@@ -318,6 +318,12 @@ impl Hir {
             mq_lang::CstNodeKind::Def => {
                 self.add_def_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Macro => {
+                self.add_macro_expr(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::MacroCall => {
+                self.add_macro_call_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Foreach => {
                 self.add_foreach_expr(node, source_id, scope_id, parent);
             }
@@ -377,6 +383,12 @@ impl Hir {
             }
             mq_lang::CstNodeKind::Pattern => {
                 self.add_pattern_expr(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::Quote => {
+                self.add_quote_expr(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::Unquote => {
+                self.add_unquote_expr(node, source_id, scope_id, parent);
             }
             mq_lang::CstNodeKind::Self_
             | mq_lang::CstNodeKind::Nodes
@@ -1160,6 +1172,101 @@ impl Hir {
         }
     }
 
+    fn add_macro_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Macro,
+            ..
+        } = &**node
+        {
+            self.symbols.insert(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Keyword,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            let (params, program) = node.split_cond_and_program();
+            let ident = params.first().unwrap();
+
+            let symbol_id = self.add_symbol(Symbol {
+                value: ident.name(),
+                kind: SymbolKind::Macro(Vec::new()),
+                source: SourceInfo::new(Some(source_id), Some(ident.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            let scope_id = self.add_scope(Scope::new(
+                SourceInfo::new(Some(source_id), Some(node.node_range())),
+                ScopeKind::Function(symbol_id),
+                Some(scope_id),
+            ));
+
+            let mut param_names = Vec::with_capacity(params.len().saturating_sub(1));
+
+            // For macro expressions, the first param is the macro name, so skip it
+            params.iter().skip(1).for_each(|child| {
+                param_names.push(child.name().unwrap_or("arg".into()));
+                self.add_symbol(Symbol {
+                    value: child.name(),
+                    kind: SymbolKind::Parameter,
+                    source: SourceInfo::new(Some(source_id), Some(child.range())),
+                    scope: scope_id,
+                    doc: Vec::new(),
+                    parent: Some(symbol_id),
+                });
+            });
+
+            self.symbols[symbol_id].kind = SymbolKind::Macro(param_names);
+
+            program.iter().for_each(|child| {
+                self.add_expr(child, source_id, scope_id, Some(symbol_id));
+            });
+        } else {
+            unreachable!()
+        }
+    }
+
+    fn add_macro_call_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::MacroCall,
+            ..
+        } = &**node
+        {
+            // Add the macro call as a regular call symbol
+            self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Call,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            // Process all children (macro arguments and program body)
+            node.children_without_token().iter().for_each(|child| {
+                self.add_expr(child, source_id, scope_id, parent);
+            });
+        } else {
+            unreachable!()
+        }
+    }
+
     fn add_fn_expr(
         &mut self,
         node: &mq_lang::Shared<mq_lang::CstNode>,
@@ -1423,6 +1530,62 @@ impl Hir {
                     // Process other expressions in the pattern (e.g., literals, guard conditions)
                     self.add_expr(&child, source_id, scope_id, Some(symbol_id));
                 }
+            }
+        }
+    }
+
+    fn add_quote_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Quote,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: None,
+                kind: SymbolKind::Keyword,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            // Process children (quoted expressions)
+            for child in node.children_without_token() {
+                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+            }
+        }
+    }
+
+    fn add_unquote_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Unquote,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: None,
+                kind: SymbolKind::Keyword,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            // Process children (unquoted expressions)
+            for child in node.children_without_token() {
+                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
             }
         }
     }
@@ -1975,6 +2138,46 @@ end"#;
         assert_eq!(symbols.len(), 4, "Should have 4 Symbol literals");
 
         // Verify no unresolved errors
+        assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
+    }
+
+    #[test]
+    fn test_macro_definition_and_call() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = r#"macro inc(x): x + 1 | inc(2)"#;
+        hir.add_code(None, code);
+
+        // Macro symbol
+        let macro_symbols: Vec<_> = hir.symbols().filter(|(_, symbol)| symbol.is_macro()).collect();
+
+        let macro_symbol = macro_symbols[0].1;
+        assert_eq!(macro_symbol.value.as_deref(), Some("inc"));
+
+        // Macro parameter
+        if let SymbolKind::Macro(params) = &macro_symbol.kind {
+            assert_eq!(params.len(), 1);
+            assert_eq!(params[0], "x");
+        } else {
+            panic!("Expected macro symbol kind");
+        }
+
+        // Macro call symbol
+        let call_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, symbol)| symbol.kind == SymbolKind::Call && symbol.value.as_deref() == Some("inc"))
+            .collect();
+        assert_eq!(call_symbols.len(), 1, "Should have 1 macro call symbol");
+
+        // Parameter symbol
+        let param_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, symbol)| symbol.kind == SymbolKind::Parameter && symbol.value.as_deref() == Some("x"))
+            .collect();
+        assert_eq!(param_symbols.len(), 1, "Should have 1 parameter symbol for macro");
+
+        // No unresolved errors
         assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
     }
 }

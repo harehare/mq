@@ -7,16 +7,6 @@ use crate::ast::constants;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::DefaultDebuggerHandler;
 use crate::{
-    IdentWithToken, LocalFsModuleResolver, ModuleResolver,
-    error::runtime::RuntimeError,
-    eval::{env::EnvError, runtime_value::ModuleEnv},
-    module::{self, error::ModuleError},
-    selector::Selector,
-};
-#[cfg(feature = "debugger")]
-use crate::{Module, eval::debugger::Source};
-
-use crate::{
     Ident, Program, Shared, SharedCell, Token, TokenKind,
     arena::Arena,
     ast::{
@@ -25,7 +15,17 @@ use crate::{
     },
     error::InnerError,
     get_token,
+    macro_expand::Macro,
 };
+use crate::{
+    IdentWithToken, LocalFsModuleResolver, ModuleResolver,
+    error::runtime::RuntimeError,
+    eval::{env::EnvError, runtime_value::ModuleEnv},
+    module::{self, error::ModuleError},
+    selector::Selector,
+};
+#[cfg(feature = "debugger")]
+use crate::{Module, eval::debugger::Source};
 
 #[cfg(feature = "debugger")]
 use debugger::{Breakpoint, DebugContext, Debugger};
@@ -76,6 +76,7 @@ pub struct Evaluator<T: ModuleResolver = LocalFsModuleResolver> {
     call_stack_depth: u32,
     pub(crate) options: Options,
     pub(crate) module_loader: module::ModuleLoader<T>,
+    pub(crate) macro_expander: Macro,
 
     #[cfg(feature = "debugger")]
     debugger: Shared<SharedCell<Debugger>>,
@@ -91,6 +92,7 @@ impl<T: ModuleResolver> Default for Evaluator<T> {
             call_stack_depth: 0,
             options: Options::default(),
             module_loader: module::ModuleLoader::new(T::default()),
+            macro_expander: Macro::new(),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
@@ -108,6 +110,7 @@ impl<T: ModuleResolver> Clone for Evaluator<T> {
             call_stack_depth: self.call_stack_depth,
             options: self.options.clone(),
             module_loader: self.module_loader.clone(),
+            macro_expander: self.macro_expander.clone(),
             #[cfg(feature = "debugger")]
             debugger: Shared::clone(&self.debugger),
             #[cfg(feature = "debugger")]
@@ -144,7 +147,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     where
         I: Iterator<Item = RuntimeValue>,
     {
-        let mut program = program.iter().try_fold(
+        let program = program.iter().try_fold(
             Vec::with_capacity(program.len()),
             |mut nodes: Vec<Shared<ast::Node>>, node: &Shared<ast::Node>| -> Result<_, InnerError> {
                 match &*node.expr {
@@ -167,7 +170,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 Ok(nodes)
             },
         )?;
-
+        let mut program = self.macro_expander.expand_program(&program).map_err(InnerError::from)?;
         let nodes_index = &program.iter().position(|node| node.is_nodes());
 
         if let Some(index) = nodes_index {
@@ -253,6 +256,10 @@ impl<T: ModuleResolver> Evaluator<T> {
         module: module::Module,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<(), RuntimeError> {
+        self.macro_expander.collect_macros(&module.macros);
+        let functions = self.macro_expander.expand_program(&module.functions)?;
+        let vars = self.macro_expander.expand_program(&module.vars)?;
+
         for node in &module.modules {
             let _ = match &*node.expr {
                 ast::Expr::Include(_) => self.eval_expr(&RuntimeValue::NONE, node, env)?,
@@ -266,7 +273,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             };
         }
 
-        for node in &module.functions {
+        for node in functions {
             if let ast::Expr::Def(ident, params, program) = &*node.expr {
                 define(
                     env,
@@ -276,7 +283,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             }
         }
 
-        for node in &module.vars {
+        for node in vars {
             if let ast::Expr::Let(ident, node) = &*node.expr {
                 let val = self.eval_expr(&RuntimeValue::NONE, node, env)?;
                 define(env, ident.name, val);
@@ -418,7 +425,12 @@ impl<T: ModuleResolver> Evaluator<T> {
                     self.eval_import(module_path.to_owned(), &Shared::clone(&module_env))?;
                 }
                 ast::Expr::Module(ident, program) => {
+                    // Collect macros from the module
+                    self.macro_expander.collect_macros(program);
                     let _ = self.eval_module(&RuntimeValue::NONE, ident, program, &module_env)?;
+                }
+                ast::Expr::Macro(..) => {
+                    // Macros are not loaded into runtime environment
                 }
                 _ => {}
             }
@@ -447,9 +459,9 @@ impl<T: ModuleResolver> Evaluator<T> {
                     .load_from_file(&module_name, Shared::clone(&self.token_arena));
 
                 if let Ok(module) = module {
+                    // Collect macros from the module
                     // Create a new environment for the module exports
                     let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
-
                     let module_name_to_use = module.name.to_string();
 
                     self.load_module_with_env(module, &Shared::clone(&module_env))?;
@@ -717,6 +729,10 @@ impl<T: ModuleResolver> Evaluator<T> {
                 define(env, ident.name, function.clone());
                 Ok(function)
             }
+            ast::Expr::Macro(_, _, _) => Err(RuntimeError::Runtime(
+                (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
+                "Internal error: macro was not expanded before evaluation.".to_string(),
+            )),
             ast::Expr::Fn(params, program) => Ok(RuntimeValue::Function(
                 params.clone(),
                 program.clone(),
@@ -782,6 +798,14 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Expr::Break => Err(RuntimeError::Break),
             ast::Expr::Continue => Err(RuntimeError::Continue),
             ast::Expr::Paren(expr) => self.eval_expr(runtime_value, expr, env),
+            ast::Expr::Quote(_) => {
+                let token = get_token(Shared::clone(&self.token_arena), node.token_id);
+                Err(RuntimeError::QuoteNotAllowedInRuntimeContext((*token).clone()))
+            }
+            ast::Expr::Unquote(_) => {
+                let token = get_token(Shared::clone(&self.token_arena), node.token_id);
+                Err(RuntimeError::UnquoteNotAllowedOutsideQuote((*token).clone()))
+            }
         }
     }
 
@@ -5965,6 +5989,83 @@ mod tests {
         assert_eq!(
             Evaluator::new(DefaultModuleLoader::default(), token_arena).eval(&program, runtime_values.into_iter()),
             expected
+        );
+    }
+
+    #[test]
+    fn test_expand_macro_with_module() {
+        let (temp_dir, temp_file_path) = create_file(
+            "test_macro.mq",
+            r#"
+            macro add_macro(a, b) do
+              unquote(a + b)
+            end"#,
+        );
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let program = vec![
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::Import(ast::Literal::String("test_macro".to_string()))),
+            }),
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::Call(
+                    IdentWithToken::new("add_macro"),
+                    smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Number(10.into()))),
+                        ast_node(ast::Expr::Literal(ast::Literal::Number(20.into()))),
+                    ],
+                )),
+            }),
+        ];
+        assert_eq!(
+            Evaluator::new(loader, token_arena())
+                .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
+            Ok(vec![RuntimeValue::Number(30.into())])
+        );
+    }
+
+    #[test]
+    fn test_expand_macro_with_def_in_module() {
+        let (temp_dir, temp_file_path) = create_file(
+            "test_macro2.mq",
+            r#"
+            macro add_macro(a, b) do
+              unquote(a + b)
+            end | def a(): add_macro(10, 20);"#,
+        );
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let program = vec![
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::Import(ast::Literal::String("test_macro2".to_string()))),
+            }),
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::QualifiedAccess(
+                    vec![IdentWithToken::new("test_macro2")],
+                    ast::AccessTarget::Call(IdentWithToken::new("a"), smallvec![]),
+                )),
+            }),
+        ];
+        assert_eq!(
+            Evaluator::new(loader, token_arena())
+                .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
+            Ok(vec![RuntimeValue::Number(30.into())])
         );
     }
 }

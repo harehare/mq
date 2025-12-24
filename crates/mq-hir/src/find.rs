@@ -67,7 +67,8 @@ impl Hir {
                     || symbol.is_variable()
                     || symbol.is_module()
                     || symbol.is_argument()
-                    || symbol.is_ident())
+                    || symbol.is_ident()
+                    || symbol.is_macro())
             {
                 symbols.push(Arc::new(symbol.clone()));
             }

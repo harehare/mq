@@ -1,7 +1,7 @@
 use smol_str::SmolStr;
 use thiserror::Error;
 
-use crate::{Token, number::Number};
+use crate::{Ident, Token, number::Number};
 
 use super::module::error::ModuleError;
 
@@ -53,6 +53,20 @@ pub enum RuntimeError {
     AssignToImmutable(Token, String),
     #[error("Undefined variable \"{1}\"")]
     UndefinedVariable(Token, String),
+    #[error("quote() is not allowed in runtime context, it should only appear inside macros")]
+    QuoteNotAllowedInRuntimeContext(Token),
+    #[error("unquote() can only be used inside quote()")]
+    UnquoteNotAllowedOutsideQuote(Token),
+    #[error("Undefined macro: {0}")]
+    UndefinedMacro(Ident),
+    #[error("Macro {macro_name} expects {expected} arguments, got {got}")]
+    ArityMismatch {
+        macro_name: Ident,
+        expected: usize,
+        got: usize,
+    },
+    #[error("Maximum macro recursion depth exceeded")]
+    RecursionLimit,
 }
 
 impl RuntimeError {
@@ -78,6 +92,11 @@ impl RuntimeError {
             RuntimeError::EnvNotFound(token, _) => Some(token),
             RuntimeError::AssignToImmutable(token, _) => Some(token),
             RuntimeError::UndefinedVariable(token, _) => Some(token),
+            RuntimeError::QuoteNotAllowedInRuntimeContext(token) => Some(token),
+            RuntimeError::UnquoteNotAllowedOutsideQuote(token) => Some(token),
+            RuntimeError::UndefinedMacro(_) => None,
+            RuntimeError::ArityMismatch { .. } => None,
+            RuntimeError::RecursionLimit => None,
         }
     }
 }

@@ -26,6 +26,7 @@
     - [Def Expression](reference/def.md)
     - [Environment variables](reference/env.md)
     - [Fn Expression](reference/fn.md)
+    - [Macros](reference/macros.md)
     - [Modules and imports](reference/modules_and_imports.md)
     - [Variable Declarations](reference/variables.md)
     - [Self](reference/self.md)

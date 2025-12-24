@@ -81,7 +81,20 @@ impl Node {
                     .unwrap_or_else(|| callable.range(Shared::clone(&arena)).end);
                 Range { start, end }
             }
-            Expr::Let(_, node) | Expr::Var(_, node) | Expr::Assign(_, node) => node.range(Shared::clone(&arena)),
+            Expr::Macro(_, args, block) => {
+                let start = args
+                    .first()
+                    .map(|node| node.range(Shared::clone(&arena)))
+                    .unwrap_or(block.range(Shared::clone(&arena)))
+                    .start;
+                let end = block.range(arena).end;
+                Range { start, end }
+            }
+            Expr::Let(_, node)
+            | Expr::Var(_, node)
+            | Expr::Assign(_, node)
+            | Expr::Quote(node)
+            | Expr::Unquote(node) => node.range(Shared::clone(&arena)),
             Expr::If(nodes) => {
                 if let (Some(first), Some(last)) = (nodes.first(), nodes.last()) {
                     let start = first.1.range(Shared::clone(&arena));
@@ -249,6 +262,7 @@ pub enum Expr {
     Call(IdentWithToken, Args),
     CallDynamic(Shared<Node>, Args),
     Def(IdentWithToken, Params, Program),
+    Macro(IdentWithToken, Params, Shared<Node>),
     Fn(Params, Program),
     Let(IdentWithToken, Shared<Node>),
     Var(IdentWithToken, Shared<Node>),
@@ -270,6 +284,8 @@ pub enum Expr {
     Self_,
     Nodes,
     Paren(Shared<Node>),
+    Quote(Shared<Node>),
+    Unquote(Shared<Node>),
     Try(Shared<Node>, Shared<Node>),
     Break,
     Continue,

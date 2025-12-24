@@ -206,6 +206,7 @@ define_token_parser!(colon, ":", TokenKind::Colon);
 define_token_parser!(comma, ",", TokenKind::Comma);
 define_keyword_parser!(def, "def", TokenKind::Def);
 define_keyword_parser!(do_, "do", TokenKind::Do);
+define_keyword_parser!(macro_, "macro", TokenKind::Macro);
 define_token_parser!(double_colon, "::", TokenKind::DoubleColon);
 define_keyword_parser!(elif, "elif", TokenKind::Elif);
 define_keyword_parser!(else_, "else", TokenKind::Else);
@@ -235,6 +236,7 @@ define_keyword_parser!(none, "None", TokenKind::None);
 define_token_parser!(plus, "+", TokenKind::Plus);
 define_token_parser!(pipe, "|", TokenKind::Pipe);
 define_token_parser!(percent, "%", TokenKind::Percent);
+define_keyword_parser!(quote_, "quote", TokenKind::Quote);
 define_token_parser!(range_op, "..", TokenKind::RangeOp);
 define_token_parser!(r_bracket, "]", TokenKind::RBracket);
 define_token_parser!(r_paren, ")", TokenKind::RParen);
@@ -242,6 +244,7 @@ define_token_parser!(r_brace, "}", TokenKind::RBrace);
 define_keyword_parser!(self_, constants::SELF, TokenKind::Self_);
 define_token_parser!(semi_colon, ";", TokenKind::SemiColon);
 define_keyword_parser!(try_, "try", TokenKind::Try);
+define_keyword_parser!(unquote_, "unquote", TokenKind::Unquote);
 define_keyword_parser!(catch_, "catch", TokenKind::Catch);
 define_keyword_parser!(while_, "while", TokenKind::While);
 define_token_parser!(lt, "<", TokenKind::Lt);
@@ -289,7 +292,8 @@ fn unary_op(input: Span) -> IResult<Span, Token> {
 
 fn control_keywords(input: Span) -> IResult<Span, Token> {
     alt((
-        def, do_, let_, match_, while_, if_, elif, else_, end, foreach, fn_, break_, continue_, try_, catch_, var,
+        def, do_, let_, macro_, match_, while_, if_, elif, else_, end, foreach, fn_, break_, continue_, try_, catch_,
+        quote_, unquote_, var,
     ))
     .parse(input)
 }

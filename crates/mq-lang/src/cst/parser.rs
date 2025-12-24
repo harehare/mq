@@ -262,6 +262,7 @@ impl<'a> Parser<'a> {
                     break;
                 }
                 TokenKind::Def => {}
+                TokenKind::Macro => {}
                 _ => {
                     self.errors
                         .report(ParseError::UnexpectedToken(Shared::new((*token).clone())));
@@ -336,6 +337,7 @@ impl<'a> Parser<'a> {
 
         match &token.kind {
             TokenKind::Def => self.parse_def(leading_trivia),
+            TokenKind::Macro => self.parse_macro(leading_trivia),
             TokenKind::Do => self.parse_block(leading_trivia, in_loop),
             TokenKind::Fn => self.parse_fn(leading_trivia, in_loop),
             TokenKind::If => self.parse_if(leading_trivia, in_loop),
@@ -363,6 +365,8 @@ impl<'a> Parser<'a> {
             TokenKind::Break if in_loop => self.parse_node(NodeKind::Break, leading_trivia),
             TokenKind::Continue if in_loop => self.parse_node(NodeKind::Continue, leading_trivia),
             TokenKind::Colon => self.parse_symbol(leading_trivia),
+            TokenKind::Quote => self.parse_quote(leading_trivia),
+            TokenKind::Unquote => self.parse_unquote(leading_trivia),
             TokenKind::Eof => {
                 self.tokens.next();
                 Err(ParseError::UnexpectedEOFDetected)
@@ -372,6 +376,45 @@ impl<'a> Parser<'a> {
                 Err(ParseError::UnexpectedToken(Shared::clone(token)))
             }
         }
+    }
+
+    fn parse_quote(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+        let token = self.tokens.next();
+        let trailing_trivia = self.parse_trailing_trivia();
+        let mut node = Node {
+            kind: NodeKind::Quote,
+            token: Some(Shared::clone(token.unwrap())),
+            leading_trivia,
+            trailing_trivia,
+            children: Vec::new(),
+        };
+
+        self.push_colon_token_if_present(&mut node.children)?;
+
+        let leading_trivia = self.parse_leading_trivia();
+        let expr = self.parse_expr(leading_trivia, false, false)?;
+
+        node.children.push(expr);
+
+        Ok(Shared::new(node))
+    }
+
+    fn parse_unquote(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+        let token = self.tokens.next();
+        let trailing_trivia = self.parse_trailing_trivia();
+        let mut node = Node {
+            kind: NodeKind::Unquote,
+            token: Some(Shared::clone(token.unwrap())),
+            leading_trivia,
+            trailing_trivia,
+            children: Vec::with_capacity(1),
+        };
+
+        let leading_trivia = self.parse_leading_trivia();
+        let expr = self.parse_expr(leading_trivia, false, false)?;
+        node.children.push(expr);
+
+        Ok(Shared::new(node))
     }
 
     fn parse_group_expr(
@@ -484,6 +527,17 @@ impl<'a> Parser<'a> {
 
                 node.kind = NodeKind::Call;
                 node.children = children;
+
+                // Check for macro call (e.g., foo(args) do ...)
+                if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Do)) {
+                    node.kind = NodeKind::MacroCall;
+
+                    let leading_trivia = self.parse_leading_trivia();
+                    let block = self.parse_block(leading_trivia, false)?;
+                    node.children.push(block);
+
+                    return Ok(Shared::new(node));
+                }
 
                 // Check for bracket access after function call (e.g., foo()[0])
                 if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
@@ -709,11 +763,41 @@ impl<'a> Parser<'a> {
         let mut params = self.parse_params()?;
         children.append(&mut params);
 
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        self.push_colon_token_if_present(&mut children)?;
 
         let (mut program, _) = self.parse_program(false, false);
 
         children.append(&mut program);
+
+        node.children = children;
+        Ok(Shared::new(node))
+    }
+
+    fn parse_macro(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+        let token = self.tokens.next();
+        let trailing_trivia = self.parse_trailing_trivia();
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(12);
+
+        let mut node = Node {
+            kind: NodeKind::Macro,
+            token: Some(Shared::clone(token.unwrap())),
+            leading_trivia,
+            trailing_trivia,
+            children: Vec::new(),
+        };
+
+        children.push(self.next_node(|kind| matches!(kind, TokenKind::Ident(_)), NodeKind::Ident)?);
+
+        let mut params = self.parse_params()?;
+        children.append(&mut params);
+
+        self.push_colon_token_if_present(&mut children)?;
+
+        let leading_trivia = self.parse_leading_trivia();
+
+        let expr = self.parse_expr(leading_trivia, false, false)?;
+
+        children.push(expr);
 
         node.children = children;
         Ok(Shared::new(node))
@@ -734,7 +818,8 @@ impl<'a> Parser<'a> {
 
         let mut params = self.parse_params()?;
         children.append(&mut params);
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+        self.push_colon_token_if_present(&mut children)?;
 
         let (mut program, _) = self.parse_program(false, in_loop);
 
@@ -907,8 +992,7 @@ impl<'a> Parser<'a> {
         // Parse module name (identifier)
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Ident(_)), NodeKind::Ident)?);
 
-        // Parse colon
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        self.push_colon_token_if_present(&mut children)?;
 
         // Parse program block (contains let, def, or module statements)
         let (program_nodes, errors) = self.parse_program(false, false);
@@ -944,7 +1028,8 @@ impl<'a> Parser<'a> {
         }
 
         children.append(&mut args);
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+        self.push_colon_token_if_present(&mut children)?;
 
         let leading_trivia = self.parse_leading_trivia();
         children.push(self.parse_expr(leading_trivia, false, in_loop)?);
@@ -990,7 +1075,8 @@ impl<'a> Parser<'a> {
         }
 
         children.append(&mut args);
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+        self.push_colon_token_if_present(&mut children)?;
 
         let leading_trivia = self.parse_leading_trivia();
         children.push(self.parse_expr(leading_trivia, false, in_loop)?);
@@ -1012,7 +1098,7 @@ impl<'a> Parser<'a> {
             children: Vec::new(),
         };
 
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        self.push_colon_token_if_present(&mut children)?;
 
         let leading_trivia = self.parse_leading_trivia();
         children.push(self.parse_expr(leading_trivia, false, in_loop)?);
@@ -1387,7 +1473,8 @@ impl<'a> Parser<'a> {
 
         children.push(self.parse_expr(leading_trivia, false, false)?);
         children.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+        self.push_colon_token_if_present(&mut children)?;
 
         let (mut program, _) = self.parse_program(false, true);
 
@@ -1416,7 +1503,8 @@ impl<'a> Parser<'a> {
 
         children.push(self.parse_expr(leading_trivia, false, true)?);
         children.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+        self.push_colon_token_if_present(&mut children)?;
 
         let (mut program, _) = self.parse_program(false, true);
 
@@ -1439,7 +1527,7 @@ impl<'a> Parser<'a> {
             children: Vec::new(),
         };
 
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        self.push_colon_token_if_present(&mut children)?;
 
         let leading_trivia = self.parse_leading_trivia();
         children.push(self.parse_expr(leading_trivia, false, false)?);
@@ -1470,7 +1558,7 @@ impl<'a> Parser<'a> {
             children: Vec::new(),
         };
 
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        self.push_colon_token_if_present(&mut children)?;
 
         let leading_trivia = self.parse_leading_trivia();
         children.push(self.parse_expr(leading_trivia, false, false)?);
@@ -1499,8 +1587,7 @@ impl<'a> Parser<'a> {
         }
         children.append(&mut args);
 
-        // Parse colon
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        self.push_colon_token_if_present(&mut children)?;
 
         // Parse match arms
         loop {
@@ -1976,6 +2063,15 @@ impl<'a> Parser<'a> {
             children: Vec::new(),
         }))
     }
+
+    #[inline(always)]
+    fn push_colon_token_if_present(&mut self, children: &mut Vec<Shared<Node>>) -> Result<(), ParseError> {
+        if self.try_next_token(|kind| matches!(kind, TokenKind::Colon)) {
+            children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -2051,6 +2147,212 @@ mod tests {
                         Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("test".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::End,
+                            token: Some(Shared::new(token(TokenKind::End))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::def_without_colon1(
+        vec![
+            Shared::new(token(TokenKind::Def)),
+            Shared::new(token(TokenKind::Ident("bar".into()))),
+            Shared::new(token(TokenKind::LParen)),
+            Shared::new(token(TokenKind::RParen)),
+            Shared::new(token(TokenKind::StringLiteral("test".into()))),
+            Shared::new(token(TokenKind::End)),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Def,
+                    token: Some(Shared::new(token(TokenKind::Def))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Shared::new(token(TokenKind::StringLiteral("test".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::End,
+                            token: Some(Shared::new(token(TokenKind::End))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::def_without_colon2(
+        vec![
+            Shared::new(token(TokenKind::Def)),
+            Shared::new(token(TokenKind::Ident("baz".into()))),
+            Shared::new(token(TokenKind::LParen)),
+            Shared::new(token(TokenKind::RParen)),
+            Shared::new(token(TokenKind::NumberLiteral(42.into()))),
+            Shared::new(token(TokenKind::SemiColon)),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Def,
+                    token: Some(Shared::new(token(TokenKind::Def))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("baz".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Shared::new(token(TokenKind::NumberLiteral(42.into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::SemiColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::def_without_colon_with_args(
+        vec![
+            Shared::new(token(TokenKind::Def)),
+            Shared::new(token(TokenKind::Ident("func".into()))),
+            Shared::new(token(TokenKind::LParen)),
+            Shared::new(token(TokenKind::Ident("x".into()))),
+            Shared::new(token(TokenKind::RParen)),
+            Shared::new(token(TokenKind::Ident("x".into()))),
+            Shared::new(token(TokenKind::End)),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Def,
+                    token: Some(Shared::new(token(TokenKind::Def))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("func".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
@@ -6953,6 +7255,242 @@ mod tests {
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: Vec::new(),
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::macro_(
+        vec![
+            Shared::new(token(TokenKind::Macro)),
+            Shared::new(token(TokenKind::Ident("double".into()))),
+            Shared::new(token(TokenKind::LParen)),
+            Shared::new(token(TokenKind::Ident("x".into()))),
+            Shared::new(token(TokenKind::RParen)),
+            Shared::new(token(TokenKind::Colon)),
+            Shared::new(token(TokenKind::Ident("x".into()))),
+            Shared::new(token(TokenKind::Plus)),
+            Shared::new(token(TokenKind::Ident("x".into()))),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Macro,
+                    token: Some(Shared::new(token(TokenKind::Macro))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("double".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::Colon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::BinaryOp(BinaryOp::Plus),
+                            token: Some(Shared::new(token(TokenKind::Plus))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: vec![
+                                Shared::new(Node {
+                                    kind: NodeKind::Ident,
+                                    token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                                Shared::new(Node {
+                                    kind: NodeKind::Ident,
+                                    token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                            ],
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::quote(
+        vec![
+            Shared::new(token(TokenKind::Quote)),
+            Shared::new(token(TokenKind::Ident("x".into()))),
+            Shared::new(token(TokenKind::Plus)),
+            Shared::new(token(TokenKind::NumberLiteral(1.into()))),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Quote,
+                    token: Some(Shared::new(token(TokenKind::Quote))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::BinaryOp(BinaryOp::Plus),
+                            token: Some(Shared::new(token(TokenKind::Plus))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: vec![
+                                Shared::new(Node {
+                                    kind: NodeKind::Ident,
+                                    token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                                Shared::new(Node {
+                                    kind: NodeKind::Literal,
+                                    token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                            ],
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::unquote(
+        vec![
+            Shared::new(token(TokenKind::Unquote)),
+            Shared::new(token(TokenKind::Ident("x".into()))),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Unquote,
+                    token: Some(Shared::new(token(TokenKind::Unquote))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::quote_with_unquote(
+        vec![
+            Shared::new(token(TokenKind::Quote)),
+            Shared::new(token(TokenKind::Unquote)),
+            Shared::new(token(TokenKind::Ident("x".into()))),
+            Shared::new(token(TokenKind::Plus)),
+            Shared::new(token(TokenKind::NumberLiteral(1.into()))),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Quote,
+                    token: Some(Shared::new(token(TokenKind::Quote))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Unquote,
+                            token: Some(Shared::new(token(TokenKind::Unquote))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: vec![
+                                Shared::new(Node {
+                                    kind: NodeKind::BinaryOp(BinaryOp::Plus),
+                                    token: Some(Shared::new(token(TokenKind::Plus))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: vec![
+                                        Shared::new(Node {
+                                            kind: NodeKind::Ident,
+                                            token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
+                                            leading_trivia: Vec::new(),
+                                            trailing_trivia: Vec::new(),
+                                            children: Vec::new(),
+                                        }),
+                                        Shared::new(Node {
+                                            kind: NodeKind::Literal,
+                                            token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
+                                            leading_trivia: Vec::new(),
+                                            trailing_trivia: Vec::new(),
+                                            children: Vec::new(),
+                                        }),
+                                    ],
+                                }),
+                            ],
+                        }),
+                    ],
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,

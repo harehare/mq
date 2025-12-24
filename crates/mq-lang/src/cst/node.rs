@@ -102,17 +102,21 @@ pub enum NodeKind {
     Let,
     Var,
     Literal,
+    Macro,
+    MacroCall,
     Match,
     MatchArm,
     Module,
     Nodes,
     Pattern,
     QualifiedAccess,
+    Quote,
     Selector,
     Self_,
     Token,
     Try,
     Catch,
+    Unquote,
     UnaryOp(UnaryOp),
     While,
 }
@@ -208,28 +212,41 @@ impl Node {
     }
 
     pub fn split_cond_and_program(&self) -> (Vec<Shared<Node>>, Vec<Shared<Node>>) {
-        let expr_index = self
-            .children
-            .iter()
-            .position(|child| {
-                child
-                    .token
-                    .as_ref()
-                    .map(|token| matches!(token.kind, TokenKind::Colon))
-                    .unwrap_or(false)
-            })
-            .unwrap_or_default();
+        let colon_index = self.children.iter().position(|child| {
+            child
+                .token
+                .as_ref()
+                .map(|token| matches!(token.kind, TokenKind::Colon))
+                .unwrap_or(false)
+        });
+
+        // If there's no colon, split before the right parenthesis
+        let index = match colon_index {
+            Some(index) => index,
+            None => self
+                .children
+                .iter()
+                .position(|child| {
+                    child
+                        .token
+                        .as_ref()
+                        .map(|token| matches!(token.kind, TokenKind::RParen))
+                        .unwrap_or(false)
+                })
+                .map(|index| index + 1)
+                .unwrap_or_default(),
+        };
 
         (
             self.children
                 .iter()
-                .take(expr_index)
+                .take(index)
                 .filter(|child| !child.is_token())
                 .cloned()
                 .collect::<Vec<_>>(),
             self.children
                 .iter()
-                .skip(expr_index)
+                .skip(index)
                 .filter(|child| !child.is_token())
                 .cloned()
                 .collect::<Vec<_>>(),

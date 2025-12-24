@@ -46,7 +46,7 @@
             "patterns": [
                 {
                     "name": "keyword.control.mq",
-                    "match": "\\b(def|do|let|if|elif|else|end|while|foreach|self|nodes|fn|break|continue|include|match|module|import|var)\\b"
+                    "match": "\\b(def|do|let|if|elif|else|end|while|foreach|self|nodes|fn|break|continue|include|match|module|import|var|macro|quote|unquote)\\b"
                 },
                 {
                     "name": "keyword.operator.mq",

@@ -103,7 +103,11 @@ impl Formatter {
             }
             mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::CallDynamic => self.format_call_dynamic(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Quote => self.format_quote(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Unquote => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Def
+            | mq_lang::CstNodeKind::Macro
+            | mq_lang::CstNodeKind::MacroCall
             | mq_lang::CstNodeKind::Foreach
             | mq_lang::CstNodeKind::While
             | mq_lang::CstNodeKind::Fn => self.format_expr(
@@ -471,6 +475,29 @@ impl Formatter {
             };
 
             self.format_node(mq_lang::Shared::clone(child), indent_level);
+        });
+    }
+
+    fn format_quote(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        self.append_indent(indent_level);
+        self.output.push_str(&node.to_string());
+        self.append_space();
+
+        let current_line_indent = if indent_level == 0 {
+            self.current_line_indent()
+        } else {
+            indent_level
+        };
+
+        node.children.iter().for_each(|child| {
+            self.format_node(
+                mq_lang::Shared::clone(child),
+                if child.has_new_line() {
+                    current_line_indent + 1
+                } else {
+                    current_line_indent
+                },
+            );
         });
     }
 
@@ -1449,6 +1476,12 @@ s"test${val1}"
         "[\n  1,\n  2,\n  3\n]\n"
     )]
     #[case::let_with_array(r#"let arr = [1, 2, 3]"#, r#"let arr = [1, 2, 3]"#)]
+    // --- quote/unquote simple & nested cases ---
+    #[case::quote_simple("quote do test;", "quote do test;")]
+    #[case::unquote_simple("unquote(test)", "unquote(test)")]
+    #[case::quote_unquote_nested("quote do unquote(test);", "quote do unquote(test);")]
+    #[case::quote_with_pipe("quote do test | unquote(expr);", "quote do test | unquote(expr);")]
+    #[case::quote_quote_nested("quote do quote do test;;", "quote do quote do test;;")]
     #[case::let_with_array_multiline(
         r#"let arr = [
 1,
