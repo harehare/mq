@@ -391,8 +391,8 @@ impl<'a> Parser<'a> {
 
         self.push_colon_token_if_present(&mut node.children)?;
 
-        let lending_trivia = self.parse_leading_trivia();
-        let expr = self.parse_expr(lending_trivia, false, false)?;
+        let leading_trivia = self.parse_leading_trivia();
+        let expr = self.parse_expr(leading_trivia, false, false)?;
 
         node.children.push(expr);
 

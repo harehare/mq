@@ -1053,7 +1053,6 @@ mod tests {
         macro_expander.max_recursion = 10;
         let result = macro_expander.expand_program(&program);
 
-        dbg!(&result);
         assert!(matches!(result, Err(RuntimeError::RecursionLimit)));
     }
 
