@@ -88,7 +88,7 @@ pub use module::{
     BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, error::ModuleError,
     resolver::LocalFsModuleResolver, resolver::ModuleResolver, resolver::module_name,
 };
-pub use optree::{Op, OpPool, OpRef, OpTreeEvaluator, OpTreeTransformer, dump_optree};
+pub use optree::{Op, OpPool, OpRef, OpTreeEvaluator, OpTreeTransformer};
 pub use range::{Position, Range};
 pub use selector::{AttrKind, Selector};
 

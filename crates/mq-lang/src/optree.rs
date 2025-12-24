@@ -46,12 +46,10 @@
 //! let result = evaluator.eval(root, runtime_value)?;
 //! ```
 
-pub mod debug;
 mod eval;
 mod instruction;
 mod transform;
 
-pub use debug::dump_optree;
 pub use eval::OpTreeEvaluator;
 pub use instruction::{AccessTarget, MatchArm, Op, OpPool, OpRef, SourceMap, StringSegment};
 pub use transform::OpTreeTransformer;
