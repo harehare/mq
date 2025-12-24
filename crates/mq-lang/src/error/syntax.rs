@@ -33,6 +33,8 @@ pub enum SyntaxError {
     /// An unknown selector was encountered.
     #[error(transparent)]
     UnknownSelector(selector::UnknownSelector),
+    #[error("Macro parameters must be identifiers, but got `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
+    MacroParamsMustBeIdents(Token),
 }
 
 impl SyntaxError {
@@ -49,6 +51,7 @@ impl SyntaxError {
             SyntaxError::ExpectedClosingBracket(token) => Some(token),
             SyntaxError::InvalidAssignmentTarget(token) => Some(token),
             SyntaxError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
+            SyntaxError::MacroParamsMustBeIdents(token) => Some(token),
         }
     }
 }

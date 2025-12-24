@@ -1030,7 +1030,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let args = self.parse_args()?;
 
         if !args.is_empty() && !args.iter().all(|a| matches!(&*a.expr, Expr::Ident(_))) {
-            return Err(SyntaxError::UnexpectedToken(
+            return Err(SyntaxError::MacroParamsMustBeIdents(
                 (*self.token_arena[macro_token_id]).clone(),
             ));
         }

@@ -186,6 +186,9 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::InvalidAssignmentTarget(_)) => Some(Cow::Borrowed(
                 "Invalid assignment target. Ensure you're assigning to a valid variable or property.",
             )),
+            InnerError::Syntax(SyntaxError::MacroParamsMustBeIdents(_)) => Some(Cow::Borrowed(
+                "Macro parameters must be identifiers. Check your macro definition.",
+            )),
             InnerError::Runtime(RuntimeError::UserDefined { .. }) => {
                 Some(Cow::Borrowed("A user-defined error occurred during evaluation."))
             }
@@ -282,6 +285,9 @@ impl Diagnostic for Error {
                 Some(Cow::Borrowed("Parse error in module: unknown selector used."))
             }
             InnerError::Module(ModuleError::InvalidModule) => Some(Cow::Borrowed("Invalid module format or content.")),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParamsMustBeIdents(_))) => Some(
+                Cow::Borrowed("Parse error in module: macro parameters must be identifiers."),
+            ),
             InnerError::Runtime(RuntimeError::UndefinedMacro(_)) => {
                 Some(Cow::Borrowed("Macro expansion error: undefined macro used."))
             }
