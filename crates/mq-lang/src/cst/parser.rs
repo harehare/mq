@@ -410,8 +410,8 @@ impl<'a> Parser<'a> {
             children: Vec::with_capacity(1),
         };
 
-        let lending_trivia = self.parse_leading_trivia();
-        let expr = self.parse_expr(lending_trivia, false, false)?;
+        let leading_trivia = self.parse_leading_trivia();
+        let expr = self.parse_expr(leading_trivia, false, false)?;
         node.children.push(expr);
 
         Ok(Shared::new(node))
