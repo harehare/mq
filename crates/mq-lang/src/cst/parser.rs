@@ -377,6 +377,7 @@ impl<'a> Parser<'a> {
             }
         }
     }
+
     fn parse_quote(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();

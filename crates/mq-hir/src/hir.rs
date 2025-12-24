@@ -2140,4 +2140,44 @@ end"#;
         // Verify no unresolved errors
         assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
     }
+
+    #[test]
+    fn test_macro_definition_and_call() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = r#"macro inc(x): x + 1 | inc(2)"#;
+        hir.add_code(None, code);
+
+        // Macro symbol
+        let macro_symbols: Vec<_> = hir.symbols().filter(|(_, symbol)| symbol.is_macro()).collect();
+
+        let macro_symbol = macro_symbols[0].1;
+        assert_eq!(macro_symbol.value.as_deref(), Some("inc"));
+
+        // Macro parameter
+        if let SymbolKind::Macro(params) = &macro_symbol.kind {
+            assert_eq!(params.len(), 1);
+            assert_eq!(params[0], "x");
+        } else {
+            panic!("Expected macro symbol kind");
+        }
+
+        // Macro call symbol
+        let call_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, symbol)| symbol.kind == SymbolKind::Call && symbol.value.as_deref() == Some("inc"))
+            .collect();
+        assert_eq!(call_symbols.len(), 1, "Should have 1 macro call symbol");
+
+        // Parameter symbol
+        let param_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, symbol)| symbol.kind == SymbolKind::Parameter && symbol.value.as_deref() == Some("x"))
+            .collect();
+        assert_eq!(param_symbols.len(), 1, "Should have 1 parameter symbol for macro");
+
+        // No unresolved errors
+        assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
+    }
 }
