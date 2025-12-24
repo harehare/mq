@@ -276,11 +276,20 @@ impl Macro {
                     expr: Shared::new(Expr::Paren(expanded_inner)),
                 }))
             }
-            Expr::Quote(program) => {
-                let expanded_program = self.expand_program(program)?;
+            Expr::Quote(block) => {
+                let program = match &*block.expr {
+                    Expr::Block(prog) => prog.clone(),
+                    _ => vec![Shared::clone(block)],
+                };
+                let expanded_program = self.expand_program(&program)?;
+                let block = Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Block(expanded_program.clone())),
+                });
+
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Quote(expanded_program)),
+                    expr: Shared::new(Expr::Quote(block)),
                 }))
             }
             Expr::Unquote(inner) => {
@@ -645,8 +654,12 @@ impl Macro {
                 })
             }
             // Quote: Expand unquote expressions and unwrap the quote
-            Expr::Quote(program) => {
-                // Traverse the quoted program to find and handle unquote expressions
+            Expr::Quote(block) => {
+                let program = match &*block.expr {
+                    Expr::Block(prog) => prog.clone(),
+                    _ => vec![Shared::clone(block)],
+                };
+
                 let substituted_program: Vec<_> = program
                     .iter()
                     .map(|n| self.substitute_in_quote(n, substitutions))
@@ -686,15 +699,24 @@ impl Macro {
             // Unquote should not appear in the final expanded code
             Expr::Unquote(inner) => self.substitute_node(inner, substitutions),
             // Nested Quote: Recursively handle
-            Expr::Quote(program) => {
+            Expr::Quote(block) => {
+                let program = match &*block.expr {
+                    Expr::Block(prog) => prog.clone(),
+                    _ => vec![Shared::clone(block)],
+                };
                 let substituted_program: Vec<_> = program
                     .iter()
                     .map(|n| self.substitute_in_quote(n, substitutions))
                     .collect();
 
+                let block = Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Block(substituted_program)),
+                });
+
                 Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Quote(substituted_program)),
+                    expr: Shared::new(Expr::Quote(block)),
                 })
             }
             Expr::Block(program) => {
@@ -1132,7 +1154,7 @@ mod tests {
 
     #[test]
     fn test_quote_basic() {
-        let input = "macro make_expr(x): quote(x + 1) | make_expr(5)";
+        let input = "macro make_expr(x): quote: x + 1 | make_expr(5)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);
@@ -1142,7 +1164,7 @@ mod tests {
 
     #[test]
     fn test_quote_with_unquote() {
-        let input = "macro add_one(x): quote(unquote(x) + 1) | add_one(5)";
+        let input = "macro add_one(x): quote: unquote(x) + 1 | add_one(5)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);
@@ -1152,7 +1174,7 @@ mod tests {
 
     #[test]
     fn test_quote_multiple_expressions() {
-        let input = r#"macro log_and_eval(x): quote(| "start" | unquote(x) | "end") | log_and_eval(5 + 5)"#;
+        let input = r#"macro log_and_eval(x): quote do "start" | unquote(x) | "end"; | log_and_eval(5 + 5)"#;
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);
@@ -1165,7 +1187,7 @@ mod tests {
 
     #[test]
     fn test_nested_quote() {
-        let input = "macro nested(x): quote(quote(unquote(x))) | nested(5)";
+        let input = "macro nested(x): quote: quote: unquote(x) | nested(5)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);
@@ -1175,7 +1197,7 @@ mod tests {
 
     #[test]
     fn test_macro_call_with_body() {
-        let input = r#"macro unless(cond, expr): quote(if (unquote(!cond)): unquote(expr)) | unless(!false) do 1;"#;
+        let input = r#"macro unless(cond, expr): quote: if (unquote(!cond)): unquote(expr) | unless(!false) do 1;"#;
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);

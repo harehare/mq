@@ -1702,7 +1702,7 @@ fn engine() -> DefaultEngine {
     Ok(vec![RuntimeValue::Number(10.into())].into()))]
 #[case::macro_quote_basic("
     macro make_expr(x) do
-      quote(unquote(x) + 1)
+      quote: unquote(x) + 1
     end
     | make_expr(5)
     ",
@@ -1710,7 +1710,9 @@ fn engine() -> DefaultEngine {
     Ok(vec![RuntimeValue::Number(6.into())].into()))]
 #[case::macro_quote_multiple_expressions("
     macro wrap_expr(x) do
-      quote(let result = unquote(x) | result * 2)
+      quote do
+        let result = unquote(x) | result * 2
+      end
     end
     | wrap_expr(5)
     ",
@@ -1718,7 +1720,7 @@ fn engine() -> DefaultEngine {
     Ok(vec![RuntimeValue::Number(10.into())].into()))]
 #[case::macro_quote_with_function("
     macro define_double() do
-        quote(def double(x): x * 2 end)
+        quote: def double(x): x * 2 end
     end
     | define_double() | double(7)
     ",
@@ -1726,7 +1728,7 @@ fn engine() -> DefaultEngine {
     Ok(vec![RuntimeValue::Number(14.into())].into()))]
 #[case::macro_quote_nested("
     macro compute(a, b) do
-        quote(unquote(a) + unquote(b) * 2)
+        quote: unquote(a) + unquote(b) * 2
     end
     | compute(10, 5)
     ",
@@ -1734,7 +1736,7 @@ fn engine() -> DefaultEngine {
     Ok(vec![RuntimeValue::Number(20.into())].into()))]
 #[case::macro_quote_with_if("
     macro conditional_expr(x) do
-        quote(if(unquote(x) > 10): \"large\" else: \"small\")
+        quote: if(unquote(x) > 10): \"large\" else: \"small\"
     end
     | conditional_expr(15)
     ",
@@ -1742,8 +1744,8 @@ fn engine() -> DefaultEngine {
     Ok(vec![RuntimeValue::String("large".to_string())].into()))]
 #[case::macro_quote_preserve_structure("
     macro make_array(a, b, c) do
-        quote([unquote(a), unquote(b), unquote(c)])
-    end    
+        quote: [unquote(a), unquote(b), unquote(c)]
+    end
     | make_array(1, 2, 3)
     ",
     vec![RuntimeValue::Number(0.into())],
@@ -1751,7 +1753,7 @@ fn engine() -> DefaultEngine {
 #[case::macro_quote_with_let_outside("
     macro test(x) do
         let y = x + 1 |
-        quote(unquote(y) * 2)
+        quote: unquote(y) * 2
     end
     | test(5)
     ",
@@ -1761,7 +1763,7 @@ fn engine() -> DefaultEngine {
     macro compute(x) do
         let a = x * 2 |
         let b = x + 10 |
-        quote(unquote(a) + unquote(b))
+        quote: unquote(a) + unquote(b)
     end
     | compute(5)
     ",
@@ -1770,7 +1772,7 @@ fn engine() -> DefaultEngine {
 #[case::macro_quote_variable_reference("
     macro make_computation(x) do
         let base = x |
-        quote(base * 3 + unquote(x))
+        quote: base * 3 + unquote(x)
     end
     | make_computation(4)
     ",

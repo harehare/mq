@@ -1153,60 +1153,29 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_quote(&mut self, quote_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(quote_token));
 
-        // Expect '(' after 'quote'
-        self.next_token(|token_kind| matches!(token_kind, TokenKind::LParen))?;
+        self.consume_colon();
 
-        // Parse program inside parentheses
-        let mut program = Vec::new();
-
-        loop {
-            match self.tokens.peek() {
-                Some(token) if matches!(token.kind, TokenKind::RParen) => {
-                    self.tokens.next(); // consume RParen
-                    break;
-                }
-                Some(token) if matches!(token.kind, TokenKind::Eof) => {
-                    return Err(SyntaxError::UnexpectedEOFDetected(self.module_id));
-                }
-                Some(token) if matches!(token.kind, TokenKind::Pipe) => {
-                    self.tokens.next(); // skip pipes
-                    continue;
-                }
-                Some(_) => {
-                    let token = self.tokens.next().unwrap();
-                    let node = self.parse_expr(token)?;
-                    program.push(node);
-                }
-                None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
-            }
-        }
-
-        if program.is_empty() {
-            return Err(SyntaxError::UnexpectedToken((**quote_token).clone()));
-        }
+        let expr = match self.tokens.next() {
+            Some(token) => self.parse_expr(token)?,
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+        };
 
         Ok(Shared::new(Node {
             token_id,
-            expr: Shared::new(Expr::Quote(program)),
+            expr: Shared::new(Expr::Quote(expr)),
         }))
     }
 
     fn parse_unquote(&mut self, unquote_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(unquote_token));
 
-        // Expect '(' after 'unquote'
-        self.next_token(|token_kind| matches!(token_kind, TokenKind::LParen))?;
+        let args = self.parse_args()?;
 
-        // Parse single expression inside parentheses
-        let expr_token = match self.tokens.next() {
-            Some(t) => t,
-            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
-        };
+        if args.len() != 1 {
+            return Err(SyntaxError::UnexpectedToken((*self.token_arena[token_id]).clone()));
+        }
 
-        let expr = self.parse_expr(expr_token)?;
-
-        // Expect ')' after expression
-        self.next_token(|token_kind| matches!(token_kind, TokenKind::RParen))?;
+        let expr = Shared::clone(args.first().unwrap());
 
         Ok(Shared::new(Node {
             token_id,

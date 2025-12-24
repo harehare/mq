@@ -77,21 +77,26 @@ def inc(n): n + 1;
 ```python
 # Basic injection
 macro make_expr(x) do
-  quote(unquote(x) + 1)
+  quote: unquote(x) + 1
 end
 
 | make_expr(5)  # Returns 6
 
 # Pre-computation
 macro compute(a, b) do
-  quote(unquote(a) + unquote(b) * 2)
+  quote: unquote(a) + unquote(b) * 2
 end
 
 | compute(10, 5)  # Returns 20
 
 # Conditional code generation
 macro conditional_expr(x) do
-  quote(if(unquote(x) > 10): "large" else: "small")
+  quote do
+    if(unquote(x) > 10):
+        "large"
+    else:
+        "small"
+  end
 end
 
 | conditional_expr(15)  # Returns "large"
@@ -100,14 +105,14 @@ end
 macro compute_mixed(x) do
   let a = x * 2 |
   let b = x + 10 |
-  quote(unquote(a) + unquote(b))
+  quote: unquote(a) + unquote(b)
 end
 
 | compute_mixed(5)  # a=10, b=15, returns 25
 
 # Generating data structures
 macro make_array(a, b, c) do
-  quote([unquote(a), unquote(b), unquote(c)])
+  quote: [unquote(a), unquote(b), unquote(c)]
 end
 
 | make_array(1, 2, 3)  # Returns [1, 2, 3]
