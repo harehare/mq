@@ -245,32 +245,34 @@ impl Repl {
             let readline = editor.readline(&prompt);
 
             match readline {
-                Ok(line) => match self.command_context.borrow_mut().execute(&line) {
-                    Ok(CommandOutput::String(s)) => println!("{}", s.join("\n")),
-                    Ok(CommandOutput::Value(runtime_values)) => {
-                        let lines = runtime_values
-                            .iter()
-                            .filter_map(|runtime_value| {
-                                if runtime_value.is_none() {
-                                    return Some("None".to_string());
-                                }
+                Ok(line) => {
+                    editor.add_history_entry(&line).unwrap();
 
-                                let s = runtime_value.to_string();
-                                if s.is_empty() { None } else { Some(s) }
-                            })
-                            .collect::<Vec<_>>();
+                    match self.command_context.borrow_mut().execute(&line) {
+                        Ok(CommandOutput::String(s)) => println!("{}", s.join("\n")),
+                        Ok(CommandOutput::Value(runtime_values)) => {
+                            let lines = runtime_values
+                                .iter()
+                                .filter_map(|runtime_value| {
+                                    if runtime_value.is_none() {
+                                        return Some("None".to_string());
+                                    }
 
-                        if !lines.is_empty() {
-                            println!("{}", lines.join("\n"))
+                                    let s = runtime_value.to_string();
+                                    if s.is_empty() { None } else { Some(s) }
+                                })
+                                .collect::<Vec<_>>();
+
+                            if !lines.is_empty() {
+                                println!("{}", lines.join("\n"))
+                            }
                         }
-
-                        editor.add_history_entry(&line).unwrap();
+                        Ok(CommandOutput::None) => (),
+                        Err(e) => {
+                            eprintln!("{:?}", e)
+                        }
                     }
-                    Ok(CommandOutput::None) => (),
-                    Err(e) => {
-                        eprintln!("{:?}", e)
-                    }
-                },
+                }
                 Err(ReadlineError::Interrupted) => {
                     continue;
                 }
