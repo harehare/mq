@@ -949,7 +949,7 @@ impl Default for Macro {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{SharedCell, Token, TokenKind, arena::Arena, parse};
+    use crate::{DefaultEngine, RuntimeValue, SharedCell, Token, TokenKind, arena::Arena, parse};
     use rstest::rstest;
 
     fn create_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
@@ -968,6 +968,15 @@ mod tests {
 
     fn parse_program(input: &str) -> Result<Program, Box<crate::error::Error>> {
         parse(input, create_token_arena())
+    }
+
+    fn eval_program(program: &Program) -> Result<Vec<RuntimeValue>, Box<dyn std::error::Error>> {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let result = engine
+            .evaluator
+            .eval(program, [RuntimeValue::Number(0.into())].into_iter())?;
+        Ok(result)
     }
 
     #[rstest]
@@ -1109,7 +1118,6 @@ mod tests {
             .expand_program(&program)
             .expect("Failed to expand program");
 
-        // The expanded program should not contain the macro definition
         for node in &expanded {
             assert!(
                 !matches!(&*node.expr, Expr::Macro(_, _, _)),
@@ -1120,7 +1128,6 @@ mod tests {
 
     #[test]
     fn test_no_macro_fast_path() {
-        // Test that when no macros are defined, the program is returned as-is
         let input = "1 + 2 | . * 3";
         let program = parse_program(input).expect("Failed to parse program");
         let original_len = program.len();
@@ -1130,9 +1137,7 @@ mod tests {
             .expand_program(&program)
             .expect("Failed to expand program");
 
-        // Should have same number of nodes
         assert_eq!(expanded.len(), original_len);
-        // No macros should be collected
         assert!(macro_expander.macros.is_empty());
     }
 
@@ -1202,5 +1207,188 @@ mod tests {
         let result = macro_expander.expand_program(&program);
 
         assert!(result.is_ok(), "Expected successful expansion with MacroCall and body");
+    }
+
+    #[rstest]
+    #[case::while_condition(
+        "macro get_limit(x): x * 2 | var i = 0 | while(i < get_limit(5)): i = i + 1; | i",
+        vec![RuntimeValue::Number(10.into())],
+    )]
+    #[case::foreach_collection(
+        "macro make_value(x): x * 2 | foreach(item, [1, 2, 3]): make_value(item);",
+        vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(4.into()),
+            RuntimeValue::Number(6.into())
+        ])],
+    )]
+    #[case::match_value(
+        "macro get_val(x): x | match(get_val(5)): | 1: 10 | _: 20 end",
+        vec![RuntimeValue::Number(20.into())],
+    )]
+    #[case::match_body(
+        "macro default_value(x): x * 2 | match(5): | 1: default_value(10) | _: default_value(20) end",
+        vec![RuntimeValue::Number(40.into())],
+    )]
+    #[case::match_guard(
+        "macro is_positive(x): x > 0 | match(5): | n if (is_positive(n)): n * 2 | _: 0 end",
+        vec![RuntimeValue::Number(10.into())],
+    )]
+    #[case::and_expression(
+        "macro is_positive(x): x > 0 | macro is_even(x): x % 2 == 0 | is_positive(4) && is_even(4)",
+        vec![RuntimeValue::Boolean(true)],
+    )]
+    #[case::or_expression(
+        "macro is_zero(x): x == 0 | macro is_one(x): x == 1 | is_zero(0) || is_one(1)",
+        vec![RuntimeValue::Boolean(true)],
+    )]
+    #[case::try_catch(
+        "macro fallback(x): x * 2 | try: 1 / 0 catch: fallback(5);",
+        vec![RuntimeValue::Number(10.into())],
+    )]
+    #[case::var_declaration(
+        "macro initial_value(x): x * 10 | var counter = initial_value(5) | counter",
+        vec![RuntimeValue::Number(50.into())],
+    )]
+    #[case::assignment(
+        "macro next_value(x): x + 1 | var counter = 0 | counter = next_value(counter) | counter",
+        vec![RuntimeValue::Number(1.into())],
+    )]
+    #[case::lambda_body(
+        "macro double(x): x * 2 | def apply_double(n): double(n) + 1; | apply_double(5)",
+        vec![RuntimeValue::Number(11.into())],
+    )]
+    #[case::parentheses(
+        "macro value(x): x + 10 | (value(5)) * 2",
+        vec![RuntimeValue::Number(30.into())],
+    )]
+    #[case::interpolated_string(
+        r#"macro get_name(): "World" | s"Hello, ${get_name()}!""#,
+        vec![RuntimeValue::String("Hello, World!".to_string())],
+    )]
+    fn test_expand_node_branches(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .unwrap_or_else(|e| panic!("Failed to expand: {:?}", e));
+
+        let result = eval_program(&expanded).unwrap_or_else(|e| panic!("Failed to eval: {:?}", e));
+
+        assert_eq!(result, expected,);
+    }
+
+    #[rstest]
+    #[case::parameter_substitution(
+        "macro add_to_param(x, y): x + y | add_to_param(10, 5)",
+        vec![RuntimeValue::Number(15.into())],
+    )]
+    #[case::complex_substitution(
+        "macro calc(x, y, z): (x + y) * z | calc(2, 3, 4)",
+        vec![RuntimeValue::Number(20.into())],
+    )]
+    #[case::call_to_dynamic(
+        "macro apply(f, x): f(x) | def double(n): n * 2; | apply(double, 5)",
+        vec![RuntimeValue::Number(10.into())],
+    )]
+    #[case::nested_blocks(
+        "macro block_double(x) do x + x; | macro block_quad(x) do block_double(block_double(x)); | block_quad(3)",
+        vec![RuntimeValue::Number(12.into())],
+    )]
+    fn test_substitute_node_branches(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .unwrap_or_else(|e| panic!("Failed to expand: {:?}", e));
+
+        let result = eval_program(&expanded).unwrap_or_else(|e| panic!("Failed to eval: {:?}", e));
+
+        assert_eq!(result, expected,);
+    }
+
+    #[rstest]
+    #[case::quote_with_complex_unquote(
+        r#"macro wrap(expr): quote do "before" | unquote(expr) | "after"; | wrap(1 + 2)"#,
+        vec![RuntimeValue::String("after".to_string())], // Pipeline returns last value
+    )]
+    fn test_quote_unquote_branches(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .unwrap_or_else(|e| panic!("Failed to expand: {:?}", e));
+
+        let result = eval_program(&expanded).unwrap_or_else(|e| panic!("Failed to eval: {:?}", e));
+
+        assert_eq!(result, expected,);
+    }
+
+    #[rstest]
+    #[case::single_node_body(
+        "macro single(x): x | single(42)",
+        vec![RuntimeValue::Number(42.into())],
+    )]
+    #[case::multi_node_body(
+        "macro multi(x) do x | x + 1 | x + 2; | multi(5)",
+        vec![RuntimeValue::Number(7.into())], // Pipeline returns last value
+    )]
+    #[case::deeply_nested(
+        "macro level1(x): level2(x) | macro level2(x): level3(x) | macro level3(x): x * 2 | level1(5)",
+        vec![RuntimeValue::Number(10.into())],
+    )]
+    #[case::multiple_macros_in_expression(
+        "macro first(x): x * 2 | macro second(x): x + 10 | first(5) + second(3)",
+        vec![RuntimeValue::Number(23.into())],
+    )]
+    #[allow(clippy::approx_constant)]
+    #[case::zero_parameters(
+        "macro pi(): 3.14159 | pi() * 2",
+        vec![RuntimeValue::Number(6.28318.into())],
+    )]
+    #[case::all_if_branches(
+        "macro value(x): x | if(value(true)): value(1) elif(value(false)): value(2) else: value(3);",
+        vec![RuntimeValue::Number(1.into())],
+    )]
+    #[case::macro_returning_macro(
+        "macro inner(x): x + 1 | macro outer(x): inner(x) | outer(5)",
+        vec![RuntimeValue::Number(6.into())],
+    )]
+    #[case::block_expression(
+        "macro wrap(x) do let y = x | y * 2; | wrap(5) + wrap(3)",
+        vec![RuntimeValue::Number(16.into())],
+    )]
+    fn test_edge_cases(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .unwrap_or_else(|e| panic!("Failed to expand: {:?}", e));
+
+        let result = eval_program(&expanded).unwrap_or_else(|e| panic!("Failed to eval: {:?}", e));
+
+        assert_eq!(result, expected,);
+    }
+
+    #[test]
+    fn test_single_node_not_wrapped() {
+        let input = "macro single(x): x | single(42)";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander.expand_program(&program).expect("Failed to expand");
+
+        assert_eq!(expanded.len(), 1, "Expected single node in expanded output");
+        // Should not be wrapped in a Block
+        assert!(!matches!(&*expanded[0].expr, Expr::Block(_)));
+    }
+
+    #[test]
+    fn test_multi_node_preserved() {
+        let input = "macro multi(x) do x | x + 1 | x + 2; | multi(5)";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander.expand_program(&program).expect("Failed to expand");
+
+        assert_eq!(expanded.len(), 3, "Expected three nodes from multi-node macro");
     }
 }
