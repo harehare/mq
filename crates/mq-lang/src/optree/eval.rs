@@ -79,7 +79,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
 
     /// Evaluates an OpTree instruction with the given runtime value.
     pub fn eval_single(&mut self, root: OpRef, runtime_value: RuntimeValue) -> Result<RuntimeValue, RuntimeError> {
-        self.eval_op(root, runtime_value, &Shared::clone(&self.env))
+        self.eval_op(root, &runtime_value, &Shared::clone(&self.env))
     }
 
     /// Evaluates an OpTree with multiple input values, handling nodes keyword.
@@ -129,7 +129,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
             input
                 .map(|runtime_value| match &runtime_value {
                     RuntimeValue::Markdown(node, _) => self.eval_markdown_node_single(root, node),
-                    _ => self.eval_op(root, runtime_value, &Shared::clone(&self.env)),
+                    _ => self.eval_op(root, &runtime_value, &Shared::clone(&self.env)),
                 })
                 .collect()
         }
@@ -176,9 +176,12 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
     /// Finds the Nodes operation in a Sequence and splits it.
     /// Returns (operations_before_nodes, operations_after_nodes)
     fn find_nodes_in_sequence(&self, op_ref: OpRef) -> Option<(Vec<OpRef>, Vec<OpRef>)> {
-        if let Op::Sequence(ops) = self.pool.get(op_ref) {
+        if let Op::Sequence(ops) = self.pool.get(op_ref).as_ref() {
             // Find the position of Nodes in the sequence
-            if let Some(nodes_pos) = ops.iter().position(|&op| matches!(self.pool.get(op), Op::Nodes)) {
+            if let Some(nodes_pos) = ops
+                .iter()
+                .position(|&op| matches!(self.pool.get(op).as_ref(), Op::Nodes))
+            {
                 let before_nodes: Vec<OpRef> = ops[..nodes_pos].to_vec();
                 let after_nodes: Vec<OpRef> = ops[nodes_pos + 1..].to_vec();
 
@@ -193,7 +196,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
     fn eval_sequence(&mut self, ops: &[OpRef], runtime_value: RuntimeValue) -> Result<RuntimeValue, RuntimeError> {
         let mut value = runtime_value;
         for &op in ops {
-            value = self.eval_op(op, value, &Shared::clone(&self.env))?;
+            value = self.eval_op(op, &value, &Shared::clone(&self.env))?;
         }
         Ok(value)
     }
@@ -202,50 +205,50 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
     fn eval_op(
         &mut self,
         op_ref: OpRef,
-        runtime_value: RuntimeValue,
+        runtime_value: &RuntimeValue,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, RuntimeError> {
         // Get the operation from the pool
-        let op = self.pool.get(op_ref).clone();
+        let op = Shared::clone(self.pool.get(op_ref));
 
         #[cfg(feature = "debugger")]
         self.check_breakpoint(op_ref, &runtime_value, env);
 
-        match op {
+        match op.as_ref() {
             // ===== Literals & Values =====
-            Op::Literal(lit) => self.eval_literal(&lit),
+            Op::Literal(lit) => self.eval_literal(lit),
 
-            Op::Ident(ident) => self.eval_ident(ident, op_ref, env),
+            Op::Ident(ident) => self.eval_ident(*ident, op_ref, env),
 
-            Op::Self_ | Op::Nodes => Ok(runtime_value),
+            Op::Self_ | Op::Nodes => Ok(runtime_value.clone()),
 
             // ===== Variables =====
             Op::Let { name, value } => {
-                let val = self.eval_op(value, runtime_value.clone(), env)?;
-                self.define(env, name, val);
-                Ok(runtime_value)
+                let val = self.eval_op(*value, runtime_value, env)?;
+                self.define(env, *name, val);
+                Ok(runtime_value.clone())
             }
 
             Op::Var { name, value } => {
-                let val = self.eval_op(value, runtime_value.clone(), env)?;
-                self.define_mutable(env, name, val);
-                Ok(runtime_value)
+                let val = self.eval_op(*value, runtime_value, env)?;
+                self.define_mutable(env, *name, val);
+                Ok(runtime_value.clone())
             }
 
             Op::Assign { name, value } => {
-                let val = self.eval_op(value, runtime_value.clone(), env)?;
-                self.assign(env, name, val, op_ref)?;
-                Ok(runtime_value)
+                let val = self.eval_op(*value, runtime_value, env)?;
+                self.assign(env, *name, val, op_ref)?;
+                Ok(runtime_value.clone())
             }
 
             // ===== Control Flow =====
-            Op::If { branches } => self.eval_if(&runtime_value, &branches, env),
+            Op::If { branches } => self.eval_if(runtime_value, branches, env),
 
-            Op::While { condition, body } => self.eval_while(&runtime_value, condition, body, env),
+            Op::While { condition, body } => self.eval_while(runtime_value, *condition, *body, env),
 
-            Op::Foreach { name, iterator, body } => self.eval_foreach(&runtime_value, name, iterator, body, env),
+            Op::Foreach { name, iterator, body } => self.eval_foreach(runtime_value, *name, *iterator, *body, env),
 
-            Op::Match { value, arms } => self.eval_match(&runtime_value, value, &arms, env),
+            Op::Match { value, arms } => self.eval_match(runtime_value, *value, arms, env),
 
             Op::Break => Err(RuntimeError::Break),
 
@@ -255,82 +258,82 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
             Op::Def { name, params, body } => {
                 self.define(
                     env,
-                    name,
+                    *name,
                     RuntimeValue::OpTreeFunction {
-                        params,
-                        body,
+                        params: params.clone(),
+                        body: *body,
                         env: Shared::clone(env),
                     },
                 );
-                Ok(runtime_value)
+                Ok(runtime_value.clone())
             }
 
             Op::Fn { params, body } => Ok(RuntimeValue::OpTreeFunction {
-                params,
-                body,
+                params: params.clone(),
+                body: *body,
                 env: Shared::clone(env),
             }),
 
-            Op::Call { name, args } => self.eval_call(&runtime_value, name, &args, env, op_ref),
+            Op::Call { name, args } => self.eval_call(runtime_value, *name, args, env, op_ref),
 
-            Op::CallDynamic { callable, args } => self.eval_call_dynamic(&runtime_value, callable, &args, env, op_ref),
+            Op::CallDynamic { callable, args } => self.eval_call_dynamic(runtime_value, *callable, args, env, op_ref),
 
             // ===== Blocks & Sequences =====
             Op::Block(body) => {
                 let block_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
-                self.eval_op(body, runtime_value, &block_env)
+                self.eval_op(*body, runtime_value, &block_env)
             }
 
             Op::Sequence(ops) => {
-                let mut value = runtime_value;
+                let mut value = runtime_value.clone();
                 for &op in ops.iter() {
-                    value = self.eval_op(op, value, env)?;
+                    value = self.eval_op(op, &value, env)?;
                 }
                 Ok(value)
             }
 
             // ===== Operators =====
-            Op::And(left, right) => self.eval_and(&runtime_value, left, right, env),
+            Op::And(left, right) => self.eval_and(runtime_value, *left, *right, env),
 
-            Op::Or(left, right) => self.eval_or(&runtime_value, left, right, env),
+            Op::Or(left, right) => self.eval_or(runtime_value, *left, *right, env),
 
-            Op::Paren(expr) => self.eval_op(expr, runtime_value, env),
+            Op::Paren(expr) => self.eval_op(*expr, runtime_value, env),
 
             // ===== String Operations =====
-            Op::InterpolatedString(segments) => self.eval_interpolated_string(&runtime_value, &segments, env),
+            Op::InterpolatedString(segments) => self.eval_interpolated_string(runtime_value, segments, env),
 
             // ===== Selectors =====
-            Op::Selector(selector) => self.eval_selector(&runtime_value, &selector),
+            Op::Selector(selector) => self.eval_selector(runtime_value, selector),
 
             Op::QualifiedAccess { module_path, target } => {
-                self.eval_qualified_access(&runtime_value, &module_path, &target, env, op_ref)
+                self.eval_qualified_access(runtime_value, module_path, target, env, op_ref)
             }
 
             // ===== Modules =====
             Op::Module { name, body } => {
                 let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
-                self.eval_op(body, RuntimeValue::None, &module_env)?;
+                self.eval_op(*body, &RuntimeValue::None, &module_env)?;
 
                 let module_runtime_value =
                     RuntimeValue::Module(ModuleEnv::new(&name.as_str(), Shared::clone(&module_env)));
-                self.define(env, name, module_runtime_value);
-                Ok(runtime_value)
+                self.define(env, *name, module_runtime_value);
+                Ok(runtime_value.clone())
             }
 
             Op::Include(lit) => {
-                self.eval_include(lit, env)?;
-                Ok(runtime_value)
+                self.eval_include(lit.clone(), env)?;
+                Ok(runtime_value.clone())
             }
 
             Op::Import(lit) => {
-                self.eval_import(lit, env)?;
-                Ok(runtime_value)
+                self.eval_import(lit.clone(), env)?;
+                Ok(runtime_value.clone())
             }
 
             // ===== Error Handling =====
-            Op::Try { try_expr, catch_expr } => match self.eval_op(try_expr, runtime_value.clone(), env) {
+            Op::Try { try_expr, catch_expr } => match self.eval_op(*try_expr, runtime_value, env) {
                 Ok(value) => Ok(value),
-                Err(_) => self.eval_op(catch_expr, runtime_value, env),
+                Err(_) => self.eval_op(*catch_expr, runtime_value, env),
             },
         }
     }
@@ -371,16 +374,16 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
     ) -> Result<RuntimeValue, RuntimeError> {
         for (cond, body) in branches {
             if let Some(cond_ref) = cond {
-                let cond_value = self.eval_op(*cond_ref, runtime_value.clone(), env)?;
+                let cond_value = self.eval_op(*cond_ref, runtime_value, env)?;
                 if cond_value.is_truthy() {
-                    return self.eval_op(*body, runtime_value.clone(), env);
+                    return self.eval_op(*body, runtime_value, env);
                 }
             } else {
                 // Else clause
-                return self.eval_op(*body, runtime_value.clone(), env);
+                return self.eval_op(*body, runtime_value, env);
             }
         }
-        Ok(runtime_value.clone())
+        Ok(RuntimeValue::None)
     }
 
     fn eval_while(
@@ -392,12 +395,12 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
     ) -> Result<RuntimeValue, RuntimeError> {
         let mut result = runtime_value.clone();
         loop {
-            let cond_value = self.eval_op(condition, result.clone(), env)?;
+            let cond_value = self.eval_op(condition, &result, env)?;
             if !cond_value.is_truthy() {
                 break;
             }
 
-            match self.eval_op(body, result.clone(), env) {
+            match self.eval_op(body, &result, env) {
                 Ok(value) => result = value,
                 Err(RuntimeError::Break) => break,
                 Err(RuntimeError::Continue) => continue,
@@ -415,7 +418,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         body: OpRef,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, RuntimeError> {
-        let iter_value = self.eval_op(iterator, runtime_value.clone(), env)?;
+        let iter_value = self.eval_op(iterator, runtime_value, env)?;
 
         let loop_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
         let mut results = Vec::new();
@@ -424,7 +427,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
             RuntimeValue::Array(items) => {
                 for item in items {
                     self.define(&loop_env, name, item.clone());
-                    match self.eval_op(body, item, &loop_env) {
+                    match self.eval_op(body, &item, &loop_env) {
                         Ok(value) => results.push(value),
                         Err(RuntimeError::Break) => break,
                         Err(RuntimeError::Continue) => continue,
@@ -436,7 +439,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                 for c in s.chars() {
                     let char_value = RuntimeValue::String(c.to_string());
                     self.define(&loop_env, name, char_value.clone());
-                    match self.eval_op(body, char_value, &loop_env) {
+                    match self.eval_op(body, &char_value, &loop_env) {
                         Ok(value) => results.push(value),
                         Err(RuntimeError::Break) => break,
                         Err(RuntimeError::Continue) => continue,
@@ -463,7 +466,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         arms: &[MatchArm],
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, RuntimeError> {
-        let match_value = self.eval_op(value, runtime_value.clone(), env)?;
+        let match_value = self.eval_op(value, runtime_value, env)?;
 
         for arm in arms {
             if let Some(bindings) = self.pattern_match(&arm.pattern, &match_value) {
@@ -474,7 +477,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                         self.define(&guard_env, *name, value.clone());
                     }
 
-                    let guard_result = self.eval_op(guard_ref, runtime_value.clone(), &guard_env)?;
+                    let guard_result = self.eval_op(guard_ref, runtime_value, &guard_env)?;
                     if !guard_result.is_truthy() {
                         continue;
                     }
@@ -486,7 +489,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                     self.define(&body_env, name, value);
                 }
 
-                return self.eval_op(arm.body, runtime_value.clone(), &body_env);
+                return self.eval_op(arm.body, runtime_value, &body_env);
             }
         }
 
@@ -609,7 +612,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         // Evaluate arguments
         let arg_values: Result<Vec<_>, _> = args
             .iter()
-            .map(|&arg| self.eval_op(arg, runtime_value.clone(), env))
+            .map(|&arg| self.eval_op(arg, runtime_value, env))
             .collect();
         let arg_values = arg_values?;
 
@@ -629,12 +632,12 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         op_ref: OpRef,
     ) -> Result<RuntimeValue, RuntimeError> {
         // Evaluate callable expression
-        let function = self.eval_op(callable, runtime_value.clone(), env)?;
+        let function = self.eval_op(callable, runtime_value, env)?;
 
         // Evaluate arguments
         let arg_values: Result<Vec<_>, _> = args
             .iter()
-            .map(|&arg| self.eval_op(arg, runtime_value.clone(), env))
+            .map(|&arg| self.eval_op(arg, runtime_value, env))
             .collect();
         let arg_values = arg_values?;
 
@@ -667,14 +670,14 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                 if params.len() == args.len() + 1 {
                     // First parameter gets the current runtime_value
                     if let Some(&first_param) = params.first()
-                        && let Op::Ident(name) = self.pool.get(first_param)
+                        && let Op::Ident(name) = self.pool.get(first_param).as_ref()
                     {
                         self.define(&call_env, *name, runtime_value.clone());
                     }
 
                     // Remaining parameters get args
                     for (i, &param) in params.iter().skip(1).enumerate() {
-                        if let Op::Ident(name) = self.pool.get(param) {
+                        if let Op::Ident(name) = self.pool.get(param).as_ref() {
                             let value = args.get(i).cloned().unwrap_or(RuntimeValue::None);
                             self.define(&call_env, *name, value);
                         }
@@ -682,7 +685,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                 } else if params.len() == args.len() {
                     // Normal case: bind parameters to arguments
                     for (i, &param) in params.iter().enumerate() {
-                        if let Op::Ident(name) = self.pool.get(param) {
+                        if let Op::Ident(name) = self.pool.get(param).as_ref() {
                             let value = args.get(i).cloned().unwrap_or(RuntimeValue::None);
                             self.define(&call_env, *name, value);
                         }
@@ -699,7 +702,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                 }
 
                 // Evaluate function body
-                self.eval_op(body, runtime_value.clone(), &call_env)
+                self.eval_op(body, runtime_value, &call_env)
             }
             RuntimeValue::Function(params, program, fn_env) => {
                 // Handle AST-based functions (from modules, etc.)
@@ -782,11 +785,11 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         right: OpRef,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, RuntimeError> {
-        let left_value = self.eval_op(left, runtime_value.clone(), env)?;
+        let left_value = self.eval_op(left, runtime_value, env)?;
         if !left_value.is_truthy() {
             return Ok(left_value);
         }
-        self.eval_op(right, runtime_value.clone(), env)
+        self.eval_op(right, runtime_value, env)
     }
 
     #[inline(always)]
@@ -797,11 +800,11 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         right: OpRef,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, RuntimeError> {
-        let left_value = self.eval_op(left, runtime_value.clone(), env)?;
+        let left_value = self.eval_op(left, runtime_value, env)?;
         if left_value.is_truthy() {
             return Ok(left_value);
         }
-        self.eval_op(right, runtime_value.clone(), env)
+        self.eval_op(right, runtime_value, env)
     }
 
     fn eval_interpolated_string(
@@ -810,13 +813,23 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         segments: &[StringSegment],
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, RuntimeError> {
-        let mut result = String::new();
+        // Pre-allocate capacity based on segment content for better performance
+        let estimated_capacity = segments
+            .iter()
+            .map(|segment| match segment {
+                StringSegment::Text(s) => s.len(),
+                StringSegment::Expr(_) => 32, // Estimated size for expression result
+                StringSegment::Env(_) => 32,  // Estimated size for environment variable
+                StringSegment::Self_ => 64,   // Estimated size for self reference
+            })
+            .sum();
+        let mut result = String::with_capacity(estimated_capacity);
 
         for segment in segments {
             match segment {
                 StringSegment::Text(text) => result.push_str(text),
                 StringSegment::Expr(expr_ref) => {
-                    let value = self.eval_op(*expr_ref, runtime_value.clone(), env)?;
+                    let value = self.eval_op(*expr_ref, runtime_value, env)?;
                     result.push_str(&value.to_string());
                 }
                 StringSegment::Env(env_var) => {
@@ -934,7 +947,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                     // Evaluate arguments
                     let arg_values: Result<Vec<_>, _> = args
                         .iter()
-                        .map(|&arg| self.eval_op(arg, runtime_value.clone(), env))
+                        .map(|&arg| self.eval_op(arg, runtime_value, env))
                         .collect();
                     let arg_values = arg_values?;
 

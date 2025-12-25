@@ -81,7 +81,7 @@ def to_date_iso8601(d): to_date(d, "%Y-%m-%dT%H:%M:%SZ");
 def map(v, f):
   if (is_dict(v)):
     do
-      let map_dict = fn(v, f): let mapped = foreach (x, entries(v)): f(x); | dict(mapped);
+      let map_dict = fn(val, pred): let mapped = foreach (x, entries(val)): pred(x); | dict(mapped);
       | map_dict(v, f)
     end
   elif (is_none(v)):
@@ -94,7 +94,7 @@ end
 def flat_map(v, f):
   if (is_dict(v)):
     do
-      let flat_map_dict = fn(v, f): let mapped = do foreach (x, entries(v)): f(x); | flatten(mapped) | dict(mapped);;
+      let flat_map_dict = fn(val, pred): let mapped = do foreach (x, entries(val)): pred(x); | flatten(mapped) | dict(mapped);;
       | flat_map_dict(v, f)
     end
   elif (is_none(v)):
@@ -107,14 +107,14 @@ end
 def filter(v, f):
   if (is_dict(v)):
     do
-      let filter_dict = fn(v, f): let fileted = foreach (x, entries(v)): select(x, f(x)); | dict(compact(fileted));
+      let filter_dict = fn(val, pred): let fileted = foreach (x, entries(val)): select(x, pred(x)); | dict(compact(fileted));
       | filter_dict(v, f)
     end
   elif (is_none(v)):
     None
   else:
     do
-      let _filter = fn(v, f): foreach (x, v): select(x, f(x)); | compact();
+      let _filter = fn(val, pred): foreach (x, val): select(x, pred(x)); | compact();
       | _filter(v, f)
     end
 end

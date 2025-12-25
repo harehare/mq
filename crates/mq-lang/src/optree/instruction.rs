@@ -4,7 +4,7 @@
 //! for the OpTree (Flat AST) representation.
 
 use crate::{
-    Ident,
+    Ident, Shared,
     ast::{
         TokenId,
         node::{Literal, Pattern},
@@ -67,7 +67,7 @@ impl fmt::Display for OpRef {
 /// ```
 #[derive(Debug, Clone)]
 pub struct OpPool {
-    instructions: Vec<Op>,
+    instructions: Vec<Shared<Op>>,
 }
 
 impl OpPool {
@@ -93,7 +93,7 @@ impl OpPool {
     /// ```
     pub fn alloc(&mut self, op: Op) -> OpRef {
         let id = self.instructions.len() as u32;
-        self.instructions.push(op);
+        self.instructions.push(Shared::new(op));
         OpRef::new(id)
     }
 
@@ -102,8 +102,8 @@ impl OpPool {
     /// # Panics
     ///
     /// Panics if the OpRef is invalid (out of bounds).
-    #[inline]
-    pub fn get(&self, op_ref: OpRef) -> &Op {
+    #[inline(always)]
+    pub fn get(&self, op_ref: OpRef) -> &Shared<Op> {
         &self.instructions[op_ref.id() as usize]
     }
 
@@ -120,7 +120,7 @@ impl OpPool {
     }
 
     /// Returns an iterator over all instructions with their OpRefs.
-    pub fn iter(&self) -> impl Iterator<Item = (OpRef, &Op)> {
+    pub fn iter(&self) -> impl Iterator<Item = (OpRef, &Shared<Op>)> {
         self.instructions
             .iter()
             .enumerate()
@@ -182,7 +182,7 @@ impl SourceMap {
     /// # Panics
     ///
     /// Panics if the OpRef is invalid (out of bounds).
-    #[inline]
+    #[inline(always)]
     pub fn get(&self, op_ref: OpRef) -> TokenId {
         self.locations[op_ref.id() as usize]
     }
@@ -240,7 +240,7 @@ pub struct MatchArm {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AccessTarget {
     /// Function call: Module::function(args)
-    Call(Ident, SmallVec<[OpRef; 4]>),
+    Call(Ident, SmallVec<[OpRef; 8]>),
     /// Identifier access: Module::value
     Ident(Ident),
 }
@@ -300,7 +300,7 @@ pub enum Op {
     If {
         /// Branches: (optional condition, body)
         /// First branch with None condition is else clause
-        branches: SmallVec<[(Option<OpRef>, OpRef); 4]>,
+        branches: SmallVec<[(Option<OpRef>, OpRef); 8]>,
     },
 
     /// While loop: while condition: body;
@@ -326,7 +326,7 @@ pub enum Op {
         /// Value to match (reference to op in pool)
         value: OpRef,
         /// Match arms with patterns, optional guards, and bodies
-        arms: SmallVec<[MatchArm; 4]>,
+        arms: SmallVec<[MatchArm; 8]>,
     },
 
     /// Break from loop
@@ -341,7 +341,7 @@ pub enum Op {
         /// Function name
         name: Ident,
         /// Parameter names (references to op in pool)
-        params: SmallVec<[OpRef; 4]>,
+        params: SmallVec<[OpRef; 8]>,
         /// Function body (reference to op in pool)
         body: OpRef,
     },
@@ -349,7 +349,7 @@ pub enum Op {
     /// Anonymous function: fn(params): body;
     Fn {
         /// Parameter names (references to op in pool)
-        params: SmallVec<[OpRef; 4]>,
+        params: SmallVec<[OpRef; 8]>,
         /// Function body (reference to op in pool)
         body: OpRef,
     },
@@ -359,7 +359,7 @@ pub enum Op {
         /// Function name
         name: Ident,
         /// Arguments (references to ops in pool)
-        args: SmallVec<[OpRef; 4]>,
+        args: SmallVec<[OpRef; 8]>,
     },
 
     /// Dynamic function call: expr(args)
@@ -367,7 +367,7 @@ pub enum Op {
         /// Callable expression (reference to op in pool)
         callable: OpRef,
         /// Arguments (references to ops in pool)
-        args: SmallVec<[OpRef; 4]>,
+        args: SmallVec<[OpRef; 8]>,
     },
 
     // ===== Blocks & Sequences =====
@@ -375,7 +375,7 @@ pub enum Op {
     Block(OpRef),
 
     /// Sequential execution of multiple operations
-    Sequence(SmallVec<[OpRef; 4]>),
+    Sequence(SmallVec<[OpRef; 8]>),
 
     // ===== Operators =====
     /// Logical AND: expr1 and expr2
@@ -450,12 +450,12 @@ mod tests {
         assert_eq!(pool.len(), 3);
         assert!(!pool.is_empty());
 
-        assert!(matches!(pool.get(ref1), Op::Literal(Literal::Number(_))));
+        assert!(matches!(pool.get(ref1).as_ref(), Op::Literal(Literal::Number(_))));
         assert!(matches!(
-            pool.get(ref2),
+            pool.get(ref2).as_ref(),
             Op::Literal(Literal::String(s)) if s == "hello"
         ));
-        assert!(matches!(pool.get(ref3), Op::Ident(name) if name.as_str() == "x"));
+        assert!(matches!(pool.get(ref3).as_ref(), Op::Ident(name) if name.as_str() == "x"));
     }
 
     #[test]

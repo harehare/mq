@@ -79,7 +79,7 @@ impl OpTreeTransformer {
         }
 
         // Multiple expressions → create Sequence
-        let ops: SmallVec<[OpRef; 4]> = program.iter().map(|node| self.transform_node(node)).collect();
+        let ops: SmallVec<[OpRef; 8]> = program.iter().map(|node| self.transform_node(node)).collect();
 
         // Use first node's token for sequence
         let token_id = program[0].token_id;
@@ -331,7 +331,7 @@ mod tests {
 
         assert_eq!(pool.len(), 1);
         assert_eq!(source_map.len(), 1);
-        assert!(matches!(pool.get(root), Op::Literal(ast::Literal::Number(_))));
+        assert!(matches!(pool.get(root).as_ref(), Op::Literal(ast::Literal::Number(_))));
     }
 
     #[test]
@@ -342,7 +342,7 @@ mod tests {
 
         let (pool, _, root) = transformer.transform(&program);
 
-        assert!(matches!(pool.get(root), Op::Ident(name) if name.as_str() == "x"));
+        assert!(matches!(pool.get(root).as_ref(), Op::Ident(name) if name.as_str() == "x"));
     }
 
     #[test]
@@ -360,10 +360,10 @@ mod tests {
 
         let (pool, _, root) = transformer.transform(&program);
 
-        match pool.get(root) {
+        match pool.get(root).as_ref() {
             Op::Let { name, value } => {
                 assert_eq!(name.as_str(), "x");
-                assert!(matches!(pool.get(*value), Op::Literal(_)));
+                assert!(matches!(pool.get(*value).as_ref(), Op::Literal(_)));
             }
             _ => panic!("Expected Let op"),
         }
@@ -392,7 +392,7 @@ mod tests {
 
         let (pool, _, root) = transformer.transform(&program);
 
-        match pool.get(root) {
+        match pool.get(root).as_ref() {
             Op::If { branches } => {
                 assert_eq!(branches.len(), 2);
                 assert!(branches[0].0.is_some()); // if condition
@@ -422,12 +422,12 @@ mod tests {
 
         let (pool, _, root) = transformer.transform(&program);
 
-        match pool.get(root) {
+        match pool.get(root).as_ref() {
             Op::Call { name, args } => {
                 assert_eq!(name.as_str(), "add");
                 assert_eq!(args.len(), 2);
-                assert!(matches!(pool.get(args[0]), Op::Literal(_)));
-                assert!(matches!(pool.get(args[1]), Op::Literal(_)));
+                assert!(matches!(pool.get(args[0]).as_ref(), Op::Literal(_)));
+                assert!(matches!(pool.get(args[1]).as_ref(), Op::Literal(_)));
             }
             _ => panic!("Expected Call op"),
         }
@@ -448,11 +448,11 @@ mod tests {
 
         let (pool, _, root) = transformer.transform(&program);
 
-        match pool.get(root) {
+        match pool.get(root).as_ref() {
             Op::Sequence(ops) => {
                 assert_eq!(ops.len(), 2);
-                assert!(matches!(pool.get(ops[0]), Op::Literal(_)));
-                assert!(matches!(pool.get(ops[1]), Op::Literal(_)));
+                assert!(matches!(pool.get(ops[0]).as_ref(), Op::Literal(_)));
+                assert!(matches!(pool.get(ops[1]).as_ref(), Op::Literal(_)));
             }
             _ => panic!("Expected Sequence op"),
         }
@@ -465,7 +465,7 @@ mod tests {
 
         let (pool, _, root) = transformer.transform(&program);
 
-        assert!(matches!(pool.get(root), Op::Nodes));
+        assert!(matches!(pool.get(root).as_ref(), Op::Nodes));
     }
 
     #[test]

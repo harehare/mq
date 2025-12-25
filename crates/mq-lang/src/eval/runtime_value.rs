@@ -96,7 +96,7 @@ pub enum RuntimeValue {
     Function(AstParams, Program, Shared<SharedCell<Env>>),
     /// A user-defined OpTree function with parameters, body (OpRef), and captured environment.
     OpTreeFunction {
-        params: SmallVec<[crate::optree::OpRef; 4]>,
+        params: SmallVec<[crate::optree::OpRef; 8]>,
         body: crate::optree::OpRef,
         env: Shared<SharedCell<Env>>,
     },
