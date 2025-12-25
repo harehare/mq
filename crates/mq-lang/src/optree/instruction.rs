@@ -257,20 +257,14 @@ pub enum AccessTarget {
 /// - Instructions are stored contiguously in OpPool for cache efficiency
 #[derive(Debug, Clone, PartialEq)]
 pub enum Op {
-    // ===== Literals & Values =====
     /// Literal value (number, string, bool, symbol, none)
     Literal(Literal),
-
     /// Variable identifier reference
     Ident(Ident),
-
     /// Self reference (current value in pipeline)
     Self_,
-
     /// Reference to all input nodes
     Nodes,
-
-    // ===== Variables =====
     /// Immutable variable binding: let name = value;
     Let {
         /// Variable name
@@ -278,7 +272,6 @@ pub enum Op {
         /// Value expression (reference to op in pool)
         value: OpRef,
     },
-
     /// Mutable variable declaration: var name = value;
     Var {
         /// Variable name
@@ -286,7 +279,6 @@ pub enum Op {
         /// Initial value expression (reference to op in pool)
         value: OpRef,
     },
-
     /// Variable assignment: name = value;
     Assign {
         /// Variable name
@@ -294,15 +286,12 @@ pub enum Op {
         /// New value expression (reference to op in pool)
         value: OpRef,
     },
-
-    // ===== Control Flow =====
     /// Conditional expression: if cond: body; elif cond2: body2; else: body3;
     If {
         /// Branches: (optional condition, body)
         /// First branch with None condition is else clause
         branches: SmallVec<[(Option<OpRef>, OpRef); 8]>,
     },
-
     /// While loop: while condition: body;
     While {
         /// Loop condition (reference to op in pool)
@@ -310,7 +299,6 @@ pub enum Op {
         /// Loop body (reference to op in pool)
         body: OpRef,
     },
-
     /// For-each loop: foreach name in iterator: body;
     Foreach {
         /// Loop variable name
@@ -320,7 +308,6 @@ pub enum Op {
         /// Loop body (reference to op in pool)
         body: OpRef,
     },
-
     /// Pattern matching: match value: case pattern: body; ...
     Match {
         /// Value to match (reference to op in pool)
@@ -328,14 +315,10 @@ pub enum Op {
         /// Match arms with patterns, optional guards, and bodies
         arms: SmallVec<[MatchArm; 8]>,
     },
-
     /// Break from loop
     Break,
-
     /// Continue to next loop iteration
     Continue,
-
-    // ===== Functions =====
     /// Function definition: def name(params): body;
     Def {
         /// Function name
@@ -345,7 +328,6 @@ pub enum Op {
         /// Function body (reference to op in pool)
         body: OpRef,
     },
-
     /// Anonymous function: fn(params): body;
     Fn {
         /// Parameter names (references to op in pool)
@@ -353,7 +335,6 @@ pub enum Op {
         /// Function body (reference to op in pool)
         body: OpRef,
     },
-
     /// Static function call: function_name(args)
     Call {
         /// Function name
@@ -361,7 +342,6 @@ pub enum Op {
         /// Arguments (references to ops in pool)
         args: SmallVec<[OpRef; 8]>,
     },
-
     /// Dynamic function call: expr(args)
     CallDynamic {
         /// Callable expression (reference to op in pool)
@@ -369,32 +349,20 @@ pub enum Op {
         /// Arguments (references to ops in pool)
         args: SmallVec<[OpRef; 8]>,
     },
-
-    // ===== Blocks & Sequences =====
     /// Code block with its own scope: { ... }
     Block(OpRef),
-
     /// Sequential execution of multiple operations
     Sequence(SmallVec<[OpRef; 8]>),
-
-    // ===== Operators =====
     /// Logical AND: expr1 and expr2
     And(OpRef, OpRef),
-
     /// Logical OR: expr1 or expr2
     Or(OpRef, OpRef),
-
     /// Parenthesized expression: (expr)
     Paren(OpRef),
-
-    // ===== String Operations =====
     /// Interpolated string: "text {expr} more"
     InterpolatedString(Vec<StringSegment>),
-
-    // ===== Selectors =====
     /// Markdown selector: .heading, .list, etc.
     Selector(Selector),
-
     /// Module qualified access: Module::function or Module::value
     QualifiedAccess {
         /// Module path (e.g., ["Std", "Array"])
@@ -402,8 +370,6 @@ pub enum Op {
         /// Access target (function call or identifier)
         target: AccessTarget,
     },
-
-    // ===== Modules =====
     /// Module definition: module name: body;
     Module {
         /// Module name
@@ -411,14 +377,10 @@ pub enum Op {
         /// Module body (reference to op in pool)
         body: OpRef,
     },
-
     /// Include external file: include "path.mq"
     Include(Literal),
-
     /// Import module: import "module"
     Import(Literal),
-
-    // ===== Error Handling =====
     /// Try-catch expression: try expr catch handler
     Try {
         /// Expression to try (reference to op in pool)

@@ -208,53 +208,36 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         runtime_value: &RuntimeValue,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, RuntimeError> {
-        // Get the operation from the pool
         let op = Shared::clone(self.pool.get(op_ref));
 
         #[cfg(feature = "debugger")]
-        self.check_breakpoint(op_ref, &runtime_value, env);
+        self.check_breakpoint(op_ref, runtime_value, env);
 
         match op.as_ref() {
-            // ===== Literals & Values =====
             Op::Literal(lit) => self.eval_literal(lit),
-
             Op::Ident(ident) => self.eval_ident(*ident, op_ref, env),
-
             Op::Self_ | Op::Nodes => Ok(runtime_value.clone()),
-
-            // ===== Variables =====
             Op::Let { name, value } => {
                 let val = self.eval_op(*value, runtime_value, env)?;
                 self.define(env, *name, val);
                 Ok(runtime_value.clone())
             }
-
             Op::Var { name, value } => {
                 let val = self.eval_op(*value, runtime_value, env)?;
                 self.define_mutable(env, *name, val);
                 Ok(runtime_value.clone())
             }
-
             Op::Assign { name, value } => {
                 let val = self.eval_op(*value, runtime_value, env)?;
                 self.assign(env, *name, val, op_ref)?;
                 Ok(runtime_value.clone())
             }
-
-            // ===== Control Flow =====
             Op::If { branches } => self.eval_if(runtime_value, branches, env),
-
             Op::While { condition, body } => self.eval_while(runtime_value, *condition, *body, env),
-
             Op::Foreach { name, iterator, body } => self.eval_foreach(runtime_value, *name, *iterator, *body, env),
-
             Op::Match { value, arms } => self.eval_match(runtime_value, *value, arms, env),
-
             Op::Break => Err(RuntimeError::Break),
-
             Op::Continue => Err(RuntimeError::Continue),
-
-            // ===== Functions =====
             Op::Def { name, params, body } => {
                 self.define(
                     env,
@@ -267,23 +250,17 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                 );
                 Ok(runtime_value.clone())
             }
-
             Op::Fn { params, body } => Ok(RuntimeValue::OpTreeFunction {
                 params: params.clone(),
                 body: *body,
                 env: Shared::clone(env),
             }),
-
             Op::Call { name, args } => self.eval_call(runtime_value, *name, args, env, op_ref),
-
             Op::CallDynamic { callable, args } => self.eval_call_dynamic(runtime_value, *callable, args, env, op_ref),
-
-            // ===== Blocks & Sequences =====
             Op::Block(body) => {
                 let block_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
                 self.eval_op(*body, runtime_value, &block_env)
             }
-
             Op::Sequence(ops) => {
                 let mut value = runtime_value.clone();
                 for &op in ops.iter() {
@@ -291,25 +268,14 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                 }
                 Ok(value)
             }
-
-            // ===== Operators =====
             Op::And(left, right) => self.eval_and(runtime_value, *left, *right, env),
-
             Op::Or(left, right) => self.eval_or(runtime_value, *left, *right, env),
-
             Op::Paren(expr) => self.eval_op(*expr, runtime_value, env),
-
-            // ===== String Operations =====
             Op::InterpolatedString(segments) => self.eval_interpolated_string(runtime_value, segments, env),
-
-            // ===== Selectors =====
             Op::Selector(selector) => self.eval_selector(runtime_value, selector),
-
             Op::QualifiedAccess { module_path, target } => {
                 self.eval_qualified_access(runtime_value, module_path, target, env, op_ref)
             }
-
-            // ===== Modules =====
             Op::Module { name, body } => {
                 let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
                 self.eval_op(*body, &RuntimeValue::None, &module_env)?;
@@ -319,26 +285,20 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                 self.define(env, *name, module_runtime_value);
                 Ok(runtime_value.clone())
             }
-
             Op::Include(lit) => {
                 self.eval_include(lit.clone(), env)?;
                 Ok(runtime_value.clone())
             }
-
             Op::Import(lit) => {
                 self.eval_import(lit.clone(), env)?;
                 Ok(runtime_value.clone())
             }
-
-            // ===== Error Handling =====
             Op::Try { try_expr, catch_expr } => match self.eval_op(*try_expr, runtime_value, env) {
                 Ok(value) => Ok(value),
                 Err(_) => self.eval_op(*catch_expr, runtime_value, env),
             },
         }
     }
-
-    // ===== Helper Methods =====
 
     fn eval_literal(&self, literal: &Literal) -> Result<RuntimeValue, RuntimeError> {
         Ok(match literal {

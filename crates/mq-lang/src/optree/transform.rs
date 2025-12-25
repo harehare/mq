@@ -27,7 +27,6 @@ pub struct OpTreeTransformer {
 }
 
 impl OpTreeTransformer {
-    /// Creates a new transformer with default capacity.
     pub fn new() -> Self {
         Self {
             pool: OpPool::new(),
@@ -35,7 +34,6 @@ impl OpTreeTransformer {
         }
     }
 
-    /// Creates a new transformer with specified capacity hint.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             pool: OpPool::with_capacity(capacity),
@@ -65,23 +63,17 @@ impl OpTreeTransformer {
         (self.pool, self.source_map, root)
     }
 
-    /// Transforms a program (sequence of nodes) into an OpRef.
     fn transform_program(&mut self, program: &Program) -> OpRef {
         if program.is_empty() {
-            // Empty program → return Nodes (no-op that passes through input)
             let _op_id = self.source_map.register(crate::arena::ArenaId::new(0));
             return self.pool.alloc(Op::Nodes);
         }
 
         if program.len() == 1 {
-            // Single expression → transform directly
             return self.transform_node(&program[0]);
         }
 
-        // Multiple expressions → create Sequence
         let ops: SmallVec<[OpRef; 8]> = program.iter().map(|node| self.transform_node(node)).collect();
-
-        // Use first node's token for sequence
         let token_id = program[0].token_id;
         let _ = self.source_map.register(token_id);
 
@@ -94,16 +86,10 @@ impl OpTreeTransformer {
         let _ = self.source_map.register(token_id);
 
         let op = match &*node.expr {
-            // ===== Literals & Values =====
             ast::Expr::Literal(lit) => Op::Literal(lit.clone()),
-
             ast::Expr::Ident(ident) => Op::Ident(ident.name),
-
             ast::Expr::Self_ => Op::Self_,
-
             ast::Expr::Nodes => Op::Nodes,
-
-            // ===== Variables =====
             ast::Expr::Let(ident, value) => {
                 let value_ref = self.transform_node(value);
                 Op::Let {
@@ -111,7 +97,6 @@ impl OpTreeTransformer {
                     value: value_ref,
                 }
             }
-
             ast::Expr::Var(ident, value) => {
                 let value_ref = self.transform_node(value);
                 Op::Var {
@@ -119,7 +104,6 @@ impl OpTreeTransformer {
                     value: value_ref,
                 }
             }
-
             ast::Expr::Assign(ident, value) => {
                 let value_ref = self.transform_node(value);
                 Op::Assign {
@@ -127,8 +111,6 @@ impl OpTreeTransformer {
                     value: value_ref,
                 }
             }
-
-            // ===== Control Flow =====
             ast::Expr::If(branches) => {
                 let op_branches: SmallVec<_> = branches
                     .iter()
@@ -140,7 +122,6 @@ impl OpTreeTransformer {
                     .collect();
                 Op::If { branches: op_branches }
             }
-
             ast::Expr::While(cond, body) => {
                 let cond_ref = self.transform_node(cond);
                 let body_ref = self.transform_program(body);
@@ -149,7 +130,6 @@ impl OpTreeTransformer {
                     body: body_ref,
                 }
             }
-
             ast::Expr::Foreach(ident, iter, body) => {
                 let iter_ref = self.transform_node(iter);
                 let body_ref = self.transform_program(body);
@@ -159,7 +139,6 @@ impl OpTreeTransformer {
                     body: body_ref,
                 }
             }
-
             ast::Expr::Match(value, arms) => {
                 let value_ref = self.transform_node(value);
                 let op_arms: SmallVec<_> = arms
@@ -175,12 +154,8 @@ impl OpTreeTransformer {
                     arms: op_arms,
                 }
             }
-
             ast::Expr::Break => Op::Break,
-
             ast::Expr::Continue => Op::Continue,
-
-            // ===== Functions =====
             ast::Expr::Def(ident, params, body) => {
                 let param_refs: SmallVec<_> = params.iter().map(|p| self.transform_node(p)).collect();
                 let body_ref = self.transform_program(body);
@@ -190,7 +165,6 @@ impl OpTreeTransformer {
                     body: body_ref,
                 }
             }
-
             ast::Expr::Fn(params, body) => {
                 let param_refs: SmallVec<_> = params.iter().map(|p| self.transform_node(p)).collect();
                 let body_ref = self.transform_program(body);
@@ -199,7 +173,6 @@ impl OpTreeTransformer {
                     body: body_ref,
                 }
             }
-
             ast::Expr::Call(ident, args) => {
                 let arg_refs: SmallVec<_> = args.iter().map(|a| self.transform_node(a)).collect();
                 Op::Call {
@@ -207,7 +180,6 @@ impl OpTreeTransformer {
                     args: arg_refs,
                 }
             }
-
             ast::Expr::CallDynamic(callable, args) => {
                 let callable_ref = self.transform_node(callable);
                 let arg_refs: SmallVec<_> = args.iter().map(|a| self.transform_node(a)).collect();
@@ -216,32 +188,24 @@ impl OpTreeTransformer {
                     args: arg_refs,
                 }
             }
-
-            // ===== Blocks & Sequences =====
             ast::Expr::Block(program) => {
                 let body_ref = self.transform_program(program);
                 Op::Block(body_ref)
             }
-
-            // ===== Operators =====
             ast::Expr::And(left, right) => {
                 let left_ref = self.transform_node(left);
                 let right_ref = self.transform_node(right);
                 Op::And(left_ref, right_ref)
             }
-
             ast::Expr::Or(left, right) => {
                 let left_ref = self.transform_node(left);
                 let right_ref = self.transform_node(right);
                 Op::Or(left_ref, right_ref)
             }
-
             ast::Expr::Paren(expr) => {
                 let expr_ref = self.transform_node(expr);
                 Op::Paren(expr_ref)
             }
-
-            // ===== String Operations =====
             ast::Expr::InterpolatedString(segments) => {
                 let op_segments: Vec<_> = segments
                     .iter()
@@ -254,10 +218,7 @@ impl OpTreeTransformer {
                     .collect();
                 Op::InterpolatedString(op_segments)
             }
-
-            // ===== Selectors =====
             ast::Expr::Selector(sel) => Op::Selector(sel.clone()),
-
             ast::Expr::QualifiedAccess(path, target) => {
                 let op_target = match target {
                     ast::AccessTarget::Call(ident, args) => {
@@ -271,8 +232,6 @@ impl OpTreeTransformer {
                     target: op_target,
                 }
             }
-
-            // ===== Modules =====
             ast::Expr::Module(ident, body) => {
                 let body_ref = self.transform_program(body);
                 Op::Module {
@@ -280,12 +239,8 @@ impl OpTreeTransformer {
                     body: body_ref,
                 }
             }
-
             ast::Expr::Include(lit) => Op::Include(lit.clone()),
-
             ast::Expr::Import(lit) => Op::Import(lit.clone()),
-
-            // ===== Error Handling =====
             ast::Expr::Try(try_expr, catch_expr) => {
                 let try_ref = self.transform_node(try_expr);
                 let catch_ref = self.transform_node(catch_expr);
@@ -294,8 +249,6 @@ impl OpTreeTransformer {
                     catch_expr: catch_ref,
                 }
             }
-
-            // ===== Macros (should be expanded before transformation) =====
             ast::Expr::Macro(_, _, _) | ast::Expr::Quote(_) | ast::Expr::Unquote(_) => {
                 // These should never appear in the AST after macro expansion.
                 // If they do, it indicates a bug in macro expansion or incorrect usage.
