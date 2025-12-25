@@ -2226,6 +2226,17 @@ define_builtin!(
     }
 );
 
+define_builtin!(IS_DEBUG_MODE, ParamNum::None, |_, _, _, _| {
+    #[cfg(feature = "debugger")]
+    {
+        Ok(RuntimeValue::TRUE)
+    }
+    #[cfg(not(feature = "debugger"))]
+    {
+        Ok(RuntimeValue::FALSE)
+    }
+});
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2293,6 +2304,7 @@ const HASH_INDEX: u64 = fnv1a_hash_64("index");
 const HASH_INSERT: u64 = fnv1a_hash_64("insert");
 const HASH_INFINITE: u64 = fnv1a_hash_64("infinite");
 const HASH_INPUT: u64 = fnv1a_hash_64("input");
+const HASH_IS_DEBUG_MODE: u64 = fnv1a_hash_64("is_debug_mode");
 const HASH_IS_NAN: u64 = fnv1a_hash_64("is_nan");
 const HASH_JOIN: u64 = fnv1a_hash_64("join");
 const HASH_KEYS: u64 = fnv1a_hash_64("keys");
@@ -2411,6 +2423,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_INCREASE_HEADER_LEVEL => Some(&INCREASE_HEADER_LEVEL),
         HASH_INDEX => Some(&INDEX),
         HASH_INFINITE => Some(&INFINITE),
+        HASH_IS_DEBUG_MODE => Some(&IS_DEBUG_MODE),
         HASH_IS_NAN => Some(&IS_NAN),
         HASH_INSERT => Some(&INSERT),
         HASH_INPUT => Some(&INPUT),
@@ -3547,13 +3560,6 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &["path"],
         },
     );
-    map.insert(
-            SmolStr::new(constants::BREAKPOINT),
-            BuiltinFunctionDoc {
-            description: "Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.",
-            params: &[],
-            },
-        );
     map.insert(
         SmolStr::new("negate"),
         BuiltinFunctionDoc {

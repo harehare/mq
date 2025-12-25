@@ -212,10 +212,10 @@ def is_mdx_js_esm(mdx): to_md_name(mdx) == "mdx_js_esm";
 # Checks if markdown is MDX
 def is_mdx(mdx):
   is_mdx_flow_expression(mdx) ||
-  is_mdx_jsx_flow_element(mdx) ||
-  is_mdx_jsx_text_element(mdx) ||
-  is_mdx_text_expression(mdx) ||
-  is_mdx_js_esm(mdx)
+    is_mdx_jsx_flow_element(mdx) ||
+    is_mdx_jsx_text_element(mdx) ||
+    is_mdx_text_expression(mdx) ||
+    is_mdx_js_esm(mdx)
 end
 
 # Returns an array of length n filled with the given value.
@@ -427,4 +427,9 @@ def transpose(matrix):
           end
         end
     end
+end
+
+# Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.
+macro breakpoint(): quote do
+  if (is_debug_mode()): _breakpoint()
 end
