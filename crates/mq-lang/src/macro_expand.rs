@@ -413,11 +413,6 @@ impl Macro {
     }
 
     fn substitute_node(&self, node: &Shared<Node>, substitutions: &FxHashMap<Ident, Shared<Node>>) -> Shared<Node> {
-        // Fast path: if there are no substitutions, return the node unchanged
-        if substitutions.is_empty() {
-            return Shared::clone(node);
-        }
-
         match &*node.expr {
             // Substitute identifiers
             Expr::Ident(ident) => {
@@ -741,11 +736,6 @@ impl Macro {
 
     /// Substitute only unquote expressions within quoted code
     fn substitute_in_quote(&self, node: &Shared<Node>, substitutions: &FxHashMap<Ident, Shared<Node>>) -> Shared<Node> {
-        // Fast path: if there are no substitutions, return the node unchanged
-        if substitutions.is_empty() {
-            return Shared::clone(node);
-        }
-
         match &*node.expr {
             // Unquote: Perform substitution and unwrap
             // Unquote should not appear in the final expanded code
