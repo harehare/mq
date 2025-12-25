@@ -5,7 +5,7 @@ Macros enable compile-time code generation and transformation in mq. They allow 
 ## Syntax
 
 ```
-macro name(parameters): body;
+macro name(parameters): body
 ```
 
 Macros are invoked like functions:
