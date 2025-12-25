@@ -14,7 +14,7 @@ const MAX_RECURSION_DEPTH: u32 = 1000;
 #[derive(Debug, Clone)]
 struct MacroDefinition {
     params: Vec<Ident>,
-    body: Program,
+    body: Shared<Program>,
 }
 
 /// Expands macros in an AST before evaluation.
@@ -84,8 +84,8 @@ impl Macro {
                         .collect();
 
                     let program = match &*body.expr {
-                        Expr::Block(prog) => prog.clone(),
-                        _ => vec![Shared::clone(body)],
+                        Expr::Block(prog) => Shared::new(prog.clone()),
+                        _ => Shared::new(vec![Shared::clone(body)]),
                     };
 
                     self.macros.insert(
@@ -284,7 +284,7 @@ impl Macro {
                 let expanded_program = self.expand_program(&program)?;
                 let block = Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Block(expanded_program.clone())),
+                    expr: Shared::new(Expr::Block(expanded_program)),
                 });
 
                 Ok(Shared::new(Node {
@@ -453,17 +453,36 @@ impl Macro {
             }
             Expr::Def(ident, params, program) => {
                 // Function parameters shadow macro parameters
-                let mut scoped_substitutions = substitutions.clone();
-                for param in params {
-                    if let Expr::Ident(param_ident) = &*param.expr {
-                        scoped_substitutions.remove(&param_ident.name);
-                    }
-                }
-
-                let substituted_program: Vec<_> = program
+                // Collect parameters that actually shadow substitutions
+                let shadowed_params: Vec<_> = params
                     .iter()
-                    .map(|n| self.substitute_node(n, &scoped_substitutions))
+                    .filter_map(|param| {
+                        if let Expr::Ident(param_ident) = &*param.expr {
+                            if substitutions.contains_key(&param_ident.name) {
+                                Some(param_ident.name)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
                     .collect();
+
+                let substituted_program: Vec<_> = if shadowed_params.is_empty() {
+                    // No shadowing - use original substitutions
+                    program.iter().map(|n| self.substitute_node(n, substitutions)).collect()
+                } else {
+                    // Shadowing detected - clone and remove shadowed params
+                    let mut scoped_substitutions = substitutions.clone();
+                    for param in shadowed_params {
+                        scoped_substitutions.remove(&param);
+                    }
+                    program
+                        .iter()
+                        .map(|n| self.substitute_node(n, &scoped_substitutions))
+                        .collect()
+                };
 
                 Shared::new(Node {
                     token_id: node.token_id,
@@ -471,17 +490,37 @@ impl Macro {
                 })
             }
             Expr::Fn(params, program) => {
-                let mut scoped_substitutions = substitutions.clone();
-                for param in params {
-                    if let Expr::Ident(param_ident) = &*param.expr {
-                        scoped_substitutions.remove(&param_ident.name);
-                    }
-                }
-
-                let substituted_program: Vec<_> = program
+                // Function parameters shadow macro parameters
+                // Collect parameters that actually shadow substitutions
+                let shadowed_params: Vec<_> = params
                     .iter()
-                    .map(|n| self.substitute_node(n, &scoped_substitutions))
+                    .filter_map(|param| {
+                        if let Expr::Ident(param_ident) = &*param.expr {
+                            if substitutions.contains_key(&param_ident.name) {
+                                Some(param_ident.name)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
                     .collect();
+
+                let substituted_program: Vec<_> = if shadowed_params.is_empty() {
+                    // No shadowing - use original substitutions
+                    program.iter().map(|n| self.substitute_node(n, substitutions)).collect()
+                } else {
+                    // Shadowing detected - clone and remove shadowed params
+                    let mut scoped_substitutions = substitutions.clone();
+                    for param in shadowed_params {
+                        scoped_substitutions.remove(&param);
+                    }
+                    program
+                        .iter()
+                        .map(|n| self.substitute_node(n, &scoped_substitutions))
+                        .collect()
+                };
 
                 Shared::new(Node {
                     token_id: node.token_id,

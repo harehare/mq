@@ -165,3 +165,41 @@ let a1 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1"
         )
         .unwrap()
 }
+
+#[divan::bench()]
+fn eval_macro_expansion_simple() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine
+        .eval(
+            r#"macro repeat(x): x + x + x + x + x | repeat(5)"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_macro_expansion_nested() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine
+        .eval(
+            r#"macro double(x): x + x | macro quad(x): double(x) + double(x) | quad(5)"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_no_macro_large_program() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine
+        .eval(
+            r#"
+let a = 1 | let b = 2 | let c = 3 | let d = 4 | let e = 5
+| let f = 6 | let g = 7 | let h = 8 | let i = 9 | let j = 10
+| let k = 11 | let l = 12 | let m = 13 | let n = 14 | let o = 15
+| a + b + c + d + e + f + g + h + i + j + k + l + m + n + o
+"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
