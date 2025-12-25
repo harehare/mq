@@ -43,7 +43,7 @@ impl Macro {
             return Ok(program.clone());
         }
 
-        let mut expanded_program = Vec::with_capacity(program.len());
+        let mut expanded_program = Vec::new();
         for node in program {
             // Skip macro definitions - they shouldn't appear in the expanded output
             if matches!(&*node.expr, Expr::Macro(..)) {
@@ -366,30 +366,33 @@ impl Macro {
             return Err(RuntimeError::RecursionLimit);
         }
 
-        let macro_def = self
-            .macros
-            .get(&name)
-            .ok_or(RuntimeError::UndefinedMacro(name))?
-            .clone();
+        // Limit the borrow scope to avoid cloning the entire MacroDefinition
+        let (params, body) = {
+            let macro_def = self.macros.get(&name).ok_or(RuntimeError::UndefinedMacro(name))?;
 
-        // Check arity
-        if macro_def.params.len() != args.len() {
-            return Err(RuntimeError::ArityMismatch {
-                macro_name: name,
-                expected: macro_def.params.len(),
-                got: args.len(),
-            });
-        }
+            // Check arity
+            if macro_def.params.len() != args.len() {
+                return Err(RuntimeError::ArityMismatch {
+                    macro_name: name,
+                    expected: macro_def.params.len(),
+                    got: args.len(),
+                });
+            }
+
+            // Clone only what we need: params (Vec<Ident>) and body (Shared<Program>)
+            // Note: Shared::clone is cheap (just increments reference count)
+            (macro_def.params.clone(), Shared::clone(&macro_def.body))
+        };
 
         // Create substitution map
-        let mut substitutions = FxHashMap::with_capacity_and_hasher(macro_def.params.len(), FxBuildHasher);
-        for (param, arg) in macro_def.params.iter().zip(args.iter()) {
+        let mut substitutions = FxHashMap::with_capacity_and_hasher(params.len(), FxBuildHasher);
+        for (param, arg) in params.iter().zip(args.iter()) {
             substitutions.insert(*param, Shared::clone(arg));
         }
 
         // Substitute and expand the macro body
         self.recursion_depth += 1;
-        let result = self.substitute_and_expand_program(&macro_def.body, &substitutions);
+        let result = self.substitute_and_expand_program(&body, &substitutions);
         self.recursion_depth -= 1;
 
         result
@@ -410,6 +413,11 @@ impl Macro {
     }
 
     fn substitute_node(&self, node: &Shared<Node>, substitutions: &FxHashMap<Ident, Shared<Node>>) -> Shared<Node> {
+        // Fast path: if there are no substitutions, return the node unchanged
+        if substitutions.is_empty() {
+            return Shared::clone(node);
+        }
+
         match &*node.expr {
             // Substitute identifiers
             Expr::Ident(ident) => {
@@ -733,6 +741,11 @@ impl Macro {
 
     /// Substitute only unquote expressions within quoted code
     fn substitute_in_quote(&self, node: &Shared<Node>, substitutions: &FxHashMap<Ident, Shared<Node>>) -> Shared<Node> {
+        // Fast path: if there are no substitutions, return the node unchanged
+        if substitutions.is_empty() {
+            return Shared::clone(node);
+        }
+
         match &*node.expr {
             // Unquote: Perform substitution and unwrap
             // Unquote should not appear in the final expanded code
