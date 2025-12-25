@@ -16,11 +16,12 @@ fn main() {
 fn small_fibonacci_optree() -> mq_lang::RuntimeValues {
     let mut engine = mq_lang::DefaultEngine::default();
     engine.set_optree_enabled(true);
-    engine.eval(
-        "def fib(n): if (n < 2): n else: fib(n - 1) + fib(n - 2); | fib(15)",
-        vec![mq_lang::RuntimeValue::Number(15.into())].into_iter(),
-    )
-    .unwrap()
+    engine
+        .eval(
+            "def fib(n): if (n < 2): n else: fib(n - 1) + fib(n - 2); | fib(15)",
+            vec![mq_lang::RuntimeValue::Number(15.into())].into_iter(),
+        )
+        .unwrap()
 }
 
 /// Benchmark: Small fibonacci computation with recursive evaluator
@@ -28,18 +29,18 @@ fn small_fibonacci_optree() -> mq_lang::RuntimeValues {
 fn small_fibonacci_recursive() -> mq_lang::RuntimeValues {
     let mut engine = mq_lang::DefaultEngine::default();
     engine.set_optree_enabled(false);
-    engine.eval(
-        "def fib(n): if (n < 2): n else: fib(n - 1) + fib(n - 2); | fib(15)",
-        vec![mq_lang::RuntimeValue::Number(15.into())].into_iter(),
-    )
-    .unwrap()
+    engine
+        .eval(
+            "def fib(n): if (n < 2): n else: fib(n - 1) + fib(n - 2); | fib(15)",
+            vec![mq_lang::RuntimeValue::Number(15.into())].into_iter(),
+        )
+        .unwrap()
 }
 
 /// Benchmark: Small markdown selector with OpTree
 #[divan::bench(name = "small_markdown_select_optree")]
 fn small_markdown_select_optree() -> mq_lang::RuntimeValues {
-    let markdown: mq_markdown::Markdown =
-        mq_markdown::Markdown::from_markdown_str("# H1\n## H2\n### H3\n").unwrap();
+    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str("# H1\n## H2\n### H3\n").unwrap();
     let input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from);
     let mut engine = mq_lang::DefaultEngine::default();
     engine.set_optree_enabled(true);
@@ -49,8 +50,7 @@ fn small_markdown_select_optree() -> mq_lang::RuntimeValues {
 /// Benchmark: Small markdown selector with recursive evaluator
 #[divan::bench(name = "small_markdown_select_recursive")]
 fn small_markdown_select_recursive() -> mq_lang::RuntimeValues {
-    let markdown: mq_markdown::Markdown =
-        mq_markdown::Markdown::from_markdown_str("# H1\n## H2\n### H3\n").unwrap();
+    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str("# H1\n## H2\n### H3\n").unwrap();
     let input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from);
     let mut engine = mq_lang::DefaultEngine::default();
     engine.set_optree_enabled(false);

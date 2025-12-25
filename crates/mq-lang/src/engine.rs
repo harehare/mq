@@ -201,9 +201,18 @@ impl<T: ModuleResolver> Engine<T> {
     ) -> MqResult {
         use crate::optree::{OpTreeEvaluator, OpTreeTransformer};
 
+        // Expand macros before OpTree transformation
+        let expanded_program = self.evaluator.macro_expander.expand_program(program).map_err(|e| {
+            Box::new(error::Error::from_error(
+                code,
+                e.into(),
+                self.evaluator.module_loader.clone(),
+            ))
+        })?;
+
         // Transform AST to OpTree
         let transformer = OpTreeTransformer::new();
-        let (pool, source_map, root) = transformer.transform(program);
+        let (pool, source_map, root) = transformer.transform(&expanded_program);
 
         // Create OpTree evaluator
         let mut evaluator = OpTreeEvaluator::new(
@@ -323,7 +332,7 @@ impl<T: ModuleResolver> Engine<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::DefaultEngine;
+    use crate::{DefaultEngine, RuntimeValue};
     use scopeguard::defer;
     use std::io::Write;
     use std::{fs::File, path::PathBuf};
@@ -480,5 +489,108 @@ mod tests {
         let result = engine.get_source_code_for_debug(module_id);
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_optree_with_macro_basic() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        // Ensure OpTree is enabled (default)
+        assert!(engine.is_optree_enabled());
+
+        let code = "macro double(x): x + x | double(5)";
+        let result = engine.eval(code, crate::null_input().into_iter());
+
+        assert!(result.is_ok(), "Macro evaluation failed: {:?}", result.err());
+        let values = result.unwrap();
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0], RuntimeValue::Number(10.into()));
+    }
+
+    #[test]
+    fn test_optree_with_macro_multiple_params() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+
+        let code = "macro add_three(a, b, c): a + b + c | add_three(1, 2, 3)";
+        let result = engine.eval(code, crate::null_input().into_iter());
+
+        assert!(result.is_ok());
+        let values = result.unwrap();
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0], RuntimeValue::Number(6.into()));
+    }
+
+    #[test]
+    fn test_optree_with_nested_macro_calls() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+
+        let code = "macro double(x): x + x | macro quad(x): double(double(x)) | quad(3)";
+        let result = engine.eval(code, crate::null_input().into_iter());
+
+        assert!(result.is_ok());
+        let values = result.unwrap();
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0], RuntimeValue::Number(12.into()));
+    }
+
+    #[test]
+    fn test_optree_with_macro_string_interpolation() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+
+        let code = r#"macro greet(name): s"Hello, ${name}!" | greet("World")"#;
+        let result = engine.eval(code, crate::null_input().into_iter());
+
+        assert!(result.is_ok());
+        let values = result.unwrap();
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0], RuntimeValue::String("Hello, World!".to_string()));
+    }
+
+    #[test]
+    fn test_optree_with_macro_in_function() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+
+        let code = "macro double(x): x * 2 | def apply_double(n): double(n) + 1; | apply_double(5)";
+        let result = engine.eval(code, crate::null_input().into_iter());
+
+        assert!(result.is_ok());
+        let values = result.unwrap();
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0], RuntimeValue::Number(11.into()));
+    }
+
+    #[test]
+    fn test_optree_with_quote_and_unquote() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+
+        let code = "macro add_one(x): quote: unquote(x) + 1 | add_one(5)";
+        let result = engine.eval(code, crate::null_input().into_iter());
+
+        assert!(result.is_ok());
+        let values = result.unwrap();
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0], RuntimeValue::Number(6.into()));
+    }
+
+    #[test]
+    fn test_optree_disabled_with_macro() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        // Disable OpTree to ensure macros work with recursive evaluator too
+        engine.set_optree_enabled(false);
+        assert!(!engine.is_optree_enabled());
+
+        let code = "macro double(x): x + x | double(5)";
+        let result = engine.eval(code, crate::null_input().into_iter());
+
+        assert!(result.is_ok());
+        let values = result.unwrap();
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0], RuntimeValue::Number(10.into()));
     }
 }

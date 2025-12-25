@@ -610,10 +610,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         op_ref: OpRef,
     ) -> Result<RuntimeValue, RuntimeError> {
         // Evaluate arguments
-        let arg_values: Result<Vec<_>, _> = args
-            .iter()
-            .map(|&arg| self.eval_op(arg, runtime_value, env))
-            .collect();
+        let arg_values: Result<Vec<_>, _> = args.iter().map(|&arg| self.eval_op(arg, runtime_value, env)).collect();
         let arg_values = arg_values?;
 
         // Look up function
@@ -635,10 +632,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         let function = self.eval_op(callable, runtime_value, env)?;
 
         // Evaluate arguments
-        let arg_values: Result<Vec<_>, _> = args
-            .iter()
-            .map(|&arg| self.eval_op(arg, runtime_value, env))
-            .collect();
+        let arg_values: Result<Vec<_>, _> = args.iter().map(|&arg| self.eval_op(arg, runtime_value, env)).collect();
         let arg_values = arg_values?;
 
         self.call_function(runtime_value, function, arg_values, op_ref)
@@ -945,10 +939,8 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                     drop(module_borrow);
 
                     // Evaluate arguments
-                    let arg_values: Result<Vec<_>, _> = args
-                        .iter()
-                        .map(|&arg| self.eval_op(arg, runtime_value, env))
-                        .collect();
+                    let arg_values: Result<Vec<_>, _> =
+                        args.iter().map(|&arg| self.eval_op(arg, runtime_value, env)).collect();
                     let arg_values = arg_values?;
 
                     self.call_function(runtime_value, function, arg_values, op_ref)

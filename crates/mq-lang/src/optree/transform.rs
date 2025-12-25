@@ -294,6 +294,16 @@ impl OpTreeTransformer {
                     catch_expr: catch_ref,
                 }
             }
+
+            // ===== Macros (should be expanded before transformation) =====
+            ast::Expr::Macro(_, _, _) | ast::Expr::Quote(_) | ast::Expr::Unquote(_) => {
+                // These should never appear in the AST after macro expansion.
+                // If they do, it indicates a bug in macro expansion or incorrect usage.
+                panic!(
+                    "Unexpanded macro construct encountered in OpTree transformation. \
+                     Macros should be expanded before transforming to OpTree."
+                );
+            }
         };
 
         self.pool.alloc(op)
