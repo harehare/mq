@@ -28,7 +28,6 @@ pub const NEGATE: &str = "negate";
 
 pub const RANGE: &str = "range";
 
-#[allow(dead_code)]
 pub const BREAKPOINT: &str = "_breakpoint";
 pub const COALESCE: &str = "coalesce";
 

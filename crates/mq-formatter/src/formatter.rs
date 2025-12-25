@@ -515,7 +515,12 @@ impl Formatter {
         } + indent_adjustment;
 
         expr_nodes.for_each(|child| {
-            self.format_node(mq_lang::Shared::clone(child), block_indent_level);
+            let child_indent = if matches!(child.kind, mq_lang::CstNodeKind::Block) && colon_index.is_none() {
+                indent_level
+            } else {
+                block_indent_level
+            };
+            self.format_node(mq_lang::Shared::clone(child), child_indent);
         });
     }
 
@@ -2091,6 +2096,19 @@ end"#,
   do
     if (is_debug_mode()):
       _breakpoint()
+  end
+end
+"#
+    )]
+    #[case::macro_with_do_block_no_colon(
+        r#"macro breakpoint() do
+quote do
+if(is_debug_mode()):_breakpoint()
+end
+end"#,
+        r#"macro breakpoint() do
+  quote do
+    if (is_debug_mode()): _breakpoint()
   end
 end
 "#
