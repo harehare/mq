@@ -126,8 +126,23 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
             }
         } else {
             // No nodes keyword, evaluate each input independently
+            // Extract and clone ops to avoid borrow issues
+            let ops: Vec<OpRef> = if let Op::Sequence(seq) = self.pool.get(root).as_ref() {
+                seq.to_vec()
+            } else {
+                vec![root]
+            };
+
             input
-                .map(|runtime_value| self.eval_op(root, &runtime_value, &Shared::clone(&self.env)))
+                .map(|runtime_value| {
+                    match &runtime_value {
+                        RuntimeValue::Markdown(node, _) => {
+                            // For markdown nodes, use eval_markdown_node
+                            self.eval_markdown_node(&ops, node)
+                        }
+                        _ => self.eval_op(root, &runtime_value, &Shared::clone(&self.env)),
+                    }
+                })
                 .collect()
         }
     }
@@ -159,15 +174,6 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
             })?;
 
         Ok(RuntimeValue::Markdown(result_node, None))
-    }
-
-    /// Evaluates a single operation on a markdown node.
-    fn eval_markdown_node_single(
-        &mut self,
-        op_ref: OpRef,
-        node: &mq_markdown::Node,
-    ) -> Result<RuntimeValue, RuntimeError> {
-        self.eval_markdown_node(&[op_ref], node)
     }
 
     /// Finds the Nodes operation in a Sequence and splits it.
@@ -929,7 +935,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
     }
 
     fn eval_selector(
-        &self,
+        &mut self,
         runtime_value: &RuntimeValue,
         selector: &crate::selector::Selector,
     ) -> Result<RuntimeValue, RuntimeError> {
@@ -938,7 +944,8 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                 if crate::eval::builtin::eval_selector(node, selector) {
                     Ok(runtime_value.clone())
                 } else {
-                    Ok(RuntimeValue::None)
+                    // If the selector doesn't match, search in child nodes
+                    self.eval_selector_in_children(node, selector)
                 }
             }
             RuntimeValue::Array(values) => {
@@ -949,7 +956,11 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                             if crate::eval::builtin::eval_selector(node, selector) {
                                 value.clone()
                             } else {
-                                RuntimeValue::None
+                                // Search in child nodes
+                                match self.eval_selector_in_children(node, selector) {
+                                    Ok(v) => v,
+                                    Err(_) => RuntimeValue::None,
+                                }
                             }
                         } else {
                             RuntimeValue::None
@@ -959,6 +970,49 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                 Ok(RuntimeValue::Array(result))
             }
             _ => Ok(RuntimeValue::None),
+        }
+    }
+
+    /// Recursively searches for nodes matching the selector in child nodes.
+    fn eval_selector_in_children(
+        &mut self,
+        node: &mq_markdown::Node,
+        selector: &crate::selector::Selector,
+    ) -> Result<RuntimeValue, RuntimeError> {
+        // Get child nodes from the parent node
+        let children = self.get_child_nodes(node);
+
+        // Search for matching nodes in children
+        for child in children {
+            if crate::eval::builtin::eval_selector(&child, selector) {
+                return Ok(RuntimeValue::Markdown(child, None));
+            }
+
+            // Recursively search in child's children
+            if let Ok(RuntimeValue::Markdown(found, _)) = self.eval_selector_in_children(&child, selector) {
+                return Ok(RuntimeValue::Markdown(found, None));
+            }
+        }
+
+        Ok(RuntimeValue::None)
+    }
+
+    /// Extracts child nodes from a parent node.
+    fn get_child_nodes(&self, node: &mq_markdown::Node) -> Vec<mq_markdown::Node> {
+        match node {
+            mq_markdown::Node::List(mq_markdown::List { values, .. })
+            | mq_markdown::Node::TableCell(mq_markdown::TableCell { values, .. })
+            | mq_markdown::Node::TableRow(mq_markdown::TableRow { values, .. })
+            | mq_markdown::Node::Link(mq_markdown::Link { values, .. })
+            | mq_markdown::Node::Footnote(mq_markdown::Footnote { values, .. })
+            | mq_markdown::Node::LinkRef(mq_markdown::LinkRef { values, .. })
+            | mq_markdown::Node::Heading(mq_markdown::Heading { values, .. })
+            | mq_markdown::Node::Blockquote(mq_markdown::Blockquote { values, .. })
+            | mq_markdown::Node::Delete(mq_markdown::Delete { values, .. })
+            | mq_markdown::Node::Emphasis(mq_markdown::Emphasis { values, .. })
+            | mq_markdown::Node::Strong(mq_markdown::Strong { values, .. })
+            | mq_markdown::Node::Fragment(mq_markdown::Fragment { values }) => values.clone(),
+            _ => vec![],
         }
     }
 
