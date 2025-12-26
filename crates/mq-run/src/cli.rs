@@ -1372,7 +1372,7 @@ mod tests {
         let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
         assert!(!output_content.is_empty(), "JSON output should not be empty");
         assert!(
-            output_content.starts_with("{") || output_content.starts_with("["),
+            output_content.starts_with('{') || output_content.starts_with('['),
             "JSON output should be valid JSON"
         );
     }
