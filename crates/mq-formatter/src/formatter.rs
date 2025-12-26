@@ -106,7 +106,6 @@ impl Formatter {
             mq_lang::CstNodeKind::Quote => self.format_quote(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Unquote => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Def
-            | mq_lang::CstNodeKind::Macro
             | mq_lang::CstNodeKind::MacroCall
             | mq_lang::CstNodeKind::Foreach
             | mq_lang::CstNodeKind::While
@@ -116,6 +115,7 @@ impl Formatter {
                 indent_level,
                 !matches!(node.kind, mq_lang::CstNodeKind::Fn),
             ),
+            mq_lang::CstNodeKind::Macro => self.format_macro(&node, indent_level_consider_new_line, indent_level),
             mq_lang::CstNodeKind::Eof => {}
             mq_lang::CstNodeKind::Elif => self.format_elif(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Else => self.format_else(&node, indent_level_consider_new_line),
@@ -378,16 +378,28 @@ impl Formatter {
             self.append_space();
         }
 
-        let expr_index = node
-            .children
-            .iter()
-            .position(|c| {
-                c.token
-                    .as_ref()
-                    .map(|token| matches!(token.kind, mq_lang::TokenKind::Colon))
-                    .unwrap_or(false)
-            })
-            .unwrap_or(0);
+        let colon_index = node.children.iter().position(|c| {
+            c.token
+                .as_ref()
+                .map(|token| matches!(token.kind, mq_lang::TokenKind::Colon))
+                .unwrap_or(false)
+        });
+
+        // If there's no colon, split before the right parenthesis
+        let expr_index = match colon_index {
+            Some(index) => index,
+            None => node
+                .children
+                .iter()
+                .position(|c| {
+                    c.token
+                        .as_ref()
+                        .map(|token| matches!(token.kind, mq_lang::TokenKind::RParen))
+                        .unwrap_or(false)
+                })
+                .map(|index| index + 1)
+                .unwrap_or_default(),
+        };
 
         node.children.iter().take(expr_index).for_each(|child| {
             self.format_node(
@@ -401,12 +413,19 @@ impl Formatter {
         });
 
         let mut expr_nodes = node.children.iter().skip(expr_index).peekable();
-        let colon_node = expr_nodes.next().unwrap();
 
-        self.format_node(mq_lang::Shared::clone(colon_node), block_indent_level + 1);
+        // Format colon if it exists
+        if colon_index.is_some()
+            && let Some(colon_node) = expr_nodes.next()
+        {
+            self.format_node(mq_lang::Shared::clone(colon_node), block_indent_level + 1);
 
-        if !expr_nodes.peek().unwrap().has_new_line() {
-            self.append_space();
+            if let Some(next) = expr_nodes.peek()
+                && !next.has_new_line()
+                && !matches!(next.kind, mq_lang::CstNodeKind::Block)
+            {
+                self.append_space();
+            }
         }
 
         let block_indent_level = if is_prev_pipe {
@@ -417,6 +436,91 @@ impl Formatter {
 
         expr_nodes.for_each(|child| {
             self.format_node(mq_lang::Shared::clone(child), block_indent_level);
+        });
+    }
+
+    fn format_macro(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        indent_level: usize,
+        block_indent_level: usize,
+    ) {
+        let is_prev_pipe = self.is_prev_pipe();
+        let indent_adjustment = if self.is_let_line() {
+            self.current_line_indent()
+        } else {
+            0
+        };
+
+        if node.has_new_line() {
+            self.append_indent(indent_level);
+        }
+        self.output.push_str(&node.to_string());
+        self.append_space();
+
+        let colon_index = node.children.iter().position(|c| {
+            c.token
+                .as_ref()
+                .map(|token| matches!(token.kind, mq_lang::TokenKind::Colon))
+                .unwrap_or(false)
+        });
+
+        // If there's no colon, split before the right parenthesis
+        let expr_index = match colon_index {
+            Some(index) => index,
+            None => node
+                .children
+                .iter()
+                .position(|c| {
+                    c.token
+                        .as_ref()
+                        .map(|token| matches!(token.kind, mq_lang::TokenKind::RParen))
+                        .unwrap_or(false)
+                })
+                .map(|index| index + 1)
+                .unwrap_or_default(),
+        };
+
+        node.children.iter().take(expr_index).for_each(|child| {
+            self.format_node(
+                mq_lang::Shared::clone(child),
+                if child.has_new_line() {
+                    block_indent_level + 1
+                } else {
+                    block_indent_level
+                } + indent_adjustment,
+            );
+        });
+
+        let mut expr_nodes = node.children.iter().skip(expr_index).peekable();
+
+        // Format colon if it exists
+        if colon_index.is_some()
+            && let Some(colon_node) = expr_nodes.next()
+        {
+            self.format_node(mq_lang::Shared::clone(colon_node), block_indent_level + 1);
+
+            if let Some(next) = expr_nodes.peek()
+                && !next.has_new_line()
+                && !matches!(next.kind, mq_lang::CstNodeKind::Block)
+            {
+                self.append_space();
+            }
+        }
+
+        let block_indent_level = if is_prev_pipe {
+            block_indent_level + 2
+        } else {
+            block_indent_level + 1
+        } + indent_adjustment;
+
+        expr_nodes.for_each(|child| {
+            let child_indent = if matches!(child.kind, mq_lang::CstNodeKind::Block) && colon_index.is_none() {
+                indent_level
+            } else {
+                block_indent_level
+            };
+            self.format_node(mq_lang::Shared::clone(child), child_indent);
         });
     }
 
@@ -435,7 +539,10 @@ impl Formatter {
 
         if node.has_new_line() {
             self.append_indent(indent_level);
+        } else if !self.output.is_empty() && !self.output.ends_with(' ') {
+            self.append_space();
         }
+
         self.output.push_str(&node.to_string());
         self.append_space();
 
@@ -481,7 +588,6 @@ impl Formatter {
     fn format_quote(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
-        self.append_space();
 
         let current_line_indent = if indent_level == 0 {
             self.current_line_indent()
@@ -566,7 +672,7 @@ impl Formatter {
             self.format_node(mq_lang::Shared::clone(r_param), 0);
             self.format_node(mq_lang::Shared::clone(then_colon), 0);
 
-            if !then_expr.has_new_line() {
+            if !then_expr.has_new_line() && !matches!(then_expr.kind, mq_lang::CstNodeKind::Block) {
                 self.append_space();
             }
 
@@ -601,7 +707,7 @@ impl Formatter {
             self.format_node(mq_lang::Shared::clone(r_param), 0);
             self.format_node(mq_lang::Shared::clone(then_colon), 0);
 
-            if !then_expr.has_new_line() {
+            if !then_expr.has_new_line() && !matches!(then_expr.kind, mq_lang::CstNodeKind::Block) {
                 self.append_space();
             }
 
@@ -620,7 +726,7 @@ impl Formatter {
         if let [then_colon, then_expr] = node.children.as_slice() {
             self.format_node(mq_lang::Shared::clone(then_colon), 0);
 
-            if !then_expr.has_new_line() {
+            if !then_expr.has_new_line() && !matches!(then_expr.kind, mq_lang::CstNodeKind::Block) {
                 self.append_space();
             }
 
@@ -1962,7 +2068,115 @@ test2"#,
     test2
 "#
     )]
-
+    #[case::macro_simple_oneline("macro test(): value;", "macro test(): value;")]
+    #[case::macro_with_args_oneline("macro test(x, y): add(x, y);", "macro test(x, y): add(x, y);")]
+    #[case::macro_multiline(
+        r#"macro test():
+  value;"#,
+        r#"macro test():
+  value;
+"#
+    )]
+    #[case::macro_with_args_multiline(
+        r#"macro test(x, y):
+  add(x, y);"#,
+        r#"macro test(x, y):
+  add(x, y);
+"#
+    )]
+    #[case::macro_with_do_block(r#"macro test(): do value end"#, r#"macro test(): do value end"#)]
+    #[case::macro_with_do_block_multiline(
+        r#"macro breakpoint():
+do
+if(is_debug_mode()):
+_breakpoint()
+end
+end"#,
+        r#"macro breakpoint():
+  do
+    if (is_debug_mode()):
+      _breakpoint()
+  end
+end
+"#
+    )]
+    #[case::macro_with_do_block_no_colon(
+        r#"macro breakpoint() do
+quote do
+if(is_debug_mode()):_breakpoint()
+end
+end"#,
+        r#"macro breakpoint() do
+  quote do
+    if (is_debug_mode()): _breakpoint()
+  end
+end
+"#
+    )]
+    #[case::macro_with_if_multiline(
+        r#"macro test(x):
+if(x > 0):
+positive()
+else:
+negative()
+end"#,
+        r#"macro test(x):
+  if (x > 0):
+    positive()
+  else:
+    negative()
+end
+"#
+    )]
+    #[case::macro_complex(
+        r#"macro debug(msg):do
+let formatted=s"DEBUG: ${to_string(msg)}"
+|stderr(formatted)
+end"#,
+        r#"macro debug(msg): do
+    let formatted = s"DEBUG: ${to_string(msg)}"
+    | stderr(formatted)
+  end
+"#
+    )]
+    #[case::quote_multiline(
+        r#"quote do
+test
+|unquote(expr)
+;"#,
+        r#"quote do
+  test
+  | unquote(expr);
+"#
+    )]
+    #[case::quote_multiline_nested(
+        r#"quote do
+let x = 1
+|let y = 2
+|unquote(expr)
+;"#,
+        r#"quote do
+  let x = 1
+  | let y = 2
+  | unquote(expr);
+"#
+    )]
+    #[case::quote_multiline_with_if(
+        r#"quote do
+if(test):
+value
+else:
+other
+end
+;"#,
+        r#"quote do
+  if (test):
+    value
+  else:
+    other
+end;
+"#
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

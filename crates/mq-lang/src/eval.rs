@@ -6152,7 +6152,7 @@ mod debugger_tests {
         let mut evaluator: Evaluator = Evaluator::new(ModuleLoader::default(), token_arena);
         evaluator.debugger_handler = Shared::clone(&handler);
 
-        let program = vec![ast_call("breakpoint", SmallVec::new())];
+        let program = vec![ast_call(constants::BREAKPOINT, SmallVec::new())];
         let runtime_values = vec![RuntimeValue::String("test".to_string())];
 
         let result = evaluator.eval(&program, runtime_values.into_iter());

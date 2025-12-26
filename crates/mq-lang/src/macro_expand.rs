@@ -14,7 +14,7 @@ const MAX_RECURSION_DEPTH: u32 = 1000;
 #[derive(Debug, Clone)]
 struct MacroDefinition {
     params: Vec<Ident>,
-    body: Program,
+    body: Shared<Program>,
 }
 
 /// Expands macros in an AST before evaluation.
@@ -50,7 +50,7 @@ impl Macro {
                 continue;
             }
 
-            // Check if this is a macro call - if so, expand it directly
+            // Check if this is a top-level macro call - if so, expand it directly
             if let Expr::Call(ident, args) = &*node.expr
                 && self.macros.contains_key(&ident.name)
             {
@@ -84,8 +84,8 @@ impl Macro {
                         .collect();
 
                     let program = match &*body.expr {
-                        Expr::Block(prog) => prog.clone(),
-                        _ => vec![Shared::clone(body)],
+                        Expr::Block(prog) => Shared::new(prog.clone()),
+                        _ => Shared::new(vec![Shared::clone(body)]),
                     };
 
                     self.macros.insert(
@@ -109,7 +109,7 @@ impl Macro {
         match &*node.expr {
             // Expand function calls, including nested macro calls
             Expr::Call(ident, args) => {
-                // Check if this is a macro call
+                // Check if this is a macro call - use single lookup
                 if self.macros.contains_key(&ident.name) {
                     // For nested macro calls, we need to expand and potentially return multiple nodes
                     // However, expand_node returns a single node, so we wrap them in a Block
@@ -277,6 +277,8 @@ impl Macro {
                 }))
             }
             Expr::Quote(block) => {
+                // Expand macros inside the quote, but preserve the quote itself
+                // Quotes will be unwrapped during macro substitution
                 let program = match &*block.expr {
                     Expr::Block(prog) => prog.clone(),
                     _ => vec![Shared::clone(block)],
@@ -284,7 +286,7 @@ impl Macro {
                 let expanded_program = self.expand_program(&program)?;
                 let block = Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Block(expanded_program.clone())),
+                    expr: Shared::new(Expr::Block(expanded_program)),
                 });
 
                 Ok(Shared::new(Node {
@@ -348,7 +350,7 @@ impl Macro {
                 // This should not happen in normal flow as we filter them out
                 Ok(Shared::clone(node))
             }
-            // Leaf nodes - no expansion needed
+            // Leaf nodes and other expressions - no expansion needed, avoid cloning
             Expr::Literal(_)
             | Expr::Ident(_)
             | Expr::Selector(_)
@@ -366,30 +368,33 @@ impl Macro {
             return Err(RuntimeError::RecursionLimit);
         }
 
-        let macro_def = self
-            .macros
-            .get(&name)
-            .ok_or(RuntimeError::UndefinedMacro(name))?
-            .clone();
+        // Limit the borrow scope to avoid cloning the entire MacroDefinition
+        let (params, body) = {
+            let macro_def = self.macros.get(&name).ok_or(RuntimeError::UndefinedMacro(name))?;
 
-        // Check arity
-        if macro_def.params.len() != args.len() {
-            return Err(RuntimeError::ArityMismatch {
-                macro_name: name,
-                expected: macro_def.params.len(),
-                got: args.len(),
-            });
-        }
+            // Check arity
+            if macro_def.params.len() != args.len() {
+                return Err(RuntimeError::ArityMismatch {
+                    macro_name: name,
+                    expected: macro_def.params.len(),
+                    got: args.len(),
+                });
+            }
+
+            // Clone only what we need: params (Vec<Ident>) and body (Shared<Program>)
+            // Note: Shared::clone is cheap (just increments reference count)
+            (macro_def.params.clone(), Shared::clone(&macro_def.body))
+        };
 
         // Create substitution map
-        let mut substitutions = FxHashMap::with_capacity_and_hasher(macro_def.params.len(), FxBuildHasher);
-        for (param, arg) in macro_def.params.iter().zip(args.iter()) {
+        let mut substitutions = FxHashMap::with_capacity_and_hasher(params.len(), FxBuildHasher);
+        for (param, arg) in params.iter().zip(args.iter()) {
             substitutions.insert(*param, Shared::clone(arg));
         }
 
         // Substitute and expand the macro body
         self.recursion_depth += 1;
-        let result = self.substitute_and_expand_program(&macro_def.body, &substitutions);
+        let result = self.substitute_and_expand_program(&body, &substitutions);
         self.recursion_depth -= 1;
 
         result
@@ -410,6 +415,17 @@ impl Macro {
     }
 
     fn substitute_node(&self, node: &Shared<Node>, substitutions: &FxHashMap<Ident, Shared<Node>>) -> Shared<Node> {
+        // Fast path: if no substitutions AND not a quote or block, return node as-is
+        // Quotes and blocks always need to be processed
+        if substitutions.is_empty() {
+            match &*node.expr {
+                Expr::Quote(_) | Expr::Block(_) => {
+                    // Need to process these even without substitutions
+                }
+                _ => return Shared::clone(node),
+            }
+        }
+
         match &*node.expr {
             // Substitute identifiers
             Expr::Ident(ident) => {
@@ -453,17 +469,29 @@ impl Macro {
             }
             Expr::Def(ident, params, program) => {
                 // Function parameters shadow macro parameters
-                let mut scoped_substitutions = substitutions.clone();
-                for param in params {
+                // Check if any parameter shadows a substitution
+                let has_shadowing = params.iter().any(|param| {
                     if let Expr::Ident(param_ident) = &*param.expr {
-                        scoped_substitutions.remove(&param_ident.name);
+                        substitutions.contains_key(&param_ident.name)
+                    } else {
+                        false
                     }
-                }
+                });
 
-                let substituted_program: Vec<_> = program
-                    .iter()
-                    .map(|n| self.substitute_node(n, &scoped_substitutions))
-                    .collect();
+                let substituted_program: Vec<_> = if has_shadowing {
+                    let mut scoped_substitutions = substitutions.clone();
+                    for param in params {
+                        if let Expr::Ident(param_ident) = &*param.expr {
+                            scoped_substitutions.remove(&param_ident.name);
+                        }
+                    }
+                    program
+                        .iter()
+                        .map(|n| self.substitute_node(n, &scoped_substitutions))
+                        .collect()
+                } else {
+                    program.iter().map(|n| self.substitute_node(n, substitutions)).collect()
+                };
 
                 Shared::new(Node {
                     token_id: node.token_id,
@@ -471,17 +499,30 @@ impl Macro {
                 })
             }
             Expr::Fn(params, program) => {
-                let mut scoped_substitutions = substitutions.clone();
-                for param in params {
+                // Function parameters shadow macro parameters
+                // Check if any parameter shadows a substitution
+                let has_shadowing = params.iter().any(|param| {
                     if let Expr::Ident(param_ident) = &*param.expr {
-                        scoped_substitutions.remove(&param_ident.name);
+                        substitutions.contains_key(&param_ident.name)
+                    } else {
+                        false
                     }
-                }
+                });
 
-                let substituted_program: Vec<_> = program
-                    .iter()
-                    .map(|n| self.substitute_node(n, &scoped_substitutions))
-                    .collect();
+                let substituted_program: Vec<_> = if has_shadowing {
+                    let mut scoped_substitutions = substitutions.clone();
+                    for param in params {
+                        if let Expr::Ident(param_ident) = &*param.expr {
+                            scoped_substitutions.remove(&param_ident.name);
+                        }
+                    }
+                    program
+                        .iter()
+                        .map(|n| self.substitute_node(n, &scoped_substitutions))
+                        .collect()
+                } else {
+                    program.iter().map(|n| self.substitute_node(n, substitutions)).collect()
+                };
 
                 Shared::new(Node {
                     token_id: node.token_id,
@@ -694,6 +735,11 @@ impl Macro {
 
     /// Substitute only unquote expressions within quoted code
     fn substitute_in_quote(&self, node: &Shared<Node>, substitutions: &FxHashMap<Ident, Shared<Node>>) -> Shared<Node> {
+        // Fast path: if no substitutions, return node as-is
+        if substitutions.is_empty() {
+            return Shared::clone(node);
+        }
+
         match &*node.expr {
             // Unquote: Perform substitution and unwrap
             // Unquote should not appear in the final expanded code

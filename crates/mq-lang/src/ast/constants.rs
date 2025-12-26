@@ -28,7 +28,7 @@ pub const NEGATE: &str = "negate";
 
 pub const RANGE: &str = "range";
 
-pub const BREAKPOINT: &str = "breakpoint";
+pub const BREAKPOINT: &str = "_breakpoint";
 pub const COALESCE: &str = "coalesce";
 
 pub const ASSIGN: &str = "assign";
