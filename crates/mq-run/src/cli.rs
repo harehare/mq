@@ -82,6 +82,13 @@ enum OutputFormat {
     None,
 }
 
+#[derive(Clone, Debug, Default, clap::ValueEnum)]
+enum DocFormat {
+    #[default]
+    Markdown,
+    Text,
+}
+
 #[derive(Debug, Clone, Default, clap::ValueEnum)]
 pub enum ListStyle {
     #[default]
@@ -234,6 +241,9 @@ enum Commands {
         /// Specify additional module names to load for documentation
         #[arg(short = 'M', long)]
         module_names: Option<Vec<String>>,
+        /// Specify the documentation output format
+        #[arg(short = 'F', long, value_enum, default_value_t)]
+        format: DocFormat,
     },
     /// Check syntax errors in mq files
     Check {
@@ -433,63 +443,7 @@ impl Cli {
 
                 Ok(())
             }
-            Some(Commands::Docs { module_names }) => {
-                let mut hir = mq_hir::Hir::default();
-
-                if let Some(module_names) = module_names {
-                    hir.builtin.disabled = true;
-
-                    for module_name in module_names {
-                        hir.add_code(None, &format!("include \"{}\"", module_name));
-                    }
-                } else {
-                    hir.add_code(None, "");
-                }
-
-                let mut doc_csv = hir
-                    .symbols()
-                    .sorted_by_key(|(_, symbol)| symbol.value.clone())
-                    .filter_map(|(_, symbol)| match symbol {
-                        mq_hir::Symbol {
-                            kind: mq_hir::SymbolKind::Function(params),
-                            value: Some(value),
-                            doc,
-                            ..
-                        } if !symbol.is_internal_function() => {
-                            let name = if symbol.is_deprecated() {
-                                format!("~~`{}`~~", value)
-                            } else {
-                                format!("`{}`", value)
-                            };
-                            let description = doc.iter().map(|(_, d)| d.to_string()).join("\n");
-                            let args = params.iter().map(|p| format!("`{}`", p)).join(", ");
-                            let example = format!("{}({})", value, params.join(", "));
-
-                            Some(mq_lang::RuntimeValue::String(
-                                [name, description, args, example].join("\t"),
-                            ))
-                        }
-                        _ => None,
-                    })
-                    .collect::<VecDeque<_>>();
-
-                doc_csv.push_front(mq_lang::RuntimeValue::String(
-                    ["Function Name", "Description", "Parameters", "Example"]
-                        .iter()
-                        .join("\t"),
-                ));
-
-                let mut engine = self.create_engine()?;
-                let doc_values = engine
-                    .eval(
-                        r#"include "csv" | tsv_parse(false) | csv_to_markdown_table()"#,
-                        mq_lang::raw_input(&doc_csv.iter().join("\n")).into_iter(),
-                    )
-                    .map_err(|e| *e)?;
-                self.print(doc_values)?;
-
-                Ok(())
-            }
+            Some(Commands::Docs { module_names, format }) => self.docs(module_names, format),
             Some(Commands::Check { files }) => {
                 let stdout = io::stdout();
                 let mut handle = BufWriter::new(stdout.lock());
@@ -848,6 +802,86 @@ impl Cli {
             && e.kind() != std::io::ErrorKind::BrokenPipe
         {
             return Err(miette!(e));
+        }
+
+        Ok(())
+    }
+
+    fn docs(&self, module_names: &Option<Vec<String>>, format: &DocFormat) -> Result<(), miette::Error> {
+        let mut hir = mq_hir::Hir::default();
+
+        if let Some(module_names) = module_names {
+            hir.builtin.disabled = true;
+
+            for module_name in module_names {
+                hir.add_code(None, &format!("include \"{}\"", module_name));
+            }
+        } else {
+            hir.add_code(None, "");
+        }
+
+        let symbols = hir
+            .symbols()
+            .sorted_by_key(|(_, symbol)| symbol.value.clone())
+            .filter_map(|(_, symbol)| match symbol {
+                mq_hir::Symbol {
+                    kind: mq_hir::SymbolKind::Function(params),
+                    value: Some(value),
+                    doc,
+                    ..
+                } if !symbol.is_internal_function() => {
+                    let name = if symbol.is_deprecated() {
+                        format!("~~`{}`~~", value)
+                    } else {
+                        format!("`{}`", value)
+                    };
+                    let description = doc.iter().map(|(_, d)| d.to_string()).join("\n");
+                    let args = params.iter().map(|p| format!("`{}`", p)).join(", ");
+                    let example = format!("{}({})", value, params.join(", "));
+
+                    Some([name, description, args, example])
+                }
+                _ => None,
+            })
+            .collect::<VecDeque<_>>();
+
+        match format {
+            DocFormat::Markdown => {
+                let mut doc_csv = symbols
+                    .iter()
+                    .map(|[name, description, args, example]| {
+                        mq_lang::RuntimeValue::String([name, description, args, example].into_iter().join("\t"))
+                    })
+                    .collect::<VecDeque<_>>();
+
+                doc_csv.push_front(mq_lang::RuntimeValue::String(
+                    ["Function Name", "Description", "Parameters", "Example"]
+                        .iter()
+                        .join("\t"),
+                ));
+
+                let mut engine = self.create_engine()?;
+                let doc_values = engine
+                    .eval(
+                        r#"include "csv" | tsv_parse(false) | csv_to_markdown_table()"#,
+                        mq_lang::raw_input(&doc_csv.iter().join("\n")).into_iter(),
+                    )
+                    .map_err(|e| *e)?;
+                self.print(doc_values)?;
+            }
+            DocFormat::Text => {
+                println!(
+                    "{}",
+                    symbols
+                        .iter()
+                        .map(|[name, description, args, _]| {
+                            let name = name.replace('`', "");
+                            let args = args.replace('`', "");
+                            format!("# {description}\ndef {name}({args})")
+                        })
+                        .join("\n\n")
+                );
+            }
         }
 
         Ok(())
