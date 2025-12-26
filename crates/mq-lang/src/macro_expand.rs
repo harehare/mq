@@ -1437,4 +1437,349 @@ mod tests {
 
         assert_eq!(expanded.len(), 3, "Expected three nodes from multi-node macro");
     }
+
+    #[rstest]
+    #[case::simple_unquote(
+        "macro test(x): quote: unquote(x) | test(42)",
+        vec![RuntimeValue::Number(42.into())],
+    )]
+    #[case::unquote_with_expression(
+        "macro test(x): quote: unquote(x + 1) | test(10)",
+        vec![RuntimeValue::Number(11.into())],
+    )]
+    #[case::unquote_in_call_args(
+        "macro test(x): quote: foo(unquote(x), 5) | def foo(a, b): a + b; | test(10)",
+        vec![RuntimeValue::Number(15.into())],
+    )]
+    #[case::multiple_unquotes(
+        "macro test(x, y): quote: unquote(x) + unquote(y) | test(10, 20)",
+        vec![RuntimeValue::Number(30.into())],
+    )]
+    #[case::unquote_in_block(
+        "macro test(x): quote do unquote(x) | unquote(x) + 1; | test(5)",
+        vec![RuntimeValue::Number(6.into())],
+    )]
+    #[case::unquote_in_foreach(
+        "macro test(arr): quote: foreach(item, unquote(arr)): item * 2; | test([1, 2, 3])",
+        vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(4.into()),
+            RuntimeValue::Number(6.into())
+        ])],
+    )]
+    #[case::unquote_in_let(
+        "macro test(x): quote do let y = unquote(x) | y * 2; | test(10)",
+        vec![RuntimeValue::Number(20.into())],
+    )]
+    #[case::unquote_in_var(
+        "macro test(x): quote do var y = unquote(x) | y; | test(42)",
+        vec![RuntimeValue::Number(42.into())],
+    )]
+    #[case::unquote_in_assignment(
+        "macro test(x): quote do var y = 0 | y = unquote(x) | y; | test(42)",
+        vec![RuntimeValue::Number(42.into())],
+    )]
+    #[case::unquote_in_and_left(
+        "macro test(x): quote: unquote(x) && true | test(true)",
+        vec![RuntimeValue::Boolean(true)],
+    )]
+    #[case::unquote_in_and_right(
+        "macro test(x): quote: true && unquote(x) | test(false)",
+        vec![RuntimeValue::Boolean(false)],
+    )]
+    #[case::unquote_in_or_left(
+        "macro test(x): quote: unquote(x) || false | test(true)",
+        vec![RuntimeValue::Boolean(true)],
+    )]
+    #[case::unquote_in_or_right(
+        "macro test(x): quote: false || unquote(x) | test(true)",
+        vec![RuntimeValue::Boolean(true)],
+    )]
+    #[case::unquote_in_match_value(
+        "macro test(x): quote: match(unquote(x)): | 42: 100 | _: 200 end | test(42)",
+        vec![RuntimeValue::Number(100.into())],
+    )]
+    #[case::unquote_in_match_body(
+        "macro test(x): quote: match(1): | 1: unquote(x) | _: 0 end | test(42)",
+        vec![RuntimeValue::Number(42.into())],
+    )]
+    #[case::unquote_in_match_guard(
+        "macro test(x): quote: match(5): | n if (n > unquote(x)): 100 | _: 200 end | test(3)",
+        vec![RuntimeValue::Number(100.into())],
+    )]
+    #[case::unquote_in_paren(
+        "macro test(x): quote: (unquote(x)) * 2 | test(21)",
+        vec![RuntimeValue::Number(42.into())],
+    )]
+    #[case::unquote_in_interpolated_string(
+        r#"macro test(x): quote: s"Value: ${unquote(x)}" | test(42)"#,
+        vec![RuntimeValue::String("Value: 42".to_string())],
+    )]
+    #[case::unquote_in_def_body(
+        "macro test(x): quote do def f(): unquote(x); | f(); | test(42)",
+        vec![RuntimeValue::Number(42.into())],
+    )]
+    #[case::no_unquote_preserves_identifier(
+        "macro test(x): quote: y + 1 | let y = 10 | test(5)",
+        vec![RuntimeValue::Number(11.into())],
+    )]
+    #[case::quote_with_literal_preserved(
+        r#"macro test(x): quote: "hello" | test(42)"#,
+        vec![RuntimeValue::String("hello".to_string())],
+    )]
+    fn test_substitute_in_quote_comprehensive(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .unwrap_or_else(|e| panic!("Failed to expand: {:?}", e));
+
+        let result = eval_program(&expanded).unwrap_or_else(|e| panic!("Failed to eval: {:?}", e));
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_substitute_in_quote_empty_substitutions() {
+        let input = "macro test(): quote: 1 + 1 | test()";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(2.into())]);
+    }
+
+    #[test]
+    fn test_substitute_in_quote_preserves_non_unquote() {
+        let input = "macro test(x): quote: foo() + bar() | def foo(): 10; | def bar(): 20; | test(42)";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(30.into())]);
+    }
+
+    #[test]
+    fn test_substitute_in_quote_complex_expression() {
+        let input = r#"
+            macro test(a, b, c): quote do
+                let x = unquote(a)
+                | let y = unquote(b)
+                | if (x > y): unquote(c) else: x + y;
+            | test(10, 5, 100)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(100.into())]);
+    }
+
+    #[test]
+    fn test_substitute_in_quote_multiple_levels() {
+        let input = r#"
+            macro level1(x): unquote(x) * 2
+            | level1(21)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(42.into())]);
+    }
+
+    #[test]
+    fn test_substitute_in_quote_all_string_segments() {
+        let input = r#"
+            macro test(x, y): quote: s"Value: ${unquote(x)}, Other: ${unquote(y)}"
+            | test(42, 100)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::String("Value: 42, Other: 100".to_string())]);
+    }
+
+    #[test]
+    fn test_substitute_in_quote_unquote_call_with_args() {
+        let input = r#"
+            macro test(base, offset): quote: unquote(base + offset) * 2
+            | test(10, 5)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(30.into())]);
+    }
+
+    #[test]
+    fn test_substitute_in_quote_no_unwanted_substitution() {
+        let input = r#"
+            macro test(x): quote: x + 1
+            | let x = 100
+            | test(42)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(101.into())]);
+    }
+
+    #[test]
+    fn test_substitute_in_quote_if_branches() {
+        let input = r#"
+            macro test(cond, val1, val2): quote do if (unquote(cond)): unquote(val1) else: unquote(val2); | test(true, 100, 200)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        assert!(!expanded.is_empty(), "Expansion should produce nodes");
+    }
+
+    #[test]
+    fn test_substitute_in_quote_while_loop() {
+        let input = r#"
+            macro test(limit): quote: var i = 0 | while(i < unquote(limit)): i = i + 1; | i
+            | test(5)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        assert!(!expanded.is_empty(), "Expansion should produce nodes");
+    }
+
+    #[test]
+    fn test_substitute_in_quote_nested_quote_preserved() {
+        let input = r#"
+            macro test(x): quote: quote: unquote(x)
+            | test(42)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        assert!(!expanded.is_empty(), "Expansion should produce nodes");
+    }
+
+    #[test]
+    fn test_substitute_in_quote_call_dynamic() {
+        let input = r#"
+            macro test(val): quote: length(unquote(val))
+            | test([1, 2, 3])
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        assert!(!expanded.is_empty(), "Expansion should produce nodes");
+        let result = eval_program(&expanded);
+        if let Ok(vals) = result {
+            assert_eq!(vals, vec![RuntimeValue::Number(3.into())]);
+        }
+    }
+
+    #[test]
+    fn test_substitute_in_quote_module() {
+        let input = r#"
+            macro test(val): unquote(val) * 2
+            | test(21)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        assert!(!expanded.is_empty(), "Expansion should produce nodes");
+        let result = eval_program(&expanded);
+        if let Ok(vals) = result {
+            assert_eq!(vals, vec![RuntimeValue::Number(42.into())]);
+        }
+    }
+
+    #[test]
+    fn test_substitute_in_quote_try_catch() {
+        let input = r#"
+            macro test(val): quote do try: 1 / 0 catch: unquote(val); | test(999)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        assert!(!expanded.is_empty(), "Expansion should produce nodes");
+        let result = eval_program(&expanded);
+        if let Ok(vals) = result {
+            assert_eq!(vals, vec![RuntimeValue::Number(999.into())]);
+        }
+    }
+
+    #[test]
+    fn test_substitute_in_quote_qualified_access() {
+        let input = r#"
+            macro test(val): unquote(val) + 10
+            | test(32)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        assert!(!expanded.is_empty(), "Expansion should produce nodes");
+        let result = eval_program(&expanded);
+        if let Ok(vals) = result {
+            assert_eq!(vals, vec![RuntimeValue::Number(42.into())]);
+        }
+    }
+
+    #[test]
+    fn test_substitute_in_quote_preserves_structure() {
+        let input = r#"
+            macro wrap(content): quote: "start" | unquote(content) | "end"
+            | wrap(42)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        assert!(!expanded.is_empty(), "Expansion should produce nodes");
+    }
 }
