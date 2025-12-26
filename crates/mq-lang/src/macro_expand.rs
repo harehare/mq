@@ -43,14 +43,14 @@ impl Macro {
             return Ok(program.clone());
         }
 
-        let mut expanded_program = Vec::new();
+        let mut expanded_program = Vec::with_capacity(program.len());
         for node in program {
             // Skip macro definitions - they shouldn't appear in the expanded output
             if matches!(&*node.expr, Expr::Macro(..)) {
                 continue;
             }
 
-            // Check if this is a macro call - if so, expand it directly
+            // Check if this is a top-level macro call - if so, expand it directly
             if let Expr::Call(ident, args) = &*node.expr
                 && self.macros.contains_key(&ident.name)
             {
@@ -109,7 +109,7 @@ impl Macro {
         match &*node.expr {
             // Expand function calls, including nested macro calls
             Expr::Call(ident, args) => {
-                // Check if this is a macro call
+                // Check if this is a macro call - use single lookup
                 if self.macros.contains_key(&ident.name) {
                     // For nested macro calls, we need to expand and potentially return multiple nodes
                     // However, expand_node returns a single node, so we wrap them in a Block
@@ -277,6 +277,8 @@ impl Macro {
                 }))
             }
             Expr::Quote(block) => {
+                // Expand macros inside the quote, but preserve the quote itself
+                // Quotes will be unwrapped during macro substitution
                 let program = match &*block.expr {
                     Expr::Block(prog) => prog.clone(),
                     _ => vec![Shared::clone(block)],
@@ -348,7 +350,7 @@ impl Macro {
                 // This should not happen in normal flow as we filter them out
                 Ok(Shared::clone(node))
             }
-            // Leaf nodes - no expansion needed
+            // Leaf nodes and other expressions - no expansion needed, avoid cloning
             Expr::Literal(_)
             | Expr::Ident(_)
             | Expr::Selector(_)
@@ -413,6 +415,17 @@ impl Macro {
     }
 
     fn substitute_node(&self, node: &Shared<Node>, substitutions: &FxHashMap<Ident, Shared<Node>>) -> Shared<Node> {
+        // Fast path: if no substitutions AND not a quote or block, return node as-is
+        // Quotes and blocks always need to be processed
+        if substitutions.is_empty() {
+            match &*node.expr {
+                Expr::Quote(_) | Expr::Block(_) => {
+                    // Need to process these even without substitutions
+                }
+                _ => return Shared::clone(node),
+            }
+        }
+
         match &*node.expr {
             // Substitute identifiers
             Expr::Ident(ident) => {
@@ -456,35 +469,28 @@ impl Macro {
             }
             Expr::Def(ident, params, program) => {
                 // Function parameters shadow macro parameters
-                // Collect parameters that actually shadow substitutions
-                let shadowed_params: Vec<_> = params
-                    .iter()
-                    .filter_map(|param| {
-                        if let Expr::Ident(param_ident) = &*param.expr {
-                            if substitutions.contains_key(&param_ident.name) {
-                                Some(param_ident.name)
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+                // Check if any parameter shadows a substitution
+                let has_shadowing = params.iter().any(|param| {
+                    if let Expr::Ident(param_ident) = &*param.expr {
+                        substitutions.contains_key(&param_ident.name)
+                    } else {
+                        false
+                    }
+                });
 
-                let substituted_program: Vec<_> = if shadowed_params.is_empty() {
-                    // No shadowing - use original substitutions
-                    program.iter().map(|n| self.substitute_node(n, substitutions)).collect()
-                } else {
-                    // Shadowing detected - clone and remove shadowed params
+                let substituted_program: Vec<_> = if has_shadowing {
                     let mut scoped_substitutions = substitutions.clone();
-                    for param in shadowed_params {
-                        scoped_substitutions.remove(&param);
+                    for param in params {
+                        if let Expr::Ident(param_ident) = &*param.expr {
+                            scoped_substitutions.remove(&param_ident.name);
+                        }
                     }
                     program
                         .iter()
                         .map(|n| self.substitute_node(n, &scoped_substitutions))
                         .collect()
+                } else {
+                    program.iter().map(|n| self.substitute_node(n, substitutions)).collect()
                 };
 
                 Shared::new(Node {
@@ -494,35 +500,28 @@ impl Macro {
             }
             Expr::Fn(params, program) => {
                 // Function parameters shadow macro parameters
-                // Collect parameters that actually shadow substitutions
-                let shadowed_params: Vec<_> = params
-                    .iter()
-                    .filter_map(|param| {
-                        if let Expr::Ident(param_ident) = &*param.expr {
-                            if substitutions.contains_key(&param_ident.name) {
-                                Some(param_ident.name)
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+                // Check if any parameter shadows a substitution
+                let has_shadowing = params.iter().any(|param| {
+                    if let Expr::Ident(param_ident) = &*param.expr {
+                        substitutions.contains_key(&param_ident.name)
+                    } else {
+                        false
+                    }
+                });
 
-                let substituted_program: Vec<_> = if shadowed_params.is_empty() {
-                    // No shadowing - use original substitutions
-                    program.iter().map(|n| self.substitute_node(n, substitutions)).collect()
-                } else {
-                    // Shadowing detected - clone and remove shadowed params
+                let substituted_program: Vec<_> = if has_shadowing {
                     let mut scoped_substitutions = substitutions.clone();
-                    for param in shadowed_params {
-                        scoped_substitutions.remove(&param);
+                    for param in params {
+                        if let Expr::Ident(param_ident) = &*param.expr {
+                            scoped_substitutions.remove(&param_ident.name);
+                        }
                     }
                     program
                         .iter()
                         .map(|n| self.substitute_node(n, &scoped_substitutions))
                         .collect()
+                } else {
+                    program.iter().map(|n| self.substitute_node(n, substitutions)).collect()
                 };
 
                 Shared::new(Node {
@@ -736,6 +735,11 @@ impl Macro {
 
     /// Substitute only unquote expressions within quoted code
     fn substitute_in_quote(&self, node: &Shared<Node>, substitutions: &FxHashMap<Ident, Shared<Node>>) -> Shared<Node> {
+        // Fast path: if no substitutions, return node as-is
+        if substitutions.is_empty() {
+            return Shared::clone(node);
+        }
+
         match &*node.expr {
             // Unquote: Perform substitution and unwrap
             // Unquote should not appear in the final expanded code
