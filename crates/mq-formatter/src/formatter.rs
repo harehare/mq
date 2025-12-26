@@ -101,12 +101,13 @@ impl Formatter {
             mq_lang::CstNodeKind::Block => {
                 self.format_block(&node, indent_level_consider_new_line, indent_level);
             }
-            mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Call | mq_lang::CstNodeKind::MacroCall => {
+                self.format_call(&node, indent_level_consider_new_line)
+            }
             mq_lang::CstNodeKind::CallDynamic => self.format_call_dynamic(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Quote => self.format_quote(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Unquote => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Def
-            | mq_lang::CstNodeKind::MacroCall
             | mq_lang::CstNodeKind::Foreach
             | mq_lang::CstNodeKind::While
             | mq_lang::CstNodeKind::Fn => self.format_expr(
@@ -2175,6 +2176,15 @@ end
   else:
     other
 end;
+"#
+    )]
+    #[case::macro_call_test(
+        r#"unless(cond) do
+expr
+end"#,
+        r#"unless(cond) do
+  expr
+end
 "#
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
