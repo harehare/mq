@@ -1239,7 +1239,10 @@ mod tests {
         let cli = Cli {
             input: InputArgs::default(),
             output: OutputArgs::default(),
-            commands: Some(Commands::Docs { module_names: None }),
+            commands: Some(Commands::Docs {
+                module_names: None,
+                format: DocFormat::Markdown,
+            }),
             query: None,
             files: None,
             ..Cli::default()
@@ -1255,6 +1258,7 @@ mod tests {
             output: OutputArgs::default(),
             commands: Some(Commands::Docs {
                 module_names: Some(vec!["string".to_string()]),
+                format: DocFormat::Markdown,
             }),
             query: None,
             files: None,
