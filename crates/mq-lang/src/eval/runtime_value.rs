@@ -95,10 +95,15 @@ pub enum RuntimeValue {
     /// A user-defined function with parameters, body (program), and captured environment.
     Function(AstParams, Program, Shared<SharedCell<Env>>),
     /// A user-defined OpTree function with parameters, body (OpRef), and captured environment.
+    /// Also stores original AST for compatibility with AST evaluator.
     OpTreeFunction {
         params: SmallVec<[crate::optree::OpRef; 8]>,
         body: crate::optree::OpRef,
         env: Shared<SharedCell<Env>>,
+        /// Original AST parameters (for AST evaluator compatibility)
+        ast_params: AstParams,
+        /// Original AST program (for AST evaluator compatibility)
+        ast_program: Program,
     },
     /// A built-in native function identified by name.
     NativeFunction(Ident),

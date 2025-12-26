@@ -557,7 +557,10 @@ mod tests {
         let code = "macro double(x): x * 2 | def apply_double(n): double(n) + 1; | apply_double(5)";
         let result = engine.eval(code, crate::null_input().into_iter());
 
-        assert!(result.is_ok());
+        if let Err(ref e) = result {
+            eprintln!("Error details: {}", e);
+        }
+        assert!(result.is_ok(), "Expected Ok but got: {:?}", result);
         let values = result.unwrap();
         assert_eq!(values.len(), 1);
         assert_eq!(values[0], RuntimeValue::Number(11.into()));

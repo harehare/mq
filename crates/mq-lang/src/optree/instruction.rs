@@ -261,6 +261,13 @@ pub enum Op {
     Literal(Literal),
     /// Variable identifier reference
     Ident(Ident),
+    /// Local variable reference by index (padlist-style optimization)
+    /// This is a performance optimization: local variables are indexed at transform time
+    /// and accessed via direct array indexing instead of HashMap lookup at runtime.
+    LocalVar(u32),
+    /// Global variable reference (functions, modules, builtins)
+    /// Used for variables that cannot be resolved to local scope at transform time.
+    GlobalVar(Ident),
     /// Self reference (current value in pipeline)
     Self_,
     /// Reference to all input nodes
@@ -271,6 +278,8 @@ pub enum Op {
         name: Ident,
         /// Value expression (reference to op in pool)
         value: OpRef,
+        /// Local variable index (if this is a local variable)
+        local_index: Option<u32>,
     },
     /// Mutable variable declaration: var name = value;
     Var {
@@ -278,6 +287,8 @@ pub enum Op {
         name: Ident,
         /// Initial value expression (reference to op in pool)
         value: OpRef,
+        /// Local variable index (if this is a local variable)
+        local_index: Option<u32>,
     },
     /// Variable assignment: name = value;
     Assign {
@@ -285,6 +296,8 @@ pub enum Op {
         name: Ident,
         /// New value expression (reference to op in pool)
         value: OpRef,
+        /// Local variable index (if this is a local variable)
+        local_index: Option<u32>,
     },
     /// Conditional expression: if cond: body; elif cond2: body2; else: body3;
     If {
@@ -307,18 +320,25 @@ pub enum Op {
         iterator: OpRef,
         /// Loop body (reference to op in pool)
         body: OpRef,
+        /// Local variable index for loop variable (if it's local)
+        local_index: Option<u32>,
     },
     /// Pattern matching: match value: case pattern: body; ...
     Match {
         /// Value to match (reference to op in pool)
         value: OpRef,
         /// Match arms with patterns, optional guards, and bodies
-        arms: SmallVec<[MatchArm; 8]>,
+        /// Boxed to reduce enum size (clippy::large_enum_variant)
+        arms: Box<SmallVec<[MatchArm; 8]>>,
     },
     /// Break from loop
     Break,
     /// Continue to next loop iteration
     Continue,
+    /// Quote expression (error at runtime - should be expanded during macro processing)
+    Quote,
+    /// Unquote expression (error at runtime - should only appear inside quotes)
+    Unquote,
     /// Function definition: def name(params): body;
     Def {
         /// Function name
@@ -327,6 +347,10 @@ pub enum Op {
         params: SmallVec<[OpRef; 8]>,
         /// Function body (reference to op in pool)
         body: OpRef,
+        /// Original AST parameters (for compatibility)
+        ast_params: crate::ast::node::Args,
+        /// Original AST program (for compatibility)
+        ast_program: crate::Program,
     },
     /// Anonymous function: fn(params): body;
     Fn {
@@ -334,6 +358,10 @@ pub enum Op {
         params: SmallVec<[OpRef; 8]>,
         /// Function body (reference to op in pool)
         body: OpRef,
+        /// Original AST parameters (for compatibility)
+        ast_params: crate::ast::node::Args,
+        /// Original AST program (for compatibility)
+        ast_program: crate::Program,
     },
     /// Static function call: function_name(args)
     Call {
@@ -388,6 +416,15 @@ pub enum Op {
         /// Error handler (reference to op in pool)
         catch_expr: OpRef,
     },
+    /// Optimized: constant true condition (always execute body)
+    /// Used to optimize: if true: body
+    ConstTrue(OpRef),
+    /// Optimized: constant false condition (never execute body)
+    /// Used to optimize: if false: body → no-op
+    ConstFalse,
+    /// Optimized: empty sequence (no operations)
+    /// Used to optimize: empty blocks, removed dead code
+    Nop,
 }
 
 #[cfg(test)]

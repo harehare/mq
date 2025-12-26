@@ -1288,6 +1288,70 @@ impl<T: ModuleResolver> Evaluator<T> {
             self.debugger.write().unwrap().pop_call_stack();
 
             result
+        } else if let RuntimeValue::OpTreeFunction {
+            ast_params,
+            ast_program,
+            env: fn_env,
+            ..
+        } = fn_value
+        {
+            // Handle OpTreeFunction when called from AST evaluator
+            // This happens when OpTree code passes a function to an AST-based builtin function
+            // We use the stored AST representation for compatibility
+            self.enter_scope()?;
+            #[cfg(feature = "debugger")]
+            self.debugger.write().unwrap().push_call_stack(Shared::clone(&node));
+
+            let new_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(fn_env))));
+
+            if ast_params.len() == args.len() + 1 {
+                if let ast::Expr::Ident(id) = &*ast_params.first().unwrap().expr {
+                    define(&new_env, id.name, runtime_value.clone());
+                } else {
+                    return Err(RuntimeError::InvalidDefinition(
+                        (*get_token(Shared::clone(&self.token_arena), ast_params.first().unwrap().token_id)).clone(),
+                        ident.to_string(),
+                    ));
+                }
+
+                for (arg, param) in args.into_iter().zip(ast_params.iter().skip(1)) {
+                    if let ast::Expr::Ident(id) = &*param.expr {
+                        let val = self.eval_expr(runtime_value, arg, env)?;
+                        define(&new_env, id.name, val);
+                    } else {
+                        return Err(RuntimeError::InvalidDefinition(
+                            (*get_token(Shared::clone(&self.token_arena), param.token_id)).clone(),
+                            ident.to_string(),
+                        ));
+                    }
+                }
+            } else if args.len() != ast_params.len() {
+                return Err(RuntimeError::InvalidNumberOfArguments(
+                    (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
+                    ident.to_string(),
+                    ast_params.len() as u8,
+                    args.len() as u8,
+                ));
+            } else {
+                for (arg, param) in args.into_iter().zip(ast_params.iter()) {
+                    if let ast::Expr::Ident(id) = &*param.expr {
+                        let val = self.eval_expr(runtime_value, arg, env)?;
+                        define(&new_env, id.name, val);
+                    } else {
+                        return Err(RuntimeError::InvalidDefinition(
+                            (*get_token(Shared::clone(&self.token_arena), param.token_id)).clone(),
+                            ident.to_string(),
+                        ));
+                    }
+                }
+            };
+
+            let result = self.eval_program(ast_program, runtime_value.clone(), new_env);
+            self.exit_scope();
+            #[cfg(feature = "debugger")]
+            self.debugger.write().unwrap().pop_call_stack();
+
+            result
         } else if let RuntimeValue::NativeFunction(ident) = fn_value {
             self.eval_builtin(runtime_value, node, ident, args, env)
         } else {

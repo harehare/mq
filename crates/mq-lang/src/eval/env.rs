@@ -59,6 +59,9 @@ pub struct Env {
     context: FxHashMap<Ident, RuntimeValue>,
     mutable_vars: FxHashSet<Ident>,
     parent: Option<Weak<SharedCell<Env>>>,
+    /// Local variable storage (Perl padlist-style optimization)
+    /// Indexed access is faster than HashMap lookup
+    pad: Vec<RuntimeValue>,
 }
 
 impl PartialEq for Env {
@@ -158,7 +161,50 @@ impl Env {
             context: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
             mutable_vars: FxHashSet::default(),
             parent: Some(parent),
+            pad: Vec::new(),
         }
+    }
+
+    /// Creates a new environment with a pad of specified capacity
+    pub fn with_pad_capacity(capacity: usize) -> Self {
+        Self {
+            context: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
+            mutable_vars: FxHashSet::default(),
+            parent: None,
+            pad: Vec::with_capacity(capacity),
+        }
+    }
+
+    /// Creates a new environment with parent and pad capacity
+    pub fn with_parent_and_pad(parent: Weak<SharedCell<Env>>, pad_capacity: usize) -> Self {
+        Self {
+            context: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
+            mutable_vars: FxHashSet::default(),
+            parent: Some(parent),
+            pad: Vec::with_capacity(pad_capacity),
+        }
+    }
+
+    /// Sets a local variable at given index in the pad
+    #[inline(always)]
+    pub fn set_local(&mut self, index: u32, value: RuntimeValue) {
+        let index = index as usize;
+        if index >= self.pad.len() {
+            self.pad.resize(index + 1, RuntimeValue::None);
+        }
+        self.pad[index] = value;
+    }
+
+    /// Gets a local variable by index from the pad
+    #[inline(always)]
+    pub fn get_local(&self, index: u32) -> Option<RuntimeValue> {
+        self.pad.get(index as usize).cloned()
+    }
+
+    /// Initializes the pad with given capacity
+    #[inline]
+    pub fn init_pad(&mut self, capacity: usize) {
+        self.pad = vec![RuntimeValue::None; capacity];
     }
 
     pub fn len(&self) -> usize {

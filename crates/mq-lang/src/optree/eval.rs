@@ -127,10 +127,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         } else {
             // No nodes keyword, evaluate each input independently
             input
-                .map(|runtime_value| match &runtime_value {
-                    RuntimeValue::Markdown(node, _) => self.eval_markdown_node_single(root, node),
-                    _ => self.eval_op(root, &runtime_value, &Shared::clone(&self.env)),
-                })
+                .map(|runtime_value| self.eval_op(root, &runtime_value, &Shared::clone(&self.env)))
                 .collect()
         }
     }
@@ -216,29 +213,84 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         match op.as_ref() {
             Op::Literal(lit) => self.eval_literal(lit),
             Op::Ident(ident) => self.eval_ident(*ident, op_ref, env),
+            Op::LocalVar(index) => self.eval_local_var(*index, op_ref, env),
+            Op::GlobalVar(ident) => self.eval_ident(*ident, op_ref, env),
             Op::Self_ | Op::Nodes => Ok(runtime_value.clone()),
-            Op::Let { name, value } => {
+            Op::Let {
+                name,
+                value,
+                local_index,
+            } => {
                 let val = self.eval_op(*value, runtime_value, env)?;
-                self.define(env, *name, val);
+                // Store in pad if local, otherwise in context
+                if let Some(index) = local_index {
+                    #[cfg(not(feature = "sync"))]
+                    env.borrow_mut().set_local(*index, val);
+                    #[cfg(feature = "sync")]
+                    env.write().unwrap().set_local(*index, val);
+                } else {
+                    self.define(env, *name, val);
+                }
                 Ok(runtime_value.clone())
             }
-            Op::Var { name, value } => {
+            Op::Var {
+                name,
+                value,
+                local_index,
+            } => {
                 let val = self.eval_op(*value, runtime_value, env)?;
-                self.define_mutable(env, *name, val);
+                // Store in pad if local, otherwise in context
+                if let Some(index) = local_index {
+                    #[cfg(not(feature = "sync"))]
+                    env.borrow_mut().set_local(*index, val);
+                    #[cfg(feature = "sync")]
+                    env.write().unwrap().set_local(*index, val);
+                } else {
+                    self.define_mutable(env, *name, val);
+                }
                 Ok(runtime_value.clone())
             }
-            Op::Assign { name, value } => {
+            Op::Assign {
+                name,
+                value,
+                local_index,
+            } => {
                 let val = self.eval_op(*value, runtime_value, env)?;
-                self.assign(env, *name, val, op_ref)?;
+                // Update in pad if local, otherwise in context
+                if let Some(index) = local_index {
+                    #[cfg(not(feature = "sync"))]
+                    env.borrow_mut().set_local(*index, val);
+                    #[cfg(feature = "sync")]
+                    env.write().unwrap().set_local(*index, val);
+                } else {
+                    self.assign(env, *name, val, op_ref)?;
+                }
                 Ok(runtime_value.clone())
             }
             Op::If { branches } => self.eval_if(runtime_value, branches, env),
             Op::While { condition, body } => self.eval_while(runtime_value, *condition, *body, env),
-            Op::Foreach { name, iterator, body } => self.eval_foreach(runtime_value, *name, *iterator, *body, env),
-            Op::Match { value, arms } => self.eval_match(runtime_value, *value, arms, env),
+            Op::Foreach {
+                name,
+                iterator,
+                body,
+                local_index,
+            } => self.eval_foreach(runtime_value, *name, *iterator, *body, *local_index, env),
+            Op::Match { value, arms } => self.eval_match(runtime_value, *value, arms.as_ref(), env),
             Op::Break => Err(RuntimeError::Break),
             Op::Continue => Err(RuntimeError::Continue),
-            Op::Def { name, params, body } => {
+            Op::Quote => Err(RuntimeError::QuoteNotAllowedInRuntimeContext(
+                (*self.get_token(op_ref)).clone(),
+            )),
+            Op::Unquote => Err(RuntimeError::UnquoteNotAllowedOutsideQuote(
+                (*self.get_token(op_ref)).clone(),
+            )),
+            Op::Def {
+                name,
+                params,
+                body,
+                ast_params,
+                ast_program,
+            } => {
                 self.define(
                     env,
                     *name,
@@ -246,14 +298,23 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                         params: params.clone(),
                         body: *body,
                         env: Shared::clone(env),
+                        ast_params: ast_params.clone(),
+                        ast_program: ast_program.clone(),
                     },
                 );
                 Ok(runtime_value.clone())
             }
-            Op::Fn { params, body } => Ok(RuntimeValue::OpTreeFunction {
+            Op::Fn {
+                params,
+                body,
+                ast_params,
+                ast_program,
+            } => Ok(RuntimeValue::OpTreeFunction {
                 params: params.clone(),
                 body: *body,
                 env: Shared::clone(env),
+                ast_params: ast_params.clone(),
+                ast_program: ast_program.clone(),
             }),
             Op::Call { name, args } => self.eval_call(runtime_value, *name, args, env, op_ref),
             Op::CallDynamic { callable, args } => self.eval_call_dynamic(runtime_value, *callable, args, env, op_ref),
@@ -297,6 +358,10 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                 Ok(value) => Ok(value),
                 Err(_) => self.eval_op(*catch_expr, runtime_value, env),
             },
+            // Specialized ops (Perl-style optimizations)
+            Op::ConstTrue(body) => self.eval_op(*body, runtime_value, env),
+            Op::ConstFalse => Ok(RuntimeValue::None),
+            Op::Nop => Ok(RuntimeValue::None),
         }
     }
 
@@ -324,6 +389,24 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         env_borrow
             .resolve(ident)
             .map_err(|_| RuntimeError::UndefinedVariable((*self.get_token(op_ref)).clone(), ident.to_string()))
+    }
+
+    /// Evaluates a local variable by direct pad index (fast path)
+    #[inline(always)]
+    fn eval_local_var(
+        &self,
+        index: u32,
+        op_ref: OpRef,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, RuntimeError> {
+        #[cfg(not(feature = "sync"))]
+        let env_borrow = env.borrow();
+        #[cfg(feature = "sync")]
+        let env_borrow = env.read().unwrap();
+
+        env_borrow.get_local(index).ok_or_else(|| {
+            RuntimeError::UndefinedVariable((*self.get_token(op_ref)).clone(), format!("local[{}]", index))
+        })
     }
 
     fn eval_if(
@@ -376,6 +459,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         name: Ident,
         iterator: OpRef,
         body: OpRef,
+        local_index: Option<u32>,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, RuntimeError> {
         let iter_value = self.eval_op(iterator, runtime_value, env)?;
@@ -386,7 +470,15 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
         match iter_value {
             RuntimeValue::Array(items) => {
                 for item in items {
-                    self.define(&loop_env, name, item.clone());
+                    // Store in pad if local, otherwise in context
+                    if let Some(index) = local_index {
+                        #[cfg(not(feature = "sync"))]
+                        loop_env.borrow_mut().set_local(index, item.clone());
+                        #[cfg(feature = "sync")]
+                        loop_env.write().unwrap().set_local(index, item.clone());
+                    } else {
+                        self.define(&loop_env, name, item.clone());
+                    }
                     match self.eval_op(body, &item, &loop_env) {
                         Ok(value) => results.push(value),
                         Err(RuntimeError::Break) => break,
@@ -398,7 +490,15 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
             RuntimeValue::String(s) => {
                 for c in s.chars() {
                     let char_value = RuntimeValue::String(c.to_string());
-                    self.define(&loop_env, name, char_value.clone());
+                    // Store in pad if local, otherwise in context
+                    if let Some(index) = local_index {
+                        #[cfg(not(feature = "sync"))]
+                        loop_env.borrow_mut().set_local(index, char_value.clone());
+                        #[cfg(feature = "sync")]
+                        loop_env.write().unwrap().set_local(index, char_value.clone());
+                    } else {
+                        self.define(&loop_env, name, char_value.clone());
+                    }
                     match self.eval_op(body, &char_value, &loop_env) {
                         Ok(value) => results.push(value),
                         Err(RuntimeError::Break) => break,
@@ -616,6 +716,7 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                 params,
                 body,
                 env: fn_env,
+                ..
             } => {
                 // Create new environment for function call
                 let call_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(&fn_env))));
@@ -623,25 +724,52 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                 // Check if args is one short - if so, prepend current runtime_value
                 if params.len() == args.len() + 1 {
                     // First parameter gets the current runtime_value
-                    if let Some(&first_param) = params.first()
-                        && let Op::Ident(name) = self.pool.get(first_param).as_ref()
-                    {
-                        self.define(&call_env, *name, runtime_value.clone());
+                    if let Some(&first_param) = params.first() {
+                        match self.pool.get(first_param).as_ref() {
+                            Op::Ident(name) | Op::GlobalVar(name) => {
+                                self.define(&call_env, *name, runtime_value.clone());
+                            }
+                            Op::LocalVar(index) => {
+                                #[cfg(not(feature = "sync"))]
+                                call_env.borrow_mut().set_local(*index, runtime_value.clone());
+                                #[cfg(feature = "sync")]
+                                call_env.write().unwrap().set_local(*index, runtime_value.clone());
+                            }
+                            _ => {}
+                        }
                     }
 
                     // Remaining parameters get args
                     for (i, &param) in params.iter().skip(1).enumerate() {
-                        if let Op::Ident(name) = self.pool.get(param).as_ref() {
-                            let value = args.get(i).cloned().unwrap_or(RuntimeValue::None);
-                            self.define(&call_env, *name, value);
+                        let value = args.get(i).cloned().unwrap_or(RuntimeValue::None);
+                        match self.pool.get(param).as_ref() {
+                            Op::Ident(name) | Op::GlobalVar(name) => {
+                                self.define(&call_env, *name, value);
+                            }
+                            Op::LocalVar(index) => {
+                                #[cfg(not(feature = "sync"))]
+                                call_env.borrow_mut().set_local(*index, value);
+                                #[cfg(feature = "sync")]
+                                call_env.write().unwrap().set_local(*index, value);
+                            }
+                            _ => {}
                         }
                     }
                 } else if params.len() == args.len() {
                     // Normal case: bind parameters to arguments
                     for (i, &param) in params.iter().enumerate() {
-                        if let Op::Ident(name) = self.pool.get(param).as_ref() {
-                            let value = args.get(i).cloned().unwrap_or(RuntimeValue::None);
-                            self.define(&call_env, *name, value);
+                        let value = args.get(i).cloned().unwrap_or(RuntimeValue::None);
+                        match self.pool.get(param).as_ref() {
+                            Op::Ident(name) | Op::GlobalVar(name) => {
+                                self.define(&call_env, *name, value);
+                            }
+                            Op::LocalVar(index) => {
+                                #[cfg(not(feature = "sync"))]
+                                call_env.borrow_mut().set_local(*index, value);
+                                #[cfg(feature = "sync")]
+                                call_env.write().unwrap().set_local(*index, value);
+                            }
+                            _ => {}
                         }
                     }
                 } else {
@@ -814,21 +942,21 @@ impl<T: ModuleResolver> OpTreeEvaluator<T> {
                 }
             }
             RuntimeValue::Array(values) => {
-                let filtered: Vec<_> = values
+                let result: Vec<_> = values
                     .iter()
-                    .filter_map(|value| {
+                    .map(|value| {
                         if let RuntimeValue::Markdown(node, _) = value {
                             if crate::eval::builtin::eval_selector(node, selector) {
-                                Some(value.clone())
+                                value.clone()
                             } else {
-                                None
+                                RuntimeValue::None
                             }
                         } else {
-                            None
+                            RuntimeValue::None
                         }
                     })
                     .collect();
-                Ok(RuntimeValue::Array(filtered))
+                Ok(RuntimeValue::Array(result))
             }
             _ => Ok(RuntimeValue::None),
         }
