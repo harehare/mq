@@ -431,8 +431,7 @@ end
 
 # Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.
 macro breakpoint() do
-  quote do
-    if (is_debug_mode()): _breakpoint()
+    quote do
+      if (is_debug_mode()): _breakpoint()
+    end
   end
-end
-

@@ -1233,4 +1233,750 @@ mod tests {
 
         assert!(cli.run().is_err());
     }
+
+    #[test]
+    fn test_docs_command_no_modules() {
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs::default(),
+            commands: Some(Commands::Docs { module_names: None }),
+            query: None,
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_docs_command_with_modules() {
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs::default(),
+            commands: Some(Commands::Docs {
+                module_names: Some(vec!["string".to_string()]),
+            }),
+            query: None,
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_input_format_mdx() {
+        let (_, temp_file_path) = create_file("test_mdx.mdx", "# MDX test");
+        let (_, output_file) = create_file("test_mdx_output.md", "");
+        let temp_file_path_clone = temp_file_path.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Mdx),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(output_content.contains("# MDX test"), "Output should contain heading");
+    }
+
+    #[test]
+    fn test_input_format_html() {
+        let (_, temp_file_path) = create_file("test_html.html", "<h1>HTML test</h1>");
+        let (_, output_file) = create_file("test_html_output.md", "");
+        let temp_file_path_clone = temp_file_path.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Html),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(
+            output_content.contains("# HTML test"),
+            "Output should contain converted heading"
+        );
+    }
+
+    #[test]
+    fn test_output_format_json() {
+        let (_, temp_file_path) = create_file("test_json.md", "# Test");
+        let (_, output_file) = create_file("test_json_output.json", "");
+        let temp_file_path_clone = temp_file_path.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Json,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(!output_content.is_empty(), "JSON output should not be empty");
+        assert!(
+            output_content.starts_with("{") || output_content.starts_with("["),
+            "JSON output should be valid JSON"
+        );
+    }
+
+    #[test]
+    fn test_output_format_none() {
+        let (_, temp_file_path) = create_file("test_none.md", "# Test");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::None,
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_link_title_styles() {
+        let (_, temp_file_path) = create_file("test_link_title.md", "[link](url \"title\")");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+        }
+
+        for (style, expected_char) in [
+            (LinkTitleStyle::Double, '"'),
+            (LinkTitleStyle::Single, '\''),
+            (LinkTitleStyle::Paren, '('),
+        ] {
+            let (_, output_file) = create_file(&format!("test_link_title_{:?}.md", style), "");
+            let output_file_clone = output_file.clone();
+
+            defer! {
+                if output_file_clone.exists() {
+                    std::fs::remove_file(&output_file_clone).ok();
+                }
+            }
+
+            let cli = Cli {
+                input: InputArgs::default(),
+                output: OutputArgs {
+                    link_title_style: style.clone(),
+                    output_file: Some(output_file.clone()),
+                    ..Default::default()
+                },
+                commands: None,
+                query: Some("self".to_string()),
+                files: Some(vec![temp_file_path.clone()]),
+                ..Cli::default()
+            };
+
+            assert!(cli.run().is_ok());
+            let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+            if style == LinkTitleStyle::Paren {
+                assert!(
+                    output_content.contains("(title)"),
+                    "Paren style should wrap title with parens"
+                );
+            } else {
+                assert!(
+                    output_content.contains(expected_char),
+                    "Link title should use {:?} style",
+                    style
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_link_url_styles() {
+        let (_, temp_file_path) = create_file("test_link_url.md", "[link](https://example.com)");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+        }
+
+        for style in [LinkUrlStyle::None, LinkUrlStyle::Angle] {
+            let (_, output_file) = create_file(&format!("test_link_url_{:?}.md", style), "");
+            let output_file_clone = output_file.clone();
+
+            defer! {
+                if output_file_clone.exists() {
+                    std::fs::remove_file(&output_file_clone).ok();
+                }
+            }
+
+            let cli = Cli {
+                input: InputArgs::default(),
+                output: OutputArgs {
+                    link_url_style: style.clone(),
+                    output_file: Some(output_file.clone()),
+                    ..Default::default()
+                },
+                commands: None,
+                query: Some("self".to_string()),
+                files: Some(vec![temp_file_path.clone()]),
+                ..Cli::default()
+            };
+
+            assert!(cli.run().is_ok());
+            let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+            if style == LinkUrlStyle::Angle {
+                assert!(
+                    output_content.contains("<https://example.com>"),
+                    "Angle style should wrap URL with angle brackets"
+                );
+            } else {
+                assert!(
+                    output_content.contains("(https://example.com)"),
+                    "None style should not wrap URL"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_aggregate_flag() {
+        let (_, temp_file1) = create_file("test_agg1.md", "# Test 1");
+        let (_, temp_file2) = create_file("test_agg2.md", "# Test 2");
+        let (_, output_file) = create_file("test_agg_output.md", "");
+        let temp_file1_clone = temp_file1.clone();
+        let temp_file2_clone = temp_file2.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file1_clone.exists() {
+                std::fs::remove_file(&temp_file1_clone).ok();
+            }
+            if temp_file2_clone.exists() {
+                std::fs::remove_file(&temp_file2_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                aggregate: true,
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                output_format: OutputFormat::Text,
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("len()".to_string()),
+            files: Some(vec![temp_file1, temp_file2]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(!output_content.is_empty(), "Aggregated output should not be empty");
+    }
+
+    #[test]
+    fn test_from_file_flag() {
+        let (_, query_file) = create_file("test_query.mq", "self");
+        let (_, input_file) = create_file("test_from_file.md", "# Test");
+        let query_file_clone = query_file.clone();
+        let input_file_clone = input_file.clone();
+
+        defer! {
+            if query_file_clone.exists() {
+                std::fs::remove_file(&query_file_clone).ok();
+            }
+            if input_file_clone.exists() {
+                std::fs::remove_file(&input_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                from_file: true,
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some(query_file.to_string_lossy().to_string()),
+            files: Some(vec![input_file]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_separator_flag() {
+        let (_, temp_file1) = create_file("test_sep1.md", "# Test 1");
+        let (_, temp_file2) = create_file("test_sep2.md", "# Test 2");
+        let (_, output_file) = create_file("test_sep_output.md", "");
+        let temp_file1_clone = temp_file1.clone();
+        let temp_file2_clone = temp_file2.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file1_clone.exists() {
+                std::fs::remove_file(&temp_file1_clone).ok();
+            }
+            if temp_file2_clone.exists() {
+                std::fs::remove_file(&temp_file2_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                separator: Some("\"---\"".to_string()),
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file1, temp_file2]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(!output_content.is_empty(), "Output should not be empty");
+        assert!(output_content.contains("# Test"), "File content should be present");
+    }
+
+    #[test]
+    fn test_output_file_flag() {
+        let (_, temp_input) = create_file("test_input_out.md", "# Test Output");
+        let temp_output = std::env::temp_dir().join("test_output_file.md");
+        let temp_input_clone = temp_input.clone();
+        let temp_output_clone = temp_output.clone();
+
+        defer! {
+            if temp_input_clone.exists() {
+                std::fs::remove_file(&temp_input_clone).ok();
+            }
+            if temp_output_clone.exists() {
+                std::fs::remove_file(&temp_output_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_file: Some(temp_output.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_input]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        assert!(temp_output.exists(), "Output file should exist");
+        let output_content = fs::read_to_string(&temp_output).expect("Failed to read output");
+        assert!(
+            output_content.contains("# Test Output"),
+            "Output content should match input"
+        );
+    }
+
+    #[test]
+    fn test_unbuffered_output() {
+        let (_, temp_file) = create_file("test_unbuf.md", "# Test");
+        let temp_file_clone = temp_file.clone();
+
+        defer! {
+            if temp_file_clone.exists() {
+                std::fs::remove_file(&temp_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                unbuffered: true,
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_include_csv_module() {
+        let (_, temp_file) = create_file("test_csv.csv", "a,b\n1,2\n3,4");
+        let (_, output_file) = create_file("test_csv_output.txt", "");
+        let temp_file_clone = temp_file.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_clone.exists() {
+                std::fs::remove_file(&temp_file_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                include_csv: true,
+                input_format: Some(InputFormat::Raw),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                output_format: OutputFormat::Text,
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("csv_parse(true) | len()".to_string()),
+            files: Some(vec![temp_file]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(!output_content.is_empty(), "CSV output should not be empty");
+    }
+
+    #[test]
+    fn test_include_json_module() {
+        let (_, temp_file) = create_file("test_json_module.json", r#"{"key": "value", "num": 42}"#);
+        let (_, output_file) = create_file("test_json_module_output.txt", "");
+        let temp_file_clone = temp_file.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_clone.exists() {
+                std::fs::remove_file(&temp_file_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                include_json: true,
+                input_format: Some(InputFormat::Raw),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                output_format: OutputFormat::Text,
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("json_parse()".to_string()),
+            files: Some(vec![temp_file]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(!output_content.is_empty(), "JSON output should not be empty");
+    }
+
+    #[test]
+    fn test_include_yaml_module() {
+        let (_, temp_file) = create_file("test_yaml.yaml", "key: value\nnum: 42");
+        let (_, output_file) = create_file("test_yaml_output.txt", "");
+        let temp_file_clone = temp_file.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_clone.exists() {
+                std::fs::remove_file(&temp_file_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                include_yaml: true,
+                input_format: Some(InputFormat::Raw),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                output_format: OutputFormat::Text,
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("yaml_parse()".to_string()),
+            files: Some(vec![temp_file]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(!output_content.is_empty(), "YAML output should not be empty");
+    }
+
+    #[test]
+    fn test_include_toml_module() {
+        let (_, temp_file) = create_file("test_toml.toml", "key = \"value\"\nnum = 42");
+        let (_, output_file) = create_file("test_toml_output.txt", "");
+        let temp_file_clone = temp_file.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_clone.exists() {
+                std::fs::remove_file(&temp_file_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                include_toml: true,
+                input_format: Some(InputFormat::Raw),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                output_format: OutputFormat::Text,
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("toml_parse()".to_string()),
+            files: Some(vec![temp_file]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(!output_content.is_empty(), "TOML output should not be empty");
+    }
+
+    #[test]
+    fn test_include_xml_module() {
+        let (_, temp_file) = create_file("test_xml.xml", "<root><key>value</key><num>42</num></root>");
+        let (_, output_file) = create_file("test_xml_output.txt", "");
+        let temp_file_clone = temp_file.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_clone.exists() {
+                std::fs::remove_file(&temp_file_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                include_xml: true,
+                input_format: Some(InputFormat::Raw),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                output_format: OutputFormat::Text,
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("xml_parse()".to_string()),
+            files: Some(vec![temp_file]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(!output_content.is_empty(), "XML output should not be empty");
+    }
+
+    #[test]
+    fn test_fmt_file_not_found() {
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs::default(),
+            commands: Some(Commands::Fmt {
+                indent_width: 2,
+                check: false,
+                files: vec![PathBuf::from("nonexistent.mq")],
+            }),
+            query: None,
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_err());
+    }
+
+    #[test]
+    fn test_fmt_check_unformatted_file() {
+        let (_, temp_file) = create_file("test_unformatted.mq", "def   math():    42;");
+        let temp_file_clone = temp_file.clone();
+
+        defer! {
+            if temp_file_clone.exists() {
+                std::fs::remove_file(&temp_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs::default(),
+            commands: Some(Commands::Fmt {
+                indent_width: 2,
+                check: true,
+                files: vec![temp_file],
+            }),
+            query: None,
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_err());
+    }
+
+    #[test]
+    fn test_update_with_non_markdown_input() {
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Html),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                update: true,
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_err());
+    }
+
+    #[test]
+    fn test_list_commands() {
+        let cli = Cli {
+            list: true,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_parallel_threshold() {
+        let files: Vec<PathBuf> = (0..15)
+            .map(|i| {
+                let (_, path) = create_file(&format!("test_parallel_{}.md", i), "# Test");
+                path
+            })
+            .collect();
+
+        let files_clone = files.clone();
+        defer! {
+            for file in &files_clone {
+                if file.exists() {
+                    std::fs::remove_file(file).ok();
+                }
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(files),
+            parallel_threshold: 10,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+    }
 }
