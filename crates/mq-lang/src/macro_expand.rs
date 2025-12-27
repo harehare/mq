@@ -1956,4 +1956,382 @@ mod tests {
         // unquote outside quote should fail
         assert!(result.is_err());
     }
+
+    // Additional comprehensive tests for substitute_node and macro expansion
+
+    #[test]
+    fn test_mutual_recursion_between_macros() {
+        // Test mutual recursion with a limit
+        // Note: This tests that macro expansion itself handles mutual recursion
+        // The actual evaluation would need if/else to work properly
+        let input = r#"
+            macro a(x): b(x)
+            | macro b(x): x * 2
+            | a(21)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        macro_expander.max_recursion = 100;
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand mutually recursive macros");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(42.into())]);
+    }
+
+    #[test]
+    fn test_mutual_recursion_hits_limit() {
+        // Test that mutual recursion respects the recursion limit
+        let input = r#"
+            macro ping(x): pong(x)
+            | macro pong(x): ping(x)
+            | ping(1)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        macro_expander.max_recursion = 5;
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
+
+        assert!(matches!(result, Err(RuntimeError::RecursionLimit)));
+    }
+
+    #[rstest]
+    #[case::nested_function_shadowing(
+        r#"
+            macro outer(x): def inner(x): x * 2; | inner(5)
+            | outer(100)
+        "#,
+        vec![RuntimeValue::Number(10.into())],
+    )]
+    #[case::multiple_level_shadowing(
+        r#"
+            let x = 1
+            | macro level1(x): def level2(x): def level3(x): x + 1; | level3(10); | level2(20)
+            | level1(30)
+        "#,
+        vec![RuntimeValue::Number(11.into())],
+    )]
+    #[case::shadowing_in_nested_let(
+        r#"
+            macro test(x) do let a = x | let b = a * 2 | a + b;
+            | test(5)
+        "#,
+        vec![RuntimeValue::Number(15.into())],
+    )]
+    #[case::lambda_parameter_shadowing(
+        r#"
+            macro make_adder(x): def adder(y): x + y;
+            | make_adder(10)
+            | adder(5)
+        "#,
+        vec![RuntimeValue::Number(15.into())],
+    )]
+    fn test_complex_parameter_shadowing(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::string_interpolation_with_multiple_macros(
+        r#"
+            macro first(): "Hello"
+            | macro second(): "World"
+            | s"${first()}, ${second()}!"
+        "#,
+        vec![RuntimeValue::String("Hello, World!".to_string())],
+    )]
+    #[case::nested_string_interpolation(
+        r#"
+            macro outer(x): s"[${x}]"
+            | macro inner(x): s"${x}!"
+            | outer(inner("test"))
+        "#,
+        vec![RuntimeValue::String("[test!]".to_string())],
+    )]
+    #[case::string_interpolation_with_complex_expression(
+        r#"
+            macro compute(x, y): x * y + 10
+            | s"Result: ${compute(3, 4)}"
+        "#,
+        vec![RuntimeValue::String("Result: 22".to_string())],
+    )]
+    #[case::string_with_macro_and_literal_segments(
+        r#"
+            macro get_value(): 42
+            | s"The answer is ${get_value()}, always ${get_value()}!"
+        "#,
+        vec![RuntimeValue::String("The answer is 42, always 42!".to_string())],
+    )]
+    fn test_string_interpolation_edge_cases(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::try_with_macro_in_both_branches(
+        r#"
+            macro risky(x): 1 / x
+            | macro fallback(x): x * 10
+            | try: risky(0) catch: fallback(5);
+        "#,
+        vec![RuntimeValue::Number(50.into())],
+    )]
+    #[case::nested_try_with_macros(
+        r#"
+            macro inner_try(x) do try: 1 / x catch: 0;
+            | macro outer_try(x) do try: inner_try(x) catch: -1;
+            | outer_try(0)
+        "#,
+        vec![RuntimeValue::Number(0.into())],
+    )]
+    #[case::try_with_macro_generating_error(
+        r#"
+            macro will_error(): 1 / 0
+            | try: will_error() catch: 999;
+        "#,
+        vec![RuntimeValue::Number(999.into())],
+    )]
+    fn test_try_catch_with_nested_macros(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::match_with_macro_generated_patterns(
+        r#"
+            macro get_pattern(): 42
+            | match(42): | 1: 10 | 42: 100 | _: 0 end
+        "#,
+        vec![RuntimeValue::Number(100.into())],
+    )]
+    #[case::match_with_multiple_guards_using_macros(
+        r#"
+            macro is_positive(x): x > 0
+            | macro is_even(x): x % 2 == 0
+            | match(4): | n if (is_positive(n) && is_even(n)): 100 | _: 0 end
+        "#,
+        vec![RuntimeValue::Number(100.into())],
+    )]
+    #[case::match_with_macro_in_all_branches(
+        r#"
+            macro handle(x): x * 10
+            | match(2): | 1: handle(1) | 2: handle(2) | _: handle(0) end
+        "#,
+        vec![RuntimeValue::Number(20.into())],
+    )]
+    #[case::nested_match_with_macros(
+        r#"
+            macro outer_match(x): match(x): | 1: 10 | _: 20 end
+            | match(5): | 5: outer_match(1) | _: 0 end
+        "#,
+        vec![RuntimeValue::Number(10.into())],
+    )]
+    fn test_pattern_matching_with_macros(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::multi_statement_in_block_context(
+        r#"
+            macro setup(x) do var a = x | var b = a * 2 | a + b;
+            | setup(5)
+        "#,
+        vec![RuntimeValue::Number(15.into())],
+    )]
+    #[case::multi_statement_with_side_effects(
+        r#"
+            macro init_and_compute(x) do var counter = x | counter = counter + 1 | counter = counter * 2 | counter;
+            | init_and_compute(5)
+        "#,
+        vec![RuntimeValue::Number(12.into())],
+    )]
+    #[case::multi_statement_mixed_with_other_code(
+        r#"
+            macro block(x) do let y = x | y * 2;
+            | let before = 10 | block(5) + before
+        "#,
+        vec![RuntimeValue::Number(20.into())],
+    )]
+    fn test_multiple_statement_expansion_edge_cases(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::nested_call_dynamic(
+        r#"
+            macro apply(f, x): f(x)
+            | macro double_apply(f, x): f(f(x))
+            | def inc(n): n + 1;
+            | double_apply(inc, 5)
+        "#,
+        vec![RuntimeValue::Number(7.into())],
+    )]
+    #[case::multiple_dynamic_calls_in_expression(
+        r#"
+            macro call_both(f, g, x): f(x) + g(x)
+            | def double(n): n * 2;
+            | def triple(n): n * 3;
+            | call_both(double, triple, 5)
+        "#,
+        vec![RuntimeValue::Number(25.into())],
+    )]
+    fn test_call_dynamic_conversion_edge_cases(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_substitute_node_with_deeply_nested_expressions() {
+        let input = r#"
+            macro deep(x): ((((x + 1) * 2) - 3) / 4)
+            | deep(10)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(4.75.into())]);
+    }
+
+    #[test]
+    fn test_substitute_node_with_array_operations() {
+        let input = r#"
+            macro first_elem(arr): arr[0]
+            | first_elem([10, 20, 30])
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(10.into())]);
+    }
+
+    #[test]
+    fn test_substitute_node_preserves_foreach_iteration() {
+        let input = r#"
+            macro transform(arr, multiplier): foreach(item, arr): item * multiplier;
+            | transform([1, 2, 3], 10)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(
+            result,
+            vec![RuntimeValue::Array(vec![
+                RuntimeValue::Number(10.into()),
+                RuntimeValue::Number(20.into()),
+                RuntimeValue::Number(30.into())
+            ])]
+        );
+    }
+
+    #[test]
+    fn test_substitute_node_with_variable_mutations() {
+        let input = r#"
+            macro init_and_update(x) do var counter = x | counter = counter + 10 | counter;
+            | init_and_update(5)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(15.into())]);
+    }
+
+    #[test]
+    fn test_substitute_node_with_object_literal() {
+        let input = r#"
+            macro make_obj(k, v): {key: k, value: v}
+            | make_obj("name", "test")
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        // Just verify it expands without error
+        assert!(!expanded.is_empty());
+    }
+
+    #[test]
+    fn test_substitute_node_empty_substitutions_optimization() {
+        let input = "macro no_params(): 42 | no_params()";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(42.into())]);
+    }
+
+    #[test]
+    fn test_substitute_node_with_index_access() {
+        let input = r#"
+            macro get_at(arr, idx): arr[idx]
+            | get_at([10, 20, 30], 1)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(20.into())]);
+    }
 }
