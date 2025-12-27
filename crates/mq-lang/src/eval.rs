@@ -143,6 +143,29 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
     }
 
+    /// Helper method to temporarily take the macro_expander to avoid borrow conflicts.
+    /// This pattern is needed when the macro_expander needs to call methods that require
+    /// mutable access to the evaluator (self).
+    ///
+    /// # Arguments
+    /// * `f` - A closure that operates on the taken macro_expander and returns a result
+    ///
+    /// # Example
+    /// ```ignore
+    /// self.with_macro_expander(|expander, evaluator| {
+    ///     expander.expand(&program, evaluator)
+    /// })?;
+    /// ```
+    fn with_macro_expander<F, R>(&mut self, f: F) -> Result<R, RuntimeError>
+    where
+        F: FnOnce(&mut Macro, &mut Self) -> Result<R, RuntimeError>,
+    {
+        let mut macro_expander = std::mem::take(&mut self.macro_expander);
+        let result = f(&mut macro_expander, self);
+        self.macro_expander = macro_expander;
+        result
+    }
+
     pub(crate) fn eval<I>(&mut self, program: &Program, input: I) -> Result<Vec<RuntimeValue>, InnerError>
     where
         I: Iterator<Item = RuntimeValue>,
@@ -171,12 +194,9 @@ impl<T: ModuleResolver> Evaluator<T> {
             },
         )?;
 
-        // Temporarily take the macro_expander to avoid borrow conflicts
-        let mut macro_expander = std::mem::take(&mut self.macro_expander);
-        let expanded_result = macro_expander.expand(&program, self);
-        self.macro_expander = macro_expander;
-
-        let mut program = expanded_result.map_err(InnerError::from)?;
+        let mut program = self
+            .with_macro_expander(|expander, evaluator| expander.expand(&program, evaluator))
+            .map_err(InnerError::from)?;
         let nodes_index = &program.iter().position(|node| node.is_nodes());
 
         if let Some(index) = nodes_index {
@@ -263,11 +283,12 @@ impl<T: ModuleResolver> Evaluator<T> {
         module: module::Module,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<(), RuntimeError> {
-        let mut macro_expander = std::mem::take(&mut self.macro_expander);
-        macro_expander.collect_macros(&module.macros, self)?;
-        let functions = macro_expander.expand(&module.functions, self)?;
-        let vars = macro_expander.expand(&module.vars, self)?;
-        self.macro_expander = macro_expander;
+        let (functions, vars) = self.with_macro_expander(|expander, evaluator| {
+            expander.collect_macros(&module.macros, evaluator)?;
+            let functions = expander.expand(&module.functions, evaluator)?;
+            let vars = expander.expand(&module.vars, evaluator)?;
+            Ok((functions, vars))
+        })?;
 
         for node in &module.modules {
             let _ = match &*node.expr {
@@ -435,9 +456,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 }
                 ast::Expr::Module(ident, program) => {
                     // Collect macros from the module
-                    let mut macro_expander = std::mem::take(&mut self.macro_expander);
-                    macro_expander.collect_macros(program, self)?;
-                    self.macro_expander = macro_expander;
+                    self.with_macro_expander(|expander, evaluator| expander.collect_macros(program, evaluator))?;
                     let _ = self.eval_module(&RuntimeValue::NONE, ident, program, &module_env)?;
                 }
                 ast::Expr::Macro(..) => {
