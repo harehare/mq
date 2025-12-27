@@ -67,6 +67,10 @@ pub enum RuntimeError {
     },
     #[error("Maximum macro recursion depth exceeded")]
     RecursionLimit,
+    #[error("Invalid macro result AST")]
+    InvalidMacroResultAst(Token),
+    #[error("Invalid macro result: expected AST value")]
+    InvalidMacroResult(Token),
 }
 
 impl RuntimeError {
@@ -97,6 +101,8 @@ impl RuntimeError {
             RuntimeError::UndefinedMacro(_) => None,
             RuntimeError::ArityMismatch { .. } => None,
             RuntimeError::RecursionLimit => None,
+            RuntimeError::InvalidMacroResultAst(token) => Some(token),
+            RuntimeError::InvalidMacroResult(token) => Some(token),
         }
     }
 }

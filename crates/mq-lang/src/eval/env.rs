@@ -136,6 +136,11 @@ impl Variable {
                 value: "None".to_string(),
                 type_field: "none".to_string(),
             },
+            RuntimeValue::Ast(_) => Variable {
+                name: ident.to_string(),
+                value: "<ast>".to_string(),
+                type_field: "ast".to_string(),
+            },
         }
     }
 }

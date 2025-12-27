@@ -297,6 +297,12 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::RecursionLimit) => {
                 Some(Cow::Borrowed("Macro expansion error: recursion limit exceeded."))
             }
+            InnerError::Runtime(RuntimeError::InvalidMacroResultAst(_)) => {
+                Some(Cow::Borrowed("Invalid macro result AST during macro expansion."))
+            }
+            InnerError::Runtime(RuntimeError::InvalidMacroResult(_)) => Some(Cow::Borrowed(
+                "Invalid macro result: expected AST value during macro body evaluation.",
+            )),
         };
 
         msg.map(|m| Box::new(m) as Box<dyn std::fmt::Display>)

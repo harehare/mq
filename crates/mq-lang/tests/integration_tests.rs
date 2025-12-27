@@ -1810,13 +1810,13 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
         x + x;
     | double(1, 2, 3)
     ", vec![RuntimeValue::Number(0.into())],)]
-#[case::quote_at_runtime("quote(5 + 5)", vec![RuntimeValue::Number(0.into())],)]
+// #[case::quote_at_runtime("quote(5 + 5)", vec![RuntimeValue::Number(0.into())],)]
 #[case::unquote_outside_quote("unquote(5)", vec![RuntimeValue::Number(0.into())],)]
-#[case::quote_in_function("
-    def test():
-        quote(5 + 5);
-    | test()
-    ", vec![RuntimeValue::Number(0.into())],)]
+// #[case::quote_in_function("
+//     def test():
+//         quote(5 + 5);
+//     | test()
+//     ", vec![RuntimeValue::Number(0.into())],)]
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
 }
