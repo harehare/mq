@@ -1,5 +1,5 @@
 use super::env::Env;
-use crate::{AstParams, Ident, Program, Shared, SharedCell, number::Number};
+use crate::{AstParams, Ident, Program, Shared, SharedCell, ast, number::Number};
 use mq_markdown::Node;
 use smol_str::SmolStr;
 use std::{
@@ -99,6 +99,8 @@ pub enum RuntimeValue {
     Dict(BTreeMap<Ident, RuntimeValue>),
     /// A module with its exports.
     Module(ModuleEnv),
+    /// An AST node (quoted expression).
+    Ast(Shared<ast::node::Node>),
     /// An empty or null value.
     #[default]
     None,
@@ -118,6 +120,7 @@ impl PartialEq for RuntimeValue {
             (RuntimeValue::NativeFunction(a), RuntimeValue::NativeFunction(b)) => a == b,
             (RuntimeValue::Dict(a), RuntimeValue::Dict(b)) => a == b,
             (RuntimeValue::Module(a), RuntimeValue::Module(b)) => a == b,
+            (RuntimeValue::Ast(a), RuntimeValue::Ast(b)) => a == b,
             (RuntimeValue::None, RuntimeValue::None) => true,
             _ => false,
         }
@@ -231,6 +234,8 @@ impl PartialOrd for RuntimeValue {
             (RuntimeValue::Dict(_), _) => None,
             (_, RuntimeValue::Dict(_)) => None,
             (RuntimeValue::Module(a), RuntimeValue::Module(b)) => a.name.partial_cmp(&b.name),
+            (RuntimeValue::Ast(_), _) => None,
+            (_, RuntimeValue::Ast(_)) => None,
             _ => None,
         }
     }
@@ -250,6 +255,7 @@ impl std::fmt::Display for RuntimeValue {
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             Self::Dict(_) => self.string(),
             Self::Module(module_name) => Cow::Owned(format!(r#"module "{}""#, module_name.name)),
+            Self::Ast(_) => Cow::Borrowed("<ast>"),
         };
         write!(f, "{}", value)
     }
@@ -298,6 +304,7 @@ impl RuntimeValue {
             RuntimeValue::NativeFunction(_) => "native_function",
             RuntimeValue::Dict(_) => "dict",
             RuntimeValue::Module(_) => "module",
+            RuntimeValue::Ast(_) => "ast",
         }
     }
 
@@ -362,6 +369,7 @@ impl RuntimeValue {
             | RuntimeValue::NativeFunction(_)
             | RuntimeValue::Dict(_) => true,
             RuntimeValue::Module(_) => true,
+            RuntimeValue::Ast(_) => true,
             RuntimeValue::None => false,
         }
     }
@@ -384,6 +392,7 @@ impl RuntimeValue {
             RuntimeValue::Function(..) => 0,
             RuntimeValue::Module(m) => m.len(),
             RuntimeValue::NativeFunction(..) => 0,
+            RuntimeValue::Ast(_) => 0,
         }
     }
 
@@ -448,6 +457,7 @@ impl RuntimeValue {
             Self::Function(f, _, _) => Cow::Owned(format!("function/{}", f.len())),
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             Self::Module(m) => Cow::Owned(format!("module/{}", m.name())),
+            Self::Ast(_) => Cow::Borrowed("<ast>"),
             Self::Dict(map) => {
                 let items = map
                     .iter()
@@ -538,6 +548,7 @@ impl RuntimeValues {
                         RuntimeValue::None
                         | RuntimeValue::Function(_, _, _)
                         | RuntimeValue::Module(_)
+                        | RuntimeValue::Ast(_)
                         | RuntimeValue::NativeFunction(_) => current_value.clone(),
                         RuntimeValue::Markdown(node, _) if node.is_empty() => current_value.clone(),
                         RuntimeValue::Markdown(node, _) => {
