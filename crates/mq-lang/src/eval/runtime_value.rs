@@ -483,359 +483,359 @@ impl RuntimeValue {
         }
     }
 
-    /// Formats an AST node in Elixir-like syntax.
+    /// Formats an AST node in Rust Debug-like syntax.
     ///
     /// # Examples
     ///
     /// ```ignore
-    /// {:call, [ident: "map"], [arg1, arg2]}
-    /// {:literal, [], 42}
-    /// {:ident, [], "x"}
+    /// Call("map", [Literal(Number(1)), Literal(Number(2))])
+    /// Literal(Number(42))
+    /// Ident("x")
     /// ```
     fn format_ast_node(node: &ast::node::Node, buf: &mut String) -> std::fmt::Result {
         use ast::node::{Expr, Literal, StringSegment};
 
         match &*node.expr {
             Expr::Literal(lit) => {
-                write!(buf, "{{:literal, [], ")?;
+                write!(buf, "Literal(")?;
                 match lit {
-                    Literal::String(s) => write!(buf, "\"{}\"", s)?,
-                    Literal::Number(n) => write!(buf, "{}", n)?,
-                    Literal::Symbol(i) => write!(buf, ":{}", i)?,
-                    Literal::Bool(b) => write!(buf, "{}", b)?,
-                    Literal::None => write!(buf, "none")?,
+                    Literal::String(s) => write!(buf, "String(\"{}\")", s)?,
+                    Literal::Number(n) => write!(buf, "Number({})", n)?,
+                    Literal::Symbol(i) => write!(buf, "Symbol({})", i)?,
+                    Literal::Bool(b) => write!(buf, "Bool({})", b)?,
+                    Literal::None => write!(buf, "None")?,
                 }
-                write!(buf, "}}")?;
+                write!(buf, ")")?;
             }
             Expr::Ident(ident) => {
-                write!(buf, "{{:ident, [], \"{}\"}}", ident)?;
+                write!(buf, "Ident(\"{}\")", ident)?;
             }
             Expr::Call(ident, args) => {
-                write!(buf, "{{:call, [ident: \"{}\"], [", ident)?;
+                write!(buf, "Call(\"{}\", [", ident)?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
                     Self::format_ast_node(arg, buf)?;
                 }
-                write!(buf, "]}}")?;
+                write!(buf, "])")?;
             }
             Expr::CallDynamic(callable, args) => {
-                write!(buf, "{{:call_dynamic, [], [")?;
+                write!(buf, "CallDynamic(")?;
                 Self::format_ast_node(callable, buf)?;
-                for arg in args.iter() {
-                    write!(buf, ", ")?;
+                write!(buf, ", [")?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(buf, ", ")?;
+                    }
                     Self::format_ast_node(arg, buf)?;
                 }
-                write!(buf, "]}}")?;
+                write!(buf, "])")?;
             }
             Expr::Block(program) => {
-                write!(buf, "{{:block, [], [")?;
+                write!(buf, "Block([")?;
                 for (i, node) in program.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
                     Self::format_ast_node(node, buf)?;
                 }
-                write!(buf, "]}}")?;
+                write!(buf, "])")?;
             }
             Expr::Def(ident, params, body) => {
-                write!(buf, "{{:def, [ident: \"{}\"], [", ident)?;
+                write!(buf, "Def(\"{}\", [", ident)?;
                 for (i, param) in params.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
                     Self::format_ast_node(param, buf)?;
                 }
-                if !params.is_empty() && !body.is_empty() {
-                    write!(buf, ", ")?;
-                }
-                write!(buf, "{{:body, [], [")?;
+                write!(buf, "], [")?;
                 for (i, node) in body.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
                     Self::format_ast_node(node, buf)?;
                 }
-                write!(buf, "]}}")?;
-                write!(buf, "]}}")?;
+                write!(buf, "])")?;
             }
             Expr::Macro(ident, params, block) => {
-                write!(buf, "{{:macro, [ident: \"{}\"], [", ident)?;
+                write!(buf, "Macro(\"{}\", [", ident)?;
                 for (i, param) in params.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
                     Self::format_ast_node(param, buf)?;
                 }
-                if !params.is_empty() {
-                    write!(buf, ", ")?;
-                }
+                write!(buf, "], ")?;
                 Self::format_ast_node(block, buf)?;
-                write!(buf, "]}}")?;
+                write!(buf, ")")?;
             }
             Expr::Fn(params, body) => {
-                write!(buf, "{{:fn, [], [")?;
+                write!(buf, "Fn([")?;
                 for (i, param) in params.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
                     Self::format_ast_node(param, buf)?;
                 }
-                if !params.is_empty() && !body.is_empty() {
-                    write!(buf, ", ")?;
-                }
-                write!(buf, "{{:body, [], [")?;
+                write!(buf, "], [")?;
                 for (i, node) in body.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
                     Self::format_ast_node(node, buf)?;
                 }
-                write!(buf, "]}}")?;
-                write!(buf, "]}}")?;
+                write!(buf, "])")?;
             }
             Expr::Let(ident, value) => {
-                write!(buf, "{{:let, [ident: \"{}\"], [", ident)?;
+                write!(buf, "Let(\"{}\", ", ident)?;
                 Self::format_ast_node(value, buf)?;
-                write!(buf, "]}}")?;
+                write!(buf, ")")?;
             }
             Expr::Var(ident, value) => {
-                write!(buf, "{{:var, [ident: \"{}\"], [", ident)?;
+                write!(buf, "Var(\"{}\", ", ident)?;
                 Self::format_ast_node(value, buf)?;
-                write!(buf, "]}}")?;
+                write!(buf, ")")?;
             }
             Expr::Assign(ident, value) => {
-                write!(buf, "{{:assign, [ident: \"{}\"], [", ident)?;
+                write!(buf, "Assign(\"{}\", ", ident)?;
                 Self::format_ast_node(value, buf)?;
-                write!(buf, "]}}")?;
+                write!(buf, ")")?;
             }
             Expr::And(left, right) => {
-                write!(buf, "{{:and, [], [")?;
+                write!(buf, "And(")?;
                 Self::format_ast_node(left, buf)?;
                 write!(buf, ", ")?;
                 Self::format_ast_node(right, buf)?;
-                write!(buf, "]}}")?;
+                write!(buf, ")")?;
             }
             Expr::Or(left, right) => {
-                write!(buf, "{{:or, [], [")?;
+                write!(buf, "Or(")?;
                 Self::format_ast_node(left, buf)?;
                 write!(buf, ", ")?;
                 Self::format_ast_node(right, buf)?;
-                write!(buf, "]}}")?;
+                write!(buf, ")")?;
             }
             Expr::InterpolatedString(segments) => {
-                write!(buf, "{{:interpolated_string, [], [")?;
+                write!(buf, "InterpolatedString([")?;
                 for (i, segment) in segments.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
                     match segment {
-                        StringSegment::Text(s) => write!(buf, "{{:text, [], \"{}\"}}", s)?,
+                        StringSegment::Text(s) => write!(buf, "Text(\"{}\")", s)?,
                         StringSegment::Expr(expr) => {
-                            write!(buf, "{{:expr, [], [")?;
+                            write!(buf, "Expr(")?;
                             Self::format_ast_node(expr, buf)?;
-                            write!(buf, "]}}")?;
+                            write!(buf, ")")?;
                         }
-                        StringSegment::Env(e) => write!(buf, "{{:env, [], \"{}\"}}", e)?,
-                        StringSegment::Self_ => write!(buf, "{{:self, [], []}}")?,
+                        StringSegment::Env(e) => write!(buf, "Env(\"{}\")", e)?,
+                        StringSegment::Self_ => write!(buf, "Self")?,
                     }
                 }
-                write!(buf, "]}}")?;
+                write!(buf, "])")?;
             }
             Expr::Selector(selector) => {
-                write!(buf, "{{:selector, [], {:?}}}", selector)?;
+                write!(buf, "Selector({:?})", selector)?;
             }
             Expr::While(cond, body) => {
-                write!(buf, "{{:while, [], [")?;
+                write!(buf, "While(")?;
                 Self::format_ast_node(cond, buf)?;
-                write!(buf, ", {{:body, [], [")?;
+                write!(buf, ", [")?;
                 for (i, node) in body.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
                     Self::format_ast_node(node, buf)?;
                 }
-                write!(buf, "]}}")?;
-                write!(buf, "]}}")?;
+                write!(buf, "])")?;
             }
             Expr::Foreach(ident, iter, body) => {
-                write!(buf, "{{:foreach, [ident: \"{}\"], [", ident)?;
+                write!(buf, "Foreach(\"{}\", ", ident)?;
                 Self::format_ast_node(iter, buf)?;
-                write!(buf, ", {{:body, [], [")?;
+                write!(buf, ", [")?;
                 for (i, node) in body.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
                     Self::format_ast_node(node, buf)?;
                 }
-                write!(buf, "]}}")?;
-                write!(buf, "]}}")?;
+                write!(buf, "])")?;
             }
             Expr::If(branches) => {
-                write!(buf, "{{:if, [], [")?;
+                write!(buf, "If([")?;
                 for (i, (cond, body)) in branches.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
-                    write!(buf, "{{:branch, [], [")?;
+                    write!(buf, "Branch(")?;
                     if let Some(c) = cond {
                         Self::format_ast_node(c, buf)?;
-                        write!(buf, ", ")?;
+                    } else {
+                        write!(buf, "None")?;
                     }
+                    write!(buf, ", ")?;
                     Self::format_ast_node(body, buf)?;
-                    write!(buf, "]}}")?;
+                    write!(buf, ")")?;
                 }
-                write!(buf, "]}}")?;
+                write!(buf, "])")?;
             }
             Expr::Match(value, arms) => {
-                write!(buf, "{{:match, [], [")?;
+                write!(buf, "Match(")?;
                 Self::format_ast_node(value, buf)?;
-                for arm in arms.iter() {
-                    write!(buf, ", {{:arm, [pattern: ")?;
-                    Self::format_pattern(&arm.pattern, buf)?;
-                    write!(buf, "], [")?;
-                    if let Some(guard) = &arm.guard {
-                        write!(buf, "{{:guard, [], [")?;
-                        Self::format_ast_node(guard, buf)?;
-                        write!(buf, "]}}, ")?;
+                write!(buf, ", [")?;
+                for (i, arm) in arms.iter().enumerate() {
+                    if i > 0 {
+                        write!(buf, ", ")?;
                     }
+                    write!(buf, "Arm(")?;
+                    Self::format_pattern(&arm.pattern, buf)?;
+                    if let Some(guard) = &arm.guard {
+                        write!(buf, ", Guard(")?;
+                        Self::format_ast_node(guard, buf)?;
+                        write!(buf, ")")?;
+                    }
+                    write!(buf, ", ")?;
                     Self::format_ast_node(&arm.body, buf)?;
-                    write!(buf, "]}}")?;
+                    write!(buf, ")")?;
                 }
-                write!(buf, "]}}")?;
+                write!(buf, "])")?;
             }
             Expr::Include(lit) | Expr::Import(lit) => {
                 let kind = if matches!(&*node.expr, Expr::Include(_)) {
-                    "include"
+                    "Include"
                 } else {
-                    "import"
+                    "Import"
                 };
-                write!(buf, "{{:{}, [], ", kind)?;
+                write!(buf, "{}(", kind)?;
                 match lit {
                     Literal::String(s) => write!(buf, "\"{}\"", s)?,
                     Literal::Number(n) => write!(buf, "{}", n)?,
-                    Literal::Symbol(i) => write!(buf, ":{}", i)?,
+                    Literal::Symbol(i) => write!(buf, "{}", i)?,
                     Literal::Bool(b) => write!(buf, "{}", b)?,
-                    Literal::None => write!(buf, "none")?,
+                    Literal::None => write!(buf, "None")?,
                 }
-                write!(buf, "}}")?;
+                write!(buf, ")")?;
             }
             Expr::Module(ident, body) => {
-                write!(buf, "{{:module, [ident: \"{}\"], [", ident)?;
+                write!(buf, "Module(\"{}\", [", ident)?;
                 for (i, node) in body.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
                     Self::format_ast_node(node, buf)?;
                 }
-                write!(buf, "]}}")?;
+                write!(buf, "])")?;
             }
             Expr::QualifiedAccess(path, target) => {
-                write!(buf, "{{:qualified_access, [path: [")?;
+                write!(buf, "QualifiedAccess([")?;
                 for (i, ident) in path.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
                     write!(buf, "\"{}\"", ident)?;
                 }
-                write!(buf, "]], [")?;
+                write!(buf, "], ")?;
                 match target {
                     ast::node::AccessTarget::Call(ident, args) => {
-                        write!(buf, "{{:call, [ident: \"{}\"], [", ident)?;
+                        write!(buf, "Call(\"{}\", [", ident)?;
                         for (i, arg) in args.iter().enumerate() {
                             if i > 0 {
                                 write!(buf, ", ")?;
                             }
                             Self::format_ast_node(arg, buf)?;
                         }
-                        write!(buf, "]}}")?;
+                        write!(buf, "])")?;
                     }
                     ast::node::AccessTarget::Ident(ident) => {
-                        write!(buf, "{{:ident, [], \"{}\"}}", ident)?;
+                        write!(buf, "Ident(\"{}\")", ident)?;
                     }
                 }
-                write!(buf, "]}}")?;
+                write!(buf, ")")?;
             }
             Expr::Self_ => {
-                write!(buf, "{{:self, [], []}}")?;
+                write!(buf, "Self")?;
             }
             Expr::Nodes => {
-                write!(buf, "{{:nodes, [], []}}")?;
+                write!(buf, "Nodes")?;
             }
             Expr::Paren(inner) => {
-                write!(buf, "{{:paren, [], [")?;
+                write!(buf, "Paren(")?;
                 Self::format_ast_node(inner, buf)?;
-                write!(buf, "]}}")?;
+                write!(buf, ")")?;
             }
             Expr::Quote(inner) => {
-                write!(buf, "{{:quote, [], [")?;
+                write!(buf, "Quote(")?;
                 Self::format_ast_node(inner, buf)?;
-                write!(buf, "]}}")?;
+                write!(buf, ")")?;
             }
             Expr::Unquote(inner) => {
-                write!(buf, "{{:unquote, [], [")?;
+                write!(buf, "Unquote(")?;
                 Self::format_ast_node(inner, buf)?;
-                write!(buf, "]}}")?;
+                write!(buf, ")")?;
             }
             Expr::Try(try_expr, catch_expr) => {
-                write!(buf, "{{:try, [], [")?;
+                write!(buf, "Try(")?;
                 Self::format_ast_node(try_expr, buf)?;
-                write!(buf, ", {{:catch, [], [")?;
+                write!(buf, ", Catch(")?;
                 Self::format_ast_node(catch_expr, buf)?;
-                write!(buf, "]}}")?;
-                write!(buf, "]}}")?;
+                write!(buf, "))")?;
             }
             Expr::Break => {
-                write!(buf, "{{:break, [], []}}")?;
+                write!(buf, "Break")?;
             }
             Expr::Continue => {
-                write!(buf, "{{:continue, [], []}}")?;
+                write!(buf, "Continue")?;
             }
         }
         Ok(())
     }
 
-    /// Formats a pattern in Elixir-like syntax.
+    /// Formats a pattern in Rust Debug-like syntax.
     fn format_pattern(pattern: &ast::node::Pattern, buf: &mut String) -> std::fmt::Result {
         use ast::node::{Literal, Pattern};
 
         match pattern {
-            Pattern::Literal(lit) => match lit {
-                Literal::String(s) => write!(buf, "\"{}\"", s)?,
-                Literal::Number(n) => write!(buf, "{}", n)?,
-                Literal::Symbol(i) => write!(buf, ":{}", i)?,
-                Literal::Bool(b) => write!(buf, "{}", b)?,
-                Literal::None => write!(buf, "none")?,
-            },
+            Pattern::Literal(lit) => {
+                write!(buf, "Literal(")?;
+                match lit {
+                    Literal::String(s) => write!(buf, "String(\"{}\")", s)?,
+                    Literal::Number(n) => write!(buf, "Number({})", n)?,
+                    Literal::Symbol(i) => write!(buf, "Symbol({})", i)?,
+                    Literal::Bool(b) => write!(buf, "Bool({})", b)?,
+                    Literal::None => write!(buf, "None")?,
+                }
+                write!(buf, ")")?;
+            }
             Pattern::Ident(ident) => {
-                write!(buf, "\"{}\"", ident)?;
+                write!(buf, "Ident(\"{}\")", ident)?;
             }
             Pattern::Wildcard => {
-                write!(buf, "\"_\"")?;
+                write!(buf, "Wildcard")?;
             }
             Pattern::Array(patterns) => {
-                write!(buf, "[")?;
+                write!(buf, "Array([")?;
                 for (i, p) in patterns.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
                     Self::format_pattern(p, buf)?;
                 }
-                write!(buf, "]")?;
+                write!(buf, "])")?;
             }
             Pattern::ArrayRest(patterns, rest) => {
-                write!(buf, "[rest: [")?;
+                write!(buf, "ArrayRest([")?;
                 for (i, p) in patterns.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
                     Self::format_pattern(p, buf)?;
                 }
-                write!(buf, "], binding: \"{}\"]", rest)?;
+                write!(buf, "], \"{}\")", rest)?;
             }
             Pattern::Dict(entries) => {
-                write!(buf, "{{")?;
+                write!(buf, "Dict({{")?;
                 for (i, (key, value)) in entries.iter().enumerate() {
                     if i > 0 {
                         write!(buf, ", ")?;
@@ -843,10 +843,10 @@ impl RuntimeValue {
                     write!(buf, "\"{}\": ", key)?;
                     Self::format_pattern(value, buf)?;
                 }
-                write!(buf, "}}")?;
+                write!(buf, "}})")?;
             }
             Pattern::Type(type_name) => {
-                write!(buf, ":{}", type_name)?;
+                write!(buf, "Type({})", type_name)?;
             }
         }
         Ok(())
@@ -1370,16 +1370,16 @@ mod tests {
 
     #[rstest]
     // Literal variants
-    #[case::number_literal(ast_literal(ast::node::Literal::Number(Number::from(42.0))), "{:literal, [], 42}")]
+    #[case::number_literal(ast_literal(ast::node::Literal::Number(Number::from(42.0))), "Literal(Number(42))")]
     #[case::string_literal(
         ast_literal(ast::node::Literal::String("hello".to_string())),
-        "{:literal, [], \"hello\"}"
+        "Literal(String(\"hello\"))"
     )]
-    #[case::bool_literal(ast_literal(ast::node::Literal::Bool(true)), "{:literal, [], true}")]
-    #[case::symbol_literal(ast_literal(ast::node::Literal::Symbol(Ident::new("test"))), "{:literal, [], :test}")]
-    #[case::none_literal(ast_literal(ast::node::Literal::None), "{:literal, [], none}")]
+    #[case::bool_literal(ast_literal(ast::node::Literal::Bool(true)), "Literal(Bool(true))")]
+    #[case::symbol_literal(ast_literal(ast::node::Literal::Symbol(Ident::new("test"))), "Literal(Symbol(test))")]
+    #[case::none_literal(ast_literal(ast::node::Literal::None), "Literal(None)")]
     // Ident
-    #[case::ident(ast_ident("x"), "{:ident, [], \"x\"}")]
+    #[case::ident(ast_ident("x"), "Ident(\"x\")")]
     // Call
     #[case::call(
         ast_node(ast::node::Expr::Call(
@@ -1389,7 +1389,7 @@ mod tests {
                 ast_literal(ast::node::Literal::Number(Number::from(2.0))),
             ],
         )),
-        "{:call, [ident: \"map\"], [{:literal, [], 1}, {:literal, [], 2}]}"
+        "Call(\"map\", [Literal(Number(1)), Literal(Number(2))])"
     )]
     // CallDynamic
     #[case::call_dynamic(
@@ -1399,7 +1399,7 @@ mod tests {
                 ast_literal(ast::node::Literal::Number(Number::from(1.0))),
             ],
         )),
-        "{:call_dynamic, [], [{:ident, [], \"fn\"}, {:literal, [], 1}]}"
+        "CallDynamic(Ident(\"fn\"), [Literal(Number(1))])"
     )]
     // Block
     #[case::block(
@@ -1407,7 +1407,7 @@ mod tests {
             ast_ident("x"),
             ast_literal(ast::node::Literal::Number(Number::from(42.0))),
         ])),
-        "{:block, [], [{:ident, [], \"x\"}, {:literal, [], 42}]}"
+        "Block([Ident(\"x\"), Literal(Number(42))])"
     )]
     // Def
     #[case::def(
@@ -1416,7 +1416,7 @@ mod tests {
             smallvec![ast_ident("a"), ast_ident("b")],
             vec![ast_ident("result")],
         )),
-        "{:def, [ident: \"add\"], [{:ident, [], \"a\"}, {:ident, [], \"b\"}, {:body, [], [{:ident, [], \"result\"}]}]}"
+        "Def(\"add\", [Ident(\"a\"), Ident(\"b\")], [Ident(\"result\")])"
     )]
     // Macro
     #[case::macro_def(
@@ -1425,7 +1425,7 @@ mod tests {
             smallvec![ast_ident("x")],
             ast_ident("body"),
         )),
-        "{:macro, [ident: \"my_macro\"], [{:ident, [], \"x\"}, {:ident, [], \"body\"}]}"
+        "Macro(\"my_macro\", [Ident(\"x\")], Ident(\"body\"))"
     )]
     // Fn
     #[case::fn_expr(
@@ -1433,7 +1433,7 @@ mod tests {
             smallvec![ast_ident("x")],
             vec![ast_literal(ast::node::Literal::Number(Number::from(1.0)))],
         )),
-        "{:fn, [], [{:ident, [], \"x\"}, {:body, [], [{:literal, [], 1}]}]}"
+        "Fn([Ident(\"x\")], [Literal(Number(1))])"
     )]
     // Let, Var, Assign
     #[case::let_binding(
@@ -1441,21 +1441,21 @@ mod tests {
             ast::node::IdentWithToken::new("x"),
             ast_literal(ast::node::Literal::Number(Number::from(10.0))),
         )),
-        "{:let, [ident: \"x\"], [{:literal, [], 10}]}"
+        "Let(\"x\", Literal(Number(10)))"
     )]
     #[case::var_binding(
         ast_node(ast::node::Expr::Var(
             ast::node::IdentWithToken::new("y"),
             ast_literal(ast::node::Literal::Number(Number::from(5.0))),
         )),
-        "{:var, [ident: \"y\"], [{:literal, [], 5}]}"
+        "Var(\"y\", Literal(Number(5)))"
     )]
     #[case::assign(
         ast_node(ast::node::Expr::Assign(
             ast::node::IdentWithToken::new("z"),
             ast_literal(ast::node::Literal::Number(Number::from(3.0))),
         )),
-        "{:assign, [ident: \"z\"], [{:literal, [], 3}]}"
+        "Assign(\"z\", Literal(Number(3)))"
     )]
     // Binary operators
     #[case::and_op(
@@ -1463,14 +1463,14 @@ mod tests {
             ast_literal(ast::node::Literal::Bool(true)),
             ast_literal(ast::node::Literal::Bool(false)),
         )),
-        "{:and, [], [{:literal, [], true}, {:literal, [], false}]}"
+        "And(Literal(Bool(true)), Literal(Bool(false)))"
     )]
     #[case::or_op(
         ast_node(ast::node::Expr::Or(
             ast_literal(ast::node::Literal::Bool(true)),
             ast_literal(ast::node::Literal::Bool(false)),
         )),
-        "{:or, [], [{:literal, [], true}, {:literal, [], false}]}"
+        "Or(Literal(Bool(true)), Literal(Bool(false)))"
     )]
     // InterpolatedString
     #[case::interpolated_string(
@@ -1480,12 +1480,12 @@ mod tests {
             ast::node::StringSegment::Env(smol_str::SmolStr::new("HOME")),
             ast::node::StringSegment::Self_,
         ])),
-        "{:interpolated_string, [], [{:text, [], \"Hello \"}, {:expr, [], [{:ident, [], \"name\"}]}, {:env, [], \"HOME\"}, {:self, [], []}]}"
+        "InterpolatedString([Text(\"Hello \"), Expr(Ident(\"name\")), Env(\"HOME\"), Self])"
     )]
     // Selector
     #[case::selector(
         ast_node(ast::node::Expr::Selector(crate::selector::Selector::Heading(Some(1)))),
-        "{:selector, [], Heading(Some(1))}"
+        "Selector(Heading(Some(1)))"
     )]
     // While
     #[case::while_loop(
@@ -1493,7 +1493,7 @@ mod tests {
             ast_literal(ast::node::Literal::Bool(true)),
             vec![ast_ident("body")],
         )),
-        "{:while, [], [{:literal, [], true}, {:body, [], [{:ident, [], \"body\"}]}]}"
+        "While(Literal(Bool(true)), [Ident(\"body\")])"
     )]
     // Foreach
     #[case::foreach_loop(
@@ -1502,7 +1502,7 @@ mod tests {
             ast_ident("items"),
             vec![ast_ident("process")],
         )),
-        "{:foreach, [ident: \"item\"], [{:ident, [], \"items\"}, {:body, [], [{:ident, [], \"process\"}]}]}"
+        "Foreach(\"item\", Ident(\"items\"), [Ident(\"process\")])"
     )]
     // If
     #[case::if_expr(
@@ -1516,7 +1516,7 @@ mod tests {
                 ast_literal(ast::node::Literal::Number(Number::from(2.0)))
             ),
         ])),
-        "{:if, [], [{:branch, [], [{:literal, [], true}, {:literal, [], 1}]}, {:branch, [], [{:literal, [], 2}]}]}"
+        "If([Branch(Literal(Bool(true)), Literal(Number(1))), Branch(None, Literal(Number(2)))])"
     )]
     // Match
     #[case::match_expr(
@@ -1535,16 +1535,16 @@ mod tests {
                 },
             ],
         )),
-        "{:match, [], [{:ident, [], \"x\"}, {:arm, [pattern: 1], [{:literal, [], \"one\"}]}, {:arm, [pattern: \"_\"], [{:guard, [], [{:literal, [], true}]}, {:literal, [], \"other\"}]}]}"
+        "Match(Ident(\"x\"), [Arm(Literal(Number(1)), Literal(String(\"one\"))), Arm(Wildcard, Guard(Literal(Bool(true))), Literal(String(\"other\")))])"
     )]
     // Include and Import
     #[case::include_expr(
         ast_node(ast::node::Expr::Include(ast::node::Literal::String("lib.mq".to_string()))),
-        "{:include, [], \"lib.mq\"}"
+        "Include(\"lib.mq\")"
     )]
     #[case::import_expr(
         ast_node(ast::node::Expr::Import(ast::node::Literal::String("module.mq".to_string()))),
-        "{:import, [], \"module.mq\"}"
+        "Import(\"module.mq\")"
     )]
     // Module
     #[case::module_expr(
@@ -1552,7 +1552,7 @@ mod tests {
             ast::node::IdentWithToken::new("MyModule"),
             vec![ast_ident("export")],
         )),
-        "{:module, [ident: \"MyModule\"], [{:ident, [], \"export\"}]}"
+        "Module(\"MyModule\", [Ident(\"export\")])"
     )]
     // QualifiedAccess
     #[case::qualified_access_ident(
@@ -1563,7 +1563,7 @@ mod tests {
             ],
             ast::node::AccessTarget::Ident(ast::node::IdentWithToken::new("value")),
         )),
-        "{:qualified_access, [path: [\"Module\", \"SubModule\"]], [{:ident, [], \"value\"}]}"
+        "QualifiedAccess([\"Module\", \"SubModule\"], Ident(\"value\"))"
     )]
     #[case::qualified_access_call(
         ast_node(ast::node::Expr::QualifiedAccess(
@@ -1573,32 +1573,23 @@ mod tests {
                 smallvec![ast_literal(ast::node::Literal::Number(Number::from(1.0)))],
             ),
         )),
-        "{:qualified_access, [path: [\"Module\"]], [{:call, [ident: \"fn\"], [{:literal, [], 1}]}]}"
+        "QualifiedAccess([\"Module\"], Call(\"fn\", [Literal(Number(1))]))"
     )]
     // Quote and Unquote
-    #[case::quote(
-        ast_node(ast::node::Expr::Quote(ast_ident("x"))),
-        "{:quote, [], [{:ident, [], \"x\"}]}"
-    )]
-    #[case::unquote(
-        ast_node(ast::node::Expr::Unquote(ast_ident("y"))),
-        "{:unquote, [], [{:ident, [], \"y\"}]}"
-    )]
+    #[case::quote(ast_node(ast::node::Expr::Quote(ast_ident("x"))), "Quote(Ident(\"x\"))")]
+    #[case::unquote(ast_node(ast::node::Expr::Unquote(ast_ident("y"))), "Unquote(Ident(\"y\"))")]
     // Try
     #[case::try_catch(
         ast_node(ast::node::Expr::Try(ast_ident("risky"), ast_ident("fallback"),)),
-        "{:try, [], [{:ident, [], \"risky\"}, {:catch, [], [{:ident, [], \"fallback\"}]}]}"
+        "Try(Ident(\"risky\"), Catch(Ident(\"fallback\")))"
     )]
     // Simple expressions
-    #[case::nodes(ast_node(ast::node::Expr::Nodes), "{:nodes, [], []}")]
-    #[case::self_expr(ast_node(ast::node::Expr::Self_), "{:self, [], []}")]
-    #[case::break_stmt(ast_node(ast::node::Expr::Break), "{:break, [], []}")]
-    #[case::continue_stmt(ast_node(ast::node::Expr::Continue), "{:continue, [], []}")]
+    #[case::nodes(ast_node(ast::node::Expr::Nodes), "Nodes")]
+    #[case::self_expr(ast_node(ast::node::Expr::Self_), "Self")]
+    #[case::break_stmt(ast_node(ast::node::Expr::Break), "Break")]
+    #[case::continue_stmt(ast_node(ast::node::Expr::Continue), "Continue")]
     // Paren
-    #[case::paren(
-        ast_node(ast::node::Expr::Paren(ast_ident("x"))),
-        "{:paren, [], [{:ident, [], \"x\"}]}"
-    )]
+    #[case::paren(ast_node(ast::node::Expr::Paren(ast_ident("x"))), "Paren(Ident(\"x\"))")]
     fn test_ast_display(#[case] node: Shared<ast::node::Node>, #[case] expected: &str) {
         let ast_value = RuntimeValue::Ast(node);
         assert_eq!(format!("{}", ast_value), expected);
