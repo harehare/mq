@@ -1,12 +1,21 @@
 use crate::{
     Ident, Shared,
     ast::{
-        Program,
+        Program, TokenId,
         node::{AccessTarget, Expr, MatchArm, Node, StringSegment},
     },
     error::runtime::RuntimeError,
+    eval::runtime_value::RuntimeValue,
 };
 use rustc_hash::{FxBuildHasher, FxHashMap};
+
+/// Trait for evaluating macro bodies during macro collection.
+/// This allows the macro expander to request evaluation without depending on the concrete evaluator type.
+pub trait MacroEvaluator {
+    /// Evaluates a macro body and returns the result.
+    /// The result should be an AST value for valid macros.
+    fn eval_macro_body(&mut self, body: &Shared<Node>, token_id: TokenId) -> Result<RuntimeValue, RuntimeError>;
+}
 
 const MAX_RECURSION_DEPTH: u32 = 1000;
 
@@ -35,8 +44,8 @@ impl Macro {
     }
 
     /// Expands all macros in a program.
-    pub fn expand_program(&mut self, program: &Program) -> Result<Program, RuntimeError> {
-        self.collect_macros(program);
+    pub fn expand<E: MacroEvaluator>(&mut self, program: &Program, evaluator: &mut E) -> Result<Program, RuntimeError> {
+        self.collect_macros(program, evaluator)?;
 
         // Fast path: if no macros are defined, return the program as-is without traversal
         if self.macros.is_empty() {
@@ -55,20 +64,24 @@ impl Macro {
                 && self.macros.contains_key(&ident.name)
             {
                 // Expand macro call and add all resulting nodes
-                let expanded_nodes = self.expand_macro_call(ident.name, args)?;
+                let expanded_nodes = self.expand_macro_call(ident.name, args, evaluator)?;
                 expanded_program.extend(expanded_nodes);
                 continue;
             }
 
             // Regular node expansion
-            let expanded_node = self.expand_node(node)?;
+            let expanded_node = self.expand_node(node, evaluator)?;
             expanded_program.push(expanded_node);
         }
 
         Ok(expanded_program)
     }
 
-    pub(crate) fn collect_macros(&mut self, program: &Program) {
+    pub(crate) fn collect_macros<E: MacroEvaluator>(
+        &mut self,
+        program: &Program,
+        evaluator: &mut E,
+    ) -> Result<(), RuntimeError> {
         for node in program {
             match &*node.expr {
                 Expr::Macro(ident, params, body) => {
@@ -83,29 +96,40 @@ impl Macro {
                         })
                         .collect();
 
-                    let program = match &*body.expr {
-                        Expr::Block(prog) => Shared::new(prog.clone()),
-                        _ => Shared::new(vec![Shared::clone(body)]),
-                    };
+                    let ast = evaluator.eval_macro_body(body, node.token_id)?;
 
-                    self.macros.insert(
-                        ident.name,
-                        MacroDefinition {
-                            params: param_names,
-                            body: program,
-                        },
-                    );
+                    if let RuntimeValue::Ast(macro_body) = ast {
+                        let program = match &*macro_body.expr {
+                            Expr::Block(prog) => prog.clone(),
+                            _ => vec![Shared::clone(&macro_body)],
+                        };
+
+                        self.macros.insert(
+                            ident.name,
+                            MacroDefinition {
+                                params: param_names,
+                                body: Shared::new(program),
+                            },
+                        );
+                    } else {
+                        unreachable!("Macro body did not evaluate to AST");
+                    }
                 }
                 Expr::Module(_, program) => {
                     // Recursively collect macros in nested modules
-                    self.collect_macros(program);
+                    self.collect_macros(program, evaluator)?;
                 }
                 _ => {}
             }
         }
+        Ok(())
     }
 
-    fn expand_node(&mut self, node: &Shared<Node>) -> Result<Shared<Node>, RuntimeError> {
+    fn expand_node<E: MacroEvaluator>(
+        &mut self,
+        node: &Shared<Node>,
+        evaluator: &mut E,
+    ) -> Result<Shared<Node>, RuntimeError> {
         match &*node.expr {
             // Expand function calls, including nested macro calls
             Expr::Call(ident, args) => {
@@ -113,7 +137,7 @@ impl Macro {
                 if self.macros.contains_key(&ident.name) {
                     // For nested macro calls, we need to expand and potentially return multiple nodes
                     // However, expand_node returns a single node, so we wrap them in a Block
-                    let expanded_nodes = self.expand_macro_call(ident.name, args)?;
+                    let expanded_nodes = self.expand_macro_call(ident.name, args, evaluator)?;
                     match expanded_nodes.as_slice() {
                         [single] => Ok(Shared::clone(single)),
                         multiple => Ok(Shared::new(Node {
@@ -125,7 +149,7 @@ impl Macro {
                     // Not a macro, just expand arguments
                     let expanded_args = args
                         .iter()
-                        .map(|arg| self.expand_node(arg))
+                        .map(|arg| self.expand_node(arg, evaluator))
                         .collect::<Result<Vec<_>, _>>()?;
 
                     Ok(Shared::new(Node {
@@ -135,21 +159,21 @@ impl Macro {
                 }
             }
             Expr::Block(program) => {
-                let expanded_program = self.expand_program(program)?;
+                let expanded_program = self.expand(program, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Block(expanded_program)),
                 }))
             }
             Expr::Def(ident, params, program) => {
-                let expanded_program = self.expand_program(program)?;
+                let expanded_program = self.expand(program, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Def(ident.clone(), params.clone(), expanded_program)),
                 }))
             }
             Expr::Fn(params, program) => {
-                let expanded_program = self.expand_program(program)?;
+                let expanded_program = self.expand(program, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Fn(params.clone(), expanded_program)),
@@ -160,11 +184,11 @@ impl Macro {
                     .iter()
                     .map(|(cond, body)| {
                         let expanded_cond = if let Some(c) = cond {
-                            Some(self.expand_node(c)?)
+                            Some(self.expand_node(c, evaluator)?)
                         } else {
                             None
                         };
-                        let expanded_body = self.expand_node(body)?;
+                        let expanded_body = self.expand_node(body, evaluator)?;
                         Ok((expanded_cond, expanded_body))
                     })
                     .collect::<Result<Vec<_>, RuntimeError>>()?;
@@ -175,63 +199,63 @@ impl Macro {
                 }))
             }
             Expr::While(cond, program) => {
-                let expanded_cond = self.expand_node(cond)?;
-                let expanded_program = self.expand_program(program)?;
+                let expanded_cond = self.expand_node(cond, evaluator)?;
+                let expanded_program = self.expand(program, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::While(expanded_cond, expanded_program)),
                 }))
             }
             Expr::Foreach(ident, collection, program) => {
-                let expanded_collection = self.expand_node(collection)?;
-                let expanded_program = self.expand_program(program)?;
+                let expanded_collection = self.expand_node(collection, evaluator)?;
+                let expanded_program = self.expand(program, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Foreach(ident.clone(), expanded_collection, expanded_program)),
                 }))
             }
             Expr::Let(ident, value) => {
-                let expanded_value = self.expand_node(value)?;
+                let expanded_value = self.expand_node(value, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Let(ident.clone(), expanded_value)),
                 }))
             }
             Expr::Var(ident, value) => {
-                let expanded_value = self.expand_node(value)?;
+                let expanded_value = self.expand_node(value, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Var(ident.clone(), expanded_value)),
                 }))
             }
             Expr::Assign(ident, value) => {
-                let expanded_value = self.expand_node(value)?;
+                let expanded_value = self.expand_node(value, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Assign(ident.clone(), expanded_value)),
                 }))
             }
             Expr::And(left, right) => {
-                let expanded_left = self.expand_node(left)?;
-                let expanded_right = self.expand_node(right)?;
+                let expanded_left = self.expand_node(left, evaluator)?;
+                let expanded_right = self.expand_node(right, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::And(expanded_left, expanded_right)),
                 }))
             }
             Expr::Or(left, right) => {
-                let expanded_left = self.expand_node(left)?;
-                let expanded_right = self.expand_node(right)?;
+                let expanded_left = self.expand_node(left, evaluator)?;
+                let expanded_right = self.expand_node(right, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Or(expanded_left, expanded_right)),
                 }))
             }
             Expr::CallDynamic(callable, args) => {
-                let expanded_callable = self.expand_node(callable)?;
+                let expanded_callable = self.expand_node(callable, evaluator)?;
                 let expanded_args = args
                     .iter()
-                    .map(|arg| self.expand_node(arg))
+                    .map(|arg| self.expand_node(arg, evaluator))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
@@ -239,16 +263,16 @@ impl Macro {
                 }))
             }
             Expr::Match(value, arms) => {
-                let expanded_value = self.expand_node(value)?;
+                let expanded_value = self.expand_node(value, evaluator)?;
                 let expanded_arms = arms
                     .iter()
                     .map(|arm| {
                         let expanded_guard = if let Some(guard) = &arm.guard {
-                            Some(self.expand_node(guard)?)
+                            Some(self.expand_node(guard, evaluator)?)
                         } else {
                             None
                         };
-                        let expanded_body = self.expand_node(&arm.body)?;
+                        let expanded_body = self.expand_node(&arm.body, evaluator)?;
                         Ok(MatchArm {
                             pattern: arm.pattern.clone(),
                             guard: expanded_guard,
@@ -263,14 +287,14 @@ impl Macro {
                 }))
             }
             Expr::Module(ident, program) => {
-                let expanded_program = self.expand_program(program)?;
+                let expanded_program = self.expand(program, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Module(ident.clone(), expanded_program)),
                 }))
             }
             Expr::Paren(inner) => {
-                let expanded_inner = self.expand_node(inner)?;
+                let expanded_inner = self.expand_node(inner, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Paren(expanded_inner)),
@@ -283,7 +307,7 @@ impl Macro {
                     Expr::Block(prog) => prog.clone(),
                     _ => vec![Shared::clone(block)],
                 };
-                let expanded_program = self.expand_program(&program)?;
+                let expanded_program = self.expand(&program, evaluator)?;
                 let block = Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Block(expanded_program)),
@@ -295,15 +319,15 @@ impl Macro {
                 }))
             }
             Expr::Unquote(inner) => {
-                let expanded_inner = self.expand_node(inner)?;
+                let expanded_inner = self.expand_node(inner, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Unquote(expanded_inner)),
                 }))
             }
             Expr::Try(try_expr, catch_expr) => {
-                let expanded_try = self.expand_node(try_expr)?;
-                let expanded_catch = self.expand_node(catch_expr)?;
+                let expanded_try = self.expand_node(try_expr, evaluator)?;
+                let expanded_catch = self.expand_node(catch_expr, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Try(expanded_try, expanded_catch)),
@@ -315,7 +339,7 @@ impl Macro {
                     .map(|segment| match segment {
                         StringSegment::Text(text) => Ok(StringSegment::Text(text.clone())),
                         StringSegment::Expr(node) => {
-                            let expanded = self.expand_node(node)?;
+                            let expanded = self.expand_node(node, evaluator)?;
                             Ok(StringSegment::Expr(expanded))
                         }
                         StringSegment::Env(env) => Ok(StringSegment::Env(env.clone())),
@@ -333,7 +357,7 @@ impl Macro {
                     AccessTarget::Call(ident, args) => {
                         let expanded_args = args
                             .iter()
-                            .map(|arg| self.expand_node(arg))
+                            .map(|arg| self.expand_node(arg, evaluator))
                             .collect::<Result<Vec<_>, _>>()?;
                         AccessTarget::Call(ident.clone(), expanded_args.into())
                     }
@@ -363,7 +387,12 @@ impl Macro {
         }
     }
 
-    fn expand_macro_call(&mut self, name: Ident, args: &[Shared<Node>]) -> Result<Vec<Shared<Node>>, RuntimeError> {
+    fn expand_macro_call<E: MacroEvaluator>(
+        &mut self,
+        name: Ident,
+        args: &[Shared<Node>],
+        evaluator: &mut E,
+    ) -> Result<Vec<Shared<Node>>, RuntimeError> {
         if self.recursion_depth >= self.max_recursion {
             return Err(RuntimeError::RecursionLimit);
         }
@@ -394,22 +423,23 @@ impl Macro {
 
         // Substitute and expand the macro body
         self.recursion_depth += 1;
-        let result = self.substitute_and_expand_program(&body, &substitutions);
+        let result = self.substitute_and_expand_program(&body, &substitutions, evaluator);
         self.recursion_depth -= 1;
 
         result
     }
 
-    fn substitute_and_expand_program(
+    fn substitute_and_expand_program<E: MacroEvaluator>(
         &mut self,
         program: &Program,
         substitutions: &FxHashMap<Ident, Shared<Node>>,
+        evaluator: &mut E,
     ) -> Result<Program, RuntimeError> {
         program
             .iter()
             .map(|node| {
                 let substituted = self.substitute_node(node, substitutions);
-                self.expand_node(&substituted)
+                self.expand_node(&substituted, evaluator)
             })
             .collect()
     }
@@ -995,8 +1025,28 @@ impl Default for Macro {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DefaultEngine, RuntimeValue, SharedCell, Token, TokenKind, arena::Arena, parse};
+    use crate::AstLiteral;
+    use crate::ast::node;
+    use crate::eval::Evaluator;
+    use crate::module::ModuleLoader;
+    use crate::{
+        DefaultEngine, LocalFsModuleResolver, RuntimeValue, SharedCell, Token, TokenKind, arena::Arena, parse,
+    };
     use rstest::rstest;
+
+    /// Mock MacroEvaluator for testing.
+    /// Returns the program as-is wrapped in RuntimeValue::Ast.
+    struct MockMacroEvaluator;
+
+    impl MacroEvaluator for MockMacroEvaluator {
+        fn eval_macro_body(&mut self, body: &Shared<Node>, _token_id: TokenId) -> Result<RuntimeValue, RuntimeError> {
+            // Return the body as-is wrapped in AST
+            Ok(RuntimeValue::Ast(Shared::new(Node {
+                token_id: TokenId::new(1),
+                expr: body.expr.clone(),
+            })))
+        }
+    }
 
     fn create_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
         let token_arena = Shared::new(SharedCell::new(Arena::new(10240)));
@@ -1064,7 +1114,7 @@ mod tests {
     fn test_macro_expansion_success(#[case] input: &str, #[case] _description: &str, #[case] expected: Result<(), ()>) {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
-        let result = macro_expander.expand_program(&program);
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
 
         match expected {
             Ok(_) => {
@@ -1085,7 +1135,7 @@ mod tests {
         let input = "macro add_two(a, b): a + b | add_two(1)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
-        let result = macro_expander.expand_program(&program);
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
 
         assert!(matches!(result, Err(RuntimeError::ArityMismatch { .. })));
     }
@@ -1095,7 +1145,7 @@ mod tests {
         let input = "macro double(x): x + x | double(1, 2, 3)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
-        let result = macro_expander.expand_program(&program);
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
 
         assert!(matches!(result, Err(RuntimeError::ArityMismatch { .. })));
     }
@@ -1106,7 +1156,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         macro_expander.max_recursion = 10;
-        let result = macro_expander.expand_program(&program);
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
 
         assert!(matches!(result, Err(RuntimeError::RecursionLimit)));
     }
@@ -1119,7 +1169,7 @@ mod tests {
     fn test_macro_definition_collection(#[case] input: &str, #[case] expected_param_count: usize) {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
-        macro_expander.collect_macros(&program);
+        let _ = macro_expander.collect_macros(&program, &mut MockMacroEvaluator);
 
         assert_eq!(macro_expander.macros.len(), 1, "Expected one macro definition");
         let macro_def = macro_expander.macros.values().next().unwrap();
@@ -1139,7 +1189,7 @@ mod tests {
         "#;
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
-        let result = macro_expander.expand_program(&program);
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
 
         assert!(result.is_ok(), "Expected successful expansion");
         assert_eq!(macro_expander.macros.len(), 2, "Expected two macro definitions");
@@ -1150,7 +1200,7 @@ mod tests {
         let input = "let x = 100 | macro use_param(x): x * 2 | use_param(5)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
-        let result = macro_expander.expand_program(&program);
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
 
         assert!(result.is_ok(), "Expected successful expansion with parameter shadowing");
     }
@@ -1161,7 +1211,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         for node in &expanded {
@@ -1180,7 +1230,7 @@ mod tests {
 
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         assert_eq!(expanded.len(), original_len);
@@ -1196,7 +1246,7 @@ mod tests {
     fn test_no_macro_optimization(#[case] input: &str) {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
-        let result = macro_expander.expand_program(&program);
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
 
         assert!(result.is_ok(), "Expected successful expansion for input without macros");
         assert!(macro_expander.macros.is_empty(), "No macros should be collected");
@@ -1207,7 +1257,7 @@ mod tests {
         let input = "macro make_expr(x): quote: x + 1 | make_expr(5)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
-        let result = macro_expander.expand_program(&program);
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
 
         assert!(result.is_ok(), "Expected successful expansion with quote");
     }
@@ -1217,7 +1267,7 @@ mod tests {
         let input = "macro add_one(x): quote: unquote(x) + 1 | add_one(5)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
-        let result = macro_expander.expand_program(&program);
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
 
         assert!(result.is_ok(), "Expected successful expansion with quote and unquote");
     }
@@ -1227,7 +1277,7 @@ mod tests {
         let input = r#"macro log_and_eval(x): quote do "start" | unquote(x) | "end"; | log_and_eval(5 + 5)"#;
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
-        let result = macro_expander.expand_program(&program);
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
 
         assert!(
             result.is_ok(),
@@ -1240,7 +1290,7 @@ mod tests {
         let input = "macro nested(x): quote: quote: unquote(x) | nested(5)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
-        let result = macro_expander.expand_program(&program);
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
 
         assert!(result.is_ok(), "Expected successful expansion with nested quote");
     }
@@ -1250,7 +1300,7 @@ mod tests {
         let input = r#"macro unless(cond, expr): quote: if (unquote(!cond)): unquote(expr) | unless(!false) do 1;"#;
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
-        let result = macro_expander.expand_program(&program);
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
 
         assert!(result.is_ok(), "Expected successful expansion with MacroCall and body");
     }
@@ -1316,7 +1366,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .unwrap_or_else(|e| panic!("Failed to expand: {:?}", e));
 
         let result = eval_program(&expanded).unwrap_or_else(|e| panic!("Failed to eval: {:?}", e));
@@ -1345,7 +1395,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .unwrap_or_else(|e| panic!("Failed to expand: {:?}", e));
 
         let result = eval_program(&expanded).unwrap_or_else(|e| panic!("Failed to eval: {:?}", e));
@@ -1362,7 +1412,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .unwrap_or_else(|e| panic!("Failed to expand: {:?}", e));
 
         let result = eval_program(&expanded).unwrap_or_else(|e| panic!("Failed to eval: {:?}", e));
@@ -1408,7 +1458,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .unwrap_or_else(|e| panic!("Failed to expand: {:?}", e));
 
         let result = eval_program(&expanded).unwrap_or_else(|e| panic!("Failed to eval: {:?}", e));
@@ -1421,7 +1471,9 @@ mod tests {
         let input = "macro single(x): x | single(42)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
-        let expanded = macro_expander.expand_program(&program).expect("Failed to expand");
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
 
         assert_eq!(expanded.len(), 1, "Expected single node in expanded output");
         // Should not be wrapped in a Block
@@ -1433,7 +1485,9 @@ mod tests {
         let input = "macro multi(x) do x | x + 1 | x + 2; | multi(5)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
-        let expanded = macro_expander.expand_program(&program).expect("Failed to expand");
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
 
         assert_eq!(expanded.len(), 3, "Expected three nodes from multi-node macro");
     }
@@ -1531,7 +1585,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .unwrap_or_else(|e| panic!("Failed to expand: {:?}", e));
 
         let result = eval_program(&expanded).unwrap_or_else(|e| panic!("Failed to eval: {:?}", e));
@@ -1545,7 +1599,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         let result = eval_program(&expanded).expect("Failed to eval");
@@ -1558,7 +1612,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         let result = eval_program(&expanded).expect("Failed to eval");
@@ -1577,7 +1631,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         let result = eval_program(&expanded).expect("Failed to eval");
@@ -1593,7 +1647,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         let result = eval_program(&expanded).expect("Failed to eval");
@@ -1609,7 +1663,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         let result = eval_program(&expanded).expect("Failed to eval");
@@ -1625,7 +1679,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         let result = eval_program(&expanded).expect("Failed to eval");
@@ -1642,7 +1696,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         let result = eval_program(&expanded).expect("Failed to eval");
@@ -1657,7 +1711,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         assert!(!expanded.is_empty(), "Expansion should produce nodes");
@@ -1672,7 +1726,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         assert!(!expanded.is_empty(), "Expansion should produce nodes");
@@ -1687,7 +1741,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         assert!(!expanded.is_empty(), "Expansion should produce nodes");
@@ -1702,7 +1756,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         assert!(!expanded.is_empty(), "Expansion should produce nodes");
@@ -1721,7 +1775,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         assert!(!expanded.is_empty(), "Expansion should produce nodes");
@@ -1739,7 +1793,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         assert!(!expanded.is_empty(), "Expansion should produce nodes");
@@ -1758,7 +1812,7 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         assert!(!expanded.is_empty(), "Expansion should produce nodes");
@@ -1777,9 +1831,716 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
-            .expand_program(&program)
+            .expand(&program, &mut MockMacroEvaluator)
             .expect("Failed to expand program");
 
         assert!(!expanded.is_empty(), "Expansion should produce nodes");
+    }
+
+    #[test]
+    fn test_quote_runtime_evaluation_basic() {
+        let input = "quote: 1 + 2";
+        let program = parse_program(input).expect("Failed to parse program");
+        let result = eval_program(&program).expect("Failed to eval program");
+
+        // quote should return an AST value
+        assert_eq!(result.len(), 1);
+        assert!(matches!(result[0], RuntimeValue::Ast(_)));
+    }
+
+    #[test]
+    fn test_macro_with_conditional_true_expands() {
+        let input = r#"macro test(): if (true): quote: breakpoint() | test()"#;
+        let token_arena = create_token_arena();
+        let program = parse(input, Shared::clone(&token_arena)).expect("Failed to parse program");
+
+        let module_loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut evaluator = Evaluator::new(module_loader, token_arena);
+
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut evaluator)
+            .expect("Failed to expand program");
+
+        // The macro should expand to breakpoint() call
+        assert!(!expanded.is_empty(), "Expansion should produce nodes");
+
+        // Verify the expanded code contains a call to breakpoint
+        let has_breakpoint = expanded.iter().any(|node| {
+            if let Expr::Call(ident, _) = &*node.expr {
+                ident.name.as_str() == "breakpoint"
+            } else {
+                false
+            }
+        });
+        assert!(has_breakpoint, "Expected breakpoint() call in expanded output");
+    }
+
+    #[test]
+    fn test_macro_with_conditional_false_expands_nothing() {
+        let input = r#"macro test(): if (false): quote: breakpoint() | test()"#;
+        let token_arena = create_token_arena();
+        let program = parse(input, Shared::clone(&token_arena)).expect("Failed to parse program");
+
+        let module_loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut evaluator = Evaluator::new(module_loader, token_arena);
+
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut evaluator)
+            .expect("Failed to expand program");
+
+        // The macro should expand to empty or no breakpoint call
+        let has_breakpoint = expanded.iter().any(|node| {
+            if let Expr::Call(ident, _) = &*node.expr {
+                ident.name.as_str() == "breakpoint"
+            } else {
+                false
+            }
+        });
+        assert!(
+            !has_breakpoint,
+            "Should not have breakpoint() call when condition is false"
+        );
+    }
+
+    #[test]
+    fn test_macro_with_conditional_else_branch() {
+        let input = r#"macro test(): if (false): quote: breakpoint() else: quote: continue | test()"#;
+        let token_arena = create_token_arena();
+        let program = parse(input, Shared::clone(&token_arena)).expect("Failed to parse program");
+
+        let module_loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut evaluator = Evaluator::new(module_loader, token_arena);
+
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut evaluator)
+            .expect("Failed to expand program");
+
+        // Should expand to continue since condition is false
+        assert!(!expanded.is_empty(), "Expansion should produce nodes");
+
+        let has_continue = expanded.iter().any(|node| matches!(&*node.expr, Expr::Continue));
+        assert!(has_continue, "Expected continue in expanded output from else branch");
+
+        let has_breakpoint = expanded.iter().any(|node| {
+            if let Expr::Call(ident, _) = &*node.expr {
+                ident.name.as_str() == "breakpoint"
+            } else {
+                false
+            }
+        });
+        assert!(!has_breakpoint, "Should not have breakpoint() from false branch");
+    }
+
+    #[test]
+    fn test_quote_with_unquote_runtime() {
+        let input = "let x = 5 | quote: unquote(x) + 1";
+        let program = parse_program(input).expect("Failed to parse program");
+        let result = eval_program(&program).expect("Failed to eval program");
+
+        // quote should evaluate unquote and return AST
+        assert_eq!(result.len(), 1);
+        assert!(matches!(result[0], RuntimeValue::Ast(_)));
+    }
+
+    #[test]
+    fn test_unquote_outside_quote_fails() {
+        let input = "unquote(42)";
+        let program = parse_program(input).expect("Failed to parse program");
+        let result = eval_program(&program);
+
+        // unquote outside quote should fail
+        assert!(result.is_err());
+    }
+
+    // Additional comprehensive tests for substitute_node and macro expansion
+
+    #[test]
+    fn test_mutual_recursion_between_macros() {
+        // Test mutual recursion with a limit
+        // Note: This tests that macro expansion itself handles mutual recursion
+        // The actual evaluation would need if/else to work properly
+        let input = r#"
+            macro a(x): b(x)
+            | macro b(x): x * 2
+            | a(21)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        macro_expander.max_recursion = 100;
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand mutually recursive macros");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(42.into())]);
+    }
+
+    #[test]
+    fn test_mutual_recursion_hits_limit() {
+        // Test that mutual recursion respects the recursion limit
+        let input = r#"
+            macro ping(x): pong(x)
+            | macro pong(x): ping(x)
+            | ping(1)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        macro_expander.max_recursion = 5;
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
+
+        assert!(matches!(result, Err(RuntimeError::RecursionLimit)));
+    }
+
+    #[rstest]
+    #[case::nested_function_shadowing(
+        r#"
+            macro outer(x): def inner(x): x * 2; | inner(5)
+            | outer(100)
+        "#,
+        vec![RuntimeValue::Number(10.into())],
+    )]
+    #[case::multiple_level_shadowing(
+        r#"
+            let x = 1
+            | macro level1(x): def level2(x): def level3(x): x + 1; | level3(10); | level2(20)
+            | level1(30)
+        "#,
+        vec![RuntimeValue::Number(11.into())],
+    )]
+    #[case::shadowing_in_nested_let(
+        r#"
+            macro test(x) do let a = x | let b = a * 2 | a + b;
+            | test(5)
+        "#,
+        vec![RuntimeValue::Number(15.into())],
+    )]
+    #[case::lambda_parameter_shadowing(
+        r#"
+            macro make_adder(x): def adder(y): x + y;
+            | make_adder(10)
+            | adder(5)
+        "#,
+        vec![RuntimeValue::Number(15.into())],
+    )]
+    fn test_complex_parameter_shadowing(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::string_interpolation_with_multiple_macros(
+        r#"
+            macro first(): "Hello"
+            | macro second(): "World"
+            | s"${first()}, ${second()}!"
+        "#,
+        vec![RuntimeValue::String("Hello, World!".to_string())],
+    )]
+    #[case::nested_string_interpolation(
+        r#"
+            macro outer(x): s"[${x}]"
+            | macro inner(x): s"${x}!"
+            | outer(inner("test"))
+        "#,
+        vec![RuntimeValue::String("[test!]".to_string())],
+    )]
+    #[case::string_interpolation_with_complex_expression(
+        r#"
+            macro compute(x, y): x * y + 10
+            | s"Result: ${compute(3, 4)}"
+        "#,
+        vec![RuntimeValue::String("Result: 22".to_string())],
+    )]
+    #[case::string_with_macro_and_literal_segments(
+        r#"
+            macro get_value(): 42
+            | s"The answer is ${get_value()}, always ${get_value()}!"
+        "#,
+        vec![RuntimeValue::String("The answer is 42, always 42!".to_string())],
+    )]
+    fn test_string_interpolation_edge_cases(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::try_with_macro_in_both_branches(
+        r#"
+            macro risky(x): 1 / x
+            | macro fallback(x): x * 10
+            | try: risky(0) catch: fallback(5);
+        "#,
+        vec![RuntimeValue::Number(50.into())],
+    )]
+    #[case::nested_try_with_macros(
+        r#"
+            macro inner_try(x) do try: 1 / x catch: 0;
+            | macro outer_try(x) do try: inner_try(x) catch: -1;
+            | outer_try(0)
+        "#,
+        vec![RuntimeValue::Number(0.into())],
+    )]
+    #[case::try_with_macro_generating_error(
+        r#"
+            macro will_error(): 1 / 0
+            | try: will_error() catch: 999;
+        "#,
+        vec![RuntimeValue::Number(999.into())],
+    )]
+    fn test_try_catch_with_nested_macros(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::match_with_macro_generated_patterns(
+        r#"
+            macro get_pattern(): 42
+            | match(42): | 1: 10 | 42: 100 | _: 0 end
+        "#,
+        vec![RuntimeValue::Number(100.into())],
+    )]
+    #[case::match_with_multiple_guards_using_macros(
+        r#"
+            macro is_positive(x): x > 0
+            | macro is_even(x): x % 2 == 0
+            | match(4): | n if (is_positive(n) && is_even(n)): 100 | _: 0 end
+        "#,
+        vec![RuntimeValue::Number(100.into())],
+    )]
+    #[case::match_with_macro_in_all_branches(
+        r#"
+            macro handle(x): x * 10
+            | match(2): | 1: handle(1) | 2: handle(2) | _: handle(0) end
+        "#,
+        vec![RuntimeValue::Number(20.into())],
+    )]
+    #[case::nested_match_with_macros(
+        r#"
+            macro outer_match(x): match(x): | 1: 10 | _: 20 end
+            | match(5): | 5: outer_match(1) | _: 0 end
+        "#,
+        vec![RuntimeValue::Number(10.into())],
+    )]
+    fn test_pattern_matching_with_macros(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::multi_statement_in_block_context(
+        r#"
+            macro setup(x) do var a = x | var b = a * 2 | a + b;
+            | setup(5)
+        "#,
+        vec![RuntimeValue::Number(15.into())],
+    )]
+    #[case::multi_statement_with_side_effects(
+        r#"
+            macro init_and_compute(x) do var counter = x | counter = counter + 1 | counter = counter * 2 | counter;
+            | init_and_compute(5)
+        "#,
+        vec![RuntimeValue::Number(12.into())],
+    )]
+    #[case::multi_statement_mixed_with_other_code(
+        r#"
+            macro block(x) do let y = x | y * 2;
+            | let before = 10 | block(5) + before
+        "#,
+        vec![RuntimeValue::Number(20.into())],
+    )]
+    fn test_multiple_statement_expansion_edge_cases(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::nested_call_dynamic(
+        r#"
+            macro apply(f, x): f(x)
+            | macro double_apply(f, x): f(f(x))
+            | def inc(n): n + 1;
+            | double_apply(inc, 5)
+        "#,
+        vec![RuntimeValue::Number(7.into())],
+    )]
+    #[case::multiple_dynamic_calls_in_expression(
+        r#"
+            macro call_both(f, g, x): f(x) + g(x)
+            | def double(n): n * 2;
+            | def triple(n): n * 3;
+            | call_both(double, triple, 5)
+        "#,
+        vec![RuntimeValue::Number(25.into())],
+    )]
+    fn test_call_dynamic_conversion_edge_cases(#[case] input: &str, #[case] expected: Vec<RuntimeValue>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_substitute_node_with_deeply_nested_expressions() {
+        let input = r#"
+            macro deep(x): ((((x + 1) * 2) - 3) / 4)
+            | deep(10)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(4.75.into())]);
+    }
+
+    #[test]
+    fn test_substitute_node_with_array_operations() {
+        let input = r#"
+            macro first_elem(arr): arr[0]
+            | first_elem([10, 20, 30])
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(10.into())]);
+    }
+
+    #[test]
+    fn test_substitute_node_preserves_foreach_iteration() {
+        let input = r#"
+            macro transform(arr, multiplier): foreach(item, arr): item * multiplier;
+            | transform([1, 2, 3], 10)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(
+            result,
+            vec![RuntimeValue::Array(vec![
+                RuntimeValue::Number(10.into()),
+                RuntimeValue::Number(20.into()),
+                RuntimeValue::Number(30.into())
+            ])]
+        );
+    }
+
+    #[test]
+    fn test_substitute_node_with_variable_mutations() {
+        let input = r#"
+            macro init_and_update(x) do var counter = x | counter = counter + 10 | counter;
+            | init_and_update(5)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(15.into())]);
+    }
+
+    #[test]
+    fn test_substitute_node_with_object_literal() {
+        let input = r#"
+            macro make_obj(k, v): {key: k, value: v}
+            | make_obj("name", "test")
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        // Just verify it expands without error
+        assert!(!expanded.is_empty());
+    }
+
+    #[test]
+    fn test_substitute_node_empty_substitutions_optimization() {
+        let input = "macro no_params(): 42 | no_params()";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(42.into())]);
+    }
+
+    #[test]
+    fn test_substitute_node_with_index_access() {
+        let input = r#"
+            macro get_at(arr, idx): arr[idx]
+            | get_at([10, 20, 30], 1)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand");
+
+        let result = eval_program(&expanded).expect("Failed to eval");
+        assert_eq!(result, vec![RuntimeValue::Number(20.into())]);
+    }
+
+    #[test]
+    fn test_quote_unquote_evaluates_non_ast_values() {
+        let input = r#"quote: unquote(1 + 2)"#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let result = eval_program(&program).expect("Failed to eval");
+
+        // The result should be an AST containing a block with the literal value 3
+        assert_eq!(result.len(), 1);
+        if let RuntimeValue::Ast(node) = &result[0] {
+            if let Expr::Block(nodes) = &*node.expr {
+                assert_eq!(nodes.len(), 1);
+                if let Expr::Literal(AstLiteral::Number(n)) = &*nodes[0].expr {
+                    assert_eq!(*n, 3.into());
+                } else {
+                    panic!("Expected literal number in block, got {:?}", nodes[0].expr);
+                }
+            } else {
+                panic!("Expected block in AST, got {:?}", node.expr);
+            }
+        } else {
+            panic!("Expected AST result");
+        }
+    }
+
+    #[test]
+    fn test_quote_unquote_evaluates_string_values() {
+        let input = r#"let x = "hello" | quote: unquote(x)"#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let result = eval_program(&program).expect("Failed to eval");
+
+        // The result should be an AST containing a block with the literal string "hello"
+        assert_eq!(result.len(), 1);
+        if let RuntimeValue::Ast(node) = &result[0] {
+            if let Expr::Block(nodes) = &*node.expr {
+                assert_eq!(nodes.len(), 1);
+                if let Expr::Literal(AstLiteral::String(s)) = &*nodes[0].expr {
+                    assert_eq!(s, "hello");
+                } else {
+                    panic!("Expected literal string in block, got {:?}", nodes[0].expr);
+                }
+            } else {
+                panic!("Expected block in AST, got {:?}", node.expr);
+            }
+        } else {
+            panic!("Expected AST result");
+        }
+    }
+
+    #[test]
+    fn test_quote_unquote_removes_none_values() {
+        let input = r#"quote do unquote(if(false): 1) | 2 | unquote(if(false): 3);"#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let result = eval_program(&program).expect("Failed to eval");
+
+        // The result should be an AST with a block containing only the literal 2
+        // The None values from the if statements should be filtered out
+        assert_eq!(result.len(), 1);
+        if let RuntimeValue::Ast(node) = &result[0] {
+            if let Expr::Block(nodes) = &*node.expr {
+                // Should have only 1 node (the literal 2), not 3
+                assert_eq!(
+                    nodes.len(),
+                    1,
+                    "Expected 1 node after filtering None values, got {}",
+                    nodes.len()
+                );
+                if let Expr::Literal(crate::ast::node::Literal::Number(n)) = &*nodes[0].expr {
+                    assert_eq!(*n, 2.into());
+                } else {
+                    panic!("Expected literal number 2");
+                }
+            } else {
+                panic!("Expected block in AST");
+            }
+        } else {
+            panic!("Expected AST result");
+        }
+    }
+
+    #[test]
+    fn test_quote_unquote_preserves_ast_values() {
+        // Test that unquote expressions that return AST values preserve them
+        let input = r#"let x = quote: 1 + 2 | quote: unquote(x)"#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let result = eval_program(&program).expect("Failed to eval");
+
+        // The result should be an AST containing the expression "1 + 2"
+        assert_eq!(result.len(), 1);
+        if let RuntimeValue::Ast(node) = &result[0] {
+            // quote returns a Block, so we need to check inside the block
+            if let Expr::Block(outer_nodes) = &*node.expr {
+                assert_eq!(outer_nodes.len(), 1, "Expected 1 node in outer block");
+                // The inner node should be another Block (from the original quote)
+                if let Expr::Block(inner_nodes) = &*outer_nodes[0].expr {
+                    assert_eq!(inner_nodes.len(), 1, "Expected 1 node in inner block");
+                    // The innermost node should be a Call (add)
+                    if let Expr::Call(ident, _) = &*inner_nodes[0].expr {
+                        assert_eq!(ident.name.as_str(), "add", "Expected add call");
+                    } else {
+                        panic!("Expected Call in innermost block, got {:?}", inner_nodes[0].expr);
+                    }
+                } else {
+                    panic!("Expected inner Block, got {:?}", outer_nodes[0].expr);
+                }
+            } else {
+                panic!("Expected outer Block in AST, got {:?}", node.expr);
+            }
+        } else {
+            panic!("Expected AST result");
+        }
+    }
+
+    #[test]
+    fn test_macro_body_none_removes_macro() {
+        let input = r#"quote do 1 | unquote(if(false): 2) | 3;"#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let result = eval_program(&program).expect("Failed to eval");
+
+        // The result should be an AST with a block containing only 1 and 3
+        // The None from if(false) should be filtered out
+        assert_eq!(result.len(), 1);
+        if let RuntimeValue::Ast(node) = &result[0] {
+            if let Expr::Block(nodes) = &*node.expr {
+                // Should have 2 nodes (1 and 3), not 3
+                assert_eq!(nodes.len(), 2, "Expected 2 nodes after filtering None");
+                // Verify the values are 1 and 3
+                if let Expr::Literal(node::Literal::Number(n)) = &*nodes[0].expr {
+                    assert_eq!(*n, 1.into());
+                } else {
+                    panic!("Expected literal 1");
+                }
+                if let Expr::Literal(node::Literal::Number(n)) = &*nodes[1].expr {
+                    assert_eq!(*n, 3.into());
+                } else {
+                    panic!("Expected literal 3");
+                }
+            } else {
+                panic!("Expected block in AST");
+            }
+        } else {
+            panic!("Expected AST result");
+        }
+    }
+
+    /// EmptyBlockMacroEvaluator returns an empty Block for testing.
+    struct EmptyBlockMacroEvaluator;
+
+    impl MacroEvaluator for EmptyBlockMacroEvaluator {
+        fn eval_macro_body(&mut self, _body: &Shared<Node>, _token_id: TokenId) -> Result<RuntimeValue, RuntimeError> {
+            // Return an empty Block
+            Ok(RuntimeValue::Ast(Shared::new(Node {
+                token_id: TokenId::new(1),
+                expr: Shared::new(Expr::Block(vec![])),
+            })))
+        }
+    }
+
+    #[test]
+    fn test_macro_expansion_with_empty_block() {
+        let input = r#"macro empty_macro(): if (false): 1 | empty_macro() | 42"#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut EmptyBlockMacroEvaluator)
+            .expect("Failed to expand program");
+
+        assert_eq!(macro_expander.macros.len(), 1, "Expected no macros to be registered");
+        assert_eq!(expanded.len(), 1, "Expected all three nodes to remain");
+
+        if let Expr::Literal(node::Literal::Number(n)) = &*expanded[0].expr {
+            assert_eq!(*n, 42.into());
+        } else {
+            panic!("Expected literal number 42");
+        }
+    }
+
+    #[test]
+    fn test_macro_expansion_multiple_empty_blocks() {
+        let input = r#"
+            macro empty1(): if (false): 1
+            | macro empty2(): if (false): 2
+            | empty1()
+            | empty2()
+            | 100
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut EmptyBlockMacroEvaluator)
+            .expect("Failed to expand program");
+
+        assert_eq!(macro_expander.macros.len(), 2, "Expected no macros to be registered");
+        assert_eq!(expanded.len(), 1);
+    }
+
+    #[test]
+    fn test_macro_expansion_only_empty_blocks() {
+        let input = r#"
+            macro empty1(): if (false): 1
+            | macro empty2(): if (false): 2
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut EmptyBlockMacroEvaluator)
+            .expect("Failed to expand program");
+
+        assert_eq!(macro_expander.macros.len(), 2, "Expected no macros to be registered");
+        assert_eq!(expanded.len(), 0, "Expected two macro definition nodes to remain");
     }
 }

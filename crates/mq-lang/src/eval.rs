@@ -15,7 +15,7 @@ use crate::{
     },
     error::InnerError,
     get_token,
-    macro_expand::Macro,
+    macro_expand::{Macro, MacroEvaluator},
 };
 use crate::{
     IdentWithToken, LocalFsModuleResolver, ModuleResolver,
@@ -143,6 +143,29 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
     }
 
+    /// Helper method to temporarily take the macro_expander to avoid borrow conflicts.
+    /// This pattern is needed when the macro_expander needs to call methods that require
+    /// mutable access to the evaluator (self).
+    ///
+    /// # Arguments
+    /// * `f` - A closure that operates on the taken macro_expander and returns a result
+    ///
+    /// # Example
+    /// ```ignore
+    /// self.with_macro_expander(|expander, evaluator| {
+    ///     expander.expand(&program, evaluator)
+    /// })?;
+    /// ```
+    fn with_macro_expander<F, R>(&mut self, f: F) -> Result<R, RuntimeError>
+    where
+        F: FnOnce(&mut Macro, &mut Self) -> Result<R, RuntimeError>,
+    {
+        let mut macro_expander = std::mem::take(&mut self.macro_expander);
+        let result = f(&mut macro_expander, self);
+        self.macro_expander = macro_expander;
+        result
+    }
+
     pub(crate) fn eval<I>(&mut self, program: &Program, input: I) -> Result<Vec<RuntimeValue>, InnerError>
     where
         I: Iterator<Item = RuntimeValue>,
@@ -170,7 +193,10 @@ impl<T: ModuleResolver> Evaluator<T> {
                 Ok(nodes)
             },
         )?;
-        let mut program = self.macro_expander.expand_program(&program).map_err(InnerError::from)?;
+
+        let mut program = self
+            .with_macro_expander(|expander, evaluator| expander.expand(&program, evaluator))
+            .map_err(InnerError::from)?;
         let nodes_index = &program.iter().position(|node| node.is_nodes());
 
         if let Some(index) = nodes_index {
@@ -223,9 +249,10 @@ impl<T: ModuleResolver> Evaluator<T> {
 
             Ok(match value {
                 RuntimeValue::None => child_node.to_fragment(),
-                RuntimeValue::Function(_, _, _) | RuntimeValue::NativeFunction(_) | RuntimeValue::Module(_) => {
-                    mq_markdown::Node::Empty
-                }
+                RuntimeValue::Function(_, _, _)
+                | RuntimeValue::NativeFunction(_)
+                | RuntimeValue::Module(_)
+                | RuntimeValue::Ast(_) => mq_markdown::Node::Empty,
                 RuntimeValue::Array(_)
                 | RuntimeValue::Dict(_)
                 | RuntimeValue::Boolean(_)
@@ -256,9 +283,12 @@ impl<T: ModuleResolver> Evaluator<T> {
         module: module::Module,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<(), RuntimeError> {
-        self.macro_expander.collect_macros(&module.macros);
-        let functions = self.macro_expander.expand_program(&module.functions)?;
-        let vars = self.macro_expander.expand_program(&module.vars)?;
+        let (functions, vars) = self.with_macro_expander(|expander, evaluator| {
+            expander.collect_macros(&module.macros, evaluator)?;
+            let functions = expander.expand(&module.functions, evaluator)?;
+            let vars = expander.expand(&module.vars, evaluator)?;
+            Ok((functions, vars))
+        })?;
 
         for node in &module.modules {
             let _ = match &*node.expr {
@@ -426,7 +456,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 }
                 ast::Expr::Module(ident, program) => {
                     // Collect macros from the module
-                    self.macro_expander.collect_macros(program);
+                    self.with_macro_expander(|expander, evaluator| expander.collect_macros(program, evaluator))?;
                     let _ = self.eval_module(&RuntimeValue::NONE, ident, program, &module_env)?;
                 }
                 ast::Expr::Macro(..) => {
@@ -729,10 +759,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 define(env, ident.name, function.clone());
                 Ok(function)
             }
-            ast::Expr::Macro(_, _, _) => Err(RuntimeError::Runtime(
-                (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
-                "Internal error: macro was not expanded before evaluation.".to_string(),
-            )),
+            ast::Expr::Macro(_, _, _) => self.eval_macro(node),
             ast::Expr::Fn(params, program) => Ok(RuntimeValue::Function(
                 params.clone(),
                 program.clone(),
@@ -798,10 +825,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Expr::Break => Err(RuntimeError::Break),
             ast::Expr::Continue => Err(RuntimeError::Continue),
             ast::Expr::Paren(expr) => self.eval_expr(runtime_value, expr, env),
-            ast::Expr::Quote(_) => {
-                let token = get_token(Shared::clone(&self.token_arena), node.token_id);
-                Err(RuntimeError::QuoteNotAllowedInRuntimeContext((*token).clone()))
-            }
+            ast::Expr::Quote(inner) => self.eval_quote(inner, env),
             ast::Expr::Unquote(_) => {
                 let token = get_token(Shared::clone(&self.token_arena), node.token_id);
                 Err(RuntimeError::UnquoteNotAllowedOutsideQuote((*token).clone()))
@@ -1036,6 +1060,96 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
 
         Ok(RuntimeValue::NONE)
+    }
+
+    #[inline(always)]
+    fn eval_quote(
+        &mut self,
+        node: &Shared<ast::Node>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, RuntimeError> {
+        let processed_node = self.process_quote_node(node, env)?;
+        Ok(RuntimeValue::Ast(processed_node))
+    }
+
+    fn process_quote_node(
+        &mut self,
+        node: &Shared<ast::Node>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<Shared<ast::Node>, RuntimeError> {
+        match &*node.expr {
+            ast::Expr::Unquote(inner) => {
+                let value = self.eval_expr(&RuntimeValue::None, inner, env)?;
+
+                match value {
+                    RuntimeValue::Ast(ast_node) => Ok(ast_node),
+                    RuntimeValue::None => Ok(Shared::new(ast::Node {
+                        token_id: node.token_id,
+                        expr: Shared::new(ast::Expr::Block(vec![])),
+                    })),
+                    other_value => {
+                        let literal_expr = self.value_to_literal_expr(&other_value)?;
+                        Ok(Shared::new(ast::Node {
+                            token_id: node.token_id,
+                            expr: Shared::new(literal_expr),
+                        }))
+                    }
+                }
+            }
+            ast::Expr::Block(nodes) => {
+                let processed_nodes: Result<Vec<_>, _> =
+                    nodes.iter().map(|n| self.process_quote_node(n, env)).collect();
+                let processed = processed_nodes?;
+                let filtered_nodes: Vec<_> = processed
+                    .into_iter()
+                    .filter(|n| !matches!(&*n.expr, ast::Expr::Block(nodes) if nodes.is_empty()))
+                    .collect();
+
+                Ok(Shared::new(ast::Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(ast::Expr::Block(filtered_nodes)),
+                }))
+            }
+            ast::Expr::Paren(inner) => {
+                let processed = self.process_quote_node(inner, env)?;
+                Ok(Shared::new(ast::Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(ast::Expr::Paren(processed)),
+                }))
+            }
+            ast::Expr::Quote(inner) => Ok(Shared::new(ast::Node {
+                token_id: node.token_id,
+                expr: Shared::new(ast::Expr::Quote(Shared::clone(inner))),
+            })),
+            _ => Ok(Shared::clone(node)),
+        }
+    }
+
+    #[inline(always)]
+    fn value_to_literal_expr(&self, value: &RuntimeValue) -> Result<ast::Expr, RuntimeError> {
+        match value {
+            RuntimeValue::String(s) => Ok(ast::Expr::Literal(ast::Literal::String(s.clone()))),
+            RuntimeValue::Number(n) => Ok(ast::Expr::Literal(ast::Literal::Number(*n))),
+            RuntimeValue::Boolean(b) => Ok(ast::Expr::Literal(ast::Literal::Bool(*b))),
+            RuntimeValue::None => Ok(ast::Expr::Literal(ast::Literal::None)),
+            _ => {
+                let s = format!("{}", value);
+                Ok(ast::Expr::Literal(ast::Literal::String(s)))
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn eval_macro(&mut self, node: &Shared<ast::Node>) -> Result<RuntimeValue, RuntimeError> {
+        let macro_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(&self.env))));
+        let value = self.eval_expr(&RuntimeValue::None, node, &macro_env)?;
+
+        if let RuntimeValue::Ast(_) = value {
+            Ok(value)
+        } else {
+            let token = get_token(Shared::clone(&self.token_arena), node.token_id);
+            Err(RuntimeError::InvalidMacroResultAst((*token).clone()))
+        }
     }
 
     fn match_pattern(
@@ -5998,7 +6112,9 @@ mod tests {
             "test_macro.mq",
             r#"
             macro add_macro(a, b) do
-              unquote(a + b)
+              quote do
+                unquote(a + b)
+              end
             end"#,
         );
 
@@ -6038,7 +6154,9 @@ mod tests {
             "test_macro2.mq",
             r#"
             macro add_macro(a, b) do
-              unquote(a + b)
+              quote do
+                unquote(a + b)
+              end
             end | def a(): add_macro(10, 20);"#,
         );
 
@@ -6067,6 +6185,30 @@ mod tests {
                 .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
             Ok(vec![RuntimeValue::Number(30.into())])
         );
+    }
+}
+
+/// Implementation of MacroEvaluator trait for Evaluator.
+/// This allows the macro expander to evaluate macro bodies during collection.
+impl<T: ModuleResolver> MacroEvaluator for Evaluator<T> {
+    fn eval_macro_body(&mut self, body: &Shared<ast::Node>, _token_id: TokenId) -> Result<RuntimeValue, RuntimeError> {
+        let value = self.eval_macro(body);
+
+        // If the result is already an AST (from quote), return it as-is
+        // If the result is None (e.g., from if(false) without else), return None to indicate removal
+        // Otherwise, wrap the body itself as an AST (for macros without quote)
+        match value {
+            Ok(RuntimeValue::Ast(ast)) => Ok(RuntimeValue::Ast(ast)),
+            Ok(RuntimeValue::None) => {
+                // Return None instead of empty block - this will cause the macro to be skipped
+                Ok(RuntimeValue::None)
+            }
+            Ok(_) | Err(_) => {
+                // Return the body as AST, not the evaluated result
+                // This allows macros without quote to work
+                Ok(RuntimeValue::Ast(Shared::clone(body)))
+            }
+        }
     }
 }
 
