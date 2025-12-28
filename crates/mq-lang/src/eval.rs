@@ -1069,8 +1069,8 @@ impl<T: ModuleResolver> Evaluator<T> {
 
     #[inline(always)]
     fn eval_macro(&mut self, node: &Shared<ast::Node>) -> Result<RuntimeValue, RuntimeError> {
-        let env = Shared::clone(&self.env);
-        let value = self.eval_expr(&RuntimeValue::None, node, &env)?;
+        let macro_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(&self.env))));
+        let value = self.eval_expr(&RuntimeValue::None, node, &macro_env)?;
 
         if let RuntimeValue::Ast(_) = value {
             Ok(value)

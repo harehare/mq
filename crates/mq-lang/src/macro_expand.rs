@@ -14,10 +14,6 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 pub trait MacroEvaluator {
     /// Evaluates a macro body and returns the result.
     /// The result should be an AST value for valid macros.
-    ///
-    /// # Arguments
-    /// * `program` - The macro body program to evaluate
-    /// * `token_id` - The token ID for error reporting
     fn eval_macro_body(&mut self, body: &Shared<Node>, token_id: TokenId) -> Result<RuntimeValue, RuntimeError>;
 }
 
