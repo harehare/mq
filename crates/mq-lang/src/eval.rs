@@ -1072,7 +1072,6 @@ impl<T: ModuleResolver> Evaluator<T> {
         Ok(RuntimeValue::Ast(processed_node))
     }
 
-    /// Process a node inside a quote, evaluating any unquotes found
     fn process_quote_node(
         &mut self,
         node: &Shared<ast::Node>,
@@ -1080,21 +1079,14 @@ impl<T: ModuleResolver> Evaluator<T> {
     ) -> Result<Shared<ast::Node>, RuntimeError> {
         match &*node.expr {
             ast::Expr::Unquote(inner) => {
-                // Evaluate the unquote expression
                 let value = self.eval_expr(&RuntimeValue::None, inner, env)?;
 
                 match value {
-                    // If the result is an AST, return it directly
                     RuntimeValue::Ast(ast_node) => Ok(ast_node),
-                    // If the result is None, we should remove it (handled by caller)
-                    RuntimeValue::None => {
-                        // Return an empty block that can be filtered out later
-                        Ok(Shared::new(ast::Node {
-                            token_id: node.token_id,
-                            expr: Shared::new(ast::Expr::Block(vec![])),
-                        }))
-                    }
-                    // For any other value, convert it to a literal AST node
+                    RuntimeValue::None => Ok(Shared::new(ast::Node {
+                        token_id: node.token_id,
+                        expr: Shared::new(ast::Expr::Block(vec![])),
+                    })),
                     other_value => {
                         let literal_expr = self.value_to_literal_expr(&other_value)?;
                         Ok(Shared::new(ast::Node {
@@ -1104,14 +1096,10 @@ impl<T: ModuleResolver> Evaluator<T> {
                     }
                 }
             }
-            // For other expressions, recursively process child nodes
             ast::Expr::Block(nodes) => {
                 let processed_nodes: Result<Vec<_>, _> =
                     nodes.iter().map(|n| self.process_quote_node(n, env)).collect();
-
                 let processed = processed_nodes?;
-
-                // Filter out empty blocks that resulted from RuntimeValue::None in unquotes
                 let filtered_nodes: Vec<_> = processed
                     .into_iter()
                     .filter(|n| !matches!(&*n.expr, ast::Expr::Block(nodes) if nodes.is_empty()))
@@ -1129,28 +1117,22 @@ impl<T: ModuleResolver> Evaluator<T> {
                     expr: Shared::new(ast::Expr::Paren(processed)),
                 }))
             }
-            ast::Expr::Quote(inner) => {
-                // Nested quote: don't process unquotes inside
-                Ok(Shared::new(ast::Node {
-                    token_id: node.token_id,
-                    expr: Shared::new(ast::Expr::Quote(Shared::clone(inner))),
-                }))
-            }
-            // For all other expressions, return the node as-is
+            ast::Expr::Quote(inner) => Ok(Shared::new(ast::Node {
+                token_id: node.token_id,
+                expr: Shared::new(ast::Expr::Quote(Shared::clone(inner))),
+            })),
             _ => Ok(Shared::clone(node)),
         }
     }
 
-    /// Convert a RuntimeValue to a literal expression
+    #[inline(always)]
     fn value_to_literal_expr(&self, value: &RuntimeValue) -> Result<ast::Expr, RuntimeError> {
         match value {
             RuntimeValue::String(s) => Ok(ast::Expr::Literal(ast::Literal::String(s.clone()))),
             RuntimeValue::Number(n) => Ok(ast::Expr::Literal(ast::Literal::Number(*n))),
             RuntimeValue::Boolean(b) => Ok(ast::Expr::Literal(ast::Literal::Bool(*b))),
             RuntimeValue::None => Ok(ast::Expr::Literal(ast::Literal::None)),
-            // For complex types, we could serialize them or return an error
             _ => {
-                // For now, convert complex types to their string representation
                 let s = format!("{}", value);
                 Ok(ast::Expr::Literal(ast::Literal::String(s)))
             }

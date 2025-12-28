@@ -2476,4 +2476,71 @@ mod tests {
             panic!("Expected AST result");
         }
     }
+
+    /// EmptyBlockMacroEvaluator returns an empty Block for testing.
+    struct EmptyBlockMacroEvaluator;
+
+    impl MacroEvaluator for EmptyBlockMacroEvaluator {
+        fn eval_macro_body(&mut self, _body: &Shared<Node>, _token_id: TokenId) -> Result<RuntimeValue, RuntimeError> {
+            // Return an empty Block
+            Ok(RuntimeValue::Ast(Shared::new(Node {
+                token_id: TokenId::new(1),
+                expr: Shared::new(Expr::Block(vec![])),
+            })))
+        }
+    }
+
+    #[test]
+    fn test_macro_expansion_with_empty_block() {
+        let input = r#"macro empty_macro(): if (false): 1 | empty_macro() | 42"#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut EmptyBlockMacroEvaluator)
+            .expect("Failed to expand program");
+
+        assert_eq!(macro_expander.macros.len(), 1, "Expected no macros to be registered");
+        assert_eq!(expanded.len(), 1, "Expected all three nodes to remain");
+
+        if let Expr::Literal(node::Literal::Number(n)) = &*expanded[0].expr {
+            assert_eq!(*n, 42.into());
+        } else {
+            panic!("Expected literal number 42");
+        }
+    }
+
+    #[test]
+    fn test_macro_expansion_multiple_empty_blocks() {
+        let input = r#"
+            macro empty1(): if (false): 1
+            | macro empty2(): if (false): 2
+            | empty1()
+            | empty2()
+            | 100
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut EmptyBlockMacroEvaluator)
+            .expect("Failed to expand program");
+
+        assert_eq!(macro_expander.macros.len(), 2, "Expected no macros to be registered");
+        assert_eq!(expanded.len(), 1);
+    }
+
+    #[test]
+    fn test_macro_expansion_only_empty_blocks() {
+        let input = r#"
+            macro empty1(): if (false): 1
+            | macro empty2(): if (false): 2
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut EmptyBlockMacroEvaluator)
+            .expect("Failed to expand program");
+
+        assert_eq!(macro_expander.macros.len(), 2, "Expected no macros to be registered");
+        assert_eq!(expanded.len(), 0, "Expected two macro definition nodes to remain");
+    }
 }
