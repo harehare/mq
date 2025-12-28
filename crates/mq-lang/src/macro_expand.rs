@@ -1025,6 +1025,8 @@ impl Default for Macro {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AstLiteral;
+    use crate::ast::node;
     use crate::eval::Evaluator;
     use crate::module::ModuleLoader;
     use crate::{
@@ -2329,5 +2331,149 @@ mod tests {
 
         let result = eval_program(&expanded).expect("Failed to eval");
         assert_eq!(result, vec![RuntimeValue::Number(20.into())]);
+    }
+
+    #[test]
+    fn test_quote_unquote_evaluates_non_ast_values() {
+        let input = r#"quote: unquote(1 + 2)"#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let result = eval_program(&program).expect("Failed to eval");
+
+        // The result should be an AST containing a block with the literal value 3
+        assert_eq!(result.len(), 1);
+        if let RuntimeValue::Ast(node) = &result[0] {
+            if let Expr::Block(nodes) = &*node.expr {
+                assert_eq!(nodes.len(), 1);
+                if let Expr::Literal(AstLiteral::Number(n)) = &*nodes[0].expr {
+                    assert_eq!(*n, 3.into());
+                } else {
+                    panic!("Expected literal number in block, got {:?}", nodes[0].expr);
+                }
+            } else {
+                panic!("Expected block in AST, got {:?}", node.expr);
+            }
+        } else {
+            panic!("Expected AST result");
+        }
+    }
+
+    #[test]
+    fn test_quote_unquote_evaluates_string_values() {
+        let input = r#"let x = "hello" | quote: unquote(x)"#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let result = eval_program(&program).expect("Failed to eval");
+
+        // The result should be an AST containing a block with the literal string "hello"
+        assert_eq!(result.len(), 1);
+        if let RuntimeValue::Ast(node) = &result[0] {
+            if let Expr::Block(nodes) = &*node.expr {
+                assert_eq!(nodes.len(), 1);
+                if let Expr::Literal(AstLiteral::String(s)) = &*nodes[0].expr {
+                    assert_eq!(s, "hello");
+                } else {
+                    panic!("Expected literal string in block, got {:?}", nodes[0].expr);
+                }
+            } else {
+                panic!("Expected block in AST, got {:?}", node.expr);
+            }
+        } else {
+            panic!("Expected AST result");
+        }
+    }
+
+    #[test]
+    fn test_quote_unquote_removes_none_values() {
+        let input = r#"quote do unquote(if(false): 1) | 2 | unquote(if(false): 3);"#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let result = eval_program(&program).expect("Failed to eval");
+
+        // The result should be an AST with a block containing only the literal 2
+        // The None values from the if statements should be filtered out
+        assert_eq!(result.len(), 1);
+        if let RuntimeValue::Ast(node) = &result[0] {
+            if let Expr::Block(nodes) = &*node.expr {
+                // Should have only 1 node (the literal 2), not 3
+                assert_eq!(
+                    nodes.len(),
+                    1,
+                    "Expected 1 node after filtering None values, got {}",
+                    nodes.len()
+                );
+                if let Expr::Literal(crate::ast::node::Literal::Number(n)) = &*nodes[0].expr {
+                    assert_eq!(*n, 2.into());
+                } else {
+                    panic!("Expected literal number 2");
+                }
+            } else {
+                panic!("Expected block in AST");
+            }
+        } else {
+            panic!("Expected AST result");
+        }
+    }
+
+    #[test]
+    fn test_quote_unquote_preserves_ast_values() {
+        // Test that unquote expressions that return AST values preserve them
+        let input = r#"let x = quote: 1 + 2 | quote: unquote(x)"#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let result = eval_program(&program).expect("Failed to eval");
+
+        // The result should be an AST containing the expression "1 + 2"
+        assert_eq!(result.len(), 1);
+        if let RuntimeValue::Ast(node) = &result[0] {
+            // quote returns a Block, so we need to check inside the block
+            if let Expr::Block(outer_nodes) = &*node.expr {
+                assert_eq!(outer_nodes.len(), 1, "Expected 1 node in outer block");
+                // The inner node should be another Block (from the original quote)
+                if let Expr::Block(inner_nodes) = &*outer_nodes[0].expr {
+                    assert_eq!(inner_nodes.len(), 1, "Expected 1 node in inner block");
+                    // The innermost node should be a Call (add)
+                    if let Expr::Call(ident, _) = &*inner_nodes[0].expr {
+                        assert_eq!(ident.name.as_str(), "add", "Expected add call");
+                    } else {
+                        panic!("Expected Call in innermost block, got {:?}", inner_nodes[0].expr);
+                    }
+                } else {
+                    panic!("Expected inner Block, got {:?}", outer_nodes[0].expr);
+                }
+            } else {
+                panic!("Expected outer Block in AST, got {:?}", node.expr);
+            }
+        } else {
+            panic!("Expected AST result");
+        }
+    }
+
+    #[test]
+    fn test_macro_body_none_removes_macro() {
+        let input = r#"quote do 1 | unquote(if(false): 2) | 3;"#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let result = eval_program(&program).expect("Failed to eval");
+
+        // The result should be an AST with a block containing only 1 and 3
+        // The None from if(false) should be filtered out
+        assert_eq!(result.len(), 1);
+        if let RuntimeValue::Ast(node) = &result[0] {
+            if let Expr::Block(nodes) = &*node.expr {
+                // Should have 2 nodes (1 and 3), not 3
+                assert_eq!(nodes.len(), 2, "Expected 2 nodes after filtering None");
+                // Verify the values are 1 and 3
+                if let Expr::Literal(node::Literal::Number(n)) = &*nodes[0].expr {
+                    assert_eq!(*n, 1.into());
+                } else {
+                    panic!("Expected literal 1");
+                }
+                if let Expr::Literal(node::Literal::Number(n)) = &*nodes[1].expr {
+                    assert_eq!(*n, 3.into());
+                } else {
+                    panic!("Expected literal 3");
+                }
+            } else {
+                panic!("Expected block in AST");
+            }
+        } else {
+            panic!("Expected AST result");
+        }
     }
 }

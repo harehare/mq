@@ -825,7 +825,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Expr::Break => Err(RuntimeError::Break),
             ast::Expr::Continue => Err(RuntimeError::Continue),
             ast::Expr::Paren(expr) => self.eval_expr(runtime_value, expr, env),
-            ast::Expr::Quote(inner) => self.eval_quote(inner),
+            ast::Expr::Quote(inner) => self.eval_quote(inner, env),
             ast::Expr::Unquote(_) => {
                 let token = get_token(Shared::clone(&self.token_arena), node.token_id);
                 Err(RuntimeError::UnquoteNotAllowedOutsideQuote((*token).clone()))
@@ -1063,8 +1063,98 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     #[inline(always)]
-    fn eval_quote(&mut self, node: &Shared<ast::Node>) -> Result<RuntimeValue, RuntimeError> {
-        Ok(RuntimeValue::Ast(Shared::clone(node)))
+    fn eval_quote(
+        &mut self,
+        node: &Shared<ast::Node>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, RuntimeError> {
+        let processed_node = self.process_quote_node(node, env)?;
+        Ok(RuntimeValue::Ast(processed_node))
+    }
+
+    /// Process a node inside a quote, evaluating any unquotes found
+    fn process_quote_node(
+        &mut self,
+        node: &Shared<ast::Node>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<Shared<ast::Node>, RuntimeError> {
+        match &*node.expr {
+            ast::Expr::Unquote(inner) => {
+                // Evaluate the unquote expression
+                let value = self.eval_expr(&RuntimeValue::None, inner, env)?;
+
+                match value {
+                    // If the result is an AST, return it directly
+                    RuntimeValue::Ast(ast_node) => Ok(ast_node),
+                    // If the result is None, we should remove it (handled by caller)
+                    RuntimeValue::None => {
+                        // Return an empty block that can be filtered out later
+                        Ok(Shared::new(ast::Node {
+                            token_id: node.token_id,
+                            expr: Shared::new(ast::Expr::Block(vec![])),
+                        }))
+                    }
+                    // For any other value, convert it to a literal AST node
+                    other_value => {
+                        let literal_expr = self.value_to_literal_expr(&other_value)?;
+                        Ok(Shared::new(ast::Node {
+                            token_id: node.token_id,
+                            expr: Shared::new(literal_expr),
+                        }))
+                    }
+                }
+            }
+            // For other expressions, recursively process child nodes
+            ast::Expr::Block(nodes) => {
+                let processed_nodes: Result<Vec<_>, _> =
+                    nodes.iter().map(|n| self.process_quote_node(n, env)).collect();
+
+                let processed = processed_nodes?;
+
+                // Filter out empty blocks that resulted from RuntimeValue::None in unquotes
+                let filtered_nodes: Vec<_> = processed
+                    .into_iter()
+                    .filter(|n| !matches!(&*n.expr, ast::Expr::Block(nodes) if nodes.is_empty()))
+                    .collect();
+
+                Ok(Shared::new(ast::Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(ast::Expr::Block(filtered_nodes)),
+                }))
+            }
+            ast::Expr::Paren(inner) => {
+                let processed = self.process_quote_node(inner, env)?;
+                Ok(Shared::new(ast::Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(ast::Expr::Paren(processed)),
+                }))
+            }
+            ast::Expr::Quote(inner) => {
+                // Nested quote: don't process unquotes inside
+                Ok(Shared::new(ast::Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(ast::Expr::Quote(Shared::clone(inner))),
+                }))
+            }
+            // For all other expressions, return the node as-is
+            _ => Ok(Shared::clone(node)),
+        }
+    }
+
+    /// Convert a RuntimeValue to a literal expression
+    fn value_to_literal_expr(&self, value: &RuntimeValue) -> Result<ast::Expr, RuntimeError> {
+        match value {
+            RuntimeValue::String(s) => Ok(ast::Expr::Literal(ast::Literal::String(s.clone()))),
+            RuntimeValue::Number(n) => Ok(ast::Expr::Literal(ast::Literal::Number(*n))),
+            RuntimeValue::Boolean(b) => Ok(ast::Expr::Literal(ast::Literal::Bool(*b))),
+            RuntimeValue::None => Ok(ast::Expr::Literal(ast::Literal::None)),
+            // For complex types, we could serialize them or return an error
+            _ => {
+                // For now, convert complex types to their string representation
+                let s = format!("{}", value);
+                Ok(ast::Expr::Literal(ast::Literal::String(s)))
+            }
+        }
     }
 
     #[inline(always)]
@@ -6120,21 +6210,16 @@ mod tests {
 /// This allows the macro expander to evaluate macro bodies during collection.
 impl<T: ModuleResolver> MacroEvaluator for Evaluator<T> {
     fn eval_macro_body(&mut self, body: &Shared<ast::Node>, _token_id: TokenId) -> Result<RuntimeValue, RuntimeError> {
-        // Try to evaluate the macro body
         let value = self.eval_macro(body);
 
         // If the result is already an AST (from quote), return it as-is
-        // If the result is None (e.g., from if(false) without else), return empty block
+        // If the result is None (e.g., from if(false) without else), return None to indicate removal
         // Otherwise, wrap the body itself as an AST (for macros without quote)
         match value {
             Ok(RuntimeValue::Ast(ast)) => Ok(RuntimeValue::Ast(ast)),
             Ok(RuntimeValue::None) => {
-                // Return an empty block for None results (e.g., from if(false))
-                // Use a default token_id to avoid arena issues
-                Ok(RuntimeValue::Ast(Shared::new(ast::Node {
-                    token_id: TokenId::new(0),
-                    expr: Shared::new(ast::Expr::Block(vec![])),
-                })))
+                // Return None instead of empty block - this will cause the macro to be skipped
+                Ok(RuntimeValue::None)
             }
             Ok(_) | Err(_) => {
                 // Return the body as AST, not the evaluated result

@@ -1772,7 +1772,7 @@ fn engine() -> DefaultEngine {
 #[case::macro_quote_variable_reference("
     macro make_computation(x) do
         let base = x |
-        quote: base * 3 + unquote(x)
+        | quote: unquote(base) * 3 + unquote(x)
     end
     | make_computation(4)
     ",
