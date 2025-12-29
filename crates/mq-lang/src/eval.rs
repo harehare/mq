@@ -170,17 +170,11 @@ impl<T: ModuleResolver> Evaluator<T> {
     where
         I: Iterator<Item = RuntimeValue>,
     {
+        // First pass: handle includes and imports, collect other nodes
         let program = program.iter().try_fold(
             Vec::with_capacity(program.len()),
             |mut nodes: Vec<Shared<ast::Node>>, node: &Shared<ast::Node>| -> Result<_, InnerError> {
                 match &*node.expr {
-                    ast::Expr::Def(ident, params, program) => {
-                        define(
-                            &self.env,
-                            ident.name,
-                            RuntimeValue::Function(params.clone(), program.clone(), Shared::clone(&self.env)),
-                        );
-                    }
                     ast::Expr::Include(module_id) => {
                         self.eval_include(module_id.to_owned(), &Shared::clone(&self.env))?;
                     }
@@ -194,9 +188,29 @@ impl<T: ModuleResolver> Evaluator<T> {
             },
         )?;
 
-        let mut program = self
+        // Expand macros in all nodes, including function definitions
+        let program = self
             .with_macro_expander(|expander, evaluator| expander.expand(&program, evaluator))
             .map_err(InnerError::from)?;
+
+        // Register expanded function definitions
+        let mut program = program.iter().try_fold(
+            Vec::with_capacity(program.len()),
+            |mut nodes: Vec<Shared<ast::Node>>, node: &Shared<ast::Node>| -> Result<_, InnerError> {
+                match &*node.expr {
+                    ast::Expr::Def(ident, params, program) => {
+                        define(
+                            &self.env,
+                            ident.name,
+                            RuntimeValue::Function(params.clone(), program.clone(), Shared::clone(&self.env)),
+                        );
+                    }
+                    _ => nodes.push(Shared::clone(node)),
+                };
+
+                Ok(nodes)
+            },
+        )?;
         let nodes_index = &program.iter().position(|node| node.is_nodes());
 
         if let Some(index) = nodes_index {
