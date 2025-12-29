@@ -435,3 +435,11 @@ macro breakpoint() do
     if (is_debug_mode()): _breakpoint()
   end
 end
+
+# Applies a function to a value and returns the value (useful for debugging or side effects).
+macro tap(tap_value, tap_expr) do
+  quote do
+    tap_expr | tap_value
+  end
+end
+
