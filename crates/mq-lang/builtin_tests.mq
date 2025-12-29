@@ -428,6 +428,11 @@ end
   | assert_eq(result2, [])
 end
 
+| def test_tap():
+  let result1 = tap(1, print("tap"))
+  | assert_eq(result1, 1)
+end
+
 run_tests([
   # Type checking
   test_case("is_array", test_is_array),
@@ -478,5 +483,9 @@ run_tests([
   test_case("transpose", test_transpose),
 
   test_case("regex_test", test_regex_test),
-  test_case("regex_match", test_regex_match)
+  test_case("regex_match", test_regex_match),
+
+  # macro
+  test_case("tap", test_tap)
 ])
+
