@@ -50,6 +50,7 @@ impl Node {
             | Expr::Def(_, _, program)
             | Expr::Fn(_, program)
             | Expr::While(_, program)
+            | Expr::Loop(program)
             | Expr::Module(_, program)
             | Expr::Foreach(_, _, program) => {
                 let start = program
@@ -265,6 +266,7 @@ pub enum Expr {
     Macro(IdentWithToken, Params, Shared<Node>),
     Fn(Params, Program),
     Let(IdentWithToken, Shared<Node>),
+    Loop(Program),
     Var(IdentWithToken, Shared<Node>),
     Assign(IdentWithToken, Shared<Node>),
     And(Shared<Node>, Shared<Node>),

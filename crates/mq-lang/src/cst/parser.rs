@@ -346,6 +346,7 @@ impl<'a> Parser<'a> {
             TokenKind::Import => self.parse_import(leading_trivia),
             TokenKind::Module => self.parse_module(leading_trivia),
             TokenKind::While => self.parse_while(leading_trivia),
+            TokenKind::Loop => self.parse_loop(leading_trivia),
             TokenKind::Try => self.parse_try(leading_trivia),
             TokenKind::Match => self.parse_match(leading_trivia),
             TokenKind::Ident(_) => self.parse_ident(leading_trivia),
@@ -736,6 +737,7 @@ impl<'a> Parser<'a> {
             | TokenKind::Fn
             | TokenKind::Foreach
             | TokenKind::While
+            | TokenKind::Loop
             | TokenKind::If
             | TokenKind::LParen
             | TokenKind::Do
@@ -1516,6 +1518,29 @@ impl<'a> Parser<'a> {
         Ok(Shared::new(node))
     }
 
+    fn parse_loop(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+        let token = self.tokens.next();
+        let trailing_trivia = self.parse_trailing_trivia();
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(4);
+
+        let mut node = Node {
+            kind: NodeKind::Loop,
+            token: Some(Shared::clone(token.unwrap())),
+            leading_trivia,
+            trailing_trivia,
+            children: Vec::new(),
+        };
+
+        self.push_colon_token_if_present(&mut children)?;
+
+        let (mut program, _) = self.parse_program(false, true);
+
+        children.append(&mut program);
+
+        node.children = children;
+        Ok(Shared::new(node))
+    }
+
     fn parse_try(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
@@ -2015,6 +2040,7 @@ impl<'a> Parser<'a> {
             match token.kind {
                 TokenKind::If
                 | TokenKind::While
+                | TokenKind::Loop
                 | TokenKind::Foreach
                 | TokenKind::Let
                 | TokenKind::Var
@@ -3225,6 +3251,44 @@ mod tests {
                             token: Some(Shared::new(token(TokenKind::Ident("body".into())))),
                             leading_trivia: vec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("comment".into())))), Trivia::NewLine],
                             trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(4))))],
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::loop_(
+        vec![
+            Shared::new(token(TokenKind::Loop)),
+            Shared::new(token(TokenKind::Colon)),
+            Shared::new(token(TokenKind::NewLine)),
+            Shared::new(token(TokenKind::Comment("loop comment".into()))),
+            Shared::new(token(TokenKind::NewLine)),
+            Shared::new(token(TokenKind::Ident("body".into()))),
+            Shared::new(token(TokenKind::Whitespace(2))),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Loop,
+                    token: Some(Shared::new(token(TokenKind::Loop))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::Colon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("body".into())))),
+                            leading_trivia: vec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("loop comment".into())))), Trivia::NewLine],
+                            trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
                             children: Vec::new(),
                         }),
                     ],

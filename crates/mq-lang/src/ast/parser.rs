@@ -228,6 +228,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Do => self.parse_block(token),
             TokenKind::Fn => self.parse_fn(token),
             TokenKind::While => self.parse_while(token),
+            TokenKind::Loop => self.parse_loop(token),
             TokenKind::Foreach => self.parse_foreach(token),
             TokenKind::Module => self.parse_module(token),
             TokenKind::Try => self.parse_try(token),
@@ -361,6 +362,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::LBrace
                 | TokenKind::LBracket
                 | TokenKind::While
+                | TokenKind::Loop
                 | TokenKind::Match
                 | TokenKind::Self_
                 | TokenKind::Selector(_)
@@ -398,6 +400,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::LBrace
                 | TokenKind::LBracket
                 | TokenKind::While
+                | TokenKind::Loop
                 | TokenKind::Match
                 | TokenKind::Self_
                 | TokenKind::Env(_)
@@ -1107,6 +1110,24 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }))
             }
             None => Err(SyntaxError::UnexpectedToken((**while_token).clone())),
+        }
+    }
+
+    fn parse_loop(&mut self, loop_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.token_arena.alloc(Shared::clone(loop_token));
+
+        self.consume_colon();
+
+        match self.tokens.peek() {
+            Some(_) => {
+                let body_program = self.parse_program(false)?;
+
+                Ok(Shared::new(Node {
+                    token_id,
+                    expr: Shared::new(Expr::Loop(body_program.iter().map(Shared::clone).collect())),
+                }))
+            }
+            None => Err(SyntaxError::UnexpectedToken((**loop_token).clone())),
         }
     }
 
@@ -2882,6 +2903,28 @@ mod tests {
             token(TokenKind::Colon),
         ],
         Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::While, module_id: 1.into()})))]
+    #[case::loop_(
+        vec![
+            token(TokenKind::Loop),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("loop body".to_owned())),
+            token(TokenKind::SemiColon),
+        ],
+        Ok(vec![Shared::new(Node {
+            token_id: 1.into(),
+            expr: Shared::new(Expr::Loop(
+                vec![Shared::new(Node {
+                    token_id: 2.into(),
+                    expr: Shared::new(Expr::Literal(Literal::String("loop body".to_owned()))),
+                })],
+            )),
+        })]))]
+    #[case::loop_error_no_body(
+        vec![
+            token(TokenKind::Loop),
+            token(TokenKind::Colon),
+        ],
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Loop, module_id: 1.into()})))]
     #[case::try_catch(
         vec![
             token(TokenKind::Try),

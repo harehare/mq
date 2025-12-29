@@ -110,11 +110,12 @@ impl Formatter {
             mq_lang::CstNodeKind::Def
             | mq_lang::CstNodeKind::Foreach
             | mq_lang::CstNodeKind::While
+            | mq_lang::CstNodeKind::Loop
             | mq_lang::CstNodeKind::Fn => self.format_expr(
                 &node,
                 indent_level_consider_new_line,
                 indent_level,
-                !matches!(node.kind, mq_lang::CstNodeKind::Fn),
+                !matches!(node.kind, mq_lang::CstNodeKind::Fn | mq_lang::CstNodeKind::Loop),
             ),
             mq_lang::CstNodeKind::Macro => self.format_macro(&node, indent_level_consider_new_line, indent_level),
             mq_lang::CstNodeKind::Eof => {}

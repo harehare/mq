@@ -821,6 +821,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Expr::And(left, right) => self.eval_and(runtime_value, left, right, env),
             ast::Expr::Or(left, right) => self.eval_or(runtime_value, left, right, env),
             ast::Expr::While(cond, program) => self.eval_while(runtime_value, cond, program, env),
+            ast::Expr::Loop(program) => self.eval_loop(runtime_value, program, env),
             ast::Expr::Try(try_expr, catch_expr) => self.eval_try(runtime_value, try_expr, catch_expr, env),
             ast::Expr::Foreach(ident, values, body) => {
                 self.eval_foreach(runtime_value, ident.name, values, body, node.token_id, env)
@@ -978,6 +979,41 @@ impl<T: ModuleResolver> Evaluator<T> {
                 Ok(mut new_runtime_value) => {
                     std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                     cond_value = self.eval_expr(&runtime_value, cond, &env)?;
+                }
+                Err(RuntimeError::Break) if first => {
+                    runtime_value = RuntimeValue::NONE;
+                    break;
+                }
+                Err(RuntimeError::Break) => break,
+                Err(RuntimeError::Continue) if first => {
+                    runtime_value = RuntimeValue::NONE;
+                    continue;
+                }
+                Err(RuntimeError::Continue) => continue,
+                Err(e) => return Err(e),
+            }
+
+            first = false;
+        }
+
+        Ok(runtime_value)
+    }
+
+    #[inline(always)]
+    fn eval_loop(
+        &mut self,
+        runtime_value: &RuntimeValue,
+        body: &Program,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, RuntimeError> {
+        let mut runtime_value = runtime_value.clone();
+        let env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+        let mut first = true;
+
+        loop {
+            match self.eval_program(body, runtime_value.clone(), Shared::clone(&env)) {
+                Ok(mut new_runtime_value) => {
+                    std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                 }
                 Err(RuntimeError::Break) if first => {
                     runtime_value = RuntimeValue::NONE;

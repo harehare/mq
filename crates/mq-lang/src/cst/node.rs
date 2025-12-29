@@ -100,6 +100,7 @@ pub enum NodeKind {
     Include,
     InterpolatedString,
     Let,
+    Loop,
     Var,
     Literal,
     Macro,

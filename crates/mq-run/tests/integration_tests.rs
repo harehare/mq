@@ -487,3 +487,51 @@ fn test_def_argument_scope_with_let_and_do() -> Result<(), Box<dyn std::error::E
 
     Ok(())
 }
+
+#[test]
+fn test_loop_with_break() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("let x = 0 | loop: let x = x + 1 | if(x > 3): break else: x;;")
+        .assert();
+
+    assert.success().code(0).stdout("3\n");
+
+    Ok(())
+}
+
+#[test]
+fn test_loop_with_counter() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("let x = 0 | loop: let x = x + 1 | if(x > 5): break else: x;;")
+        .assert();
+
+    assert.success().code(0).stdout("5\n");
+
+    Ok(())
+}
+
+#[test]
+fn test_loop_with_continue() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("let x = 0 | loop: let x = x + 1 | if(x < 3): continue elif(x > 5): break else: x;;")
+        .assert();
+
+    assert.success().code(0).stdout("5\n");
+
+    Ok(())
+}
