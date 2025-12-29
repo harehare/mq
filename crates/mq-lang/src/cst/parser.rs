@@ -740,6 +740,8 @@ impl<'a> Parser<'a> {
             | TokenKind::LParen
             | TokenKind::Do
             | TokenKind::Colon
+            | TokenKind::Unquote
+            | TokenKind::Quote
             | TokenKind::LBrace => self.parse_expr(leading_trivia, false, false),
             _ => Err(ParseError::UnexpectedToken(Shared::clone(&token))),
         }
