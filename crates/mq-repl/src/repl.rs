@@ -227,6 +227,11 @@ impl Repl {
             KeyEvent(KeyCode::Right, Modifiers::CTRL),
             Cmd::Move(Movement::ForwardWord(1, At::AfterEnd, Word::Big)),
         );
+        // Bind Esc+C (Alt+C) to clear all input lines
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('c'), Modifiers::ALT),
+            Cmd::Kill(Movement::WholeBuffer),
+        );
 
         let config_dir = config_dir();
 
