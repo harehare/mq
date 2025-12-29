@@ -401,24 +401,37 @@ impl Macro {
         let (params, body) = {
             let macro_def = self.macros.get(&name).ok_or(RuntimeError::UndefinedMacro(name))?;
 
-            // Check arity
-            if macro_def.params.len() != args.len() {
+            if macro_def.params.len() == args.len() + 1 {
+                // Case 2: One argument missing -> first parameter will be mapped to Expr::Self_
+                (macro_def.params.clone(), Shared::clone(&macro_def.body))
+            } else if macro_def.params.len() != args.len() {
                 return Err(RuntimeError::ArityMismatch {
                     macro_name: name,
                     expected: macro_def.params.len(),
                     got: args.len(),
                 });
+            } else {
+                (macro_def.params.clone(), Shared::clone(&macro_def.body))
             }
-
-            // Clone only what we need: params (Vec<Ident>) and body (Shared<Program>)
-            // Note: Shared::clone is cheap (just increments reference count)
-            (macro_def.params.clone(), Shared::clone(&macro_def.body))
         };
 
         // Create substitution map
         let mut substitutions = FxHashMap::with_capacity_and_hasher(params.len(), FxBuildHasher);
-        for (param, arg) in params.iter().zip(args.iter()) {
-            substitutions.insert(*param, Shared::clone(arg));
+
+        // If one argument is missing, map the first parameter to Expr::Self_
+        if params.len() == args.len() + 1 {
+            let self_node = Shared::new(Node {
+                token_id: TokenId::new(1),
+                expr: Shared::new(Expr::Self_),
+            });
+            substitutions.insert(params[0], self_node);
+            for (param, arg) in params[1..].iter().zip(args.iter()) {
+                substitutions.insert(*param, Shared::clone(arg));
+            }
+        } else {
+            for (param, arg) in params.iter().zip(args.iter()) {
+                substitutions.insert(*param, Shared::clone(arg));
+            }
         }
 
         // Substitute and expand the macro body
@@ -1132,7 +1145,8 @@ mod tests {
 
     #[test]
     fn test_macro_expansion_arity_mismatch_too_few() {
-        let input = "macro add_two(a, b): a + b | add_two(1)";
+        // Changed: now requires 2+ arguments missing to error (not just 1)
+        let input = "macro add_three(a, b, c): a + b + c | add_three(1)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
@@ -2542,5 +2556,122 @@ mod tests {
 
         assert_eq!(macro_expander.macros.len(), 2, "Expected no macros to be registered");
         assert_eq!(expanded.len(), 0, "Expected two macro definition nodes to remain");
+    }
+
+    #[rstest]
+    #[case::simple_self_substitution(
+        "macro add(value, n): value | add(5)",
+        true,
+        "First parameter should be Expr::Self_ when one argument is missing"
+    )]
+    #[case::two_params_missing_one(
+        "macro compute(value, a): value | compute(10)",
+        true,
+        "First parameter should be Expr::Self_ with 2 params, 1 arg"
+    )]
+    #[case::three_params_missing_one(
+        "macro compute(value, a, b): value | compute(10, 20)",
+        true,
+        "First parameter should be Expr::Self_ with 3 params, 2 args"
+    )]
+    #[case::four_params_missing_one(
+        "macro compute(value, a, b, c): value | compute(10, 20, 30)",
+        true,
+        "First parameter should be Expr::Self_ with 4 params, 3 args"
+    )]
+    fn test_macro_expansion_missing_one_argument(
+        #[case] input: &str,
+        #[case] should_have_self: bool,
+        #[case] description: &str,
+    ) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand program");
+
+        assert_eq!(expanded.len(), 1, "{}", description);
+        if should_have_self {
+            assert!(
+                matches!(&*expanded[0].expr, Expr::Self_),
+                "{}: Expected Expr::Self_, got {:?}",
+                description,
+                expanded[0].expr
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::missing_two_arguments("macro add(a, b, c): a + b + c | add(1)", "Should error when missing 2 arguments")]
+    #[case::missing_three_arguments(
+        "macro add(a, b, c, d): a + b + c + d | add(1)",
+        "Should error when missing 3 arguments"
+    )]
+    #[case::no_args_to_two_params(
+        "macro add(a, b): a + b | add()",
+        "Should error when no arguments provided but 2 params expected"
+    )]
+    fn test_macro_expansion_still_errors_on_too_few_arguments(#[case] input: &str, #[case] description: &str) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
+
+        assert!(
+            matches!(result, Err(RuntimeError::ArityMismatch { .. })),
+            "{}: Expected ArityMismatch error",
+            description
+        );
+    }
+
+    #[rstest]
+    #[case::simple_block_with_self(
+        "macro process(value, multiplier) do value * multiplier; | 10 | process(3)",
+        vec![RuntimeValue::Number(30.into())],
+        "Block macro with self: 10 * 3 = 30"
+    )]
+    #[case::nested_expression_with_self(
+        "macro add_and_double(base, n) do (base + n) * 2; | 5 | add_and_double(3)",
+        vec![RuntimeValue::Number(16.into())],
+        "Nested expression: (5 + 3) * 2 = 16"
+    )]
+    #[case::three_params_with_self(
+        "macro compute(value, a, b): value + a * b | 2 | compute(3, 4)",
+        vec![RuntimeValue::Number(14.into())],
+        "Three params with self: 2 + 3 * 4 = 14"
+    )]
+    #[case::string_operation_with_self(
+        r#"macro concat(value, suffix): s"${value}${suffix}" | "Hello" | concat("World")"#,
+        vec![RuntimeValue::String("HelloWorld".to_string())],
+        "String concatenation with self"
+    )]
+    #[case::function_call_with_self(
+        "macro apply(value, f): f(value) | def double(x): x * 2; | 5 | apply(double)",
+        vec![RuntimeValue::Number(10.into())],
+        "Function application with self: double(5) = 10"
+    )]
+    #[case::arithmetic_with_self(
+        "macro add_multiply(base, x, y): base + x * y | 2 | add_multiply(2, 3)",
+        vec![RuntimeValue::Number(8.into())],
+        "Arithmetic with self: 2 + 2 * 3 = 8"
+    )]
+    #[case::chained_macros_with_self(
+        "macro inc(value, n): value + n | macro double(value): value * 2 | 5 | inc(3) | double()",
+        vec![RuntimeValue::Number(16.into())],
+        "Chained macros with self: (5 + 3) * 2 = 16"
+    )]
+    fn test_macro_missing_argument_with_evaluation(
+        #[case] input: &str,
+        #[case] expected: Vec<RuntimeValue>,
+        #[case] description: &str,
+    ) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .unwrap_or_else(|e| panic!("{}: Failed to expand: {:?}", description, e));
+
+        let result = eval_program(&expanded).unwrap_or_else(|e| panic!("{}: Failed to eval: {:?}", description, e));
+
+        assert_eq!(result, expected, "{}", description);
     }
 }
