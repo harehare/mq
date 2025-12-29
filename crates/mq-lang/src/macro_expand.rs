@@ -401,17 +401,14 @@ impl Macro {
         let (params, body) = {
             let macro_def = self.macros.get(&name).ok_or(RuntimeError::UndefinedMacro(name))?;
 
-            if macro_def.params.len() == args.len() + 1 {
-                // Case 2: One argument missing -> first parameter will be mapped to Expr::Self_
+            if macro_def.params.len() == args.len() || macro_def.params.len() == args.len() + 1 {
                 (macro_def.params.clone(), Shared::clone(&macro_def.body))
-            } else if macro_def.params.len() != args.len() {
+            } else {
                 return Err(RuntimeError::ArityMismatch {
                     macro_name: name,
                     expected: macro_def.params.len(),
                     got: args.len(),
                 });
-            } else {
-                (macro_def.params.clone(), Shared::clone(&macro_def.body))
             }
         };
 
