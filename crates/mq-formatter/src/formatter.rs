@@ -1465,6 +1465,34 @@ else: do
   | output();
 "
     )]
+    #[case::loop_multiline(
+        "loop:
+        process();",
+        "loop:
+  process();
+"
+    )]
+    #[case::loop_oneline("loop: process();", "loop: process();")]
+    #[case::loop_with_pipe(
+        "loop:
+        data
+        | process()
+        | output();",
+        "loop:
+  data
+  | process()
+  | output();
+"
+    )]
+    #[case::loop_with_break(
+        "loop:
+        add(self,1)
+        |if(gt(self,5)):break;;",
+        "loop:
+  add(self, 1)
+  | if (gt(self, 5)): break;;
+"
+    )]
     #[case::def(
         r##".h
 | let link = to_link(add("#", to_text(self)), to_text(self), "");

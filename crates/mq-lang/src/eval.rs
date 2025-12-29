@@ -4925,6 +4925,17 @@ mod tests {
             RuntimeValue::String("c".to_string()),
         ])])
     )]
+    #[case::loop_immediate_break(
+        vec![RuntimeValue::Number(10.into())],
+        vec![
+            ast_node(ast::Expr::Loop(
+                vec![
+                    ast_node(ast::Expr::Break),
+                ],
+            )),
+        ],
+        Ok(vec![RuntimeValue::NONE])
+    )]
     #[case::to_array_string(vec![RuntimeValue::String("test".to_string())],
         vec![
             ast_call("to_array", SmallVec::new())
