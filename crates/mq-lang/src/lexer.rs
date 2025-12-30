@@ -293,8 +293,8 @@ fn unary_op(input: Span) -> IResult<Span, Token> {
 
 fn control_keywords(input: Span) -> IResult<Span, Token> {
     alt((
-        def, do_, let_, loop_, macro_, match_, while_, if_, elif, else_, end, foreach, fn_, break_, continue_, try_,
-        catch_, quote_, unquote_, var,
+        break_, catch_, continue_, def, do_, elif, else_, end, fn_, foreach, if_, let_, loop_, macro_, match_, quote_,
+        try_, unquote_, var, while_,
     ))
     .parse(input)
 }
