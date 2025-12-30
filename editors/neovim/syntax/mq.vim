@@ -7,7 +7,7 @@ syn match mqComment "#.*$" contains=mqTodo
 syn keyword mqTodo contained TODO FIXME XXX NOTE
 
 " Keywords (use \< and \> for word boundaries to avoid partial matches)
-syn match mqKeywordControl "\<\(def\|do\|if\|elif\|else\|end\|while\|foreach\|fn\|break\|continue\|match\)\>"
+syn match mqKeywordControl "\<\(def\|do\|if\|elif\|else\|end\|while\|foreach\|fn\|break\|continue\|match\|macro\|quote\|unquote\|loop\)\>"
 syn match mqKeywordInclude "\<\(include\|module\|import\)\>"
 syn match mqKeywordSpecial "\<\(self\|nodes\)\>"
 syn match mqKeywordLetVar "\<\(let\|var\)\>" nextgroup=mqVariableDef skipwhite

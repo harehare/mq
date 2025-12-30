@@ -651,6 +651,16 @@ impl RuntimeValue {
                 }
                 write!(buf, "])")?;
             }
+            Expr::Loop(body) => {
+                write!(buf, "Loop([")?;
+                for (i, node) in body.iter().enumerate() {
+                    if i > 0 {
+                        write!(buf, ", ")?;
+                    }
+                    Self::format_ast_node(node, buf)?;
+                }
+                write!(buf, "])")?;
+            }
             Expr::Foreach(ident, iter, body) => {
                 write!(buf, "Foreach(\"{}\", ", ident)?;
                 Self::format_ast_node(iter, buf)?;

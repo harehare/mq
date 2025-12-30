@@ -61,3 +61,42 @@ Foreach loops are useful for:
 - Processing arrays element by element
 - Mapping operations across collections
 - Filtering and transforming data
+
+## Loop Expression
+
+The loop expression creates an infinite loop that continues until explicitly terminated with `break`:
+
+```ruby
+var x = 0 |
+loop:
+  x = x + 1 |
+  if(x > 5):
+    break
+  else:
+    x
+end
+# => 5
+```
+
+The loop can be controlled using `break` to exit the loop and `continue` to skip to the next iteration:
+
+```ruby
+var x = 0 |
+loop:
+  x = x + 1 |
+  if(x < 3):
+    continue
+  elif(x > 5):
+    break
+  else:
+    x
+end
+# => 5
+```
+
+Loop expressions are useful for:
+
+- Implementing infinite loops with conditional exits
+- Creating retry mechanisms
+- Processing until a specific condition is met
+- Complex iteration patterns that don't fit while or foreach

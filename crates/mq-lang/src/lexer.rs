@@ -225,6 +225,7 @@ define_token_parser!(l_bracket, "[", TokenKind::LBracket);
 define_token_parser!(l_paren, "(", TokenKind::LParen);
 define_token_parser!(l_brace, "{", TokenKind::LBrace);
 define_keyword_parser!(let_, "let", TokenKind::Let);
+define_keyword_parser!(loop_, "loop", TokenKind::Loop);
 define_keyword_parser!(match_, "match", TokenKind::Match);
 define_keyword_parser!(module_, "module", TokenKind::Module);
 define_token_parser!(asterisk, "*", TokenKind::Asterisk);
@@ -292,8 +293,8 @@ fn unary_op(input: Span) -> IResult<Span, Token> {
 
 fn control_keywords(input: Span) -> IResult<Span, Token> {
     alt((
-        def, do_, let_, macro_, match_, while_, if_, elif, else_, end, foreach, fn_, break_, continue_, try_, catch_,
-        quote_, unquote_, var,
+        break_, catch_, continue_, def, do_, elif, else_, end, fn_, foreach, if_, let_, loop_, macro_, match_, quote_,
+        try_, unquote_, var, while_,
     ))
     .parse(input)
 }

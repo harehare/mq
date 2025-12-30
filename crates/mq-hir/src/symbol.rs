@@ -38,6 +38,7 @@ pub enum SymbolKind {
     If,
     Include(SourceId),
     Keyword,
+    Loop,
     Macro(Params),
     Match,
     MatchArm,

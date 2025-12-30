@@ -206,6 +206,13 @@ impl Macro {
                     expr: Shared::new(Expr::While(expanded_cond, expanded_program)),
                 }))
             }
+            Expr::Loop(program) => {
+                let expanded_program = self.expand(program, evaluator)?;
+                Ok(Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Loop(expanded_program)),
+                }))
+            }
             Expr::Foreach(ident, collection, program) => {
                 let expanded_collection = self.expand_node(collection, evaluator)?;
                 let expanded_program = self.expand(program, evaluator)?;
@@ -594,6 +601,15 @@ impl Macro {
                     expr: Shared::new(Expr::While(substituted_cond, substituted_program)),
                 })
             }
+            Expr::Loop(program) => {
+                let substituted_program: Vec<_> =
+                    program.iter().map(|n| self.substitute_node(n, substitutions)).collect();
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Loop(substituted_program)),
+                })
+            }
             Expr::Foreach(ident, collection, program) => {
                 let substituted_collection = self.substitute_node(collection, substitutions);
                 let substituted_program: Vec<_> =
@@ -886,6 +902,17 @@ impl Macro {
                 Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::While(substituted_cond, substituted_program)),
+                })
+            }
+            Expr::Loop(program) => {
+                let substituted_program: Vec<_> = program
+                    .iter()
+                    .map(|n| self.substitute_in_quote(n, substitutions))
+                    .collect();
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Loop(substituted_program)),
                 })
             }
             Expr::Foreach(ident, collection, program) => {
