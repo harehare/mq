@@ -1008,27 +1008,16 @@ impl<T: ModuleResolver> Evaluator<T> {
     ) -> Result<RuntimeValue, RuntimeError> {
         let mut runtime_value = runtime_value.clone();
         let env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
-        let mut first = true;
 
         loop {
             match self.eval_program(body, runtime_value.clone(), Shared::clone(&env)) {
                 Ok(mut new_runtime_value) => {
                     std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                 }
-                Err(RuntimeError::Break) if first => {
-                    runtime_value = RuntimeValue::NONE;
-                    break;
-                }
                 Err(RuntimeError::Break) => break,
-                Err(RuntimeError::Continue) if first => {
-                    runtime_value = RuntimeValue::NONE;
-                    continue;
-                }
                 Err(RuntimeError::Continue) => continue,
                 Err(e) => return Err(e),
             }
-
-            first = false;
         }
 
         Ok(runtime_value)
@@ -4934,7 +4923,7 @@ mod tests {
                 ],
             )),
         ],
-        Ok(vec![RuntimeValue::NONE])
+        Ok(vec![RuntimeValue::Number(10.into())])
     )]
     #[case::to_array_string(vec![RuntimeValue::String("test".to_string())],
         vec![
