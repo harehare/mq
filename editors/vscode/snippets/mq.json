@@ -51,7 +51,7 @@
     "macro": {
         "prefix": "macro",
         "body": [
-            "macro ${1:name} do\n  ${2:body}\nend"
+            "macro ${1:name}(${2:args}) do\n  ${3:body}\nend"
         ],
         "description": "Define a macro"
     },

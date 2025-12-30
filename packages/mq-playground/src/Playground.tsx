@@ -1375,7 +1375,7 @@ export const Playground = () => {
           {
             label: "macro",
             kind: monaco.languages.CompletionItemKind.Snippet,
-            insertText: "macro ${1:name} do\n  ${2:body}:\nend",
+            insertText: "macro ${1:name}(${2:args}) do\n  ${3:body}:\nend",
             insertTextRules:
               monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
             detail: "Macro declaration",
@@ -1386,6 +1386,7 @@ export const Playground = () => {
               startColumn: wordRange.startColumn,
               endLineNumber: position.lineNumber,
               endColumn: wordRange.endColumn,
+            },
           },
           {
             label: "quote",
