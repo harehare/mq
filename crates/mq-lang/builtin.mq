@@ -443,3 +443,30 @@ macro tap(tap_value, tap_expr) do
   end
 end
 
+# Executes the expression only if the condition is false.
+macro unless(unless_cond, unless_expr) do
+  quote do
+    if (unquote(!unless_cond)): unquote(unless_expr)
+  end
+end
+
+# Executes the expression repeatedly until the condition is true.
+macro until(until_cond, until_expr) do
+  quote do
+    loop:
+      if (unquote(until_cond)): break
+      | unquote(until_expr)
+    end
+  end
+end
+
+# Extracts values from an array of objects based on a specified selector.
+macro pluck(pluck_obj, selector) do 
+ quote do
+   if (is_array(unquote(pluck_obj))) do
+     unquote(pluck_obj) | map(fn(x): x | unquote(selector););
+   else do
+     unquote(pluck_obj) | unquote(selector);
+ end
+end
+
