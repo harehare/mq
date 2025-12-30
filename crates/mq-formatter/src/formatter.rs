@@ -549,14 +549,17 @@ impl Formatter {
         self.append_space();
 
         let expr_nodes = node.children.iter().peekable();
-        let block_indent_level = if is_prev_pipe {
-            block_indent_level + 2
+
+        let base_indent = if indent_level > 0 {
+            indent_level
         } else {
-            block_indent_level + 1
-        } + indent_adjustment;
+            block_indent_level
+        };
+
+        let child_indent_level = if is_prev_pipe { base_indent + 2 } else { base_indent + 1 } + indent_adjustment;
 
         expr_nodes.for_each(|child| {
-            self.format_node(mq_lang::Shared::clone(child), block_indent_level);
+            self.format_node(mq_lang::Shared::clone(child), child_indent_level);
         });
     }
 
@@ -668,29 +671,68 @@ impl Formatter {
             0
         };
 
-        if let [l_param, cond, r_param, then_colon, then_expr, rest @ ..] = node.children.as_slice() {
-            self.format_node(mq_lang::Shared::clone(l_param), 0);
-            self.format_node(mq_lang::Shared::clone(cond), 0);
-            self.format_node(mq_lang::Shared::clone(r_param), 0);
-            self.format_node(mq_lang::Shared::clone(then_colon), 0);
+        // Find the colon position
+        let colon_index = node.children.iter().position(|c| {
+            c.token
+                .as_ref()
+                .map(|token| matches!(token.kind, mq_lang::TokenKind::Colon))
+                .unwrap_or(false)
+        });
 
-            if !then_expr.has_new_line() && !matches!(then_expr.kind, mq_lang::CstNodeKind::Block) {
-                self.append_space();
-            }
+        // If there's no colon, split after the right parenthesis
+        let expr_index = match colon_index {
+            Some(index) => index,
+            None => node
+                .children
+                .iter()
+                .position(|c| {
+                    c.token
+                        .as_ref()
+                        .map(|token| matches!(token.kind, mq_lang::TokenKind::RParen))
+                        .unwrap_or(false)
+                })
+                .map(|index| index + 1)
+                .unwrap_or(3), // fallback to position 3 (after l_param, cond, r_param)
+        };
 
-            let block_indent_level = if is_prev_pipe {
-                indent_level + 2
-            } else {
-                indent_level + 1
-            } + indent_adjustment;
+        // Format nodes before colon/rparen (l_param, cond, r_param)
+        node.children.iter().take(expr_index).for_each(|child| {
+            self.format_node(mq_lang::Shared::clone(child), 0);
+        });
 
+        let mut remaining = node.children.iter().skip(expr_index).peekable();
+
+        // Format colon if it exists
+        if colon_index.is_some()
+            && let Some(colon_node) = remaining.next()
+        {
+            self.format_node(mq_lang::Shared::clone(colon_node), 0);
+        }
+
+        // Check if next node needs space before it
+        if let Some(next) = remaining.peek()
+            && !next.has_new_line()
+            && !matches!(next.kind, mq_lang::CstNodeKind::Block)
+        {
+            self.append_space();
+        }
+
+        let block_indent_level = if is_prev_pipe {
+            indent_level + 2
+        } else {
+            indent_level + 1
+        } + indent_adjustment;
+
+        let node_indent_level = if is_prev_pipe { indent_level + 1 } else { indent_level } + indent_adjustment;
+
+        // Format the then expression
+        if let Some(then_expr) = remaining.next() {
             self.format_node(mq_lang::Shared::clone(then_expr), block_indent_level);
+        }
 
-            let node_indent_level = if is_prev_pipe { indent_level + 1 } else { indent_level } + indent_adjustment;
-
-            for child in rest {
-                self.format_node(mq_lang::Shared::clone(child), node_indent_level);
-            }
+        // Format remaining nodes (elif/else clauses)
+        for child in remaining {
+            self.format_node(mq_lang::Shared::clone(child), node_indent_level);
         }
     }
 
@@ -703,16 +745,54 @@ impl Formatter {
         self.output.push_str(&node.to_string());
         self.append_space();
 
-        if let [l_param, cond, r_param, then_colon, then_expr] = node.children.as_slice() {
-            self.format_node(mq_lang::Shared::clone(l_param), 0);
-            self.format_node(mq_lang::Shared::clone(cond), 0);
-            self.format_node(mq_lang::Shared::clone(r_param), 0);
-            self.format_node(mq_lang::Shared::clone(then_colon), 0);
+        // Find the colon position
+        let colon_index = node.children.iter().position(|c| {
+            c.token
+                .as_ref()
+                .map(|token| matches!(token.kind, mq_lang::TokenKind::Colon))
+                .unwrap_or(false)
+        });
 
-            if !then_expr.has_new_line() && !matches!(then_expr.kind, mq_lang::CstNodeKind::Block) {
-                self.append_space();
-            }
+        // If there's no colon, split after the right parenthesis
+        let expr_index = match colon_index {
+            Some(index) => index,
+            None => node
+                .children
+                .iter()
+                .position(|c| {
+                    c.token
+                        .as_ref()
+                        .map(|token| matches!(token.kind, mq_lang::TokenKind::RParen))
+                        .unwrap_or(false)
+                })
+                .map(|index| index + 1)
+                .unwrap_or(3), // fallback to position 3 (after l_param, cond, r_param)
+        };
 
+        // Format nodes before colon/rparen (l_param, cond, r_param)
+        node.children.iter().take(expr_index).for_each(|child| {
+            self.format_node(mq_lang::Shared::clone(child), 0);
+        });
+
+        let mut remaining = node.children.iter().skip(expr_index).peekable();
+
+        // Format colon if it exists
+        if colon_index.is_some()
+            && let Some(colon_node) = remaining.next()
+        {
+            self.format_node(mq_lang::Shared::clone(colon_node), 0);
+        }
+
+        // Check if next node needs space before it
+        if let Some(next) = remaining.peek()
+            && !next.has_new_line()
+            && !matches!(next.kind, mq_lang::CstNodeKind::Block)
+        {
+            self.append_space();
+        }
+
+        // Format the then expression
+        if let Some(then_expr) = remaining.next() {
             self.format_node(mq_lang::Shared::clone(then_expr), indent_level + 1);
         }
     }
@@ -725,13 +805,33 @@ impl Formatter {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
 
-        if let [then_colon, then_expr] = node.children.as_slice() {
-            self.format_node(mq_lang::Shared::clone(then_colon), 0);
+        // Find the colon position
+        let colon_index = node.children.iter().position(|c| {
+            c.token
+                .as_ref()
+                .map(|token| matches!(token.kind, mq_lang::TokenKind::Colon))
+                .unwrap_or(false)
+        });
 
-            if !then_expr.has_new_line() && !matches!(then_expr.kind, mq_lang::CstNodeKind::Block) {
-                self.append_space();
-            }
+        let mut remaining = node.children.iter().peekable();
 
+        // Format colon if it exists
+        if colon_index.is_some()
+            && let Some(colon_node) = remaining.next()
+        {
+            self.format_node(mq_lang::Shared::clone(colon_node), 0);
+        }
+
+        // Check if next node needs space before it
+        if let Some(next) = remaining.peek()
+            && !next.has_new_line()
+            && !matches!(next.kind, mq_lang::CstNodeKind::Block)
+        {
+            self.append_space();
+        }
+
+        // Format the then expression
+        for then_expr in remaining {
             self.format_node(mq_lang::Shared::clone(then_expr), indent_level + 1);
         }
     }
@@ -2214,6 +2314,49 @@ end"#,
         r#"unless(cond) do
   expr
 end
+"#
+    )]
+    #[case::if_without_colon_oneline("if(test) 1 else 2", "if (test) 1 else 2")]
+    #[case::if_without_colon_multiline(
+        r#"if(test)
+test
+else
+test2"#,
+        r#"if (test)
+  test
+else
+  test2
+"#
+    )]
+    #[case::if_elif_else_without_colon_oneline("if(test) 1 elif(test2) 2 else 3", "if (test) 1 elif (test2) 2 else 3")]
+    #[case::if_elif_else_without_colon_multiline(
+        r#"if(test)
+test
+elif(test2)
+test2
+else
+test3"#,
+        r#"if (test)
+  test
+elif (test2)
+  test2
+else
+  test3
+"#
+    )]
+    #[case::if_without_colon_with_do_block(
+        r#"if(test) do
+test
+end
+else do
+test2
+end"#,
+        r#"if (test) do
+    test
+  end
+else do
+    test2
+  end
 "#
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
