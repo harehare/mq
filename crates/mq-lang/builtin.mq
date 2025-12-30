@@ -461,12 +461,11 @@ macro until(until_cond, until_expr) do
 end
 
 # Extracts values from an array of objects based on a specified selector.
-macro pluck(pluck_obj, selector) do 
- quote do
-   if (is_array(unquote(pluck_obj))) do
-     unquote(pluck_obj) | map(fn(x): x | unquote(selector););
-   else do
-     unquote(pluck_obj) | unquote(selector);
- end
+macro pluck(pluck_obj, selector) do
+  quote do
+    if (is_array(unquote(pluck_obj))): do
+        unquote(pluck_obj) | map(fn(x): x | select(unquote(selector), unquote(selector));) | compact();
+    else: do
+        unquote(pluck_obj) | unquote(selector);
+  end
 end
-

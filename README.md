@@ -254,6 +254,9 @@ mq '.h' README.md
 # Extract code blocks containing "name"
 mq '.code | select(contains("name"))' example.md
 
+# Extract code values from code blocks
+mq -A 'pluck(.code.value)' example.md
+
 # Extract language names from code blocks
 mq '.code.lang' documentation.md
 
