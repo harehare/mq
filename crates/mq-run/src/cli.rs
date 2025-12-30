@@ -829,6 +829,12 @@ impl Cli {
                     value: Some(value),
                     doc,
                     ..
+                }
+                | mq_hir::Symbol {
+                    kind: mq_hir::SymbolKind::Macro(params),
+                    value: Some(value),
+                    doc,
+                    ..
                 } if !symbol.is_internal_function() => {
                     let name = if symbol.is_deprecated() {
                         format!("~~`{}`~~", value)

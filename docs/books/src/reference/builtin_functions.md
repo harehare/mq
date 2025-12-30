@@ -62,6 +62,7 @@
 | `is_array` |  Checks if input is an array | `a` | is_array(a) |
 | `is_bool` |  Checks if input is a boolean | `b` | is_bool(b) |
 | `is_code` |  Checks if markdown is code block | `md` | is_code(md) |
+| `is_debug_mode` | Checks if the runtime is currently in debug mode, returning true if a debugger is attached. |  | is_debug_mode() |
 | `is_dict` |  Checks if input is a dictionary | `d` | is_dict(d) |
 | `is_em` |  Checks if markdown is emphasis | `md` | is_em(md) |
 | `is_empty` |  Checks if string, array or dict is empty | `s` | is_empty(s) |
