@@ -433,6 +433,30 @@ end
   | assert_eq(result1, 1)
 end
 
+| def test_unless():
+  let result1 = unless(false) do 1;
+  | assert_eq(result1, 1)
+
+  | let result2 = unless(true) do 1;
+  | assert_eq(result2, None)
+end
+
+| def test_pluck():
+  let result1 = do to_markdown("# test1\n\n## test2") | pluck(.h.value);
+  | assert_eq(result1, ["test1", "test2"])
+
+  | let result2 = do to_markdown("# test1\n\n## test2") | pluck(.h.level);
+  | assert_eq(result2, [1, 2])
+
+  | let result3 = do [{name: "test1"}, {name: "test2"}] | pluck(:name);
+  | assert_eq(result3, ["test1", "test2"])
+end
+
+| def test_until():
+  let result1 = do var i = 0 | until(i == 5) do i = i + 1 | i + 1;;
+  | assert_eq(result1, 6)
+end
+
 run_tests([
   # Type checking
   test_case("is_array", test_is_array),
@@ -486,6 +510,8 @@ run_tests([
   test_case("regex_match", test_regex_match),
 
   # macro
-  test_case("tap", test_tap)
+  test_case("tap", test_tap),
+  test_case("unless", test_unless),
+  test_case("pluck", test_pluck),
+  test_case("until", test_until),
 ])
-

@@ -1372,6 +1372,54 @@ export const Playground = () => {
               endColumn: wordRange.endColumn,
             },
           },
+          {
+            label: "macro",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "macro ${1:name}(${2:args}) do\n  ${3:body}:\nend",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Macro declaration",
+            documentation:
+              "Creates a macro that generates code at compile time for reuse.",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+          {
+            label: "quote",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "quote do\n  ${1:body}:\nend",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Quote block",
+            documentation:
+              "Creates a quote block that treats the code inside as data rather than executing it.",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+          {
+            label: "unquote",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "unquote(${1:expr})",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Unquote expression",
+            documentation:
+              "Inserts the result of an expression into a quote block.",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
         ];
 
         return { suggestions: [...suggestions, ...snippets] };
