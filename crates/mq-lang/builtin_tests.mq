@@ -447,6 +447,9 @@ end
 
   | let result2 = do to_markdown("# test1\n\n## test2") | pluck(.h.level);
   | assert_eq(result2, [1, 2])
+
+  | let result3 = do [{name: "test1"}, {name: "test2"}] | pluck(:name);
+  | assert_eq(result3, ["test1", "test2"])
 end
 
 | def test_until():
@@ -512,4 +515,3 @@ run_tests([
   test_case("pluck", test_pluck),
   test_case("until", test_until),
 ])
-

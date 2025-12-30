@@ -463,9 +463,21 @@ end
 # Extracts values from an array of objects based on a specified selector.
 macro pluck(pluck_obj, selector) do
   quote do
-    if (is_array(unquote(pluck_obj))): do
-        unquote(pluck_obj) | map(fn(x): x | select(unquote(selector), unquote(selector));) | compact();
-    else: do
-        unquote(pluck_obj) | unquote(selector);
+    match (unquote(pluck_obj)):
+      | :array: do
+          unquote(pluck_obj)
+          | map(fn(x):
+            match (x):
+              | :dict: x[unquote(selector)]
+              | _: do
+                  x | select(unquote(selector), unquote(selector))
+                end
+            end
+          end) | compact()
+        end
+      | _: do
+          unquote(pluck_obj) | unquote(selector)
+        end
+    end
   end
 end
