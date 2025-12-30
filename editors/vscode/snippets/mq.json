@@ -47,5 +47,26 @@
             "module ${1:name}:\n  ${2:body}\nend"
         ],
         "description": "Create a module that contains related functions and variables"
+    },
+    "macro": {
+        "prefix": "macro",
+        "body": [
+            "macro ${1:name} do\n  ${2:body}\nend"
+        ],
+        "description": "Define a macro"
+    },
+    "quote": {
+        "prefix": "quote",
+        "body": [
+            "quote do\n  ${1:body}\nend"
+        ],
+        "description": "Quote an expression"
+    },
+    "unquote": {
+        "prefix": "unquote",
+        "body": [
+            "unquote(${1:expr})"
+        ],
+        "description": "Unquote an expression"
     }
 }
