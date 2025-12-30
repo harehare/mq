@@ -2860,13 +2860,6 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
             },
         );
     map.insert(
-            SmolStr::new(constants::BREAKPOINT),
-            BuiltinFunctionDoc {
-            description: "Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.",
-            params: &[],
-            },
-        );
-    map.insert(
         SmolStr::new("is_debug_mode"),
         BuiltinFunctionDoc {
             description: "Checks if the runtime is currently in debug mode, returning true if a debugger is attached.",
@@ -3650,6 +3643,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             description: "Retrieves the value of a symbol or variable from the current environment.",
             params: &["symbol_or_string"],
         },
+    );
+    map.insert(
+        SmolStr::new(constants::BREAKPOINT),
+        BuiltinFunctionDoc {
+            description: "Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.",
+            params: &[],
+            },
     );
 
     map

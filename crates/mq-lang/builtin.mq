@@ -429,13 +429,6 @@ def transpose(matrix):
     end
 end
 
-# Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.
-macro breakpoint() do
-  quote do
-    if (is_debug_mode()): _breakpoint()
-  end
-end
-
 # Applies a function to a value and returns the value (useful for debugging or side effects).
 macro tap(tap_value, tap_expr) do
   quote do
