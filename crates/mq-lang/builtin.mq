@@ -516,7 +516,7 @@ macro between(bw_value, bw_min, bw_max) do
 end
 
 # Sums elements of an array after applying a transformation function.
-def sum_by(arr, f): map(arr, f) | fold(0, fn(acc, x): acc + x;);
+def sum_by(arr, f): fold(arr, 0, fn(acc, x): acc + f(x););
 
 # Creates a dictionary indexed by a key extracted from each element.
 macro index_by(ib_array, ib_key_expr) do
