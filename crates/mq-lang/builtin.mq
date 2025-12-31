@@ -519,11 +519,11 @@ end
 def sum_by(arr, f): fold(arr, 0, fn(acc, x): acc + f(x););
 
 # Creates a dictionary indexed by a key extracted from each element.
-macro index_by(ib_array, ib_key_expr) do
-  quote do
-    let __ib_arr = unquote(ib_array)
-    | fold(__ib_arr, dict(), fn(acc, item):
-        set(acc, to_string(unquote(ib_key_expr)), item);
-      )
-  end
+def index_by(arr, f):
+  fold(arr, dict(), fn(acc, item):
+    let key = to_string(f(item))
+    | let existing = get(acc, key)
+    | let new_value = if (is_none(existing)): item else: existing + item
+    | set(acc, key, new_value);
+  )
 end

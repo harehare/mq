@@ -578,11 +578,11 @@ end
 
 | def test_index_by():
   let arr = [dict([["id", 1], ["name", "Alice"]]), dict([["id", 2], ["name", "Bob"]])]
-  | let result1 = index_by(arr, item["id"])
+  | let result1 = index_by(arr, fn(item): item["id"];)
   | assert_eq(get(result1, "1")["name"], "Alice")
   | assert_eq(get(result1, "2")["name"], "Bob")
 
-  | let result2 = index_by([], item["id"])
+  | let result2 = index_by([], fn(item): item["id"];)
   | assert_eq(result2, dict())
 end
 
