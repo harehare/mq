@@ -484,11 +484,7 @@ macro default_to(dt_value, dt_default) do
 end
 
 # Maps over an array and removes None values from the result.
-macro compact_map(cm_array, cm_expr) do
-  quote do
-    unquote(cm_array) | map(unquote(cm_expr)) | compact()
-  end
-end
+def compact_map(arr, f): map(arr, f) | compact();
 
 # Filters out elements that match the condition (opposite of filter).
 def reject(arr, f): filter(arr, fn(x): !f(x););
@@ -516,13 +512,6 @@ macro between(bw_value, bw_min, bw_max) do
   quote do
     let __bw_v = unquote(bw_value)
     | __bw_v >= unquote(bw_min) && __bw_v <= unquote(bw_max)
-  end
-end
-
-# Checks if value is not empty (opposite of is_empty).
-macro not_empty(ne_value) do
-  quote do
-    !is_empty(unquote(ne_value))
   end
 end
 

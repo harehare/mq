@@ -562,23 +562,6 @@ end
   | assert_eq(result5, false)
 end
 
-| def test_not_empty():
-  let result1 = not_empty([1, 2, 3])
-  | assert_eq(result1, true)
-
-  | let result2 = not_empty([])
-  | assert_eq(result2, false)
-
-  | let result3 = not_empty("")
-  | assert_eq(result3, false)
-
-  | let result4 = not_empty("hello")
-  | assert_eq(result4, true)
-
-  | let result5 = not_empty(None)
-  | assert_eq(result5, false)
-end
-
 | def test_sum_by():
   let result1 = sum_by([1, 2, 3, 4], fn(x): x;)
   | assert_eq(result1, 10)
@@ -667,7 +650,6 @@ run_tests([
   test_case("get_or", test_get_or),
   test_case("times", test_times),
   test_case("between", test_between),
-  test_case("not_empty", test_not_empty),
   test_case("sum_by", test_sum_by),
   test_case("index_by", test_index_by),
 ])
