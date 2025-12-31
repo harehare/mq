@@ -474,3 +474,46 @@ macro pluck(pluck_obj, selector) do
     end
   end
 end
+
+# Returns a default value if the input is None or empty.
+def default_to(value, default):
+  if (is_none(value) || is_empty(value)): default else: value
+end
+
+# Maps over an array and removes None values from the result.
+def compact_map(arr, f): map(arr, f) | compact();
+
+# Filters out elements that match the condition (opposite of filter).
+def reject(arr, f): filter(arr, fn(x): !f(x););
+
+# Splits an array into two arrays: [matching, not_matching] based on a condition.
+def partition(arr, f): [filter(arr, f), filter(arr, fn(x): !f(x);)];
+
+# Safely gets a value from a dict with a default if the key doesn't exist.
+def get_or(dict, key, default):
+  let val = get(dict, key)
+  | if (is_none(val)): default else: val
+end
+
+# Executes an expression n times and returns an array of results.
+macro times(t_n, t_expr) do
+  quote do
+    foreach (_, range(0, unquote(t_n) - 1)): unquote(t_expr);
+  end
+end
+
+# Checks if a value is between min and max (inclusive).
+def between(value, min, max): value >= min && value <= max;
+
+# Sums elements of an array after applying a transformation function.
+def sum_by(arr, f): fold(arr, 0, fn(acc, x): acc + f(x););
+
+# Creates a dictionary indexed by a key extracted from each element.
+def index_by(arr, f):
+  fold(arr, dict(), fn(acc, item):
+    let key = to_string(f(item))
+    | let existing = get(acc, key)
+    | let new_value = if (is_none(existing)): item else: existing + item
+    | set(acc, key, new_value);
+  )
+end
