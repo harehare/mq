@@ -476,11 +476,8 @@ macro pluck(pluck_obj, selector) do
 end
 
 # Returns a default value if the input is None or empty.
-macro default_to(dt_value, dt_default) do
-  quote do
-    let __dt_v = unquote(dt_value)
-    | if (is_none(__dt_v) || is_empty(__dt_v)): unquote(dt_default) else: __dt_v
-  end
+def default_to(value, default):
+  if (is_none(value) || is_empty(value)): default else: value
 end
 
 # Maps over an array and removes None values from the result.
@@ -493,11 +490,9 @@ def reject(arr, f): filter(arr, fn(x): !f(x););
 def partition(arr, f): [filter(arr, f), filter(arr, fn(x): !f(x);)];
 
 # Safely gets a value from a dict with a default if the key doesn't exist.
-macro get_or(go_dict, go_key, go_default) do
-  quote do
-    let __go_val = get(unquote(go_dict), unquote(go_key))
-    | if (is_none(__go_val)): unquote(go_default) else: __go_val
-  end
+def get_or(dict, key, default):
+  let val = get(dict, key)
+  | if (is_none(val)): default else: val
 end
 
 # Executes an expression n times and returns an array of results.
@@ -508,12 +503,7 @@ macro times(t_n, t_expr) do
 end
 
 # Checks if a value is between min and max (inclusive).
-macro between(bw_value, bw_min, bw_max) do
-  quote do
-    let __bw_v = unquote(bw_value)
-    | __bw_v >= unquote(bw_min) && __bw_v <= unquote(bw_max)
-  end
-end
+def between(value, min, max): value >= min && value <= max;
 
 # Sums elements of an array after applying a transformation function.
 def sum_by(arr, f): fold(arr, 0, fn(acc, x): acc + f(x););
