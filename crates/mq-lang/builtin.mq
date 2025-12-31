@@ -474,3 +474,25 @@ macro pluck(pluck_obj, selector) do
     end
   end
 end
+
+# Executes the expression only if the condition is true.
+macro when(when_cond, when_expr) do
+  quote do
+    if (unquote(when_cond)): unquote(when_expr)
+  end
+end
+
+# Returns a default value if the input is None or empty.
+macro default_to(dt_value, dt_default) do
+  quote do
+    let __dt_v = unquote(dt_value)
+    | if (is_none(__dt_v) || is_empty(__dt_v)): unquote(dt_default) else: __dt_v
+  end
+end
+
+# Maps over an array and removes None values from the result.
+macro compact_map(cm_array, cm_expr) do
+  quote do
+    unquote(cm_array) | map(unquote(cm_expr)) | compact()
+  end
+end

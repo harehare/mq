@@ -457,6 +457,51 @@ end
   | assert_eq(result1, 6)
 end
 
+| def test_when():
+  let result1 = when(true) do 42;
+  | assert_eq(result1, 42)
+
+  | let result2 = when(false) do 42;
+  | assert_eq(result2, None)
+
+  | let result3 = when(5 > 3) do "yes";
+  | assert_eq(result3, "yes")
+end
+
+| def test_default_to():
+  let result1 = default_to(None, "default")
+  | assert_eq(result1, "default")
+
+  | let result2 = default_to("", "default")
+  | assert_eq(result2, "default")
+
+  | let result3 = default_to([], "default")
+  | assert_eq(result3, "default")
+
+  | let result4 = default_to("value", "default")
+  | assert_eq(result4, "value")
+
+  | let result5 = default_to([1, 2, 3], "default")
+  | assert_eq(result5, [1, 2, 3])
+
+  | let result6 = default_to(0, "default")
+  | assert_eq(result6, 0)
+end
+
+| def test_compact_map():
+  let result1 = compact_map([1, 2, 3, 4, 5], fn(x): if (x > 2): x;)
+  | assert_eq(result1, [3, 4, 5])
+
+  | let result2 = compact_map([1, 2, 3], fn(x): if (x % 2 == 0): x * 2;)
+  | assert_eq(result2, [4])
+
+  | let result3 = compact_map([], fn(x): x;)
+  | assert_eq(result3, [])
+
+  | let result4 = compact_map([1, 2, 3], fn(x): None;)
+  | assert_eq(result4, [])
+end
+
 run_tests([
   # Type checking
   test_case("is_array", test_is_array),
@@ -514,4 +559,7 @@ run_tests([
   test_case("unless", test_unless),
   test_case("pluck", test_pluck),
   test_case("until", test_until),
+  test_case("when", test_when),
+  test_case("default_to", test_default_to),
+  test_case("compact_map", test_compact_map),
 ])
