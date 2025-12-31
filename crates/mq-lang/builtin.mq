@@ -475,13 +475,6 @@ macro pluck(pluck_obj, selector) do
   end
 end
 
-# Executes the expression only if the condition is true.
-macro when(when_cond, when_expr) do
-  quote do
-    if (unquote(when_cond)): unquote(when_expr)
-  end
-end
-
 # Returns a default value if the input is None or empty.
 macro default_to(dt_value, dt_default) do
   quote do
