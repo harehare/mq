@@ -502,6 +502,118 @@ end
   | assert_eq(result4, [])
 end
 
+| def test_reject():
+  let result1 = reject([1, 2, 3, 4, 5], fn(x): x > 3;)
+  | assert_eq(result1, [1, 2, 3])
+
+  | let result2 = reject([1, 2, 3, 4], fn(x): x % 2 == 0;)
+  | assert_eq(result2, [1, 3])
+
+  | let result3 = reject([], fn(x): x > 0;)
+  | assert_eq(result3, [])
+
+  | let result4 = reject([1, 2, 3], fn(x): false;)
+  | assert_eq(result4, [1, 2, 3])
+end
+
+| def test_partition():
+  let result1 = partition([1, 2, 3, 4, 5], fn(x): x > 3;)
+  | assert_eq(result1, [[4, 5], [1, 2, 3]])
+
+  | let result2 = partition([1, 2, 3, 4], fn(x): x % 2 == 0;)
+  | assert_eq(result2, [[2, 4], [1, 3]])
+
+  | let result3 = partition([], fn(x): x > 0;)
+  | assert_eq(result3, [[], []])
+
+  | let result4 = partition([1, 2, 3], fn(x): true;)
+  | assert_eq(result4, [[1, 2, 3], []])
+end
+
+| def test_get_or():
+  let d = dict([["a", 1], ["b", 2]])
+  | let result1 = get_or(d, "a", 0)
+  | assert_eq(result1, 1)
+
+  | let result2 = get_or(d, "c", 0)
+  | assert_eq(result2, 0)
+
+  | let result3 = get_or(d, "b", 999)
+  | assert_eq(result3, 2)
+
+  | let result4 = get_or(dict(), "key", "default")
+  | assert_eq(result4, "default")
+end
+
+| def test_times():
+  let result1 = times(3, 5)
+  | assert_eq(result1, [5, 5, 5])
+
+  | let result2 = times(0, "hello")
+  | assert_eq(result2, [])
+
+  | let result3 = times(4, 1)
+  | assert_eq(result3, [1, 1, 1, 1])
+end
+
+| def test_between():
+  let result1 = between(5, 1, 10)
+  | assert_eq(result1, true)
+
+  | let result2 = between(0, 1, 10)
+  | assert_eq(result2, false)
+
+  | let result3 = between(10, 1, 10)
+  | assert_eq(result3, true)
+
+  | let result4 = between(1, 1, 10)
+  | assert_eq(result4, true)
+
+  | let result5 = between(15, 1, 10)
+  | assert_eq(result5, false)
+end
+
+| def test_not_empty():
+  let result1 = not_empty([1, 2, 3])
+  | assert_eq(result1, true)
+
+  | let result2 = not_empty([])
+  | assert_eq(result2, false)
+
+  | let result3 = not_empty("")
+  | assert_eq(result3, false)
+
+  | let result4 = not_empty("hello")
+  | assert_eq(result4, true)
+
+  | let result5 = not_empty(None)
+  | assert_eq(result5, false)
+end
+
+| def test_sum_by():
+  let result1 = sum_by([1, 2, 3, 4], fn(x): x;)
+  | assert_eq(result1, 10)
+
+  | let result2 = sum_by([1, 2, 3], fn(x): x * 2;)
+  | assert_eq(result2, 12)
+
+  | let result3 = sum_by([], fn(x): x;)
+  | assert_eq(result3, 0)
+
+  | let result4 = sum_by([5, 10, 15], fn(x): x / 5;)
+  | assert_eq(result4, 6)
+end
+
+| def test_index_by():
+  let arr = [dict([["id", 1], ["name", "Alice"]]), dict([["id", 2], ["name", "Bob"]])]
+  | let result1 = index_by(arr, item["id"])
+  | assert_eq(get(result1, "1")["name"], "Alice")
+  | assert_eq(get(result1, "2")["name"], "Bob")
+
+  | let result2 = index_by([], item["id"])
+  | assert_eq(result2, dict())
+end
+
 run_tests([
   # Type checking
   test_case("is_array", test_is_array),
@@ -562,4 +674,12 @@ run_tests([
   test_case("when", test_when),
   test_case("default_to", test_default_to),
   test_case("compact_map", test_compact_map),
+  test_case("reject", test_reject),
+  test_case("partition", test_partition),
+  test_case("get_or", test_get_or),
+  test_case("times", test_times),
+  test_case("between", test_between),
+  test_case("not_empty", test_not_empty),
+  test_case("sum_by", test_sum_by),
+  test_case("index_by", test_index_by),
 ])

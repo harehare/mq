@@ -496,3 +496,52 @@ macro compact_map(cm_array, cm_expr) do
     unquote(cm_array) | map(unquote(cm_expr)) | compact()
   end
 end
+
+# Filters out elements that match the condition (opposite of filter).
+def reject(arr, f): filter(arr, fn(x): !f(x););
+
+# Splits an array into two arrays: [matching, not_matching] based on a condition.
+def partition(arr, f): [filter(arr, f), filter(arr, fn(x): !f(x);)];
+
+# Safely gets a value from a dict with a default if the key doesn't exist.
+macro get_or(go_dict, go_key, go_default) do
+  quote do
+    let __go_val = get(unquote(go_dict), unquote(go_key))
+    | if (is_none(__go_val)): unquote(go_default) else: __go_val
+  end
+end
+
+# Executes an expression n times and returns an array of results.
+macro times(t_n, t_expr) do
+  quote do
+    foreach (_, range(0, unquote(t_n) - 1)): unquote(t_expr);
+  end
+end
+
+# Checks if a value is between min and max (inclusive).
+macro between(bw_value, bw_min, bw_max) do
+  quote do
+    let __bw_v = unquote(bw_value)
+    | __bw_v >= unquote(bw_min) && __bw_v <= unquote(bw_max)
+  end
+end
+
+# Checks if value is not empty (opposite of is_empty).
+macro not_empty(ne_value) do
+  quote do
+    !is_empty(unquote(ne_value))
+  end
+end
+
+# Sums elements of an array after applying a transformation function.
+def sum_by(arr, f): map(arr, f) | fold(0, fn(acc, x): acc + x;);
+
+# Creates a dictionary indexed by a key extracted from each element.
+macro index_by(ib_array, ib_key_expr) do
+  quote do
+    let __ib_arr = unquote(ib_array)
+    | fold(__ib_arr, dict(), fn(acc, item):
+        set(acc, to_string(unquote(ib_key_expr)), item);
+      )
+  end
+end
