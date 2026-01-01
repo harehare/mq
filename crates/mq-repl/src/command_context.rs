@@ -182,15 +182,12 @@ impl CommandContext {
                 if code.is_empty() {
                     Ok(CommandOutput::None)
                 } else {
-                    let result = self.engine.eval(code, self.input.clone().into_iter());
+                    let eval_result = self.engine.eval(code, self.input.clone().into_iter()).map_err(|e| *e)?;
 
-                    result
-                        .map(|result| {
-                            self.hir.add_line_of_code(self.source_id, self.scope_id, code);
-                            self.input = result.values().clone();
-                            Ok(CommandOutput::Value(result.values().clone()))
-                        })
-                        .map_err(|e| *e)?
+                    self.hir.add_line_of_code(self.source_id, self.scope_id, code);
+                    self.input = eval_result.values().clone();
+
+                    Ok(CommandOutput::Value(eval_result.values().clone()))
                 }
             }
             Command::Env(name, value) => {
