@@ -1094,7 +1094,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             return Err(SyntaxError::UnexpectedToken((**while_token).clone()));
         }
 
-        self.consume_colon();
+        // Check for 'do' keyword
+        if self.is_next_token(|kind| matches!(kind, TokenKind::Do)) {
+            let _ = self.next_token(|kind| matches!(kind, TokenKind::Do));
+        } else {
+            self.consume_colon();
+        }
 
         match self.tokens.peek() {
             Some(_) => {
@@ -1218,7 +1223,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 name: ident,
                 token: ident_token,
             }) => {
-                self.consume_colon();
+                // Check for 'do' keyword
+                if self.is_next_token(|kind| matches!(kind, TokenKind::Do)) {
+                    let _ = self.next_token(|kind| matches!(kind, TokenKind::Do));
+                } else {
+                    self.consume_colon();
+                }
 
                 let each_values = Shared::clone(&args[1]);
                 let body_program = self.parse_program(false)?;
@@ -1285,7 +1295,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
         let value = Shared::clone(args.first().unwrap());
 
-        self.consume_colon();
+        // Check for 'do' keyword
+        if self.is_next_token(|kind| matches!(kind, TokenKind::Do)) {
+            let _ = self.next_token(|kind| matches!(kind, TokenKind::Do));
+        } else {
+            self.consume_colon();
+        }
 
         // Parse match arms
         let mut arms: super::node::MatchArms = SmallVec::new();

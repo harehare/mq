@@ -1478,7 +1478,12 @@ impl<'a> Parser<'a> {
         children.push(self.parse_expr(leading_trivia, false, false)?);
         children.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
 
-        self.push_colon_token_if_present(&mut children)?;
+        // Check for 'do' keyword
+        if self.try_next_token(|kind| matches!(kind, TokenKind::Do)) {
+            children.push(self.next_node(|kind| matches!(kind, TokenKind::Do), NodeKind::Token)?);
+        } else {
+            self.push_colon_token_if_present(&mut children)?;
+        }
 
         let (mut program, _) = self.parse_program(false, true);
 
@@ -1508,7 +1513,12 @@ impl<'a> Parser<'a> {
         children.push(self.parse_expr(leading_trivia, false, true)?);
         children.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
 
-        self.push_colon_token_if_present(&mut children)?;
+        // Check for 'do' keyword
+        if self.try_next_token(|kind| matches!(kind, TokenKind::Do)) {
+            children.push(self.next_node(|kind| matches!(kind, TokenKind::Do), NodeKind::Token)?);
+        } else {
+            self.push_colon_token_if_present(&mut children)?;
+        }
 
         let (mut program, _) = self.parse_program(false, true);
 
@@ -1614,7 +1624,12 @@ impl<'a> Parser<'a> {
         }
         children.append(&mut args);
 
-        self.push_colon_token_if_present(&mut children)?;
+        // Check for 'do' keyword
+        if self.try_next_token(|kind| matches!(kind, TokenKind::Do)) {
+            children.push(self.next_node(|kind| matches!(kind, TokenKind::Do), NodeKind::Token)?);
+        } else {
+            self.push_colon_token_if_present(&mut children)?;
+        }
 
         // Parse match arms
         loop {
