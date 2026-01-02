@@ -73,6 +73,73 @@ fn engine() -> DefaultEngine {
     ",
       vec![RuntimeValue::Number(0.into())],
       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(11.into()), RuntimeValue::Number(12.into()), RuntimeValue::Number(14.into()), RuntimeValue::Number(15.into())])].into()))]
+#[case::while_do_end("
+    let x = 5 |
+    while (x > 0) do
+      let x = x - 1 | x
+    end
+    ",
+      vec![RuntimeValue::Number(10.into())],
+      Ok(vec![RuntimeValue::Number(0.into())].into()))]
+#[case::foreach_do_end("
+    foreach(x, array(1, 2, 3)) do
+      add(x, 1)
+    end
+    ",
+      vec![RuntimeValue::Number(10.into())],
+      Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())])].into()))]
+#[case::while_do_end_break("
+    let x = 0 |
+    while(x < 10) do
+      let x = x + 1
+      | if(x == 3):
+        break
+      else:
+        x
+      end
+    end
+    ",
+      vec![RuntimeValue::Number(10.into())],
+      Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::foreach_do_end_continue("
+    foreach(x, array(1, 2, 3, 4, 5)) do
+      if(x == 3):
+        continue
+      else:
+        x + 10
+      end
+    end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(11.into()), RuntimeValue::Number(12.into()), RuntimeValue::Number(14.into()), RuntimeValue::Number(15.into())])].into()))]
+#[case::nested_do_end("
+    let arr = array(array(1, 2), array(3, 4)) |
+    foreach(row, arr) do
+      foreach(x, row) do
+        x * 2
+      end
+    end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(4.into())]), RuntimeValue::Array(vec![RuntimeValue::Number(6.into()), RuntimeValue::Number(8.into())])])].into()))]
+#[case::match_do_end("
+    match (2) do
+      | 1: \"one\"
+      | 2: \"two\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("two".to_string())].into()))]
+#[case::match_do_end_type_pattern("
+    match (array(1, 2, 3)) do
+      | :array: \"is_array\"
+      | :number: \"is_number\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("is_array".to_string())].into()))]
 #[case::if_("
     def fibonacci(x):
       if(eq(x, 0)):

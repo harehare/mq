@@ -1094,7 +1094,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             return Err(SyntaxError::UnexpectedToken((**while_token).clone()));
         }
 
-        self.consume_colon();
+        // Check for 'do' keyword
+        if self.is_next_token(|kind| matches!(kind, TokenKind::Do)) {
+            let _ = self.next_token(|kind| matches!(kind, TokenKind::Do));
+        } else {
+            self.consume_colon();
+        }
 
         match self.tokens.peek() {
             Some(_) => {
@@ -1218,7 +1223,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 name: ident,
                 token: ident_token,
             }) => {
-                self.consume_colon();
+                // Check for 'do' keyword
+                if self.is_next_token(|kind| matches!(kind, TokenKind::Do)) {
+                    let _ = self.next_token(|kind| matches!(kind, TokenKind::Do));
+                } else {
+                    self.consume_colon();
+                }
 
                 let each_values = Shared::clone(&args[1]);
                 let body_program = self.parse_program(false)?;
@@ -1285,7 +1295,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
         let value = Shared::clone(args.first().unwrap());
 
-        self.consume_colon();
+        // Check for 'do' keyword
+        if self.is_next_token(|kind| matches!(kind, TokenKind::Do)) {
+            let _ = self.next_token(|kind| matches!(kind, TokenKind::Do));
+        } else {
+            self.consume_colon();
+        }
 
         // Parse match arms
         let mut arms: super::node::MatchArms = SmallVec::new();
@@ -2903,6 +2918,29 @@ mod tests {
             token(TokenKind::Colon),
         ],
         Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::While, module_id: 1.into()})))]
+    #[case::while_do_end(
+        vec![
+            token(TokenKind::While),
+            token(TokenKind::LParen),
+            token(TokenKind::BoolLiteral(true)),
+            token(TokenKind::RParen),
+            token(TokenKind::Do),
+            token(TokenKind::StringLiteral("loop body".to_owned())),
+            token(TokenKind::End),
+        ],
+        Ok(vec![Shared::new(Node {
+            token_id: 0.into(),
+            expr: Shared::new(Expr::While(
+                Shared::new(Node {
+                    token_id: 1.into(),
+                    expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                }),
+                vec![Shared::new(Node {
+                    token_id: 3.into(),
+                    expr: Shared::new(Expr::Literal(Literal::String("loop body".to_owned()))),
+                })],
+            )),
+        })]))]
     #[case::loop_(
         vec![
             token(TokenKind::Loop),
@@ -3007,6 +3045,52 @@ mod tests {
             token(TokenKind::SemiColon),
         ],
         Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Foreach, module_id: 1.into()})))]
+    #[case::foreach_do_end(
+        vec![
+            token(TokenKind::Foreach),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("item"))),
+            token(TokenKind::Comma),
+            token(TokenKind::StringLiteral("array".to_owned())),
+            token(TokenKind::RParen),
+            token(TokenKind::Do),
+            token(TokenKind::Ident(SmolStr::new("print"))),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("item"))),
+            token(TokenKind::RParen),
+            token(TokenKind::End),
+        ],
+        Ok(vec![Shared::new(Node {
+            token_id: 6.into(),
+            expr: Shared::new(Expr::Foreach(
+                IdentWithToken::new_with_token(
+                    "item",
+                    Some(Shared::new(token(TokenKind::Ident(SmolStr::new("item"))))),
+                ),
+                Shared::new(Node {
+                    token_id: 1.into(),
+                    expr: Shared::new(Expr::Literal(Literal::String("array".to_owned()))),
+                }),
+                vec![Shared::new(Node {
+                    token_id: 4.into(),
+                    expr: Shared::new(Expr::Call(
+                        IdentWithToken::new_with_token(
+                            "print",
+                            Some(Shared::new(token(TokenKind::Ident(SmolStr::new(
+                                "print",
+                            ))))),
+                        ),
+                        smallvec![Shared::new(Node {
+                            token_id: 3.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token(
+                                "item",
+                                Some(Shared::new(token(TokenKind::Ident(SmolStr::new("item"))))),
+                            ))),
+                        })],
+                    )),
+                })],
+            )),
+        })]))]
     #[case::self_(
         vec![token(TokenKind::Self_), token(TokenKind::Eof)],
         Ok(vec![Shared::new(Node {
@@ -6820,6 +6904,65 @@ mod tests {
                             body: Shared::new(Node {
                                 token_id: 17.into(),
                                 expr: Shared::new(Expr::Literal(Literal::String("zero".to_owned())))
+                            })
+                        }
+                    ]
+                ))
+            })
+        ]))]
+    #[case::match_do_end(
+        vec![
+            token(TokenKind::Match),
+            token(TokenKind::LParen),
+            token(TokenKind::NumberLiteral(2.into())),
+            token(TokenKind::RParen),
+            token(TokenKind::Do),
+            token(TokenKind::Pipe),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("one".to_owned())),
+            token(TokenKind::Pipe),
+            token(TokenKind::NumberLiteral(2.into())),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("two".to_owned())),
+            token(TokenKind::Pipe),
+            token(TokenKind::Ident(SmolStr::new("_"))),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("other".to_owned())),
+            token(TokenKind::End),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Match(
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Literal(Literal::Number(2.into())))
+                    }),
+                    smallvec![
+                        MatchArm {
+                            pattern: Pattern::Literal(Literal::Number(1.into())),
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("one".to_owned())))
+                            })
+                        },
+                        MatchArm {
+                            pattern: Pattern::Literal(Literal::Number(2.into())),
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 8.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("two".to_owned())))
+                            })
+                        },
+                        MatchArm {
+                            pattern: Pattern::Wildcard,
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 11.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("other".to_owned())))
                             })
                         }
                     ]
