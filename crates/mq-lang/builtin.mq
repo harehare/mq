@@ -498,7 +498,10 @@ end
 # Executes an expression n times and returns an array of results.
 macro times(t_n, t_expr) do
   quote do
-    foreach (_, range(0, unquote(t_n) - 1)): unquote(t_expr);
+    if (unquote(t_n) == 0):
+      []
+    else:
+      foreach (_, range(0, unquote(t_n) - 1)): unquote(t_expr);
   end
 end
 
