@@ -2749,6 +2749,7 @@ dependencies = [
  "rustyline",
  "scopeguard",
  "strum",
+ "tempfile",
 ]
 
 [[package]]

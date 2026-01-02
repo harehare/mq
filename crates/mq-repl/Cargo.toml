@@ -22,6 +22,7 @@ mq-markdown = {workspace = true}
 regex-lite = {workspace = true}
 rustyline = {workspace = true, default-features = false, features = ["custom-bindings", "with-file-history"]}
 strum = {workspace = true, features = ["derive"]}
+tempfile = {workspace = true}
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 arboard = {workspace = true, optional = true}

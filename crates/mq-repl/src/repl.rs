@@ -16,7 +16,7 @@ use crate::command_context::{Command, CommandContext, CommandOutput};
 fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
     let mut result = line.to_string();
 
-    let commands_pattern = r"^(/copy|/env|/help|/quit|/load|/vars|/version)\b";
+    let commands_pattern = r"^(/copy|/edit|/env|/help|/quit|/load|/vars|/version)\b";
     if let Ok(re) = regex_lite::Regex::new(commands_pattern) {
         result = re
             .replace_all(&result, |caps: &regex_lite::Captures| {
@@ -231,6 +231,11 @@ impl Repl {
         editor.bind_sequence(
             KeyEvent(KeyCode::Char('c'), Modifiers::ALT),
             Cmd::Kill(Movement::WholeBuffer),
+        );
+        // Bind Esc+O (Alt+O) to open editor
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('o'), Modifiers::ALT),
+            Cmd::Insert(1, "/edit\n".to_string()),
         );
 
         let config_dir = config_dir();
