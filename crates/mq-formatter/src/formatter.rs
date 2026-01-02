@@ -408,16 +408,8 @@ impl Formatter {
             && let Some(separator_node) = expr_nodes.next()
         {
             if uses_do_syntax {
-                // Format 'do' keyword with space before and after
-                self.append_space();
-                self.format_node(mq_lang::Shared::clone(separator_node), 0);
-
-                // Add space after 'do' if next node doesn't have newline
-                if let Some(next) = expr_nodes.peek()
-                    && !next.has_new_line()
-                {
-                    self.append_space();
-                }
+                // Format 'do' keyword with standardized spacing
+                self.format_do_with_spacing(separator_node, &mut expr_nodes);
             } else {
                 // Format colon with spacing
                 self.format_colon_with_spacing(separator_node, &mut expr_nodes, block_indent_level + 1);
@@ -838,20 +830,12 @@ impl Formatter {
         }
 
         // Format colon or do keyword
-        if let Some(separator) = node.children.get(separator_pos) {
-            if uses_do_syntax {
-                // Format 'do' keyword with space before
-                self.append_space();
-                self.format_node(mq_lang::Shared::clone(separator), 0);
+        let mut remaining_children = node.children.iter().skip(separator_pos).peekable();
 
-                // Add space after 'do' if next node doesn't have newline and is not a MatchArm
-                // (MatchArm starts with pipe which handles its own spacing)
-                if let Some(next) = node.children.get(separator_pos + 1)
-                    && !next.has_new_line()
-                    && !matches!(next.kind, mq_lang::CstNodeKind::MatchArm)
-                {
-                    self.append_space();
-                }
+        if let Some(separator) = remaining_children.next() {
+            if uses_do_syntax {
+                // Format 'do' keyword with standardized spacing
+                self.format_do_with_spacing(separator, &mut remaining_children);
             } else {
                 // Format colon
                 self.format_node(mq_lang::Shared::clone(separator), 0);
@@ -869,7 +853,7 @@ impl Formatter {
         let end_indent_level = if is_prev_pipe { indent_level + 1 } else { indent_level } + indent_adjustment;
 
         // Format match arms and end
-        let remaining_children: Vec<_> = node.children.iter().skip(separator_pos + 1).collect();
+        let remaining_children: Vec<_> = remaining_children.collect();
 
         // Check if this is a multiline match (first match arm has new line)
         let is_multiline = remaining_children
@@ -1382,6 +1366,31 @@ impl Formatter {
         if let Some(next) = remaining.peek()
             && !next.has_new_line()
             && !matches!(next.kind, mq_lang::CstNodeKind::Block)
+        {
+            self.append_space();
+        }
+    }
+
+    /// Formats a 'do' keyword with standardized spacing.
+    /// Adds space before the 'do' keyword, formats it, and adds space after
+    /// if the next node doesn't have a newline and is not a MatchArm.
+    fn format_do_with_spacing<'a, I>(
+        &mut self,
+        do_node: &mq_lang::Shared<mq_lang::CstNode>,
+        remaining: &mut std::iter::Peekable<I>,
+    ) where
+        I: Iterator<Item = &'a mq_lang::Shared<mq_lang::CstNode>>,
+    {
+        // Add space before 'do' keyword
+        self.append_space();
+
+        // Format the 'do' keyword
+        self.format_node(mq_lang::Shared::clone(do_node), 0);
+
+        // Add space after 'do' if next node doesn't have newline and is not a MatchArm
+        if let Some(next) = remaining.peek()
+            && !next.has_new_line()
+            && !matches!(next.kind, mq_lang::CstNodeKind::MatchArm)
         {
             self.append_space();
         }
