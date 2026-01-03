@@ -4,29 +4,29 @@ use super::node::{AccessTarget, Args, Expr, Literal, Node, Params, Pattern, Stri
 use std::fmt::Write;
 
 impl Node {
-    /// Converts the AST node back to mq source code.
+    /// Converts the AST node back to mq code code.
     ///
-    /// This method reconstructs the original source code representation from the AST.
+    /// This method reconstructs the original code code representation from the AST.
     /// The output is valid, executable mq code that, when parsed, should produce
     /// an equivalent AST structure.
     ///
     /// # Examples
     ///
     /// ```ignore
-    /// // Parse mq source code to AST
-    /// let source = "def test(x): x + 1";
+    /// // Parse mq code code to AST
+    /// let code = "def test(x): x + 1";
     /// // ... parse to AST nodes ...
-    /// // Convert AST back to source
-    /// let generated = node.to_source();
+    /// // Convert AST back to code
+    /// let generated = node.to_code();
     /// // generated will be "def test(x): x + 1"
     /// ```
-    pub fn to_source(&self) -> String {
+    pub fn to_code(&self) -> String {
         let mut output = String::new();
-        self.format_to_source(&mut output, 0);
+        self.format_to_code(&mut output, 0);
         output
     }
 
-    fn format_to_source(&self, buf: &mut String, indent: usize) {
+    fn format_to_code(&self, buf: &mut String, indent: usize) {
         match &*self.expr {
             Expr::Literal(lit) => {
                 format_literal(lit, buf);
@@ -51,18 +51,18 @@ impl Node {
             }
             Expr::Paren(node) => {
                 buf.push('(');
-                node.format_to_source(buf, indent);
+                node.format_to_code(buf, indent);
                 buf.push(')');
             }
             Expr::And(left, right) => {
-                left.format_to_source(buf, indent);
+                left.format_to_code(buf, indent);
                 buf.push_str(" && ");
-                right.format_to_source(buf, indent);
+                right.format_to_code(buf, indent);
             }
             Expr::Or(left, right) => {
-                left.format_to_source(buf, indent);
+                left.format_to_code(buf, indent);
                 buf.push_str(" || ");
-                right.format_to_source(buf, indent);
+                right.format_to_code(buf, indent);
             }
             Expr::Call(func, args) => {
                 write!(buf, "{}", func).unwrap();
@@ -71,22 +71,22 @@ impl Node {
                 buf.push(')');
             }
             Expr::CallDynamic(func, args) => {
-                func.format_to_source(buf, indent);
+                func.format_to_code(buf, indent);
                 buf.push('(');
                 format_args(args, buf, indent);
                 buf.push(')');
             }
             Expr::Let(ident, value) => {
                 write!(buf, "let {} = ", ident).unwrap();
-                value.format_to_source(buf, indent);
+                value.format_to_code(buf, indent);
             }
             Expr::Var(ident, value) => {
                 write!(buf, "var {} = ", ident).unwrap();
-                value.format_to_source(buf, indent);
+                value.format_to_code(buf, indent);
             }
             Expr::Assign(ident, value) => {
                 write!(buf, "{} = ", ident).unwrap();
-                value.format_to_source(buf, indent);
+                value.format_to_code(buf, indent);
             }
             Expr::If(branches) => {
                 for (i, (cond_opt, body)) in branches.iter().enumerate() {
@@ -94,31 +94,31 @@ impl Node {
                         buf.push_str("if ");
                         if let Some(cond) = cond_opt {
                             buf.push('(');
-                            cond.format_to_source(buf, indent);
+                            cond.format_to_code(buf, indent);
                             buf.push(')');
                         }
                         buf.push_str(": ");
-                        body.format_to_source(buf, indent);
+                        body.format_to_code(buf, indent);
                     } else if let Some(cond) = cond_opt {
                         buf.push_str(" elif (");
-                        cond.format_to_source(buf, indent);
+                        cond.format_to_code(buf, indent);
                         buf.push_str("): ");
-                        body.format_to_source(buf, indent);
+                        body.format_to_code(buf, indent);
                     } else {
                         buf.push_str(" else: ");
-                        body.format_to_source(buf, indent);
+                        body.format_to_code(buf, indent);
                     }
                 }
             }
             Expr::While(cond, program) => {
                 buf.push_str("while (");
-                cond.format_to_source(buf, indent);
+                cond.format_to_code(buf, indent);
                 buf.push(')');
                 if needs_block_syntax(program) {
                     format_program_block(program, buf, indent);
                 } else if let Some(stmt) = program.first() {
                     buf.push_str(": ");
-                    stmt.format_to_source(buf, indent);
+                    stmt.format_to_code(buf, indent);
                 }
             }
             Expr::Loop(program) => {
@@ -127,13 +127,13 @@ impl Node {
             }
             Expr::Foreach(item, iter, program) => {
                 write!(buf, "foreach({}, ", item).unwrap();
-                iter.format_to_source(buf, indent);
+                iter.format_to_code(buf, indent);
                 buf.push(')');
                 if needs_block_syntax(program) {
                     format_program_block(program, buf, indent);
                 } else if let Some(stmt) = program.first() {
                     buf.push_str(": ");
-                    stmt.format_to_source(buf, indent);
+                    stmt.format_to_code(buf, indent);
                 }
             }
             Expr::Block(program) => {
@@ -147,7 +147,7 @@ impl Node {
                     format_program_block(program, buf, indent);
                 } else if let Some(stmt) = program.first() {
                     buf.push_str(": ");
-                    stmt.format_to_source(buf, indent);
+                    stmt.format_to_code(buf, indent);
                 }
             }
             Expr::Fn(params, program) => {
@@ -158,12 +158,12 @@ impl Node {
                     format_program_block(program, buf, indent);
                 } else if let Some(stmt) = program.first() {
                     buf.push_str(": ");
-                    stmt.format_to_source(buf, indent);
+                    stmt.format_to_code(buf, indent);
                 }
             }
             Expr::Match(value, arms) => {
                 buf.push_str("match (");
-                value.format_to_source(buf, indent);
+                value.format_to_code(buf, indent);
                 buf.push_str(") do");
                 for arm in arms.iter() {
                     buf.push('\n');
@@ -172,10 +172,10 @@ impl Node {
                     format_pattern(&arm.pattern, buf);
                     if let Some(guard) = &arm.guard {
                         buf.push_str(" if ");
-                        guard.format_to_source(buf, indent + 1);
+                        guard.format_to_code(buf, indent + 1);
                     }
                     buf.push_str(": ");
-                    arm.body.format_to_source(buf, indent + 1);
+                    arm.body.format_to_code(buf, indent + 1);
                 }
                 buf.push('\n');
                 buf.push_str(&"  ".repeat(indent));
@@ -190,7 +190,7 @@ impl Node {
                         }
                         StringSegment::Expr(expr) => {
                             buf.push_str("${");
-                            expr.format_to_source(buf, indent);
+                            expr.format_to_code(buf, indent);
                             buf.push('}');
                         }
                         StringSegment::Env(name) => {
@@ -207,22 +207,22 @@ impl Node {
                 write!(buf, "macro {}(", name).unwrap();
                 format_params(params, buf, indent);
                 buf.push_str("): ");
-                body.format_to_source(buf, indent);
+                body.format_to_code(buf, indent);
             }
             Expr::Quote(node) => {
                 buf.push_str("quote: ");
-                node.format_to_source(buf, indent);
+                node.format_to_code(buf, indent);
             }
             Expr::Unquote(node) => {
                 buf.push_str("unquote(");
-                node.format_to_source(buf, indent);
+                node.format_to_code(buf, indent);
                 buf.push(')');
             }
             Expr::Try(try_expr, catch_expr) => {
                 buf.push_str("try ");
-                try_expr.format_to_source(buf, indent);
+                try_expr.format_to_code(buf, indent);
                 buf.push_str(" catch: ");
-                catch_expr.format_to_source(buf, indent);
+                catch_expr.format_to_code(buf, indent);
             }
             Expr::Module(name, program) => {
                 write!(buf, "module {}", name).unwrap();
@@ -259,7 +259,7 @@ impl Node {
     }
 }
 
-/// Escapes special characters in strings for mq source code
+/// Escapes special characters in strings for mq code code
 fn escape_string(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     for ch in s.chars() {
@@ -275,7 +275,7 @@ fn escape_string(s: &str) -> String {
     result
 }
 
-/// Formats a Literal as mq source code
+/// Formats a Literal as mq code code
 fn format_literal(literal: &Literal, buf: &mut String) {
     match literal {
         Literal::String(s) => {
@@ -304,7 +304,7 @@ fn format_args(args: &Args, buf: &mut String, indent: usize) {
         if i > 0 {
             buf.push_str(", ");
         }
-        arg.format_to_source(buf, indent);
+        arg.format_to_code(buf, indent);
     }
 }
 
@@ -314,7 +314,7 @@ fn format_params(params: &Params, buf: &mut String, indent: usize) {
         if i > 0 {
             buf.push_str(", ");
         }
-        param.format_to_source(buf, indent);
+        param.format_to_code(buf, indent);
     }
 }
 
@@ -324,7 +324,7 @@ fn format_program_inline(program: &Program, buf: &mut String, indent: usize) {
         if i > 0 {
             buf.push_str(" | ");
         }
-        stmt.format_to_source(buf, indent);
+        stmt.format_to_code(buf, indent);
     }
 }
 
@@ -334,7 +334,7 @@ fn format_program_block(program: &Program, buf: &mut String, indent: usize) {
     for stmt in program.iter() {
         buf.push('\n');
         buf.push_str(&"  ".repeat(indent + 1));
-        stmt.format_to_source(buf, indent + 1);
+        stmt.format_to_code(buf, indent + 1);
     }
     buf.push('\n');
     buf.push_str(&"  ".repeat(indent));
@@ -426,9 +426,9 @@ mod tests {
     #[case::bool_true(Literal::Bool(true), "true")]
     #[case::bool_false(Literal::Bool(false), "false")]
     #[case::none(Literal::None, "none")]
-    fn test_to_source_literals(#[case] literal: Literal, #[case] expected: &str) {
+    fn test_to_code_literals(#[case] literal: Literal, #[case] expected: &str) {
         let node = create_node(Expr::Literal(literal));
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -437,18 +437,18 @@ mod tests {
     #[case::nodes(Expr::Nodes, "nodes")]
     #[case::break_(Expr::Break, "break")]
     #[case::continue_(Expr::Continue, "continue")]
-    fn test_to_source_simple_expressions(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_simple_expressions(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
     #[case::simple(Expr::Literal(Literal::Number(Number::new(42.0))), "(42)")]
     #[case::ident(Expr::Ident(IdentWithToken::new("x")), "(x)")]
-    fn test_to_source_paren(#[case] inner_expr: Expr, #[case] expected: &str) {
+    fn test_to_code_paren(#[case] inner_expr: Expr, #[case] expected: &str) {
         let inner_node = Shared::new(create_node(inner_expr));
         let node = create_node(Expr::Paren(inner_node));
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -466,9 +466,9 @@ mod tests {
         ),
         "a || b"
     )]
-    fn test_to_source_operators(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_operators(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -493,9 +493,9 @@ mod tests {
         ),
         "add(1, 2)"
     )]
-    fn test_to_source_call(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_call(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -506,9 +506,9 @@ mod tests {
         ),
         "func(42)"
     )]
-    fn test_to_source_call_dynamic(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_call_dynamic(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -533,9 +533,9 @@ mod tests {
         ),
         "z = value"
     )]
-    fn test_to_source_variables(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_variables(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -578,9 +578,9 @@ mod tests {
         ]),
         "if (x): 1 elif (y): 2 else: 3"
     )]
-    fn test_to_source_if(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_if(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -601,9 +601,9 @@ mod tests {
         ),
         "while (x) do\n  1\n  2\nend"
     )]
-    fn test_to_source_while(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_while(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -611,9 +611,9 @@ mod tests {
         Expr::Loop(vec![Shared::new(create_node(Expr::Break))]),
         "loop do\n  break\nend"
     )]
-    fn test_to_source_loop(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_loop(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -636,9 +636,9 @@ mod tests {
         ),
         "foreach(x, arr) do\n  1\n  2\nend"
     )]
-    fn test_to_source_foreach(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_foreach(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -654,9 +654,9 @@ mod tests {
         ]),
         "1 | 2 | 3"
     )]
-    fn test_to_source_block(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_block(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -690,9 +690,9 @@ mod tests {
         ),
         "def test(x) do\n  1\n  2\nend"
     )]
-    fn test_to_source_def(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_def(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -713,9 +713,9 @@ mod tests {
         ),
         "fn(x, y): 1"
     )]
-    fn test_to_source_fn(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_fn(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -737,9 +737,9 @@ mod tests {
         ),
         "match (x) do\n  | 1: \"one\"\n  | _: \"other\"\nend"
     )]
-    fn test_to_source_match(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_match(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -755,9 +755,9 @@ mod tests {
         ]),
         r#"s"Hello ${name}!""#
     )]
-    fn test_to_source_interpolated_string(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_interpolated_string(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -769,9 +769,9 @@ mod tests {
         ),
         "macro double(x): x"
     )]
-    fn test_to_source_macro(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_macro(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -783,9 +783,9 @@ mod tests {
         Expr::Unquote(Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))),
         "unquote(x)"
     )]
-    fn test_to_source_quote_unquote(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_quote_unquote(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -796,9 +796,9 @@ mod tests {
         ),
         r#"try risky catch: "error""#
     )]
-    fn test_to_source_try(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_try(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -809,9 +809,9 @@ mod tests {
         ),
         "module math do\n  1\nend"
     )]
-    fn test_to_source_module(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_module(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -832,9 +832,9 @@ mod tests {
         ),
         "module::func(1)"
     )]
-    fn test_to_source_qualified_access(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_qualified_access(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     #[rstest]
@@ -846,9 +846,9 @@ mod tests {
         Expr::Import(Literal::String("module.mq".to_string())),
         r#"import "module.mq""#
     )]
-    fn test_to_source_include_import(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_include_import(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 
     // Complex expression tests
@@ -865,8 +865,8 @@ mod tests {
         ),
         "map(filter(items))"
     )]
-    fn test_to_source_complex(#[case] expr: Expr, #[case] expected: &str) {
+    fn test_to_code_complex(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
-        assert_eq!(node.to_source(), expected);
+        assert_eq!(node.to_code(), expected);
     }
 }
