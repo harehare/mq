@@ -268,7 +268,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         .next()
                         .ok_or(SyntaxError::UnexpectedEOFDetected(self.module_id))?;
 
-                    self.consume_colon();
+                    self.consume_colon_or_do();
 
                     let program = self.parse_program(false)?;
 
@@ -1002,7 +1002,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             return Err(SyntaxError::UnexpectedToken((*self.token_arena[def_token_id]).clone()));
         }
 
-        self.consume_colon();
+        self.consume_colon_or_do();
 
         let program = self.parse_program(false)?;
 
@@ -1076,7 +1076,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             return Err(SyntaxError::UnexpectedToken((*self.token_arena[fn_token_id]).clone()));
         }
 
-        self.consume_colon();
+        self.consume_colon_or_do();
 
         let program = self.parse_program(false)?;
 
@@ -1094,12 +1094,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             return Err(SyntaxError::UnexpectedToken((**while_token).clone()));
         }
 
-        // Check for 'do' keyword
-        if self.is_next_token(|kind| matches!(kind, TokenKind::Do)) {
-            let _ = self.next_token(|kind| matches!(kind, TokenKind::Do));
-        } else {
-            self.consume_colon();
-        }
+        self.consume_colon_or_do();
 
         match self.tokens.peek() {
             Some(_) => {
@@ -1121,7 +1116,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_loop(&mut self, loop_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(loop_token));
 
-        self.consume_colon();
+        self.consume_colon_or_do();
 
         match self.tokens.peek() {
             Some(_) => {
@@ -1139,7 +1134,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_try(&mut self, try_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(try_token));
 
-        self.consume_colon();
+        self.consume_colon_or_do();
 
         // Parse try expression
         let try_expr = match self.tokens.next() {
@@ -1162,7 +1157,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         // Expect 'catch' keyword
         self.next_token(|token_kind| matches!(token_kind, TokenKind::Catch))?;
-        self.consume_colon();
+        self.consume_colon_or_do();
 
         // Parse catch expression
         let catch_expr = match self.tokens.next() {
@@ -1223,12 +1218,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 name: ident,
                 token: ident_token,
             }) => {
-                // Check for 'do' keyword
-                if self.is_next_token(|kind| matches!(kind, TokenKind::Do)) {
-                    let _ = self.next_token(|kind| matches!(kind, TokenKind::Do));
-                } else {
-                    self.consume_colon();
-                }
+                self.consume_colon_or_do();
 
                 let each_values = Shared::clone(&args[1]);
                 let body_program = self.parse_program(false)?;
@@ -1295,12 +1285,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
         let value = Shared::clone(args.first().unwrap());
 
-        // Check for 'do' keyword
-        if self.is_next_token(|kind| matches!(kind, TokenKind::Do)) {
-            let _ = self.next_token(|kind| matches!(kind, TokenKind::Do));
-        } else {
-            self.consume_colon();
-        }
+        self.consume_colon_or_do();
 
         // Parse match arms
         let mut arms: super::node::MatchArms = SmallVec::new();
@@ -2000,6 +1985,16 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn consume_colon(&mut self) {
         if self.is_next_token(|token_kind| matches!(token_kind, TokenKind::Colon)) {
             let _ = self.next_token(|token_kind| matches!(token_kind, TokenKind::Colon));
+        }
+    }
+
+    #[inline(always)]
+    fn consume_colon_or_do(&mut self) {
+        // Check for 'do' keyword
+        if self.is_next_token(|kind| matches!(kind, TokenKind::Do)) {
+            let _ = self.next_token(|kind| matches!(kind, TokenKind::Do));
+        } else {
+            self.consume_colon();
         }
     }
 }
