@@ -2242,11 +2242,8 @@ define_builtin!(_AST_GET_ARGS, ParamNum::Fixed(1), |_, _, args, _| {
         [RuntimeValue::Ast(ast)] => match &*ast.expr {
             ast::Expr::Call(_, args) | ast::Expr::CallDynamic(_, args) => Ok(args
                 .iter()
-                .filter_map(|arg| match &*arg.expr {
-                    ast::Expr::Ident(ident) => Some((ident.name, RuntimeValue::Ast(Shared::clone(arg)))),
-                    _ => None,
-                })
-                .collect::<BTreeMap<_, _>>()
+                .map(|arg| RuntimeValue::Ast(Shared::clone(arg)))
+                .collect::<Vec<_>>()
                 .into()),
             _ => Ok(RuntimeValue::NONE),
         },
