@@ -1218,9 +1218,9 @@ impl Formatter {
                     }
                 }
                 mq_lang::TokenKind::Do => {
-                    self.append_indent(indent_level);
-
                     if node.has_new_line() {
+                        self.append_leading_trivia(node, indent_level);
+                        self.append_indent(indent_level);
                         self.output.push_str(&token.to_string());
                     } else {
                         if !self.output.ends_with(' ') {
@@ -2150,6 +2150,19 @@ import "foo.mq"
 | def main(): test();
 end"#,
         r#"module test do
+  import "foo.mq"
+  | def main(): test();
+end
+"#
+    )]
+    #[case::module_with_do_and_new_line(
+        r#"module test
+do
+import "foo.mq"
+| def main(): test();
+end"#,
+        r#"module test
+  do
   import "foo.mq"
   | def main(): test();
 end
