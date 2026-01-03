@@ -2,10 +2,10 @@ use node::Node;
 
 use crate::{Shared, Token, arena::ArenaId};
 
+pub mod code;
 pub mod constants;
 pub mod node;
 pub mod parser;
-pub mod source;
 
 pub type Program = Vec<Shared<Node>>;
 pub type TokenId = ArenaId<Shared<Token>>;
