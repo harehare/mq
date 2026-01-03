@@ -85,6 +85,7 @@ pub enum NodeKind {
     Def,
     Dict,
     DictEntry,
+    Do,
     End,
     Elif,
     Else,

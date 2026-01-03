@@ -2105,7 +2105,7 @@ impl<'a> Parser<'a> {
     fn push_colon_or_do_token_if_present(&mut self, children: &mut Vec<Shared<Node>>) -> Result<(), ParseError> {
         // Check for 'do' keyword
         if self.try_next_token(|kind| matches!(kind, TokenKind::Do)) {
-            children.push(self.next_node(|kind| matches!(kind, TokenKind::Do), NodeKind::Token)?);
+            children.push(self.next_node(|kind| matches!(kind, TokenKind::Do), NodeKind::Do)?);
         } else {
             self.push_colon_token_if_present(children)?;
         }
@@ -3166,7 +3166,7 @@ mod tests {
                             children: Vec::new(),
                         }),
                         Shared::new(Node {
-                            kind: NodeKind::Token,
+                            kind: NodeKind::Do,
                             token: Some(Shared::new(token(TokenKind::Do))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
@@ -3399,7 +3399,7 @@ mod tests {
                             children: Vec::new(),
                         }),
                         Shared::new(Node {
-                            kind: NodeKind::Token,
+                            kind: NodeKind::Do,
                             token: Some(Shared::new(token(TokenKind::Do))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
@@ -6565,7 +6565,7 @@ mod tests {
                             children: Vec::new(),
                         }),
                         Shared::new(Node {
-                            kind: NodeKind::Token,
+                            kind: NodeKind::Do,
                             token: Some(Shared::new(token(TokenKind::Do))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
