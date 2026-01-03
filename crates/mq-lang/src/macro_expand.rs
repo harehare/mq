@@ -2371,15 +2371,10 @@ mod tests {
         // The result should be an AST containing a block with the literal value 3
         assert_eq!(result.len(), 1);
         if let RuntimeValue::Ast(node) = &result[0] {
-            if let Expr::Block(nodes) = &*node.expr {
-                assert_eq!(nodes.len(), 1);
-                if let Expr::Literal(AstLiteral::Number(n)) = &*nodes[0].expr {
-                    assert_eq!(*n, 3.into());
-                } else {
-                    panic!("Expected literal number in block, got {:?}", nodes[0].expr);
-                }
+            if let Expr::Literal(AstLiteral::Number(n)) = &*node.expr {
+                assert_eq!(*n, 3.into());
             } else {
-                panic!("Expected block in AST, got {:?}", node.expr);
+                panic!("Expected literal number in block, got {:?}", node.expr);
             }
         } else {
             panic!("Expected AST result");
@@ -2392,19 +2387,9 @@ mod tests {
         let program = parse_program(input).expect("Failed to parse program");
         let result = eval_program(&program).expect("Failed to eval");
 
-        // The result should be an AST containing a block with the literal string "hello"
         assert_eq!(result.len(), 1);
         if let RuntimeValue::Ast(node) = &result[0] {
-            if let Expr::Block(nodes) = &*node.expr {
-                assert_eq!(nodes.len(), 1);
-                if let Expr::Literal(AstLiteral::String(s)) = &*nodes[0].expr {
-                    assert_eq!(s, "hello");
-                } else {
-                    panic!("Expected literal string in block, got {:?}", nodes[0].expr);
-                }
-            } else {
-                panic!("Expected block in AST, got {:?}", node.expr);
-            }
+            assert_eq!(node.expr, Expr::Literal(AstLiteral::String("hello".to_string())).into());
         } else {
             panic!("Expected AST result");
         }
@@ -2451,23 +2436,10 @@ mod tests {
         // The result should be an AST containing the expression "1 + 2"
         assert_eq!(result.len(), 1);
         if let RuntimeValue::Ast(node) = &result[0] {
-            // quote returns a Block, so we need to check inside the block
-            if let Expr::Block(outer_nodes) = &*node.expr {
-                assert_eq!(outer_nodes.len(), 1, "Expected 1 node in outer block");
-                // The inner node should be another Block (from the original quote)
-                if let Expr::Block(inner_nodes) = &*outer_nodes[0].expr {
-                    assert_eq!(inner_nodes.len(), 1, "Expected 1 node in inner block");
-                    // The innermost node should be a Call (add)
-                    if let Expr::Call(ident, _) = &*inner_nodes[0].expr {
-                        assert_eq!(ident.name.as_str(), "add", "Expected add call");
-                    } else {
-                        panic!("Expected Call in innermost block, got {:?}", inner_nodes[0].expr);
-                    }
-                } else {
-                    panic!("Expected inner Block, got {:?}", outer_nodes[0].expr);
-                }
+            if let Expr::Call(ident, _) = &*node.expr {
+                assert_eq!(ident.name.as_str(), "add", "Expected add call");
             } else {
-                panic!("Expected outer Block in AST, got {:?}", node.expr);
+                panic!("Expected Call in innermost block, got {:?}", node.expr);
             }
         } else {
             panic!("Expected AST result");
