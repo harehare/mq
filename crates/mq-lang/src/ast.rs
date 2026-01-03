@@ -5,6 +5,7 @@ use crate::{Shared, Token, arena::ArenaId};
 pub mod constants;
 pub mod node;
 pub mod parser;
+pub mod source;
 
 pub type Program = Vec<Shared<Node>>;
 pub type TokenId = ArenaId<Shared<Token>>;
