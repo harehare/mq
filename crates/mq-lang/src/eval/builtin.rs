@@ -2237,6 +2237,20 @@ define_builtin!(IS_DEBUG_MODE, ParamNum::None, |_, _, _, _| {
     }
 });
 
+define_builtin!(_AST_GET_ARGS, ParamNum::Fixed(1), |_, _, args, _| {
+    match args.as_slice() {
+        [RuntimeValue::Ast(ast)] => match &*ast.expr {
+            ast::Expr::Call(_, args) | ast::Expr::CallDynamic(_, args) => Ok(args
+                .iter()
+                .map(|arg| RuntimeValue::Ast(Shared::clone(arg)))
+                .collect::<Vec<_>>()
+                .into()),
+            _ => Ok(RuntimeValue::NONE),
+        },
+        _ => Ok(RuntimeValue::NONE),
+    }
+});
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2287,6 +2301,7 @@ const HASH_ENTRIES: u64 = fnv1a_hash_64("entries");
 const HASH_EQ: u64 = fnv1a_hash_64(constants::EQ);
 const HASH_ERROR: u64 = fnv1a_hash_64("error");
 const HASH_EXPLODE: u64 = fnv1a_hash_64("explode");
+const HASH_AST_GET_ARGS: u64 = fnv1a_hash_64("_ast_get_args");
 const HASH_FLATTEN: u64 = fnv1a_hash_64("flatten");
 const HASH_FLOOR: u64 = fnv1a_hash_64("floor");
 const HASH_FROM_DATE: u64 = fnv1a_hash_64("from_date");
@@ -2392,6 +2407,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_AND => Some(&AND),
         HASH_ALL_SYMBOLS => Some(&ALL_SYMBOLS),
         HASH_ARRAY => Some(&ARRAY),
+        HASH_AST_GET_ARGS => Some(&_AST_GET_ARGS),
         HASH_ATTR => Some(&ATTR),
         HASH_BASE64 => Some(&BASE64),
         HASH_BASE64D => Some(&BASE64D),
@@ -2864,6 +2880,13 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Checks if the runtime is currently in debug mode, returning true if a debugger is attached.",
             params: &[],
+        },
+    );
+    map.insert(
+        SmolStr::new("_ast_get_args"),
+        BuiltinFunctionDoc {
+            description: "Internal function to extract arguments from an AST call expression, returning a dictionary of argument names to their AST nodes.",
+            params: &["ast_node"],
         },
     );
     map
