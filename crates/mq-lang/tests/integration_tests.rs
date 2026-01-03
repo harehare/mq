@@ -1845,7 +1845,7 @@ fn engine() -> DefaultEngine {
     ",
     vec![RuntimeValue::Number(0.into())],
     Ok(vec![RuntimeValue::Number(16.into())].into()))]
-#[case::quote_extract_args("let a = 10 | let b = 20 | extract_args(quote: a + b) | len()",
+#[case::quote_ast_get_args("let a = 10 | let b = 20 | _ast_get_args(quote: a + b) | len()",
     vec![RuntimeValue::Number(0.into())],
     Ok(vec![RuntimeValue::Number(2.into())].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
