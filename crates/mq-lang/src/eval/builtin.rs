@@ -2237,6 +2237,23 @@ define_builtin!(IS_DEBUG_MODE, ParamNum::None, |_, _, _, _| {
     }
 });
 
+define_builtin!(EXTRACT_ARGS, ParamNum::Fixed(1), |_, _, args, _| {
+    match args.as_slice() {
+        [RuntimeValue::Ast(ast)] => match &*ast.expr {
+            ast::Expr::Call(_, args) => Ok(args
+                .iter()
+                .filter_map(|arg| match &*arg.expr {
+                    ast::Expr::Ident(ident) => Some((ident.name, RuntimeValue::Ast(Shared::clone(arg)))),
+                    _ => None,
+                })
+                .collect::<BTreeMap<_, _>>()
+                .into()),
+            _ => Ok(RuntimeValue::NONE),
+        },
+        _ => Ok(RuntimeValue::NONE),
+    }
+});
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2287,6 +2304,7 @@ const HASH_ENTRIES: u64 = fnv1a_hash_64("entries");
 const HASH_EQ: u64 = fnv1a_hash_64(constants::EQ);
 const HASH_ERROR: u64 = fnv1a_hash_64("error");
 const HASH_EXPLODE: u64 = fnv1a_hash_64("explode");
+const HASH_EXTRACT_ARGS: u64 = fnv1a_hash_64("extract_args");
 const HASH_FLATTEN: u64 = fnv1a_hash_64("flatten");
 const HASH_FLOOR: u64 = fnv1a_hash_64("floor");
 const HASH_FROM_DATE: u64 = fnv1a_hash_64("from_date");
@@ -2408,6 +2426,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_EQ => Some(&EQ),
         HASH_ERROR => Some(&ERROR),
         HASH_EXPLODE => Some(&EXPLODE),
+        HASH_EXTRACT_ARGS => Some(&EXTRACT_ARGS),
         HASH_FLATTEN => Some(&FLATTEN),
         HASH_FLOOR => Some(&FLOOR),
         HASH_FROM_DATE => Some(&FROM_DATE),
