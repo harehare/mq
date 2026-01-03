@@ -2240,7 +2240,7 @@ define_builtin!(IS_DEBUG_MODE, ParamNum::None, |_, _, _, _| {
 define_builtin!(EXTRACT_ARGS, ParamNum::Fixed(1), |_, _, args, _| {
     match args.as_slice() {
         [RuntimeValue::Ast(ast)] => match &*ast.expr {
-            ast::Expr::Call(_, args) => Ok(args
+            ast::Expr::Call(_, args) | ast::Expr::CallDynamic(_, args) => Ok(args
                 .iter()
                 .filter_map(|arg| match &*arg.expr {
                     ast::Expr::Ident(ident) => Some((ident.name, RuntimeValue::Ast(Shared::clone(arg)))),
