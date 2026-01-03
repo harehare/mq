@@ -77,6 +77,7 @@ impl Formatter {
             mq_lang::CstNodeKind::Token
                 | mq_lang::CstNodeKind::BinaryOp(_)
                 | mq_lang::CstNodeKind::End
+                | mq_lang::CstNodeKind::Do
                 | mq_lang::CstNodeKind::CallDynamic
         ) {
             self.append_leading_trivia(&node, indent_level_consider_new_line);
@@ -141,6 +142,7 @@ impl Formatter {
             | mq_lang::CstNodeKind::End
             | mq_lang::CstNodeKind::Self_
             | mq_lang::CstNodeKind::Break
+            | mq_lang::CstNodeKind::Do
             | mq_lang::CstNodeKind::Continue => self.format_keyword(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Selector => self.format_selector(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Try => self.format_try(&node, indent_level_consider_new_line),
@@ -1215,6 +1217,18 @@ impl Formatter {
                         self.output.push_str(&token.to_string());
                     }
                 }
+                mq_lang::TokenKind::Do => {
+                    if node.has_new_line() {
+                        self.append_leading_trivia(node, indent_level);
+                        self.append_indent(indent_level);
+                        self.output.push_str(&token.to_string());
+                    } else {
+                        if !self.output.ends_with(' ') {
+                            self.append_space();
+                        }
+                        self.output.push_str(&token.to_string());
+                    }
+                }
                 _ => {
                     self.append_indent(indent_level);
                     self.output.push_str(&token.to_string());
@@ -2125,6 +2139,30 @@ import "foo.mq"
 | def main(): test();
 end"#,
         r#"module test:
+  import "foo.mq"
+  | def main(): test();
+end
+"#
+    )]
+    #[case::module_with_do(
+        r#"module test  do
+import "foo.mq"
+| def main(): test();
+end"#,
+        r#"module test do
+  import "foo.mq"
+  | def main(): test();
+end
+"#
+    )]
+    #[case::module_with_do_and_new_line(
+        r#"module test
+do
+import "foo.mq"
+| def main(): test();
+end"#,
+        r#"module test
+  do
   import "foo.mq"
   | def main(): test();
 end
