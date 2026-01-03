@@ -305,10 +305,17 @@ impl Macro {
                     _ => vec![Shared::clone(block)],
                 };
                 let expanded_program = self.expand(&program, evaluator)?;
-                let block = Shared::new(Node {
-                    token_id: node.token_id,
-                    expr: Shared::new(Expr::Block(expanded_program)),
-                });
+                let block = if expanded_program.len() == 1 {
+                    Shared::new(Node {
+                        token_id: node.token_id,
+                        expr: Shared::clone(&expanded_program[0].expr),
+                    })
+                } else {
+                    Shared::new(Node {
+                        token_id: node.token_id,
+                        expr: Shared::new(Expr::Block(expanded_program)),
+                    })
+                };
 
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
