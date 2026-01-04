@@ -673,8 +673,8 @@ mod tests {
         Expr::Def(
             IdentWithToken::new("add"),
             smallvec![
-                Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
-                Shared::new(create_node(Expr::Ident(IdentWithToken::new("y"))))
+                IdentWithToken::new("x"),
+                IdentWithToken::new("y")
             ],
             vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
         ),
@@ -683,7 +683,7 @@ mod tests {
     #[case::block(
         Expr::Def(
             IdentWithToken::new("test"),
-            smallvec![Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))],
+            smallvec![IdentWithToken::new("x")],
             vec![
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0)))))
@@ -707,8 +707,8 @@ mod tests {
     #[case::with_params_inline(
         Expr::Fn(
             smallvec![
-                Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
-                Shared::new(create_node(Expr::Ident(IdentWithToken::new("y"))))
+                IdentWithToken::new("x"),
+                IdentWithToken::new("y")
             ],
             vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
         ),
@@ -765,7 +765,7 @@ mod tests {
     #[case::simple(
         Expr::Macro(
             IdentWithToken::new("double"),
-            smallvec![Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))],
+            smallvec![IdentWithToken::new("x")],
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))
         ),
         "macro double(x): x"
