@@ -1393,25 +1393,12 @@ impl<T: ModuleResolver> Evaluator<T> {
             let new_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(fn_env))));
 
             if params.len() == args.len() + 1 {
-                if let ast::Expr::Ident(id) = &*params.first().unwrap().expr {
-                    define(&new_env, id.name, runtime_value.clone());
-                } else {
-                    return Err(RuntimeError::InvalidDefinition(
-                        (*get_token(Shared::clone(&self.token_arena), params.first().unwrap().token_id)).clone(),
-                        ident.to_string(),
-                    ));
-                }
+                let param = params.first().unwrap();
+                define(&new_env, param.name, runtime_value.clone());
 
                 for (arg, param) in args.into_iter().zip(params.iter().skip(1)) {
-                    if let ast::Expr::Ident(id) = &*param.expr {
-                        let val = self.eval_expr(runtime_value, arg, env)?;
-                        define(&new_env, id.name, val);
-                    } else {
-                        return Err(RuntimeError::InvalidDefinition(
-                            (*get_token(Shared::clone(&self.token_arena), param.token_id)).clone(),
-                            ident.to_string(),
-                        ));
-                    }
+                    let val = self.eval_expr(runtime_value, arg, env)?;
+                    define(&new_env, param.name, val);
                 }
             } else if args.len() != params.len() {
                 return Err(RuntimeError::InvalidNumberOfArguments(
@@ -1422,15 +1409,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                 ));
             } else {
                 for (arg, param) in args.into_iter().zip(params.iter()) {
-                    if let ast::Expr::Ident(id) = &*param.expr {
-                        let val = self.eval_expr(runtime_value, arg, env)?;
-                        define(&new_env, id.name, val);
-                    } else {
-                        return Err(RuntimeError::InvalidDefinition(
-                            (*get_token(Shared::clone(&self.token_arena), param.token_id)).clone(),
-                            ident.to_string(),
-                        ));
-                    }
+                    let val = self.eval_expr(runtime_value, arg, env)?;
+                    define(&new_env, param.name, val);
                 }
             };
 
@@ -2706,7 +2686,7 @@ mod tests {
             ast_node(ast::Expr::Def(
                 IdentWithToken::new("split2"),
                 smallvec![
-                    ast_node(ast::Expr::Ident(IdentWithToken::new("str"))),
+                    IdentWithToken::new("str"),
                 ],
                 vec![ast_call("split",
                     smallvec![
@@ -2725,8 +2705,8 @@ mod tests {
             ast_node(ast::Expr::Def(
                 IdentWithToken::new("concat_self"),
                 smallvec![
-                    ast_node(ast::Expr::Ident(IdentWithToken::new("str1"))),
-                    ast_node(ast::Expr::Ident(IdentWithToken::new("str2"))),
+                    IdentWithToken::new("str1"),
+                    IdentWithToken::new("str2"),
                 ],
                 vec![ast_call("add",
                     smallvec![
@@ -2746,8 +2726,8 @@ mod tests {
             ast_node(ast::Expr::Def(
                 IdentWithToken::new("prepend_self"),
                 smallvec![
-                    ast_node(ast::Expr::Ident(IdentWithToken::new("str1"))),
-                    ast_node(ast::Expr::Ident(IdentWithToken::new("str2"))),
+                    IdentWithToken::new("str1"),
+                    IdentWithToken::new("str2"),
                 ],
                 vec![ast_call("add",
                     smallvec![

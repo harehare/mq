@@ -85,17 +85,7 @@ impl Macro {
         for node in program {
             match &*node.expr {
                 Expr::Macro(ident, params, body) => {
-                    let param_names: Vec<Ident> = params
-                        .iter()
-                        .filter_map(|param| {
-                            if let Expr::Ident(param_ident) = &*param.expr {
-                                Some(param_ident.name)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-
+                    let param_names: Vec<Ident> = params.iter().map(|param| param.name).collect();
                     let ast = evaluator.eval_macro_body(body, node.token_id)?;
 
                     if let RuntimeValue::Ast(macro_body) = ast {
@@ -517,20 +507,12 @@ impl Macro {
             Expr::Def(ident, params, program) => {
                 // Function parameters shadow macro parameters
                 // Check if any parameter shadows a substitution
-                let has_shadowing = params.iter().any(|param| {
-                    if let Expr::Ident(param_ident) = &*param.expr {
-                        substitutions.contains_key(&param_ident.name)
-                    } else {
-                        false
-                    }
-                });
+                let has_shadowing = params.iter().any(|param| substitutions.contains_key(&param.name));
 
                 let substituted_program: Vec<_> = if has_shadowing {
                     let mut scoped_substitutions = substitutions.clone();
                     for param in params {
-                        if let Expr::Ident(param_ident) = &*param.expr {
-                            scoped_substitutions.remove(&param_ident.name);
-                        }
+                        scoped_substitutions.remove(&param.name);
                     }
                     program
                         .iter()
@@ -548,20 +530,11 @@ impl Macro {
             Expr::Fn(params, program) => {
                 // Function parameters shadow macro parameters
                 // Check if any parameter shadows a substitution
-                let has_shadowing = params.iter().any(|param| {
-                    if let Expr::Ident(param_ident) = &*param.expr {
-                        substitutions.contains_key(&param_ident.name)
-                    } else {
-                        false
-                    }
-                });
-
+                let has_shadowing = params.iter().any(|param| substitutions.contains_key(&param.name));
                 let substituted_program: Vec<_> = if has_shadowing {
                     let mut scoped_substitutions = substitutions.clone();
                     for param in params {
-                        if let Expr::Ident(param_ident) = &*param.expr {
-                            scoped_substitutions.remove(&param_ident.name);
-                        }
+                        scoped_substitutions.remove(&param.name);
                     }
                     program
                         .iter()
