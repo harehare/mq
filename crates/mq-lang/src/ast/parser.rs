@@ -997,16 +997,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }?;
         let def_token_id = self.token_arena.alloc(Shared::clone(def_token));
         let parsed_args = self.parse_args()?;
-        let args = parsed_args
-            .iter()
-            .filter_map(|arg| {
-                if let Expr::Ident(ident) = &*arg.expr {
-                    Some(ident.clone())
-                } else {
-                    None
-                }
-            })
-            .collect::<SmallVec<_>>();
+        let mut args = SmallVec::new();
+        for arg in &parsed_args {
+            if let Expr::Ident(ident) = &*arg.expr {
+                args.push(ident.clone());
+            } else {
+                return Err(SyntaxError::UnexpectedToken((*self.token_arena[arg.token_id]).clone()));
+            }
+        }
 
         if !parsed_args.is_empty() && parsed_args.len() != args.len() {
             return Err(SyntaxError::UnexpectedToken((*self.token_arena[def_token_id]).clone()));
@@ -1041,16 +1039,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }?;
         let macro_token_id = self.token_arena.alloc(Shared::clone(macro_token));
         let parsed_args = self.parse_args()?;
-        let args = parsed_args
-            .iter()
-            .filter_map(|arg| {
-                if let Expr::Ident(ident) = &*arg.expr {
-                    Some(ident.clone())
-                } else {
-                    None
-                }
-            })
-            .collect::<SmallVec<_>>();
+        let mut args = SmallVec::new();
+        for arg in &parsed_args {
+            if let Expr::Ident(ident) = &*arg.expr {
+                args.push(ident.clone());
+            } else {
+                return Err(SyntaxError::UnexpectedToken((*self.token_arena[arg.token_id]).clone()));
+            }
+        }
 
         if !parsed_args.is_empty() && parsed_args.len() != args.len() {
             return Err(SyntaxError::UnexpectedToken(
@@ -1091,16 +1087,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_fn(&mut self, fn_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let fn_token_id = self.token_arena.alloc(Shared::clone(fn_token));
         let parsed_args = self.parse_args()?;
-        let args = parsed_args
-            .iter()
-            .filter_map(|arg| {
-                if let Expr::Ident(ident) = &*arg.expr {
-                    Some(ident.clone())
-                } else {
-                    None
-                }
-            })
-            .collect::<SmallVec<_>>();
+        let mut args = SmallVec::new();
+        for arg in &parsed_args {
+            if let Expr::Ident(ident) = &*arg.expr {
+                args.push(ident.clone());
+            } else {
+                return Err(SyntaxError::UnexpectedToken((*self.token_arena[arg.token_id]).clone()));
+            }
+        }
 
         if !parsed_args.is_empty() && parsed_args.len() != args.len() {
             return Err(SyntaxError::UnexpectedToken((*self.token_arena[fn_token_id]).clone()));
@@ -2323,7 +2317,7 @@ mod tests {
             token(TokenKind::Comma),
             token(TokenKind::RParen),
         ],
-        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::StringLiteral("value".to_string()), module_id: 1.into()})))]
     #[case::def4(
         vec![
             token(TokenKind::Def),
@@ -2333,7 +2327,7 @@ mod tests {
             token(TokenKind::RParen),
             token(TokenKind::Colon),
         ],
-        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::StringLiteral("value".to_string()), module_id: 1.into()})))]
     #[case::def5(
         vec![
             token(TokenKind::Def),
@@ -2344,7 +2338,7 @@ mod tests {
             token(TokenKind::Colon),
             token(TokenKind::Pipe),
         ],
-        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::StringLiteral("value".to_string()), module_id: 1.into()})))]
     #[case::def6(
         vec![
             token(TokenKind::Def),
@@ -2355,7 +2349,7 @@ mod tests {
             token(TokenKind::Colon),
             token(TokenKind::SemiColon),
         ],
-        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::StringLiteral("value".to_string()), module_id: 1.into()})))]
     #[case::def7(
         vec![
             token(TokenKind::Def),
@@ -2365,7 +2359,7 @@ mod tests {
             token(TokenKind::RParen),
             token(TokenKind::Colon),
         ],
-        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::StringLiteral("value".to_string()), module_id: 1.into()})))]
     #[case::def7(
         vec![
             token(TokenKind::Def),
@@ -3384,7 +3378,7 @@ mod tests {
             token(TokenKind::StringLiteral("result".to_owned())),
             token(TokenKind::SemiColon),
         ],
-        Err(SyntaxError::UnexpectedToken(token(TokenKind::Fn))))]
+        Err(SyntaxError::UnexpectedToken(token(TokenKind::StringLiteral("invalid".to_owned())))))]
     #[case::fn_without_body(
         vec![
             token(TokenKind::Fn),
