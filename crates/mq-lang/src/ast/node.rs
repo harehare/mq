@@ -11,7 +11,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-pub type Params = SmallVec<[Shared<Node>; 4]>;
+pub type Params = SmallVec<[IdentWithToken; 4]>;
 pub type Args = SmallVec<[Shared<Node>; 4]>;
 pub type Cond = (Option<Shared<Node>>, Shared<Node>);
 pub type Branches = SmallVec<[Cond; 4]>;
@@ -85,7 +85,7 @@ impl Node {
             Expr::Macro(_, args, block) => {
                 let start = args
                     .first()
-                    .map(|node| node.range(Shared::clone(&arena)))
+                    .and_then(|ident| ident.token.as_ref().map(|it| it.range))
                     .unwrap_or(block.range(Shared::clone(&arena)))
                     .start;
                 let end = block.range(arena).end;
