@@ -1394,11 +1394,11 @@ impl<T: ModuleResolver> Evaluator<T> {
 
             if params.len() == args.len() + 1 {
                 let param = params.first().unwrap();
-                define(&new_env, param.name, runtime_value.clone());
+                define(&new_env, param.name.name, runtime_value.clone());
 
                 for (arg, param) in args.into_iter().zip(params.iter().skip(1)) {
                     let val = self.eval_expr(runtime_value, arg, env)?;
-                    define(&new_env, param.name, val);
+                    define(&new_env, param.name.name, val);
                 }
             } else if args.len() != params.len() {
                 return Err(RuntimeError::InvalidNumberOfArguments(
@@ -1410,7 +1410,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             } else {
                 for (arg, param) in args.into_iter().zip(params.iter()) {
                     let val = self.eval_expr(runtime_value, arg, env)?;
-                    define(&new_env, param.name, val);
+                    define(&new_env, param.name.name, val);
                 }
             };
 
@@ -1472,7 +1472,7 @@ mod tests {
     use std::f64::consts::PI;
     use std::vec;
 
-    use crate::ast::node::{Args, IdentWithToken};
+    use crate::ast::node::{Args, IdentWithToken, Param};
     use crate::error::runtime::RuntimeError;
     use crate::eval::module::error::ModuleError;
     use crate::number::{INFINITE, NAN};
@@ -2686,7 +2686,7 @@ mod tests {
             ast_node(ast::Expr::Def(
                 IdentWithToken::new("split2"),
                 smallvec![
-                    IdentWithToken::new("str"),
+                    Param::new(IdentWithToken::new("str")),
                 ],
                 vec![ast_call("split",
                     smallvec![
@@ -2705,8 +2705,8 @@ mod tests {
             ast_node(ast::Expr::Def(
                 IdentWithToken::new("concat_self"),
                 smallvec![
-                    IdentWithToken::new("str1"),
-                    IdentWithToken::new("str2"),
+                    Param::new(IdentWithToken::new("str1")),
+                    Param::new(IdentWithToken::new("str2")),
                 ],
                 vec![ast_call("add",
                     smallvec![
@@ -2726,8 +2726,8 @@ mod tests {
             ast_node(ast::Expr::Def(
                 IdentWithToken::new("prepend_self"),
                 smallvec![
-                    IdentWithToken::new("str1"),
-                    IdentWithToken::new("str2"),
+                    Param::new(IdentWithToken::new("str1")),
+                    Param::new(IdentWithToken::new("str2")),
                 ],
                 vec![ast_call("add",
                     smallvec![

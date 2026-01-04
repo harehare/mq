@@ -11,7 +11,28 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-pub type Params = SmallVec<[IdentWithToken; 4]>;
+/// Represents a function parameter with an optional default value
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
+#[derive(PartialEq, PartialOrd, Debug, Clone)]
+pub struct Param {
+    pub name: IdentWithToken,
+    pub default: Option<Shared<Node>>,
+}
+
+impl Param {
+    pub fn new(name: IdentWithToken) -> Self {
+        Self::with_default(name, None)
+    }
+
+    pub fn with_default(name: IdentWithToken, default_value: Option<Shared<Node>>) -> Self {
+        Self {
+            name,
+            default: default_value,
+        }
+    }
+}
+
+pub type Params = SmallVec<[Param; 4]>;
 pub type Args = SmallVec<[Shared<Node>; 4]>;
 pub type Cond = (Option<Shared<Node>>, Shared<Node>);
 pub type Branches = SmallVec<[Cond; 4]>;
@@ -82,10 +103,10 @@ impl Node {
                     .unwrap_or_else(|| callable.range(Shared::clone(&arena)).end);
                 Range { start, end }
             }
-            Expr::Macro(_, args, block) => {
-                let start = args
+            Expr::Macro(_, params, block) => {
+                let start = params
                     .first()
-                    .and_then(|ident| ident.token.as_ref().map(|it| it.range))
+                    .and_then(|param| param.name.token.as_ref().map(|t| t.range))
                     .unwrap_or(block.range(Shared::clone(&arena)))
                     .start;
                 let end = block.range(arena).end;

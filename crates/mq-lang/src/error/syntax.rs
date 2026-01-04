@@ -35,6 +35,17 @@ pub enum SyntaxError {
     UnknownSelector(selector::UnknownSelector),
     #[error("Macro parameters must be identifiers, but got `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
     MacroParamsMustBeIdents(Token),
+    /// A parameter without a default value was found after a parameter with a default value.
+    #[error(
+        "Parameter without default value after parameter with default: parameters with defaults must come after all parameters without defaults"
+    )]
+    ParameterWithoutDefaultAfterDefault(Token),
+    /// The function name (first parameter in def) cannot have a default value.
+    #[error("Function name cannot have a default value")]
+    FunctionNameCannotHaveDefault(Token),
+    /// Macro parameters cannot have default values.
+    #[error("Macro parameters cannot have default values")]
+    MacroParametersCannotHaveDefaults(Token),
 }
 
 impl SyntaxError {
@@ -52,6 +63,9 @@ impl SyntaxError {
             SyntaxError::InvalidAssignmentTarget(token) => Some(token),
             SyntaxError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
             SyntaxError::MacroParamsMustBeIdents(token) => Some(token),
+            SyntaxError::ParameterWithoutDefaultAfterDefault(token) => Some(token),
+            SyntaxError::FunctionNameCannotHaveDefault(token) => Some(token),
+            SyntaxError::MacroParametersCannotHaveDefaults(token) => Some(token),
         }
     }
 }

@@ -243,7 +243,7 @@ mod tests {
 
     use crate::{
         Shared, SharedCell, Token, TokenKind,
-        ast::node::{self as ast, IdentWithToken},
+        ast::node::{self as ast, IdentWithToken, Param},
         module::LocalFsModuleResolver,
         range::{Position, Range},
     };
@@ -297,18 +297,18 @@ mod tests {
             Shared::new(ast::Node{token_id: 0.into(), expr: Shared::new(ast::Expr::Def(
                 IdentWithToken::new_with_token("test", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()}))),
                 smallvec![
-                    IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()}))),
-                    IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()}))),
+                    Param::new(IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()})))),
+                    Param::new(IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()})))),
                 ],
                 vec![
-                    Shared::new(ast::Node{token_id: 6.into(), expr: Shared::new(ast::Expr::Call(
+                    Shared::new(ast::Node{token_id: 4.into(), expr: Shared::new(ast::Expr::Call(
                     IdentWithToken::new_with_token("add", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("add")), range: Range{start: Position{line: 1, column: 17}, end: Position{line: 1, column: 20}}, module_id: 1.into()}))),
                     smallvec![
-                        Shared::new(ast::Node{token_id: 4.into(),
+                        Shared::new(ast::Node{token_id: 2.into(),
                             expr: Shared::new(
                                 ast::Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 21}, end: Position{line: 1, column: 22}}, module_id: 1.into()}))))
                                 )}),
-                        Shared::new(ast::Node{token_id: 5.into(),
+                        Shared::new(ast::Node{token_id: 3.into(),
                             expr: Shared::new(
                                 ast::Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 24}, end: Position{line: 1, column: 25}}, module_id: 1.into()}))))
                             )})

@@ -842,8 +842,8 @@ impl Cli {
                         format!("`{}`", value)
                     };
                     let description = doc.iter().map(|(_, d)| d.to_string()).join("\n");
-                    let args = params.iter().map(|p| format!("`{}`", p)).join(", ");
-                    let example = format!("{}({})", value, params.join(", "));
+                    let args = params.iter().map(|p| format!("`{}`", p.name)).join(", ");
+                    let example = format!("{}({})", value, params.iter().map(|p| p.name.as_str()).join(", "));
 
                     Some([name, description, args, example])
                 }

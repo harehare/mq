@@ -189,6 +189,15 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::MacroParamsMustBeIdents(_)) => Some(Cow::Borrowed(
                 "Macro parameters must be identifiers. Check your macro definition.",
             )),
+            InnerError::Syntax(SyntaxError::ParameterWithoutDefaultAfterDefault(_)) => Some(Cow::Borrowed(
+                "Parameters with default values must come after all parameters without defaults.",
+            )),
+            InnerError::Syntax(SyntaxError::FunctionNameCannotHaveDefault(_)) => {
+                Some(Cow::Borrowed("Function name cannot have a default value."))
+            }
+            InnerError::Syntax(SyntaxError::MacroParametersCannotHaveDefaults(_)) => {
+                Some(Cow::Borrowed("Macro parameters cannot have default values."))
+            }
             InnerError::Runtime(RuntimeError::UserDefined { .. }) => {
                 Some(Cow::Borrowed("A user-defined error occurred during evaluation."))
             }
@@ -219,6 +228,11 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::InvalidNumberOfArguments(_, _, expected, actual)) => Some(Cow::Owned(
                 format!("Invalid number of arguments: expected {expected}, got {actual}."),
             )),
+            InnerError::Runtime(RuntimeError::InvalidNumberOfArgumentsWithDefaults(_, _, min, max, actual)) => {
+                Some(Cow::Owned(format!(
+                    "Invalid number of arguments: expected {min} to {max}, got {actual}."
+                )))
+            }
             InnerError::Runtime(RuntimeError::InvalidRegularExpression(_, _)) => Some(Cow::Borrowed(
                 "Invalid regular expression. Please check your regex syntax.",
             )),
@@ -287,6 +301,15 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::InvalidModule) => Some(Cow::Borrowed("Invalid module format or content.")),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParamsMustBeIdents(_))) => Some(
                 Cow::Borrowed("Parse error in module: macro parameters must be identifiers."),
+            ),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ParameterWithoutDefaultAfterDefault(_))) => Some(
+                Cow::Borrowed("Parse error in module: parameters with defaults must come after parameters without."),
+            ),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::FunctionNameCannotHaveDefault(_))) => Some(
+                Cow::Borrowed("Parse error in module: function name cannot have a default value."),
+            ),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotHaveDefaults(_))) => Some(
+                Cow::Borrowed("Parse error in module: macro parameters cannot have default values."),
             ),
             InnerError::Runtime(RuntimeError::UndefinedMacro(_)) => {
                 Some(Cow::Borrowed("Macro expansion error: undefined macro used."))

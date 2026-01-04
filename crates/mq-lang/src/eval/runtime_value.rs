@@ -543,7 +543,13 @@ impl RuntimeValue {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
-                    Self::format_ident(&param.name, buf)?;
+
+                    Self::format_ident(&param.name.name, buf)?;
+
+                    if let Some(default) = &param.default {
+                        write!(buf, " = ")?;
+                        Self::format_ast_node(default, buf)?;
+                    }
                 }
                 write!(buf, "], [")?;
                 for (i, node) in body.iter().enumerate() {
@@ -560,7 +566,13 @@ impl RuntimeValue {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
-                    Self::format_ident(&param.name, buf)?;
+
+                    Self::format_ident(&param.name.name, buf)?;
+
+                    if let Some(default) = &param.default {
+                        write!(buf, " = ")?;
+                        Self::format_ast_node(default, buf)?;
+                    }
                 }
                 write!(buf, "], ")?;
                 Self::format_ast_node(block, buf)?;
@@ -572,7 +584,13 @@ impl RuntimeValue {
                     if i > 0 {
                         write!(buf, ", ")?;
                     }
-                    Self::format_ident(&param.name, buf)?;
+
+                    Self::format_ident(&param.name.name, buf)?;
+
+                    if let Some(default) = &param.default {
+                        write!(buf, " = ")?;
+                        Self::format_ast_node(default, buf)?;
+                    }
                 }
                 write!(buf, "], [")?;
                 for (i, node) in body.iter().enumerate() {
@@ -997,7 +1015,7 @@ impl RuntimeValues {
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::node::IdentWithToken;
+    use crate::ast::node::{IdentWithToken, Param};
     use rstest::rstest;
     use smallvec::{SmallVec, smallvec};
 
@@ -1166,7 +1184,7 @@ mod tests {
                 Vec::new(),
                 Shared::new(SharedCell::new(Env::default()))
             ) < RuntimeValue::Function(
-                smallvec![IdentWithToken::new("test")],
+                smallvec![Param::new(IdentWithToken::new("test"))],
                 Vec::new(),
                 Shared::new(SharedCell::new(Env::default()))
             )
@@ -1414,7 +1432,7 @@ mod tests {
     #[case::def(
         ast_node(ast::node::Expr::Def(
             ast::node::IdentWithToken::new("add"),
-            smallvec![ast::node::IdentWithToken::new("a"), ast::node::IdentWithToken::new("b")],
+            smallvec![Param::new(ast::node::IdentWithToken::new("a")), Param::new(ast::node::IdentWithToken::new("b"))],
             vec![ast_ident("result")],
         )),
         "Def(\"add\", [Ident(\"a\"), Ident(\"b\")], [Ident(\"result\")])"
@@ -1423,7 +1441,7 @@ mod tests {
     #[case::macro_def(
         ast_node(ast::node::Expr::Macro(
             ast::node::IdentWithToken::new("my_macro"),
-            smallvec![ast::node::IdentWithToken::new("x")],
+            smallvec![Param::new(ast::node::IdentWithToken::new("x"))],
             ast_ident("body"),
         )),
         "Macro(\"my_macro\", [Ident(\"x\")], Ident(\"body\"))"
@@ -1431,7 +1449,7 @@ mod tests {
     // Fn
     #[case::fn_expr(
         ast_node(ast::node::Expr::Fn(
-            smallvec![ast::node::IdentWithToken::new("x")],
+            smallvec![Param::new(ast::node::IdentWithToken::new("x"))],
             vec![ast_literal(ast::node::Literal::Number(Number::from(1.0)))],
         )),
         "Fn([Ident(\"x\")], [Literal(Number(1))])"
