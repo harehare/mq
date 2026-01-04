@@ -1,6 +1,7 @@
 use std::{path::PathBuf, vec};
 
 use mq_lang::{Token, TokenKind};
+
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
 use smol_str::SmolStr;
@@ -10,7 +11,7 @@ use crate::{
     builtin::Builtin,
     scope::{Scope, ScopeId, ScopeKind},
     source::{Source, SourceId, SourceInfo},
-    symbol::{Symbol, SymbolId, SymbolKind},
+    symbol::{ParamInfo, Symbol, SymbolId, SymbolKind},
 };
 
 #[derive(Debug)]
@@ -1162,7 +1163,7 @@ impl Hir {
                 let has_default = child.children.len() > 1;
                 let param_name = child.name().unwrap_or("arg".into());
 
-                param_info.push(crate::symbol::ParamInfo {
+                param_info.push(ParamInfo {
                     name: param_name.clone(),
                     has_default,
                 });
@@ -1240,7 +1241,7 @@ impl Hir {
                 let has_default = child.children.len() > 1;
                 let param_name = child.name().unwrap_or("arg".into());
 
-                param_info.push(crate::symbol::ParamInfo {
+                param_info.push(ParamInfo {
                     name: param_name.clone(),
                     has_default,
                 });
@@ -2202,7 +2203,8 @@ end"#;
         // Macro parameter
         if let SymbolKind::Macro(params) = &macro_symbol.kind {
             assert_eq!(params.len(), 1);
-            assert_eq!(params[0].name, "x");
+            assert_eq!(params[0].name.as_str(), "x");
+            assert!(!params[0].has_default);
         } else {
             panic!("Expected macro symbol kind");
         }

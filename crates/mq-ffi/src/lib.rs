@@ -455,9 +455,7 @@ mod tests {
         let code = make_c_string(r#"select(contains("line"))"#);
         let input = make_c_string("# line1\n## line2\n### line3");
         let format = make_c_string("text");
-
         let result = unsafe { mq_eval(engine, code, input, format) };
-
         assert!(result.error_msg.is_null());
         assert!(!result.values.is_null());
         assert_eq!(result.values_len, 3);
