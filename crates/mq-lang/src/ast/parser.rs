@@ -1006,10 +1006,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
         }
 
-        if !parsed_args.is_empty() && parsed_args.len() != args.len() {
-            return Err(SyntaxError::UnexpectedToken((*self.token_arena[def_token_id]).clone()));
-        }
-
         self.consume_colon_or_do();
 
         let program = self.parse_program(false)?;
@@ -1046,12 +1042,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             } else {
                 return Err(SyntaxError::UnexpectedToken((*self.token_arena[arg.token_id]).clone()));
             }
-        }
-
-        if !parsed_args.is_empty() && parsed_args.len() != args.len() {
-            return Err(SyntaxError::UnexpectedToken(
-                (*self.token_arena[macro_token_id]).clone(),
-            ));
         }
 
         self.consume_colon();
@@ -1094,10 +1084,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             } else {
                 return Err(SyntaxError::UnexpectedToken((*self.token_arena[arg.token_id]).clone()));
             }
-        }
-
-        if !parsed_args.is_empty() && parsed_args.len() != args.len() {
-            return Err(SyntaxError::UnexpectedToken((*self.token_arena[fn_token_id]).clone()));
         }
 
         self.consume_colon_or_do();
