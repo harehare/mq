@@ -770,6 +770,14 @@ impl Macro {
         }
 
         match &*node.expr {
+            Expr::Ident(ident) => {
+                if let Some(replacement) = substitutions.get(&ident.name) {
+                    // Return the AST node itself (not evaluated)
+                    Shared::clone(replacement)
+                } else {
+                    Shared::clone(node)
+                }
+            }
             // Unquote: Perform substitution and unwrap
             // Unquote should not appear in the final expanded code
             Expr::Unquote(inner) => self.substitute_node(inner, substitutions),
@@ -1698,7 +1706,8 @@ mod tests {
     }
 
     #[test]
-    fn test_substitute_in_quote_no_unwanted_substitution() {
+    fn test_substitute_in_quote_with_macro_arg() {
+        // Now quote substitutes macro arguments as AST nodes
         let input = r#"
             macro test(x): quote: x + 1
             | let x = 100
@@ -1711,7 +1720,8 @@ mod tests {
             .expect("Failed to expand program");
 
         let result = eval_program(&expanded).expect("Failed to eval");
-        assert_eq!(result, vec![RuntimeValue::Number(101.into())]);
+        // x is substituted with 42 (the macro argument), not the outer let binding
+        assert_eq!(result, vec![RuntimeValue::Number(43.into())]);
     }
 
     #[test]
@@ -2670,5 +2680,50 @@ mod tests {
         let result = eval_program(&expanded).unwrap_or_else(|e| panic!("{}: Failed to eval: {:?}", description, e));
 
         assert_eq!(result, expected, "{}", description);
+    }
+
+    #[rstest]
+    #[case::quote_ident_as_ast(
+        "macro wrap(expr): quote: add(expr, 1) | wrap(5)",
+        "Quote should substitute identifier with AST node"
+    )]
+    #[case::multiple_idents_in_quote(
+        "macro combine(a, b): quote: add(a, b) | combine(1, 2)",
+        "Multiple identifiers in quote should be substituted"
+    )]
+    fn test_quote_identifier_ast_substitution(#[case] input: &str, #[case] description: &str) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .unwrap_or_else(|e| panic!("{}: Failed to expand: {:?}", description, e));
+
+        // Verify the expansion produces valid AST nodes
+        assert!(!expanded.is_empty(), "{}: Expected non-empty expansion", description);
+
+        // The expanded code should contain Call expressions with the substituted arguments
+        let has_call = expanded.iter().any(|node| matches!(&*node.expr, Expr::Call(_, _)));
+        assert!(has_call, "{}: Expected Call expression in expansion", description);
+    }
+
+    #[test]
+    fn test_quote_preserves_argument_ast() {
+        // Test that quote preserves the AST structure of macro arguments
+        let input = "macro wrap(expr): quote: expr | wrap(1 + 2)";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand program");
+
+        assert_eq!(expanded.len(), 1, "Expected single expanded node");
+
+        // The expanded node should be the AST of "1 + 2" (a Call to add)
+        if let Expr::Call(ident, args) = &*expanded[0].expr {
+            assert_eq!(ident.name.as_str(), "add", "Expected add function call");
+            assert_eq!(args.len(), 2, "Expected two arguments");
+        } else {
+            panic!("Expected Call expression, got {:?}", expanded[0].expr);
+        }
     }
 }
