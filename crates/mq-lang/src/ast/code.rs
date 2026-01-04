@@ -141,7 +141,7 @@ impl Node {
             }
             Expr::Def(name, params, program) => {
                 write!(buf, "def {}(", name).unwrap();
-                format_params(params, buf, indent);
+                format_params(params, buf);
                 buf.push(')');
                 if needs_block_syntax(program) {
                     format_program_block(program, buf, indent);
@@ -152,7 +152,7 @@ impl Node {
             }
             Expr::Fn(params, program) => {
                 buf.push_str("fn(");
-                format_params(params, buf, indent);
+                format_params(params, buf);
                 buf.push(')');
                 if needs_block_syntax(program) {
                     format_program_block(program, buf, indent);
@@ -205,7 +205,7 @@ impl Node {
             }
             Expr::Macro(name, params, body) => {
                 write!(buf, "macro {}(", name).unwrap();
-                format_params(params, buf, indent);
+                format_params(params, buf);
                 buf.push_str("): ");
                 body.format_to_code(buf, indent);
             }
@@ -309,12 +309,13 @@ fn format_args(args: &Args, buf: &mut String, indent: usize) {
 }
 
 /// Formats function parameters as comma-separated list
-fn format_params(params: &Params, buf: &mut String, indent: usize) {
+fn format_params(params: &Params, buf: &mut String) {
     for (i, param) in params.iter().enumerate() {
         if i > 0 {
             buf.push_str(", ");
         }
-        param.format_to_code(buf, indent);
+
+        write!(buf, "{}", param).unwrap();
     }
 }
 
