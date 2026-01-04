@@ -2251,6 +2251,13 @@ define_builtin!(_AST_GET_ARGS, ParamNum::Fixed(1), |_, _, args, _| {
     }
 });
 
+define_builtin!(_AST_TO_CODE, ParamNum::Fixed(1), |_, _, args, _| {
+    match args.as_slice() {
+        [RuntimeValue::Ast(ast)] => Ok(ast.to_code().into()),
+        _ => Ok(RuntimeValue::NONE),
+    }
+});
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2302,6 +2309,7 @@ const HASH_EQ: u64 = fnv1a_hash_64(constants::EQ);
 const HASH_ERROR: u64 = fnv1a_hash_64("error");
 const HASH_EXPLODE: u64 = fnv1a_hash_64("explode");
 const HASH_AST_GET_ARGS: u64 = fnv1a_hash_64("_ast_get_args");
+const HASH_AST_TO_CODE: u64 = fnv1a_hash_64("_ast_to_code");
 const HASH_FLATTEN: u64 = fnv1a_hash_64("flatten");
 const HASH_FLOOR: u64 = fnv1a_hash_64("floor");
 const HASH_FROM_DATE: u64 = fnv1a_hash_64("from_date");
@@ -2408,6 +2416,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_ALL_SYMBOLS => Some(&ALL_SYMBOLS),
         HASH_ARRAY => Some(&ARRAY),
         HASH_AST_GET_ARGS => Some(&_AST_GET_ARGS),
+        HASH_AST_TO_CODE => Some(&_AST_TO_CODE),
         HASH_ATTR => Some(&ATTR),
         HASH_BASE64 => Some(&BASE64),
         HASH_BASE64D => Some(&BASE64D),
@@ -2885,7 +2894,14 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
     map.insert(
         SmolStr::new("_ast_get_args"),
         BuiltinFunctionDoc {
-            description: "Internal function to extract arguments from an AST call expression, returning a dictionary of argument names to their AST nodes.",
+            description: "Internal function to extract arguments from an AST call expression, returning an array of arguments to their AST nodes.",
+            params: &["ast_node"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_ast_to_code"),
+        BuiltinFunctionDoc {
+            description: "Internal function to convert an AST node back to its source code representation as a string.",
             params: &["ast_node"],
         },
     );
