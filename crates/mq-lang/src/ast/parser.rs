@@ -1817,7 +1817,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         None
                     };
 
-                    params.push(Param { name: ident, default });
+                    params.push(Param::with_default(ident, default));
                 }
                 _ => {
                     return Err(SyntaxError::UnexpectedToken((**token).clone()));

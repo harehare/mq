@@ -15,7 +15,7 @@ use std::{
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub struct Param {
-    pub name: IdentWithToken,
+    pub ident: IdentWithToken,
     pub default: Option<Shared<Node>>,
 }
 
@@ -26,7 +26,7 @@ impl Param {
 
     pub fn with_default(name: IdentWithToken, default_value: Option<Shared<Node>>) -> Self {
         Self {
-            name,
+            ident: name,
             default: default_value,
         }
     }
@@ -106,7 +106,7 @@ impl Node {
             Expr::Macro(_, params, block) => {
                 let start = params
                     .first()
-                    .and_then(|param| param.name.token.as_ref().map(|t| t.range))
+                    .and_then(|param| param.ident.token.as_ref().map(|t| t.range))
                     .unwrap_or(block.range(Shared::clone(&arena)))
                     .start;
                 let end = block.range(arena).end;

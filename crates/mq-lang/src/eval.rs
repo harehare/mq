@@ -1410,16 +1410,16 @@ impl<T: ModuleResolver> Evaluator<T> {
             let mut arg_iter = args.iter();
 
             if use_self_param && let Some(param) = param_iter.next() {
-                define(&new_env, param.name.name, runtime_value.clone());
+                define(&new_env, param.ident.name, runtime_value.clone());
             }
 
             for param in param_iter {
                 if let Some(arg) = arg_iter.next() {
                     let val = self.eval_expr(runtime_value, arg, env)?;
-                    define(&new_env, param.name.name, val);
+                    define(&new_env, param.ident.name, val);
                 } else if let Some(default_expr) = &param.default {
                     let val = self.eval_expr(runtime_value, default_expr, &new_env)?;
-                    define(&new_env, param.name.name, val);
+                    define(&new_env, param.ident.name, val);
                 } else {
                     return Err(RuntimeError::InvalidNumberOfArguments(
                         (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),

@@ -544,7 +544,7 @@ impl RuntimeValue {
                         write!(buf, ", ")?;
                     }
 
-                    Self::format_ident(&param.name.name, buf)?;
+                    Self::format_ident(&param.ident.name, buf)?;
 
                     if let Some(default) = &param.default {
                         write!(buf, " = ")?;
@@ -567,7 +567,7 @@ impl RuntimeValue {
                         write!(buf, ", ")?;
                     }
 
-                    Self::format_ident(&param.name.name, buf)?;
+                    Self::format_ident(&param.ident.name, buf)?;
 
                     if let Some(default) = &param.default {
                         write!(buf, " = ")?;
@@ -585,7 +585,7 @@ impl RuntimeValue {
                         write!(buf, ", ")?;
                     }
 
-                    Self::format_ident(&param.name.name, buf)?;
+                    Self::format_ident(&param.ident.name, buf)?;
 
                     if let Some(default) = &param.default {
                         write!(buf, " = ")?;
