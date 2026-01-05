@@ -1391,28 +1391,44 @@ impl<T: ModuleResolver> Evaluator<T> {
             self.debugger.write().unwrap().push_call_stack(Shared::clone(&node));
 
             let new_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(fn_env))));
+            let required_params = params.iter().filter(|p| p.default.is_none()).count();
 
-            if params.len() == args.len() + 1 {
-                let param = params.first().unwrap();
-                define(&new_env, param.name.name, runtime_value.clone());
-
-                for (arg, param) in args.into_iter().zip(params.iter().skip(1)) {
-                    let val = self.eval_expr(runtime_value, arg, env)?;
-                    define(&new_env, param.name.name, val);
-                }
-            } else if args.len() != params.len() {
+            let use_self_param = if args.len() >= required_params && args.len() <= params.len() {
+                false
+            } else if args.len() + 1 >= required_params && args.len() < params.len() {
+                true
+            } else {
                 return Err(RuntimeError::InvalidNumberOfArguments(
                     (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
                     ident.to_string(),
                     params.len() as u8,
                     args.len() as u8,
                 ));
-            } else {
-                for (arg, param) in args.into_iter().zip(params.iter()) {
+            };
+
+            let mut param_iter = params.iter();
+            let mut arg_iter = args.iter();
+
+            if use_self_param && let Some(param) = param_iter.next() {
+                define(&new_env, param.name.name, runtime_value.clone());
+            }
+
+            for param in param_iter {
+                if let Some(arg) = arg_iter.next() {
                     let val = self.eval_expr(runtime_value, arg, env)?;
                     define(&new_env, param.name.name, val);
+                } else if let Some(default_expr) = &param.default {
+                    let val = self.eval_expr(runtime_value, default_expr, &new_env)?;
+                    define(&new_env, param.name.name, val);
+                } else {
+                    return Err(RuntimeError::InvalidNumberOfArguments(
+                        (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
+                        ident.to_string(),
+                        params.len() as u8,
+                        args.len() as u8,
+                    ));
                 }
-            };
+            }
 
             let result = self.eval_program(program, runtime_value.clone(), new_env);
             self.exit_scope();
@@ -6214,6 +6230,187 @@ mod tests {
             Evaluator::new(loader, token_arena())
                 .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
             Ok(vec![RuntimeValue::Number(30.into())])
+        );
+    }
+
+    #[test]
+    fn test_default_params_with_all_args() {
+        // Test: def greet(name, greeting = "Hello"): greeting with greet("Alice", "Hi")
+        let params = smallvec![
+            ast::Param::new(IdentWithToken::new("name")),
+            ast::Param::with_default(
+                IdentWithToken::new("greeting"),
+                Some(ast_node(ast::Expr::Literal(ast::Literal::String("Hello".to_string()))))
+            ),
+        ];
+        let fn_body = vec![ast_node(ast::Expr::Ident(IdentWithToken::new("greeting")))];
+
+        let program = vec![
+            ast_node(ast::Expr::Def(IdentWithToken::new("greet"), params, fn_body)),
+            ast_call(
+                "greet",
+                smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("Alice".to_string()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::String("Hi".to_string())))
+                ],
+            ),
+        ];
+
+        let result = Evaluator::new(DefaultModuleLoader::default(), token_arena())
+            .eval(&program, vec![RuntimeValue::String("test".to_string())].into_iter());
+
+        assert_eq!(result, Ok(vec![RuntimeValue::String("Hi".to_string())]));
+    }
+
+    #[test]
+    fn test_default_params_with_default() {
+        // Test: def greet(name, greeting = "Hello"): greeting with greet("Alice")
+        let params = smallvec![
+            ast::Param::new(IdentWithToken::new("name")),
+            ast::Param::with_default(
+                IdentWithToken::new("greeting"),
+                Some(ast_node(ast::Expr::Literal(ast::Literal::String("Hello".to_string()))))
+            ),
+        ];
+        let fn_body = vec![ast_node(ast::Expr::Ident(IdentWithToken::new("greeting")))];
+
+        let program = vec![
+            ast_node(ast::Expr::Def(IdentWithToken::new("greet"), params, fn_body)),
+            ast_call(
+                "greet",
+                smallvec![ast_node(ast::Expr::Literal(ast::Literal::String("Alice".to_string())))],
+            ),
+        ];
+
+        let result = Evaluator::new(DefaultModuleLoader::default(), token_arena())
+            .eval(&program, vec![RuntimeValue::String("test".to_string())].into_iter());
+
+        assert_eq!(result, Ok(vec![RuntimeValue::String("Hello".to_string())]));
+    }
+
+    #[test]
+    fn test_default_params_with_self() {
+        // Test: def format(prefix = "[LOG]"): [prefix, self] with "message" | format()
+        let params = smallvec![
+            ast::Param::new(IdentWithToken::new("self")),
+            ast::Param::with_default(
+                IdentWithToken::new("prefix"),
+                Some(ast_node(ast::Expr::Literal(ast::Literal::String("[LOG]".to_string()))))
+            ),
+        ];
+        let fn_body = vec![ast_node(ast::Expr::Call(
+            IdentWithToken::new("array"),
+            smallvec![
+                ast_node(ast::Expr::Ident(IdentWithToken::new("prefix"))),
+                ast_node(ast::Expr::Ident(IdentWithToken::new("self")))
+            ],
+        ))];
+
+        let program = vec![
+            ast_node(ast::Expr::Def(IdentWithToken::new("format"), params, fn_body)),
+            ast_call("format", smallvec![]),
+        ];
+
+        let result = Evaluator::new(DefaultModuleLoader::default(), token_arena())
+            .eval(&program, vec![RuntimeValue::String("message".to_string())].into_iter());
+
+        assert_eq!(
+            result,
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("[LOG]".to_string()),
+                RuntimeValue::String("message".to_string())
+            ])])
+        );
+    }
+
+    #[test]
+    fn test_multiple_default_params() {
+        // Test: def msg(a, b = 2, c = 3): [a, b, c] with msg(1)
+        let params = smallvec![
+            ast::Param::new(IdentWithToken::new("a")),
+            ast::Param::with_default(
+                IdentWithToken::new("b"),
+                Some(ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))))
+            ),
+            ast::Param::with_default(
+                IdentWithToken::new("c"),
+                Some(ast_node(ast::Expr::Literal(ast::Literal::Number(3.into()))))
+            ),
+        ];
+        let fn_body = vec![ast_node(ast::Expr::Call(
+            IdentWithToken::new("array"),
+            smallvec![
+                ast_node(ast::Expr::Ident(IdentWithToken::new("a"))),
+                ast_node(ast::Expr::Ident(IdentWithToken::new("b"))),
+                ast_node(ast::Expr::Ident(IdentWithToken::new("c")))
+            ],
+        ))];
+
+        let program = vec![
+            ast_node(ast::Expr::Def(IdentWithToken::new("msg"), params, fn_body)),
+            ast_call(
+                "msg",
+                smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(1.into())))],
+            ),
+        ];
+
+        let result = Evaluator::new(DefaultModuleLoader::default(), token_arena())
+            .eval(&program, vec![RuntimeValue::String("test".to_string())].into_iter());
+
+        assert_eq!(
+            result,
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(2.into()),
+                RuntimeValue::Number(3.into())
+            ])])
+        );
+    }
+
+    #[test]
+    fn test_multiple_default_params_partial() {
+        // Test: def msg(a, b = 2, c = 3): [a, b, c] with msg(1, 4)
+        let params = smallvec![
+            ast::Param::new(IdentWithToken::new("a")),
+            ast::Param::with_default(
+                IdentWithToken::new("b"),
+                Some(ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))))
+            ),
+            ast::Param::with_default(
+                IdentWithToken::new("c"),
+                Some(ast_node(ast::Expr::Literal(ast::Literal::Number(3.into()))))
+            ),
+        ];
+        let fn_body = vec![ast_node(ast::Expr::Call(
+            IdentWithToken::new("array"),
+            smallvec![
+                ast_node(ast::Expr::Ident(IdentWithToken::new("a"))),
+                ast_node(ast::Expr::Ident(IdentWithToken::new("b"))),
+                ast_node(ast::Expr::Ident(IdentWithToken::new("c")))
+            ],
+        ))];
+
+        let program = vec![
+            ast_node(ast::Expr::Def(IdentWithToken::new("msg"), params, fn_body)),
+            ast_call(
+                "msg",
+                smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(4.into())))
+                ],
+            ),
+        ];
+
+        let result = Evaluator::new(DefaultModuleLoader::default(), token_arena())
+            .eval(&program, vec![RuntimeValue::String("test".to_string())].into_iter());
+
+        assert_eq!(
+            result,
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(4.into()),
+                RuntimeValue::Number(3.into())
+            ])])
         );
     }
 }
