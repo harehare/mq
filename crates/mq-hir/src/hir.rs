@@ -2226,4 +2226,134 @@ end"#;
         // No unresolved errors
         assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
     }
+
+    #[test]
+    fn test_function_single_default_param() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        hir.add_code(None, "def add(x = 5): x + 1");
+
+        let func_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)))
+            .collect();
+
+        assert_eq!(func_symbols.len(), 1);
+
+        if let SymbolKind::Function(params) = &func_symbols[0].1.kind {
+            assert_eq!(params.len(), 1);
+            assert_eq!(params[0].name.as_str(), "x");
+            assert!(params[0].has_default, "Parameter 'x' should have default value");
+        }
+
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_function_mixed_parameters() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        hir.add_code(None, "def foo(a, b = 2, c = 3): a + b + c");
+
+        let func_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)))
+            .collect();
+
+        if let SymbolKind::Function(params) = &func_symbols[0].1.kind {
+            assert_eq!(params.len(), 3);
+            assert_eq!(params[0].name.as_str(), "a");
+            assert!(!params[0].has_default, "Parameter 'a' should NOT have default");
+            assert_eq!(params[1].name.as_str(), "b");
+            assert!(params[1].has_default, "Parameter 'b' should have default");
+            assert_eq!(params[2].name.as_str(), "c");
+            assert!(params[2].has_default, "Parameter 'c' should have default");
+        }
+
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_all_parameters_with_defaults() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        hir.add_code(None, "def calc(a = 1, b = 2, c = 3): a + b + c");
+
+        let func_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)))
+            .collect();
+
+        if let SymbolKind::Function(params) = &func_symbols[0].1.kind {
+            assert_eq!(params.len(), 3);
+            for param in params {
+                assert!(param.has_default, "All parameters should have defaults");
+            }
+        }
+
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_function_default_with_array_literal() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        hir.add_code(None, "def test(x = [1, 2, 3]): x;");
+
+        let func_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)))
+            .collect();
+
+        if let SymbolKind::Function(params) = &func_symbols[0].1.kind {
+            assert_eq!(params.len(), 1);
+            assert!(params[0].has_default);
+        }
+
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_function_default_with_string_literal() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        hir.add_code(None, "def calc(x = \"test\"): x;");
+
+        let func_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)))
+            .collect();
+
+        if let SymbolKind::Function(params) = &func_symbols[0].1.kind {
+            assert_eq!(params.len(), 1);
+            assert!(params[0].has_default);
+        }
+
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_function_default_with_boolean_literal() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        hir.add_code(None, "def greet(enabled = true): enabled;");
+
+        let func_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)))
+            .collect();
+
+        if let SymbolKind::Function(params) = &func_symbols[0].1.kind {
+            assert_eq!(params.len(), 1);
+            assert!(params[0].has_default);
+        }
+
+        assert!(hir.errors().is_empty());
+    }
 }
