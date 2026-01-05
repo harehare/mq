@@ -7948,6 +7948,7 @@ mod tests {
             Shared::new(token(TokenKind::RParen)),
             Shared::new(token(TokenKind::Colon)),
             Shared::new(token(TokenKind::Ident("greeting".into()))),
+            Shared::new(token(TokenKind::SemiColon)),
             Shared::new(token(TokenKind::Eof)),
         ],
         (
@@ -8036,6 +8037,14 @@ mod tests {
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
                         }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::SemiColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+
                     ],
                 }),
                 Shared::new(Node {
@@ -8065,6 +8074,7 @@ mod tests {
             Shared::new(token(TokenKind::RParen)),
             Shared::new(token(TokenKind::Colon)),
             Shared::new(token(TokenKind::Ident("a".into()))),
+            Shared::new(token(TokenKind::SemiColon)),
             Shared::new(token(TokenKind::Eof)),
         ],
         (
@@ -8182,6 +8192,14 @@ mod tests {
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
                         }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::SemiColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+
                     ],
                 }),
                 Shared::new(Node {
