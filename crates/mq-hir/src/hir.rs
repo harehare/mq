@@ -191,10 +191,7 @@ impl Hir {
                     mq_lang::BUILTIN_FUNCTION_DOC[&name]
                         .params
                         .iter()
-                        .map(|p| ParamInfo {
-                            name: SmolStr::new(p),
-                            has_default: false,
-                        })
+                        .map(|p| (*p).into())
                         .collect::<Vec<_>>(),
                 ),
                 source: SourceInfo::new(Some(self.builtin.source_id), None),
@@ -215,10 +212,7 @@ impl Hir {
                     mq_lang::INTERNAL_FUNCTION_DOC[&name]
                         .params
                         .iter()
-                        .map(|p| ParamInfo {
-                            name: SmolStr::new(p),
-                            has_default: false,
-                        })
+                        .map(|p| (*p).into())
                         .collect::<Vec<_>>(),
                 ),
                 source: SourceInfo::new(Some(self.builtin.source_id), None),

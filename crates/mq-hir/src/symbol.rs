@@ -14,6 +14,15 @@ pub struct ParamInfo {
     pub has_default: bool,
 }
 
+impl From<&str> for ParamInfo {
+    fn from(name: &str) -> Self {
+        ParamInfo {
+            name: SmolStr::from(name),
+            has_default: false,
+        }
+    }
+}
+
 impl std::fmt::Display for ParamInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
