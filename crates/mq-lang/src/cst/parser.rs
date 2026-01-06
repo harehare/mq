@@ -2003,14 +2003,14 @@ impl<'a> Parser<'a> {
             let default_value = self.parse_expr(default_leading_trivia, false, false)?;
             children.push(default_value);
 
-            let trainling_trivia = self.parse_trailing_trivia();
+            let trailing_trivia = self.parse_trailing_trivia();
 
             // Return a node containing all three parts (ident, '=', default_value)
             Ok(Shared::new(Node {
                 kind: NodeKind::Ident,
                 token: param_token,
                 leading_trivia: param_leading_trivia,
-                trailing_trivia: trainling_trivia,
+                trailing_trivia,
                 children,
             }))
         } else {
