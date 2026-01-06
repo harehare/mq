@@ -1846,9 +1846,9 @@ fn engine() -> DefaultEngine {
     vec![RuntimeValue::Number(0.into())],
     Ok(vec![RuntimeValue::Number(16.into())].into()))]
 #[case::default_params_with_all_args1(r#"
-    def greet(name, greeting="Hello"): greeting + " " + name; | greet("Alice", "Hi")"#,
+    def greet(name, greeting="Hello"): greeting + " " + name; | greet("Alice")"#,
     vec!["test".into()],
-    Ok(vec!["Hi Alice".into()].into()))]
+    Ok(vec!["Hello Alice".into()].into()))]
 #[case::default_params_with_all_args2(r#"
     def greet(name, greeting="Hello"): greeting + " " + name; | greet("Alice", "Hi")"#,
     vec!["test".into()],
