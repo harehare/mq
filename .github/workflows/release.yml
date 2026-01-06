@@ -20,6 +20,14 @@ jobs:
             target: aarch64-unknown-linux-gnu
             ext: ""
             asset_name: aarch64-unknown-linux-gnu
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            ext: ""
+            asset_name: x86_64-unknown-linux-musl
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-musl
+            ext: ""
+            asset_name: aarch64-unknown-linux-musl
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             ext: ".exe"
