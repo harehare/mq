@@ -1326,6 +1326,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
     }
 
+    #[inline(always)]
     fn eval_builtin(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -1340,6 +1341,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             .map_err(|e| e.to_runtime_error((*node).clone(), Shared::clone(&self.token_arena)))
     }
 
+    #[inline(always)]
     fn eval_call_dynamic(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -1395,9 +1397,12 @@ impl<T: ModuleResolver> Evaluator<T> {
             let new_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(fn_env))));
             let required_params = params.iter().filter(|p| p.default.is_none()).count();
 
-            let use_self_param = if args.len() >= required_params && args.len() <= params.len() {
+            let arg_count = args.len();
+            let param_count = params.len();
+
+            let use_self_param = if arg_count >= required_params && arg_count <= param_count {
                 false
-            } else if args.len() + 1 >= required_params && args.len() < params.len() {
+            } else if arg_count + 1 >= required_params && arg_count < param_count {
                 true
             } else {
                 return Err(RuntimeError::InvalidNumberOfArguments {
