@@ -1956,7 +1956,6 @@ impl<'a> Parser<'a> {
         Ok(nodes)
     }
 
-    #[inline(always)]
     fn parse_param(&mut self) -> Result<Shared<Node>, ParseError> {
         let leading_trivia = self.parse_leading_trivia();
 
@@ -1979,7 +1978,6 @@ impl<'a> Parser<'a> {
             None => return Err(ParseError::UnexpectedEOFDetected),
         };
 
-        // Check for '=' indicating a default value
         if self.try_next_token(|kind| matches!(kind, TokenKind::Equal)) {
             // Save param_ident info before moving it
             let param_token = param_ident.token.clone();
@@ -2005,12 +2003,14 @@ impl<'a> Parser<'a> {
             let default_value = self.parse_expr(default_leading_trivia, false, false)?;
             children.push(default_value);
 
+            let trainling_trivia = self.parse_trailing_trivia();
+
             // Return a node containing all three parts (ident, '=', default_value)
             Ok(Shared::new(Node {
                 kind: NodeKind::Ident,
                 token: param_token,
                 leading_trivia: param_leading_trivia,
-                trailing_trivia: Vec::new(),
+                trailing_trivia: trainling_trivia,
                 children,
             }))
         } else {

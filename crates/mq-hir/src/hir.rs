@@ -191,7 +191,7 @@ impl Hir {
                     mq_lang::BUILTIN_FUNCTION_DOC[&name]
                         .params
                         .iter()
-                        .map(|p| crate::symbol::ParamInfo {
+                        .map(|p| ParamInfo {
                             name: SmolStr::new(p),
                             has_default: false,
                         })
@@ -215,7 +215,7 @@ impl Hir {
                     mq_lang::INTERNAL_FUNCTION_DOC[&name]
                         .params
                         .iter()
-                        .map(|p| crate::symbol::ParamInfo {
+                        .map(|p| ParamInfo {
                             name: SmolStr::new(p),
                             has_default: false,
                         })

@@ -1385,7 +1385,9 @@ impl<T: ModuleResolver> Evaluator<T> {
         runtime_value: &RuntimeValue,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, RuntimeError> {
-        if let RuntimeValue::Function(params, program, fn_env) = fn_value {
+        if let RuntimeValue::NativeFunction(ident) = fn_value {
+            self.eval_builtin(runtime_value, node, ident, args, env)
+        } else if let RuntimeValue::Function(params, program, fn_env) = fn_value {
             self.enter_scope()?;
             #[cfg(feature = "debugger")]
             self.debugger.write().unwrap().push_call_stack(Shared::clone(&node));
@@ -1436,8 +1438,6 @@ impl<T: ModuleResolver> Evaluator<T> {
             self.debugger.write().unwrap().pop_call_stack();
 
             result
-        } else if let RuntimeValue::NativeFunction(ident) = fn_value {
-            self.eval_builtin(runtime_value, node, ident, args, env)
         } else {
             Err(RuntimeError::InvalidDefinition(
                 (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
