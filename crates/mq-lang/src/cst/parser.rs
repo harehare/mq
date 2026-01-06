@@ -1980,9 +1980,7 @@ impl<'a> Parser<'a> {
         };
 
         // Check for '=' indicating a default value
-        if let Some(token) = self.tokens.peek()
-            && matches!(token.kind, TokenKind::Equal)
-        {
+        if self.try_next_token(|kind| matches!(kind, TokenKind::Equal)) {
             // Save param_ident info before moving it
             let param_token = param_ident.token.clone();
             let param_leading_trivia = param_ident.leading_trivia.clone();
