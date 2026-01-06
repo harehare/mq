@@ -230,15 +230,6 @@ impl Diagnostic for Error {
             }) => Some(Cow::Owned(format!(
                 "Invalid number of arguments: expected {expected}, got {actual}."
             ))),
-            InnerError::Runtime(RuntimeError::InvalidNumberOfArgumentsWithDefaults {
-                token: _,
-                name: _,
-                min,
-                max,
-                actual,
-            }) => Some(Cow::Owned(format!(
-                "Invalid number of arguments: expected {min} to {max}, got {actual}."
-            ))),
             InnerError::Runtime(RuntimeError::InvalidRegularExpression(_, _)) => Some(Cow::Borrowed(
                 "Invalid regular expression. Please check your regex syntax.",
             )),
