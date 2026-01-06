@@ -1811,7 +1811,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         Some(self.parse_expr(default_token)?)
                     } else {
                         if seen_default {
-                            // Error: parameter without default after parameter with default
                             return Err(SyntaxError::ParameterWithoutDefaultAfterDefault((**token).clone()));
                         }
                         None
