@@ -192,9 +192,6 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::ParameterWithoutDefaultAfterDefault(_)) => Some(Cow::Borrowed(
                 "Parameters with default values must come after all parameters without defaults.",
             )),
-            InnerError::Syntax(SyntaxError::FunctionNameCannotHaveDefault(_)) => {
-                Some(Cow::Borrowed("Function name cannot have a default value."))
-            }
             InnerError::Syntax(SyntaxError::MacroParametersCannotHaveDefaults(_)) => {
                 Some(Cow::Borrowed("Macro parameters cannot have default values."))
             }
@@ -313,9 +310,6 @@ impl Diagnostic for Error {
             ),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::ParameterWithoutDefaultAfterDefault(_))) => Some(
                 Cow::Borrowed("Parse error in module: parameters with defaults must come after parameters without."),
-            ),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::FunctionNameCannotHaveDefault(_))) => Some(
-                Cow::Borrowed("Parse error in module: function name cannot have a default value."),
             ),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotHaveDefaults(_))) => Some(
                 Cow::Borrowed("Parse error in module: macro parameters cannot have default values."),
