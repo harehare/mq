@@ -225,14 +225,23 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::InvalidTypes { .. }) => {
                 Some(Cow::Borrowed("Type mismatch. Check the types of your operands."))
             }
-            InnerError::Runtime(RuntimeError::InvalidNumberOfArguments(_, _, expected, actual)) => Some(Cow::Owned(
-                format!("Invalid number of arguments: expected {expected}, got {actual}."),
-            )),
-            InnerError::Runtime(RuntimeError::InvalidNumberOfArgumentsWithDefaults(_, _, min, max, actual)) => {
-                Some(Cow::Owned(format!(
-                    "Invalid number of arguments: expected {min} to {max}, got {actual}."
-                )))
-            }
+            InnerError::Runtime(RuntimeError::InvalidNumberOfArguments {
+                token: _,
+                name: _,
+                expected,
+                actual,
+            }) => Some(Cow::Owned(format!(
+                "Invalid number of arguments: expected {expected}, got {actual}."
+            ))),
+            InnerError::Runtime(RuntimeError::InvalidNumberOfArgumentsWithDefaults {
+                token: _,
+                name: _,
+                min,
+                max,
+                actual,
+            }) => Some(Cow::Owned(format!(
+                "Invalid number of arguments: expected {min} to {max}, got {actual}."
+            ))),
             InnerError::Runtime(RuntimeError::InvalidRegularExpression(_, _)) => Some(Cow::Borrowed(
                 "Invalid regular expression. Please check your regex syntax.",
             )),
@@ -460,11 +469,11 @@ mod test {
         "source code"
     )]
     #[case::eval_invalid_number_of_arguments(
-        InnerError::Runtime(RuntimeError::InvalidNumberOfArguments(Token {
+        InnerError::Runtime(RuntimeError::InvalidNumberOfArguments{token: Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }, "".to_string(), 1, 1)),
+        }, name: "".to_string(), expected: 1, actual:1}),
         "source code"
     )]
     #[case::eval_invalid_regular_expression(
@@ -684,11 +693,11 @@ mod test {
         })
     )]
     #[case::eval_invalid_number_of_arguments(
-        InnerError::Runtime(RuntimeError::InvalidNumberOfArguments(Token {
+        InnerError::Runtime(RuntimeError::InvalidNumberOfArguments{token: Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }, "func".to_string(), 2, 1))
+        }, name: "func".to_string(), expected: 2, actual: 1})
     )]
     #[case::eval_invalid_regular_expression(
         InnerError::Runtime(RuntimeError::InvalidRegularExpression(Token {

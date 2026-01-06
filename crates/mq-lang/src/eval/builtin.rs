@@ -3722,12 +3722,12 @@ impl Error {
                 name: name.clone(),
                 args: args.iter().map(|o| format!("{:?}", o).into()).collect::<Vec<_>>(),
             },
-            Error::InvalidNumberOfArguments(name, expected, got) => RuntimeError::InvalidNumberOfArguments(
-                (*get_token(token_arena, node.token_id)).clone(),
-                name.clone(),
-                *expected,
-                *got,
-            ),
+            Error::InvalidNumberOfArguments(name, expected, got) => RuntimeError::InvalidNumberOfArguments {
+                token: (*get_token(token_arena, node.token_id)).clone(),
+                name: name.clone(),
+                expected: *expected,
+                actual: *got,
+            },
             Error::InvalidRegularExpression(regex) => {
                 RuntimeError::InvalidRegularExpression((*get_token(token_arena, node.token_id)).clone(), regex.clone())
             }

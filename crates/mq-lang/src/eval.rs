@@ -1400,12 +1400,12 @@ impl<T: ModuleResolver> Evaluator<T> {
             } else if args.len() + 1 >= required_params && args.len() < params.len() {
                 true
             } else {
-                return Err(RuntimeError::InvalidNumberOfArguments(
-                    (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
-                    ident.to_string(),
-                    params.len() as u8,
-                    args.len() as u8,
-                ));
+                return Err(RuntimeError::InvalidNumberOfArguments {
+                    token: (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
+                    name: ident.to_string(),
+                    expected: params.len() as u8,
+                    actual: args.len() as u8,
+                });
             };
 
             let mut param_iter = params.iter();
@@ -1423,12 +1423,12 @@ impl<T: ModuleResolver> Evaluator<T> {
                     let val = self.eval_expr(runtime_value, default_expr, &new_env)?;
                     define(&new_env, param.ident.name, val);
                 } else {
-                    return Err(RuntimeError::InvalidNumberOfArguments(
-                        (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
-                        ident.to_string(),
-                        params.len() as u8,
-                        args.len() as u8,
-                    ));
+                    return Err(RuntimeError::InvalidNumberOfArguments {
+                        token: (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
+                        name: ident.to_string(),
+                        expected: params.len() as u8,
+                        actual: args.len() as u8,
+                    });
                 }
             }
 
