@@ -403,7 +403,12 @@ fn needs_block_syntax(program: &Program) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Ident, IdentWithToken, Shared, arena::ArenaId, ast::node::MatchArm, number::Number};
+    use crate::{
+        Ident, IdentWithToken, Shared,
+        arena::ArenaId,
+        ast::node::{MatchArm, Param},
+        number::Number,
+    };
     use rstest::rstest;
     use smallvec::smallvec;
 
@@ -673,8 +678,8 @@ mod tests {
         Expr::Def(
             IdentWithToken::new("add"),
             smallvec![
-                IdentWithToken::new("x"),
-                IdentWithToken::new("y")
+                Param::new(IdentWithToken::new("x")),
+                Param::new(IdentWithToken::new("y"))
             ],
             vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
         ),
@@ -683,7 +688,7 @@ mod tests {
     #[case::block(
         Expr::Def(
             IdentWithToken::new("test"),
-            smallvec![IdentWithToken::new("x")],
+            smallvec![Param::new(IdentWithToken::new("x"))],
             vec![
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0)))))
@@ -707,8 +712,8 @@ mod tests {
     #[case::with_params_inline(
         Expr::Fn(
             smallvec![
-                IdentWithToken::new("x"),
-                IdentWithToken::new("y")
+                Param::new(IdentWithToken::new("x")),
+                Param::new(IdentWithToken::new("y"))
             ],
             vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
         ),
@@ -765,7 +770,7 @@ mod tests {
     #[case::simple(
         Expr::Macro(
             IdentWithToken::new("double"),
-            smallvec![IdentWithToken::new("x")],
+            smallvec![Param::new(IdentWithToken::new("x"))],
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))
         ),
         "macro double(x): x"
