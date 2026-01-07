@@ -419,8 +419,22 @@ fn string_segment<'a>(input: Span<'a>) -> IResult<Span<'a>, StringSegment> {
 fn interpolated_string(input: Span) -> IResult<Span, Token> {
     let (span, start) = position(input)?;
     let (span, _) = tag("s\"")(span)?;
-    let (span, segments) = many1(string_segment).parse(span)?;
-    let (span, _) = char('"')(span)?;
+
+    let mut segments = Vec::with_capacity(4);
+    let mut current = span;
+
+    // Parse at least one segment
+    let (remaining, segment) = string_segment(current)?;
+    segments.push(segment);
+    current = remaining;
+
+    // Parse remaining segments
+    while let Ok((remaining, segment)) = string_segment(current) {
+        segments.push(segment);
+        current = remaining;
+    }
+
+    let (span, _) = char('"')(current)?;
     let (span, end) = position(span)?;
     let module_id = start.extra;
 
@@ -600,13 +614,33 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
 }
 
 fn tokens<'a>(input: Span<'a>, options: &'a Options) -> IResult<Span<'a>, Vec<Token>> {
+    // Estimate token count from input length (assuming ~5 chars per token on average)
+    let estimated_capacity = input.fragment().len() / 5;
+    let mut tokens = Vec::with_capacity(estimated_capacity.max(16));
+    let mut current = input;
+
     if options.include_spaces {
-        many0(token_include_spaces).parse(input)
+        while let Ok((remaining, token)) = token_include_spaces(current) {
+            tokens.push(token);
+            current = remaining;
+        }
     } else {
-        let (input, tokens) = many0(preceded(skip_whitespace_and_comments, token)).parse(input)?;
-        let (input, _) = skip_whitespace_and_comments(input)?;
-        Ok((input, tokens))
+        loop {
+            let (remaining, _) = skip_whitespace_and_comments(current)?;
+            match token(remaining) {
+                Ok((remaining, tok)) => {
+                    tokens.push(tok);
+                    current = remaining;
+                }
+                Err(_) => {
+                    current = remaining;
+                    break;
+                }
+            }
+        }
     }
+
+    Ok((current, tokens))
 }
 
 #[cfg(test)]

@@ -753,6 +753,30 @@ impl Formatter {
     fn format_ident(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
+
+        // Handle parameter with default value
+        // Structure: [ident, '=', default_value]
+        if !node.children.is_empty() {
+            for child in &node.children {
+                // For '=' token, add space before and after
+                if matches!(child.kind, mq_lang::CstNodeKind::Token)
+                    && child
+                        .token
+                        .as_ref()
+                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::Equal))
+                {
+                    self.append_space();
+                    self.output.push_str(&child.to_string());
+                    self.append_space();
+                } else if matches!(child.kind, mq_lang::CstNodeKind::Ident) {
+                    // Skip the first ident child (it's already been output as the parent token)
+                    continue;
+                } else {
+                    // Format default value expression
+                    self.format_node(mq_lang::Shared::clone(child), 0);
+                }
+            }
+        }
     }
 
     fn format_try(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
@@ -2491,6 +2515,69 @@ end"#,
   | _: "non-positive"
 end
 "#
+    )]
+    #[case::def_with_default_single(
+        "def greet(name = \"World\"):
+        name;",
+        "def greet(name = \"World\"):
+  name;
+"
+    )]
+    #[case::def_with_multiple_defaults(
+        "def foo(a, b = 2, c = 3):
+        a + b + c;",
+        "def foo(a, b = 2, c = 3):
+  a + b + c;
+"
+    )]
+    #[case::def_with_mixed_params(
+        "def bar(x,y=10):
+        x+y;",
+        "def bar(x, y = 10):
+  x + y;
+"
+    )]
+    #[case::def_with_array_default(
+        "def baz(x,y=[1,2,3]):
+        x+len(y);",
+        "def baz(x, y = [1, 2, 3]):
+  x + len(y);
+"
+    )]
+    #[case::def_with_string_default(
+        "def test(a,b=\"test\"):
+        a+b;",
+        "def test(a, b = \"test\"):
+  a + b;
+"
+    )]
+    #[case::def_with_number_default(
+        "def calc(x=42):
+        x * 2;",
+        "def calc(x = 42):
+  x * 2;
+"
+    )]
+    #[case::def_with_boolean_default(
+        "def result(x=true):
+        x;",
+        "def result(x = true):
+  x;
+"
+    )]
+    #[case::def_all_params_with_defaults(
+        "def calc(a=1,b=2,c=3):
+        a+b+c;",
+        "def calc(a = 1, b = 2, c = 3):
+  a + b + c;
+"
+    )]
+    #[case::def_expr_with_default(
+        "def calc(a=1,b=2,c=3 + 1):
+        a+b+c;",
+        "def calc(a = 1, b = 2, c = 3 + 1):
+  a + b + c;
+"
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);

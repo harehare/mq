@@ -31,8 +31,13 @@ pub enum RuntimeError {
         name: FunctionName,
         args: ArgType,
     },
-    #[error("Invalid number of arguments in \"{1}\", expected {2}, got {3}")]
-    InvalidNumberOfArguments(ErrorToken, FunctionName, u8, u8),
+    #[error("Invalid number of arguments in \"{name}\", expected {expected}, got {actual}")]
+    InvalidNumberOfArguments {
+        token: ErrorToken,
+        name: FunctionName,
+        expected: u8,
+        actual: u8,
+    },
     #[error("Invalid regular expression \"{1}\"")]
     InvalidRegularExpression(ErrorToken, String),
     #[error("Internal error")]
@@ -85,7 +90,7 @@ impl RuntimeError {
             RuntimeError::InvalidDefinition(token, _) => Some(token),
             RuntimeError::RecursionError(_) => None,
             RuntimeError::InvalidTypes { token, .. } => Some(token),
-            RuntimeError::InvalidNumberOfArguments(token, _, _, _) => Some(token),
+            RuntimeError::InvalidNumberOfArguments { token, .. } => Some(token),
             RuntimeError::InvalidRegularExpression(token, _) => Some(token),
             RuntimeError::InternalError(token) => Some(token),
             RuntimeError::ModuleLoadError(err) => err.token(),

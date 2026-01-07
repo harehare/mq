@@ -8,9 +8,12 @@ use crate::Program;
 use crate::eval::env::Env;
 #[cfg(feature = "debugger")]
 use crate::module::ModuleId;
+use crate::{
+    ArenaId, LocalFsModuleResolver, ModuleResolver, MqResult, Range, RuntimeValue, Shared, SharedCell, TokenKind,
+    token_alloc,
+};
 #[cfg(feature = "debugger")]
 use crate::{Debugger, DebuggerHandler};
-use crate::{LocalFsModuleResolver, ModuleResolver, MqResult, RuntimeValue, Shared, SharedCell, token_alloc};
 
 use crate::{
     ModuleLoader, Token,
@@ -49,9 +52,9 @@ fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
         &token_arena,
         &Shared::new(Token {
             // Ensure at least one token for ArenaId::new(0)
-            kind: crate::TokenKind::Eof, // Dummy token
-            range: crate::range::Range::default(),
-            module_id: crate::arena::ArenaId::new(0), // Dummy module_id
+            kind: TokenKind::Eof, // Dummy token
+            range: Range::default(),
+            module_id: ArenaId::new(0), // Dummy module_id
         }),
     );
     token_arena

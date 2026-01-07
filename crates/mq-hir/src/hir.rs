@@ -1,6 +1,7 @@
 use std::{path::PathBuf, vec};
 
 use mq_lang::{Token, TokenKind};
+
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
 use smol_str::SmolStr;
@@ -10,7 +11,7 @@ use crate::{
     builtin::Builtin,
     scope::{Scope, ScopeId, ScopeKind},
     source::{Source, SourceId, SourceInfo},
-    symbol::{Symbol, SymbolId, SymbolKind},
+    symbol::{ParamInfo, Symbol, SymbolId, SymbolKind},
 };
 
 #[derive(Debug)]
@@ -190,7 +191,7 @@ impl Hir {
                     mq_lang::BUILTIN_FUNCTION_DOC[&name]
                         .params
                         .iter()
-                        .map(SmolStr::new)
+                        .map(|p| (*p).into())
                         .collect::<Vec<_>>(),
                 ),
                 source: SourceInfo::new(Some(self.builtin.source_id), None),
@@ -211,7 +212,7 @@ impl Hir {
                     mq_lang::INTERNAL_FUNCTION_DOC[&name]
                         .params
                         .iter()
-                        .map(SmolStr::new)
+                        .map(|p| (*p).into())
                         .collect::<Vec<_>>(),
                 ),
                 source: SourceInfo::new(Some(self.builtin.source_id), None),
@@ -1147,22 +1148,37 @@ impl Hir {
                 Some(scope_id),
             ));
 
-            let mut param_names = Vec::with_capacity(params.len().saturating_sub(1));
+            let mut param_info = Vec::with_capacity(params.len().saturating_sub(1));
 
             // For def expressions, the first param is the function name, so skip it
             params.iter().skip(1).for_each(|child| {
-                param_names.push(child.name().unwrap_or("arg".into()));
+                // Check if parameter has default value
+                // In CST, param with default has children: ident, '=', default_expr
+                let has_default = child.children.len() > 1;
+                let param_name = child.name().unwrap_or("arg".into());
+
+                param_info.push(ParamInfo {
+                    name: param_name.clone(),
+                    has_default,
+                });
+
                 self.add_symbol(Symbol {
-                    value: child.name(),
+                    value: Some(param_name),
                     kind: SymbolKind::Parameter,
                     source: SourceInfo::new(Some(source_id), Some(child.range())),
                     scope: scope_id,
                     doc: Vec::new(),
                     parent: Some(symbol_id),
                 });
+
+                // If has default, also analyze the default expression
+                if has_default && child.children.len() >= 3 {
+                    let default_expr = &child.children[2];
+                    self.add_expr(default_expr, source_id, scope_id, Some(symbol_id));
+                }
             });
 
-            self.symbols[symbol_id].kind = SymbolKind::Function(param_names);
+            self.symbols[symbol_id].kind = SymbolKind::Function(param_info);
 
             program.iter().for_each(|child| {
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
@@ -1211,13 +1227,21 @@ impl Hir {
                 Some(scope_id),
             ));
 
-            let mut param_names = Vec::with_capacity(params.len().saturating_sub(1));
+            let mut param_info = Vec::with_capacity(params.len().saturating_sub(1));
 
             // For macro expressions, the first param is the macro name, so skip it
             params.iter().skip(1).for_each(|child| {
-                param_names.push(child.name().unwrap_or("arg".into()));
+                // Macros should not have defaults, but we still need to store param info
+                let has_default = child.children.len() > 1;
+                let param_name = child.name().unwrap_or("arg".into());
+
+                param_info.push(ParamInfo {
+                    name: param_name.clone(),
+                    has_default,
+                });
+
                 self.add_symbol(Symbol {
-                    value: child.name(),
+                    value: Some(param_name),
                     kind: SymbolKind::Parameter,
                     source: SourceInfo::new(Some(source_id), Some(child.range())),
                     scope: scope_id,
@@ -1226,7 +1250,7 @@ impl Hir {
                 });
             });
 
-            self.symbols[symbol_id].kind = SymbolKind::Macro(param_names);
+            self.symbols[symbol_id].kind = SymbolKind::Macro(param_info);
 
             program.iter().for_each(|child| {
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
@@ -1304,21 +1328,36 @@ impl Hir {
                 Some(scope_id),
             ));
 
-            let mut param_names = Vec::with_capacity(params.len());
+            let mut param_info = Vec::with_capacity(params.len());
 
             params.iter().for_each(|child| {
-                param_names.push(child.name().unwrap_or("arg".into()));
+                // Check if parameter has default value
+                // In CST, param with default has children: ident, '=', default_expr
+                let has_default = child.children.len() > 1;
+                let param_name = child.name().unwrap_or("arg".into());
+
+                param_info.push(crate::symbol::ParamInfo {
+                    name: param_name.clone(),
+                    has_default,
+                });
+
                 self.add_symbol(Symbol {
-                    value: child.name(),
+                    value: Some(param_name),
                     kind: SymbolKind::Parameter,
                     source: SourceInfo::new(Some(source_id), Some(child.range())),
                     scope: scope_id,
                     doc: Vec::new(),
                     parent: Some(symbol_id),
                 });
+
+                // If has default, also analyze the default expression
+                if has_default && child.children.len() >= 3 {
+                    let default_expr = &child.children[2];
+                    self.add_expr(default_expr, source_id, scope_id, Some(symbol_id));
+                }
             });
 
-            self.symbols[symbol_id].kind = SymbolKind::Function(param_names);
+            self.symbols[symbol_id].kind = SymbolKind::Function(param_info);
 
             program.iter().for_each(|child| {
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
@@ -2158,7 +2197,8 @@ end"#;
         // Macro parameter
         if let SymbolKind::Macro(params) = &macro_symbol.kind {
             assert_eq!(params.len(), 1);
-            assert_eq!(params[0], "x");
+            assert_eq!(params[0].name.as_str(), "x");
+            assert!(!params[0].has_default);
         } else {
             panic!("Expected macro symbol kind");
         }
@@ -2179,5 +2219,135 @@ end"#;
 
         // No unresolved errors
         assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
+    }
+
+    #[test]
+    fn test_function_single_default_param() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        hir.add_code(None, "def add(x = 5): x + 1");
+
+        let func_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)))
+            .collect();
+
+        assert_eq!(func_symbols.len(), 1);
+
+        if let SymbolKind::Function(params) = &func_symbols[0].1.kind {
+            assert_eq!(params.len(), 1);
+            assert_eq!(params[0].name.as_str(), "x");
+            assert!(params[0].has_default, "Parameter 'x' should have default value");
+        }
+
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_function_mixed_parameters() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        hir.add_code(None, "def foo(a, b = 2, c = 3): a + b + c");
+
+        let func_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)))
+            .collect();
+
+        if let SymbolKind::Function(params) = &func_symbols[0].1.kind {
+            assert_eq!(params.len(), 3);
+            assert_eq!(params[0].name.as_str(), "a");
+            assert!(!params[0].has_default, "Parameter 'a' should NOT have default");
+            assert_eq!(params[1].name.as_str(), "b");
+            assert!(params[1].has_default, "Parameter 'b' should have default");
+            assert_eq!(params[2].name.as_str(), "c");
+            assert!(params[2].has_default, "Parameter 'c' should have default");
+        }
+
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_all_parameters_with_defaults() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        hir.add_code(None, "def calc(a = 1, b = 2, c = 3): a + b + c");
+
+        let func_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)))
+            .collect();
+
+        if let SymbolKind::Function(params) = &func_symbols[0].1.kind {
+            assert_eq!(params.len(), 3);
+            for param in params {
+                assert!(param.has_default, "All parameters should have defaults");
+            }
+        }
+
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_function_default_with_array_literal() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        hir.add_code(None, "def test(x = [1, 2, 3]): x;");
+
+        let func_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)))
+            .collect();
+
+        if let SymbolKind::Function(params) = &func_symbols[0].1.kind {
+            assert_eq!(params.len(), 1);
+            assert!(params[0].has_default);
+        }
+
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_function_default_with_string_literal() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        hir.add_code(None, "def calc(x = \"test\"): x;");
+
+        let func_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)))
+            .collect();
+
+        if let SymbolKind::Function(params) = &func_symbols[0].1.kind {
+            assert_eq!(params.len(), 1);
+            assert!(params[0].has_default);
+        }
+
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_function_default_with_boolean_literal() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        hir.add_code(None, "def greet(enabled = true): enabled;");
+
+        let func_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)))
+            .collect();
+
+        if let SymbolKind::Function(params) = &func_symbols[0].1.kind {
+            assert_eq!(params.len(), 1);
+            assert!(params[0].has_default);
+        }
+
+        assert!(hir.errors().is_empty());
     }
 }
