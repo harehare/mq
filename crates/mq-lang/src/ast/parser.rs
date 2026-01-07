@@ -43,7 +43,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn parse_program(&mut self, root: bool) -> Result<Program, SyntaxError> {
-        let mut asts = Vec::with_capacity(1_000);
+        let mut asts = Vec::with_capacity(64);
 
         // Initial check for invalid starting tokens in a program.
         match self.tokens.peek() {
@@ -115,7 +115,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    #[inline(always)]
     fn binary_op_function_name(kind: &TokenKind) -> &'static str {
         match kind {
             TokenKind::Equal => constants::ASSIGN,
@@ -620,7 +619,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    #[inline(always)]
     fn is_binary_op(token_kind: &TokenKind) -> bool {
         matches!(
             token_kind,
@@ -647,7 +645,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.tokens.peek().as_ref().map(|t| &t.kind).is_some_and(expected)
     }
 
-    #[inline(always)]
     fn is_next_token_allowed(token_kind: Option<&TokenKind>) -> bool {
         matches!(
             token_kind,
@@ -2077,7 +2074,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    #[inline(always)]
     fn next_token(&mut self, expected_kinds: fn(&TokenKind) -> bool) -> Result<TokenId, SyntaxError> {
         match self.tokens.peek() {
             // Token found and matches one of the expected kinds.

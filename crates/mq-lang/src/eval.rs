@@ -651,7 +651,6 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
     }
 
-    #[inline(always)]
     fn eval_interpolated_string(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -1379,7 +1378,6 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
     }
 
-    #[inline(always)]
     fn call_fn(
         &mut self,
         fn_value: &RuntimeValue,

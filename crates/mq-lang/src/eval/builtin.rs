@@ -3742,7 +3742,6 @@ impl Error {
         }
     }
 }
-
 #[inline(always)]
 pub fn eval_builtin(
     runtime_value: &RuntimeValue,
@@ -3875,7 +3874,6 @@ fn url_encode(input: &str) -> Result<RuntimeValue, Error> {
     ))
 }
 
-#[inline(always)]
 fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
     let mut cache = REGEX_CACHE.lock().unwrap();
     if let Some(re) = cache.get(pattern) {
@@ -3896,7 +3894,6 @@ fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
     }
 }
 
-#[inline(always)]
 fn replace_re(input: &str, pattern: &str, replacement: &str) -> Result<RuntimeValue, Error> {
     let mut cache = REGEX_CACHE.lock().unwrap();
     if let Some(re) = cache.get(pattern) {
@@ -3926,7 +3923,6 @@ fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
     }
 }
 
-#[inline(always)]
 fn generate_numeric_range(start: isize, end: isize, step: isize) -> Result<Vec<RuntimeValue>, Error> {
     if step == 0 {
         return Err(Error::Runtime("step for range must not be zero".to_string()));
@@ -3966,7 +3962,6 @@ fn generate_numeric_range(start: isize, end: isize, step: isize) -> Result<Vec<R
     Ok(result)
 }
 
-#[inline(always)]
 fn generate_char_range(start_char: char, end_char: char, step: Option<i32>) -> Result<Vec<RuntimeValue>, Error> {
     let step = step.unwrap_or(if start_char <= end_char { 1 } else { -1 });
 
@@ -4013,7 +4008,6 @@ fn generate_char_range(start_char: char, end_char: char, step: Option<i32>) -> R
     Ok(result)
 }
 
-#[inline(always)]
 fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>, Error> {
     if start.len() != end.len() {
         return Err(Error::Runtime(
@@ -4074,7 +4068,6 @@ fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>
     Ok(result)
 }
 
-#[inline(always)]
 fn flatten(args: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
     let mut result = Vec::new();
     for arg in args {
