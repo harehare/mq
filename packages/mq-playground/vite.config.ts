@@ -10,7 +10,19 @@ export default defineConfig({
       input: {
         main: "playground.html",
       },
+      output: {
+        manualChunks: (id) => {
+          if (id.includes("monaco-editor")) {
+            return "monaco";
+          }
+          if (id.includes("node_modules")) {
+            return "vendor";
+          }
+        },
+      },
     },
+    chunkSizeWarningLimit: 1000,
+    assetsInlineLimit: 0,
   },
   optimizeDeps: { exclude: ["mq-web"] },
   server: {
