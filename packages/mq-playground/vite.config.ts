@@ -22,7 +22,7 @@ export default defineConfig({
       },
     },
     chunkSizeWarningLimit: 1000,
-    assetsInlineLimit: 0,
+    assetsInlineLimit: 4096,
   },
   optimizeDeps: { exclude: ["mq-web"] },
   server: {
