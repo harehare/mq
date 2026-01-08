@@ -2254,6 +2254,7 @@ define_builtin!(_AST_GET_ARGS, ParamNum::Fixed(1), |_, _, args, _| {
 define_builtin!(_AST_TO_CODE, ParamNum::Fixed(1), |_, _, args, _| {
     match args.as_slice() {
         [RuntimeValue::Ast(ast)] => Ok(ast.to_code().into()),
+        [a] => Ok(a.to_string().into()),
         _ => Ok(RuntimeValue::NONE),
     }
 });
