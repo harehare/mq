@@ -29,7 +29,7 @@ mq-repl = {path = "crates/mq-repl", version = "0.5.10"}
 # External dependencies
 arbitrary = {version = "1.4.2", features = ["derive"]}
 arboard = {version = "3.6.1", default-features = false}
-assert_cmd = "2.1.1"
+assert_cmd = "2.1.2"
 async-trait = "0.1.83"
 axum = "0.8.8"
 base64 = "0.22.1"
