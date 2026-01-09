@@ -16,7 +16,7 @@ use crate::command_context::{Command, CommandContext, CommandOutput};
 fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
     let mut result = line.to_string();
 
-    let commands_pattern = r"^(/copy|/env|/help|/quit|/load|/vars|/version)\b";
+    let commands_pattern = r"^(/copy|/edit|/env|/help|/quit|/load|/vars|/version)\b";
     if let Ok(re) = regex_lite::Regex::new(commands_pattern) {
         result = re
             .replace_all(&result, |caps: &regex_lite::Captures| {
@@ -25,7 +25,7 @@ fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
             .to_string();
     }
 
-    let keywords_pattern = r"\b(def|let|if|elif|else|end|while|foreach|self|nodes|fn|break|continue|include|true|false|None|match|import|module|do|var)\b";
+    let keywords_pattern = r"\b(def|let|if|elif|else|end|while|foreach|self|nodes|fn|break|continue|include|true|false|None|match|import|module|do|var|macro|quote|unquote)\b";
     if let Ok(re) = regex_lite::Regex::new(keywords_pattern) {
         result = re
             .replace_all(&result, |caps: &regex_lite::Captures| caps[0].bright_blue().to_string())
@@ -179,11 +179,16 @@ pub struct Repl {
     command_context: Rc<RefCell<CommandContext>>,
 }
 
+pub fn config_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("MQ_CONFIG_DIR")
+        .map(std::path::PathBuf::from)
+        .or_else(|| dirs::config_dir().map(|d| d.join("mq")))
+}
+
 impl Repl {
     pub fn new(input: Vec<mq_lang::RuntimeValue>) -> Self {
         let mut engine = mq_lang::DefaultEngine::default();
 
-        engine.set_optimization_level(mq_lang::OptimizationLevel::None);
         engine.load_builtin_module();
 
         Self {
@@ -201,12 +206,6 @@ impl Repl {
         println!("  Welcome to mq. Start by typing commands or expressions.");
         println!("  Type {} to see available commands.", "/help".bright_cyan());
         println!();
-    }
-
-    pub fn config_dir() -> Option<std::path::PathBuf> {
-        std::env::var_os("MDQ_CONFIG_DIR")
-            .map(std::path::PathBuf::from)
-            .or_else(|| dirs::config_dir().map(|d| d.join("mq")))
     }
 
     pub fn run(&self) -> miette::Result<()> {
@@ -228,8 +227,18 @@ impl Repl {
             KeyEvent(KeyCode::Right, Modifiers::CTRL),
             Cmd::Move(Movement::ForwardWord(1, At::AfterEnd, Word::Big)),
         );
+        // Bind Esc+C (Alt+C) to clear all input lines
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('c'), Modifiers::ALT),
+            Cmd::Kill(Movement::WholeBuffer),
+        );
+        // Bind Esc+O (Alt+O) to open editor
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('o'), Modifiers::ALT),
+            Cmd::Insert(1, "/edit\n".to_string()),
+        );
 
-        let config_dir = Self::config_dir();
+        let config_dir = config_dir();
 
         if let Some(config_dir) = &config_dir {
             let history = config_dir.join("history.txt");
@@ -246,32 +255,34 @@ impl Repl {
             let readline = editor.readline(&prompt);
 
             match readline {
-                Ok(line) => match self.command_context.borrow_mut().execute(&line) {
-                    Ok(CommandOutput::String(s)) => println!("{}", s.join("\n")),
-                    Ok(CommandOutput::Value(runtime_values)) => {
-                        let lines = runtime_values
-                            .iter()
-                            .filter_map(|runtime_value| {
-                                if runtime_value.is_none() {
-                                    return Some("None".to_string());
-                                }
+                Ok(line) => {
+                    editor.add_history_entry(&line).unwrap();
 
-                                let s = runtime_value.to_string();
-                                if s.is_empty() { None } else { Some(s) }
-                            })
-                            .collect::<Vec<_>>();
+                    match self.command_context.borrow_mut().execute(&line) {
+                        Ok(CommandOutput::String(s)) => println!("{}", s.join("\n")),
+                        Ok(CommandOutput::Value(runtime_values)) => {
+                            let lines = runtime_values
+                                .iter()
+                                .filter_map(|runtime_value| {
+                                    if runtime_value.is_none() {
+                                        return Some("None".to_string());
+                                    }
 
-                        if !lines.is_empty() {
-                            println!("{}", lines.join("\n"))
+                                    let s = runtime_value.to_string();
+                                    if s.is_empty() { None } else { Some(s) }
+                                })
+                                .collect::<Vec<_>>();
+
+                            if !lines.is_empty() {
+                                println!("{}", lines.join("\n"))
+                            }
                         }
-
-                        editor.add_history_entry(&line).unwrap();
+                        Ok(CommandOutput::None) => (),
+                        Err(e) => {
+                            eprintln!("{:?}", e)
+                        }
                     }
-                    Ok(CommandOutput::None) => (),
-                    Err(e) => {
-                        eprintln!("{:?}", e)
-                    }
-                },
+                }
                 Err(ReadlineError::Interrupted) => {
                     continue;
                 }
@@ -300,12 +311,11 @@ mod tests {
 
     #[test]
     fn test_config_dir() {
-        unsafe { std::env::set_var("MDQ_CONFIG_DIR", "/tmp/test_mq_config") };
-        let config_dir = Repl::config_dir();
-        assert_eq!(config_dir, Some(std::path::PathBuf::from("/tmp/test_mq_config")));
+        unsafe { std::env::set_var("MQ_CONFIG_DIR", "/tmp/test_mq_config") };
+        assert_eq!(config_dir(), Some(std::path::PathBuf::from("/tmp/test_mq_config")));
 
-        unsafe { std::env::remove_var("MDQ_CONFIG_DIR") };
-        let config_dir = Repl::config_dir();
+        unsafe { std::env::remove_var("MQ_CONFIG_DIR") };
+        let config_dir = config_dir();
         assert!(config_dir.is_some());
         if let Some(dir) = config_dir {
             assert!(dir.ends_with("mq"));

@@ -212,10 +212,10 @@ def is_mdx_js_esm(mdx): to_md_name(mdx) == "mdx_js_esm";
 # Checks if markdown is MDX
 def is_mdx(mdx):
   is_mdx_flow_expression(mdx) ||
-  is_mdx_jsx_flow_element(mdx) ||
-  is_mdx_jsx_text_element(mdx) ||
-  is_mdx_text_expression(mdx) ||
-  is_mdx_js_esm(mdx)
+    is_mdx_jsx_flow_element(mdx) ||
+    is_mdx_jsx_text_element(mdx) ||
+    is_mdx_text_expression(mdx) ||
+    is_mdx_js_esm(mdx)
 end
 
 # Returns an array of length n filled with the given value.
@@ -427,4 +427,96 @@ def transpose(matrix):
           end
         end
     end
+end
+
+# Applies a function to a value and returns the value (useful for debugging or side effects).
+macro tap(tap_value, tap_expr) do
+  quote do
+    tap_expr | tap_value
+  end
+end
+
+# Executes the expression only if the condition is false.
+macro unless(unless_cond, unless_expr) do
+  quote do
+    if (unquote(!unless_cond)): unquote(unless_expr)
+  end
+end
+
+# Executes the expression repeatedly until the condition is true.
+macro until(until_cond, until_expr) do
+  quote do
+    loop:
+      if (unquote(until_cond)): break
+      | unquote(until_expr)
+    end
+  end
+end
+
+# Extracts values from an array of objects based on a specified selector.
+macro pluck(pluck_obj, selector) do
+  quote do
+    match (unquote(pluck_obj)):
+      | :array: do
+          unquote(pluck_obj)
+          | map(fn(x):
+            match (x):
+              | :dict: x[unquote(selector)]
+              | _: do
+                  x | select(unquote(selector), unquote(selector))
+                end
+            end
+          end) | compact()
+        end
+      | _: do
+          unquote(pluck_obj) | unquote(selector)
+        end
+    end
+  end
+end
+
+# Returns a default value if the input is None or empty.
+def default_to(value, default):
+  if (is_none(value) || is_empty(value)): default else: value
+end
+
+# Maps over an array and removes None values from the result.
+def compact_map(arr, f): map(arr, f) | compact();
+
+# Filters out elements that match the condition (opposite of filter).
+def reject(arr, f): filter(arr, fn(x): !f(x););
+
+# Splits an array into two arrays: [matching, not_matching] based on a condition.
+def partition(arr, f): [filter(arr, f), filter(arr, fn(x): !f(x);)];
+
+# Safely gets a value from a dict with a default if the key doesn't exist.
+def get_or(dict, key, default):
+  let val = get(dict, key)
+  | if (is_none(val)): default else: val
+end
+
+# Executes an expression n times and returns an array of results.
+macro times(t_n, t_expr) do
+  quote do
+    if (unquote(t_n) == 0):
+      []
+    else:
+      foreach (_, range(0, unquote(t_n) - 1)): unquote(t_expr);
+  end
+end
+
+# Checks if a value is between min and max (inclusive).
+def between(value, min, max): value >= min && value <= max;
+
+# Sums elements of an array after applying a transformation function.
+def sum_by(arr, f): fold(arr, 0, fn(acc, x): acc + f(x););
+
+# Creates a dictionary indexed by a key extracted from each element.
+def index_by(arr, f):
+  fold(arr, dict(), fn(acc, item):
+    let key = to_string(f(item))
+    | let existing = get(acc, key)
+    | let new_value = if (is_none(existing)): item else: existing + item
+    | set(acc, key, new_value);
+  )
 end

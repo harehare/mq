@@ -1,7 +1,7 @@
 use smol_str::SmolStr;
 use thiserror::Error;
 
-use crate::{Token, number::Number};
+use crate::{Ident, Token, number::Number};
 
 use super::module::error::ModuleError;
 
@@ -31,8 +31,13 @@ pub enum RuntimeError {
         name: FunctionName,
         args: ArgType,
     },
-    #[error("Invalid number of arguments in \"{1}\", expected {2}, got {3}")]
-    InvalidNumberOfArguments(ErrorToken, FunctionName, u8, u8),
+    #[error("Invalid number of arguments in \"{name}\", expected {expected}, got {actual}")]
+    InvalidNumberOfArguments {
+        token: ErrorToken,
+        name: FunctionName,
+        expected: u8,
+        actual: u8,
+    },
     #[error("Invalid regular expression \"{1}\"")]
     InvalidRegularExpression(ErrorToken, String),
     #[error("Internal error")]
@@ -53,6 +58,24 @@ pub enum RuntimeError {
     AssignToImmutable(Token, String),
     #[error("Undefined variable \"{1}\"")]
     UndefinedVariable(Token, String),
+    #[error("quote() is not allowed in runtime context, it should only appear inside macros")]
+    QuoteNotAllowedInRuntimeContext(Token),
+    #[error("unquote() can only be used inside quote()")]
+    UnquoteNotAllowedOutsideQuote(Token),
+    #[error("Undefined macro: {0}")]
+    UndefinedMacro(Ident),
+    #[error("Macro {macro_name} expects {expected} arguments, got {got}")]
+    ArityMismatch {
+        macro_name: Ident,
+        expected: usize,
+        got: usize,
+    },
+    #[error("Maximum macro recursion depth exceeded")]
+    RecursionLimit,
+    #[error("Invalid macro result AST")]
+    InvalidMacroResultAst(Token),
+    #[error("Invalid macro result: expected AST value")]
+    InvalidMacroResult(Token),
 }
 
 impl RuntimeError {
@@ -67,7 +90,7 @@ impl RuntimeError {
             RuntimeError::InvalidDefinition(token, _) => Some(token),
             RuntimeError::RecursionError(_) => None,
             RuntimeError::InvalidTypes { token, .. } => Some(token),
-            RuntimeError::InvalidNumberOfArguments(token, _, _, _) => Some(token),
+            RuntimeError::InvalidNumberOfArguments { token, .. } => Some(token),
             RuntimeError::InvalidRegularExpression(token, _) => Some(token),
             RuntimeError::InternalError(token) => Some(token),
             RuntimeError::ModuleLoadError(err) => err.token(),
@@ -78,6 +101,13 @@ impl RuntimeError {
             RuntimeError::EnvNotFound(token, _) => Some(token),
             RuntimeError::AssignToImmutable(token, _) => Some(token),
             RuntimeError::UndefinedVariable(token, _) => Some(token),
+            RuntimeError::QuoteNotAllowedInRuntimeContext(token) => Some(token),
+            RuntimeError::UnquoteNotAllowedOutsideQuote(token) => Some(token),
+            RuntimeError::UndefinedMacro(_) => None,
+            RuntimeError::ArityMismatch { .. } => None,
+            RuntimeError::RecursionLimit => None,
+            RuntimeError::InvalidMacroResultAst(token) => Some(token),
+            RuntimeError::InvalidMacroResult(token) => Some(token),
         }
     }
 }

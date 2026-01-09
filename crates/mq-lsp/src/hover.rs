@@ -13,7 +13,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
             mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
         ) {
             match &symbol.kind {
-                mq_hir::SymbolKind::Function(_) | mq_hir::SymbolKind::Variable => {
+                mq_hir::SymbolKind::Function(_) | mq_hir::SymbolKind::Macro(_) | mq_hir::SymbolKind::Variable => {
                     let deprecated = symbol.is_deprecated();
                     let deprecated_notice = if deprecated { "⚠️ **DEPRECATED**\n\n" } else { "" };
 
@@ -21,11 +21,11 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
                         contents: HoverContents::Markup(MarkupContent {
                             kind: MarkupKind::Markdown,
                             value: match symbol.kind {
-                                mq_hir::SymbolKind::Function(args) => {
+                                mq_hir::SymbolKind::Function(args) | mq_hir::SymbolKind::Macro(args) => {
                                     format!(
                                         "```mq\n{}({})\n```\n\n{deprecated_notice}{doc}",
                                         &symbol.value.unwrap_or_default(),
-                                        args.join(", "),
+                                        args.iter().map(|p| p.name.as_str()).join(", "),
                                         deprecated_notice = deprecated_notice,
                                         doc = symbol.doc.iter().map(|(_, doc)| doc).join("\n")
                                     )

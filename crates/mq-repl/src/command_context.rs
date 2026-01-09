@@ -1,4 +1,4 @@
-use std::{fmt, fs};
+use std::{fmt, fs, io::Write, process::Command as ProcessCommand};
 
 #[cfg(all(feature = "clipboard", not(target_os = "android")))]
 use arboard::Clipboard;
@@ -15,6 +15,7 @@ pub enum CommandOutput {
 #[derive(Debug, Clone, strum::EnumIter)]
 pub enum Command {
     Copy,
+    Edit,
     Env(String, String),
     Help,
     Quit,
@@ -29,6 +30,7 @@ impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Command::Copy => write!(f, "/copy"),
+            Command::Edit => write!(f, "/edit"),
             Command::Env(_, _) => {
                 write!(f, "/env")
             }
@@ -47,6 +49,7 @@ impl Command {
     pub fn help(&self) -> String {
         match self {
             Command::Copy => format!("{:<12}{}", "/copy", "Copy the execution results to the clipboard"),
+            Command::Edit => format!("{:<12}{}", "/edit", "Edit the current buffer in external editor"),
             Command::Env(_, _) => {
                 format!("{:<12}{}", "/env", "Set environment variables (key value)")
             }
@@ -65,6 +68,7 @@ impl From<String> for Command {
     fn from(s: String) -> Self {
         match s.as_str().split_whitespace().collect::<Vec<&str>>().as_slice() {
             ["/copy"] => Command::Copy,
+            ["/edit"] => Command::Edit,
             ["/env", name, value] => Command::Env(name.to_string(), value.to_string()),
             ["/help"] => Command::Help,
             ["/quit"] => Command::Quit,
@@ -133,6 +137,57 @@ impl CommandContext {
                 #[cfg(any(not(feature = "clipboard"), target_os = "android"))]
                 {
                     Err(miette!("Clipboard functionality is not available on this platform"))
+                }
+            }
+            Command::Edit => {
+                // Get editor from environment variables
+                let editor = std::env::var("EDITOR")
+                    .or_else(|_| std::env::var("VISUAL"))
+                    .unwrap_or_else(|_| "vi".to_string());
+
+                // Create a temporary file
+                let mut temp_file = tempfile::Builder::new()
+                    .prefix("mq-edit-")
+                    .suffix(".mq")
+                    .tempfile()
+                    .into_diagnostic()?;
+
+                // Write current buffer to temp file (empty for now)
+                temp_file.write_all(b"").into_diagnostic()?;
+                temp_file.flush().into_diagnostic()?;
+
+                let temp_path = temp_file.path().to_path_buf();
+
+                // Close the file before opening in editor
+                drop(temp_file);
+
+                // Launch the editor
+                let status = ProcessCommand::new(&editor)
+                    .arg(&temp_path)
+                    .status()
+                    .into_diagnostic()?;
+
+                if !status.success() {
+                    return Err(miette!("Editor exited with non-zero status"));
+                }
+
+                // Read the edited content
+                let edited_content = fs::read_to_string(&temp_path).into_diagnostic()?;
+
+                // Clean up temp file
+                fs::remove_file(&temp_path).ok();
+
+                // Evaluate the edited content
+                let code = edited_content.trim();
+                if code.is_empty() {
+                    Ok(CommandOutput::None)
+                } else {
+                    let eval_result = self.engine.eval(code, self.input.clone().into_iter()).map_err(|e| *e)?;
+
+                    self.hir.add_line_of_code(self.source_id, self.scope_id, code);
+                    self.input = eval_result.values().clone();
+
+                    Ok(CommandOutput::Value(eval_result.values().clone()))
                 }
             }
             Command::Env(name, value) => {
@@ -255,6 +310,7 @@ mod tests {
     #[test]
     fn test_command_from_string() {
         assert!(matches!(Command::from("/copy".to_string()), Command::Copy));
+        assert!(matches!(Command::from("/edit".to_string()), Command::Edit));
         assert!(matches!(Command::from("/help".to_string()), Command::Help));
         assert!(matches!(Command::from("/quit".to_string()), Command::Quit));
         assert!(matches!(Command::from("/vars".to_string()), Command::Vars));
@@ -283,6 +339,7 @@ mod tests {
     #[test]
     fn test_command_display() {
         assert_eq!(format!("{}", Command::Copy), "/copy");
+        assert_eq!(format!("{}", Command::Edit), "/edit");
         assert_eq!(format!("{}", Command::Help), "/help");
         assert_eq!(format!("{}", Command::Quit), "/quit");
         assert_eq!(format!("{}", Command::Vars), "/vars");
@@ -303,6 +360,7 @@ mod tests {
 
             match cmd {
                 Command::Copy => assert!(help.contains("/copy")),
+                Command::Edit => assert!(help.contains("/edit")),
                 Command::Help => assert!(help.contains("/help")),
                 Command::Quit => assert!(help.contains("/quit")),
                 Command::Vars => assert!(help.contains("/vars")),

@@ -2,48 +2,26 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
+#[cfg(feature = "ast-json")]
+use crate::Program;
 #[cfg(feature = "debugger")]
 use crate::eval::env::Env;
 #[cfg(feature = "debugger")]
 use crate::module::ModuleId;
-use crate::optimizer::OptimizationLevel;
+use crate::{
+    ArenaId, LocalFsModuleResolver, ModuleResolver, MqResult, Range, RuntimeValue, Shared, SharedCell, TokenKind,
+    token_alloc,
+};
 #[cfg(feature = "debugger")]
 use crate::{Debugger, DebuggerHandler};
-use crate::{LocalFsModuleResolver, ModuleResolver, MqResult, RuntimeValue, Shared, SharedCell, token_alloc};
 
 use crate::{
     ModuleLoader, Token,
     arena::Arena,
     error::{self},
     eval::Evaluator,
-    optimizer::Optimizer,
     parse,
 };
-
-/// Configuration options for the mq engine.
-#[derive(Debug, Clone)]
-pub struct Options {
-    /// Whether to enable code optimization during evaluation.
-    /// When enabled, performs constant folding and dead code elimination.
-    pub optimization_level: OptimizationLevel,
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        #[cfg(not(feature = "debugger"))]
-        {
-            Self {
-                optimization_level: OptimizationLevel::Full,
-            }
-        }
-        #[cfg(feature = "debugger")]
-        {
-            Self {
-                optimization_level: OptimizationLevel::None,
-            }
-        }
-    }
-}
 
 /// The main execution engine for the mq.
 ///
@@ -65,7 +43,6 @@ impl Default for Options {
 #[derive(Debug, Clone)]
 pub struct Engine<T: ModuleResolver = LocalFsModuleResolver> {
     pub(crate) evaluator: Evaluator<T>,
-    pub(crate) options: Options,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
 }
 
@@ -75,9 +52,9 @@ fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
         &token_arena,
         &Shared::new(Token {
             // Ensure at least one token for ArenaId::new(0)
-            kind: crate::TokenKind::Eof, // Dummy token
-            range: crate::range::Range::default(),
-            module_id: crate::arena::ArenaId::new(0), // Dummy module_id
+            kind: TokenKind::Eof, // Dummy token
+            range: Range::default(),
+            module_id: ArenaId::new(0), // Dummy module_id
         }),
     );
     token_arena
@@ -94,17 +71,8 @@ impl<T: ModuleResolver> Engine<T> {
         let token_arena = create_default_token_arena();
         Self {
             evaluator: Evaluator::new(ModuleLoader::new(module_resolver), Shared::clone(&token_arena)),
-            options: Options::default(),
             token_arena,
         }
-    }
-
-    /// Enable or disable code optimization.
-    ///
-    /// When optimization is enabled, the engine performs constant folding
-    /// and dead code elimination to improve execution performance.
-    pub fn set_optimization_level(&mut self, level: OptimizationLevel) {
-        self.options.optimization_level = level;
     }
 
     /// Set the maximum call stack depth for function calls.
@@ -162,47 +130,6 @@ impl<T: ModuleResolver> Engine<T> {
         })
     }
 
-    /// Evaluates mq code with a specified optimization level.
-    ///
-    /// This method allows you to override the engine's current optimization level
-    /// for a single evaluation. Useful for benchmarking or testing different
-    /// optimization strategies.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use mq_lang::{DefaultEngine, OptimizationLevel};
-    ///
-    /// let mut engine = DefaultEngine::default();
-    /// engine.load_builtin_module();
-    ///
-    /// let input = mq_lang::parse_text_input("hello").unwrap();
-    /// let result = engine.eval_with_level("add(\" world\")", input.into_iter(), OptimizationLevel::None);
-    /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
-    /// ```
-    #[inline]
-    pub fn eval_with_level<I: Iterator<Item = RuntimeValue>>(
-        &mut self,
-        code: &str,
-        input: I,
-        level: OptimizationLevel,
-    ) -> MqResult {
-        if code.is_empty() {
-            return Ok(vec![].into());
-        }
-
-        let mut program = parse(code, Shared::clone(&self.token_arena))?;
-        Optimizer::with_level(level).optimize(&mut program);
-
-        #[cfg(feature = "debugger")]
-        self.evaluator.module_loader.set_source_code(code.to_string());
-
-        self.evaluator
-            .eval(&program, input.into_iter())
-            .map(|values| values.into())
-            .map_err(|e| Box::new(error::Error::from_error(code, e, self.evaluator.module_loader.clone())))
-    }
-
     /// The main engine for evaluating mq code.
     ///
     /// The `Engine` manages parsing, optimization, and evaluation of mq.
@@ -220,7 +147,19 @@ impl<T: ModuleResolver> Engine<T> {
     /// ```
     ///
     pub fn eval<I: Iterator<Item = RuntimeValue>>(&mut self, code: &str, input: I) -> MqResult {
-        self.eval_with_level(code, input, self.options.optimization_level)
+        if code.is_empty() {
+            return Ok(vec![].into());
+        }
+
+        let program = parse(code, Shared::clone(&self.token_arena))?;
+
+        #[cfg(feature = "debugger")]
+        self.evaluator.module_loader.set_source_code(code.to_string());
+
+        self.evaluator
+            .eval(&program, input.into_iter())
+            .map(|values| values.into())
+            .map_err(|e| Box::new(error::Error::from_error(code, e, self.evaluator.module_loader.clone())))
     }
 
     /// Evaluates a pre-parsed AST (Program).
@@ -249,13 +188,7 @@ impl<T: ModuleResolver> Engine<T> {
     /// assert_eq!(result.unwrap(), vec!["hello".to_string().into()].into());
     /// ```
     #[cfg(feature = "ast-json")]
-    pub fn eval_ast<I: Iterator<Item = RuntimeValue>>(
-        &mut self,
-        mut program: crate::ast::Program,
-        input: I,
-    ) -> MqResult {
-        Optimizer::with_level(self.options.optimization_level).optimize(&mut program);
-
+    pub fn eval_ast<I: Iterator<Item = RuntimeValue>>(&mut self, program: Program, input: I) -> MqResult {
         self.evaluator
             .eval(&program, input.into_iter())
             .map(|values| values.into())
@@ -295,7 +228,6 @@ impl<T: ModuleResolver> Engine<T> {
 
         Self {
             evaluator: Evaluator::with_env(Shared::clone(&token_arena), Shared::clone(&env)),
-            options: self.options.clone(),
             token_arena: Shared::clone(&token_arena),
         }
     }

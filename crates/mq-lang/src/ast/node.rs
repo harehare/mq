@@ -11,7 +11,28 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-pub type Params = SmallVec<[Shared<Node>; 4]>;
+/// Represents a function parameter with an optional default value
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
+#[derive(PartialEq, PartialOrd, Debug, Clone)]
+pub struct Param {
+    pub ident: IdentWithToken,
+    pub default: Option<Shared<Node>>,
+}
+
+impl Param {
+    pub fn new(name: IdentWithToken) -> Self {
+        Self::with_default(name, None)
+    }
+
+    pub fn with_default(name: IdentWithToken, default_value: Option<Shared<Node>>) -> Self {
+        Self {
+            ident: name,
+            default: default_value,
+        }
+    }
+}
+
+pub type Params = SmallVec<[Param; 4]>;
 pub type Args = SmallVec<[Shared<Node>; 4]>;
 pub type Cond = (Option<Shared<Node>>, Shared<Node>);
 pub type Branches = SmallVec<[Cond; 4]>;
@@ -50,6 +71,7 @@ impl Node {
             | Expr::Def(_, _, program)
             | Expr::Fn(_, program)
             | Expr::While(_, program)
+            | Expr::Loop(program)
             | Expr::Module(_, program)
             | Expr::Foreach(_, _, program) => {
                 let start = program
@@ -81,7 +103,20 @@ impl Node {
                     .unwrap_or_else(|| callable.range(Shared::clone(&arena)).end);
                 Range { start, end }
             }
-            Expr::Let(_, node) | Expr::Var(_, node) | Expr::Assign(_, node) => node.range(Shared::clone(&arena)),
+            Expr::Macro(_, params, block) => {
+                let start = params
+                    .first()
+                    .and_then(|param| param.ident.token.as_ref().map(|t| t.range))
+                    .unwrap_or(block.range(Shared::clone(&arena)))
+                    .start;
+                let end = block.range(arena).end;
+                Range { start, end }
+            }
+            Expr::Let(_, node)
+            | Expr::Var(_, node)
+            | Expr::Assign(_, node)
+            | Expr::Quote(node)
+            | Expr::Unquote(node) => node.range(Shared::clone(&arena)),
             Expr::If(nodes) => {
                 if let (Some(first), Some(last)) = (nodes.first(), nodes.last()) {
                     let start = first.1.range(Shared::clone(&arena));
@@ -249,8 +284,10 @@ pub enum Expr {
     Call(IdentWithToken, Args),
     CallDynamic(Shared<Node>, Args),
     Def(IdentWithToken, Params, Program),
+    Macro(IdentWithToken, Params, Shared<Node>),
     Fn(Params, Program),
     Let(IdentWithToken, Shared<Node>),
+    Loop(Program),
     Var(IdentWithToken, Shared<Node>),
     Assign(IdentWithToken, Shared<Node>),
     And(Shared<Node>, Shared<Node>),
@@ -270,6 +307,8 @@ pub enum Expr {
     Self_,
     Nodes,
     Paren(Shared<Node>),
+    Quote(Shared<Node>),
+    Unquote(Shared<Node>),
     Try(Shared<Node>, Shared<Node>),
     Break,
     Continue,

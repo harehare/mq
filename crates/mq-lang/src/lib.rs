@@ -48,9 +48,9 @@ mod error;
 mod eval;
 mod ident;
 mod lexer;
+mod macro_expand;
 mod module;
 mod number;
-mod optimizer;
 mod range;
 mod selector;
 
@@ -87,7 +87,6 @@ pub use module::{
     BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, error::ModuleError,
     resolver::LocalFsModuleResolver, resolver::ModuleResolver, resolver::module_name,
 };
-pub use optimizer::OptimizationLevel;
 pub use range::{Position, Range};
 pub use selector::{AttrKind, Selector};
 
@@ -237,10 +236,6 @@ pub(crate) fn get_token(arena: TokenArena, token_id: TokenId) -> Shared<Token> {
         Shared::clone(&arena.read().unwrap()[token_id])
     }
 }
-
-#[cfg(test)]
-#[path = "../tests/strategies.rs"]
-pub(crate) mod strategies;
 
 #[cfg(test)]
 mod tests {

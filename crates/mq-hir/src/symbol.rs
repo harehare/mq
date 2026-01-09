@@ -7,7 +7,29 @@ use smol_str::SmolStr;
 
 slotmap::new_key_type! { pub struct SymbolId; }
 
-type Params = Vec<SmolStr>;
+/// Represents metadata about a function parameter
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParamInfo {
+    pub name: SmolStr,
+    pub has_default: bool,
+}
+
+impl From<&str> for ParamInfo {
+    fn from(name: &str) -> Self {
+        ParamInfo {
+            name: SmolStr::from(name),
+            has_default: false,
+        }
+    }
+}
+
+impl std::fmt::Display for ParamInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+type Params = Vec<ParamInfo>;
 pub type Doc = (mq_lang::Range, String);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,6 +60,8 @@ pub enum SymbolKind {
     If,
     Include(SourceId),
     Keyword,
+    Loop,
+    Macro(Params),
     Match,
     MatchArm,
     None,
@@ -63,6 +87,11 @@ impl Symbol {
     #[inline(always)]
     pub fn is_function(&self) -> bool {
         matches!(self.kind, SymbolKind::Function(_))
+    }
+
+    #[inline(always)]
+    pub fn is_macro(&self) -> bool {
+        matches!(self.kind, SymbolKind::Macro(_))
     }
 
     #[inline(always)]
@@ -121,7 +150,7 @@ impl Symbol {
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match &self.kind {
-            SymbolKind::Function(args) => &format!("function({})", args.iter().join(", ")),
+            SymbolKind::Function(args) => &format!("function({})", args.iter().map(|p| p.name.as_str()).join(", ")),
             _ => self.value.as_ref().map_or("", |value| value.as_str()),
         };
         write!(f, "{}", s)
@@ -146,7 +175,7 @@ mod tests {
 
     #[rstest]
     #[case(SymbolKind::Function(Vec::new()), true)]
-    #[case(SymbolKind::Function(vec![SmolStr::from("param")]), true)]
+    #[case(SymbolKind::Function(vec![ParamInfo { name: SmolStr::from("param"), has_default: false }]), true)]
     #[case(SymbolKind::Variable, false)]
     #[case(SymbolKind::Call, false)]
     fn test_is_function(#[case] kind: SymbolKind, #[case] expected: bool) {

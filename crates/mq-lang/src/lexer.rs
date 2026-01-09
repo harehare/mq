@@ -206,6 +206,7 @@ define_token_parser!(colon, ":", TokenKind::Colon);
 define_token_parser!(comma, ",", TokenKind::Comma);
 define_keyword_parser!(def, "def", TokenKind::Def);
 define_keyword_parser!(do_, "do", TokenKind::Do);
+define_keyword_parser!(macro_, "macro", TokenKind::Macro);
 define_token_parser!(double_colon, "::", TokenKind::DoubleColon);
 define_keyword_parser!(elif, "elif", TokenKind::Elif);
 define_keyword_parser!(else_, "else", TokenKind::Else);
@@ -224,6 +225,7 @@ define_token_parser!(l_bracket, "[", TokenKind::LBracket);
 define_token_parser!(l_paren, "(", TokenKind::LParen);
 define_token_parser!(l_brace, "{", TokenKind::LBrace);
 define_keyword_parser!(let_, "let", TokenKind::Let);
+define_keyword_parser!(loop_, "loop", TokenKind::Loop);
 define_keyword_parser!(match_, "match", TokenKind::Match);
 define_keyword_parser!(module_, "module", TokenKind::Module);
 define_token_parser!(asterisk, "*", TokenKind::Asterisk);
@@ -235,6 +237,7 @@ define_keyword_parser!(none, "None", TokenKind::None);
 define_token_parser!(plus, "+", TokenKind::Plus);
 define_token_parser!(pipe, "|", TokenKind::Pipe);
 define_token_parser!(percent, "%", TokenKind::Percent);
+define_keyword_parser!(quote_, "quote", TokenKind::Quote);
 define_token_parser!(range_op, "..", TokenKind::RangeOp);
 define_token_parser!(r_bracket, "]", TokenKind::RBracket);
 define_token_parser!(r_paren, ")", TokenKind::RParen);
@@ -242,6 +245,7 @@ define_token_parser!(r_brace, "}", TokenKind::RBrace);
 define_keyword_parser!(self_, constants::SELF, TokenKind::Self_);
 define_token_parser!(semi_colon, ";", TokenKind::SemiColon);
 define_keyword_parser!(try_, "try", TokenKind::Try);
+define_keyword_parser!(unquote_, "unquote", TokenKind::Unquote);
 define_keyword_parser!(catch_, "catch", TokenKind::Catch);
 define_keyword_parser!(while_, "while", TokenKind::While);
 define_token_parser!(lt, "<", TokenKind::Lt);
@@ -289,7 +293,8 @@ fn unary_op(input: Span) -> IResult<Span, Token> {
 
 fn control_keywords(input: Span) -> IResult<Span, Token> {
     alt((
-        def, do_, let_, match_, while_, if_, elif, else_, end, foreach, fn_, break_, continue_, try_, catch_, var,
+        break_, catch_, continue_, def, do_, elif, else_, end, fn_, foreach, if_, let_, loop_, macro_, match_, quote_,
+        try_, unquote_, var, while_,
     ))
     .parse(input)
 }
@@ -414,8 +419,22 @@ fn string_segment<'a>(input: Span<'a>) -> IResult<Span<'a>, StringSegment> {
 fn interpolated_string(input: Span) -> IResult<Span, Token> {
     let (span, start) = position(input)?;
     let (span, _) = tag("s\"")(span)?;
-    let (span, segments) = many1(string_segment).parse(span)?;
-    let (span, _) = char('"')(span)?;
+
+    let mut segments = Vec::with_capacity(4);
+    let mut current = span;
+
+    // Parse at least one segment
+    let (remaining, segment) = string_segment(current)?;
+    segments.push(segment);
+    current = remaining;
+
+    // Parse remaining segments
+    while let Ok((remaining, segment)) = string_segment(current) {
+        segments.push(segment);
+        current = remaining;
+    }
+
+    let (span, _) = char('"')(current)?;
     let (span, end) = position(span)?;
     let module_id = start.extra;
 
@@ -595,13 +614,33 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
 }
 
 fn tokens<'a>(input: Span<'a>, options: &'a Options) -> IResult<Span<'a>, Vec<Token>> {
+    // Estimate token count from input length (assuming ~5 chars per token on average)
+    let estimated_capacity = input.fragment().len() / 5;
+    let mut tokens = Vec::with_capacity(estimated_capacity.max(16));
+    let mut current = input;
+
     if options.include_spaces {
-        many0(token_include_spaces).parse(input)
+        while let Ok((remaining, token)) = token_include_spaces(current) {
+            tokens.push(token);
+            current = remaining;
+        }
     } else {
-        let (input, tokens) = many0(preceded(skip_whitespace_and_comments, token)).parse(input)?;
-        let (input, _) = skip_whitespace_and_comments(input)?;
-        Ok((input, tokens))
+        loop {
+            let (remaining, _) = skip_whitespace_and_comments(current)?;
+            match token(remaining) {
+                Ok((remaining, tok)) => {
+                    tokens.push(tok);
+                    current = remaining;
+                }
+                Err(_) => {
+                    current = remaining;
+                    break;
+                }
+            }
+        }
     }
+
+    Ok((current, tokens))
 }
 
 #[cfg(test)]

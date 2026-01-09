@@ -194,7 +194,6 @@ mod tests {
     fn test_error_ranges() {
         let mut hir = Hir::default();
         let _ = hir.add_code(None, "let abc = 1 | unknown_var | let xyz = 2");
-
         let error_ranges = hir.error_ranges();
         assert_eq!(error_ranges.len(), 1);
     }

@@ -4,18 +4,9 @@ use mq_lang::{DefaultEngine, Engine, Ident, MqResult, RuntimeValue};
 use rstest::{fixture, rstest};
 
 #[fixture]
-fn engine_no_opt() -> DefaultEngine {
+fn engine() -> DefaultEngine {
     let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
-    engine.set_optimization_level(mq_lang::OptimizationLevel::None);
-    engine
-}
-
-#[fixture]
-fn engine_with_opt() -> Engine {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine.set_optimization_level(mq_lang::OptimizationLevel::Full);
     engine
 }
 
@@ -82,6 +73,73 @@ fn engine_with_opt() -> Engine {
     ",
       vec![RuntimeValue::Number(0.into())],
       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(11.into()), RuntimeValue::Number(12.into()), RuntimeValue::Number(14.into()), RuntimeValue::Number(15.into())])].into()))]
+#[case::while_do_end("
+    let x = 5 |
+    while (x > 0) do
+      let x = x - 1 | x
+    end
+    ",
+      vec![RuntimeValue::Number(10.into())],
+      Ok(vec![RuntimeValue::Number(0.into())].into()))]
+#[case::foreach_do_end("
+    foreach(x, array(1, 2, 3)) do
+      add(x, 1)
+    end
+    ",
+      vec![RuntimeValue::Number(10.into())],
+      Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())])].into()))]
+#[case::while_do_end_break("
+    let x = 0 |
+    while(x < 10) do
+      let x = x + 1
+      | if(x == 3):
+        break
+      else:
+        x
+      end
+    end
+    ",
+      vec![RuntimeValue::Number(10.into())],
+      Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::foreach_do_end_continue("
+    foreach(x, array(1, 2, 3, 4, 5)) do
+      if(x == 3):
+        continue
+      else:
+        x + 10
+      end
+    end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(11.into()), RuntimeValue::Number(12.into()), RuntimeValue::Number(14.into()), RuntimeValue::Number(15.into())])].into()))]
+#[case::nested_do_end("
+    let arr = array(array(1, 2), array(3, 4)) |
+    foreach(row, arr) do
+      foreach(x, row) do
+        x * 2
+      end
+    end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(4.into())]), RuntimeValue::Array(vec![RuntimeValue::Number(6.into()), RuntimeValue::Number(8.into())])])].into()))]
+#[case::match_do_end("
+    match (2) do
+      | 1: \"one\"
+      | 2: \"two\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("two".to_string())].into()))]
+#[case::match_do_end_type_pattern("
+    match (array(1, 2, 3)) do
+      | :array: \"is_array\"
+      | :number: \"is_number\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("is_array".to_string())].into()))]
 #[case::if_("
     def fibonacci(x):
       if(eq(x, 0)):
@@ -1636,183 +1694,175 @@ fn engine_with_opt() -> Engine {
     ",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(6.into()), RuntimeValue::Number(10.into()), RuntimeValue::Number(15.into())])].into()))]
-fn test_eval(
-    mut engine_no_opt: Engine,
-    #[case] program: &str,
-    #[case] input: Vec<RuntimeValue>,
-    #[case] expected: MqResult,
-) {
-    assert_eq!(engine_no_opt.eval(program, input.into_iter()), expected);
-}
-
-#[rstest]
-#[case::inline_functions("
-  # comments
-  def test_fn(s):
-     let test = \"WORLD\" | ltrimstr(s, \"hello\") | upcase() | ltrimstr(test);
-  | test_fn(\"helloWorld2025\") + test_fn(\"helloWorld2026\")
-  ",
-    vec![RuntimeValue::String("helloWorld".to_string())],
-    Ok(vec![RuntimeValue::String("20252026".to_string())].into()))]
-#[case::constant_folding("
-  # comments
-  let i = 100
-  | def v(): i + 10;
-  | v() + 20
-  ",
-    vec![RuntimeValue::Number(100.into())],
-    Ok(vec![RuntimeValue::Number(130.into())].into()))]
-#[case::constant_folding("
-  # comments
-  let i = 100
-  | def v(): let i = 10 | i + 10;
-  | v() + 20
-  ",
-    vec![RuntimeValue::Number(100.into())],
-    Ok(vec![RuntimeValue::Number(40.into())].into()))]
-#[case::try_simple("
-    try:
-      1 / 0
-    catch:
-      \"error\"
+#[case::macro_basic("
+    macro double(x) do
+      x + x
+    end
+    | double(5)
     ",
     vec![RuntimeValue::Number(0.into())],
-    Ok(vec![RuntimeValue::String("error".to_string())].into()))]
-#[case::try_no_error("
-    try:
-      42
-    catch:
-      \"error\"
+    Ok(vec![RuntimeValue::Number(10.into())].into()))]
+#[case::macro_with_string("
+    macro greet(name) do
+      s\"Hello, ${name}!\"
+    end
+    | greet(\"World\")
     ",
     vec![RuntimeValue::Number(0.into())],
-    Ok(vec![RuntimeValue::Number(42.into())].into()))]
-#[case::match_number(r#"
-    match (2):
-      | 1: "one"
-      | 2: "two"
-      | _: "other"
-    end"#,
+    Ok(vec![RuntimeValue::String("Hello, World!".to_string())].into()))]
+#[case::macro_multiple_params("
+    macro add_three(a, b, c) do
+      a + b + c
+    end
+    | add_three(1, 2, 3)
+    ",
     vec![RuntimeValue::Number(0.into())],
-    Ok(vec![RuntimeValue::String("two".to_string())].into()))]
-#[case::match_string(r#"
-    match ("b"):
-      | "a": 1
-      | "b": 2
-      | _: 0
-    end"#,
+    Ok(vec![RuntimeValue::Number(6.into())].into()))]
+#[case::macro_with_function_call("
+    macro apply_twice(f, x) do
+      f(f(x))
+    end
+    | def inc(n): n + 1;
+    | apply_twice(inc, 5)
+    ",
     vec![RuntimeValue::Number(0.into())],
-    Ok(vec![RuntimeValue::Number(2.into())].into()))]
-#[case::match_default(r#"
-    match (3):
-      | 1: "one"
-      | 2: "two"
-      | _: "other"
-    end"#,
+    Ok(vec![RuntimeValue::Number(7.into())].into()))]
+#[case::macro_nested_calls("
+    macro double(x): x + x
+    | macro quadruple(x): double(double(x))
+    | quadruple(3)
+    ",
     vec![RuntimeValue::Number(0.into())],
-    Ok(vec![RuntimeValue::String("other".to_string())].into()))]
-#[case::match_type_number(r#"
-    match (1):
-      | :number: "is number"
-      | :string: "is string"
-      | _: "other"
-    end"#,
+    Ok(vec![RuntimeValue::Number(12.into())].into()))]
+#[case::macro_with_let("
+    macro let_double(x) do
+      let y = x | y + y
+    end
+    | let_double(7)
+    ",
     vec![RuntimeValue::Number(0.into())],
-    Ok(vec![RuntimeValue::String("is number".to_string())].into()))]
-#[case::match_type_string(r#"
-    match ("abc"):
-      | :number: "is number"
-      | :string: "is string"
-      | _: "other"
-    end"#,
+    Ok(vec![RuntimeValue::Number(14.into())].into()))]
+#[case::macro_with_if("
+    macro max(a, b) do
+        if(a > b): a else: b
+    end
+    | max(10, 5)
+    ",
     vec![RuntimeValue::Number(0.into())],
-    Ok(vec![RuntimeValue::String("is string".to_string())].into()))]
-#[case::match_type_array(r#"
-    match ([1, 2, 3]):
-      | :array: "is array"
-      | _: "other"
-    end"#,
+    Ok(vec![RuntimeValue::Number(10.into())].into()))]
+#[case::macro_with_array("
+    macro first_two(arr) do
+      arr[0:2]
+    end
+    | first_two([1, 2, 3, 4, 5])
+    ",
     vec![RuntimeValue::Number(0.into())],
-    Ok(vec![RuntimeValue::String("is array".to_string())].into()))]
-#[case::match_type_dict(r#"
-    match ({"key": "value"}):
-      | :dict: "is dict"
-      | _: "other"
-    end"#,
+    Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())])].into()))]
+#[case::macro_parameter_shadowing("
+    let x = 100 |
+    macro use_param(x) do
+      x * 2
+    end
+    | use_param(5)
+    ",
     vec![RuntimeValue::Number(0.into())],
-    Ok(vec![RuntimeValue::String("is dict".to_string())].into()))]
-#[case::match_type_symbol(r#"
-    match (:symbol):
-      | :symbol: "is symbol"
-      | _: "other"
-    end"#,
+    Ok(vec![RuntimeValue::Number(10.into())].into()))]
+#[case::macro_quote_basic("
+    macro make_expr(x) do
+      quote: unquote(x) + 1
+    end
+    | make_expr(5)
+    ",
     vec![RuntimeValue::Number(0.into())],
-    Ok(vec![RuntimeValue::String("is symbol".to_string())].into()))]
-#[case::match_type_none(r#"
-    match (None):
-      | :none: "is none"
-      | _: "other"
-    end"#,
+    Ok(vec![RuntimeValue::Number(6.into())].into()))]
+#[case::macro_quote_multiple_expressions("
+    macro wrap_expr(x) do
+      quote do
+        let result = unquote(x) | result * 2
+      end
+    end
+    | wrap_expr(5)
+    ",
     vec![RuntimeValue::Number(0.into())],
-    Ok(vec![RuntimeValue::String("is none".to_string())].into()))]
-#[case::match_type_function(r#"
-    match (fn(x): 1;):
-      | :function: "is function"
-      | _: "other"
-    end"#,
+    Ok(vec![RuntimeValue::Number(10.into())].into()))]
+#[case::macro_quote_with_function("
+    macro define_double() do
+        quote: def double(x): x * 2 end
+    end
+    | define_double() | double(7)
+    ",
     vec![RuntimeValue::Number(0.into())],
-    Ok(vec![RuntimeValue::String("is function".to_string())].into()))]
-#[case::match_array_pattern(r#"
-    match ([1, 2]):
-      | [1, 2]: "matched"
-      | [2, 1]: "not matched"
-      | _: "other"
-    end"#,
+    Ok(vec![RuntimeValue::Number(14.into())].into()))]
+#[case::macro_quote_nested("
+    macro compute(a, b) do
+        quote: unquote(a) + unquote(b) * 2
+    end
+    | compute(10, 5)
+    ",
     vec![RuntimeValue::Number(0.into())],
-    Ok(vec![RuntimeValue::String("matched".to_string())].into()))]
-#[case::match_array_pattern_with_rest(r#"
-    match ([1, 2]):
-      | [1, ..rest]: "matched"
-      | [1, 3]: "not matched"
-      | _: "other"
-    end"#,
+    Ok(vec![RuntimeValue::Number(20.into())].into()))]
+#[case::macro_quote_with_if("
+    macro conditional_expr(x) do
+        quote: if(unquote(x) > 10): \"large\" else: \"small\"
+    end
+    | conditional_expr(15)
+    ",
     vec![RuntimeValue::Number(0.into())],
-    Ok(vec![RuntimeValue::String("matched".to_string())].into()))]
-#[case::dynamic_call_simple("
-          let f = {f: fn(x): x + 1;}
-          | f[:f](41)
-          ",
-          vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Number(42.into())].into()))]
-#[case::qualified_access_to_module("
-module math:
-  let y = 1
-  | def add_one(x):
-    x + y;
-  def add_two(x):
-    x + y + 1;
-end
-| math::add_one(41) + math::add_two(40)",
-          vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Number(84.into())].into()))]
-#[case::qualified_access_to_nested_module("
-module math:
-  module operations:
-    def add_one(x):
-      x + 1;
-    def add_two(x):
-      x + 2;
-  end
-end
-| math::operations::add_one(41) + math::operations::add_two(40)",
-          vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Number(84.into())].into()))]
-fn test_eval_with_opt(
-    mut engine_with_opt: Engine,
-    #[case] program: &str,
-    #[case] input: Vec<RuntimeValue>,
-    #[case] expected: MqResult,
-) {
-    assert_eq!(engine_with_opt.eval(program, input.into_iter()), expected);
+    Ok(vec![RuntimeValue::String("large".to_string())].into()))]
+#[case::macro_quote_preserve_structure("
+    macro make_array(a, b, c) do
+        quote: [unquote(a), unquote(b), unquote(c)]
+    end
+    | make_array(1, 2, 3)
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])].into()))]
+#[case::macro_quote_with_let_outside("
+    macro test(x) do
+        let y = x + 1 |
+        quote: unquote(y) * 2
+    end
+    | test(5)
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Number(12.into())].into()))]
+#[case::macro_quote_mixed_code("
+    macro compute(x) do
+        let a = x * 2 |
+        let b = x + 10 |
+        quote: unquote(a) + unquote(b)
+    end
+    | compute(5)
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Number(25.into())].into()))]
+#[case::macro_quote_variable_reference("
+    macro make_computation(x) do
+        let base = x |
+        | quote: unquote(base) * 3 + unquote(x)
+    end
+    | make_computation(4)
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Number(16.into())].into()))]
+#[case::default_params_with_all_args1(r#"
+    def greet(name, greeting="Hello"): greeting + " " + name; | greet("Alice")"#,
+    vec!["test".into()],
+    Ok(vec!["Hello Alice".into()].into()))]
+#[case::default_params_with_all_args2(r#"
+    def greet(name, greeting="Hello"): greeting + " " + name; | greet("Alice", "Hi")"#,
+    vec!["test".into()],
+    Ok(vec!["Hi Alice".into()].into()))]
+#[case::default_params_with_self(r#"
+    def greet(name, greeting="Hello"): greeting + " " + name; | greet()"#,
+    vec!["Alice".into()],
+    Ok(vec!["Hello Alice".into()].into()))]
+#[case::default_params_with_expr(r#"
+    def greet(name, greeting="Hello" + " Hi"): greeting + " " + name; | greet()"#,
+    vec!["Alice".into()],
+    Ok(vec!["Hello Hi Alice".into()].into()))]
+fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
+    assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
 
 #[rstest]
@@ -1832,8 +1882,20 @@ fn test_eval_with_opt(
 #[case::dict_get_wrong_arg_count("let m = new_dict() | get(m)", vec![RuntimeValue::Number(0.into())],)]
 #[case::dict_set_wrong_arg_count("let m = new_dict() | set(m, \"key\")", vec![RuntimeValue::Number(0.into())],)]
 #[case::assign_to_immutable("let x = 10 | x = 20", vec![RuntimeValue::Number(0.into())],)]
-fn test_eval_error(mut engine_no_opt: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>) {
-    assert!(engine_no_opt.eval(program, input.into_iter()).is_err());
+#[case::macro_undefined("undefined_macro(5)", vec![RuntimeValue::Number(0.into())],)]
+#[case::macro_arity_mismatch_too_few("
+    macro add_two(a, b):
+        a + b;
+    | add_two(1)
+    ", vec![RuntimeValue::Number(0.into())],)]
+#[case::macro_arity_mismatch_too_many("
+    macro double(x):
+        x + x;
+    | double(1, 2, 3)
+    ", vec![RuntimeValue::Number(0.into())],)]
+#[case::unquote_outside_quote("unquote(5)", vec![RuntimeValue::Number(0.into())],)]
+fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>) {
+    assert!(engine.eval(program, input.into_iter()).is_err());
 }
 
 #[cfg(feature = "ast-json")]

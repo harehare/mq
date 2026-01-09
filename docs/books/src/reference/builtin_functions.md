@@ -62,6 +62,7 @@
 | `is_array` |  Checks if input is an array | `a` | is_array(a) |
 | `is_bool` |  Checks if input is a boolean | `b` | is_bool(b) |
 | `is_code` |  Checks if markdown is code block | `md` | is_code(md) |
+| `is_debug_mode` | Checks if the runtime is currently in debug mode, returning true if a debugger is attached. |  | is_debug_mode() |
 | `is_dict` |  Checks if input is a dictionary | `d` | is_dict(d) |
 | `is_em` |  Checks if markdown is emphasis | `md` | is_em(md) |
 | `is_empty` |  Checks if string, array or dict is empty | `s` | is_empty(s) |
@@ -110,6 +111,7 @@
 | `now` | Returns the current timestamp. |  | now() |
 | `numbers` |  Returns number if input is number, None otherwise | `n` | numbers(n) |
 | `or` | Performs a logical OR operation on two boolean values. | `value1`, `value2` | or(value1, value2) |
+| `pluck` |  Extracts values from an array of objects based on a specified selector. | `pluck_obj`, `selector` | pluck(pluck_obj, selector) |
 | `pow` | Raises the base to the power of the exponent. | `base`, `exponent` | pow(base, exponent) |
 | `print` | Prints a message to standard output and returns the current value. | `message` | print(message) |
 | `range` | Creates an array from start to end with an optional step. | `start`, `end`, `step` | range(start, end, step) |
@@ -143,6 +145,7 @@
 | `sub` | Subtracts the second value from the first value. | `value1`, `value2` | sub(value1, value2) |
 | `take` |  Takes the first n elements of an array | `arr`, `n` | take(arr, n) |
 | `take_while` |  Takes elements from the beginning of an array while the provided function returns true | `arr`, `f` | take_while(arr, f) |
+| `tap` |  Applies a function to a value and returns the value (useful for debugging or side effects). | `tap_value`, `tap_expr` | tap(tap_value, tap_expr) |
 | `test` |  Tests if string matches a pattern | `s`, `pattern` | test(s, pattern) |
 | `to_array` | Converts the given value to an array. | `value` | to_array(value) |
 | `to_code` | Creates a markdown code block with the given value and language. | `value`, `language` | to_code(value, language) |
@@ -176,6 +179,8 @@
 | `type` | Returns the type of the given value. | `value` | type(value) |
 | `uniq` | Removes duplicate elements from the given array. | `array` | uniq(array) |
 | `unique_by` |  Returns a new array with duplicate elements removed, comparing by the result of the provided function. | `arr`, `f` | unique_by(arr, f) |
+| `unless` |  Executes the expression only if the condition is false. | `unless_cond`, `unless_expr` | unless(unless_cond, unless_expr) |
+| `until` |  Executes the expression repeatedly until the condition is true. | `until_cond`, `until_expr` | until(until_cond, until_expr) |
 | `upcase` | Converts the given string to uppercase. | `input` | upcase(input) |
 | `update` | Update the value with specified value. | `target_value`, `source_value` | update(target_value, source_value) |
 | `url_encode` | URL-encodes the given string. | `input` | url_encode(input) |

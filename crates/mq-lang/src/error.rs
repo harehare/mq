@@ -186,6 +186,15 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::InvalidAssignmentTarget(_)) => Some(Cow::Borrowed(
                 "Invalid assignment target. Ensure you're assigning to a valid variable or property.",
             )),
+            InnerError::Syntax(SyntaxError::MacroParamsMustBeIdents(_)) => Some(Cow::Borrowed(
+                "Macro parameters must be identifiers. Check your macro definition.",
+            )),
+            InnerError::Syntax(SyntaxError::ParameterWithoutDefaultAfterDefault(_)) => Some(Cow::Borrowed(
+                "Parameters with default values must come after all parameters without defaults.",
+            )),
+            InnerError::Syntax(SyntaxError::MacroParametersCannotHaveDefaults(_)) => {
+                Some(Cow::Borrowed("Macro parameters cannot have default values."))
+            }
             InnerError::Runtime(RuntimeError::UserDefined { .. }) => {
                 Some(Cow::Borrowed("A user-defined error occurred during evaluation."))
             }
@@ -213,9 +222,14 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::InvalidTypes { .. }) => {
                 Some(Cow::Borrowed("Type mismatch. Check the types of your operands."))
             }
-            InnerError::Runtime(RuntimeError::InvalidNumberOfArguments(_, _, expected, actual)) => Some(Cow::Owned(
-                format!("Invalid number of arguments: expected {expected}, got {actual}."),
-            )),
+            InnerError::Runtime(RuntimeError::InvalidNumberOfArguments {
+                token: _,
+                name: _,
+                expected,
+                actual,
+            }) => Some(Cow::Owned(format!(
+                "Invalid number of arguments: expected {expected}, got {actual}."
+            ))),
             InnerError::Runtime(RuntimeError::InvalidRegularExpression(_, _)) => Some(Cow::Borrowed(
                 "Invalid regular expression. Please check your regex syntax.",
             )),
@@ -238,6 +252,12 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::Continue) => None,
             InnerError::Runtime(RuntimeError::EnvNotFound(..)) => {
                 Some(Cow::Borrowed("Environment variable not found during evaluation."))
+            }
+            InnerError::Runtime(RuntimeError::QuoteNotAllowedInRuntimeContext(_)) => Some(Cow::Borrowed(
+                "quote() is not allowed in runtime context. It should only appear inside macros.",
+            )),
+            InnerError::Runtime(RuntimeError::UnquoteNotAllowedOutsideQuote(_)) => {
+                Some(Cow::Borrowed("unquote() can only be used inside quote()."))
             }
             InnerError::Module(ModuleError::NotFound(name)) => Some(Cow::Owned(format!(
                 "Module '{name}' not found. Check the module name or path."
@@ -276,6 +296,30 @@ impl Diagnostic for Error {
                 Some(Cow::Borrowed("Parse error in module: unknown selector used."))
             }
             InnerError::Module(ModuleError::InvalidModule) => Some(Cow::Borrowed("Invalid module format or content.")),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParamsMustBeIdents(_))) => Some(
+                Cow::Borrowed("Parse error in module: macro parameters must be identifiers."),
+            ),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ParameterWithoutDefaultAfterDefault(_))) => Some(
+                Cow::Borrowed("Parse error in module: parameters with defaults must come after parameters without."),
+            ),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotHaveDefaults(_))) => Some(
+                Cow::Borrowed("Parse error in module: macro parameters cannot have default values."),
+            ),
+            InnerError::Runtime(RuntimeError::UndefinedMacro(_)) => {
+                Some(Cow::Borrowed("Macro expansion error: undefined macro used."))
+            }
+            InnerError::Runtime(RuntimeError::ArityMismatch { .. }) => {
+                Some(Cow::Borrowed("Macro expansion error: macro arity mismatch."))
+            }
+            InnerError::Runtime(RuntimeError::RecursionLimit) => {
+                Some(Cow::Borrowed("Macro expansion error: recursion limit exceeded."))
+            }
+            InnerError::Runtime(RuntimeError::InvalidMacroResultAst(_)) => {
+                Some(Cow::Borrowed("Invalid macro result AST during macro expansion."))
+            }
+            InnerError::Runtime(RuntimeError::InvalidMacroResult(_)) => Some(Cow::Borrowed(
+                "Invalid macro result: expected AST value during macro body evaluation.",
+            )),
         };
 
         msg.map(|m| Box::new(m) as Box<dyn std::fmt::Display>)
@@ -410,11 +454,11 @@ mod test {
         "source code"
     )]
     #[case::eval_invalid_number_of_arguments(
-        InnerError::Runtime(RuntimeError::InvalidNumberOfArguments(Token {
+        InnerError::Runtime(RuntimeError::InvalidNumberOfArguments{token: Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }, "".to_string(), 1, 1)),
+        }, name: "".to_string(), expected: 1, actual:1}),
         "source code"
     )]
     #[case::eval_invalid_regular_expression(
@@ -634,11 +678,11 @@ mod test {
         })
     )]
     #[case::eval_invalid_number_of_arguments(
-        InnerError::Runtime(RuntimeError::InvalidNumberOfArguments(Token {
+        InnerError::Runtime(RuntimeError::InvalidNumberOfArguments{token: Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }, "func".to_string(), 2, 1))
+        }, name: "func".to_string(), expected: 2, actual: 1})
     )]
     #[case::eval_invalid_regular_expression(
         InnerError::Runtime(RuntimeError::InvalidRegularExpression(Token {

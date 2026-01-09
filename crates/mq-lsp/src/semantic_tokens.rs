@@ -71,6 +71,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 | mq_hir::SymbolKind::If
                 | mq_hir::SymbolKind::Include(_)
                 | mq_hir::SymbolKind::Keyword
+                | mq_hir::SymbolKind::Loop
                 | mq_hir::SymbolKind::None
                 | mq_hir::SymbolKind::Block
                 | mq_hir::SymbolKind::Try
@@ -79,7 +80,9 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 | mq_hir::SymbolKind::Import(_)
                 | mq_hir::SymbolKind::Module(_)
                 | mq_hir::SymbolKind::While => token_type(ls_types::SemanticTokenType::KEYWORD),
-                mq_hir::SymbolKind::Function(_) => token_type(ls_types::SemanticTokenType::FUNCTION),
+                mq_hir::SymbolKind::Function(_) | mq_hir::SymbolKind::Macro(_) => {
+                    token_type(ls_types::SemanticTokenType::FUNCTION)
+                }
                 mq_hir::SymbolKind::Number => token_type(ls_types::SemanticTokenType::NUMBER),
                 mq_hir::SymbolKind::Parameter => token_type(ls_types::SemanticTokenType::PARAMETER),
                 mq_hir::SymbolKind::Ref => token_type(ls_types::SemanticTokenType::VARIABLE),

@@ -64,76 +64,6 @@ fn eval_nodes() -> mq_lang::RuntimeValues {
 }
 
 #[divan::bench]
-fn eval_boolean_folding() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine
-        .eval(
-            r#"
-            let t = true
-            | let f = false
-            | let r1 = t && f
-            | let r2 = t || f
-            | let r3 = !t
-            | let r4 = !f
-            | let r5 = (t && !f) || (!t && f)
-            | r5
-            "#, // No semicolons between lets, final variable is the result
-            vec!["".into()].into_iter(),
-        )
-        .unwrap()
-}
-
-#[divan::bench]
-fn eval_comparison_folding() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine
-        .eval(
-            r#"
-            let n1 = 10
-            | let n2 = 20
-            | let n3 = 10
-            | let s1 = "apple"
-            | let s2 = "banana"
-            | let s3 = "apple"
-
-            | let r1 = eq(n1, n2)
-            | let r2 = ne(n1, n2)
-            | let r3 = gt(n2, n1)
-            | let r4 = gte(n1, n3)
-            | let r5 = lt(n1, n2)
-            | let r6 = lte(n3, n1)
-
-            | let r7 = eq(s1, s2)
-            | let r8 = ne(s1, s3)
-
-            | and(and(and(and(and(and(not(r1), r2), r3), r4), r5), r6), not(r8))
-            "#, // No semicolons between lets, final expression is the result
-            vec!["".into()].into_iter(),
-        )
-        .unwrap()
-}
-
-#[divan::bench]
-fn eval_dead_code_elimination_benchmark() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine
-        .eval(
-            r#"
-            let unused_num = 100
-            | let used_num1 = 200
-            | let unused_str = "hello"
-            | let used_num2 = add(used_num1, 50)
-            | let unused_bool = true
-            | let unused_calc = mul(unused_num, 2)
-            | let used_str = "world"
-            | add(used_num2, len(used_str))
-            "#, // No semicolons between lets, final expression is the result
-            vec!["".into()].into_iter(),
-        )
-        .unwrap()
-}
-
-#[divan::bench]
 fn parse_fibonacci() -> Vec<Shared<mq_lang::AstNode>> {
     let token_arena = Shared::new(SharedCell::new(mq_lang::Arena::new(100)));
     mq_lang::parse(
@@ -231,6 +161,258 @@ let a1 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1"
 | a7 == a1 |  a7 == a2 |  a7 == a3 |  a7 == a4 |  a7 == a5 |  a7 == a6 |  a7 == a7 |  a7 == a8
 | a8 == a1 |  a8 == a2 |  a8 == a3 |  a8 == a4 |  a8 == a5 |  a8 == a6 |  a8 == a7 |  a8 == a8
 "#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_macro_expansion_simple() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine
+        .eval(
+            r#"macro repeat(x): x + x + x + x + x | repeat(5)"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_macro_expansion_nested() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine
+        .eval(
+            r#"macro double(x): x + x | macro quad(x): double(x) + double(x) | quad(5)"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_no_macro_large_program() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine
+        .eval(
+            r#"
+let a = 1 | let b = 2 | let c = 3 | let d = 4 | let e = 5
+| let f = 6 | let g = 7 | let h = 8 | let i = 9 | let j = 10
+| let k = 11 | let l = 12 | let m = 13 | let n = 14 | let o = 15
+| a + b + c + d + e + f + g + h + i + j + k + l + m + n + o
+"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+// Array/Collection Operations Benchmarks
+
+#[divan::bench()]
+fn eval_array_map() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"range(0, 1000, 1) | map(fn(x): x * 2;)"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_array_filter() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"range(0, 1000, 1) | filter(fn(x): x % 2 == 0;)"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_array_fold() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"def sum(acc, x): add(acc, x); | fold(range(0, 100, 1), 0, sum)"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_array_chained_operations() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"range(0, 500, 1) | filter(fn(x): x % 2 == 0;) | map(fn(x): x * 3;) | filter(fn(x): x > 100;)"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+// Object/Hash Access Benchmarks
+
+#[divan::bench()]
+fn eval_object_field_access() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"let obj = dict()
+            | let obj = set(obj, "a", 1) | let obj = set(obj, "b", 2) | let obj = set(obj, "c", 3)
+            | let obj = set(obj, "d", 4) | let obj = set(obj, "e", 5)
+            | foreach(i, range(0, 100, 1)): add(add(add(add(get(obj, "a"), get(obj, "b")), get(obj, "c")), get(obj, "d")), get(obj, "e"));"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_nested_object_access() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"let inner = dict() | let inner = set(inner, "value", 42)
+            | let middle = dict() | let middle = set(middle, "inner", inner)
+            | let outer = dict() | let outer = set(outer, "middle", middle)
+            | let obj = dict() | let obj = set(obj, "outer", outer)
+            | foreach(i, range(0, 100, 1)): get(get(get(get(obj, "outer"), "middle"), "inner"), "value");"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+// Function Call Overhead Benchmarks
+
+#[divan::bench()]
+fn eval_function_call_overhead() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine
+        .eval(
+            r#"def identity(x): x; | foreach(i, range(0, 1000, 1)): identity(i);"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_nested_function_calls() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine
+        .eval(
+            r#"def add1(x): x + 1; | def add2(x): add1(add1(x)); | def add4(x): add2(add2(x));
+            | foreach(i, range(0, 100, 1)): add4(i);"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+// Pipeline Processing Benchmarks
+
+#[divan::bench()]
+fn eval_long_pipeline() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"range(0, 100, 1)
+            | map(fn(x): x + 1;)
+            | map(fn(x): x * 2;)
+            | map(fn(x): x - 3;)
+            | map(fn(x): x + 4;)
+            | map(fn(x): x * 5;)
+            | map(fn(x): x - 6;)
+            | map(fn(x): x + 7;)
+            | map(fn(x): x * 8;)"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_pipeline_with_conditionals() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"range(0, 100, 1)
+            | map(fn(x): if (x % 2 == 0): x * 2 else: x + 1;)
+            | filter(fn(x): x > 50;)
+            | map(fn(x): if (x % 3 == 0): x / 3 else: x;)"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+// Real-World Markdown Processing Benchmarks
+
+#[divan::bench()]
+fn eval_large_markdown_filtering() -> mq_lang::RuntimeValues {
+    let markdown_content = (0..100)
+        .map(|i| format!("# Heading {}\n\nSome content here.\n\n- Item 1\n- Item 2\n- Item 3\n\n## Subheading {}\n\nMore content.\n\n", i, i))
+        .collect::<String>();
+    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str(&markdown_content).unwrap();
+    let input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from);
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.eval(".h | nodes", input.into_iter()).unwrap()
+}
+
+#[divan::bench()]
+fn eval_markdown_complex_query() -> mq_lang::RuntimeValues {
+    let markdown_content = (0..50)
+        .map(|i| format!("# Heading {}\n\n**Bold text** and *italic text*.\n\n- Item 1\n- Item 2\n\n```rust\nfn main() {{\n    println!(\"Hello\");\n}}\n```\n\n", i))
+        .collect::<String>();
+    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str(&markdown_content).unwrap();
+    let input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from);
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            ".h1 | nodes | map(upcase) | filter(fn(x): contains(x, \"HEADING\");)",
+            input.into_iter(),
+        )
+        .unwrap()
+}
+
+// Variable Assignment and Access Benchmarks
+
+#[divan::bench()]
+fn eval_variable_assignment_chain() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine
+        .eval(
+            r#"foreach(i, range(0, 100, 1)):
+            let a = i | let b = a + 1 | let c = b + 2 | let d = c + 3 | let e = d + 4
+            | a + b + c + d + e;"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+// Conditional Execution Benchmarks
+
+#[divan::bench()]
+fn eval_if_else_branching() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"def classify(x):
+              if (x % 5 == 0):
+                x * 5
+              elif (x % 3 == 0):
+                x * 3
+              elif (x % 2 == 0):
+                x * 2
+              else:
+                x;
+            | map(range(0, 500, 1), classify)"#,
             vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
         )
         .unwrap()

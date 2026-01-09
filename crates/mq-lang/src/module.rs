@@ -9,7 +9,6 @@ use crate::{
         error::ModuleError,
         resolver::{LocalFsModuleResolver, ModuleResolver},
     },
-    optimizer::{OptimizationLevel, Optimizer},
 };
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
@@ -40,6 +39,7 @@ pub struct Module {
     pub functions: Program,
     pub modules: Program,
     pub vars: Program,
+    pub macros: Program,
 }
 
 impl Module {
@@ -128,8 +128,6 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_name.to_string())));
         }
 
-        Optimizer::with_level(OptimizationLevel::InlineOnly).optimize(program);
-
         let modules = program
             .iter()
             .filter(|node| {
@@ -143,17 +141,23 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
         let functions = program
             .iter()
-            .filter(|node| matches!(*node.expr, ast::Expr::Def(_, _, _)))
+            .filter(|node| matches!(*node.expr, ast::Expr::Def(..)))
             .cloned()
             .collect::<Vec<_>>();
 
         let vars = program
             .iter()
-            .filter(|node| matches!(*node.expr, ast::Expr::Let(_, _)))
+            .filter(|node| matches!(*node.expr, ast::Expr::Let(..)))
             .cloned()
             .collect::<Vec<_>>();
 
-        let expected_len = functions.len() + modules.len() + vars.len();
+        let macros = program
+            .iter()
+            .filter(|node| matches!(*node.expr, ast::Expr::Macro(..)))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let expected_len = functions.len() + modules.len() + vars.len() + macros.len();
 
         if program.len() != expected_len {
             return Err(ModuleError::InvalidModule);
@@ -166,6 +170,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             functions,
             modules,
             vars,
+            macros,
         })
     }
 
@@ -238,7 +243,7 @@ mod tests {
 
     use crate::{
         Shared, SharedCell, Token, TokenKind,
-        ast::node::{self as ast, IdentWithToken},
+        ast::node::{self as ast, IdentWithToken, Param},
         module::LocalFsModuleResolver,
         range::{Position, Range},
     };
@@ -265,6 +270,7 @@ mod tests {
                 }))),
                 Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::String("value".to_string())))})
             ))})],
+        macros: Vec::new(),
     }))]
     #[case::load3("def test(): 1;".to_string(), Ok(Module{
         name: "test".to_string(),
@@ -282,6 +288,7 @@ mod tests {
             ]
             ))})],
         vars: Vec::new(),
+        macros: Vec::new(),
     }))]
     #[case::load4("def test(a, b): add(a, b);".to_string(), Ok(Module{
         name: "test".to_string(),
@@ -290,24 +297,18 @@ mod tests {
             Shared::new(ast::Node{token_id: 0.into(), expr: Shared::new(ast::Expr::Def(
                 IdentWithToken::new_with_token("test", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()}))),
                 smallvec![
-                    Shared::new(ast::Node{token_id: 1.into(), expr:
-                        Shared::new(
-                            ast::Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()})))
-                        ))}),
-                    Shared::new(ast::Node{token_id: 2.into(), expr:
-                        Shared::new(
-                            ast::Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()})))
-                        ))})
+                    Param::new(IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()})))),
+                    Param::new(IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()})))),
                 ],
                 vec![
-                    Shared::new(ast::Node{token_id: 6.into(), expr: Shared::new(ast::Expr::Call(
+                    Shared::new(ast::Node{token_id: 4.into(), expr: Shared::new(ast::Expr::Call(
                     IdentWithToken::new_with_token("add", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("add")), range: Range{start: Position{line: 1, column: 17}, end: Position{line: 1, column: 20}}, module_id: 1.into()}))),
                     smallvec![
-                        Shared::new(ast::Node{token_id: 4.into(),
+                        Shared::new(ast::Node{token_id: 2.into(),
                             expr: Shared::new(
                                 ast::Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 21}, end: Position{line: 1, column: 22}}, module_id: 1.into()}))))
                                 )}),
-                        Shared::new(ast::Node{token_id: 5.into(),
+                        Shared::new(ast::Node{token_id: 3.into(),
                             expr: Shared::new(
                                 ast::Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 24}, end: Position{line: 1, column: 25}}, module_id: 1.into()}))))
                             )})
@@ -315,6 +316,7 @@ mod tests {
                 ))})]
             ))})],
         vars: Vec::new(),
+        macros: Vec::new(),
     }))]
     fn test_load(
         token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
@@ -333,6 +335,7 @@ mod tests {
         functions: Vec::new(),
         modules: Vec::new(), // Assuming the csv.mq only contains definitions or is empty for this test
         vars: Vec::new(),
+        macros: Vec::new(),
     }))]
     fn test_load_standard_module(
         token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,

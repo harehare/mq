@@ -2226,6 +2226,17 @@ define_builtin!(
     }
 );
 
+define_builtin!(IS_DEBUG_MODE, ParamNum::None, |_, _, _, _| {
+    #[cfg(feature = "debugger")]
+    {
+        Ok(RuntimeValue::TRUE)
+    }
+    #[cfg(not(feature = "debugger"))]
+    {
+        Ok(RuntimeValue::FALSE)
+    }
+});
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2293,6 +2304,7 @@ const HASH_INDEX: u64 = fnv1a_hash_64("index");
 const HASH_INSERT: u64 = fnv1a_hash_64("insert");
 const HASH_INFINITE: u64 = fnv1a_hash_64("infinite");
 const HASH_INPUT: u64 = fnv1a_hash_64("input");
+const HASH_IS_DEBUG_MODE: u64 = fnv1a_hash_64("is_debug_mode");
 const HASH_IS_NAN: u64 = fnv1a_hash_64("is_nan");
 const HASH_JOIN: u64 = fnv1a_hash_64("join");
 const HASH_KEYS: u64 = fnv1a_hash_64("keys");
@@ -2411,6 +2423,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_INCREASE_HEADER_LEVEL => Some(&INCREASE_HEADER_LEVEL),
         HASH_INDEX => Some(&INDEX),
         HASH_INFINITE => Some(&INFINITE),
+        HASH_IS_DEBUG_MODE => Some(&IS_DEBUG_MODE),
         HASH_IS_NAN => Some(&IS_NAN),
         HASH_INSERT => Some(&INSERT),
         HASH_INPUT => Some(&INPUT),
@@ -2846,6 +2859,13 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
             params: &["markdown_node"],
             },
         );
+    map.insert(
+        SmolStr::new("is_debug_mode"),
+        BuiltinFunctionDoc {
+            description: "Checks if the runtime is currently in debug mode, returning true if a debugger is attached.",
+            params: &[],
+        },
+    );
     map
 });
 
@@ -3548,13 +3568,6 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
-            SmolStr::new(constants::BREAKPOINT),
-            BuiltinFunctionDoc {
-            description: "Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.",
-            params: &[],
-            },
-        );
-    map.insert(
         SmolStr::new("negate"),
         BuiltinFunctionDoc {
             description: "Returns the negation of the given number.",
@@ -3631,6 +3644,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &["symbol_or_string"],
         },
     );
+    map.insert(
+        SmolStr::new(constants::BREAKPOINT),
+        BuiltinFunctionDoc {
+            description: "Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.",
+            params: &[],
+            },
+    );
 
     map
 });
@@ -3702,12 +3722,12 @@ impl Error {
                 name: name.clone(),
                 args: args.iter().map(|o| format!("{:?}", o).into()).collect::<Vec<_>>(),
             },
-            Error::InvalidNumberOfArguments(name, expected, got) => RuntimeError::InvalidNumberOfArguments(
-                (*get_token(token_arena, node.token_id)).clone(),
-                name.clone(),
-                *expected,
-                *got,
-            ),
+            Error::InvalidNumberOfArguments(name, expected, got) => RuntimeError::InvalidNumberOfArguments {
+                token: (*get_token(token_arena, node.token_id)).clone(),
+                name: name.clone(),
+                expected: *expected,
+                actual: *got,
+            },
             Error::InvalidRegularExpression(regex) => {
                 RuntimeError::InvalidRegularExpression((*get_token(token_arena, node.token_id)).clone(), regex.clone())
             }
@@ -3722,7 +3742,6 @@ impl Error {
         }
     }
 }
-
 #[inline(always)]
 pub fn eval_builtin(
     runtime_value: &RuntimeValue,
@@ -3855,7 +3874,6 @@ fn url_encode(input: &str) -> Result<RuntimeValue, Error> {
     ))
 }
 
-#[inline(always)]
 fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
     let mut cache = REGEX_CACHE.lock().unwrap();
     if let Some(re) = cache.get(pattern) {
@@ -3876,7 +3894,6 @@ fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
     }
 }
 
-#[inline(always)]
 fn replace_re(input: &str, pattern: &str, replacement: &str) -> Result<RuntimeValue, Error> {
     let mut cache = REGEX_CACHE.lock().unwrap();
     if let Some(re) = cache.get(pattern) {
@@ -3906,7 +3923,6 @@ fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
     }
 }
 
-#[inline(always)]
 fn generate_numeric_range(start: isize, end: isize, step: isize) -> Result<Vec<RuntimeValue>, Error> {
     if step == 0 {
         return Err(Error::Runtime("step for range must not be zero".to_string()));
@@ -3946,7 +3962,6 @@ fn generate_numeric_range(start: isize, end: isize, step: isize) -> Result<Vec<R
     Ok(result)
 }
 
-#[inline(always)]
 fn generate_char_range(start_char: char, end_char: char, step: Option<i32>) -> Result<Vec<RuntimeValue>, Error> {
     let step = step.unwrap_or(if start_char <= end_char { 1 } else { -1 });
 
@@ -3993,7 +4008,6 @@ fn generate_char_range(start_char: char, end_char: char, step: Option<i32>) -> R
     Ok(result)
 }
 
-#[inline(always)]
 fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>, Error> {
     if start.len() != end.len() {
         return Err(Error::Runtime(
@@ -4054,7 +4068,6 @@ fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>
     Ok(result)
 }
 
-#[inline(always)]
 fn flatten(args: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
     let mut result = Vec::new();
     for arg in args {

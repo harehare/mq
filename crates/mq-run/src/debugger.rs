@@ -9,7 +9,7 @@ use rustyline::{
     hint::Hinter,
     validate::{ValidationContext, ValidationResult, Validator},
 };
-use std::{borrow::Cow, cmp::max, fmt};
+use std::{borrow::Cow, cmp::max, fmt, fs};
 use strum::IntoEnumIterator;
 
 type LineNo = usize;
@@ -141,6 +141,12 @@ impl mq_lang::DebuggerHandler for DebuggerHandler {
     }
 }
 
+pub fn config_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("MQ_CONFIG_DIR")
+        .map(std::path::PathBuf::from)
+        .or_else(|| dirs::config_dir().map(|d| d.join("mq")))
+}
+
 impl DebuggerHandler {
     pub fn new(engine: mq_lang::DefaultEngine) -> Self {
         Self { engine }
@@ -165,6 +171,16 @@ impl DebuggerHandler {
             KeyEvent(KeyCode::Right, Modifiers::CTRL),
             Cmd::Move(Movement::ForwardWord(1, At::AfterEnd, Word::Big)),
         );
+
+        let config_dir = config_dir();
+
+        if let Some(config_dir) = &config_dir {
+            let history = config_dir.join("dbg_history.txt");
+            fs::create_dir_all(config_dir).ok();
+            if editor.load_history(&history).is_err() {
+                println!("No previous history.");
+            }
+        }
 
         let (start, snippet) = self.get_source_code_with_context(context, context.token.range.start.line as usize, 5);
         Self::print_source_code(start, context.token.range.start.line as usize + 1, snippet);
@@ -240,6 +256,8 @@ impl DebuggerHandler {
                             continue;
                         }
                     };
+
+                    editor.add_history_entry(&expr).unwrap();
 
                     let lines = values
                         .values()
