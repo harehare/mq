@@ -171,9 +171,7 @@ end
 
 # Parses a JSON string and returns the corresponding data structure.
 def json_parse(input):
-  if (!is_string(input)):
-    error("Input must be a string.")
-  | let data = _parse_json_value(input)
+  let data = _parse_json_value(to_string(input))
   | data[0]
 end
 

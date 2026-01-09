@@ -82,9 +82,7 @@ def _split_csv_lines(input):
 end
 
 def _parse_csv_content(input, delimiter, has_header):
-  if (!is_string(input)):
-    error("Input must be a string.")
-  | let lines = _split_csv_lines(input)
+  let lines = _split_csv_lines(to_string(input))
   | let parse_line = fn(line): _parse_csv_line(line, delimiter);
   | let parsed_lines = map(lines, parse_line)
   | let headers = if (has_header && len(parsed_lines) > 0): first(parsed_lines) else: None
