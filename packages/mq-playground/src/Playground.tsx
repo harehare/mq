@@ -184,6 +184,25 @@ println!("Hello, World!");
         isUpdate: false,
         format: "markdown",
       },
+      {
+        name: "Extract all languages",
+        code: `nodes | pluck(.code.lang)`,
+        markdown: `# Sample codes
+\`\`\`js
+console.log("Hello, World!");
+\`\`\`
+
+\`\`\`python
+print("Hello, World!")
+\`\`\`
+
+\`\`\`rust
+println!("Hello, World!");
+\`\`\`
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
     ],
   },
   {

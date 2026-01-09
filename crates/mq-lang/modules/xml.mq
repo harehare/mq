@@ -209,7 +209,7 @@ end
 
 # Parses an XML string and returns the corresponding data structure.
 def xml_parse(input):
-  let input = gsub(input, "(?s)<!--.*?-->", "")
+  let input = gsub(to_string(input), "(?s)<!--.*?-->", "")
   | let result = _parse_xml_element(input)
   | result[0]
 end

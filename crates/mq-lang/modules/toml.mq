@@ -406,7 +406,7 @@ end
 
 # Parses a TOML string and returns the parsed data structure.
 def toml_parse(input):
-  _parse_toml_content(input)
+  _parse_toml_content(to_string(input))
 end
 
 # Converts a data structure to a TOML string representation.
