@@ -141,7 +141,7 @@ impl Node {
             }
             Expr::Def(name, params, program) => {
                 write!(buf, "def {}(", name).unwrap();
-                format_params(params, buf);
+                format_params(params, buf, indent);
                 buf.push(')');
                 if needs_block_syntax(program) {
                     format_program_block(program, buf, indent);
@@ -152,7 +152,7 @@ impl Node {
             }
             Expr::Fn(params, program) => {
                 buf.push_str("fn(");
-                format_params(params, buf);
+                format_params(params, buf, indent);
                 buf.push(')');
                 if needs_block_syntax(program) {
                     format_program_block(program, buf, indent);
@@ -205,7 +205,7 @@ impl Node {
             }
             Expr::Macro(name, params, body) => {
                 write!(buf, "macro {}(", name).unwrap();
-                format_params(params, buf);
+                format_params(params, buf, indent);
                 buf.push_str("): ");
                 body.format_to_code(buf, indent);
             }
@@ -309,13 +309,17 @@ fn format_args(args: &Args, buf: &mut String, indent: usize) {
 }
 
 /// Formats function parameters as comma-separated list
-fn format_params(params: &Params, buf: &mut String) {
+fn format_params(params: &Params, buf: &mut String, indent: usize) {
     for (i, param) in params.iter().enumerate() {
         if i > 0 {
             buf.push_str(", ");
         }
 
-        write!(buf, "{}", param).unwrap();
+        write!(buf, "{}", param.ident).unwrap();
+        if let Some(default) = &param.default {
+            buf.push_str(" = ");
+            default.format_to_code(buf, indent);
+        }
     }
 }
 
@@ -685,6 +689,38 @@ mod tests {
         ),
         "def add(x, y): 1"
     )]
+    #[case::with_default_value(
+        Expr::Def(
+            IdentWithToken::new("greet"),
+            smallvec![
+                Param::new(IdentWithToken::new("name")),
+                Param::with_default(
+                    IdentWithToken::new("greeting"),
+                    Some(Shared::new(create_node(Expr::Literal(Literal::String("Hello".to_string())))))
+                )
+            ],
+            vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
+        ),
+        r#"def greet(name, greeting = "Hello"): 1"#
+    )]
+    #[case::with_multiple_defaults(
+        Expr::Def(
+            IdentWithToken::new("foo"),
+            smallvec![
+                Param::new(IdentWithToken::new("a")),
+                Param::with_default(
+                    IdentWithToken::new("b"),
+                    Some(Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0))))))
+                ),
+                Param::with_default(
+                    IdentWithToken::new("c"),
+                    Some(Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(3.0))))))
+                )
+            ],
+            vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
+        ),
+        "def foo(a, b = 2, c = 3): 1"
+    )]
     #[case::block(
         Expr::Def(
             IdentWithToken::new("test"),
@@ -718,6 +754,19 @@ mod tests {
             vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
         ),
         "fn(x, y): 1"
+    )]
+    #[case::with_default_value(
+        Expr::Fn(
+            smallvec![
+                Param::new(IdentWithToken::new("x")),
+                Param::with_default(
+                    IdentWithToken::new("y"),
+                    Some(Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(10.0))))))
+                )
+            ],
+            vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
+        ),
+        "fn(x, y = 10): 1"
     )]
     fn test_to_code_fn(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
@@ -774,6 +823,20 @@ mod tests {
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))
         ),
         "macro double(x): x"
+    )]
+    #[case::with_default_value(
+        Expr::Macro(
+            IdentWithToken::new("greet_macro"),
+            smallvec![
+                Param::new(IdentWithToken::new("name")),
+                Param::with_default(
+                    IdentWithToken::new("prefix"),
+                    Some(Shared::new(create_node(Expr::Literal(Literal::String("Hi".to_string())))))
+                )
+            ],
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("name"))))
+        ),
+        r#"macro greet_macro(name, prefix = "Hi"): name"#
     )]
     fn test_to_code_macro(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
