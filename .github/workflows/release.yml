@@ -20,14 +20,6 @@ jobs:
             target: aarch64-unknown-linux-gnu
             ext: ""
             asset_name: aarch64-unknown-linux-gnu
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-musl
-            ext: ""
-            asset_name: x86_64-unknown-linux-musl
-          - os: ubuntu-22.04-arm
-            target: aarch64-unknown-linux-musl
-            ext: ""
-            asset_name: aarch64-unknown-linux-musl
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             ext: ".exe"
@@ -39,10 +31,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          target: |
-            x86_64-unknown-linux-musl
-            aarch64-unknown-linux-musl
       - uses: extractions/setup-just@v3
       - name: Build
         run: just build-target ${{ matrix.target }}
