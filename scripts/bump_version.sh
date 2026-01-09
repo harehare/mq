@@ -1,7 +1,7 @@
 #!/bin/bash
 
-export MQ_PREV_VERSION="0.5.8"
-export MQ_VERSION="0.5.9"
+export MQ_PREV_VERSION="0.5.9"
+export MQ_VERSION="0.5.10"
 export README="../README.md"
 export INSTALL_DOC="../docs/books/src/start/install.md"
 
@@ -48,3 +48,4 @@ mq -U --args VERSION $MQ_VERSION '.code | select(contains("cargo install --git h
 
 mq -U --args version $MQ_VERSION --args prev_version $MQ_PREV_VERSION '.code | select(contains("https://github.com/harehare/mq/releases/download/")) | gsub(s"v${prev_version}", s"v${version}")' $INSTALL_DOC > INSTALL_DOC.md.tmp \
   && mv INSTALL_DOC.md.tmp $INSTALL_DOC
+

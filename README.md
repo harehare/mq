@@ -74,13 +74,13 @@ The installer will:
 # Install from crates.io
 cargo install mq-run
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.9
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.10
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 # Install using binstall
-cargo binstall mq-run@0.5.9
+cargo binstall mq-run@0.5.10
 ```
 
 ### Binaries
@@ -89,13 +89,13 @@ You can download pre-built binaries from the [GitHub releases page](https://gith
 
 ```sh
 # macOS (Apple Silicon)
-curl -L https://github.com/harehare/mq/releases/download/v0.5.9/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.5.10/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux x86_64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.9/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.5.10/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux arm64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.9/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.5.10/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.9/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
+Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.10/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
 ```
 
 ### Homebrew
@@ -108,7 +108,7 @@ brew install mq
 ### Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.5.9
+$ docker run --rm ghcr.io/harehare/mq:0.5.10
 ```
 
 ### Visual Studio Code Extension
@@ -169,8 +169,8 @@ Commands:
   help   Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -A, --aggregate
@@ -190,7 +190,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
       --json
-          
+
       --csv
           Include the built-in CSV module
       --fuzzy
