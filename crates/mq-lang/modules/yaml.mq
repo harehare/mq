@@ -274,7 +274,9 @@ end
 
 # Parses a YAML string and returns the parsed data structure.
 def yaml_parse(input):
-  let result = parse_yaml_content(input)
+  if (!is_string(input)):
+    error("Input must be a string.")
+  | let result = parse_yaml_content(input)
   | result[0]
 end
 
