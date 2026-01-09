@@ -14,6 +14,7 @@ members = [
   "crates/mq-web-api",
   "crates/mq-dap",
   "crates/mq-crawler",
+  "crates/mq-typechecker",
 ]
 resolver = "3"
 [workspace.dependencies]

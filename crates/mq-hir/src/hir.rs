@@ -999,7 +999,7 @@ impl Hir {
             ..
         } = &**node
         {
-            self.add_symbol(Symbol {
+            let symbol_id = self.add_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Call,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -1012,7 +1012,7 @@ impl Hir {
                 // Process all arguments recursively to handle complex expressions
                 // This ensures that identifiers inside bracket access (e.g., vars in vars["x"])
                 // are properly registered as Ref symbols that can be resolved
-                self.add_expr(child, source_id, scope_id, parent);
+                self.add_expr(child, source_id, scope_id, Some(symbol_id));
             });
         }
     }
