@@ -229,8 +229,9 @@ impl Env {
 
     /// Checks if a variable is mutable
     pub fn is_mutable(&self, ident: Ident) -> bool {
-        if self.mutable_vars.contains(&ident) {
-            return true;
+        // Check if variable exists in current scope
+        if self.context.contains_key(&ident) {
+            return self.mutable_vars.contains(&ident);
         }
 
         // Check parent scope
@@ -307,11 +308,9 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::Shared;
+    use rstest::rstest;
 
     use super::*;
-
-    #[cfg(feature = "debugger")]
-    use rstest::rstest;
 
     #[test]
     fn test_env_define_and_resolve() {
@@ -483,5 +482,204 @@ mod tests {
         let globals = child_env.get_global_variables();
 
         assert!(globals.iter().any(|v| v.name == "p" && v.type_field == "number"));
+    }
+
+    #[rstest]
+    // Current scope cases
+    #[case("mutable_var", Some(true), None, None, true)]
+    #[case("immutable_var", Some(false), None, None, false)]
+    #[case("non_existent", None, None, None, false)]
+    // Parent scope cases
+    #[case("var", None, Some(true), None, true)]
+    #[case("var", None, Some(false), None, false)]
+    // Shadowing case: parent is mutable, child is immutable
+    #[case("var", Some(false), Some(true), None, false)]
+    // Nested scope case: grandparent is mutable
+    #[case("var", None, None, Some(true), true)]
+    fn test_is_mutable(
+        #[case] var_name: &str,
+        #[case] define_in_current: Option<bool>,
+        #[case] define_in_parent: Option<bool>,
+        #[case] define_in_grandparent: Option<bool>,
+        #[case] expected_mutable: bool,
+    ) {
+        let grandparent_env = if define_in_grandparent.is_some() {
+            Some(Shared::new(SharedCell::new(Env::default())))
+        } else {
+            None
+        };
+
+        let parent_env = if define_in_parent.is_some() || grandparent_env.is_some() {
+            if let Some(ref gp) = grandparent_env {
+                Some(Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(gp)))))
+            } else {
+                Some(Shared::new(SharedCell::new(Env::default())))
+            }
+        } else {
+            None
+        };
+
+        let mut env = if let Some(ref parent) = parent_env {
+            Env::with_parent(Shared::downgrade(parent))
+        } else {
+            Env::default()
+        };
+
+        let var = Ident::new(var_name);
+
+        // Define in grandparent if specified
+        if let Some(is_mutable) = define_in_grandparent {
+            if let Some(ref gp) = grandparent_env {
+                #[cfg(not(feature = "sync"))]
+                {
+                    if is_mutable {
+                        gp.borrow_mut().define_mutable(var, RuntimeValue::Number(1.0.into()));
+                    } else {
+                        gp.borrow_mut().define(var, RuntimeValue::Number(1.0.into()));
+                    }
+                }
+                #[cfg(feature = "sync")]
+                {
+                    if is_mutable {
+                        gp.write()
+                            .unwrap()
+                            .define_mutable(var, RuntimeValue::Number(1.0.into()));
+                    } else {
+                        gp.write().unwrap().define(var, RuntimeValue::Number(1.0.into()));
+                    }
+                }
+            }
+        }
+
+        // Define in parent if specified
+        if let Some(is_mutable) = define_in_parent {
+            if let Some(ref parent) = parent_env {
+                #[cfg(not(feature = "sync"))]
+                {
+                    if is_mutable {
+                        parent
+                            .borrow_mut()
+                            .define_mutable(var, RuntimeValue::Number(100.0.into()));
+                    } else {
+                        parent.borrow_mut().define(var, RuntimeValue::Number(100.0.into()));
+                    }
+                }
+                #[cfg(feature = "sync")]
+                {
+                    if is_mutable {
+                        parent
+                            .write()
+                            .unwrap()
+                            .define_mutable(var, RuntimeValue::Number(100.0.into()));
+                    } else {
+                        parent.write().unwrap().define(var, RuntimeValue::Number(100.0.into()));
+                    }
+                }
+            }
+        }
+
+        // Define in current scope if specified
+        if let Some(is_mutable) = define_in_current {
+            if is_mutable {
+                env.define_mutable(var, RuntimeValue::Number(10.0.into()));
+            } else {
+                env.define(var, RuntimeValue::Number(10.0.into()));
+            }
+        }
+
+        assert_eq!(env.is_mutable(var), expected_mutable);
+    }
+
+    #[rstest]
+    // Success case: assign to mutable variable in current scope
+    #[case("mutable_var", Some(true), None, 20.0, true, None)]
+    // Success case: assign to mutable variable in parent scope
+    #[case("parent_mutable", None, Some(true), 200.0, true, None)]
+    // Failure case: assign to immutable variable
+    #[case("immutable_var", Some(false), None, 20.0, false, Some(EnvError::AssignToImmutable("immutable_var".to_string())))]
+    // Failure case: assign to undefined variable
+    #[case("undefined_var", None, None, 10.0, false, Some(EnvError::UndefinedVariable("undefined_var".to_string())))]
+    fn test_assign(
+        #[case] var_name: &str,
+        #[case] define_in_current: Option<bool>,
+        #[case] define_in_parent: Option<bool>,
+        #[case] assign_value: f64,
+        #[case] should_succeed: bool,
+        #[case] expected_error: Option<EnvError>,
+    ) {
+        let parent_env = if define_in_parent.is_some() {
+            Some(Shared::new(SharedCell::new(Env::default())))
+        } else {
+            None
+        };
+
+        let mut env = if let Some(ref parent) = parent_env {
+            Env::with_parent(Shared::downgrade(parent))
+        } else {
+            Env::default()
+        };
+
+        let var = Ident::new(var_name);
+
+        // Define in parent if specified
+        if let Some(is_mutable) = define_in_parent {
+            if let Some(ref parent) = parent_env {
+                #[cfg(not(feature = "sync"))]
+                {
+                    if is_mutable {
+                        parent
+                            .borrow_mut()
+                            .define_mutable(var, RuntimeValue::Number(100.0.into()));
+                    } else {
+                        parent.borrow_mut().define(var, RuntimeValue::Number(100.0.into()));
+                    }
+                }
+                #[cfg(feature = "sync")]
+                {
+                    if is_mutable {
+                        parent
+                            .write()
+                            .unwrap()
+                            .define_mutable(var, RuntimeValue::Number(100.0.into()));
+                    } else {
+                        parent.write().unwrap().define(var, RuntimeValue::Number(100.0.into()));
+                    }
+                }
+            }
+        }
+
+        // Define in current scope if specified
+        if let Some(is_mutable) = define_in_current {
+            if is_mutable {
+                env.define_mutable(var, RuntimeValue::Number(10.0.into()));
+            } else {
+                env.define(var, RuntimeValue::Number(10.0.into()));
+            }
+        }
+
+        let result = env.assign(var, RuntimeValue::Number(assign_value.into()));
+
+        if should_succeed {
+            assert!(result.is_ok());
+            if define_in_parent.is_some() {
+                // Verify the parent's value was updated
+                if let Some(ref parent) = parent_env {
+                    #[cfg(not(feature = "sync"))]
+                    let resolved = parent.borrow().resolve(var).unwrap();
+                    #[cfg(feature = "sync")]
+                    let resolved = parent.read().unwrap().resolve(var).unwrap();
+
+                    assert_eq!(resolved, RuntimeValue::Number(assign_value.into()));
+                }
+            } else {
+                // Verify the current scope's value was updated
+                assert_eq!(env.resolve(var).unwrap(), RuntimeValue::Number(assign_value.into()));
+            }
+        } else {
+            assert!(result.is_err());
+            if let Some(expected_err) = expected_error {
+                assert_eq!(result.unwrap_err(), expected_err);
+            }
+        }
     }
 }
