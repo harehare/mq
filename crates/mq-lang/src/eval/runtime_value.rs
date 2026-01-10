@@ -10,6 +10,8 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+use ast::node::{Expr, Literal, StringSegment};
+
 /// Runtime selector for indexing into markdown nodes.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Selector {
@@ -488,8 +490,6 @@ impl RuntimeValue {
     }
 
     fn format_ast_node(node: &ast::node::Node, buf: &mut String) -> std::fmt::Result {
-        use ast::node::{Expr, Literal, StringSegment};
-
         match &*node.expr {
             Expr::Literal(lit) => {
                 write!(buf, "Literal(")?;
