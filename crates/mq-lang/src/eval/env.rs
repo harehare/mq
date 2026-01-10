@@ -528,52 +528,52 @@ mod tests {
         let var = Ident::new(var_name);
 
         // Define in grandparent if specified
-        if let Some(is_mutable) = define_in_grandparent {
-            if let Some(ref gp) = grandparent_env {
-                #[cfg(not(feature = "sync"))]
-                {
-                    if is_mutable {
-                        gp.borrow_mut().define_mutable(var, RuntimeValue::Number(1.0.into()));
-                    } else {
-                        gp.borrow_mut().define(var, RuntimeValue::Number(1.0.into()));
-                    }
+        if let Some(is_mutable) = define_in_grandparent
+            && let Some(ref gp) = grandparent_env
+        {
+            #[cfg(not(feature = "sync"))]
+            {
+                if is_mutable {
+                    gp.borrow_mut().define_mutable(var, RuntimeValue::Number(1.0.into()));
+                } else {
+                    gp.borrow_mut().define(var, RuntimeValue::Number(1.0.into()));
                 }
-                #[cfg(feature = "sync")]
-                {
-                    if is_mutable {
-                        gp.write()
-                            .unwrap()
-                            .define_mutable(var, RuntimeValue::Number(1.0.into()));
-                    } else {
-                        gp.write().unwrap().define(var, RuntimeValue::Number(1.0.into()));
-                    }
+            }
+            #[cfg(feature = "sync")]
+            {
+                if is_mutable {
+                    gp.write()
+                        .unwrap()
+                        .define_mutable(var, RuntimeValue::Number(1.0.into()));
+                } else {
+                    gp.write().unwrap().define(var, RuntimeValue::Number(1.0.into()));
                 }
             }
         }
 
         // Define in parent if specified
-        if let Some(is_mutable) = define_in_parent {
-            if let Some(ref parent) = parent_env {
-                #[cfg(not(feature = "sync"))]
-                {
-                    if is_mutable {
-                        parent
-                            .borrow_mut()
-                            .define_mutable(var, RuntimeValue::Number(100.0.into()));
-                    } else {
-                        parent.borrow_mut().define(var, RuntimeValue::Number(100.0.into()));
-                    }
+        if let Some(is_mutable) = define_in_parent
+            && let Some(ref parent) = parent_env
+        {
+            #[cfg(not(feature = "sync"))]
+            {
+                if is_mutable {
+                    parent
+                        .borrow_mut()
+                        .define_mutable(var, RuntimeValue::Number(100.0.into()));
+                } else {
+                    parent.borrow_mut().define(var, RuntimeValue::Number(100.0.into()));
                 }
-                #[cfg(feature = "sync")]
-                {
-                    if is_mutable {
-                        parent
-                            .write()
-                            .unwrap()
-                            .define_mutable(var, RuntimeValue::Number(100.0.into()));
-                    } else {
-                        parent.write().unwrap().define(var, RuntimeValue::Number(100.0.into()));
-                    }
+            }
+            #[cfg(feature = "sync")]
+            {
+                if is_mutable {
+                    parent
+                        .write()
+                        .unwrap()
+                        .define_mutable(var, RuntimeValue::Number(100.0.into()));
+                } else {
+                    parent.write().unwrap().define(var, RuntimeValue::Number(100.0.into()));
                 }
             }
         }
@@ -622,28 +622,28 @@ mod tests {
         let var = Ident::new(var_name);
 
         // Define in parent if specified
-        if let Some(is_mutable) = define_in_parent {
-            if let Some(ref parent) = parent_env {
-                #[cfg(not(feature = "sync"))]
-                {
-                    if is_mutable {
-                        parent
-                            .borrow_mut()
-                            .define_mutable(var, RuntimeValue::Number(100.0.into()));
-                    } else {
-                        parent.borrow_mut().define(var, RuntimeValue::Number(100.0.into()));
-                    }
+        if let Some(is_mutable) = define_in_parent
+            && let Some(ref parent) = parent_env
+        {
+            #[cfg(not(feature = "sync"))]
+            {
+                if is_mutable {
+                    parent
+                        .borrow_mut()
+                        .define_mutable(var, RuntimeValue::Number(100.0.into()));
+                } else {
+                    parent.borrow_mut().define(var, RuntimeValue::Number(100.0.into()));
                 }
-                #[cfg(feature = "sync")]
-                {
-                    if is_mutable {
-                        parent
-                            .write()
-                            .unwrap()
-                            .define_mutable(var, RuntimeValue::Number(100.0.into()));
-                    } else {
-                        parent.write().unwrap().define(var, RuntimeValue::Number(100.0.into()));
-                    }
+            }
+            #[cfg(feature = "sync")]
+            {
+                if is_mutable {
+                    parent
+                        .write()
+                        .unwrap()
+                        .define_mutable(var, RuntimeValue::Number(100.0.into()));
+                } else {
+                    parent.write().unwrap().define(var, RuntimeValue::Number(100.0.into()));
                 }
             }
         }
