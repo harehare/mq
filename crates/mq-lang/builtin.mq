@@ -521,6 +521,12 @@ def index_by(arr, f):
   )
 end
 
+# Inspects a value by printing its string representation and returning the value.
+def inspect(value) do
+  print(to_string(value))
+  | value
+end
+
 | module ast:
   # Gets the arguments of an AST node
   def get_args(node) do
@@ -532,4 +538,3 @@ end
     _ast_to_code(node)
   end
 end
-
