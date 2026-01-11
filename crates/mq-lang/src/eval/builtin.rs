@@ -2237,6 +2237,7 @@ define_builtin!(IS_DEBUG_MODE, ParamNum::None, |_, _, _, _| {
     }
 });
 
+// AST related built-ins
 define_builtin!(_AST_GET_ARGS, ParamNum::Fixed(1), |_, _, args, _| {
     match args.as_slice() {
         [RuntimeValue::Ast(ast)] => match &*ast.expr {
