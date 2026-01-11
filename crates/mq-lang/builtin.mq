@@ -520,3 +520,16 @@ def index_by(arr, f):
     | set(acc, key, new_value);
   )
 end
+
+| module ast:
+  # Gets the arguments of an AST node
+  def get_args(node) do
+    _ast_get_args(node)
+  end
+
+  # Converts an AST node back to code
+  def to_code(node) do
+    _ast_to_code(node)
+  end
+end
+

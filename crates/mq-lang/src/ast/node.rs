@@ -19,6 +19,12 @@ pub struct Param {
     pub default: Option<Shared<Node>>,
 }
 
+impl Display for Param {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.ident)
+    }
+}
+
 impl Param {
     pub fn new(name: IdentWithToken) -> Self {
         Self::with_default(name, None)

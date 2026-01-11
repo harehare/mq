@@ -141,9 +141,7 @@ pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
     .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))
     .unwrap();
 
-    let (cst_nodes, errors) = CstParser::new(tokens.into_iter().map(Shared::new).collect::<Vec<_>>().iter()).parse();
-
-    (cst_nodes, errors)
+    CstParser::new(tokens.into_iter().map(Shared::new).collect::<Vec<_>>().iter()).parse()
 }
 
 pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::Error>> {
