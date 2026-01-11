@@ -5,21 +5,6 @@ use std::fmt::Write;
 
 impl Node {
     /// Converts the AST node back to mq code code.
-    ///
-    /// This method reconstructs the original code code representation from the AST.
-    /// The output is valid, executable mq code that, when parsed, should produce
-    /// an equivalent AST structure.
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// // Parse mq code code to AST
-    /// let code = "def test(x): x + 1";
-    /// // ... parse to AST nodes ...
-    /// // Convert AST back to code
-    /// let generated = node.to_code();
-    /// // generated will be "def test(x): x + 1"
-    /// ```
     pub fn to_code(&self) -> String {
         let mut output = String::new();
         self.format_to_code(&mut output, 0);
@@ -259,7 +244,6 @@ impl Node {
     }
 }
 
-/// Escapes special characters in strings for mq code code
 fn escape_string(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     for ch in s.chars() {
@@ -275,7 +259,6 @@ fn escape_string(s: &str) -> String {
     result
 }
 
-/// Formats a Literal as mq code code
 fn format_literal(literal: &Literal, buf: &mut String) {
     match literal {
         Literal::String(s) => {
@@ -298,7 +281,6 @@ fn format_literal(literal: &Literal, buf: &mut String) {
     }
 }
 
-/// Formats function arguments as comma-separated list
 fn format_args(args: &Args, buf: &mut String, indent: usize) {
     for (i, arg) in args.iter().enumerate() {
         if i > 0 {
@@ -308,7 +290,6 @@ fn format_args(args: &Args, buf: &mut String, indent: usize) {
     }
 }
 
-/// Formats function parameters as comma-separated list
 fn format_params(params: &Params, buf: &mut String, indent: usize) {
     for (i, param) in params.iter().enumerate() {
         if i > 0 {
@@ -323,7 +304,6 @@ fn format_params(params: &Params, buf: &mut String, indent: usize) {
     }
 }
 
-/// Formats a program (list of statements) in inline syntax using pipes
 fn format_program_inline(program: &Program, buf: &mut String, indent: usize) {
     for (i, stmt) in program.iter().enumerate() {
         if i > 0 {
@@ -333,7 +313,6 @@ fn format_program_inline(program: &Program, buf: &mut String, indent: usize) {
     }
 }
 
-/// Formats a program in block syntax with do...end
 fn format_program_block(program: &Program, buf: &mut String, indent: usize) {
     buf.push_str(" do");
     for stmt in program.iter() {
@@ -346,7 +325,6 @@ fn format_program_block(program: &Program, buf: &mut String, indent: usize) {
     buf.push_str("end");
 }
 
-/// Formats a pattern for pattern matching
 fn format_pattern(pattern: &Pattern, buf: &mut String) {
     match pattern {
         Pattern::Literal(lit) => {
@@ -399,7 +377,6 @@ fn format_pattern(pattern: &Pattern, buf: &mut String) {
     }
 }
 
-/// Determines if a program needs block syntax (do...end) or can use inline syntax
 fn needs_block_syntax(program: &Program) -> bool {
     program.len() > 1
 }
