@@ -1,5 +1,7 @@
 //! Property-based tests for mq-lang AST operations.
-use mq_lang::{Arena, AstExpr, AstLiteral, AstNode, IdentWithToken, Program, Shared, SharedCell};
+use mq_lang::{
+    Arena, AstExpr, AstLiteral, AstNode, DefaultEngine, IdentWithToken, Program, RuntimeValue, Shared, SharedCell,
+};
 use proptest::prelude::*;
 use smallvec::smallvec;
 
@@ -16,6 +18,18 @@ fn make_node(expr: AstExpr) -> Shared<AstNode> {
         token_id: default_token_id(),
         expr: Shared::new(expr),
     })
+}
+
+fn create_engine() -> DefaultEngine {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    engine
+}
+
+fn eval_code(code: &str) -> Result<Vec<RuntimeValue>, Box<mq_lang::Error>> {
+    let mut engine = create_engine();
+    let input = mq_lang::null_input();
+    engine.eval(code, input.into_iter()).map(|v| v.into_iter().collect())
 }
 
 mod strategies {
@@ -547,6 +561,159 @@ proptest! {
             prop_assert_eq!(b, *parsed);
         } else {
             prop_assert!(false, "Expected bool literal");
+        }
+    }
+}
+
+// Property-based tests for eval functionality
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(100))]
+
+    #[test]
+    fn eval_is_deterministic(lit in prop_oneof![
+        strategies::number_lit(),
+        strategies::string_lit(),
+    ]) {
+        let node = make_node(AstExpr::Literal(lit));
+        let code = node.to_code();
+        // Use let binding to ensure output with null input
+        let full_code = format!("let x = {} | x", code);
+
+        let result1 = eval_code(&full_code)?;
+        let result2 = eval_code(&full_code)?;
+
+        prop_assert_eq!(result1, result2, "eval must be deterministic for: {}", full_code);
+    }
+
+    #[test]
+    fn eval_number_literals(n in -1000i64..1000) {
+        // Use let binding to ensure output with null input
+        let code = format!("let x = {} | x", n);
+        let result = eval_code(&code)?;
+
+        prop_assert_eq!(result.len(), 1, "Should produce exactly one value");
+        if let RuntimeValue::Number(num) = &result[0] {
+            prop_assert_eq!(num.value() as i64, n, "Number value should match");
+        } else {
+            return Err(TestCaseError::fail(format!("Expected number, got {:?}", result[0])));
+        }
+    }
+
+    #[test]
+    fn eval_bool_literals(b in any::<bool>()) {
+        // Boolean literals need to be used in context to produce output
+        let bool_str = if b { "true" } else { "false" };
+        let code = format!("let x = {} | if (eq(x, {})): 1 else: 0", bool_str, bool_str);
+        let result = eval_code(&code)?;
+
+        prop_assert_eq!(result.len(), 1, "Should produce exactly one value");
+        if let RuntimeValue::Number(num) = &result[0] {
+            // Since we're comparing x == bool_str, it should always be 1
+            prop_assert_eq!(num.value() as i64, 1, "Boolean equality check should succeed");
+        } else {
+            return Err(TestCaseError::fail(format!("Expected number, got {:?}", result[0])));
+        }
+    }
+
+    #[test]
+    fn eval_string_literals(s in r#"[a-zA-Z0-9 ]{0,20}"#) {
+        // Use let binding to ensure output with null input
+        let code = format!(r#"let x = "{}" | x"#, s);
+        let result = eval_code(&code)?;
+
+        prop_assert_eq!(result.len(), 1, "Should produce exactly one value");
+        if let RuntimeValue::String(val) = &result[0] {
+            prop_assert_eq!(val, &s, "String value should match");
+        } else {
+            return Err(TestCaseError::fail(format!("Expected string, got {:?}", result[0])));
+        }
+    }
+
+    #[test]
+    fn eval_none_literal(_unit in Just(())) {
+        // Note: None literal evaluates to empty result with null input in mq
+        let result = eval_code("None");
+        prop_assert!(result.is_ok(), "None should parse and evaluate successfully");
+    }
+
+    #[test]
+    fn eval_and_operation(a in any::<bool>(), b in any::<bool>()) {
+        let code = format!("{} && {}", a, b);
+        let result = eval_code(&code)?;
+
+        prop_assert_eq!(result.len(), 1, "Should produce exactly one value");
+        if let RuntimeValue::Boolean(val) = result[0] {
+            prop_assert_eq!(val, a && b, "AND operation should match Rust's &&");
+        } else {
+            return Err(TestCaseError::fail(format!("Expected boolean, got {:?}", result[0])));
+        }
+    }
+
+    #[test]
+    fn eval_or_operation(a in any::<bool>(), b in any::<bool>()) {
+        let code = format!("{} || {}", a, b);
+        let result = eval_code(&code)?;
+
+        prop_assert_eq!(result.len(), 1, "Should produce exactly one value");
+        if let RuntimeValue::Boolean(val) = result[0] {
+            prop_assert_eq!(val, a || b, "OR operation should match Rust's ||");
+        } else {
+            return Err(TestCaseError::fail(format!("Expected boolean, got {:?}", result[0])));
+        }
+    }
+
+    #[test]
+    fn eval_simple_if_true(then_val in 0i64..100) {
+        // Use (1 > 0) as a true condition
+        let code = format!("let x = 1 | if (x > 0): {} else: 999", then_val);
+        let result = eval_code(&code)?;
+
+        prop_assert_eq!(result.len(), 1, "Should produce exactly one value");
+        if let RuntimeValue::Number(result_num) = &result[0] {
+            prop_assert_eq!(result_num.value() as i64, then_val, "Should evaluate to then branch");
+        } else {
+            return Err(TestCaseError::fail(format!("Expected number, got {:?}", result[0])));
+        }
+    }
+
+    #[test]
+    fn eval_simple_if_false(else_val in 0i64..100) {
+        // Use (1 < 0) as a false condition
+        let code = format!("let x = 1 | if (x < 0): 999 else: {}", else_val);
+        let result = eval_code(&code)?;
+
+        prop_assert_eq!(result.len(), 1, "Should produce exactly one value");
+        if let RuntimeValue::Number(result_num) = &result[0] {
+            prop_assert_eq!(result_num.value() as i64, else_val, "Should evaluate to else branch");
+        } else {
+            return Err(TestCaseError::fail(format!("Expected number, got {:?}", result[0])));
+        }
+    }
+
+    #[test]
+    fn eval_let_binding(var_name in strategies::ident(), val in 0i64..100) {
+        let code = format!("let {} = {} | {}", var_name.name, val, var_name.name);
+        let result = eval_code(&code)?;
+
+        prop_assert_eq!(result.len(), 1, "Should produce exactly one value");
+        if let RuntimeValue::Number(num) = &result[0] {
+            prop_assert_eq!(num.value() as i64, val, "let binding should preserve value");
+        } else {
+            return Err(TestCaseError::fail(format!("Expected number, got {:?}", result[0])));
+        }
+    }
+
+    #[test]
+    fn eval_paren_expression(n in -100i64..100) {
+        // Use let binding to ensure output with null input
+        let code = format!("let x = ({}) | x", n);
+        let result = eval_code(&code)?;
+
+        prop_assert_eq!(result.len(), 1, "Should produce exactly one value");
+        if let RuntimeValue::Number(num) = &result[0] {
+            prop_assert_eq!(num.value() as i64, n, "Parenthesized expression should evaluate correctly");
+        } else {
+            return Err(TestCaseError::fail(format!("Expected number, got {:?}", result[0])));
         }
     }
 }
