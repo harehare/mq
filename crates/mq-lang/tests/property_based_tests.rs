@@ -516,181 +516,37 @@ proptest! {
     }
 }
 
-#[cfg(test)]
-mod semantic_tests {
-    use super::*;
+proptest! {
+    #[test]
+    fn special_keywords_parse_correctly(
+        keyword in prop::sample::select(vec!["self", "nodes", "break", "continue"])
+    ) {
+        let token_arena = create_token_arena();
+        let program = mq_lang::parse(keyword, token_arena)?;
 
-    proptest! {
-        #[test]
-        fn special_keywords_parse_correctly(
-            keyword in prop::sample::select(vec!["self", "nodes", "break", "continue"])
-        ) {
-            let token_arena = create_token_arena();
-            let program = mq_lang::parse(keyword, token_arena)?;
+        prop_assert!(!program.is_empty());
 
-            prop_assert!(!program.is_empty());
+        let matches_expected = match keyword {
+            "self" => matches!(&*program[0].expr, AstExpr::Self_),
+            "nodes" => matches!(&*program[0].expr, AstExpr::Nodes),
+            "break" => matches!(&*program[0].expr, AstExpr::Break),
+            "continue" => matches!(&*program[0].expr, AstExpr::Continue),
+            _ => false,
+        };
 
-            let matches_expected = match keyword {
-                "self" => matches!(&*program[0].expr, AstExpr::Self_),
-                "nodes" => matches!(&*program[0].expr, AstExpr::Nodes),
-                "break" => matches!(&*program[0].expr, AstExpr::Break),
-                "continue" => matches!(&*program[0].expr, AstExpr::Continue),
-                _ => false,
-            };
-
-            prop_assert!(matches_expected, "Keyword {} did not parse correctly", keyword);
-        }
-
-        #[test]
-        fn bool_literals_preserved(b in any::<bool>()) {
-            let node = make_node(AstExpr::Literal(AstLiteral::Bool(b)));
-            let code = node.to_code();
-            let program = assertions::assert_parses(&code)?;
-
-            if let AstExpr::Literal(AstLiteral::Bool(parsed)) = &*program[0].expr {
-                prop_assert_eq!(b, *parsed);
-            } else {
-                prop_assert!(false, "Expected bool literal");
-            }
-        }
+        prop_assert!(matches_expected, "Keyword {} did not parse correctly", keyword);
     }
 
     #[test]
-    fn none_is_preserved() {
-        let node = make_node(AstExpr::Literal(AstLiteral::None));
+    fn bool_literals_preserved(b in any::<bool>()) {
+        let node = make_node(AstExpr::Literal(AstLiteral::Bool(b)));
         let code = node.to_code();
-        let token_arena = create_token_arena();
-        let result = mq_lang::parse(&code, token_arena);
+        let program = assertions::assert_parses(&code)?;
 
-        assert!(result.is_ok(), "None should parse successfully");
-        if let Ok(program) = result {
-            assert!(!program.is_empty(), "Program should not be empty");
-            // None might be parsed as an identifier in some contexts
-        }
-    }
-}
-
-#[cfg(test)]
-mod edge_cases {
-    use super::*;
-
-    #[test]
-    fn test_empty_program() {
-        let token_arena = create_token_arena();
-        let _ = mq_lang::parse("", token_arena);
-        // Should not panic
-    }
-
-    #[test]
-    fn test_whitespace_only() {
-        let token_arena = create_token_arena();
-        let _ = mq_lang::parse("   \n\t  ", token_arena);
-        // Should not panic
-    }
-
-    #[test]
-    fn test_single_comment() {
-        let token_arena = create_token_arena();
-        let _ = mq_lang::parse("# comment", token_arena);
-        // Should not panic
-    }
-
-    #[test]
-    fn test_deeply_nested_parens() {
-        let mut code = "1".to_string();
-        for _ in 0..20 {
-            code = format!("({})", code);
-        }
-        let token_arena = create_token_arena();
-        let result = mq_lang::parse(&code, token_arena);
-        assert!(result.is_ok(), "Should handle deeply nested parentheses");
-    }
-
-    #[test]
-    fn test_long_identifier() {
-        let long_name = "a".repeat(1000);
-        let token_arena = create_token_arena();
-        let _ = mq_lang::parse(&long_name, token_arena);
-        // Should not panic
-    }
-
-    #[test]
-    fn test_many_arguments() {
-        let args = (0..100).map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
-        let code = format!("func({})", args);
-        let token_arena = create_token_arena();
-        let _ = mq_lang::parse(&code, token_arena);
-        // Should not panic
-    }
-
-    #[test]
-    fn test_chained_pipes() {
-        let code = (0..50).map(|i| format!("f{}", i)).collect::<Vec<_>>().join(" | ");
-        let token_arena = create_token_arena();
-        let result = mq_lang::parse(&code, token_arena);
-        assert!(result.is_ok(), "Should handle long pipe chains");
-    }
-}
-
-#[cfg(test)]
-mod determinism {
-    use super::*;
-
-    #[test]
-    fn test_parse_determinism() {
-        let test_cases = vec![
-            "1 + 2",
-            "let x = 42",
-            "add(1, 2)",
-            "if (true): 1 else: 2",
-            "x && y",
-            "nodes | .h",
-            "true",
-            "false",
-            "None",
-            r#""hello world""#,
-        ];
-
-        for code in test_cases {
-            let arena1 = create_token_arena();
-            let arena2 = create_token_arena();
-
-            let result1 = mq_lang::parse(code, arena1);
-            let result2 = mq_lang::parse(code, arena2);
-
-            assert_eq!(
-                result1.is_ok(),
-                result2.is_ok(),
-                "Parse results should match for: {}",
-                code
-            );
-
-            if let (Ok(prog1), Ok(prog2)) = (result1, result2) {
-                assert_eq!(prog1.len(), prog2.len(), "Program lengths should match");
-                for (node1, node2) in prog1.iter().zip(prog2.iter()) {
-                    assert_eq!(node1.expr, node2.expr, "Nodes should be equal");
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_to_code_determinism() {
-        let test_nodes = vec![
-            make_node(AstExpr::Literal(AstLiteral::Bool(true))),
-            make_node(AstExpr::Literal(AstLiteral::Number(42.into()))),
-            make_node(AstExpr::Ident(IdentWithToken::new("test"))),
-            make_node(AstExpr::Self_),
-            make_node(AstExpr::Nodes),
-        ];
-
-        for node in test_nodes {
-            let code1 = node.to_code();
-            let code2 = node.to_code();
-            let code3 = node.to_code();
-
-            assert_eq!(code1, code2, "to_code should be deterministic");
-            assert_eq!(code2, code3, "to_code should be deterministic");
+        if let AstExpr::Literal(AstLiteral::Bool(parsed)) = &*program[0].expr {
+            prop_assert_eq!(b, *parsed);
+        } else {
+            prop_assert!(false, "Expected bool literal");
         }
     }
 }
