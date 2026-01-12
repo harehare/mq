@@ -122,7 +122,13 @@ impl Node {
                 }
             }
             Expr::Block(program) => {
-                format_program_inline(program, buf, indent);
+                // Remove leading space from format_program_block output
+                let start_len = buf.len();
+                format_program_block(program, buf, indent);
+                // format_program_block adds " do", but Block doesn't need leading space
+                if buf[start_len..].starts_with(' ') {
+                    buf.replace_range(start_len..start_len + 1, "");
+                }
             }
             Expr::Def(name, params, program) => {
                 write!(buf, "def {}(", name).unwrap();
@@ -304,20 +310,13 @@ fn format_params(params: &Params, buf: &mut String, indent: usize) {
     }
 }
 
-fn format_program_inline(program: &Program, buf: &mut String, indent: usize) {
+fn format_program_block(program: &Program, buf: &mut String, indent: usize) {
+    buf.push_str(" do\n");
+    buf.push_str(&"  ".repeat(indent + 1));
     for (i, stmt) in program.iter().enumerate() {
         if i > 0 {
             buf.push_str(" | ");
         }
-        stmt.format_to_code(buf, indent);
-    }
-}
-
-fn format_program_block(program: &Program, buf: &mut String, indent: usize) {
-    buf.push_str(" do");
-    for stmt in program.iter() {
-        buf.push('\n');
-        buf.push_str(&"  ".repeat(indent + 1));
         stmt.format_to_code(buf, indent + 1);
     }
     buf.push('\n');
@@ -586,7 +585,7 @@ mod tests {
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0)))))
             ]
         ),
-        "while (x) do\n  1\n  2\nend"
+        "while (x) do\n  1 | 2\nend"
     )]
     fn test_to_code_while(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
@@ -621,7 +620,7 @@ mod tests {
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0)))))
             ]
         ),
-        "foreach(x, arr) do\n  1\n  2\nend"
+        "foreach(x, arr) do\n  1 | 2\nend"
     )]
     fn test_to_code_foreach(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
@@ -631,7 +630,7 @@ mod tests {
     #[rstest]
     #[case::single(
         Expr::Block(vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]),
-        "1"
+        "do\n  1\nend"
     )]
     #[case::multiple(
         Expr::Block(vec![
@@ -639,7 +638,7 @@ mod tests {
             Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0))))),
             Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(3.0)))))
         ]),
-        "1 | 2 | 3"
+        "do\n  1 | 2 | 3\nend"
     )]
     fn test_to_code_block(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
@@ -707,7 +706,7 @@ mod tests {
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0)))))
             ]
         ),
-        "def test(x) do\n  1\n  2\nend"
+        "def test(x) do\n  1 | 2\nend"
     )]
     fn test_to_code_def(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
