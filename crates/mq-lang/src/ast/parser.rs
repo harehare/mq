@@ -982,13 +982,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_def(&mut self, def_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let ident_token = self.tokens.next();
         let ident = match &ident_token {
-            Some(token) => match &***token {
-                Token {
-                    range: _,
-                    kind: TokenKind::Ident(ident),
-                    module_id: _,
-                } => Ok(ident),
-                token => Err(SyntaxError::UnexpectedToken((*token).clone())),
+            Some(token) => match &token.kind {
+                TokenKind::Ident(ident) => Ok(ident),
+                _ => Err(SyntaxError::UnexpectedToken((***token).clone())),
             },
             None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
@@ -1012,13 +1008,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_macro(&mut self, macro_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let ident_token = self.tokens.next();
         let ident = match &ident_token {
-            Some(token) => match &***token {
-                Token {
-                    range: _,
-                    kind: TokenKind::Ident(ident),
-                    module_id: _,
-                } => Ok(ident),
-                token => Err(SyntaxError::UnexpectedToken((*token).clone())),
+            Some(token) => match &token.kind {
+                TokenKind::Ident(ident) => Ok(ident),
+                _ => Err(SyntaxError::UnexpectedToken((***token).clone())),
             },
             None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
@@ -1563,13 +1555,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_var(&mut self, var_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let ident_token = self.tokens.next();
         let ident = match &ident_token {
-            Some(token) => match &***token {
-                Token {
-                    range: _,
-                    kind: TokenKind::Ident(ident),
-                    module_id: _,
-                } => Ok(ident),
-                token => Err(SyntaxError::UnexpectedToken((*token).clone())),
+            Some(token) => match &token.kind {
+                TokenKind::Ident(ident) => Ok(ident),
+                _ => Err(SyntaxError::UnexpectedToken((***token).clone())),
             },
             None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
@@ -1709,69 +1697,41 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     /// Parse function parameters (supports default values)
     fn parse_params(&mut self) -> Result<Params, SyntaxError> {
         match self.tokens.peek() {
-            Some(token) => match &***token {
-                Token {
-                    range: _,
-                    kind: TokenKind::LParen,
-                    module_id: _,
-                } => {
+            Some(token) => match &token.kind {
+                TokenKind::LParen => {
                     self.tokens.next();
                 }
-                token => return Err(SyntaxError::UnexpectedToken((*token).clone())),
+                _ => return Err(SyntaxError::UnexpectedToken((***token).clone())),
             },
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
         let mut params: Params = SmallVec::new();
-        let mut prev_token: Option<&Token> = None;
+        let mut prev_token: Option<&TokenKind> = None;
         let mut seen_default = false;
 
         while let Some(token) = self.tokens.next() {
-            match &**token {
-                Token {
-                    range: _,
-                    kind: TokenKind::RParen,
-                    module_id: _,
-                } => match prev_token {
-                    Some(Token {
-                        range: _,
-                        kind: TokenKind::Comma,
-                        module_id: _,
-                    }) => {
+            match &token.kind {
+                TokenKind::RParen => match prev_token {
+                    Some(TokenKind::Comma) => {
                         return Err(SyntaxError::UnexpectedToken((**token).clone()));
                     }
                     _ => break,
                 },
-                Token {
-                    range: _,
-                    kind: TokenKind::Eof,
-                    module_id: _,
-                } => match prev_token {
-                    Some(Token {
-                        range: _,
-                        kind: TokenKind::RParen,
-                        module_id: _,
-                    }) => break,
+                TokenKind::Eof => match prev_token {
+                    Some(TokenKind::RParen) => break,
                     Some(_) | None => {
                         return Err(SyntaxError::ExpectedClosingParen((**token).clone()));
                     }
                 },
-                Token {
-                    range: _,
-                    kind: TokenKind::Comma,
-                    module_id: _,
-                } => match prev_token {
+                TokenKind::Comma => match prev_token {
                     Some(_) => {
                         let token = match self.tokens.peek() {
                             Some(token) => Ok(Shared::clone(token)),
                             None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
                         }?;
-                        match &*token {
-                            Token {
-                                range: _,
-                                kind: TokenKind::Comma,
-                                module_id: _,
-                            } => {
+                        match &token.kind {
+                            TokenKind::Comma => {
                                 return Err(SyntaxError::UnexpectedToken((*token).clone()));
                             }
                             _ => continue,
@@ -1779,16 +1739,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     }
                     None => return Err(SyntaxError::UnexpectedToken((**token).clone())),
                 },
-                Token {
-                    range: _,
-                    kind: TokenKind::SemiColon,
-                    module_id: _,
-                } => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
-                Token {
-                    range: _,
-                    kind: TokenKind::Ident(name),
-                    module_id: _,
-                } => {
+                TokenKind::SemiColon => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+                TokenKind::Ident(name) => {
                     // Parse parameter name
                     let ident = IdentWithToken::new_with_token(name, Some(Shared::clone(token)));
 
@@ -1820,7 +1772,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
             }
 
-            prev_token = Some(token);
+            prev_token = Some(&token.kind);
 
             if let Some(token) = self.tokens.peek()
                 && !matches!(token.kind, TokenKind::RParen | TokenKind::Comma)
@@ -1834,68 +1786,40 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     fn parse_args(&mut self) -> Result<Args, SyntaxError> {
         match self.tokens.peek() {
-            Some(token) => match &***token {
-                Token {
-                    range: _,
-                    kind: TokenKind::LParen,
-                    module_id: _,
-                } => {
+            Some(token) => match &token.kind {
+                TokenKind::LParen => {
                     self.tokens.next();
                 }
-                token => return Err(SyntaxError::UnexpectedToken((*token).clone())),
+                _ => return Err(SyntaxError::UnexpectedToken((***token).clone())),
             },
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
         let mut args: Args = SmallVec::new();
-        let mut prev_token: Option<&Token> = None;
+        let mut prev_token: Option<&TokenKind> = None;
 
         while let Some(token) = self.tokens.next() {
-            match &**token {
-                Token {
-                    range: _,
-                    kind: TokenKind::RParen,
-                    module_id: _,
-                } => match prev_token {
-                    Some(Token {
-                        range: _,
-                        kind: TokenKind::Comma,
-                        module_id: _,
-                    }) => {
+            match &token.kind {
+                TokenKind::RParen => match prev_token {
+                    Some(TokenKind::Comma) => {
                         return Err(SyntaxError::UnexpectedToken((**token).clone()));
                     }
                     _ => break,
                 },
-                Token {
-                    range: _,
-                    kind: TokenKind::Eof,
-                    module_id: _,
-                } => match prev_token {
-                    Some(Token {
-                        range: _,
-                        kind: TokenKind::RParen,
-                        module_id: _,
-                    }) => break,
+                TokenKind::Eof => match prev_token {
+                    Some(TokenKind::RParen) => break,
                     Some(_) | None => {
                         return Err(SyntaxError::ExpectedClosingParen((**token).clone()));
                     }
                 },
-                Token {
-                    range: _,
-                    kind: TokenKind::Comma,
-                    module_id: _,
-                } => match prev_token {
+                TokenKind::Comma => match prev_token {
                     Some(_) => {
                         let token = match self.tokens.peek() {
                             Some(token) => Ok(Shared::clone(token)),
                             None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
                         }?;
-                        match &*token {
-                            Token {
-                                range: _,
-                                kind: TokenKind::Comma,
-                                module_id: _,
-                            } => {
+                        match &token.kind {
+                            TokenKind::Comma => {
                                 return Err(SyntaxError::UnexpectedToken((*token).clone()));
                             }
                             _ => continue,
@@ -1903,18 +1827,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     }
                     None => return Err(SyntaxError::UnexpectedToken((**token).clone())),
                 },
-                Token {
-                    range: _,
-                    kind: TokenKind::SemiColon,
-                    module_id: _,
-                } => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+                TokenKind::SemiColon => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
                 _ => {
                     // Arguments that are complex expressions (idents, selectors, if, fn)
                     args.push(self.parse_arg_expr(token)?);
                 }
             }
 
-            prev_token = Some(token);
+            prev_token = Some(&token.kind);
 
             if let Some(token) = self.tokens.peek()
                 && !matches!(token.kind, TokenKind::RParen | TokenKind::Comma)
@@ -2023,12 +1943,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
 
-        if let Token {
-            range: _,
-            kind: TokenKind::LBracket,
-            module_id: _,
-        } = &*token2
-        {
+        if let TokenKind::LBracket = &token2.kind {
             // .[n][n]
             let ArrayIndex(i2) = self.parse_int_array_arg(&token2)?;
             Ok(Shared::new(Node {
@@ -2052,21 +1967,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None => return Err(SyntaxError::InsufficientTokens((**token).clone())),
         }?;
 
-        if let Token {
-            range: _,
-            kind: TokenKind::NumberLiteral(n),
-            module_id: _,
-        } = &*token
-        {
+        if let TokenKind::NumberLiteral(n) = &token.kind {
             self.tokens.next();
             self.next_token(|token_kind| matches!(token_kind, TokenKind::RBracket))?;
             Ok(ArrayIndex(Some(n.value() as usize)))
-        } else if let Token {
-            range: _,
-            kind: TokenKind::RBracket,
-            module_id: _,
-        } = &*token
-        {
+        } else if let TokenKind::RBracket = &token.kind {
             self.tokens.next();
             Ok(ArrayIndex(None))
         } else {
