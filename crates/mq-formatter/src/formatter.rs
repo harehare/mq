@@ -383,13 +383,30 @@ impl Formatter {
         let colon_index = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::Colon));
         let uses_do_syntax = do_index.is_some();
 
-        // If there's no colon or do, split before the right parenthesis
+        // Determine where the condition ends
+        // Check if there's a left paren (parenthesized condition)
+        let has_lparen = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::LParen)).is_some();
+
         let expr_index = if let Some(index) = do_index.or(colon_index) {
-            index
+            // We have a separator (do or colon)
+            if has_lparen {
+                // Parenthesized: split after right paren
+                Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::RParen))
+                    .map(|i| i + 1)
+                    .unwrap_or(index)
+            } else {
+                // Bare condition: split at separator
+                index
+            }
         } else {
-            Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::RParen))
-                .map(|index| index + 1)
-                .unwrap_or(0)
+            // No separator found
+            if has_lparen {
+                Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::RParen))
+                    .map(|i| i + 1)
+                    .unwrap_or(0)
+            } else {
+                0
+            }
         };
 
         node.children.iter().take(expr_index).for_each(|child| {
@@ -629,10 +646,21 @@ impl Formatter {
         // Find the colon position
         let colon_index = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::Colon));
 
-        // If there's no colon, split after the right parenthesis
-        let expr_index = self.calculate_split_position(node, 3);
+        // Determine where the condition ends
+        // Check if there's a left paren (parenthesized condition)
+        let has_lparen = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::LParen)).is_some();
 
-        // Format nodes before colon/rparen (l_param, cond, r_param)
+        let expr_index = if has_lparen {
+            // Parenthesized: split after right paren
+            Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::RParen))
+                .map(|i| i + 1)
+                .unwrap_or_else(|| colon_index.unwrap_or(1))
+        } else {
+            // Bare condition: split at colon
+            colon_index.unwrap_or(1)
+        };
+
+        // Format nodes before colon/rparen (condition part)
         node.children.iter().take(expr_index).for_each(|child| {
             self.format_node(mq_lang::Shared::clone(child), 0);
         });
@@ -685,10 +713,21 @@ impl Formatter {
         // Find the colon position
         let colon_index = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::Colon));
 
-        // If there's no colon, split after the right parenthesis
-        let expr_index = self.calculate_split_position(node, 3);
+        // Determine where the condition ends
+        // Check if there's a left paren (parenthesized condition)
+        let has_lparen = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::LParen)).is_some();
 
-        // Format nodes before colon/rparen (l_param, cond, r_param)
+        let expr_index = if has_lparen {
+            // Parenthesized: split after right paren
+            Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::RParen))
+                .map(|i| i + 1)
+                .unwrap_or_else(|| colon_index.unwrap_or(1))
+        } else {
+            // Bare condition: split at colon
+            colon_index.unwrap_or(1)
+        };
+
+        // Format nodes before colon/rparen (condition part)
         node.children.iter().take(expr_index).for_each(|child| {
             self.format_node(mq_lang::Shared::clone(child), 0);
         });
@@ -1379,16 +1418,25 @@ impl Formatter {
         }
     }
 
-    #[inline(always)]
     fn calculate_split_position(&self, node: &mq_lang::Shared<mq_lang::CstNode>, fallback: usize) -> usize {
         let colon_index = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::Colon));
+        let do_index = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::Do));
 
-        match colon_index {
-            Some(index) => index,
-            None => Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::RParen))
-                .map(|index| index + 1)
-                .unwrap_or(fallback),
+        // If we have a colon or do, use that as the split point
+        if let Some(index) = colon_index.or(do_index) {
+            return index;
         }
+
+        // Check if there's a right parenthesis (parenthesized condition)
+        if let Some(rparen_index) = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::RParen)) {
+            return rparen_index + 1;
+        }
+
+        // No parentheses found, so we need to find where the condition ends
+        // Look for the first non-lparen, non-condition child
+        // The condition is typically the first child after the keyword
+        // For bare conditions like `if x > 5:`, we need to find all nodes before colon/do
+        fallback
     }
 
     fn format_colon_with_spacing<'a, I>(
@@ -2578,6 +2626,63 @@ end
         "def calc(a = 1, b = 2, c = 3 + 1):
   a + b + c;
 "
+    )]
+    #[case::if_without_parens(
+        "if true: \"yes\"",
+        "if true: \"yes\""
+    )]
+    #[case::if_without_parens_multiline(
+        "if true:
+        \"yes\"",
+        "if true:
+  \"yes\"
+"
+    )]
+    #[case::if_without_parens_with_comparison(
+        "if x > 5: \"big\"",
+        "if x > 5: \"big\""
+    )]
+    #[case::if_without_parens_elif_else(
+        "if x: \"x\" elif y: \"y\" else: \"none\"",
+        "if x: \"x\" elif y: \"y\" else: \"none\""
+    )]
+    #[case::if_without_parens_elif_else_multiline(
+        "if x:
+        \"x\"
+        elif y:
+        \"y\"
+        else:
+        \"none\"",
+        "if x:
+  \"x\"
+elif y:
+  \"y\"
+else:
+  \"none\"
+"
+    )]
+    #[case::if_mixed_parens(
+        "if (x): \"x\" elif y: \"y\"",
+        "if (x): \"x\" elif y: \"y\""
+    )]
+    #[case::while_without_parens(
+        "while true: x;",
+        "while true: x;"
+    )]
+    #[case::while_without_parens_multiline(
+        "while x < 10:
+        x;",
+        "while x < 10:
+  x;
+"
+    )]
+    #[case::while_without_parens_with_comparison(
+        "while x < 10: x = x + 1;",
+        "while x < 10: x = x + 1;"
+    )]
+    #[case::while_mixed_parens(
+        "while (true): x;",
+        "while (true): x;"
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);

@@ -1070,25 +1070,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     fn parse_while(&mut self, while_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(while_token));
-        let args = self.parse_args()?;
-
-        if args.len() != 1 {
-            return Err(SyntaxError::UnexpectedToken((**while_token).clone()));
-        }
+        let cond = match self.parse_condition() {
+            Ok(cond) => cond,
+            Err(_) => return Err(SyntaxError::UnexpectedToken((**while_token).clone())),
+        };
 
         self.consume_colon_or_do();
 
         match self.tokens.peek() {
             Some(_) => {
-                let cond = args.first().unwrap();
                 let body_program = self.parse_program(false)?;
 
                 Ok(Shared::new(Node {
                     token_id,
-                    expr: Shared::new(Expr::While(
-                        Shared::clone(cond),
-                        body_program.iter().map(Shared::clone).collect(),
-                    )),
+                    expr: Shared::new(Expr::While(cond, body_program.iter().map(Shared::clone).collect())),
                 }))
             }
             None => Err(SyntaxError::UnexpectedToken((**while_token).clone())),
@@ -1223,19 +1218,17 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     fn parse_if(&mut self, if_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(if_token));
-        let args = self.parse_args()?;
-
-        if args.len() != 1 {
-            return Err(SyntaxError::UnexpectedToken((*self.token_arena[token_id]).clone()));
-        }
-        let cond = args.first().unwrap();
+        let cond = match self.parse_condition() {
+            Ok(cond) => cond,
+            Err(_) => return Err(SyntaxError::UnexpectedToken((**if_token).clone())),
+        };
 
         self.consume_colon();
 
         let then_expr = self.parse_next_expr(token_id)?;
 
         let mut branches: Branches = SmallVec::new();
-        branches.push((Some(Shared::clone(cond)), then_expr));
+        branches.push((Some(cond), then_expr));
 
         let elif_branches = self.parse_elif()?;
         branches.extend(elif_branches);
@@ -1485,23 +1478,22 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
 
             let token_id = self.next_token(|token_kind| matches!(token_kind, TokenKind::Elif))?;
-            let args = self.parse_args()?;
-
-            if args.len() != 1 {
-                return Err(SyntaxError::UnexpectedToken((*self.token_arena[token_id]).clone()));
-            }
+            let elif_token = Shared::clone(&self.token_arena[token_id]);
+            let cond = match self.parse_condition() {
+                Ok(cond) => cond,
+                Err(_) => return Err(SyntaxError::UnexpectedToken((*elif_token).clone())),
+            };
 
             self.consume_colon();
 
             let expr_token = match self.tokens.next() {
                 Some(token) => Ok(token),
-                None => Err(SyntaxError::UnexpectedToken((*self.token_arena[token_id]).clone())),
+                None => Err(SyntaxError::UnexpectedToken((*elif_token).clone())),
             }?;
 
-            let cond = args.first().unwrap();
             let then_expr = self.parse_expr(expr_token)?;
 
-            nodes.push((Some(Shared::clone(cond)), then_expr));
+            nodes.push((Some(cond), then_expr));
         }
 
         Ok(nodes)
@@ -1844,6 +1836,120 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
 
         Ok(args)
+    }
+
+    /// Parse a condition expression for if/while/elif.
+    /// Supports both parenthesized `(condition)` and bare `condition` forms.
+    fn parse_condition(&mut self) -> Result<Shared<Node>, SyntaxError> {
+        match self.tokens.peek() {
+            Some(token) if matches!(token.kind, TokenKind::LParen) => {
+                // Parse parenthesized condition: (condition)
+                let args = self.parse_args()?;
+                if args.is_empty() || args.len() != 1 {
+                    return Err(SyntaxError::UnexpectedEOFDetected(self.module_id));
+                }
+                Ok(Shared::clone(args.first().unwrap()))
+            }
+            Some(_) => {
+                // Parse bare condition until we hit a colon, do, or end marker
+                let token = self
+                    .tokens
+                    .next()
+                    .ok_or(SyntaxError::UnexpectedEOFDetected(self.module_id))?;
+                self.parse_condition_expr(token)
+            }
+            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+        }
+    }
+
+    /// Parse a condition expression, stopping at delimiters like `:` or `do`
+    fn parse_condition_expr(&mut self, initial_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+        let lhs = self.parse_primary_expr(initial_token)?;
+        Self::parse_binary_op_for_condition(self, 0, lhs)
+    }
+
+    /// Parse binary operations for conditions, stopping at delimiters
+    fn parse_binary_op_for_condition(
+        parser: &mut Parser,
+        min_prec: u8,
+        mut lhs: Shared<Node>,
+    ) -> Result<Shared<Node>, SyntaxError> {
+        while let Some(peeked_token_rc) = parser.tokens.peek() {
+            let kind = &peeked_token_rc.kind;
+
+            // Stop at delimiters
+            if matches!(
+                kind,
+                TokenKind::Colon | TokenKind::Do | TokenKind::End | TokenKind::SemiColon
+            ) {
+                break;
+            }
+
+            if !Self::is_binary_op(kind) || matches!(kind, TokenKind::Equal) {
+                break;
+            }
+
+            let prec = Self::binary_op_precedence(kind);
+
+            if prec < min_prec {
+                break;
+            }
+
+            let operator_token = parser.tokens.next().unwrap();
+            let operator_token_id = parser.token_arena.alloc(Shared::clone(operator_token));
+
+            let rhs_token = match parser.tokens.next() {
+                Some(t) => t,
+                None => return Err(SyntaxError::UnexpectedEOFDetected(parser.module_id)),
+            };
+            let mut rhs = parser.parse_primary_expr(rhs_token)?;
+
+            loop {
+                let next_prec = if let Some(next_token) = parser.tokens.peek() {
+                    // Stop at delimiters
+                    if matches!(
+                        next_token.kind,
+                        TokenKind::Colon | TokenKind::Do | TokenKind::End | TokenKind::SemiColon
+                    ) {
+                        0
+                    } else if Self::is_binary_op(&next_token.kind) && !matches!(next_token.kind, TokenKind::Equal) {
+                        Self::binary_op_precedence(&next_token.kind)
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                };
+                if next_prec > prec {
+                    rhs = Self::parse_binary_op_for_condition(parser, next_prec, rhs)?;
+                } else {
+                    break;
+                }
+            }
+
+            lhs = match kind {
+                TokenKind::And => Shared::new(Node {
+                    token_id: operator_token_id,
+                    expr: Shared::new(Expr::And(lhs, rhs)),
+                }),
+                TokenKind::Or => Shared::new(Node {
+                    token_id: operator_token_id,
+                    expr: Shared::new(Expr::Or(lhs, rhs)),
+                }),
+                _ => Shared::new(Node {
+                    token_id: operator_token_id,
+                    expr: Shared::new(Expr::Call(
+                        IdentWithToken::new_with_token(
+                            Self::binary_op_function_name(kind),
+                            Some(Shared::clone(operator_token)),
+                        ),
+                        smallvec![lhs, rhs],
+                    )),
+                }),
+            };
+        }
+
+        Ok(lhs)
     }
 
     // Helper to parse an argument that is expected to be a general expression.
@@ -2860,6 +2966,119 @@ mod tests {
                 token(TokenKind::Eof)
             ],
             Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Elif, module_id: 1.into()})))]
+    #[case::if_without_parens(
+            vec![
+                token(TokenKind::If),
+                token(TokenKind::BoolLiteral(true)),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("yes".to_owned())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 0.into(),
+                    expr: Shared::new(Expr::If(smallvec![
+                        (
+                            Some(Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                            })),
+                            Shared::new(Node {
+                                token_id: 3.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("yes".to_owned()))),
+                            })
+                        ),
+                    ])),
+                })
+            ]))]
+    #[case::if_without_parens_with_comparison(
+            vec![
+                token(TokenKind::If),
+                token(TokenKind::Ident(SmolStr::new("x"))),
+                token(TokenKind::Gt),
+                token(TokenKind::NumberLiteral(5.into())),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("big".to_owned())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 0.into(),
+                    expr: Shared::new(Expr::If(smallvec![
+                        (
+                            Some(Shared::new(Node {
+                                token_id: 2.into(),
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(constants::GT, Some(Shared::new(token(TokenKind::Gt)))),
+                                    smallvec![
+                                        Shared::new(Node {
+                                            token_id: 1.into(),
+                                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                        }),
+                                        Shared::new(Node {
+                                            token_id: 3.into(),
+                                            expr: Shared::new(Expr::Literal(Literal::Number(5.into()))),
+                                        }),
+                                    ],
+                                )),
+                            })),
+                            Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("big".to_owned()))),
+                            })
+                        ),
+                    ])),
+                })
+            ]))]
+    #[case::if_without_parens_elif(
+            vec![
+                token(TokenKind::If),
+                token(TokenKind::Ident(SmolStr::new("x"))),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("x".to_owned())),
+                token(TokenKind::Elif),
+                token(TokenKind::Ident(SmolStr::new("y"))),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("y".to_owned())),
+                token(TokenKind::Else),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("none".to_owned())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 0.into(),
+                    expr: Shared::new(Expr::If(smallvec![
+                        (
+                            Some(Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                            })),
+                            Shared::new(Node {
+                                token_id: 3.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("x".to_owned()))),
+                            })
+                        ),
+                        (
+                            Some(Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
+                            })),
+                            Shared::new(Node {
+                                token_id: 7.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("y".to_owned()))),
+                            })
+                        ),
+                        (
+                            None,
+                            Shared::new(Node {
+                                token_id: 10.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("none".to_owned()))),
+                            })
+                        )
+                    ])),
+                })
+            ]))]
     #[case::h_selector(
         vec![
             token(TokenKind::Selector(SmolStr::new(".h"))),
@@ -2944,6 +3163,62 @@ mod tests {
                 vec![Shared::new(Node {
                     token_id: 3.into(),
                     expr: Shared::new(Expr::Literal(Literal::String("loop body".to_owned()))),
+                })],
+            )),
+        })]))]
+    #[case::while_without_parens(
+        vec![
+            token(TokenKind::While),
+            token(TokenKind::BoolLiteral(true)),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("loop body".to_owned())),
+            token(TokenKind::SemiColon),
+        ],
+        Ok(vec![Shared::new(Node {
+            token_id: 0.into(),
+            expr: Shared::new(Expr::While(
+                Shared::new(Node {
+                    token_id: 1.into(),
+                    expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                }),
+                vec![Shared::new(Node {
+                    token_id: 3.into(),
+                    expr: Shared::new(Expr::Literal(Literal::String("loop body".to_owned()))),
+                })],
+            )),
+        })]))]
+    #[case::while_without_parens_with_comparison(
+        vec![
+            token(TokenKind::While),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::Lt),
+            token(TokenKind::NumberLiteral(10.into())),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::SemiColon),
+        ],
+        Ok(vec![Shared::new(Node {
+            token_id: 0.into(),
+            expr: Shared::new(Expr::While(
+                Shared::new(Node {
+                    token_id: 2.into(),
+                    expr: Shared::new(Expr::Call(
+                        IdentWithToken::new_with_token(constants::LT, Some(Shared::new(token(TokenKind::Lt)))),
+                        smallvec![
+                            Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                            }),
+                            Shared::new(Node {
+                                token_id: 3.into(),
+                                expr: Shared::new(Expr::Literal(Literal::Number(10.into()))),
+                            }),
+                        ],
+                    )),
+                }),
+                vec![Shared::new(Node {
+                    token_id: 5.into(),
+                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
                 })],
             )),
         })]))]
