@@ -521,6 +521,36 @@ def index_by(arr, f):
   )
 end
 
+# Pads a string on the left to a specified total length using the given padding string.
+def pad_left(s, total_length, pad_str = " ") do
+  let pad_needed = total_length - len(s)
+  | if (pad_needed <= 0):
+      s
+    else
+      do
+        let full_repeats = pad_needed / len(pad_str)
+        | let remainder = pad_needed % len(pad_str)
+        | let left_string = foreach (_, range(0, full_repeats - 1)): pad_str;
+        | let padding = join(left_string, "") + slice(pad_str, 0, remainder)
+        | padding + s
+      end
+end
+
+# Pads a string on the right to a specified total length using the given padding string.
+def pad_right(s, total_length, pad_str = " ") do
+  let pad_needed = total_length - len(s)
+  | if (pad_needed <= 0):
+      s
+    else:
+      do
+        let full_repeats = pad_needed / len(pad_str)
+        | let remainder = pad_needed % len(pad_str)
+        | let right_string = foreach (_, range(0, full_repeats - 1)): pad_str;
+        | let padding = join(right_string, "") + slice(pad_str, 0, remainder)
+        | s + padding
+      end
+end
+
 # Inspects a value by printing its string representation and returning the value.
 def inspect(value) do
   print(to_string(value))
