@@ -184,9 +184,12 @@ impl LanguageServer for Backend {
         }
 
         let text = self.text_map.get(&params.text_document.uri.to_string()).unwrap();
-        let formatted_text = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig { indent_width: 2 }))
-            .format(&text)
-            .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::ParseError))?;
+        let formatted_text = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
+            indent_width: 2,
+            ..Default::default()
+        }))
+        .format(&text)
+        .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::ParseError))?;
 
         Ok(Some(vec![ls_types::TextEdit {
             range: ls_types::Range::new(

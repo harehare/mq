@@ -1,3 +1,5 @@
+use mq_lang::{CstNode, CstNodeKind};
+
 #[allow(dead_code)]
 #[cfg(target_os = "windows")]
 const NEW_LINE: &str = "\r\n";
@@ -12,14 +14,63 @@ pub struct Formatter {
     indent_cache: Vec<String>,
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum SortPriority {
+    Import = 0,
+    Include = 1,
+    Let = 2,
+    Def = 3,
+    Macro = 4,
+    Other = 5,
+}
+
 #[derive(Clone, Debug)]
 pub struct FormatterConfig {
     pub indent_width: usize,
+    pub sort_imports: bool,
+    pub sort_functions: bool,
+    pub sort_fields: bool,
 }
 
 impl Default for FormatterConfig {
     fn default() -> Self {
-        Self { indent_width: 2 }
+        Self {
+            indent_width: 2,
+            sort_imports: false,
+            sort_functions: false,
+            sort_fields: false,
+        }
+    }
+}
+
+impl From<CstNode> for SortPriority {
+    fn from(node: CstNode) -> Self {
+        match node.kind {
+            CstNodeKind::Import => SortPriority::Import,
+            CstNodeKind::Include => SortPriority::Include,
+            CstNodeKind::Let | CstNodeKind::Var => SortPriority::Let,
+            CstNodeKind::Def | CstNodeKind::Fn => SortPriority::Def,
+            CstNodeKind::Macro => SortPriority::Macro,
+            _ => SortPriority::Other,
+        }
+    }
+}
+
+pub fn ident(node: CstNode) -> Option<String> {
+    match node {
+        CstNode {
+            kind:
+                CstNodeKind::Import
+                | CstNodeKind::Include
+                | CstNodeKind::Def
+                | CstNodeKind::Let
+                | CstNodeKind::Var
+                | CstNodeKind::Macro,
+            token: Some(token),
+            children,
+            ..
+        } if !children.is_empty() => Some(children[0].to_string()),
+        _ => None,
     }
 }
 
@@ -37,19 +88,49 @@ impl Formatter {
             return Ok(String::new());
         }
 
-        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (mut nodes, errors) = mq_lang::parse_recovery(code);
 
         if errors.has_errors() {
             return Err(errors);
         }
 
-        self.format_with_cst(&nodes)
+        self.format_with_cst(&mut nodes)
     }
 
     pub fn format_with_cst(
         &mut self,
-        nodes: &Vec<mq_lang::Shared<mq_lang::CstNode>>,
+        nodes: &mut Vec<mq_lang::Shared<mq_lang::CstNode>>,
     ) -> Result<String, mq_lang::CstErrorReporter> {
+        if self.config.sort_imports || self.config.sort_functions || self.config.sort_fields {
+            nodes.sort_by(|a, b| {
+                let priority_a: SortPriority = mq_lang::Shared::clone(a).as_ref().clone().into();
+                let priority_b: SortPriority = mq_lang::Shared::clone(b).as_ref().clone().into();
+
+                if priority_a != priority_b {
+                    return priority_a.cmp(&priority_b);
+                }
+
+                match priority_a {
+                    SortPriority::Import if self.config.sort_imports => {
+                        let ident_a = ident(mq_lang::Shared::clone(a).as_ref().clone());
+                        let ident_b = ident(mq_lang::Shared::clone(b).as_ref().clone());
+                        ident_a.cmp(&ident_b)
+                    }
+                    SortPriority::Let if self.config.sort_fields => {
+                        let ident_a = ident(mq_lang::Shared::clone(a).as_ref().clone());
+                        let ident_b = ident(mq_lang::Shared::clone(b).as_ref().clone());
+                        ident_a.cmp(&ident_b)
+                    }
+                    SortPriority::Def if self.config.sort_functions => {
+                        let ident_a = ident(mq_lang::Shared::clone(a).as_ref().clone());
+                        let ident_b = ident(mq_lang::Shared::clone(b).as_ref().clone());
+                        ident_a.cmp(&ident_b)
+                    }
+                    _ => std::cmp::Ordering::Equal,
+                }
+            });
+        }
+
         for node in nodes {
             self.format_node(mq_lang::Shared::clone(node), 0);
         }
