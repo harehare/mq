@@ -2627,10 +2627,7 @@ end
   a + b + c;
 "
     )]
-    #[case::if_without_parens(
-        "if true: \"yes\"",
-        "if true: \"yes\""
-    )]
+    #[case::if_without_parens("if true: \"yes\"", "if true: \"yes\"")]
     #[case::if_without_parens_multiline(
         "if true:
         \"yes\"",
@@ -2638,10 +2635,7 @@ end
   \"yes\"
 "
     )]
-    #[case::if_without_parens_with_comparison(
-        "if x > 5: \"big\"",
-        "if x > 5: \"big\""
-    )]
+    #[case::if_without_parens_with_comparison("if x > 5: \"big\"", "if x > 5: \"big\"")]
     #[case::if_without_parens_elif_else(
         "if x: \"x\" elif y: \"y\" else: \"none\"",
         "if x: \"x\" elif y: \"y\" else: \"none\""
@@ -2661,14 +2655,8 @@ else:
   \"none\"
 "
     )]
-    #[case::if_mixed_parens(
-        "if (x): \"x\" elif y: \"y\"",
-        "if (x): \"x\" elif y: \"y\""
-    )]
-    #[case::while_without_parens(
-        "while true: x;",
-        "while true: x;"
-    )]
+    #[case::if_mixed_parens("if (x): \"x\" elif y: \"y\"", "if (x): \"x\" elif y: \"y\"")]
+    #[case::while_without_parens("while true: x;", "while true: x;")]
     #[case::while_without_parens_multiline(
         "while x < 10:
         x;",
@@ -2676,14 +2664,8 @@ else:
   x;
 "
     )]
-    #[case::while_without_parens_with_comparison(
-        "while x < 10: x = x + 1;",
-        "while x < 10: x = x + 1;"
-    )]
-    #[case::while_mixed_parens(
-        "while (true): x;",
-        "while (true): x;"
-    )]
+    #[case::while_without_parens_with_comparison("while x < 10: x = x + 1;", "while x < 10: x = x + 1;")]
+    #[case::while_mixed_parens("while (true): x;", "while (true): x;")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
