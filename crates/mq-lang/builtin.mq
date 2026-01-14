@@ -530,8 +530,8 @@ def pad_left(s, total_length, pad_str = " ") do
       do
         let full_repeats = pad_needed / len(pad_str)
         | let remainder = pad_needed % len(pad_str)
-        | let left_string = foreach (_, range(0, full_repeats - 1)): pad_str;
-        | let padding = join(left_string, "") + slice(pad_str, 0, remainder)
+        | let pad_strings = foreach (_, range(0, full_repeats - 1)): pad_str;
+        | let padding = join(pad_strings, "") + slice(pad_str, 0, remainder)
         | padding + s
       end
 end
@@ -545,8 +545,8 @@ def pad_right(s, total_length, pad_str = " ") do
       do
         let full_repeats = pad_needed / len(pad_str)
         | let remainder = pad_needed % len(pad_str)
-        | let right_string = foreach (_, range(0, full_repeats - 1)): pad_str;
-        | let padding = join(right_string, "") + slice(pad_str, 0, remainder)
+        | let pad_strings = foreach (_, range(0, full_repeats - 1)): pad_str;
+        | let padding = join(pad_strings, "") + slice(pad_str, 0, remainder)
         | s + padding
       end
 end
