@@ -227,6 +227,15 @@ enum Commands {
         /// Check if files are formatted without modifying them
         #[arg(short, long)]
         check: bool,
+        /// Sort imports
+        #[arg(long, default_value_t = false)]
+        sort_imports: bool,
+        /// Sort functions
+        #[arg(long, default_value_t = false)]
+        sort_functions: bool,
+        /// Sort fields
+        #[arg(long, default_value_t = false)]
+        sort_fields: bool,
         /// Path to the mq file to format
         files: Option<Vec<PathBuf>>,
     },
@@ -409,9 +418,15 @@ impl Cli {
                 indent_width,
                 check,
                 files,
+                sort_imports,
+                sort_fields,
+                sort_functions,
             }) => {
                 let mut formatter = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
                     indent_width: *indent_width,
+                    sort_imports: *sort_imports,
+                    sort_fields: *sort_fields,
+                    sort_functions: *sort_functions,
                 }));
                 let files = match files {
                     Some(f) => f,
@@ -1025,6 +1040,9 @@ mod tests {
                 indent_width: 2,
                 check: false,
                 files: Some(vec![temp_file_path.clone()]),
+                sort_functions: false,
+                sort_fields: false,
+                sort_imports: false,
             }),
             query: None,
             files: Some(vec![temp_file_path]),
@@ -1052,6 +1070,9 @@ mod tests {
                 indent_width: 2,
                 check: true,
                 files: Some(vec![temp_file_path.clone()]),
+                sort_functions: false,
+                sort_fields: false,
+                sort_imports: false,
             }),
             query: None,
             files: Some(vec![temp_file_path]),
