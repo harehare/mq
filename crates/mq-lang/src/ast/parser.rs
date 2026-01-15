@@ -43,7 +43,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn parse_program(&mut self, root: bool) -> Result<Program, SyntaxError> {
-        let mut asts = Vec::with_capacity(1024);
+        let mut asts = Vec::with_capacity(64);
 
         // Initial check for invalid starting tokens in a program.
         match self.tokens.peek() {
@@ -92,8 +92,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         if asts.is_empty() {
             return Err(SyntaxError::UnexpectedEOFDetected(self.module_id));
         }
-
-        asts.shrink_to_fit();
 
         Ok(asts)
     }
