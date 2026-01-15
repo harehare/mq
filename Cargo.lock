@@ -2767,7 +2767,6 @@ dependencies = [
  "mq-formatter",
  "mq-hir",
  "mq-lang",
- "mq-lsp",
  "mq-markdown",
  "mq-repl",
  "rayon",

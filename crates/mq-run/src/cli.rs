@@ -4,7 +4,6 @@ use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::DefaultEngine;
-use mq_lsp::server::LspConfig;
 use rayon::prelude::*;
 use std::collections::VecDeque;
 use std::io::BufRead;
@@ -219,12 +218,6 @@ struct OutputArgs {
 enum Commands {
     /// Start a REPL session for interactive query execution
     Repl,
-    /// Start a language server for mq
-    Lsp {
-        /// Specify module file paths to load for the LSP server
-        #[clap(short = 'M', long)]
-        module_paths: Option<Vec<PathBuf>>,
-    },
     /// Format mq files based on specified formatting options.
     Fmt {
         /// Number of spaces for indentation
@@ -350,7 +343,6 @@ impl Cli {
                 "  {} - Start a REPL session for interactive query execution",
                 "repl".green()
             ),
-            format!("  {} - Start a language server for mq", "lsp".green()),
             format!(
                 "  {} - Format mq files based on specified formatting options",
                 "fmt".green()
@@ -411,12 +403,6 @@ impl Cli {
             Some(Commands::Repl) => mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]).run(),
             None if self.query.is_none() => {
                 mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]).run()
-            }
-            Some(Commands::Lsp { module_paths }) => {
-                tokio::runtime::Runtime::new()
-                    .into_diagnostic()?
-                    .block_on(async { mq_lsp::start(LspConfig::new(module_paths.clone().unwrap_or_default())).await });
-                Ok(())
             }
             Some(Commands::Fmt {
                 indent_width,
