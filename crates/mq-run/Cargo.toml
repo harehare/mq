@@ -57,3 +57,22 @@ required-features = ["debugger"]
 [package.metadata.binstall]
 pkg-fmt = "bin"
 pkg-url = "{ repo }/releases/download/v{ version }/mq-{ target }{ binary-ext }"
+
+[package.metadata.deb]
+maintainer = "Takahiro Sato <harehare1110@gmail.com>"
+copyright = "2024, Takahiro Sato <harehare1110@gmail.com>"
+license-file = ["../../LICENSE", "0"]
+extended-description = "mq is a jq-like command-line tool for Markdown processing. It allows you to easily slice, filter, map, and transform Markdown files."
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/mq", "usr/bin/", "755"],
+    ["../../README.md", "usr/share/doc/mq/README", "644"],
+]
+
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/mq", dest = "/usr/bin/mq", mode = "755" },
+    { source = "../../README.md", dest = "/usr/share/doc/mq/README", mode = "644" },
+]

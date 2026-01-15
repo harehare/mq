@@ -16,10 +16,18 @@ jobs:
             target: x86_64-unknown-linux-gnu
             ext: ""
             asset_name: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            ext: ""
+            asset_name: x86_64-unknown-linux-musl
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
             ext: ""
             asset_name: aarch64-unknown-linux-gnu
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-musl
+            ext: ""
+            asset_name: aarch64-unknown-linux-musl
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             ext: ".exe"
@@ -32,6 +40,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: extractions/setup-just@v3
+      - name: Install musl-tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Build
         run: just build-target ${{ matrix.target }}
       - name: Rename artifact
@@ -49,6 +60,80 @@ jobs:
             target/${{ matrix.target }}/release/mq-dbg-${{ matrix.asset_name}}${{ matrix.ext }}
             target/${{ matrix.target }}/release/mq-lsp-${{ matrix.asset_name }}${{ matrix.ext }}
             target/${{ matrix.target }}/release/mqcr-${{ matrix.asset_name }}${{ matrix.ext }}
+          if-no-files-found: error
+          retention-days: 1
+
+  deb:
+    name: Build deb (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: extractions/setup-just@v3
+      - name: Install cargo-deb
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+      - name: Install musl-tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build
+        run: just build-target ${{ matrix.target }}
+      - name: Build deb package
+        run: cargo deb -p mq-run --no-build --target ${{ matrix.target }}
+      - name: Upload deb artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: mq-${{ matrix.target }}-deb
+          path: target/${{ matrix.target }}/debian/*.deb
+          if-no-files-found: error
+          retention-days: 1
+
+  rpm:
+    name: Build rpm (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: extractions/setup-just@v3
+      - name: Install cargo-generate-rpm
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-generate-rpm
+      - name: Install musl-tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build
+        run: just build-target ${{ matrix.target }}
+      - name: Build rpm package
+        run: cargo generate-rpm -p crates/mq-run --target ${{ matrix.target }}
+      - name: Upload rpm artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: mq-${{ matrix.target }}-rpm
+          path: target/${{ matrix.target }}/generate-rpm/*.rpm
           if-no-files-found: error
           retention-days: 1
 
@@ -86,7 +171,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: build
+    needs: [build, deb, rpm]
     runs-on: ubuntu-latest
     permissions:
       packages: write
