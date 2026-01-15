@@ -47,7 +47,7 @@ pub struct Engine<T: ModuleResolver = LocalFsModuleResolver> {
 }
 
 fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
-    let token_arena = Shared::new(SharedCell::new(Arena::new(10240)));
+    let token_arena = Shared::new(SharedCell::new(Arena::new(2048)));
     token_alloc(
         &token_arena,
         &Shared::new(Token {
