@@ -526,7 +526,7 @@ def pad_left(s, total_length, pad_str = " ") do
   let pad_needed = total_length - len(s)
   | if (pad_needed <= 0):
       s
-    else
+    else:
       do
         let full_repeats = pad_needed / len(pad_str)
         | let remainder = pad_needed % len(pad_str)
@@ -568,3 +568,4 @@ end
     _ast_to_code(node)
   end
 end
+
