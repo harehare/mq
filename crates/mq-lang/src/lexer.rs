@@ -615,7 +615,7 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
 
 fn tokens<'a>(input: Span<'a>, options: &'a Options) -> IResult<Span<'a>, Vec<Token>> {
     // Estimate token count from input length (assuming ~5 chars per token on average)
-    let estimated_capacity = input.fragment().len() / 5;
+    let estimated_capacity = input.fragment().len() / 4;
     let mut tokens = Vec::with_capacity(estimated_capacity.max(16));
     let mut current = input;
 
