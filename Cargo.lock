@@ -2775,7 +2775,6 @@ dependencies = [
  "rustyline",
  "scopeguard",
  "strum",
- "tokio",
  "url",
 ]
 

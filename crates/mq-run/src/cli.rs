@@ -418,7 +418,7 @@ impl Cli {
                         return Err(miette!("File not found: {}", file.display()));
                     }
                     let content = fs::read_to_string(file).into_diagnostic()?;
-                    let formatted = formatter.format(&content).into_diagnostic()?;
+                    let formatted = formatter.format(&content).map_err(|e| miette!("{e}"))?;
 
                     if *check && formatted != content {
                         return Err(miette!("The input is not formatted"));
