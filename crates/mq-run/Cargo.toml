@@ -67,13 +67,12 @@ section = "utils"
 priority = "optional"
 assets = [
     ["target/release/mq", "usr/bin/", "755"],
-    ["target/release/mq-dbg", "usr/bin/", "755"],
     ["../../README.md", "usr/share/doc/mq/README", "644"],
 ]
+
 
 [package.metadata.generate-rpm]
 assets = [
     { source = "target/release/mq", dest = "/usr/bin/mq", mode = "755" },
-    { source = "target/release/mq-dbg", dest = "/usr/bin/mq-dbg", mode = "755" },
     { source = "../../README.md", dest = "/usr/share/doc/mq/README", mode = "644" },
 ]
