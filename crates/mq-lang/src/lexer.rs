@@ -614,7 +614,7 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
 }
 
 fn tokens<'a>(input: Span<'a>, options: &'a Options) -> IResult<Span<'a>, Vec<Token>> {
-    let estimated_capacity = input.fragment().len() / 3;
+    let estimated_capacity = input.fragment().len() / 5;
     let mut tokens = Vec::with_capacity(estimated_capacity.max(64));
     let mut current = input;
 

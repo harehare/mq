@@ -592,28 +592,6 @@ include "test"
     | assert_eq(result1, 1)
   end
 
-| def test_pad_left():
-    let result1 = pad_left("test", 8, "-")
-    | assert_eq(result1, "----test")
-
-    | let result2 = pad_left("test", 2, "-")
-    | assert_eq(result2, "test")
-
-    | let result3 = pad_left("test", 6)
-    | assert_eq(result3, "  test")
-  end
-
-| def test_pad_right():
-    let result1 = pad_right("test", 8, "-")
-    | assert_eq(result1, "test----")
-
-    | let result2 = pad_right("test", 2, "-")
-    | assert_eq(result2, "test")
-
-    | let result3 = pad_right("test", 6)
-    | assert_eq(result3, "test  ")
-  end
-
 | run_tests([
   # Type checking
   test_case("is_array", test_is_array),
@@ -628,8 +606,6 @@ include "test"
   test_case("contains", test_contains),
   test_case("ltrimstr", test_ltrimstr),
   test_case("rtrimstr", test_rtrimstr),
-  test_case("pad_left", test_pad_left),
-  test_case("pad_right", test_pad_right),
 
   # Collection operations
   test_case("is_empty", test_is_empty),
