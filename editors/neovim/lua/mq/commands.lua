@@ -30,7 +30,7 @@ function M.install()
 
   -- Run installation command
   local install_cmd =
-  "cargo install --git https://github.com/harehare/mq.git mq-run --force && cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features=\"debugger\" --force"
+  "cargo install --git https://github.com/harehare/mq.git mq-lsp --force && cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features=\"debugger\" --force"
 
   vim.fn.jobstart(install_cmd, {
     on_exit = function(_, exit_code)

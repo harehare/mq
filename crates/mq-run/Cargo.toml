@@ -28,14 +28,12 @@ mq-dap = {workspace = true, optional = true}
 mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
 mq-lang = {workspace = true, features = ["file-io"]}
-mq-lsp = {workspace = true}
 mq-markdown = {workspace = true, features = ["json", "html-to-markdown"]}
 mq-repl = {workspace = true}
 rayon = {workspace = true}
 regex-lite = {workspace = true, optional = true}
 rustyline = {workspace = true, optional = true, default-features = false, features = ["custom-bindings", "with-file-history"]}
 strum = {workspace = true, features = ["derive"], optional = true}
-tokio = {workspace = true, features = ["io-util", "io-std", "rt"]}
 url = {workspace = true}
 
 [dev-dependencies]
@@ -50,6 +48,7 @@ path = "src/main.rs"
 required-features = ["std"]
 
 [[bin]]
+doc = false
 name = "mq-dbg"
 path = "src/bin/dbg.rs"
 required-features = ["debugger"]

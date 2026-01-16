@@ -2614,7 +2614,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.17",
- "tokio",
  "tracing",
  "tracing-subscriber",
 ]
@@ -2748,7 +2747,6 @@ dependencies = [
  "mq-lang",
  "mq-markdown",
  "regex-lite",
- "rstest",
  "rustyline",
  "scopeguard",
  "strum",
@@ -2770,7 +2768,6 @@ dependencies = [
  "mq-formatter",
  "mq-hir",
  "mq-lang",
- "mq-lsp",
  "mq-markdown",
  "mq-repl",
  "rayon",
@@ -2779,7 +2776,6 @@ dependencies = [
  "rustyline",
  "scopeguard",
  "strum",
- "tokio",
  "url",
 ]
 
@@ -2822,7 +2818,6 @@ dependencies = [
  "tower-http 0.6.8",
  "tracing",
  "tracing-subscriber",
- "url",
  "utoipa",
 ]
 

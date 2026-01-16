@@ -26,9 +26,9 @@ end
 -- Default configuration
 M.defaults = {
   -- Path to mq executable (if not in PATH)
-  cmd = "mq",
+  cmd = "mq-lsp",
   -- LSP server arguments
-  lsp_args = { "lsp" },
+  lsp_args = {},
   -- Show examples when creating new file
   show_examples = true,
   -- Automatically start LSP server
