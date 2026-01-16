@@ -40,6 +40,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
       - uses: extractions/setup-just@v3
       - name: Install musl-tools
         if: contains(matrix.target, 'musl')
@@ -81,6 +83,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
       - uses: extractions/setup-just@v3
       - name: Install cargo-deb
         uses: taiki-e/install-action@v2
@@ -118,6 +122,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
       - uses: extractions/setup-just@v3
       - name: Install cargo-generate-rpm
         uses: taiki-e/install-action@v2
