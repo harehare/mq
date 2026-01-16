@@ -238,15 +238,14 @@ Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 
 Commands:
   repl   Start a REPL session for interactive query execution
-  lsp    Start a language server for mq
   fmt    Format mq files based on specified formatting options
   docs   Show functions documentation for the query
   check  Check syntax errors in mq files
   help   Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]
-  [FILES]...
+  [QUERY OR FILE]  
+  [FILES]...       
 
 Options:
   -A, --aggregate
@@ -266,7 +265,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
       --json
-
+          
       --csv
           Include the built-in CSV module
       --fuzzy

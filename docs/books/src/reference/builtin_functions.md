@@ -44,6 +44,7 @@
 | `fold` |  Reduces an array to a single value by applying a function, starting from an initial value. | `arr`, `init`, `f` | fold(arr, init, f) |
 | `from_date` | Converts a date string to a timestamp. | `date_str` | from_date(date_str) |
 | `get` | Retrieves a value from a dict by its key. Returns None if the key is not found. | `obj`, `key` | get(obj, key) |
+| `get_args` |  Gets the arguments of an AST node | `node` | get_args(node) |
 | `get_or` |  Safely gets a value from a dict with a default if the key doesn't exist. | `dict`, `key`, `default` | get_or(dict, key, default) |
 | `get_title` | Returns the title of a markdown node. | `node` | get_title(node) |
 | `get_url` | Returns the url of a markdown node. | `node` | get_url(node) |
@@ -63,6 +64,7 @@
 | `infinite` | Returns an infinite number value. |  | infinite() |
 | `input` | Reads a line from standard input and returns it as a string. |  | input() |
 | `insert` | Inserts a value into an array or string at the specified index, or into a dict with the specified key. | `target`, `index_or_key`, `value` | insert(target, index_or_key, value) |
+| `inspect` |  Inspects a value by printing its string representation and returning the value. | `value` | inspect(value) |
 | `intern` | Interns the given string, returning a canonical reference for efficient comparison. | `string` | intern(string) |
 | `is_array` |  Checks if input is an array | `a` | is_array(a) |
 | `is_bool` |  Checks if input is a boolean | `b` | is_bool(b) |
@@ -157,6 +159,7 @@
 | `test` |  Tests if string matches a pattern | `s`, `pattern` | test(s, pattern) |
 | `times` |  Executes an expression n times and returns an array of results. | `t_n`, `t_expr` | times(t_n, t_expr) |
 | `to_array` | Converts the given value to an array. | `value` | to_array(value) |
+| `to_code` |  Converts an AST node back to code | `node` | to_code(node) |
 | `to_code` | Creates a markdown code block with the given value and language. | `value`, `language` | to_code(value, language) |
 | `to_code_inline` | Creates an inline markdown code node with the given value. | `value` | to_code_inline(value) |
 | `to_csv` |  Converts the given value to a CSV. | `v` | to_csv(v) |
