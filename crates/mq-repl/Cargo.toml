@@ -28,7 +28,6 @@ tempfile = {workspace = true}
 arboard = {workspace = true, optional = true}
 
 [dev-dependencies]
-rstest = {workspace = true}
 scopeguard = {workspace = true}
 
 [features]
