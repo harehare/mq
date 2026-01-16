@@ -46,7 +46,7 @@ deadpool-libsql = "0.1.0"
 dirs = "6.0.0"
 divan = {version = "3.0.5", package = "codspeed-divan-compat"}
 ego-tree = "0.10.0"
-fantoccini = "0.22.0"
+fantoccini = {version = "0.22.0", default-features = false, features = ["rustls-tls"]}
 futures = "0.3"
 httpmock = "0.8.2"
 itertools = "0.14.0"
@@ -65,7 +65,7 @@ proptest = "1.9"
 pyo3 = "0.27.2"
 rayon = "1.11.0"
 regex-lite = "0.1.8"
-reqwest = "0.12"
+reqwest = {version = "0.12", default-features = false}
 robots_txt = "0.7"
 rstest = "0.26.1"
 rustc-hash = "2.1.1"

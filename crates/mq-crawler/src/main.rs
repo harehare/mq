@@ -101,7 +101,8 @@ async fn main() {
 
     let client = if let Some(url) = args.webdriver_url {
         mq_crawler::http_client::HttpClient::Fantoccini({
-            let fantoccini_client = fantoccini::ClientBuilder::native()
+            let fantoccini_client = fantoccini::ClientBuilder::rustls()
+                .expect("Failed to create rustls client builder")
                 .connect(url.as_ref())
                 .await
                 .expect("Failed to connect to WebDriver");
