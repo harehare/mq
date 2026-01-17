@@ -105,6 +105,12 @@ Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.11/
 brew install mq
 ```
 
+### Docker
+
+```sh
+$ docker run --rm ghcr.io/harehare/mq:0.5.11
+```
+
 ### mq-lsp (Language Server)
 
 The mq Language Server provides IDE features like completion, hover, and diagnostics for mq query files.
@@ -141,12 +147,6 @@ curl -L https://github.com/harehare/mq/releases/download/v0.5.11/mq-lsp-x86_64-u
 curl -L https://github.com/harehare/mq/releases/download/v0.5.11/mq-lsp-aarch64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
 # Windows (PowerShell)
 Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.11/mq-lsp-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq-lsp.exe"
-```
-
-### Docker
-
-```sh
-$ docker run --rm ghcr.io/harehare/mq:0.5.11
 ```
 
 ### Visual Studio Code Extension
