@@ -39,6 +39,55 @@ pub mod runtime_value;
 use env::Env;
 use runtime_value::RuntimeValue;
 
+/// Control flow signals for internal evaluation.
+///
+/// These are not errors, but signals used within the evaluator
+/// to handle `break` and `continue` statements in loops.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ControlFlow {
+    /// Signal to break out of a loop, with the token for error reporting.
+    Break(Token),
+    /// Signal to continue to the next iteration, with the token for error reporting.
+    Continue(Token),
+}
+
+/// Internal evaluation error that combines control flow and runtime errors.
+///
+/// This type is used internally by the evaluator and should not be exposed
+/// to external consumers. External APIs convert this to `RuntimeError`.
+#[derive(Debug)]
+pub(crate) enum EvalError {
+    /// Control flow signal (break/continue).
+    Flow(ControlFlow),
+    /// Runtime error.
+    Runtime(RuntimeError),
+}
+
+impl From<RuntimeError> for EvalError {
+    fn from(err: RuntimeError) -> Self {
+        EvalError::Runtime(err)
+    }
+}
+
+impl EvalError {
+    /// Converts to RuntimeError, treating control flow as unexpected.
+    pub(crate) fn into_runtime_error(self) -> RuntimeError {
+        match self {
+            EvalError::Flow(ControlFlow::Break(token)) => RuntimeError::UnexpectedBreak(token),
+            EvalError::Flow(ControlFlow::Continue(token)) => RuntimeError::UnexpectedContinue(token),
+            EvalError::Runtime(err) => err,
+        }
+    }
+
+    /// Converts to InnerError for external API.
+    pub(crate) fn into_inner_error(self) -> InnerError {
+        InnerError::from(self.into_runtime_error())
+    }
+}
+
+/// Result type for internal evaluation functions.
+pub(crate) type EvalResult = Result<RuntimeValue, EvalError>;
+
 /// Configuration options for the evaluator.
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -176,10 +225,12 @@ impl<T: ModuleResolver> Evaluator<T> {
             |mut nodes: Vec<Shared<ast::Node>>, node: &Shared<ast::Node>| -> Result<_, InnerError> {
                 match &*node.expr {
                     ast::Expr::Include(module_id) => {
-                        self.eval_include(module_id.to_owned(), &Shared::clone(&self.env))?;
+                        self.eval_include(module_id.to_owned(), &Shared::clone(&self.env))
+                            .map_err(InnerError::from)?;
                     }
                     ast::Expr::Import(module_path) => {
-                        self.eval_import(module_path.to_owned(), &Shared::clone(&self.env))?;
+                        self.eval_import(module_path.to_owned(), &Shared::clone(&self.env))
+                            .map_err(|e| e.into_inner_error())?;
                     }
                     _ => nodes.push(Shared::clone(node)),
                 };
@@ -223,7 +274,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
                     _ => self
                         .eval_program(&program, runtime_value, Shared::clone(&self.env))
-                        .map_err(InnerError::from),
+                        .map_err(|e| e.into_inner_error()),
                 })
                 .collect();
 
@@ -238,7 +289,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                             vec![value]
                         }
                     })
-                    .map_err(InnerError::from)
+                    .map_err(|e| e.into_inner_error())
             }
         } else {
             input
@@ -246,7 +297,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
                     _ => self
                         .eval_program(&program, runtime_value, Shared::clone(&self.env))
-                        .map_err(InnerError::from),
+                        .map_err(|e| e.into_inner_error()),
                 })
                 .collect()
         }
@@ -255,11 +306,13 @@ impl<T: ModuleResolver> Evaluator<T> {
     #[inline(always)]
     fn eval_markdown_node(&mut self, program: &Program, node: &mq_markdown::Node) -> Result<RuntimeValue, InnerError> {
         node.map_values(&mut |child_node| {
-            let value = self.eval_program(
-                program,
-                RuntimeValue::Markdown(child_node.clone(), None),
-                Shared::clone(&self.env),
-            )?;
+            let value = self
+                .eval_program(
+                    program,
+                    RuntimeValue::Markdown(child_node.clone(), None),
+                    Shared::clone(&self.env),
+                )
+                .map_err(|e| e.into_inner_error())?;
 
             Ok(match value {
                 RuntimeValue::None => child_node.to_fragment(),
@@ -306,9 +359,15 @@ impl<T: ModuleResolver> Evaluator<T> {
 
         for node in &module.modules {
             let _ = match &*node.expr {
-                ast::Expr::Include(_) => self.eval_expr(&RuntimeValue::NONE, node, env)?,
-                ast::Expr::Module(ident, program) => self.eval_module(&RuntimeValue::NONE, ident, program, env)?,
-                ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned(), env)?,
+                ast::Expr::Include(_) => self
+                    .eval_expr(&RuntimeValue::NONE, node, env)
+                    .map_err(|e| e.into_runtime_error())?,
+                ast::Expr::Module(ident, program) => self
+                    .eval_module(&RuntimeValue::NONE, ident, program, env)
+                    .map_err(|e| e.into_runtime_error())?,
+                ast::Expr::Import(module_path) => self
+                    .eval_import(module_path.to_owned(), env)
+                    .map_err(|e| e.into_runtime_error())?,
                 _ => {
                     return Err(RuntimeError::InternalError(
                         (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
@@ -329,7 +388,9 @@ impl<T: ModuleResolver> Evaluator<T> {
 
         for node in vars {
             if let ast::Expr::Let(ident, node) = &*node.expr {
-                let val = self.eval_expr(&RuntimeValue::NONE, node, env)?;
+                let val = self
+                    .eval_expr(&RuntimeValue::NONE, node, env)
+                    .map_err(|e| e.into_runtime_error())?;
                 define(env, ident.name, val);
             } else {
                 return Err(RuntimeError::InternalError(
@@ -347,7 +408,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         program: &Program,
         runtime_value: RuntimeValue,
         env: Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         let mut value = runtime_value;
         for expr in program {
             match self.eval_expr(&value, expr, &env) {
@@ -359,24 +420,19 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     #[inline(always)]
-    fn eval_ident(
-        &self,
-        ident: Ident,
-        token_id: TokenId,
-        env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    fn eval_ident(&self, ident: Ident, token_id: TokenId, env: &Shared<SharedCell<Env>>) -> EvalResult {
         #[cfg(not(feature = "sync"))]
         {
             env.borrow()
                 .resolve(ident)
-                .map_err(|e| e.to_runtime_error(token_id, Shared::clone(&self.token_arena)))
+                .map_err(|e| EvalError::from(e.to_runtime_error(token_id, Shared::clone(&self.token_arena))))
         }
         #[cfg(feature = "sync")]
         {
             env.read()
                 .unwrap()
                 .resolve(ident)
-                .map_err(|e| e.to_runtime_error(token_id, Shared::clone(&self.token_arena)))
+                .map_err(|e| EvalError::from(e.to_runtime_error(token_id, Shared::clone(&self.token_arena))))
         }
     }
 
@@ -439,7 +495,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         ident: &IdentWithToken,
         program: &Program,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         let module_name_to_use = &ident.name.as_str();
 
         if let Ok(value) = resolve(module_name_to_use, env) {
@@ -491,11 +547,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         Ok(runtime_value.clone())
     }
 
-    fn eval_import(
-        &mut self,
-        module_path: ast::Literal,
-        env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    fn eval_import(&mut self, module_path: ast::Literal, env: &Shared<SharedCell<Env>>) -> EvalResult {
         match module_path {
             ast::Literal::String(module_name) => {
                 let module = self
@@ -524,12 +576,10 @@ impl<T: ModuleResolver> Evaluator<T> {
                 {
                     Ok(value)
                 } else {
-                    Err(RuntimeError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(
-                        module_name,
-                    ))))
+                    Err(RuntimeError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(module_name))).into())
                 }
             }
-            _ => Err(RuntimeError::ModuleLoadError(ModuleError::InvalidModule)),
+            _ => Err(RuntimeError::ModuleLoadError(ModuleError::InvalidModule).into()),
         }
     }
 
@@ -540,13 +590,13 @@ impl<T: ModuleResolver> Evaluator<T> {
         access_target: &ast::AccessTarget,
         token_id: TokenId,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         // Traverse the module path to get to the final module
         let mut current_value = if let Some(first_module) = module_path.first() {
             self.eval_ident(first_module.name, token_id, env)?
         } else {
             let token = get_token(Shared::clone(&self.token_arena), token_id);
-            return Err(RuntimeError::InternalError((*token).clone()));
+            return Err(RuntimeError::InternalError((*token).clone()).into());
         };
 
         // Traverse nested modules
@@ -560,15 +610,12 @@ impl<T: ModuleResolver> Evaluator<T> {
                     #[cfg(feature = "sync")]
                     let resolved = module_exports.read().unwrap().resolve(module_ident.name);
 
-                    current_value =
-                        resolved.map_err(|e| e.to_runtime_error(token_id, Shared::clone(&self.token_arena)))?;
+                    current_value = resolved
+                        .map_err(|e| EvalError::from(e.to_runtime_error(token_id, Shared::clone(&self.token_arena))))?;
                 }
                 _ => {
                     let token = get_token(Shared::clone(&self.token_arena), token_id);
-                    return Err(RuntimeError::NotDefined(
-                        (*token).clone(),
-                        module_ident.name.to_string(),
-                    ));
+                    return Err(RuntimeError::NotDefined((*token).clone(), module_ident.name.to_string()).into());
                 }
             }
         }
@@ -597,7 +644,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                             }
                             Err(_) => {
                                 let token = get_token(Shared::clone(&self.token_arena), token_id);
-                                Err(RuntimeError::NotDefined((*token).clone(), func_name.name.to_string()))
+                                Err(RuntimeError::NotDefined((*token).clone(), func_name.name.to_string()).into())
                             }
                         }
                     }
@@ -608,14 +655,16 @@ impl<T: ModuleResolver> Evaluator<T> {
                         #[cfg(feature = "sync")]
                         let resolved = module_exports.read().unwrap().resolve(ident.name);
 
-                        resolved.map_err(|e| e.to_runtime_error(token_id, Shared::clone(&self.token_arena)))
+                        resolved.map_err(|e| {
+                            EvalError::from(e.to_runtime_error(token_id, Shared::clone(&self.token_arena)))
+                        })
                     }
                 }
             }
             _ => {
                 let token = get_token(Shared::clone(&self.token_arena), token_id);
                 let last_module = module_path.last().map(|m| m.name.to_string()).unwrap_or_default();
-                Err(RuntimeError::NotDefined((*token).clone(), last_module))
+                Err(RuntimeError::NotDefined((*token).clone(), last_module).into())
             }
         }
     }
@@ -657,7 +706,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         segments: &[ast::StringSegment],
         token_id: TokenId,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         // Calculate estimated capacity based on segment content
         let estimated_capacity = segments
             .iter()
@@ -701,7 +750,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         runtime_value: &RuntimeValue,
         node: &Shared<ast::Node>,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         #[cfg(feature = "debugger")]
         {
             let token = &get_token(Shared::clone(&self.token_arena), node.token_id);
@@ -836,13 +885,19 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Expr::Module(ident, program) => self.eval_module(runtime_value, ident, program, env),
 
             ast::Expr::Match(value_node, arms) => self.eval_match(runtime_value, value_node, arms, env),
-            ast::Expr::Break => Err(RuntimeError::Break),
-            ast::Expr::Continue => Err(RuntimeError::Continue),
+            ast::Expr::Break => {
+                let token = get_token(Shared::clone(&self.token_arena), node.token_id);
+                Err(EvalError::Flow(ControlFlow::Break((*token).clone())))
+            }
+            ast::Expr::Continue => {
+                let token = get_token(Shared::clone(&self.token_arena), node.token_id);
+                Err(EvalError::Flow(ControlFlow::Continue((*token).clone())))
+            }
             ast::Expr::Paren(expr) => self.eval_expr(runtime_value, expr, env),
             ast::Expr::Quote(inner) => self.eval_quote(inner, env),
             ast::Expr::Unquote(_) => {
                 let token = get_token(Shared::clone(&self.token_arena), node.token_id);
-                Err(RuntimeError::UnquoteNotAllowedOutsideQuote((*token).clone()))
+                Err(RuntimeError::UnquoteNotAllowedOutsideQuote((*token).clone()).into())
             }
         }
     }
@@ -865,7 +920,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         left: &Shared<ast::Node>,
         right: &Shared<ast::Node>,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         let left_value = self.eval_expr(runtime_value, left, env)?;
 
         if !left_value.is_truthy() {
@@ -888,7 +943,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         left: &Shared<ast::Node>,
         right: &Shared<ast::Node>,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         let left_value = self.eval_expr(runtime_value, left, env)?;
 
         if left_value.is_truthy() {
@@ -912,7 +967,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         body: &Program,
         token_id: TokenId,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         let values = self.eval_expr(runtime_value, values, env)?;
         let values = match values {
             RuntimeValue::Array(values) => {
@@ -923,8 +978,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                     define(&env, ident, value.clone());
                     match self.eval_program(body, value, Shared::clone(&env)) {
                         Ok(result) => results.push(result),
-                        Err(RuntimeError::Break) => break,
-                        Err(RuntimeError::Continue) => continue,
+                        Err(EvalError::Flow(ControlFlow::Break(_))) => break,
+                        Err(EvalError::Flow(ControlFlow::Continue(_))) => continue,
                         Err(e) => return Err(e),
                     }
                 }
@@ -939,8 +994,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                     define(&env, ident, RuntimeValue::String(c.to_string()));
                     match self.eval_program(body, RuntimeValue::String(c.to_string()), Shared::clone(&env)) {
                         Ok(result) => results.push(result),
-                        Err(RuntimeError::Break) => break,
-                        Err(RuntimeError::Continue) => continue,
+                        Err(EvalError::Flow(ControlFlow::Break(_))) => break,
+                        Err(EvalError::Flow(ControlFlow::Continue(_))) => continue,
                         Err(e) => return Err(e),
                     }
                 }
@@ -952,7 +1007,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                     token: (*get_token(Shared::clone(&self.token_arena), token_id)).clone(),
                     name: TokenKind::Foreach.to_string(),
                     args: vec![values.to_string().into()],
-                });
+                }
+                .into());
             }
         };
 
@@ -965,7 +1021,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         cond: &Shared<ast::Node>,
         body: &Program,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         let mut runtime_value = runtime_value.clone();
         let env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
         let mut cond_value = self.eval_expr(&runtime_value, cond, &env)?;
@@ -981,16 +1037,16 @@ impl<T: ModuleResolver> Evaluator<T> {
                     std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                     cond_value = self.eval_expr(&runtime_value, cond, &env)?;
                 }
-                Err(RuntimeError::Break) if first => {
+                Err(EvalError::Flow(ControlFlow::Break(_))) if first => {
                     runtime_value = RuntimeValue::NONE;
                     break;
                 }
-                Err(RuntimeError::Break) => break,
-                Err(RuntimeError::Continue) if first => {
+                Err(EvalError::Flow(ControlFlow::Break(_))) => break,
+                Err(EvalError::Flow(ControlFlow::Continue(_))) if first => {
                     runtime_value = RuntimeValue::NONE;
                     continue;
                 }
-                Err(RuntimeError::Continue) => continue,
+                Err(EvalError::Flow(ControlFlow::Continue(_))) => continue,
                 Err(e) => return Err(e),
             }
 
@@ -1001,12 +1057,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     #[inline(always)]
-    fn eval_loop(
-        &mut self,
-        runtime_value: &RuntimeValue,
-        body: &Program,
-        env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    fn eval_loop(&mut self, runtime_value: &RuntimeValue, body: &Program, env: &Shared<SharedCell<Env>>) -> EvalResult {
         let mut runtime_value = runtime_value.clone();
         let env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
 
@@ -1015,8 +1066,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                 Ok(mut new_runtime_value) => {
                     std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                 }
-                Err(RuntimeError::Break) => break,
-                Err(RuntimeError::Continue) => continue,
+                Err(EvalError::Flow(ControlFlow::Break(_))) => break,
+                Err(EvalError::Flow(ControlFlow::Continue(_))) => continue,
                 Err(e) => return Err(e),
             }
         }
@@ -1031,7 +1082,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         try_expr: &Shared<ast::Node>,
         catch_expr: &Shared<ast::Node>,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         match self.eval_expr(runtime_value, try_expr, env) {
             Ok(result) => Ok(result),
             Err(_) => self.eval_expr(runtime_value, catch_expr, env),
@@ -1044,7 +1095,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         runtime_value: &RuntimeValue,
         conditions: &Branches,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         for (cond_node, body) in conditions {
             match cond_node {
                 Some(cond_node) => {
@@ -1067,7 +1118,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         value_node: &Shared<ast::Node>,
         arms: &MatchArms,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         let match_value = self.eval_expr(runtime_value, value_node, env)?;
 
         // Try each arm in order
@@ -1103,11 +1154,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     #[inline(always)]
-    fn eval_quote(
-        &mut self,
-        node: &Shared<ast::Node>,
-        env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    fn eval_quote(&mut self, node: &Shared<ast::Node>, env: &Shared<SharedCell<Env>>) -> EvalResult {
         let processed_node = self.process_quote_node(node, env)?;
         Ok(RuntimeValue::Ast(processed_node))
     }
@@ -1119,7 +1166,9 @@ impl<T: ModuleResolver> Evaluator<T> {
     ) -> Result<Shared<ast::Node>, RuntimeError> {
         match &*node.expr {
             ast::Expr::Unquote(inner) => {
-                let value = self.eval_expr(&RuntimeValue::None, inner, env)?;
+                let value = self
+                    .eval_expr(&RuntimeValue::None, inner, env)
+                    .map_err(|e| e.into_runtime_error())?;
 
                 match value {
                     RuntimeValue::Ast(ast_node) => Ok(ast_node),
@@ -1180,7 +1229,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     #[inline(always)]
-    fn eval_macro(&mut self, node: &Shared<ast::Node>) -> Result<RuntimeValue, RuntimeError> {
+    fn eval_macro(&mut self, node: &Shared<ast::Node>) -> EvalResult {
         let macro_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(&self.env))));
         let value = self.eval_expr(&RuntimeValue::None, node, &macro_env)?;
 
@@ -1188,7 +1237,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             Ok(value)
         } else {
             let token = get_token(Shared::clone(&self.token_arena), node.token_id);
-            Err(RuntimeError::InvalidMacroResultAst((*token).clone()))
+            Err(RuntimeError::InvalidMacroResultAst((*token).clone()).into())
         }
     }
 
@@ -1314,7 +1363,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         ident: Ident,
         args: &ast::Args,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         #[cfg(not(feature = "sync"))]
         let resolved = Shared::clone(env).borrow().resolve(ident);
         #[cfg(feature = "sync")]
@@ -1335,11 +1384,11 @@ impl<T: ModuleResolver> Evaluator<T> {
         ident: &Ident,
         args: &ast::Args,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
-        let args: Result<builtin::Args, RuntimeError> =
+    ) -> EvalResult {
+        let args: Result<builtin::Args, EvalError> =
             args.iter().map(|arg| self.eval_expr(runtime_value, arg, env)).collect();
         builtin::eval_builtin(runtime_value, ident, args?, env)
-            .map_err(|e| e.to_runtime_error((*node).clone(), Shared::clone(&self.token_arena)))
+            .map_err(|e| EvalError::from(e.to_runtime_error((*node).clone(), Shared::clone(&self.token_arena))))
     }
 
     #[inline(always)]
@@ -1349,7 +1398,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         callable: &Shared<ast::Node>,
         args: &ast::Args,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         let fn_value = self.eval_expr(runtime_value, callable, env)?;
 
         self.call_fn(
@@ -1363,9 +1412,9 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     #[inline(always)]
-    fn enter_scope(&mut self) -> Result<(), RuntimeError> {
+    fn enter_scope(&mut self) -> Result<(), EvalError> {
         if self.call_stack_depth >= self.options.max_call_stack_depth {
-            return Err(RuntimeError::RecursionError(self.options.max_call_stack_depth));
+            return Err(RuntimeError::RecursionError(self.options.max_call_stack_depth).into());
         }
         self.call_stack_depth += 1;
         Ok(())
@@ -1386,7 +1435,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         args: &ast::Args,
         runtime_value: &RuntimeValue,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, RuntimeError> {
+    ) -> EvalResult {
         if let RuntimeValue::Function(params, program, fn_env) = fn_value {
             self.enter_scope()?;
             #[cfg(feature = "debugger")]
@@ -1408,7 +1457,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                     name: ident.to_string(),
                     expected: params.len() as u8,
                     actual: args.len() as u8,
-                });
+                }
+                .into());
             };
 
             let mut param_iter = params.iter();
@@ -1431,7 +1481,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                         name: ident.to_string(),
                         expected: params.len() as u8,
                         actual: args.len() as u8,
-                    });
+                    }
+                    .into());
                 }
             }
 
@@ -1447,7 +1498,8 @@ impl<T: ModuleResolver> Evaluator<T> {
             Err(RuntimeError::InvalidDefinition(
                 (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
                 ident.to_string(),
-            ))
+            )
+            .into())
         }
     }
 }
