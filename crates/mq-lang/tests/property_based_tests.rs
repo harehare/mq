@@ -543,7 +543,7 @@ proptest! {
         let matches_expected = match keyword {
             "self" => matches!(&*program[0].expr, AstExpr::Self_),
             "nodes" => matches!(&*program[0].expr, AstExpr::Nodes),
-            "break" => matches!(&*program[0].expr, AstExpr::Break),
+            "break" => matches!(&*program[0].expr, AstExpr::Break(_)),
             "continue" => matches!(&*program[0].expr, AstExpr::Continue),
             _ => false,
         };

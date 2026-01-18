@@ -575,9 +575,23 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn parse_break(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.token_arena.alloc(Shared::clone(token));
+
+        // Check for colon and expression (break: expr)
+        let value = if self.tokens.peek().map(|t| &t.kind) == Some(&TokenKind::Colon) {
+            self.tokens.next(); // consume colon
+            let expr_token = self
+                .tokens
+                .next()
+                .ok_or(SyntaxError::UnexpectedEOFDetected(self.module_id))?;
+            Some(self.parse_expr(expr_token)?)
+        } else {
+            None
+        };
+
         Ok(Shared::new(Node {
-            token_id: self.token_arena.alloc(Shared::clone(token)),
-            expr: Shared::new(Expr::Break),
+            token_id,
+            expr: Shared::new(Expr::Break(value)),
         }))
     }
 
@@ -5180,7 +5194,7 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Break),
+                            expr: Shared::new(Expr::Break(None)),
                         })
                     ]))]
     #[case::continue_(

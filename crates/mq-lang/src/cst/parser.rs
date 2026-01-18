@@ -363,7 +363,7 @@ impl<'a> Parser<'a> {
             TokenKind::Nodes if root => self.parse_nodes(leading_trivia),
             TokenKind::Env(_) => self.parse_node(NodeKind::Env, leading_trivia),
             TokenKind::Not | TokenKind::Minus => self.parse_unary_op(leading_trivia, root),
-            TokenKind::Break if in_loop => self.parse_node(NodeKind::Break, leading_trivia),
+            TokenKind::Break if in_loop => self.parse_break(leading_trivia, in_loop),
             TokenKind::Continue if in_loop => self.parse_node(NodeKind::Continue, leading_trivia),
             TokenKind::Colon => self.parse_symbol(leading_trivia),
             TokenKind::Quote => self.parse_quote(leading_trivia),
@@ -1123,6 +1123,27 @@ impl<'a> Parser<'a> {
             trailing_trivia,
             children: Vec::new(),
         }))
+    }
+
+    fn parse_break(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+        let token = self.tokens.next();
+        let trailing_trivia = self.parse_trailing_trivia();
+        let mut node = Node {
+            kind: NodeKind::Break,
+            token: Some(Shared::clone(token.unwrap())),
+            leading_trivia,
+            trailing_trivia,
+            children: Vec::new(),
+        };
+
+        // Optionally parse colon and expression (break: expr)
+        if self.try_next_token(|kind| matches!(kind, TokenKind::Colon)) {
+            self.push_colon_token_if_present(&mut node.children)?;
+            let leading_trivia = self.parse_leading_trivia();
+            node.children.push(self.parse_expr(leading_trivia, false, in_loop)?);
+        }
+
+        Ok(Shared::new(node))
     }
 
     fn parse_array(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
