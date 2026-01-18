@@ -5197,6 +5197,176 @@ mod tests {
                             expr: Shared::new(Expr::Break(None)),
                         })
                     ]))]
+    #[case::break_with_number(
+                    vec![
+                        token(TokenKind::Break),
+                        token(TokenKind::Colon),
+                        token(TokenKind::NumberLiteral(42.into())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Break(Some(Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Literal(Literal::Number(42.into()))),
+                            })))),
+                        })
+                    ]))]
+    #[case::break_with_string(
+                    vec![
+                        token(TokenKind::Break),
+                        token(TokenKind::Colon),
+                        token(TokenKind::StringLiteral("result".to_owned())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Break(Some(Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("result".to_owned()))),
+                            })))),
+                        })
+                    ]))]
+    #[case::break_with_bool_true(
+                    vec![
+                        token(TokenKind::Break),
+                        token(TokenKind::Colon),
+                        token(TokenKind::BoolLiteral(true)),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Break(Some(Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                            })))),
+                        })
+                    ]))]
+    #[case::break_with_bool_false(
+                    vec![
+                        token(TokenKind::Break),
+                        token(TokenKind::Colon),
+                        token(TokenKind::BoolLiteral(false)),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Break(Some(Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Literal(Literal::Bool(false))),
+                            })))),
+                        })
+                    ]))]
+    #[case::break_with_self(
+                    vec![
+                        token(TokenKind::Break),
+                        token(TokenKind::Colon),
+                        token(TokenKind::Self_),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Break(Some(Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Self_),
+                            })))),
+                        })
+                    ]))]
+    #[case::break_with_function_call(
+                    vec![
+                        token(TokenKind::Break),
+                        token(TokenKind::Colon),
+                        token(TokenKind::Ident(SmolStr::new("contains"))),
+                        token(TokenKind::LParen),
+                        token(TokenKind::StringLiteral("test".to_owned())),
+                        token(TokenKind::RParen),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Break(Some(Shared::new(Node {
+                                token_id: 2.into(),
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token("contains", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("contains")))))),
+                                    smallvec![Shared::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::String("test".to_owned()))),
+                                    })],
+                                )),
+                            })))),
+                        })
+                    ]))]
+    #[case::break_with_nested_call(
+                    vec![
+                        token(TokenKind::Break),
+                        token(TokenKind::Colon),
+                        token(TokenKind::Ident(SmolStr::new("and"))),
+                        token(TokenKind::LParen),
+                        token(TokenKind::BoolLiteral(true)),
+                        token(TokenKind::Comma),
+                        token(TokenKind::BoolLiteral(false)),
+                        token(TokenKind::RParen),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Break(Some(Shared::new(Node {
+                                token_id: 3.into(),
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(constants::AND, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("and")))))),
+                                    smallvec![
+                                        Shared::new(Node {
+                                            token_id: 1.into(),
+                                            expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                                        }),
+                                        Shared::new(Node {
+                                            token_id: 2.into(),
+                                            expr: Shared::new(Expr::Literal(Literal::Bool(false))),
+                                        })
+                                    ],
+                                )),
+                            })))),
+                        })
+                    ]))]
+    #[case::break_with_selector(
+                    vec![
+                        token(TokenKind::Break),
+                        token(TokenKind::Colon),
+                        token(TokenKind::Selector(SmolStr::new(".h1"))),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Break(Some(Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Selector(Selector::Heading(Some(1)))),
+                            })))),
+                        })
+                    ]))]
+    #[case::break_with_none(
+                    vec![
+                        token(TokenKind::Break),
+                        token(TokenKind::Colon),
+                        token(TokenKind::None),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Break(Some(Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Literal(Literal::None)),
+                            })))),
+                        })
+                    ]))]
     #[case::continue_(
                     vec![
                         token(TokenKind::Continue),
