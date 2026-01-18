@@ -10,7 +10,7 @@ name = "mq-ffi"
 publish = false
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.9"
+version = "0.5.11"
 
 [dependencies]
 libc = {workspace = true}

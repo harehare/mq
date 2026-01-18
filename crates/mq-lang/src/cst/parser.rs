@@ -1205,22 +1205,10 @@ impl<'a> Parser<'a> {
             None => return Err(ParseError::UnexpectedEOFDetected),
         };
 
-        match &*token {
-            Token {
-                range: _,
-                kind: TokenKind::Ident(_),
-                ..
+        match &token.kind {
+            TokenKind::Ident(_) | TokenKind::Colon | TokenKind::StringLiteral(_) => {
+                self.parse_expr(leading_trivia, false, false)
             }
-            | Token {
-                range: _,
-                kind: TokenKind::Colon,
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::StringLiteral(_),
-                ..
-            } => self.parse_expr(leading_trivia, false, false),
             _ => Err(ParseError::UnexpectedToken(Shared::clone(&token))),
         }
     }
@@ -1334,12 +1322,7 @@ impl<'a> Parser<'a> {
         let token = self.tokens.next().unwrap();
         let trailing_trivia = self.parse_trailing_trivia();
 
-        if let Token {
-            range: _,
-            kind: TokenKind::InterpolatedString(_),
-            module_id: _,
-        } = &**token
-        {
+        if let TokenKind::InterpolatedString(_) = &token.kind {
             Ok(Shared::new(Node {
                 kind: NodeKind::InterpolatedString,
                 token: Some(Shared::clone(token)),
@@ -1859,17 +1842,9 @@ impl<'a> Parser<'a> {
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(2);
 
         let mut node = Node {
-            kind: match &**operator_token {
-                Token {
-                    range: _,
-                    kind: TokenKind::Not,
-                    ..
-                } => NodeKind::UnaryOp(UnaryOp::Not),
-                Token {
-                    range: _,
-                    kind: TokenKind::Minus,
-                    ..
-                } => NodeKind::UnaryOp(UnaryOp::Negate),
+            kind: match &operator_token.kind {
+                TokenKind::Not => NodeKind::UnaryOp(UnaryOp::Not),
+                TokenKind::Minus => NodeKind::UnaryOp(UnaryOp::Negate),
                 _ => return Err(ParseError::UnexpectedToken(Shared::clone(operator_token))),
             },
             token: Some(Shared::clone(operator_token)),

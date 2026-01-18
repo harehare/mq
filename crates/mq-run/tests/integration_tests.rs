@@ -143,15 +143,14 @@ In {year}, the snowfall was above average.
 "#)
 )]
 #[case::yaml_output(
-    vec!["--unbuffered", "--yaml", "yaml_parse()"],
+    vec!["--unbuffered", "-I", "raw", "--yaml", "yaml_parse()"],
     r#"- type: Heading
   value: title1
 - type: Heading
   value: title2
 "#,
     Some(
-        r#"{"type": "Heading", "value": "title1"}
-{"type": "Heading", "value": "title2"}
+        r#"[{"value": "title1"}, {"value": "title2"}]
 "#,
     )
 )]

@@ -2,6 +2,7 @@ use node::Node;
 
 use crate::{Shared, Token, arena::ArenaId};
 
+pub mod code;
 pub mod constants;
 pub mod node;
 pub mod parser;

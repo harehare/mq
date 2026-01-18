@@ -513,8 +513,7 @@ const executeCommand = async (
     }
   } catch (error) {
     await vscode.window.showErrorMessage(
-      `Failed to run text: ${
-        error instanceof Error ? error.message : "Unknown error"
+      `Failed to run text: ${error instanceof Error ? error.message : "Unknown error"
       }`
     );
   }
@@ -536,7 +535,7 @@ const startLspServer = async () => {
     if (configLspPath) {
       lspPath = configLspPath;
     } else {
-      lspPath = await which("mq", { nothrow: true });
+      lspPath = await which("mq-lsp", { nothrow: true });
     }
 
     if (lspPath === null) {
@@ -556,7 +555,7 @@ const startLspServer = async () => {
 
   const run: lc.Executable = {
     command: lspPath,
-    args: ["lsp", ...multiWorkspaceArgs],
+    args: multiWorkspaceArgs,
     options: {},
   };
 
@@ -611,12 +610,10 @@ const installServers = async (
     return false;
   }
 
-  const installLspCommand = `cargo install --git https://github.com/harehare/mq.git mq-run ${
-    force ? " --force" : ""
-  }`;
-  const installDapCommand = `cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger" ${
-    force ? " --force" : ""
-  }`;
+  const installLspCommand = `cargo install --git https://github.com/harehare/mq.git mq-lsp ${force ? " --force" : ""
+    }`;
+  const installDapCommand = `cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger" ${force ? " --force" : ""
+    }`;
 
   const installTask = new vscode.Task(
     { type: "cargo", task: "install-lsp-server" },
@@ -647,8 +644,7 @@ const installServers = async (
     });
   } catch (error) {
     vscode.window.showErrorMessage(
-      `Installation task failed: ${
-        error instanceof Error ? error.message : "Unknown error"
+      `Installation task failed: ${error instanceof Error ? error.message : "Unknown error"
       }`
     );
     return false;

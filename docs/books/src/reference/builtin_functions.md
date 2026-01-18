@@ -13,15 +13,18 @@
 | `attr` | Retrieves the value of the specified attribute from a markdown node. | `markdown`, `attribute` | attr(markdown, attribute) |
 | `base64` | Encodes the given string to base64. | `input` | base64(input) |
 | `base64d` | Decodes the given base64 string. | `input` | base64d(input) |
+| `between` |  Checks if a value is between min and max (inclusive). | `value`, `min`, `max` | between(value, min, max) |
 | `booleans` |  Returns boolean if input is boolean, None otherwise | `b` | booleans(b) |
 | `breakpoint` | Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached. |  | breakpoint() |
 | `ceil` | Rounds the given number up to the nearest integer. | `number` | ceil(number) |
 | `coalesce` | Returns the first non-None value from the two provided arguments. | `value1`, `value2` | coalesce(value1, value2) |
 | `compact` | Removes None values from the given array. | `array` | compact(array) |
+| `compact_map` |  Maps over an array and removes None values from the result. | `arr`, `f` | compact_map(arr, f) |
 | `contains` |  Checks if string contains a substring | `haystack`, `needle` | contains(haystack, needle) |
 | `count_by` |  Returns the count of elements in the array that satisfy the provided function. | `arr`, `f` | count_by(arr, f) |
 | `debug` |  Prints the debug information of the given value. | `msg` | debug(msg) |
 | `decrease_header_level` | Decreases the level of a markdown heading node by one, down to a minimum of 1. | `heading_node` | decrease_header_level(heading_node) |
+| `default_to` |  Returns a default value if the input is None or empty. | `value`, `default` | default_to(value, default) |
 | `del` | Deletes the element at the specified index in the array or string. | `array_or_string`, `index` | del(array_or_string, index) |
 | `dict` | Creates a new, empty dict. |  | dict() |
 | `div` | Divides the first value by the second value. | `value1`, `value2` | div(value1, value2) |
@@ -41,6 +44,8 @@
 | `fold` |  Reduces an array to a single value by applying a function, starting from an initial value. | `arr`, `init`, `f` | fold(arr, init, f) |
 | `from_date` | Converts a date string to a timestamp. | `date_str` | from_date(date_str) |
 | `get` | Retrieves a value from a dict by its key. Returns None if the key is not found. | `obj`, `key` | get(obj, key) |
+| `get_args` |  Gets the arguments of an AST node | `node` | get_args(node) |
+| `get_or` |  Safely gets a value from a dict with a default if the key doesn't exist. | `dict`, `key`, `default` | get_or(dict, key, default) |
 | `get_title` | Returns the title of a markdown node. | `node` | get_title(node) |
 | `get_url` | Returns the url of a markdown node. | `node` | get_url(node) |
 | `get_variable` | Retrieves the value of a symbol or variable from the current environment. | `symbol_or_string` | get_variable(symbol_or_string) |
@@ -55,9 +60,11 @@
 | `in` |  Returns true if the element is in the array. | `v`, `elem` | in(v, elem) |
 | `increase_header_level` | Increases the level of a markdown heading node by one, up to a maximum of 6. | `heading_node` | increase_header_level(heading_node) |
 | `index` | Finds the first occurrence of a substring in the given string. | `string`, `substring` | index(string, substring) |
+| `index_by` |  Creates a dictionary indexed by a key extracted from each element. | `arr`, `f` | index_by(arr, f) |
 | `infinite` | Returns an infinite number value. |  | infinite() |
 | `input` | Reads a line from standard input and returns it as a string. |  | input() |
 | `insert` | Inserts a value into an array or string at the specified index, or into a dict with the specified key. | `target`, `index_or_key`, `value` | insert(target, index_or_key, value) |
+| `inspect` |  Inspects a value by printing its string representation and returning the value. | `value` | inspect(value) |
 | `intern` | Interns the given string, returning a canonical reference for efficient comparison. | `string` | intern(string) |
 | `is_array` |  Checks if input is an array | `a` | is_array(a) |
 | `is_bool` |  Checks if input is a boolean | `b` | is_bool(b) |
@@ -111,12 +118,14 @@
 | `now` | Returns the current timestamp. |  | now() |
 | `numbers` |  Returns number if input is number, None otherwise | `n` | numbers(n) |
 | `or` | Performs a logical OR operation on two boolean values. | `value1`, `value2` | or(value1, value2) |
+| `partition` |  Splits an array into two arrays: [matching, not_matching] based on a condition. | `arr`, `f` | partition(arr, f) |
 | `pluck` |  Extracts values from an array of objects based on a specified selector. | `pluck_obj`, `selector` | pluck(pluck_obj, selector) |
 | `pow` | Raises the base to the power of the exponent. | `base`, `exponent` | pow(base, exponent) |
 | `print` | Prints a message to standard output and returns the current value. | `message` | print(message) |
 | `range` | Creates an array from start to end with an optional step. | `start`, `end`, `step` | range(start, end, step) |
 | `read_file` | Reads the contents of a file at the given path and returns it as a string. | `path` | read_file(path) |
 | `regex_match` | Finds all matches of the given pattern in the string. | `string`, `pattern` | regex_match(string, pattern) |
+| `reject` |  Filters out elements that match the condition (opposite of filter). | `arr`, `f` | reject(arr, f) |
 | `repeat` | Repeats the given string a specified number of times. | `string`, `count` | repeat(string, count) |
 | `replace` | Replaces all occurrences of a substring with another substring. | `from`, `pattern`, `to` | replace(from, pattern, to) |
 | `reverse` | Reverses the given string or array. | `value` | reverse(value) |
@@ -143,11 +152,14 @@
 | `starts_with` | Checks if the given string starts with the specified substring. | `string`, `substring` | starts_with(string, substring) |
 | `stderr` | Prints a message to standard error and returns the current value. | `message` | stderr(message) |
 | `sub` | Subtracts the second value from the first value. | `value1`, `value2` | sub(value1, value2) |
+| `sum_by` |  Sums elements of an array after applying a transformation function. | `arr`, `f` | sum_by(arr, f) |
 | `take` |  Takes the first n elements of an array | `arr`, `n` | take(arr, n) |
 | `take_while` |  Takes elements from the beginning of an array while the provided function returns true | `arr`, `f` | take_while(arr, f) |
 | `tap` |  Applies a function to a value and returns the value (useful for debugging or side effects). | `tap_value`, `tap_expr` | tap(tap_value, tap_expr) |
 | `test` |  Tests if string matches a pattern | `s`, `pattern` | test(s, pattern) |
+| `times` |  Executes an expression n times and returns an array of results. | `t_n`, `t_expr` | times(t_n, t_expr) |
 | `to_array` | Converts the given value to an array. | `value` | to_array(value) |
+| `to_code` |  Converts an AST node back to code | `node` | to_code(node) |
 | `to_code` | Creates a markdown code block with the given value and language. | `value`, `language` | to_code(value, language) |
 | `to_code_inline` | Creates an inline markdown code node with the given value. | `value` | to_code_inline(value) |
 | `to_csv` |  Converts the given value to a CSV. | `v` | to_csv(v) |

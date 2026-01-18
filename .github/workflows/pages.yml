@@ -58,7 +58,9 @@ jobs:
         run: npm run build
         working-directory: ./packages/mq-playground
       - name: Copy install script
-        run: cp ./scripts/install.sh ./docs
+        run: |
+          cp ./scripts/install.sh ./docs
+          cp ./scripts/install_lsp.sh ./docs
       - name: Replace env vars
         env:
           API_URL: ${{ secrets.API_URL }}
