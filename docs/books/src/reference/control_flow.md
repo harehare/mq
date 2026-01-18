@@ -37,9 +37,9 @@ The conditions must evaluate to boolean values.
 The while loop repeatedly executes code while a condition is true:
 
 ```ruby
-let x = 5 |
+var x = 5 |
 while (x > 0):
-  let x = x - 1 | x
+  x = x - 1 | x
 end
 # => 0
 ```
@@ -47,9 +47,9 @@ end
 You can use `break: <expr>` to return a value from a while loop:
 
 ```ruby
-let x = 10 |
+var x = 10 |
 while (x > 0):
-  let x = x - 1 |
+  x = x - 1 |
   if(eq(x, 3)):
     break: "Found three!"
   else:
