@@ -164,6 +164,11 @@ import "csv"
 | let section_md = "# Introduction\nThis is the introduction section.\n\n## Advanced Topics\nThis section covers advanced topics.\n\n# Conclusion\nThis is the conclusion section.\n"
 | let test_sections = to_markdown(section_md)
 
+| def test_section_sections():
+    let sections = do test_sections | section::sections();
+    | assert_eq(len(sections), 3)
+  end
+
 | def test_section_split():
     let sections = do test_sections | section::split(1);
     | assert_eq(len(sections), 2)
