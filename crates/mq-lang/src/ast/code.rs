@@ -28,8 +28,12 @@ impl Node {
             Expr::Selector(selector) => {
                 write!(buf, "{}", selector).unwrap();
             }
-            Expr::Break => {
+            Expr::Break(None) => {
                 buf.push_str("break");
+            }
+            Expr::Break(Some(value)) => {
+                buf.push_str("break: ");
+                value.format_to_code(buf, indent);
             }
             Expr::Continue => {
                 buf.push_str("continue");
@@ -421,7 +425,7 @@ mod tests {
     #[case::ident(Expr::Ident(IdentWithToken::new("foo")), "foo")]
     #[case::self_(Expr::Self_, "self")]
     #[case::nodes(Expr::Nodes, "nodes")]
-    #[case::break_(Expr::Break, "break")]
+    #[case::break_(Expr::Break(None), "break")]
     #[case::continue_(Expr::Continue, "continue")]
     fn test_to_code_simple_expressions(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
@@ -594,7 +598,7 @@ mod tests {
 
     #[rstest]
     #[case::loop_single(
-        Expr::Loop(vec![Shared::new(create_node(Expr::Break))]),
+        Expr::Loop(vec![Shared::new(create_node(Expr::Break(None)))]),
         "loop do\n  break\nend"
     )]
     fn test_to_code_loop(#[case] expr: Expr, #[case] expected: &str) {

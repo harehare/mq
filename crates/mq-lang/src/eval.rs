@@ -45,8 +45,9 @@ use runtime_value::RuntimeValue;
 /// to handle `break` and `continue` statements in loops.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ControlFlow {
-    /// Signal to break out of a loop, with the token for error reporting.
-    Break(Token),
+    /// Signal to break out of a loop, with the token for error reporting and an optional value.
+    /// The value is boxed to keep the size of the enum small.
+    Break(Token, Option<Box<RuntimeValue>>),
     /// Signal to continue to the next iteration, with the token for error reporting.
     Continue(Token),
 }
@@ -73,7 +74,7 @@ impl EvalError {
     /// Converts to RuntimeError, treating control flow as unexpected.
     pub(crate) fn into_runtime_error(self) -> RuntimeError {
         match self {
-            EvalError::Flow(ControlFlow::Break(token)) => RuntimeError::UnexpectedBreak(token),
+            EvalError::Flow(ControlFlow::Break(token, _)) => RuntimeError::UnexpectedBreak(token),
             EvalError::Flow(ControlFlow::Continue(token)) => RuntimeError::UnexpectedContinue(token),
             EvalError::Runtime(err) => err,
         }
@@ -885,9 +886,13 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Expr::Module(ident, program) => self.eval_module(runtime_value, ident, program, env),
 
             ast::Expr::Match(value_node, arms) => self.eval_match(runtime_value, value_node, arms, env),
-            ast::Expr::Break => {
+            ast::Expr::Break(value_node) => {
                 let token = get_token(Shared::clone(&self.token_arena), node.token_id);
-                Err(EvalError::Flow(ControlFlow::Break((*token).clone())))
+                let value = match value_node {
+                    Some(node) => Some(Box::new(self.eval_expr(runtime_value, node, env)?)),
+                    None => None,
+                };
+                Err(EvalError::Flow(ControlFlow::Break((*token).clone(), value)))
             }
             ast::Expr::Continue => {
                 let token = get_token(Shared::clone(&self.token_arena), node.token_id);
@@ -978,7 +983,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                     define(&env, ident, value.clone());
                     match self.eval_program(body, value, Shared::clone(&env)) {
                         Ok(result) => results.push(result),
-                        Err(EvalError::Flow(ControlFlow::Break(_))) => break,
+                        Err(EvalError::Flow(ControlFlow::Break(_, Some(v)))) => return Ok(*v),
+                        Err(EvalError::Flow(ControlFlow::Break(_, None))) => break,
                         Err(EvalError::Flow(ControlFlow::Continue(_))) => continue,
                         Err(e) => return Err(e),
                     }
@@ -994,7 +1000,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                     define(&env, ident, RuntimeValue::String(c.to_string()));
                     match self.eval_program(body, RuntimeValue::String(c.to_string()), Shared::clone(&env)) {
                         Ok(result) => results.push(result),
-                        Err(EvalError::Flow(ControlFlow::Break(_))) => break,
+                        Err(EvalError::Flow(ControlFlow::Break(_, Some(v)))) => return Ok(*v),
+                        Err(EvalError::Flow(ControlFlow::Break(_, None))) => break,
                         Err(EvalError::Flow(ControlFlow::Continue(_))) => continue,
                         Err(e) => return Err(e),
                     }
@@ -1037,11 +1044,15 @@ impl<T: ModuleResolver> Evaluator<T> {
                     std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                     cond_value = self.eval_expr(&runtime_value, cond, &env)?;
                 }
-                Err(EvalError::Flow(ControlFlow::Break(_))) if first => {
+                Err(EvalError::Flow(ControlFlow::Break(_, Some(v)))) => {
+                    runtime_value = *v;
+                    break;
+                }
+                Err(EvalError::Flow(ControlFlow::Break(_, None))) if first => {
                     runtime_value = RuntimeValue::NONE;
                     break;
                 }
-                Err(EvalError::Flow(ControlFlow::Break(_))) => break,
+                Err(EvalError::Flow(ControlFlow::Break(_, None))) => break,
                 Err(EvalError::Flow(ControlFlow::Continue(_))) if first => {
                     runtime_value = RuntimeValue::NONE;
                     continue;
@@ -1066,7 +1077,11 @@ impl<T: ModuleResolver> Evaluator<T> {
                 Ok(mut new_runtime_value) => {
                     std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                 }
-                Err(EvalError::Flow(ControlFlow::Break(_))) => break,
+                Err(EvalError::Flow(ControlFlow::Break(_, Some(v)))) => {
+                    runtime_value = *v;
+                    break;
+                }
+                Err(EvalError::Flow(ControlFlow::Break(_, None))) => break,
                 Err(EvalError::Flow(ControlFlow::Continue(_))) => continue,
                 Err(e) => return Err(e),
             }
@@ -4901,7 +4916,7 @@ mod tests {
                                         ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                                     ],
                                 ))),
-                                ast_node(ast::Expr::Break),
+                                ast_node(ast::Expr::Break(None)),
                             ),
                             (
                                 None,
@@ -4972,7 +4987,7 @@ mod tests {
         vec![
             ast_node(ast::Expr::Loop(
                 vec![
-                    ast_node(ast::Expr::Break),
+                    ast_node(ast::Expr::Break(None)),
                 ],
             )),
         ],

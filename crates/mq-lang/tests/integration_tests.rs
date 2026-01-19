@@ -44,6 +44,17 @@ fn engine() -> DefaultEngine {
     ",
       vec![RuntimeValue::Number(10.into())],
       Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::while_break_with_value("
+    let x = 0 |
+    while(x < 10):
+      let x = x + 1
+      | if(x == 5):
+        break: \"found\"
+      else:
+        x;
+    ",
+      vec![RuntimeValue::Number(10.into())],
+      Ok(vec![RuntimeValue::String("found".to_string())].into()))]
 #[case::while_continue("
     let x = 0 |
     while(x < 4):
@@ -64,6 +75,15 @@ fn engine() -> DefaultEngine {
     ",
       vec![RuntimeValue::Number(0.into())],
       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(11.into()), RuntimeValue::Number(12.into())])].into()))]
+#[case::foreach_break_with_value("
+    foreach(x, array(1, 2, 3, 4, 5)):
+      if(x == 3):
+        break: \"stopped at 3\"
+      else:
+        x + 10;
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("stopped at 3".to_string())].into()))]
 #[case::foreach_continue("
     foreach(x, array(1, 2, 3, 4, 5)):
       if(x == 3):
@@ -112,6 +132,23 @@ fn engine() -> DefaultEngine {
     ",
       vec![RuntimeValue::Number(0.into())],
       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(11.into()), RuntimeValue::Number(12.into()), RuntimeValue::Number(14.into()), RuntimeValue::Number(15.into())])].into()))]
+#[case::loop_break_with_value("
+    loop:
+      break: 42;
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::Number(42.into())].into()))]
+#[case::loop_break_with_value_complex("
+    let x = 0 |
+    loop:
+      let x = x + 1
+      | if(x >= 5):
+          break: x * 10
+        else:
+          x;
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::Number(50.into())].into()))]
 #[case::nested_do_end("
     let arr = array(array(1, 2), array(3, 4)) |
     foreach(row, arr) do

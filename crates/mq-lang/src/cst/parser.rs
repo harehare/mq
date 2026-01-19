@@ -363,7 +363,7 @@ impl<'a> Parser<'a> {
             TokenKind::Nodes if root => self.parse_nodes(leading_trivia),
             TokenKind::Env(_) => self.parse_node(NodeKind::Env, leading_trivia),
             TokenKind::Not | TokenKind::Minus => self.parse_unary_op(leading_trivia, root),
-            TokenKind::Break if in_loop => self.parse_node(NodeKind::Break, leading_trivia),
+            TokenKind::Break if in_loop => self.parse_break(leading_trivia, in_loop),
             TokenKind::Continue if in_loop => self.parse_node(NodeKind::Continue, leading_trivia),
             TokenKind::Colon => self.parse_symbol(leading_trivia),
             TokenKind::Quote => self.parse_quote(leading_trivia),
@@ -1123,6 +1123,27 @@ impl<'a> Parser<'a> {
             trailing_trivia,
             children: Vec::new(),
         }))
+    }
+
+    fn parse_break(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+        let token = self.tokens.next();
+        let trailing_trivia = self.parse_trailing_trivia();
+        let mut node = Node {
+            kind: NodeKind::Break,
+            token: Some(Shared::clone(token.unwrap())),
+            leading_trivia,
+            trailing_trivia,
+            children: Vec::new(),
+        };
+
+        // Optionally parse colon and expression (break: expr)
+        if self.try_next_token(|kind| matches!(kind, TokenKind::Colon)) {
+            self.push_colon_token_if_present(&mut node.children)?;
+            let leading_trivia = self.parse_leading_trivia();
+            node.children.push(self.parse_expr(leading_trivia, false, in_loop)?);
+        }
+
+        Ok(Shared::new(node))
     }
 
     fn parse_array(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
@@ -5323,6 +5344,89 @@ mod tests {
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
                         }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::break_in_loop_with_value(
+        vec![
+            Shared::new(token(TokenKind::While)),
+            Shared::new(token(TokenKind::LParen)),
+            Shared::new(token(TokenKind::BoolLiteral(true))),
+            Shared::new(token(TokenKind::RParen)),
+            Shared::new(token(TokenKind::Colon)),
+            Shared::new(token(TokenKind::Break)),
+            Shared::new(token(TokenKind::Colon)),
+            Shared::new(token(TokenKind::BoolLiteral(false))),
+            Shared::new(token(TokenKind::SemiColon)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::While,
+                    token: Some(Shared::new(token(TokenKind::While))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Shared::new(token(TokenKind::BoolLiteral(true)))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::Colon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Break,
+                            token: Some(Shared::new(token(TokenKind::Break))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: vec![
+                                Shared::new(Node {
+                                    kind: NodeKind::Token,
+                                    token: Some(Shared::new(token(TokenKind::Colon))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                                Shared::new(Node {
+                                    kind: NodeKind::Literal,
+                                    token: Some(Shared::new(token(TokenKind::BoolLiteral(false)))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                            ],
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::SemiColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        })
                     ],
                 }),
             ],

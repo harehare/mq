@@ -386,8 +386,15 @@ impl Macro {
             | Expr::Self_
             | Expr::Include(_)
             | Expr::Import(_)
-            | Expr::Break
+            | Expr::Break(None)
             | Expr::Continue => Ok(Shared::clone(node)),
+            Expr::Break(Some(value)) => {
+                let expanded_value = self.expand_node(value, evaluator)?;
+                Ok(Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Break(Some(expanded_value))),
+                }))
+            }
         }
     }
 
@@ -765,8 +772,15 @@ impl Macro {
             | Expr::Include(_)
             | Expr::Import(_)
             | Expr::Macro(_, _, _)
-            | Expr::Break
+            | Expr::Break(None)
             | Expr::Continue => Shared::clone(node),
+            Expr::Break(Some(value)) => {
+                let substituted_value = self.substitute_node(value, substitutions);
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Break(Some(substituted_value))),
+                })
+            }
         }
     }
 

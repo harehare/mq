@@ -44,6 +44,20 @@ end
 # => 0
 ```
 
+You can use `break: <expr>` to return a value from a while loop:
+
+```ruby
+var x = 10 |
+while (x > 0):
+  x = x - 1 |
+  if(eq(x, 3)):
+    break: "Found three!"
+  else:
+    x
+end
+# => "Found three!"
+```
+
 ## Foreach Expression
 
 The foreach loop iterates over elements in an array:
@@ -54,6 +68,19 @@ foreach (x, items):
    sub(x, 1)
 end
 # => array(0, 1, 2)
+```
+
+You can use `break: <expr>` to exit early and return a specific value instead of an array:
+
+```ruby
+let items = array(1, 2, 3, 4, 5) |
+foreach (x, items):
+  if(x > 3):
+    break: "Found value greater than 3"
+  else:
+    x
+end
+# => "Found value greater than 3"
 ```
 
 Foreach loops are useful for:
@@ -92,6 +119,20 @@ loop:
     x
 end
 # => 5
+```
+
+The `break` statement can return a value from a loop using the `break: <expr>` syntax. This allows loops to be used as expressions that produce a specific value when exited:
+
+```ruby
+var x = 0 |
+loop:
+  x = x + 1 |
+  if(x > 5):
+    break: "Found it!"
+  else:
+    x
+end
+# => "Found it!"
 ```
 
 Loop expressions are useful for:
