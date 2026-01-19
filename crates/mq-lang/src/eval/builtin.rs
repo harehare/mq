@@ -129,6 +129,18 @@ define_builtin!(
 );
 
 define_builtin!(
+    STDOUT,
+    ParamNum::Fixed(1),
+    |_, current_value, args, _| match args.as_slice() {
+        [a] => {
+            print!("{}", a);
+            Ok(current_value.clone())
+        }
+        _ => unreachable!(),
+    }
+);
+
+define_builtin!(
     STDERR,
     ParamNum::Fixed(1),
     |_, current_value, args, _| match args.as_slice() {
@@ -2367,6 +2379,7 @@ const HASH_SORT: u64 = fnv1a_hash_64("sort");
 const HASH_SORT_BY_IMPL: u64 = fnv1a_hash_64("_sort_by_impl");
 const HASH_SPLIT: u64 = fnv1a_hash_64("split");
 const HASH_STARTS_WITH: u64 = fnv1a_hash_64("starts_with");
+const HASH_STDOUT: u64 = fnv1a_hash_64("stdout");
 const HASH_STDERR: u64 = fnv1a_hash_64("stderr");
 const HASH_SUB: u64 = fnv1a_hash_64(constants::SUB);
 const HASH_TO_ARRAY: u64 = fnv1a_hash_64("to_array");
@@ -2490,6 +2503,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_SORT_BY_IMPL => Some(&_SORT_BY_IMPL),
         HASH_SPLIT => Some(&SPLIT),
         HASH_STARTS_WITH => Some(&STARTS_WITH),
+        HASH_STDOUT => Some(&STDOUT),
         HASH_STDERR => Some(&STDERR),
         HASH_SUB => Some(&SUB),
         HASH_TO_ARRAY => Some(&TO_ARRAY),
@@ -2942,6 +2956,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     );
     map.insert(
         SmolStr::new("print"),
+        BuiltinFunctionDoc {
+            description: "Prints a message to standard output and returns the current value.",
+            params: &["message"],
+        },
+    );
+    map.insert(
+        SmolStr::new("stdout"),
         BuiltinFunctionDoc {
             description: "Prints a message to standard output and returns the current value.",
             params: &["message"],
