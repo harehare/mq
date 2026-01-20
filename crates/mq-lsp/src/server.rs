@@ -25,7 +25,7 @@ struct Backend {
     hir: Arc<RwLock<mq_hir::Hir>>,
     source_map: RwLock<BiMap<String, mq_hir::SourceId>>,
     error_map: DashMap<String, Vec<(std::string::String, mq_lang::Range)>>,
-    text_map: DashMap<String, String>,
+    text_map: DashMap<String, Arc<String>>,
 }
 
 impl LanguageServer for Backend {
@@ -183,10 +183,13 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
 
-        let text = self.text_map.get(&params.text_document.uri.to_string()).unwrap();
-        let formatted_text = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig { indent_width: 2 }))
-            .format(&text)
-            .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::ParseError))?;
+        let text = Arc::clone(&self.text_map.get(&params.text_document.uri.to_string()).unwrap());
+        let formatted_text = tokio::task::spawn_blocking(move || {
+            mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig { indent_width: 2 })).format(&text)
+        })
+        .await
+        .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::InternalError))?
+        .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::ParseError))?;
 
         Ok(Some(vec![ls_types::TextEdit {
             range: ls_types::Range::new(
@@ -209,7 +212,7 @@ impl Backend {
 
         let uri_string = uri.to_string();
         self.source_map.write().unwrap().insert(uri_string.clone(), source_id);
-        self.text_map.insert(uri_string.clone(), text.to_string());
+        self.text_map.insert(uri_string.clone(), text.to_string().into());
         self.error_map.insert(uri_string, errors.error_ranges(&text));
     }
 
@@ -424,7 +427,7 @@ mod tests {
         let text = "def main():1;";
 
         let (_, errors) = mq_lang::parse_recovery(text);
-        backend.text_map.insert(uri.to_string(), text.to_string());
+        backend.text_map.insert(uri.to_string(), text.to_string().into());
         backend.error_map.insert(uri.to_string(), errors.error_ranges(text));
 
         let result = backend
@@ -766,7 +769,7 @@ mod tests {
         // Setup some content with errors
         let text = "def main(): invalid_syntax";
         let (_, errors) = mq_lang::parse_recovery(text);
-        backend.text_map.insert(uri.to_string(), text.to_string());
+        backend.text_map.insert(uri.to_string(), text.to_string().into());
         backend.error_map.insert(uri.to_string(), errors.error_ranges(text));
 
         backend
@@ -864,7 +867,7 @@ mod tests {
         // Add content with parsing errors
         let text = "def main() 1;"; // Missing colon
         let (_, errors) = mq_lang::parse_recovery(text);
-        backend.text_map.insert(uri.to_string(), text.to_string());
+        backend.text_map.insert(uri.to_string(), text.to_string().into());
         backend.error_map.insert(uri.to_string(), errors.error_ranges(text));
 
         // We can't directly test client.publish_diagnostics was called with correct diagnostics,
@@ -891,7 +894,7 @@ mod tests {
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string());
+        backend.text_map.insert(uri.to_string(), code.to_string().into());
         backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
 
         // Check unused functions are detected
@@ -922,7 +925,7 @@ mod tests {
 
         let text = "def main() 1;";
         let _ = mq_lang::parse_recovery(text);
-        backend.text_map.insert(uri.to_string(), text.to_string());
+        backend.text_map.insert(uri.to_string(), text.to_string().into());
         backend.error_map.insert(
             uri.to_string(),
             vec![(
@@ -968,7 +971,7 @@ mod tests {
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string());
+        backend.text_map.insert(uri.to_string(), code.to_string().into());
         backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
 
         // Check unreachable code warnings are detected
