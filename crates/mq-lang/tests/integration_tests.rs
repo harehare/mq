@@ -1907,6 +1907,9 @@ fn engine() -> DefaultEngine {
 #[case::double_not_true("!!true",
     vec![RuntimeValue::Boolean(false)],
     Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::double_not_false("!!false",
+    vec![RuntimeValue::Boolean(false)],
+    Ok(vec![RuntimeValue::Boolean(false)].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
