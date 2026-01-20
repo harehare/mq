@@ -366,6 +366,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::Self_
                 | TokenKind::Selector(_)
                 | TokenKind::Env(_)
+                | TokenKind::Not
                 | TokenKind::Ident(_)
         ) {
             return Err(SyntaxError::UnexpectedToken((**expr_token).clone()));
