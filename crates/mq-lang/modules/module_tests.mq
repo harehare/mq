@@ -164,6 +164,19 @@ import "csv"
 | let section_md = "# Introduction\nThis is the introduction section.\n\n## Advanced Topics\nThis section covers advanced topics.\n\n# Conclusion\nThis is the conclusion section.\n"
 | let test_sections = to_markdown(section_md)
 
+| def test_section_sections():
+    let sections = do test_sections | section::sections();
+    | assert_eq(len(sections), 3)
+
+    | let sections = do "# test" | to_markdown() | section::sections();
+    | assert_eq(len(sections), 1)
+  end
+
+| def test_section_filter_sections():
+    let sections = do test_sections | section::filter_sections(fn(x): section::level(x) == 1;);
+    | assert_eq(len(sections), 2)
+  end
+
 | def test_section_split():
     let sections = do test_sections | section::split(1);
     | assert_eq(len(sections), 2)
@@ -251,6 +264,8 @@ run_tests([
   test_case("Fuzzy Match Levenshtein", test_fuzzy_match_levenshtein),
   # section
   test_case("Section Split", test_section_split),
+  test_case("Section Sections", test_section_sections),
+  test_case("Section Filter Sections", test_section_filter_sections),
   test_case("Section Title Contains", test_section_title_contains),
   test_case("Section Title Match", test_section_title_match),
   test_case("Section Title", test_section_title),

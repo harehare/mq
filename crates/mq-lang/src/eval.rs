@@ -1067,7 +1067,6 @@ impl<T: ModuleResolver> Evaluator<T> {
         Ok(runtime_value)
     }
 
-    #[inline(always)]
     fn eval_loop(&mut self, runtime_value: &RuntimeValue, body: &Program, env: &Shared<SharedCell<Env>>) -> EvalResult {
         let mut runtime_value = runtime_value.clone();
         let env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
