@@ -167,6 +167,9 @@ import "csv"
 | def test_section_sections():
     let sections = do test_sections | section::sections();
     | assert_eq(len(sections), 3)
+    
+    | let sections = do "# test" | section::sections();
+    | assert_eq(len(sections), 1)
   end
 
 | def test_section_split():
