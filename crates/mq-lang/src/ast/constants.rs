@@ -20,6 +20,7 @@ pub const SUB: &str = "sub";
 pub const MUL: &str = "mul";
 pub const DIV: &str = "div";
 pub const MOD: &str = "mod";
+pub const FLOOR: &str = "floor";
 
 pub const AND: &str = "and";
 pub const OR: &str = "or";

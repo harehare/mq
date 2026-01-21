@@ -196,6 +196,139 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     token_id: operator_token_id,
                     expr: Shared::new(Expr::Or(lhs, rhs)),
                 }),
+                TokenKind::PlusEqual => match &*lhs.expr {
+                    Expr::Ident(ident) => Shared::new(Node {
+                        token_id: operator_token_id,
+                        expr: Shared::new(Expr::Assign(
+                            ident.clone(),
+                            Shared::new(Node {
+                                token_id: operator_token_id,
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(constants::ADD, Some(Shared::clone(operator_token))),
+                                    smallvec![lhs, rhs],
+                                )),
+                            }),
+                        )),
+                    }),
+                    _ => {
+                        return Err(SyntaxError::InvalidAssignmentTarget(
+                            (*parser.token_arena[lhs.token_id]).clone(),
+                        ));
+                    }
+                },
+                TokenKind::MinusEqual => match &*lhs.expr {
+                    Expr::Ident(ident) => Shared::new(Node {
+                        token_id: operator_token_id,
+                        expr: Shared::new(Expr::Assign(
+                            ident.clone(),
+                            Shared::new(Node {
+                                token_id: operator_token_id,
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(constants::SUB, Some(Shared::clone(operator_token))),
+                                    smallvec![lhs, rhs],
+                                )),
+                            }),
+                        )),
+                    }),
+                    _ => {
+                        return Err(SyntaxError::InvalidAssignmentTarget(
+                            (*parser.token_arena[lhs.token_id]).clone(),
+                        ));
+                    }
+                },
+                TokenKind::StarEqual => match &*lhs.expr {
+                    Expr::Ident(ident) => Shared::new(Node {
+                        token_id: operator_token_id,
+                        expr: Shared::new(Expr::Assign(
+                            ident.clone(),
+                            Shared::new(Node {
+                                token_id: operator_token_id,
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(constants::MUL, Some(Shared::clone(operator_token))),
+                                    smallvec![lhs, rhs],
+                                )),
+                            }),
+                        )),
+                    }),
+                    _ => {
+                        return Err(SyntaxError::InvalidAssignmentTarget(
+                            (*parser.token_arena[lhs.token_id]).clone(),
+                        ));
+                    }
+                },
+                TokenKind::SlashEqual => match &*lhs.expr {
+                    Expr::Ident(ident) => Shared::new(Node {
+                        token_id: operator_token_id,
+                        expr: Shared::new(Expr::Assign(
+                            ident.clone(),
+                            Shared::new(Node {
+                                token_id: operator_token_id,
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(constants::DIV, Some(Shared::clone(operator_token))),
+                                    smallvec![lhs, rhs],
+                                )),
+                            }),
+                        )),
+                    }),
+                    _ => {
+                        return Err(SyntaxError::InvalidAssignmentTarget(
+                            (*parser.token_arena[lhs.token_id]).clone(),
+                        ));
+                    }
+                },
+                TokenKind::PercentEqual => match &*lhs.expr {
+                    Expr::Ident(ident) => Shared::new(Node {
+                        token_id: operator_token_id,
+                        expr: Shared::new(Expr::Assign(
+                            ident.clone(),
+                            Shared::new(Node {
+                                token_id: operator_token_id,
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(constants::MOD, Some(Shared::clone(operator_token))),
+                                    smallvec![lhs, rhs],
+                                )),
+                            }),
+                        )),
+                    }),
+                    _ => {
+                        return Err(SyntaxError::InvalidAssignmentTarget(
+                            (*parser.token_arena[lhs.token_id]).clone(),
+                        ));
+                    }
+                },
+                TokenKind::DoubleSlashEqual => match &*lhs.expr {
+                    Expr::Ident(ident) => Shared::new(Node {
+                        token_id: operator_token_id,
+                        expr: Shared::new(Expr::Assign(
+                            ident.clone(),
+                            Shared::new(Node {
+                                token_id: operator_token_id,
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(
+                                        constants::FLOOR,
+                                        Some(Shared::clone(operator_token)),
+                                    ),
+                                    smallvec![Shared::new(Node {
+                                        token_id: operator_token_id,
+                                        expr: Shared::new(Expr::Call(
+                                            IdentWithToken::new_with_token(
+                                                constants::MOD,
+                                                Some(Shared::clone(operator_token))
+                                            ),
+                                            smallvec![lhs, rhs],
+                                        )),
+                                    }),],
+                                )),
+                            }),
+                        )),
+                    }),
+                    _ => {
+                        return Err(SyntaxError::InvalidAssignmentTarget(
+                            (*parser.token_arena[lhs.token_id]).clone(),
+                        ));
+                    }
+                },
+
                 _ => Shared::new(Node {
                     token_id: operator_token_id,
                     expr: Shared::new(Expr::Call(
