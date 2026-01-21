@@ -146,12 +146,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     /// Helper function to create compound assignment operators (+=, -=, *=, /=, %=)
     /// These operators are desugared into: `ident = function(ident, rhs)`
     fn create_compound_assign(
+        &self,
         lhs: &Shared<Node>,
         rhs: Shared<Node>,
         operator_token_id: TokenId,
         operator_token: &Shared<Token>,
         function_name: &'static str,
-        parser: &Parser,
     ) -> Result<Shared<Node>, SyntaxError> {
         match &*lhs.expr {
             Expr::Ident(ident) => Ok(Shared::new(Node {
@@ -168,7 +168,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 )),
             })),
             _ => Err(SyntaxError::InvalidAssignmentTarget(
-                (*parser.token_arena[lhs.token_id]).clone(),
+                (*self.token_arena[lhs.token_id]).clone(),
             )),
         }
     }
@@ -176,11 +176,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     /// Helper function to create floor division compound assignment (//=)
     /// This operator is desugared into: `ident = floor(div(ident, rhs))`
     fn create_floor_div_assign(
+        &self,
         lhs: &Shared<Node>,
         rhs: Shared<Node>,
         operator_token_id: TokenId,
         operator_token: &Shared<Token>,
-        parser: &Parser,
     ) -> Result<Shared<Node>, SyntaxError> {
         match &*lhs.expr {
             Expr::Ident(ident) => Ok(Shared::new(Node {
@@ -203,7 +203,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 )),
             })),
             _ => Err(SyntaxError::InvalidAssignmentTarget(
-                (*parser.token_arena[lhs.token_id]).clone(),
+                (*self.token_arena[lhs.token_id]).clone(),
             )),
         }
     }
@@ -268,22 +268,22 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     expr: Shared::new(Expr::Or(lhs, rhs)),
                 }),
                 TokenKind::PlusEqual => {
-                    Self::create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::ADD, parser)?
+                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::ADD)?
                 }
                 TokenKind::MinusEqual => {
-                    Self::create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::SUB, parser)?
+                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::SUB)?
                 }
                 TokenKind::StarEqual => {
-                    Self::create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::MUL, parser)?
+                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::MUL)?
                 }
                 TokenKind::SlashEqual => {
-                    Self::create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::DIV, parser)?
+                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::DIV)?
                 }
                 TokenKind::PercentEqual => {
-                    Self::create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::MOD, parser)?
+                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::MOD)?
                 }
                 TokenKind::DoubleSlashEqual => {
-                    Self::create_floor_div_assign(&lhs, rhs, operator_token_id, operator_token, parser)?
+                    parser.create_floor_div_assign(&lhs, rhs, operator_token_id, operator_token)?
                 }
 
                 _ => Shared::new(Node {
