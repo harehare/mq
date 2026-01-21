@@ -154,6 +154,12 @@ impl<'a> Parser<'a> {
             TokenKind::Plus => Some(BinaryOp::Plus),
             TokenKind::RangeOp => Some(BinaryOp::RangeOp),
             TokenKind::Slash => Some(BinaryOp::Division),
+            TokenKind::PlusEqual => Some(BinaryOp::PlusEqual),
+            TokenKind::MinusEqual => Some(BinaryOp::MinusEqual),
+            TokenKind::SlashEqual => Some(BinaryOp::DivisionEqual),
+            TokenKind::StarEqual => Some(BinaryOp::MultiplicationEqual),
+            TokenKind::DoubleSlashEqual => Some(BinaryOp::DoubleDivisionEqual),
+            TokenKind::PercentEqual => Some(BinaryOp::ModuloEqual),
             _ => None,
         }
     }
@@ -303,7 +309,7 @@ impl<'a> Parser<'a> {
             let operator_token = self.tokens.next().unwrap();
             let binary_op = Self::token_kind_to_binary_op(&operator_token.kind).unwrap();
 
-            let node_kind = if binary_op == BinaryOp::Assign {
+            let node_kind = if binary_op.is_assignment() {
                 NodeKind::Assign
             } else {
                 NodeKind::BinaryOp(binary_op)
