@@ -104,7 +104,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     #[inline(always)]
     fn binary_op_precedence(kind: &TokenKind) -> u8 {
         match kind {
-            TokenKind::Equal => 0,
+            TokenKind::Equal
+            | TokenKind::PlusEqual
+            | TokenKind::MinusEqual
+            | TokenKind::StarEqual
+            | TokenKind::SlashEqual
+            | TokenKind::PercentEqual
+            | TokenKind::DoubleSlashEqual => 0,
             TokenKind::Or => 1,
             TokenKind::And => 2,
             TokenKind::EqEq | TokenKind::NeEq | TokenKind::Gt | TokenKind::Gte | TokenKind::Lt | TokenKind::Lte => 3,
@@ -312,7 +318,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                                         token_id: operator_token_id,
                                         expr: Shared::new(Expr::Call(
                                             IdentWithToken::new_with_token(
-                                                constants::MOD,
+                                                constants::DIV,
                                                 Some(Shared::clone(operator_token))
                                             ),
                                             smallvec![lhs, rhs],
@@ -786,6 +792,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::Plus
                 | TokenKind::RangeOp
                 | TokenKind::Slash
+                | TokenKind::PlusEqual
+                | TokenKind::MinusEqual
+                | TokenKind::SlashEqual
+                | TokenKind::PercentEqual
+                | TokenKind::DoubleSlashEqual
+                | TokenKind::StarEqual
         )
     }
 
@@ -824,6 +836,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | Some(TokenKind::End)
                 | Some(TokenKind::Slash)
                 | Some(TokenKind::Coalesce)
+                | Some(TokenKind::PlusEqual)
+                | Some(TokenKind::MinusEqual)
+                | Some(TokenKind::SlashEqual)
+                | Some(TokenKind::StarEqual)
+                | Some(TokenKind::DoubleSlashEqual)
+                | Some(TokenKind::PercentEqual)
                 | None
         )
     }
