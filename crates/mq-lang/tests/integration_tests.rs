@@ -1910,6 +1910,30 @@ fn engine() -> DefaultEngine {
 #[case::double_not_false("!!false",
     vec![RuntimeValue::Boolean(false)],
     Ok(vec![RuntimeValue::Boolean(false)].into()))]
+#[case::plus_equal(r#"
+    var i = 1 | i += 10 | i"#,
+    vec!["".into()],
+    Ok(vec![RuntimeValue::Number(11.into())].into()))]
+#[case::minus_equal(r#"
+    var i = 10 | i -= 1 | i"#,
+    vec!["".into()],
+    Ok(vec![RuntimeValue::Number(9.into())].into()))]
+#[case::slash_equal(r#"
+    var i = 4 | i /= 2 | i"#,
+    vec!["".into()],
+    Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::star_equal(r#"
+    var i = 4 | i *= 2 | i"#,
+    vec!["".into()],
+    Ok(vec![RuntimeValue::Number(8.into())].into()))]
+#[case::percent_equal(r#"
+    var i = 3 | i %= 2 | i"#,
+    vec!["".into()],
+    Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::double_slash_equal(r#"
+    var i = 5 | i //= 2 | i"#,
+    vec!["".into()],
+    Ok(vec![RuntimeValue::Number(2.into())].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

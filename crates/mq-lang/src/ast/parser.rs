@@ -104,7 +104,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     #[inline(always)]
     fn binary_op_precedence(kind: &TokenKind) -> u8 {
         match kind {
-            TokenKind::Equal => 0,
+            TokenKind::Equal
+            | TokenKind::PlusEqual
+            | TokenKind::MinusEqual
+            | TokenKind::StarEqual
+            | TokenKind::SlashEqual
+            | TokenKind::PercentEqual
+            | TokenKind::DoubleSlashEqual => 0,
             TokenKind::Or => 1,
             TokenKind::And => 2,
             TokenKind::EqEq | TokenKind::NeEq | TokenKind::Gt | TokenKind::Gte | TokenKind::Lt | TokenKind::Lte => 3,
@@ -134,6 +140,34 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::RangeOp => constants::RANGE,
             TokenKind::Slash => constants::DIV,
             _ => unreachable!(),
+        }
+    }
+
+    fn create_compound_assign(
+        &self,
+        lhs: &Shared<Node>,
+        rhs: Shared<Node>,
+        operator_token_id: TokenId,
+        operator_token: &Shared<Token>,
+        function_name: &'static str,
+    ) -> Result<Shared<Node>, SyntaxError> {
+        match &*lhs.expr {
+            Expr::Ident(ident) => Ok(Shared::new(Node {
+                token_id: operator_token_id,
+                expr: Shared::new(Expr::Assign(
+                    ident.clone(),
+                    Shared::new(Node {
+                        token_id: operator_token_id,
+                        expr: Shared::new(Expr::Call(
+                            IdentWithToken::new_with_token(function_name, Some(Shared::clone(operator_token))),
+                            smallvec![Shared::clone(lhs), rhs],
+                        )),
+                    }),
+                )),
+            })),
+            _ => Err(SyntaxError::InvalidAssignmentTarget(
+                (*self.token_arena[lhs.token_id]).clone(),
+            )),
         }
     }
 
@@ -196,6 +230,54 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     token_id: operator_token_id,
                     expr: Shared::new(Expr::Or(lhs, rhs)),
                 }),
+                TokenKind::PlusEqual => {
+                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::ADD)?
+                }
+                TokenKind::MinusEqual => {
+                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::SUB)?
+                }
+                TokenKind::StarEqual => {
+                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::MUL)?
+                }
+                TokenKind::SlashEqual => {
+                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::DIV)?
+                }
+                TokenKind::PercentEqual => {
+                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::MOD)?
+                }
+                TokenKind::DoubleSlashEqual => match &*lhs.expr {
+                    Expr::Ident(ident) => Shared::new(Node {
+                        token_id: operator_token_id,
+                        expr: Shared::new(Expr::Assign(
+                            ident.clone(),
+                            Shared::new(Node {
+                                token_id: operator_token_id,
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(
+                                        constants::FLOOR,
+                                        Some(Shared::clone(operator_token)),
+                                    ),
+                                    smallvec![Shared::new(Node {
+                                        token_id: operator_token_id,
+                                        expr: Shared::new(Expr::Call(
+                                            IdentWithToken::new_with_token(
+                                                constants::DIV,
+                                                Some(Shared::clone(operator_token))
+                                            ),
+                                            smallvec![lhs, rhs],
+                                        )),
+                                    }),],
+                                )),
+                            }),
+                        )),
+                    }),
+                    _ => {
+                        return Err(SyntaxError::InvalidAssignmentTarget(
+                            (*parser.token_arena[lhs.token_id]).clone(),
+                        ));
+                    }
+                },
+
                 _ => Shared::new(Node {
                     token_id: operator_token_id,
                     expr: Shared::new(Expr::Call(
@@ -653,6 +735,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::Plus
                 | TokenKind::RangeOp
                 | TokenKind::Slash
+                | TokenKind::PlusEqual
+                | TokenKind::MinusEqual
+                | TokenKind::SlashEqual
+                | TokenKind::PercentEqual
+                | TokenKind::DoubleSlashEqual
+                | TokenKind::StarEqual
         )
     }
 
@@ -691,6 +779,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | Some(TokenKind::End)
                 | Some(TokenKind::Slash)
                 | Some(TokenKind::Coalesce)
+                | Some(TokenKind::PlusEqual)
+                | Some(TokenKind::MinusEqual)
+                | Some(TokenKind::SlashEqual)
+                | Some(TokenKind::StarEqual)
+                | Some(TokenKind::DoubleSlashEqual)
+                | Some(TokenKind::PercentEqual)
                 | None
         )
     }
