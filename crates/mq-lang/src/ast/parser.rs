@@ -143,7 +143,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    /// Helper function to create compound assignment operators (+=, -=, *=, /=, %=, //=)
+    /// Helper function to create compound assignment operators (+=, -=, *=, /=, %=)
     /// These operators are desugared into: `ident = function(ident, rhs)`
     fn create_compound_assign(
         lhs: &Shared<Node>,
