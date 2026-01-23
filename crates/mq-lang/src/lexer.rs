@@ -264,6 +264,7 @@ define_token_parser!(star_equal, "*=", TokenKind::StarEqual);
 define_token_parser!(slash_equal, "/=", TokenKind::SlashEqual);
 define_token_parser!(percent_equal, "%=", TokenKind::PercentEqual);
 define_token_parser!(double_slash_equal, "//=", TokenKind::DoubleSlashEqual);
+define_token_parser!(pipe_equal, "|=", TokenKind::PipeEqual);
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
@@ -294,6 +295,7 @@ fn binary_op(input: Span) -> IResult<Span, Token> {
         slash_equal,
         percent_equal,
         double_slash_equal,
+        pipe_equal,
         eq_eq,
         ne_eq,
         lte,
@@ -617,7 +619,7 @@ fn skip_whitespace_and_comments(input: Span) -> IResult<Span, ()> {
 }
 
 fn token(input: Span) -> IResult<Span, Token> {
-    alt((keywords, env, literals, punctuations, binary_op, unary_op, ident)).parse(input)
+    alt((keywords, env, literals, binary_op, punctuations, unary_op, ident)).parse(input)
 }
 
 fn token_include_spaces(input: Span) -> IResult<Span, Token> {
@@ -629,8 +631,8 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
         keywords,
         env,
         literals,
-        punctuations,
         binary_op,
+        punctuations,
         unary_op,
         ident,
     ))

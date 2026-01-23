@@ -160,6 +160,7 @@ impl<'a> Parser<'a> {
             TokenKind::StarEqual => Some(BinaryOp::MultiplicationEqual),
             TokenKind::DoubleSlashEqual => Some(BinaryOp::DoubleDivisionEqual),
             TokenKind::PercentEqual => Some(BinaryOp::ModuloEqual),
+            TokenKind::PipeEqual => Some(BinaryOp::PipeEqual),
             _ => None,
         }
     }
@@ -7918,6 +7919,150 @@ mod tests {
                         Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(3.into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::pipe_equal_with_selector(
+        vec![
+            Shared::new(token(TokenKind::Selector(".h1".into()))),
+            Shared::new(token(TokenKind::Selector(".value".into()))),
+            Shared::new(token(TokenKind::PipeEqual)),
+            Shared::new(token(TokenKind::StringLiteral("new_id".into()))),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Assign,
+                    token: Some(Shared::new(token(TokenKind::PipeEqual))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Selector,
+                            token: Some(Shared::new(token(TokenKind::Selector(".h1".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: vec![
+                                Shared::new(Node {
+                                    kind: NodeKind::Selector,
+                                    token: Some(Shared::new(token(TokenKind::Selector(".value".into())))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                            ],
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Shared::new(token(TokenKind::StringLiteral("new_id".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::pipe_equal_with_ident_and_attr(
+        vec![
+            Shared::new(token(TokenKind::Ident("obj".into()))),
+            Shared::new(token(TokenKind::Selector(".value".into()))),
+            Shared::new(token(TokenKind::PipeEqual)),
+            Shared::new(token(TokenKind::StringLiteral("John".into()))),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Assign,
+                    token: Some(Shared::new(token(TokenKind::PipeEqual))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("obj".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: vec![
+                                Shared::new(Node {
+                                    kind: NodeKind::Selector,
+                                    token: Some(Shared::new(token(TokenKind::Selector(".value".into())))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                            ],
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Shared::new(token(TokenKind::StringLiteral("John".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::pipe_equal_with_self(
+        vec![
+            Shared::new(token(TokenKind::Selector(".".into()))),
+            Shared::new(token(TokenKind::PipeEqual)),
+            Shared::new(token(TokenKind::NumberLiteral(42.into()))),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Assign,
+                    token: Some(Shared::new(token(TokenKind::PipeEqual))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Self_,
+                            token: Some(Shared::new(token(TokenKind::Selector(".".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Shared::new(token(TokenKind::NumberLiteral(42.into())))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),

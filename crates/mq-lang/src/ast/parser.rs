@@ -631,6 +631,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             self.tokens.next(); // Consume selector token
 
+            if self.is_next_token(|kind| matches!(kind, TokenKind::PipeEqual)) {
+                self.tokens.next(); // consume '|='
+                return self.parse_set_attr_call_with_selector(base_node, attr_literal);
+            }
+
             Ok(Shared::new(Node {
                 token_id: attr_literal_token_id,
                 expr: Shared::new(Expr::Call(
@@ -1962,6 +1967,24 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.parse_expr(token)
     }
 
+    fn parse_set_attr_call_with_selector(
+        &mut self,
+        selector_node: Shared<Node>,
+        attr_literal: Shared<Node>,
+    ) -> Result<Shared<Node>, SyntaxError> {
+        let token = self.tokens.next().unwrap();
+        let value = self.parse_expr(token)?;
+
+        // Create the set_attr() function call
+        Ok(Shared::new(Node {
+            token_id: self.token_arena.alloc(Shared::clone(token)),
+            expr: Shared::new(Expr::Call(
+                IdentWithToken::new_with_token(constants::SET_ATTR, Some(Shared::clone(token))),
+                smallvec![selector_node, attr_literal, value],
+            )),
+        }))
+    }
+
     /// Parse a selector with an attribute suffix and convert it to an attr() function call
     fn parse_selector_with_attribute(
         &mut self,
@@ -1985,6 +2008,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 token_id: self.token_arena.alloc(Shared::clone(token)),
                 expr: Shared::new(Expr::Literal(Literal::String(attribute.to_string()))),
             });
+
+            if self.is_next_token(|kind| matches!(kind, TokenKind::PipeEqual)) {
+                self.tokens.next(); // consume '|=' token
+                return self.parse_set_attr_call_with_selector(base_node, attr_literal);
+            }
 
             // Create the attr() function call
             Ok(Shared::new(Node {
@@ -6092,6 +6120,96 @@ mod tests {
                                     Shared::new(Node {
                                         token_id: 1.into(),
                                         expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                                    }),
+                                ],
+                            )),
+                        })
+                    ]))]
+    #[case::pipe_equal_with_selector(
+                    vec![
+                        token(TokenKind::Selector(SmolStr::new(".h1"))),
+                        token(TokenKind::Selector(SmolStr::new(".value"))),
+                        token(TokenKind::PipeEqual),
+                        token(TokenKind::StringLiteral("new_id".to_owned())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 3.into(),
+                            expr: Shared::new(Expr::Call(
+                                IdentWithToken::new_with_token(constants::SET_ATTR, Some(Shared::new(token(TokenKind::StringLiteral("new_id".to_owned()))))),
+                                smallvec![
+                                    Shared::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Shared::new(Expr::Selector(selector::Selector::Heading(Some(1)))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::String("new_id".to_owned()))),
+                                    }),
+                                ],
+                            )),
+                        })
+                    ]))]
+    #[case::pipe_equal_with_ident_and_attr(
+                    vec![
+                        token(TokenKind::Ident(SmolStr::new("obj"))),
+                        token(TokenKind::Selector(SmolStr::new(".value"))),
+                        token(TokenKind::PipeEqual),
+                        token(TokenKind::StringLiteral("John".to_owned())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 3.into(),
+                            expr: Shared::new(Expr::Call(
+                                IdentWithToken::new_with_token(constants::SET_ATTR, Some(Shared::new(token(TokenKind::StringLiteral("John".to_owned()))))),
+                                smallvec![
+                                    Shared::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("obj", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("obj")))))))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::String("John".to_owned()))),
+                                    }),
+                                ],
+                            )),
+                        })
+                    ]))]
+    #[case::pipe_equal_with_self_and_attr(
+                    vec![
+                        token(TokenKind::Self_),
+                        token(TokenKind::Selector(SmolStr::new(".value"))),
+                        token(TokenKind::PipeEqual),
+                        token(TokenKind::NumberLiteral(42.into())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Call(
+                                IdentWithToken::new_with_token(constants::SET_ATTR, Some(Shared::new(token(TokenKind::NumberLiteral(42.into()))))),
+                                smallvec![
+                                    Shared::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Shared::new(Expr::Self_),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::Number(42.into()))),
                                     }),
                                 ],
                             )),
