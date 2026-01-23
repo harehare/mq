@@ -131,6 +131,7 @@ pub enum BinaryOp {
     Division,
     DivisionEqual,
     DoubleDivisionEqual,
+    PipeEqual,
     Equal,
     Gt,
     Gte,
@@ -160,6 +161,7 @@ impl BinaryOp {
                 | BinaryOp::DivisionEqual
                 | BinaryOp::ModuloEqual
                 | BinaryOp::DoubleDivisionEqual
+                | BinaryOp::PipeEqual
         )
     }
 }

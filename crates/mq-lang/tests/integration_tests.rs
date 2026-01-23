@@ -1934,6 +1934,10 @@ fn engine() -> DefaultEngine {
     var i = 5 | i //= 2 | i"#,
     vec!["".into()],
     Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::set_attr(r#"
+    to_markdown("```\ntest\n```") | .code | first() | .code.value |= "updated" | .code.value | to_text()"#,
+    vec!["".into()],
+    Ok(vec!["updated".into()].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
