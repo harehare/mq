@@ -1972,7 +1972,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         selector_node: Shared<Node>,
         attr_literal: Shared<Node>,
     ) -> Result<Shared<Node>, SyntaxError> {
-        let token = self.tokens.next().unwrap();
+        let token = match self.tokens.next() {
+            Some(token) => token,
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+        };
         let value = self.parse_expr(token)?;
 
         // Create the set_attr() function call
