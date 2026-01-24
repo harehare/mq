@@ -1,5 +1,5 @@
 def crate_version():
-  if (ne("[workspace.package]") && starts_with("[")):
+  if (ne("[workspace.package]") && ne("[package]") && starts_with("[")):
     s"
 ${self}"
   elif (starts_with("version = ")):
@@ -31,3 +31,8 @@ def crates_version():
   | replace(s"path = \"crates/mq-repl\", version = \"${prev_version}\"", s"path = \"crates/mq-repl\", version = \"${version}\"")
   | replace(s"path = \"crates/mq-dap\", version = \"${prev_version}\"", s"path = \"crates/mq-dap\", version = \"${version}\"")
 end
+
+def code_block_version(version):
+  .code | gsub("[0-9]+.[0-9]+.[0-9]+", version)
+end
+
