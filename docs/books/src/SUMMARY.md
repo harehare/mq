@@ -23,6 +23,7 @@
     - [Control flow](reference/control_flow.md)
     - [Pattern Matching](reference/pattern_matching.md)
     - [Operators](reference/operators.md)
+    - [Assignment Operators](reference/assignment_operators.md)
     - [Def Expression](reference/def.md)
     - [Environment variables](reference/env.md)
     - [Fn Expression](reference/fn.md)
