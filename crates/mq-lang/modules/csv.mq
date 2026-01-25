@@ -2,38 +2,37 @@
 # Based on RFC 4180 for CSV format
 
 def _parse_csv_line(line, delimiter):
-  let fields = []
-  | let pos = 0
+  var fields = []
+  | var pos = 0
   | let line_count = len(line)
   | let result = while (pos < line_count):
       let field_result =
         if (starts_with(line[pos], "\"")):
           do
-            let pos = pos + 1
-            | let field_content = ""
-            | let escaped = false
-            | let end_pos = pos
+            pos += 1
+            | var field_content = ""
+            | var escaped = false
+            | var end_pos = pos
             | let result = while (end_pos < line_count && (escaped || line[end_pos] != "\"")):
                           let char = line[end_pos]
-                          | let field_content = field_content + char
-                          | let escaped = char == "\"" && !escaped
-                          | let end_pos = end_pos + 1
+                          | field_content += char
+                          | escaped = char == "\"" && !escaped
+                          | end_pos += 1
                           | [field_content, end_pos]
                         end
-            | let field_content = if (is_none(result)): "" else: result[0]
-            | let end_pos = if (is_none(result)): pos else: result[1]
-            | let field_content = replace(field_content, "\"\"", "\"")
+            | field_content = do if (is_none(result)): "" else: result[0] | replace(field_content, "\"\"", "\"");
+            | end_pos = if (is_none(result)): pos else: result[1]
             | let next_pos = if (end_pos < line_count): end_pos + 1 else: end_pos
             | [field_content, next_pos]
 
           end
         else:
           do
-            let end_pos = pos
-            | let current_input = line[end_pos]
+            var end_pos = pos
+            | var current_input = line[end_pos]
             | let result = while (end_pos < line_count && current_input != delimiter && current_input != "\n" && current_input != "\r"):
-                          let end_pos = end_pos + 1
-                          | let current_input = line[end_pos]
+                          end_pos += 1
+                          | current_input = line[end_pos]
                           | end_pos
                         end
             | let result = if (is_none(result)): end_pos else: result
@@ -41,44 +40,43 @@ def _parse_csv_line(line, delimiter):
             | [field_content, result]
           end
       | let new_pos = field_result[1]
-      | let fields = fields + field_result[0]
-      | let pos = if (new_pos < line_count && line[new_pos] == delimiter):
-              new_pos + 1
-            else:
-              new_pos
+      | fields += field_result[0]
+      | pos = if (new_pos < line_count && line[new_pos] == delimiter):
+        new_pos + 1
+      else:
+        new_pos
       | [fields, pos]
     end
   | result[0]
 end
 
 def _split_csv_lines(input):
-  let lines = []
-  | let current_line = ""
-  | let in_quotes = false
-  | let i = 0
-  | let result = foreach (char, input):
-      let i = i + 1
-      | let result = if (char == "\"" && !in_quotes):
-              [lines, current_line + char, true]
-            elif (char == "\"" && in_quotes):
-              [lines, current_line + char, false]
-            elif (char != "\"" && in_quotes):
-              [lines, current_line + char, true]
-            elif ((char == "\n" || char == "\r") && !in_quotes):
-              [if (is_empty(trim(current_line))): lines else: lines + current_line, "", false]
-            else:
-              [lines, current_line + char, in_quotes]
-      | let lines = result[0]
-      | let current_line = result[1]
-      | let in_quotes = result[2]
-      | if (i < len(input)): continue else: result
+  var lines = []
+  | var current_line = ""
+  | var in_quotes = false
+  | var i = 0
+  | let result = do foreach (char, input):
+          i += 1
+          | let result = if (char == "\"" && !in_quotes):
+                      [current_line + char, true]
+                    elif (char == "\"" && in_quotes):
+                      [current_line + char, false]
+                    elif (char != "\"" && in_quotes):
+                      [current_line + char, true]
+                    elif ((char == "\n" || char == "\r") && !in_quotes): do
+                        if (!is_empty(trim(current_line))): lines += current_line
+                        | ["", false]
+                      end
+                    else:
+                      [current_line + char, in_quotes]
+          | current_line = result[0]
+          | in_quotes = result[1]
+          | if (i < len(input)): continue else: result
+        end
+      | first()
     end
-
-  | let result = result[0]
-  | let lines = result[0]
-  | let current_line = result[1]
-  | let lines = if (is_empty(trim(current_line))): lines else: lines + current_line
-  | lines
+  | let current_line = result[0]
+  | if (is_empty(trim(current_line))): lines else: lines + current_line
 end
 
 def _parse_csv_content(input, delimiter, has_header):
@@ -89,12 +87,14 @@ def _parse_csv_content(input, delimiter, has_header):
   | let data_lines = if (has_header && len(parsed_lines) > 0): parsed_lines[1:len(parsed_lines)] else: parsed_lines
   | let csv_to_dict = fn(row):
       let obj = {}
-      | let i = 0
-      | while (i < len(headers) && i < len(row)):
-          let key = if (i < len(headers)): headers[i] else: "column_" + to_string(i)
-          | let value = if (i < len(row)): row[i] else: ""
+      | var i = 0
+      | let headers_count = len(headers)
+      | let rows_count = len(row)
+      | while (i < headers_count && i < rows_count):
+          let key = if (i < headers_count): headers[i] else: "column_" + to_string(i)
+          | let value = if (i < rows_count): row[i] else: ""
           | let obj = set(obj, key, value)
-          | let i = i + 1
+          | i += 1
           | obj
         end
     end
