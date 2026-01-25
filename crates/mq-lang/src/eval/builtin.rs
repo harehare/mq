@@ -443,7 +443,7 @@ define_builtin!(GSUB, ParamNum::Fixed(3), |ident, _, mut args, _| {
             .markdown_node()
             .map(|md| Ok(node.update_markdown_value(&replace_re(md.value().as_str(), &*s1, &*s2)?.to_string())))
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-        [RuntimeValue::None, RuntimeValue::String(_), RuntimeValue::String(_)] => Ok(RuntimeValue::NONE),
+        [RuntimeValue::None, _, _] => Ok(RuntimeValue::NONE),
         [a, b, c] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
@@ -2313,7 +2313,7 @@ const HASH_EXPLODE: u64 = fnv1a_hash_64("explode");
 const HASH_AST_GET_ARGS: u64 = fnv1a_hash_64("_ast_get_args");
 const HASH_AST_TO_CODE: u64 = fnv1a_hash_64("_ast_to_code");
 const HASH_FLATTEN: u64 = fnv1a_hash_64("flatten");
-const HASH_FLOOR: u64 = fnv1a_hash_64("floor");
+const HASH_FLOOR: u64 = fnv1a_hash_64(constants::FLOOR);
 const HASH_FROM_DATE: u64 = fnv1a_hash_64("from_date");
 const HASH_GET: u64 = fnv1a_hash_64(constants::GET);
 const HASH_GT: u64 = fnv1a_hash_64(constants::GT);
@@ -3355,7 +3355,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
-        SmolStr::new("floor"),
+        SmolStr::new(constants::FLOOR),
         BuiltinFunctionDoc {
             description: "Rounds the given number down to the nearest integer.",
             params: &["number"],

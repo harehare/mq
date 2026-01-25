@@ -20,10 +20,10 @@ fn engine() -> DefaultEngine {
       vec![RuntimeValue::String("helloWorld".to_string())],
       Ok(vec![RuntimeValue::String("2025".to_string())].into()))]
 #[case::while_("
-    let x = 5 |
+    var x = 5 |
     while (x > 0):
       # test
-      let x = x - 1 | x;
+      x -= 1 | x;
     ",
       vec![RuntimeValue::Number(10.into())],
       Ok(vec![RuntimeValue::Number(0.into())].into()))]
@@ -34,9 +34,9 @@ fn engine() -> DefaultEngine {
       vec![RuntimeValue::Number(10.into())],
       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())])].into()))]
 #[case::while_break("
-    let x = 0 |
+    var x = 0 |
     while(x < 10):
-      let x = x + 1
+      x += 1
       | if(x == 3):
         break
       else:
@@ -44,10 +44,21 @@ fn engine() -> DefaultEngine {
     ",
       vec![RuntimeValue::Number(10.into())],
       Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::while_break_with_value("
+    var x = 0 |
+    while(x < 10):
+      x += 1
+      | if(x == 5):
+        break: \"found\"
+      else:
+        x;
+    ",
+      vec![RuntimeValue::Number(10.into())],
+      Ok(vec![RuntimeValue::String("found".to_string())].into()))]
 #[case::while_continue("
-    let x = 0 |
+    var x = 0 |
     while(x < 4):
-      let x = x + 1
+      x += 1
       | if(x == 3):
         continue
       else:
@@ -64,6 +75,15 @@ fn engine() -> DefaultEngine {
     ",
       vec![RuntimeValue::Number(0.into())],
       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(11.into()), RuntimeValue::Number(12.into())])].into()))]
+#[case::foreach_break_with_value("
+    foreach(x, array(1, 2, 3, 4, 5)):
+      if(x == 3):
+        break: \"stopped at 3\"
+      else:
+        x + 10;
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("stopped at 3".to_string())].into()))]
 #[case::foreach_continue("
     foreach(x, array(1, 2, 3, 4, 5)):
       if(x == 3):
@@ -74,9 +94,9 @@ fn engine() -> DefaultEngine {
       vec![RuntimeValue::Number(0.into())],
       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(11.into()), RuntimeValue::Number(12.into()), RuntimeValue::Number(14.into()), RuntimeValue::Number(15.into())])].into()))]
 #[case::while_do_end("
-    let x = 5 |
+    var x = 5 |
     while (x > 0) do
-      let x = x - 1 | x
+      x -= 1 | x
     end
     ",
       vec![RuntimeValue::Number(10.into())],
@@ -89,9 +109,9 @@ fn engine() -> DefaultEngine {
       vec![RuntimeValue::Number(10.into())],
       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())])].into()))]
 #[case::while_do_end_break("
-    let x = 0 |
+    var x = 0 |
     while(x < 10) do
-      let x = x + 1
+      x += 1
       | if(x == 3):
         break
       else:
@@ -112,6 +132,23 @@ fn engine() -> DefaultEngine {
     ",
       vec![RuntimeValue::Number(0.into())],
       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(11.into()), RuntimeValue::Number(12.into()), RuntimeValue::Number(14.into()), RuntimeValue::Number(15.into())])].into()))]
+#[case::loop_break_with_value("
+    loop:
+      break: 42;
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::Number(42.into())].into()))]
+#[case::loop_break_with_value_complex("
+    var x = 0 |
+    loop:
+      x += 1
+      | if(x >= 5):
+          break: x * 10
+        else:
+          x;
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::Number(50.into())].into()))]
 #[case::nested_do_end("
     let arr = array(array(1, 2), array(3, 4)) |
     foreach(row, arr) do
@@ -1336,24 +1373,6 @@ fn engine() -> DefaultEngine {
 #[case::in_array_false(r#"in(["a", "c"], ["a", "b"])"#,
             vec![RuntimeValue::Number(0.into())],
             Ok(vec![RuntimeValue::Boolean(false)].into()))]
-#[case::to_csv_single_row(
-            "to_csv()",
-            vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::String("b".to_string()),
-                RuntimeValue::String("c".to_string()),
-            ])],
-            Ok(vec![RuntimeValue::String("a,b,c".to_string())].into())
-          )]
-#[case::to_tsv_single_row(
-            "to_tsv()",
-            vec![RuntimeValue::Array(vec![
-              RuntimeValue::String("a".to_string()),
-              RuntimeValue::String("b".to_string()),
-              RuntimeValue::String("c".to_string()),
-            ])],
-            Ok(vec![RuntimeValue::String("a\tb\tc".to_string())].into())
-          )]
 #[case::fold_sum("
             def sum(acc, x):
               add(acc, x);
@@ -1867,6 +1886,40 @@ fn engine() -> DefaultEngine {
 #[case::quote_ast_to_code("let a = 10 | _ast_to_code(quote: a)",
     vec![RuntimeValue::Number(0.into())],
     Ok(vec![RuntimeValue::String("a".into())].into()))]
+#[case::double_not_true("!!true",
+    vec![RuntimeValue::Boolean(false)],
+    Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::double_not_false("!!false",
+    vec![RuntimeValue::Boolean(false)],
+    Ok(vec![RuntimeValue::Boolean(false)].into()))]
+#[case::plus_equal(r#"
+    var i = 1 | i += 10 | i"#,
+    vec!["".into()],
+    Ok(vec![RuntimeValue::Number(11.into())].into()))]
+#[case::minus_equal(r#"
+    var i = 10 | i -= 1 | i"#,
+    vec!["".into()],
+    Ok(vec![RuntimeValue::Number(9.into())].into()))]
+#[case::slash_equal(r#"
+    var i = 4 | i /= 2 | i"#,
+    vec!["".into()],
+    Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::star_equal(r#"
+    var i = 4 | i *= 2 | i"#,
+    vec!["".into()],
+    Ok(vec![RuntimeValue::Number(8.into())].into()))]
+#[case::percent_equal(r#"
+    var i = 3 | i %= 2 | i"#,
+    vec!["".into()],
+    Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::double_slash_equal(r#"
+    var i = 5 | i //= 2 | i"#,
+    vec!["".into()],
+    Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::set_attr(r#"
+    to_markdown("```\ntest\n```") | .code | first() | .code.value |= "updated" | .code.value | to_text()"#,
+    vec!["".into()],
+    Ok(vec!["updated".into()].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

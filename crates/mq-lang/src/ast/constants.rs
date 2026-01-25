@@ -6,6 +6,7 @@ pub const DICT: &str = "dict";
 pub const GET: &str = "get";
 pub const SLICE: &str = "slice";
 pub const ATTR: &str = "attr";
+pub const SET_ATTR: &str = "set_attr";
 pub const LEN: &str = "len";
 
 pub const EQ: &str = "eq";
@@ -20,6 +21,7 @@ pub const SUB: &str = "sub";
 pub const MUL: &str = "mul";
 pub const DIV: &str = "div";
 pub const MOD: &str = "mod";
+pub const FLOOR: &str = "floor";
 
 pub const AND: &str = "and";
 pub const OR: &str = "or";

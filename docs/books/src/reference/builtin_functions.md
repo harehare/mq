@@ -24,11 +24,11 @@
 | `count_by` |  Returns the count of elements in the array that satisfy the provided function. | `arr`, `f` | count_by(arr, f) |
 | `debug` |  Prints the debug information of the given value. | `msg` | debug(msg) |
 | `decrease_header_level` | Decreases the level of a markdown heading node by one, down to a minimum of 1. | `heading_node` | decrease_header_level(heading_node) |
-| `default_to` |  Returns a default value if the input is None or empty. | `value`, `default` | default_to(value, default) |
 | `del` | Deletes the element at the specified index in the array or string. | `array_or_string`, `index` | del(array_or_string, index) |
 | `dict` | Creates a new, empty dict. |  | dict() |
 | `div` | Divides the first value by the second value. | `value1`, `value2` | div(value1, value2) |
 | `downcase` | Converts the given string to lowercase. | `input` | downcase(input) |
+| `each` |  | `v`, `f` | each(v, f) |
 | `ends_with` | Checks if the given string ends with the specified substring. | `string`, `substring` | ends_with(string, substring) |
 | `entries` | Returns an array of key-value pairs from the dict as arrays. | `dict` | entries(dict) |
 | `eq` | Checks if two values are equal. | `value1`, `value2` | eq(value1, value2) |
@@ -44,7 +44,6 @@
 | `fold` |  Reduces an array to a single value by applying a function, starting from an initial value. | `arr`, `init`, `f` | fold(arr, init, f) |
 | `from_date` | Converts a date string to a timestamp. | `date_str` | from_date(date_str) |
 | `get` | Retrieves a value from a dict by its key. Returns None if the key is not found. | `obj`, `key` | get(obj, key) |
-| `get_args` |  Gets the arguments of an AST node | `node` | get_args(node) |
 | `get_or` |  Safely gets a value from a dict with a default if the key doesn't exist. | `dict`, `key`, `default` | get_or(dict, key, default) |
 | `get_title` | Returns the title of a markdown node. | `node` | get_title(node) |
 | `get_url` | Returns the url of a markdown node. | `node` | get_url(node) |
@@ -133,8 +132,6 @@
 | `round` | Rounds the given number to the nearest integer. | `number` | round(number) |
 | `rtrimstr` |  Removes suffix string from input if it exists | `s`, `right` | rtrimstr(s, right) |
 | `second` |  Returns the second element of an array | `arr` | second(arr) |
-| ~~`sections`~~ |  deprecated: Use the section module instead of the sections function. |
-|  Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level. | `md_nodes`, `level` | sections(md_nodes, level) |
 | `select` |  Returns value if condition is true, None otherwise | `v`, `f` | select(v, f) |
 | `set` | Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map. | `obj`, `key`, `value` | set(obj, key, value) |
 | `set_attr` | Sets the value of the specified attribute on a markdown node. | `markdown`, `attribute`, `value` | set_attr(markdown, attribute, value) |
@@ -159,10 +156,8 @@
 | `test` |  Tests if string matches a pattern | `s`, `pattern` | test(s, pattern) |
 | `times` |  Executes an expression n times and returns an array of results. | `t_n`, `t_expr` | times(t_n, t_expr) |
 | `to_array` | Converts the given value to an array. | `value` | to_array(value) |
-| `to_code` |  Converts an AST node back to code | `node` | to_code(node) |
 | `to_code` | Creates a markdown code block with the given value and language. | `value`, `language` | to_code(value, language) |
 | `to_code_inline` | Creates an inline markdown code node with the given value. | `value` | to_code_inline(value) |
-| `to_csv` |  Converts the given value to a CSV. | `v` | to_csv(v) |
 | `to_date` | Converts a timestamp to a date string with the given format. | `timestamp`, `format` | to_date(timestamp, format) |
 | `to_date_iso8601` |  Formats a date to ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ) | `d` | to_date_iso8601(d) |
 | `to_em` | Creates a markdown emphasis (italic) node with the given value. | `value` | to_em(value) |
@@ -184,7 +179,6 @@
 | `to_string` | Converts the given value to a string. | `value` | to_string(value) |
 | `to_strong` | Creates a markdown strong (bold) node with the given value. | `value` | to_strong(value) |
 | `to_text` | Converts the given markdown node to plain text. | `markdown` | to_text(markdown) |
-| `to_tsv` |  Converts the given value to a TSV. | `v` | to_tsv(v) |
 | `transpose` |  Transposes a 2D array (matrix), swapping rows and columns. | `matrix` | transpose(matrix) |
 | `trim` | Trims whitespace from both ends of the given string. | `input` | trim(input) |
 | `trunc` | Truncates the given number to an integer by removing the fractional part. | `number` | trunc(number) |

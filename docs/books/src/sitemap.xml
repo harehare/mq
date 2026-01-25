@@ -102,6 +102,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/reference/assignment_operators</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/reference/def</loc>
     <priority>1.0</priority>
   </url>

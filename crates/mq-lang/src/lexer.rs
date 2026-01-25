@@ -258,6 +258,13 @@ define_token_parser!(not, "!", TokenKind::Not);
 define_token_parser!(question, "?", TokenKind::Question);
 define_token_parser!(coalesce, "??", TokenKind::Coalesce);
 define_keyword_parser!(var, "var", TokenKind::Var);
+define_token_parser!(plus_equal, "+=", TokenKind::PlusEqual);
+define_token_parser!(minus_equal, "-=", TokenKind::MinusEqual);
+define_token_parser!(star_equal, "*=", TokenKind::StarEqual);
+define_token_parser!(slash_equal, "/=", TokenKind::SlashEqual);
+define_token_parser!(percent_equal, "%=", TokenKind::PercentEqual);
+define_token_parser!(double_slash_equal, "//=", TokenKind::DoubleSlashEqual);
+define_token_parser!(pipe_equal, "|=", TokenKind::PipeEqual);
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
@@ -282,7 +289,26 @@ fn punctuations(input: Span) -> IResult<Span, Token> {
 
 fn binary_op(input: Span) -> IResult<Span, Token> {
     alt((
-        eq_eq, ne_eq, lte, gte, lt, gt, equal, plus, minus, asterisk, slash, percent, range_op,
+        plus_equal,
+        minus_equal,
+        star_equal,
+        slash_equal,
+        percent_equal,
+        double_slash_equal,
+        pipe_equal,
+        eq_eq,
+        ne_eq,
+        lte,
+        gte,
+        lt,
+        gt,
+        equal,
+        plus,
+        minus,
+        asterisk,
+        slash,
+        percent,
+        range_op,
     ))
     .parse(input)
 }
@@ -593,7 +619,7 @@ fn skip_whitespace_and_comments(input: Span) -> IResult<Span, ()> {
 }
 
 fn token(input: Span) -> IResult<Span, Token> {
-    alt((keywords, env, literals, punctuations, binary_op, unary_op, ident)).parse(input)
+    alt((keywords, env, literals, binary_op, punctuations, unary_op, ident)).parse(input)
 }
 
 fn token_include_spaces(input: Span) -> IResult<Span, Token> {
@@ -605,8 +631,8 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
         keywords,
         env,
         literals,
-        punctuations,
         binary_op,
+        punctuations,
         unary_op,
         ident,
     ))

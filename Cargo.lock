@@ -1004,7 +1004,7 @@ dependencies = [
  "bytes",
  "deadpool",
  "libsql",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1737,7 +1737,7 @@ dependencies = [
  "similar",
  "stringmetrics",
  "tabwriter",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "url",
@@ -2579,7 +2579,7 @@ dependencies = [
 
 [[package]]
 name = "mq-crawler"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "clap",
  "crossbeam",
@@ -2604,7 +2604,7 @@ dependencies = [
 
 [[package]]
 name = "mq-dap"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "crossbeam-channel",
  "dap",
@@ -2613,14 +2613,14 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "tracing",
  "tracing-subscriber",
 ]
 
 [[package]]
 name = "mq-ffi"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "cbindgen",
  "libc",
@@ -2630,7 +2630,7 @@ dependencies = [
 
 [[package]]
 name = "mq-formatter"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "mq-lang",
  "rstest",
@@ -2649,7 +2649,7 @@ dependencies = [
 
 [[package]]
 name = "mq-hir"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "itertools 0.14.0",
  "mq-lang",
@@ -2658,13 +2658,13 @@ dependencies = [
  "slotmap",
  "smol_str",
  "strsim",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "url",
 ]
 
 [[package]]
 name = "mq-lang"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2686,12 +2686,12 @@ dependencies = [
  "smallvec",
  "smol_str",
  "string-interner",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "mq-lsp"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "bimap",
  "dashmap",
@@ -2710,7 +2710,7 @@ dependencies = [
 
 [[package]]
 name = "mq-markdown"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "ego-tree",
  "itertools 0.14.0",
@@ -2727,7 +2727,7 @@ dependencies = [
 
 [[package]]
 name = "mq-python"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "mq-lang",
  "mq-markdown",
@@ -2736,7 +2736,7 @@ dependencies = [
 
 [[package]]
 name = "mq-repl"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "arboard",
  "colored 3.1.1",
@@ -2755,7 +2755,7 @@ dependencies = [
 
 [[package]]
 name = "mq-run"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -2781,7 +2781,7 @@ dependencies = [
 
 [[package]]
 name = "mq-wasm"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "futures",
  "itertools 0.14.0",
@@ -2801,7 +2801,7 @@ dependencies = [
 
 [[package]]
 name = "mq-web-api"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "async-trait",
  "axum 0.8.8",
@@ -2812,7 +2812,7 @@ dependencies = [
  "mq-markdown",
  "serde",
  "serde_json",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "tokio",
  "tower 0.5.3",
  "tower-http 0.6.8",
@@ -3454,7 +3454,7 @@ dependencies = [
  "rustc-hash 2.1.1",
  "rustls 0.23.35",
  "socket2 0.6.1",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "web-time",
@@ -3475,7 +3475,7 @@ dependencies = [
  "rustls 0.23.35",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "tinyvec",
  "tracing",
  "web-time",
@@ -3636,7 +3636,7 @@ checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
 dependencies = [
  "getrandom 0.2.16",
  "libredox",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -4529,11 +4529,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.17"
+version = "2.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f63587ca0f12b72a0600bcba1d40081f830876000bb46dd2337a3051618f4fc8"
+checksum = "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4"
 dependencies = [
- "thiserror-impl 2.0.17",
+ "thiserror-impl 2.0.18",
 ]
 
 [[package]]
@@ -4549,9 +4549,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.17"
+version = "2.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ff15c8ecd7de3849db632e14d18d2571fa09dfc5ed93479bc4485c7a517c913"
+checksum = "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5"
 dependencies = [
  "proc-macro2",
  "quote",

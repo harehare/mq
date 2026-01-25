@@ -155,6 +155,11 @@ impl Node {
                 let end = expr2.range(Shared::clone(&arena)).end;
                 Range { start, end }
             }
+            Expr::Break(Some(value_node)) => {
+                let start = arena[self.token_id].range.start;
+                let end = value_node.range(Shared::clone(&arena)).end;
+                Range { start, end }
+            }
             Expr::Literal(_)
             | Expr::Ident(_)
             | Expr::Selector(_)
@@ -164,7 +169,7 @@ impl Node {
             | Expr::QualifiedAccess(_, _)
             | Expr::Nodes
             | Expr::Self_
-            | Expr::Break
+            | Expr::Break(None)
             | Expr::Continue => arena[self.token_id].range,
         }
     }
@@ -316,7 +321,7 @@ pub enum Expr {
     Quote(Shared<Node>),
     Unquote(Shared<Node>),
     Try(Shared<Node>, Shared<Node>),
-    Break,
+    Break(Option<Shared<Node>>),
     Continue,
 }
 

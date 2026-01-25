@@ -1,5 +1,31 @@
 def _is_section(section): is_dict(section) && section[:type] == :section;
 
+def sections(md_nodes):
+  if (is_empty(md_nodes)):
+    []
+  else:
+    do
+      let indices = do foreach (i, range(len(md_nodes) - 1)): if (is_h(md_nodes[i])): i; | compact();
+      | let indices_with_end = indices + len(md_nodes)
+      | let indices_len = len(indices)
+      | var result = []
+      | var i = 0
+      | while (i < indices_len):
+          let start_node = indices[i]
+          | let end_node = indices_with_end[i + 1]
+          | let children = md_nodes[start_node + 1:end_node]
+          | result += [{type: :section, header: md_nodes[start_node], children: children}]
+          | i = i + 1
+          | result
+        end
+    end
+end
+
+# Filters sections based on a given predicate function.
+def filter_sections(md_nodes, predicate):
+  sections(md_nodes) | filter(fn(section): predicate(section);)
+end
+
 # Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.
 def split(md_nodes, level):
   if (is_empty(md_nodes)):
@@ -8,14 +34,15 @@ def split(md_nodes, level):
     do
       let indices = do foreach (i, range(len(md_nodes) - 1)): if (is_h_level(md_nodes[i], level)): i; | compact();
       | let indices_with_end = indices + len(md_nodes)
-      | let result = []
-      | let i = 0
+      | let indices_len = len(indices)
+      | var result = []
+      | var i = 0
       | while (i < len(indices)):
           let start_node = indices[i]
           | let end_node = indices_with_end[i + 1]
           | let children = md_nodes[start_node + 1:end_node]
-          | let result = result + [{type: :section, header: md_nodes[start_node], children: children}]
-          | let i = i + 1
+          | result += [{type: :section, header: md_nodes[start_node], children: children}]
+          | i += 1
           | result
         end
     end

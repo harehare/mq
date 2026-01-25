@@ -48,10 +48,10 @@ pub enum RuntimeError {
     Runtime(ErrorToken, String),
     #[error("Divided by 0")]
     ZeroDivision(ErrorToken),
-    #[error("Unexpected token break")]
-    Break,
-    #[error("Unexpected token continue")]
-    Continue,
+    #[error("Unexpected break outside of loop")]
+    UnexpectedBreak(ErrorToken),
+    #[error("Unexpected continue outside of loop")]
+    UnexpectedContinue(ErrorToken),
     #[error("Not found env `{1}`")]
     EnvNotFound(Token, SmolStr),
     #[error("Cannot assign to immutable variable \"{1}\"")]
@@ -96,8 +96,8 @@ impl RuntimeError {
             RuntimeError::ModuleLoadError(err) => err.token(),
             RuntimeError::Runtime(token, _) => Some(token),
             RuntimeError::ZeroDivision(token) => Some(token),
-            RuntimeError::Break => None,
-            RuntimeError::Continue => None,
+            RuntimeError::UnexpectedBreak(token) => Some(token),
+            RuntimeError::UnexpectedContinue(token) => Some(token),
             RuntimeError::EnvNotFound(token, _) => Some(token),
             RuntimeError::AssignToImmutable(token, _) => Some(token),
             RuntimeError::UndefinedVariable(token, _) => Some(token),

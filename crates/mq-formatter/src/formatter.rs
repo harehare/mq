@@ -141,9 +141,9 @@ impl Formatter {
             mq_lang::CstNodeKind::Nodes
             | mq_lang::CstNodeKind::End
             | mq_lang::CstNodeKind::Self_
-            | mq_lang::CstNodeKind::Break
             | mq_lang::CstNodeKind::Do
             | mq_lang::CstNodeKind::Continue => self.format_keyword(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Break => self.format_break(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Selector => self.format_selector(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Try => self.format_try(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Catch => self.format_catch(&node, indent_level_consider_new_line),
@@ -1258,6 +1258,16 @@ impl Formatter {
                     self.output.push_str(&token.to_string());
                 }
             }
+        }
+    }
+
+    fn format_break(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        self.append_indent(indent_level);
+        self.output.push_str(&node.to_string());
+
+        // Format children (colon and expression if present)
+        for child in &node.children {
+            self.format_node(mq_lang::Shared::clone(child), 0);
         }
     }
 

@@ -12,6 +12,27 @@ import "section"
 
 ## Functions
 
+### `sections(md_nodes)`
+
+Splits Markdown nodes into sections at each heading node.  
+Each section starts with a heading node and includes all subsequent nodes up to the next heading of the same or higher level.
+
+**Parameters:**
+- `md_nodes`: Array of Markdown nodes to split
+
+**Returns:**
+- Array of section objects, where each section has:
+  - `type`: Always `:section`
+  - `header`: The heading node that starts the section
+  - `children`: Array of all nodes in the section (excluding the header)
+
+**Example:**
+```mq
+import "section"
+
+nodes | section::sections()
+```
+
 ### `split(md_nodes, level)`
 
 Splits markdown nodes into sections based on header level. Each section includes a header and all content until the next header of the same level.
@@ -24,7 +45,7 @@ Splits markdown nodes into sections based on header level. Each section includes
 - Array of section objects, where each section has:
   - `type`: Always `:section`
   - `header`: The header node
-  - `children`: Array of all nodes in the section (including the header)
+  - `children`: Array of all nodes in the section (excluding the header)
 
 **Example:**
 

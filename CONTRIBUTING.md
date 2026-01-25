@@ -15,7 +15,7 @@ Before contributing, please:
 
 ### Prerequisites
 
-- Rust 1.70 or later
+- Rust 1.93 or later
 - Git
 - [just](https://github.com/casey/just) command runner
 
@@ -93,31 +93,6 @@ just test-cov
 1. **Ensure tests pass**: Run `just test` and fix any failures
 2. **Update documentation**: Add or update documentation for new features
 3. **Follow commit conventions**: Use clear, descriptive commit messages
-
-### Commit Message Format
-
-Use the following format for commit messages:
-
-```
-<type>(<scope>): <description>
-
-[optional body]
-
-[optional footer]
-```
-
-Types:
-- ✨  New feature
-- 🐛  Bug fix
-- 📝  Documentation changes
-- 💄  Code style changes that don't affect behavior
-- ♻️  Refactoring
-- ⚡   Performance improvements
-- ✅  Adding or modifying tests
-- 📦  Changes to build system or external dependencies
-- 👷  Changes to CI configuration files and scripts
-
-## Documentation
 
 ### Documentation Requirements
 

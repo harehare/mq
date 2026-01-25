@@ -129,18 +129,41 @@ pub enum BinaryOp {
     Assign,
     Coalesce,
     Division,
+    DivisionEqual,
+    DoubleDivisionEqual,
+    PipeEqual,
     Equal,
     Gt,
     Gte,
     Lt,
     Lte,
     Minus,
+    MinusEqual,
     Modulo,
+    ModuloEqual,
     Multiplication,
+    MultiplicationEqual,
     NotEqual,
     Or,
     Plus,
+    PlusEqual,
     RangeOp,
+}
+
+impl BinaryOp {
+    pub fn is_assignment(&self) -> bool {
+        matches!(
+            self,
+            BinaryOp::Assign
+                | BinaryOp::PlusEqual
+                | BinaryOp::MinusEqual
+                | BinaryOp::MultiplicationEqual
+                | BinaryOp::DivisionEqual
+                | BinaryOp::ModuloEqual
+                | BinaryOp::DoubleDivisionEqual
+                | BinaryOp::PipeEqual
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

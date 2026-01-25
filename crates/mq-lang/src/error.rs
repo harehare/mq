@@ -248,8 +248,12 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::ModuleLoadError(_)) => {
                 Some(Cow::Borrowed("Failed to load module. Check module paths and names."))
             }
-            InnerError::Runtime(RuntimeError::Break) => None,
-            InnerError::Runtime(RuntimeError::Continue) => None,
+            InnerError::Runtime(RuntimeError::UnexpectedBreak(_)) => {
+                Some(Cow::Borrowed("'break' can only be used inside a loop."))
+            }
+            InnerError::Runtime(RuntimeError::UnexpectedContinue(_)) => {
+                Some(Cow::Borrowed("'continue' can only be used inside a loop."))
+            }
             InnerError::Runtime(RuntimeError::EnvNotFound(..)) => {
                 Some(Cow::Borrowed("Environment variable not found during evaluation."))
             }
@@ -712,8 +716,16 @@ mod test {
             module_id: ArenaId::new(0),
         }))
     )]
-    #[case::eval_break(InnerError::Runtime(RuntimeError::Break))]
-    #[case::eval_continue(InnerError::Runtime(RuntimeError::Continue))]
+    #[case::eval_unexpected_break(InnerError::Runtime(RuntimeError::UnexpectedBreak(Token {
+        range: Range::default(),
+        kind: TokenKind::Eof,
+        module_id: ArenaId::new(0),
+    })))]
+    #[case::eval_unexpected_continue(InnerError::Runtime(RuntimeError::UnexpectedContinue(Token {
+        range: Range::default(),
+        kind: TokenKind::Eof,
+        module_id: ArenaId::new(0),
+    })))]
     #[case::eval_env_not_found(
         InnerError::Runtime(RuntimeError::EnvNotFound(Token {
             range: Range::default(),

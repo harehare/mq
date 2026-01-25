@@ -1,7 +1,7 @@
 {
   "name": "playground",
   "private": true,
-  "version": "0.5.11",
+  "version": "0.5.12",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,24 +13,24 @@
     "@monaco-editor/react": "^4.7.0",
     "lz-string": "^1.5.0",
     "monaco-editor": "^0.55.1",
-    "mq-web": "^0.5.11",
+    "mq-web": "^0.5.12",
     "react": "^19.2.1",
     "react-dom": "^19.2.3",
     "react-icons": "^5.5.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
-    "@types/react": "^19.2.8",
+    "@types/react": "^19.2.9",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.2",
-    "baseline-browser-mapping": "^2.9.15",
+    "baseline-browser-mapping": "^2.9.17",
     "eslint": "^9.39.2",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.26",
-    "globals": "^17.0.0",
-    "oxlint": "^1.39.0",
+    "globals": "^17.1.0",
+    "oxlint": "^1.41.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.53.0",
+    "typescript-eslint": "^8.53.1",
     "vite": "^7.3.1"
   }
 }
