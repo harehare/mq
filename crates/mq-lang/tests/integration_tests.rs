@@ -20,10 +20,10 @@ fn engine() -> DefaultEngine {
       vec![RuntimeValue::String("helloWorld".to_string())],
       Ok(vec![RuntimeValue::String("2025".to_string())].into()))]
 #[case::while_("
-    let x = 5 |
+    var x = 5 |
     while (x > 0):
       # test
-      let x = x - 1 | x;
+      x -= 1 | x;
     ",
       vec![RuntimeValue::Number(10.into())],
       Ok(vec![RuntimeValue::Number(0.into())].into()))]
@@ -34,9 +34,9 @@ fn engine() -> DefaultEngine {
       vec![RuntimeValue::Number(10.into())],
       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())])].into()))]
 #[case::while_break("
-    let x = 0 |
+    var x = 0 |
     while(x < 10):
-      let x = x + 1
+      x += 1
       | if(x == 3):
         break
       else:
@@ -45,9 +45,9 @@ fn engine() -> DefaultEngine {
       vec![RuntimeValue::Number(10.into())],
       Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::while_break_with_value("
-    let x = 0 |
+    var x = 0 |
     while(x < 10):
-      let x = x + 1
+      x += 1
       | if(x == 5):
         break: \"found\"
       else:
@@ -56,9 +56,9 @@ fn engine() -> DefaultEngine {
       vec![RuntimeValue::Number(10.into())],
       Ok(vec![RuntimeValue::String("found".to_string())].into()))]
 #[case::while_continue("
-    let x = 0 |
+    var x = 0 |
     while(x < 4):
-      let x = x + 1
+      x += 1
       | if(x == 3):
         continue
       else:
@@ -94,9 +94,9 @@ fn engine() -> DefaultEngine {
       vec![RuntimeValue::Number(0.into())],
       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(11.into()), RuntimeValue::Number(12.into()), RuntimeValue::Number(14.into()), RuntimeValue::Number(15.into())])].into()))]
 #[case::while_do_end("
-    let x = 5 |
+    var x = 5 |
     while (x > 0) do
-      let x = x - 1 | x
+      x -= 1 | x
     end
     ",
       vec![RuntimeValue::Number(10.into())],
@@ -109,9 +109,9 @@ fn engine() -> DefaultEngine {
       vec![RuntimeValue::Number(10.into())],
       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())])].into()))]
 #[case::while_do_end_break("
-    let x = 0 |
+    var x = 0 |
     while(x < 10) do
-      let x = x + 1
+      x += 1
       | if(x == 3):
         break
       else:
@@ -139,9 +139,9 @@ fn engine() -> DefaultEngine {
       vec![RuntimeValue::Number(0.into())],
       Ok(vec![RuntimeValue::Number(42.into())].into()))]
 #[case::loop_break_with_value_complex("
-    let x = 0 |
+    var x = 0 |
     loop:
-      let x = x + 1
+      x += 1
       | if(x >= 5):
           break: x * 10
         else:
