@@ -443,7 +443,7 @@ define_builtin!(GSUB, ParamNum::Fixed(3), |ident, _, mut args, _| {
             .markdown_node()
             .map(|md| Ok(node.update_markdown_value(&replace_re(md.value().as_str(), &*s1, &*s2)?.to_string())))
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-        [RuntimeValue::None, RuntimeValue::String(_), RuntimeValue::String(_)] => Ok(RuntimeValue::NONE),
+        [RuntimeValue::None, _, _] => Ok(RuntimeValue::NONE),
         [a, b, c] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
