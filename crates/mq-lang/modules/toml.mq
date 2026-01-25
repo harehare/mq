@@ -37,10 +37,9 @@ let INFINITY = 9223372036854775807
 | def _skip_comment(input):
     if (len(input) > 0 && input[0] == "#"):
       do
-        let i = 1
+        var i = 1
         | let result = while (i < len(input) && !_is_newline(input[i])):
-                  let i = i + 1
-                  | i
+                  i += 1 | i
                 end
         | let skip_count = if (is_none(result)): 1 else: result
         | trim(input[skip_count:len(input)])
@@ -53,7 +52,7 @@ let INFINITY = 9223372036854775807
     if (len(input) > 0 && (input[0] == "\"" || input[0] == "'")):
       do
         let quote_char = input[0]
-        | let i = 1
+        | var i = 1
         | let key_chars = ""
         | let escaped = false
         | let result = while (i < len(input) && (escaped || input[i] != quote_char)):
@@ -65,7 +64,7 @@ let INFINITY = 9223372036854775807
                     [key_chars + input[i], escaped, i + 1]
                   | let key_chars = result[0]
                   | let escaped = result[1]
-                  | let i = result[2]
+                  | i = result[2]
                   | result
                 end
         # Add 1 to skip the closing quote character
@@ -75,10 +74,9 @@ let INFINITY = 9223372036854775807
       end
     else:
       do
-        let i = 0
+        var i = 0
         | let result = while (i < len(input) && _is_alpha_numeric(input[i])):
-                  let i = i + 1
-                  | i
+                  i += 1 | i
                 end
         | let consumed = if (is_none(result)): 0 else: result
         | let key = input[0:consumed]
@@ -103,11 +101,11 @@ let INFINITY = 9223372036854775807
   end
 
 | def _detect_number_type(input):
-    let i = 0
+    var i = 0
     | let has_dot = false
     | let result = while (i < len(input) && (_is_digit(input[i]) || input[i] == "." || input[i] == "+" || input[i] == "-" || input[i] == "_")):
           let has_dot = has_dot || input[i] == "."
-          | let i = i + 1
+          | i += 1
           | [has_dot, i]
         end
     | if (is_none(result)): has_dot else: result[0]
@@ -135,11 +133,11 @@ let INFINITY = 9223372036854775807
 # Parses a TOML string and returns the parsed data structure.
 | def _parse_toml_content(input):
     def _parse_multiline_string(input, delimiter):
-      let i = 3
+      var i = 3
       | let value_chars = ""
       | let result = while (i + 2 < len(input) && input[i:i + 3] != delimiter):
               let value_chars = value_chars + input[i]
-              | let i = i + 1
+              | i += 1
               | [value_chars, i]
             end
       | let value = if (is_none(result[0])): "" else: result[0]
@@ -149,9 +147,9 @@ let INFINITY = 9223372036854775807
 
     def _parse_string(input):
       let quote_char = input[0]
-      | let i = 1
-      | let value_chars = ""
-      | let escaped = false
+      | var i = 1
+      | var value_chars = ""
+      | var escaped = false
       | let result = while (i < len(input) && (escaped || input[i] != quote_char)):
               let result = if (escaped):
                 [value_chars + input[i], false, i + 1]
@@ -159,9 +157,9 @@ let INFINITY = 9223372036854775807
                 [value_chars, true, i + 1]
               else:
                 [value_chars + input[i], escaped, i + 1]
-              | let value_chars = result[0]
-              | let escaped = result[1]
-              | let i = result[2]
+              | value_chars = result[0]
+              | escaped = result[1]
+              | i = result[2]
               | result
             end
       | let value = if (is_none(result[0])): "" else: result[0]
@@ -170,12 +168,11 @@ let INFINITY = 9223372036854775807
     end
 
     def _parse_integer(input):
-      let i = 0
+      var i = 0
       | let has_sign = len(input) > 0 && (input[0] == "+" || input[0] == "-")
       | let i = if (has_sign): 1 else: 0
       | let result = while (i < len(input) && (_is_digit(input[i]) || input[i] == "_")):
-              let i = i + 1
-              | i
+              i += 1 | i
             end
       | let consumed = if (is_none(result)): i else: result
       | let value_str = do input[0:consumed] | replace("_", "");
@@ -184,12 +181,11 @@ let INFINITY = 9223372036854775807
     end
 
     def _parse_float(input):
-      let i = 0
+      var i = 0
       | let has_sign = len(input) > 0 && (input[0] == "+" || input[0] == "-")
       | let i = if (has_sign): 1 else: 0
       | let result = while (i < len(input) && (_is_digit(input[i]) || input[i] == "." || input[i] == "_")):
-              let i = i + 1
-              | i
+              i += 1 | i
             end
       | let consumed = if (is_none(result)): i else: result
       | let value_str = do input[0:consumed] | replace("_", "");
@@ -198,10 +194,9 @@ let INFINITY = 9223372036854775807
     end
 
     def _parse_datetime(input):
-      let i = 0
+      var i = 0
       | let result = while (i < len(input) && _is_datetime_char(input[i])):
-              let i = i + 1
-              | i
+              i += 1 | i
             end
       | let consumed = if (is_none(result)): i else: result
       | let datetime_str = input[0:consumed]
@@ -413,12 +408,12 @@ end
 def toml_stringify(data):
   let lines = []
   | let result = keys(data)
-  | let i = 0
+  | var i = 0
   | let final_lines = while (i < len(result)):
       let key = result[i]
       | let value = data[key]
       | let lines = _add_toml_lines(lines, key, value)
-      | let i = i + 1
+      | i += 1
       | lines
     end
   | join(final_lines, "\n")
