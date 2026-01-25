@@ -4,9 +4,9 @@ def _levenshtein_distance(s1, s2):
   let len1 = len(s1)
   | let len2 = len(s2)
   | let matrix = []
-  | let i = 0
+  | var i = 0
   | let matrix = while (i <= len1):
-      let j = 0
+      var j = 0
       | let row = []
       | let row = while (j <= len2):
               let value = if (i == 0):
@@ -16,16 +16,16 @@ def _levenshtein_distance(s1, s2):
               else:
                 0
               | let row = row + [value]
-              | let j = j + 1
+              | j += 1
               | row
             end
       | let matrix = matrix + [row]
-      | let i = i + 1
+      | i += 1
       | matrix
     end
-  | let i = 1
+  | i = 1
   | let matrix = while (i <= len1):
-      let j = 1
+      var j = 1
       | let matrix = while (j <= len2):
               let cost = if (s1[i - 1] == s2[j - 1]): 0 else: 1
               | let deletion = matrix[i - 1][j] + 1
@@ -40,10 +40,10 @@ def _levenshtein_distance(s1, s2):
               | let row = matrix[i]
               | let row = set(row, j, min_value)
               | let matrix = set(matrix, i, row)
-              | let j = j + 1
+              | j += 1
               | matrix
             end
-      | let i = i + 1
+      | i += 1
       | matrix
     end
   | if (len1 == 0): len2 elif (len2 == 0): len1 elif (is_none(matrix)): 0 else: matrix[len1][len2]
@@ -55,19 +55,19 @@ def _calculate_jaro_distance(s1, s2, len1, len2):
   | let s1_matches = []
   | let s2_matches = []
   | let matches = 0
-  | let i = 0
+  | var i = 0
   | let result = while (i < len1):
       let start = max(i - match_window, 0)
       | let end_ = min(len2, i + match_window + 1)
-      | let j = start
-      | let found = false
+      | var j = start
+      | var found = false
       | let result = while (j < end_ && !found):
               let result = if (s1[i] == s2[j] && !contains(s2_matches, j)):
                 [true, j]
               else:
                 [false, j + 1]
-              | let found = result[0]
-              | let j = result[1]
+              | found = result[0]
+              | j = result[1]
               | let result = if (found):
                               [s1_matches + [i], s2_matches + [j], matches + 1]
                             else:
@@ -80,7 +80,7 @@ def _calculate_jaro_distance(s1, s2, len1, len2):
       | let s1_matches = result[0]
       | let s2_matches = result[1]
       | let matches = result[2]
-      | let i = i + 1
+      | i += 1
       | [s1_matches, s2_matches, matches]
     end
   | let s1_matches = result[0]
@@ -94,14 +94,14 @@ end
 
 def _calculate_jaro_with_transpositions(s1, s2, s1_matches, s2_matches, matches, len1, len2):
   let transpositions = 0
-  | let i = 0
+  | var i = 0
   | let s1_matches_len = len(s1_matches)
   | let transpositions = while (i < s1_matches_len):
       let transpositions = if (s1_matches[i] != s2_matches[i]):
         transpositions + 1
       else:
         transpositions
-      | let i = i + 1
+      | i += 1
       | transpositions
     end
   | let transpositions = transpositions / 2
@@ -121,10 +121,9 @@ end
 
 def _common_prefix_length(s1, s2):
   let min_len = if (len(s1) < len(s2)): len(s1) else: len(s2)
-  | let i = 0
-  | let i = while (i < min_len && s1[i] == s2[i]):
-      let i = i + 1
-      | i
+  | var i = 0
+  | while (i < min_len && s1[i] == s2[i]):
+      i += 1
     end
   | i
 end

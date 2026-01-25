@@ -286,16 +286,17 @@ def skip_while(arr, f):
     0
   else:
     do
-      let i = 0
+      var i = 0
       | while (i < len(arr) && f(get(arr, i))):
-          let i = i + 1 | i;
+          i += 1 | i
+        end
     end
   | slice(arr, if (is_none(si)): 0 else: si, len(arr))
 end
 
 # Takes elements from the beginning of an array while the provided function returns true
 def take_while(arr, f):
-  let i = 0
+  var i = 0
   | let ti =
     if (not(is_array(arr))):
       error("first argument must be an array")
@@ -303,7 +304,8 @@ def take_while(arr, f):
       0
     else:
       while (and(i < len(arr), f(get(arr, i)))):
-        let i = i + 1 | i;
+        i += 1 | i
+      end
   | if (is_none(ti)): []
     else:
       slice(arr, 0, ti)
@@ -311,8 +313,8 @@ end
 
 # Groups elements of an array by the result of applying a function to each element
 def group_by(arr, f):
-  let i = 0
-  | let groups = dict()
+  var i = 0
+  | var groups = dict()
   | if (not(is_array(arr))):
       error("first argument must be an array")
     elif (is_empty(arr)):
@@ -320,11 +322,11 @@ def group_by(arr, f):
     else:
       while (not(is_none(get(arr, i)))):
         let v = get(arr, i)
-        | let i = i + 1
+        | i += 1
         | let key = to_string(f(v))
         | let existing = get(groups, key)
         | let new_group = if (is_none(existing)): [v] else: existing + v
-        | let groups = set(groups, key, new_group)
+        | groups = set(groups, key, new_group)
         | groups
       end
 end
@@ -354,25 +356,25 @@ def to_tsv(v): if (is_array(v)): join(v, "\t") else: to_string(v);
 
 # Reduces an array to a single value by applying a function, starting from an initial value.
 def fold(arr, init, f):
-  let acc = init
-  | let i = 0
+  var acc = init
+  | var i = 0
   | if (not(is_array(arr))):
       error("first argument must be an array")
     elif (is_empty(arr)):
       init
     else:
       while (i != len(arr)):
-        let acc = f(acc, get(arr, i))
-        | let i = i + 1
+        acc = f(acc, get(arr, i))
+        | i += 1
         | acc
       end
 end
 
 # Returns a new array with duplicate elements removed, comparing by the result of the provided function.
 def unique_by(arr, f):
-  let seen = dict()
-  | let result = []
-  | let i = 0
+  var seen = dict()
+  | var result = []
+  | var i = 0
   | if (not(is_array(arr))):
       error("first argument must be an array")
     elif (is_empty(arr)): []
@@ -381,9 +383,9 @@ def unique_by(arr, f):
         let item = get(arr, i)
         | let key = to_string(f(item))
         | let already_seen = get(seen, key)
-        | let result = if (is_none(already_seen)): result + item else: result
-        | let seen = if (is_none(already_seen)): set(seen, key, true) else: seen
-        | let i = i + 1
+        | result = if (is_none(already_seen)): result + item else: result
+        | seen = if (is_none(already_seen)): set(seen, key, true) else: seen
+        | i += 1
         | result
       end
 end
@@ -399,14 +401,15 @@ def sections(md_nodes, level):
       | if (is_h_level(n, level)): i;
   | let indices = compact(indices)
   | let indices_with_end = indices + len(md_nodes)
-  | let result = []
-  | let i = 0
-  | while (i < len(indices)):
+  | let indices_len = len(indices)
+  | var result = []
+  | var i = 0
+  | while (i < indices_len):
       let start_node = get(indices, i)
       | let end_node = get(indices_with_end, i + 1)
       | let section = slice(md_nodes, start_node, end_node)
-      | let result = result + [section]
-      | let i = i + 1
+      | result += [section]
+      | i += 1
       | result
     end
 end
@@ -525,17 +528,5 @@ end
 def inspect(value) do
   print(to_string(value))
   | value
-end
-
-| module ast:
-  # Gets the arguments of an AST node
-  def get_args(node) do
-    _ast_get_args(node)
-  end
-
-  # Converts an AST node back to code
-  def to_code(node) do
-    _ast_to_code(node)
-  end
 end
 

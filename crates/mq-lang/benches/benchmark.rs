@@ -25,7 +25,7 @@ fn eval_while_speed_test() -> mq_lang::RuntimeValues {
     let mut engine = mq_lang::DefaultEngine::default();
     engine
         .eval(
-            "let i = 10000 | while(i > 0): let i = i - 1 | i;",
+            "var i = 10000 | while(i > 0): i -= 1; | i",
             vec![mq_lang::RuntimeValue::Number(1.into())].into_iter(),
         )
         .unwrap()
