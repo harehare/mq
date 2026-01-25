@@ -3,14 +3,16 @@
 def _parse_json_value(input):
   let input = trim(input)
 
-  | def handle_string_char(char, escaped, pos):
-      if (char == "\"" && !escaped):
-        [true, pos]
-      elif (char == "\""):
-        [false, !escaped]
-      else:
-        [false, false]
-    end
+  |
+
+  def handle_string_char(char, escaped, pos):
+    if (char == "\"" && !escaped):
+      [true, pos]
+    elif (char == "\""):
+      [false, !escaped]
+    else:
+      [false, false]
+  end
 
   def _parse_string(input):
     let escaped = false

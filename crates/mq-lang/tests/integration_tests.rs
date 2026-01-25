@@ -1373,24 +1373,6 @@ fn engine() -> DefaultEngine {
 #[case::in_array_false(r#"in(["a", "c"], ["a", "b"])"#,
             vec![RuntimeValue::Number(0.into())],
             Ok(vec![RuntimeValue::Boolean(false)].into()))]
-#[case::to_csv_single_row(
-            "to_csv()",
-            vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::String("b".to_string()),
-                RuntimeValue::String("c".to_string()),
-            ])],
-            Ok(vec![RuntimeValue::String("a,b,c".to_string())].into())
-          )]
-#[case::to_tsv_single_row(
-            "to_tsv()",
-            vec![RuntimeValue::Array(vec![
-              RuntimeValue::String("a".to_string()),
-              RuntimeValue::String("b".to_string()),
-              RuntimeValue::String("c".to_string()),
-            ])],
-            Ok(vec![RuntimeValue::String("a\tb\tc".to_string())].into())
-          )]
 #[case::fold_sum("
             def sum(acc, x):
               add(acc, x);

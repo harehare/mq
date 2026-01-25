@@ -360,12 +360,6 @@ def in(v, elem):
     contains(v, elem)
 end
 
-# Converts the given value to a CSV.
-def to_csv(v): if (is_array(v)): join(v, ",") else: to_string(v);
-
-# Converts the given value to a TSV.
-def to_tsv(v): if (is_array(v)): join(v, "\t") else: to_string(v);
-
 # Reduces an array to a single value by applying a function, starting from an initial value.
 def fold(arr, init, f):
   var acc = init
@@ -404,27 +398,6 @@ end
 
 # Returns the input value unchanged.
 def identity(x): x;
-
-# deprecated: Use the section module instead of the sections function.
-# Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.
-def sections(md_nodes, level):
-  let indices = foreach (i, range(sub(len(md_nodes), 1))):
-      let n = get(md_nodes, i)
-      | if (is_h_level(n, level)): i;
-  | let indices = compact(indices)
-  | let indices_with_end = indices + len(md_nodes)
-  | let indices_len = len(indices)
-  | var result = []
-  | var i = 0
-  | while (i < indices_len):
-      let start_node = get(indices, i)
-      | let end_node = get(indices_with_end, i + 1)
-      | let section = slice(md_nodes, start_node, end_node)
-      | result += [section]
-      | i += 1
-      | result
-    end
-end
 
 # Transposes a 2D array (matrix), swapping rows and columns.
 def transpose(matrix):
@@ -488,11 +461,6 @@ macro pluck(pluck_obj, selector) do
         end
     end
   end
-end
-
-# Returns a default value if the input is None or empty.
-def default_to(value, default):
-  if (is_none(value) || is_empty(value)): default else: value
 end
 
 # Maps over an array and removes None values from the result.
