@@ -592,6 +592,12 @@ include "test"
     | assert_eq(result1, 1)
   end
 
+| def test_each():
+    var i = 0
+    | each([1, 2, 3], fn(x): i += x;)
+    | assert_eq(i, 6)
+  end
+
 | run_tests([
   # Type checking
   test_case("is_array", test_is_array),
@@ -620,6 +626,7 @@ include "test"
   test_case("map", test_map),
   test_case("flat_map", test_flat_map),
   test_case("filter", test_filter),
+  test_case("each", test_each),
   test_case("first", test_first),
   test_case("last", test_last),
   test_case("second", test_second),
