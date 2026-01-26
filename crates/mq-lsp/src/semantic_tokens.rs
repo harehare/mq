@@ -102,16 +102,24 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
             pre_line = line;
             pre_start = start;
 
+            let hir_guard = hir.read().unwrap();
+            let is_builtin = hir_guard.is_builtin_symbol(&symbol);
+            drop(hir_guard);
+
+            let mut modifiers_bitset = 0;
+            if is_builtin {
+                modifiers_bitset |= 1 << token_modifier(ls_types::SemanticTokenModifier::DEFAULT_LIBRARY);
+            }
+            if symbol.is_deprecated() {
+                modifiers_bitset |= 1 << token_modifier(ls_types::SemanticTokenModifier::DEPRECATED);
+            }
+
             semantic_tokens.push(ls_types::SemanticToken {
                 delta_line,
                 delta_start,
                 length,
                 token_type,
-                token_modifiers_bitset: if hir.read().unwrap().is_builtin_symbol(&symbol) {
-                    token_modifier(ls_types::SemanticTokenModifier::DEFAULT_LIBRARY)
-                } else {
-                    0
-                },
+                token_modifiers_bitset: modifiers_bitset,
             });
         }
     }
@@ -148,6 +156,7 @@ pub const TOKEN_MODIFIER: &[ls_types::SemanticTokenModifier] = &[
     SemanticTokenModifier::DEFINITION,
     SemanticTokenModifier::DEFAULT_LIBRARY,
     SemanticTokenModifier::DOCUMENTATION,
+    SemanticTokenModifier::DEPRECATED,
 ];
 #[cfg(test)]
 mod tests {
@@ -165,6 +174,7 @@ mod tests {
         assert_eq!(token_modifier(SemanticTokenModifier::DEFINITION), 0);
         assert_eq!(token_modifier(SemanticTokenModifier::DEFAULT_LIBRARY), 1);
         assert_eq!(token_modifier(SemanticTokenModifier::DOCUMENTATION), 2);
+        assert_eq!(token_modifier(SemanticTokenModifier::DEPRECATED), 3);
     }
 
     #[test]
@@ -208,6 +218,39 @@ mod tests {
         assert_eq!(
             tokens[0].token_modifiers_bitset,
             token_modifier(SemanticTokenModifier::DOCUMENTATION)
+        );
+    }
+
+    #[test]
+    fn test_response_with_deprecated_function() {
+        let mut hir = mq_hir::Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+
+        // Create a deprecated function
+        hir.add_code(
+            Some(url.clone()),
+            "# deprecated: This function is no longer supported\ndef old_func(): 1;",
+        );
+
+        let hir = Arc::new(RwLock::new(hir));
+        let tokens = response(hir, url);
+
+        // Should have tokens for comment and function definition
+        assert!(tokens.len() >= 2, "Should have at least comment and function tokens");
+
+        // Find the function token (should be the one with FUNCTION type)
+        let func_token = tokens
+            .iter()
+            .find(|t| t.token_type == token_type(SemanticTokenType::FUNCTION));
+        assert!(func_token.is_some(), "Should have a function token");
+
+        // Check that the function token has the DEPRECATED modifier
+        let func_token = func_token.unwrap();
+        let deprecated_bit = 1 << token_modifier(SemanticTokenModifier::DEPRECATED);
+        assert_ne!(
+            func_token.token_modifiers_bitset & deprecated_bit,
+            0,
+            "Function token should have DEPRECATED modifier"
         );
     }
 }
