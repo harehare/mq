@@ -102,13 +102,15 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
             pre_line = line;
             pre_start = start;
 
+            let hir_guard = hir.read().unwrap();
             let mut modifiers_bitset = 0;
-            if hir.read().unwrap().is_builtin_symbol(&symbol) {
+            if hir_guard.is_builtin_symbol(&symbol) {
                 modifiers_bitset |= 1 << token_modifier(ls_types::SemanticTokenModifier::DEFAULT_LIBRARY);
             }
             if symbol.is_deprecated() {
                 modifiers_bitset |= 1 << token_modifier(ls_types::SemanticTokenModifier::DEPRECATED);
             }
+            drop(hir_guard);
 
             semantic_tokens.push(ls_types::SemanticToken {
                 delta_line,
