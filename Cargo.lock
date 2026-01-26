@@ -1175,6 +1175,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2972feb8dffe7bc8c5463b1dacda1b0dfbed3710e50f977d965429692d74cd8"
 
 [[package]]
+name = "ego-tree"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b04dc5a38e4f151a79d9f2451ae6037fb6eaf5cba34771f44781f80e508498e3"
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2712,7 +2718,7 @@ dependencies = [
 name = "mq-markdown"
 version = "0.5.12"
 dependencies = [
- "ego-tree",
+ "ego-tree 0.11.0",
  "itertools 0.14.0",
  "markdown",
  "miette",
@@ -4017,7 +4023,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93cecd86d6259499c844440546d02f55f3e17bd286e529e48d1f9f67e92315cb"
 dependencies = [
  "cssparser",
- "ego-tree",
+ "ego-tree 0.10.0",
  "getopts",
  "html5ever",
  "precomputed-hash",
