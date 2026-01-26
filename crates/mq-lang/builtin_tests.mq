@@ -558,11 +558,33 @@ def test_inspect():
   | assert_eq(result1, 1)
 end
 
-| def test_each():
-    var i = 0
-    | each([1, 2, 3], fn(x): i += x;)
-    | assert_eq(i, 6)
-  end
+def test_each():
+  var i = 0
+  | each([1, 2, 3], fn(x): i += x;)
+  | assert_eq(i, 6)
+end
+
+def test_lpad():
+  let result1 = lpad("test", 6, "0")
+  | assert_eq(result1, "00test")
+
+  | let result2 = lpad("hello", 3, "x")
+  | assert_eq(result2, "hello")
+
+  | let result3 = lpad("abc", 5)
+  | assert_eq(result3, "  abc")
+end
+
+def test_rpad():
+  let result1 = rpad("test", 6, "0")
+  | assert_eq(result1, "test00")
+
+  | let result2 = rpad("hello", 3, "x")
+  | assert_eq(result2, "hello")
+
+  | let result3 = rpad("abc", 5)
+  | assert_eq(result3, "abc  ")
+end
 
 | run_tests([
   # Type checking
@@ -578,6 +600,8 @@ end
   test_case("contains", test_contains),
   test_case("ltrimstr", test_ltrimstr),
   test_case("rtrimstr", test_rtrimstr),
+  test_case("lpad", test_lpad),
+  test_case("rpad", test_rpad),
 
   # Collection operations
   test_case("is_empty", test_is_empty),
