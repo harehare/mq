@@ -510,3 +510,31 @@ def inspect(value) do
   | value
 end
 
+# Left-pads a string to a specified length using a given padding string.
+def lpad(s, length, pad_str = " "):
+  let pad_needed = length - len(s)
+  | if (pad_needed <= 0):
+      s
+    else: do
+        let full_repeats = floor(pad_needed / len(pad_str))
+        | let remainder = pad_needed % len(pad_str)
+        | let full_pad = do foreach (_, range(0, full_repeats - 1)): pad_str; | join("");
+        | let final_pad = full_pad + slice(pad_str, 0, remainder)
+        | final_pad + s
+      end
+end
+
+# Right-pads a string to a specified length using a given padding string.
+def rpad(s, length, pad_str = " "):
+  let pad_needed = length - len(s)
+  | if (pad_needed <= 0):
+      s
+    else: do
+        let full_repeats = floor(pad_needed / len(pad_str))
+        | let remainder = pad_needed % len(pad_str)
+        | let full_pad = do foreach (_, range(0, full_repeats - 1)): pad_str; | join("");
+        | let final_pad = full_pad + slice(pad_str, 0, remainder)
+        | s + final_pad
+      end
+end
+
