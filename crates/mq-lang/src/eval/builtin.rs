@@ -142,9 +142,9 @@ define_builtin!(
 
 define_builtin!(DEBUG, ParamNum::Range(1, u8::MAX), |_, current_value, args, _| {
     if args.len() == 1 {
-        println!("DEBUG: {}", args[0]);
+        eprintln!("DEBUG: {}", args[0]);
     } else {
-        println!("DEBUG:\n{}", args.iter().map(|v| format!(" - {}", v)).join("\n"));
+        eprintln!("DEBUG:\n{}", args.iter().map(|v| format!(" - {}", v)).join("\n"));
     }
 
     Ok(current_value.clone())
