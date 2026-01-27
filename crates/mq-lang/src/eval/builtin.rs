@@ -140,6 +140,16 @@ define_builtin!(
     }
 );
 
+define_builtin!(DEBUG, ParamNum::Range(1, u8::MAX), |_, current_value, args, _| {
+    if args.len() == 1 {
+        println!("DEBUG: {}", args[0]);
+    } else {
+        println!("DEBUG:\n{}", args.iter().map(|v| format!(" - {}", v)).join("\n"));
+    }
+
+    Ok(current_value.clone())
+});
+
 define_builtin!(TYPE, ParamNum::Fixed(1), |_, _, args, _| match args.first() {
     Some(value) => Ok(value.name().to_string().into()),
     None => Ok(RuntimeValue::NONE),
@@ -2395,6 +2405,7 @@ const HASH_TO_TEXT: u64 = fnv1a_hash_64("to_text");
 const HASH_TRUNC: u64 = fnv1a_hash_64("trunc");
 const HASH_TRIM: u64 = fnv1a_hash_64("trim");
 const HASH_TYPE: u64 = fnv1a_hash_64("type");
+const HASH_DEBUG: u64 = fnv1a_hash_64("debug");
 const HASH_UNIQ: u64 = fnv1a_hash_64("uniq");
 const HASH_UPDATE: u64 = fnv1a_hash_64("update");
 const HASH_UPCASE: u64 = fnv1a_hash_64("upcase");
@@ -2430,6 +2441,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_DICT => Some(&DICT),
         HASH_DIV => Some(&DIV),
         HASH_DOWNCASE => Some(&DOWNCASE),
+        HASH_DEBUG => Some(&DEBUG),
         HASH_ENDS_WITH => Some(&ENDS_WITH),
         HASH_ENTRIES => Some(&ENTRIES),
         HASH_EQ => Some(&EQ),
@@ -2945,6 +2957,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Prints a message to standard output and returns the current value.",
             params: &["message"],
+        },
+    );
+    map.insert(
+        SmolStr::new("debug"),
+        BuiltinFunctionDoc {
+            description: "Prints the debug information of the given value.",
+            params: &["values"],
         },
     );
     map.insert(

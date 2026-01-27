@@ -240,9 +240,6 @@ def fill(value, n):
     foreach (i, range(0, n - 1)): value;
 end
 
-# Prints the debug information of the given value.
-def debug(msg): stderr(s"DEBUG: ${to_string(msg)}");
-
 # Sorts an array using a key function that extracts a comparable value for each element.
 def sort_by(arr, f):
   let decorate_arr = foreach (x, arr): [f(x), x]; | _sort_by_impl(decorate_arr) | map(second);
