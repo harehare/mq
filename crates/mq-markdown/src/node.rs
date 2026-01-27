@@ -1,11 +1,13 @@
+use crate::node::attr_value::{AttrValue, keys};
+use itertools::Itertools;
+use markdown::mdast::{self};
+use smol_str::SmolStr;
 use std::{
     borrow::Cow,
     fmt::{self, Display},
 };
 
-use itertools::Itertools;
-use markdown::mdast::{self};
-use smol_str::SmolStr;
+pub mod attr_value;
 
 type Level = u8;
 
@@ -476,129 +478,6 @@ pub struct MdxJsxAttribute {
 pub enum MdxAttributeValue {
     Expression(SmolStr),
     Literal(SmolStr),
-}
-
-/// Represents a typed attribute value that can be returned from or passed to attr/set_attr methods.
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "json", derive(serde::Serialize, serde::Deserialize), serde(untagged))]
-pub enum AttrValue {
-    Array(Vec<Node>),
-    String(String),
-    Number(f64),
-    Integer(i64),
-    Boolean(bool),
-    Null,
-}
-
-impl From<String> for AttrValue {
-    fn from(s: String) -> Self {
-        AttrValue::String(s)
-    }
-}
-
-impl From<&str> for AttrValue {
-    fn from(s: &str) -> Self {
-        AttrValue::String(s.to_string())
-    }
-}
-
-impl From<f64> for AttrValue {
-    fn from(n: f64) -> Self {
-        AttrValue::Number(n)
-    }
-}
-
-impl From<i64> for AttrValue {
-    fn from(n: i64) -> Self {
-        AttrValue::Integer(n)
-    }
-}
-
-impl From<i32> for AttrValue {
-    fn from(n: i32) -> Self {
-        AttrValue::Integer(n as i64)
-    }
-}
-
-impl From<usize> for AttrValue {
-    fn from(n: usize) -> Self {
-        AttrValue::Integer(n as i64)
-    }
-}
-
-impl From<u8> for AttrValue {
-    fn from(n: u8) -> Self {
-        AttrValue::Integer(n as i64)
-    }
-}
-
-impl From<bool> for AttrValue {
-    fn from(b: bool) -> Self {
-        AttrValue::Boolean(b)
-    }
-}
-
-impl AttrValue {
-    /// Converts the attribute value to a string representation.
-    pub fn as_string(&self) -> String {
-        match self {
-            AttrValue::String(s) => s.clone(),
-            AttrValue::Number(n) => n.to_string(),
-            AttrValue::Integer(i) => i.to_string(),
-            AttrValue::Boolean(b) => b.to_string(),
-            AttrValue::Array(arr) => values_to_string(arr, &RenderOptions::default()),
-            AttrValue::Null => String::new(),
-        }
-    }
-
-    /// Converts the attribute value to an integer representation.
-    pub fn as_i64(&self) -> Option<i64> {
-        match self {
-            AttrValue::String(s) => s.parse().ok(),
-            AttrValue::Number(n) => Some(*n as i64),
-            AttrValue::Integer(i) => Some(*i),
-            AttrValue::Boolean(b) => Some(*b as i64),
-            AttrValue::Array(arr) => Some(arr.len() as i64),
-            AttrValue::Null => None,
-        }
-    }
-
-    /// Converts the attribute value to a number representation.
-    pub fn as_f64(&self) -> Option<f64> {
-        match self {
-            AttrValue::String(s) => s.parse().ok(),
-            AttrValue::Number(n) => Some(*n),
-            AttrValue::Integer(i) => Some(*i as f64),
-            AttrValue::Boolean(_) => None,
-            AttrValue::Array(arr) => Some(arr.len() as f64),
-            AttrValue::Null => None,
-        }
-    }
-
-    /// Returns `true` if the attribute value is a string.
-    pub fn is_string(&self) -> bool {
-        matches!(self, AttrValue::String(_))
-    }
-
-    /// Returns `true` if the attribute value is a number.
-    pub fn is_number(&self) -> bool {
-        matches!(self, AttrValue::Number(_))
-    }
-
-    /// Returns `true` if the attribute value is an integer.
-    pub fn is_integer(&self) -> bool {
-        matches!(self, AttrValue::Integer(_))
-    }
-
-    /// Returns `true` if the attribute value is a boolean.
-    pub fn is_boolean(&self) -> bool {
-        matches!(self, AttrValue::Boolean(_))
-    }
-
-    /// Returns `true` if the attribute value is null.
-    pub fn is_null(&self) -> bool {
-        matches!(self, AttrValue::Null)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1746,17 +1625,17 @@ impl Node {
     pub fn attr(&self, attr: &str) -> Option<AttrValue> {
         match self {
             Node::Footnote(Footnote { ident, values, .. }) => match attr {
-                "ident" => Some(AttrValue::String(ident.clone())),
-                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
-                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
+                keys::IDENT => Some(AttrValue::String(ident.clone())),
+                keys::VALUE => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                keys::VALUES | keys::CHILDREN => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::Html(Html { value, .. }) => match attr {
-                "value" => Some(AttrValue::String(value.clone())),
+                keys::VALUE => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Text(Text { value, .. }) => match attr {
-                "value" => Some(AttrValue::String(value.clone())),
+                keys::VALUE => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Code(Code {
@@ -1766,59 +1645,59 @@ impl Node {
                 fence,
                 ..
             }) => match attr {
-                "value" => Some(AttrValue::String(value.clone())),
-                "lang" => lang.clone().map(AttrValue::String),
-                "meta" => meta.clone().map(AttrValue::String),
-                "fence" => Some(AttrValue::Boolean(*fence)),
+                keys::VALUE => Some(AttrValue::String(value.clone())),
+                keys::LANG => lang.clone().map(AttrValue::String),
+                keys::META => meta.clone().map(AttrValue::String),
+                keys::FENCE => Some(AttrValue::Boolean(*fence)),
                 _ => None,
             },
             Node::CodeInline(CodeInline { value, .. }) => match attr {
-                "value" => Some(AttrValue::String(value.to_string())),
+                keys::VALUE => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::MathInline(MathInline { value, .. }) => match attr {
-                "value" => Some(AttrValue::String(value.to_string())),
+                keys::VALUE => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::Math(Math { value, .. }) => match attr {
-                "value" => Some(AttrValue::String(value.clone())),
+                keys::VALUE => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Yaml(Yaml { value, .. }) => match attr {
-                "value" => Some(AttrValue::String(value.clone())),
+                keys::VALUE => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Toml(Toml { value, .. }) => match attr {
-                "value" => Some(AttrValue::String(value.clone())),
+                keys::VALUE => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Image(Image { alt, url, title, .. }) => match attr {
-                "alt" => Some(AttrValue::String(alt.clone())),
-                "url" => Some(AttrValue::String(url.clone())),
-                "title" => title.clone().map(AttrValue::String),
+                keys::ALT => Some(AttrValue::String(alt.clone())),
+                keys::URL => Some(AttrValue::String(url.clone())),
+                keys::TITLE => title.clone().map(AttrValue::String),
                 _ => None,
             },
             Node::ImageRef(ImageRef { alt, ident, label, .. }) => match attr {
-                "alt" => Some(AttrValue::String(alt.clone())),
-                "ident" => Some(AttrValue::String(ident.clone())),
-                "label" => label.clone().map(AttrValue::String),
+                keys::ALT => Some(AttrValue::String(alt.clone())),
+                keys::IDENT => Some(AttrValue::String(ident.clone())),
+                keys::LABEL => label.clone().map(AttrValue::String),
                 _ => None,
             },
             Node::Link(Link { url, title, values, .. }) => match attr {
-                "url" => Some(AttrValue::String(url.as_str().to_string())),
-                "title" => title.as_ref().map(|t| AttrValue::String(t.to_value())),
-                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
-                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
+                keys::URL => Some(AttrValue::String(url.as_str().to_string())),
+                keys::TITLE => title.as_ref().map(|t| AttrValue::String(t.to_value())),
+                keys::VALUE => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                keys::VALUES | keys::CHILDREN => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::LinkRef(LinkRef { ident, label, .. }) => match attr {
-                "ident" => Some(AttrValue::String(ident.clone())),
-                "label" => label.clone().map(AttrValue::String),
+                keys::IDENT => Some(AttrValue::String(ident.clone())),
+                keys::LABEL => label.clone().map(AttrValue::String),
                 _ => None,
             },
             Node::FootnoteRef(FootnoteRef { ident, label, .. }) => match attr {
-                "ident" => Some(AttrValue::String(ident.clone())),
-                "label" => label.clone().map(AttrValue::String),
+                keys::IDENT => Some(AttrValue::String(ident.clone())),
+                keys::LABEL => label.clone().map(AttrValue::String),
                 _ => None,
             },
             Node::Definition(Definition {
@@ -1828,16 +1707,16 @@ impl Node {
                 label,
                 ..
             }) => match attr {
-                "ident" => Some(AttrValue::String(ident.clone())),
-                "url" => Some(AttrValue::String(url.as_str().to_string())),
-                "title" => title.as_ref().map(|t| AttrValue::String(t.to_value())),
-                "label" => label.clone().map(AttrValue::String),
+                keys::IDENT => Some(AttrValue::String(ident.clone())),
+                keys::URL => Some(AttrValue::String(url.as_str().to_string())),
+                keys::TITLE => title.as_ref().map(|t| AttrValue::String(t.to_value())),
+                keys::LABEL => label.clone().map(AttrValue::String),
                 _ => None,
             },
             Node::Heading(Heading { depth, values, .. }) => match attr {
-                "depth" | "level" => Some(AttrValue::Integer(*depth as i64)),
-                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
-                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
+                keys::DEPTH | keys::LEVEL => Some(AttrValue::Integer(*depth as i64)),
+                keys::VALUE => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                keys::VALUES | keys::CHILDREN => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::List(List {
@@ -1852,8 +1731,8 @@ impl Node {
                 "level" => Some(AttrValue::Integer(*level as i64)),
                 "ordered" => Some(AttrValue::Boolean(*ordered)),
                 "checked" => checked.map(AttrValue::Boolean),
-                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
-                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
+                keys::VALUE => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                keys::VALUES | keys::CHILDREN => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::TableCell(TableCell {
@@ -1868,8 +1747,8 @@ impl Node {
                 "row" => Some(AttrValue::Integer(*row as i64)),
                 "last_cell_in_row" => Some(AttrValue::Boolean(*last_cell_in_row)),
                 "last_cell_of_in_table" => Some(AttrValue::Boolean(*last_cell_of_in_table)),
-                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
-                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
+                keys::VALUE => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                keys::VALUES | keys::CHILDREN => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::TableHeader(TableHeader { align, .. }) => match attr {
@@ -1879,56 +1758,33 @@ impl Node {
                 _ => None,
             },
             Node::MdxFlowExpression(MdxFlowExpression { value, .. }) => match attr {
-                "value" => Some(AttrValue::String(value.to_string())),
+                keys::VALUE => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::MdxTextExpression(MdxTextExpression { value, .. }) => match attr {
-                "value" => Some(AttrValue::String(value.to_string())),
+                keys::VALUE => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::MdxJsEsm(MdxJsEsm { value, .. }) => match attr {
-                "value" => Some(AttrValue::String(value.to_string())),
+                keys::VALUE => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::MdxJsxFlowElement(MdxJsxFlowElement { name, .. }) => match attr {
-                "name" => name.clone().map(AttrValue::String),
+                keys::NAME => name.clone().map(AttrValue::String),
                 _ => None,
             },
             Node::MdxJsxTextElement(MdxJsxTextElement { name, .. }) => match attr {
-                "name" => name.as_ref().map(|n| AttrValue::String(n.to_string())),
+                keys::NAME => name.as_ref().map(|n| AttrValue::String(n.to_string())),
                 _ => None,
             },
-            Node::Strong(Strong { values, .. }) => match attr {
-                "value" => Some(AttrValue::String(values_to_string(
-                    values.as_ref(),
-                    &RenderOptions::default(),
-                ))),
-                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
-                _ => None,
-            },
-            Node::Blockquote(Blockquote { values, .. }) => match attr {
-                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
-                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
-                _ => None,
-            },
-            Node::Delete(Delete { values, .. }) => match attr {
-                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
-                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
-                _ => None,
-            },
-            Node::Emphasis(Emphasis { values, .. }) => match attr {
-                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
-                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
-                _ => None,
-            },
-            Node::TableRow(TableRow { values, .. }) => match attr {
-                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
-                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
-                _ => None,
-            },
-            Node::Fragment(Fragment { values, .. }) => match attr {
-                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
-                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
+            Node::Strong(Strong { values, .. })
+            | Node::Blockquote(Blockquote { values, .. })
+            | Node::Delete(Delete { values, .. })
+            | Node::Emphasis(Emphasis { values, .. })
+            | Node::TableRow(TableRow { values, .. })
+            | Node::Fragment(Fragment { values, .. }) => match attr {
+                keys::VALUE => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                keys::VALUES | keys::CHILDREN => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::Break(_) | Node::HorizontalRule(_) | Node::Empty => None,
@@ -2684,8 +2540,7 @@ impl Node {
     }
 }
 
-#[inline(always)]
-fn values_to_string(values: &[Node], options: &RenderOptions) -> String {
+pub(crate) fn values_to_string(values: &[Node], options: &RenderOptions) -> String {
     let mut pre_position: Option<Position> = None;
     values
         .iter()
@@ -2730,7 +2585,6 @@ fn values_to_string(values: &[Node], options: &RenderOptions) -> String {
         .collect::<String>()
 }
 
-#[inline(always)]
 fn values_to_value(values: Vec<Node>) -> String {
     values.iter().map(|value| value.value()).collect::<String>()
 }
