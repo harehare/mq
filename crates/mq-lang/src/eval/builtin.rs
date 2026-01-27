@@ -2962,7 +2962,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("debug"),
         BuiltinFunctionDoc {
-            description: "Prints the debug information of the given value.",
+            description: "Prints the debug information of the given value(s).",
             params: &["values"],
         },
     );
