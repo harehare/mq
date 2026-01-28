@@ -1,9 +1,12 @@
 use super::node::{HtmlElement, HtmlNode};
-use ego_tree;
 use rustc_hash::FxHashMap;
 use scraper::Node;
 
-fn map_node_to_html_node(node_ref: ego_tree::NodeRef<Node>) -> miette::Result<Option<HtmlNode>> {
+// Helper type alias to refer to the NodeRef type that scraper uses
+// This comes from scraper's ego-tree dependency (0.10.0), not from the workspace
+type NodeRef<'a> = ego_tree::NodeRef<'a, Node>;
+
+fn map_node_to_html_node(node_ref: NodeRef) -> miette::Result<Option<HtmlNode>> {
     match node_ref.value() {
         Node::Text(text) => {
             let text_content = text.text.to_string();
@@ -36,7 +39,7 @@ fn map_node_to_html_node(node_ref: ego_tree::NodeRef<Node>) -> miette::Result<Op
     }
 }
 
-pub fn map_nodes_to_html_nodes(nodes: Vec<ego_tree::NodeRef<Node>>) -> miette::Result<Vec<HtmlNode>> {
+pub fn map_nodes_to_html_nodes(nodes: Vec<NodeRef>) -> miette::Result<Vec<HtmlNode>> {
     let mut html_nodes = Vec::new();
     for node in nodes {
         match map_node_to_html_node(node) {

@@ -12,7 +12,7 @@ repository = "https://github.com/harehare/mq"
 version = "0.5.12"
 
 [dependencies]
-ego-tree = {workspace = true, optional = true}
+ego-tree = {version = "0.10.0", optional = true}
 itertools = {workspace = true}
 markdown = {workspace = true}
 miette = {workspace = true}
