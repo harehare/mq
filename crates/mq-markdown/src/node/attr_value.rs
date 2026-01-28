@@ -1,6 +1,6 @@
 use crate::{Node, RenderOptions, node::values_to_string};
 
-pub mod keys {
+pub mod attr_keys {
     pub(crate) const IDENT: &str = "ident";
     pub(crate) const LABEL: &str = "label";
     pub(crate) const NAME: &str = "name";
@@ -15,6 +15,14 @@ pub mod keys {
     pub(crate) const FENCE: &str = "fence";
     pub(crate) const DEPTH: &str = "depth";
     pub(crate) const LEVEL: &str = "level";
+    pub(crate) const INDEX: &str = "index";
+    pub(crate) const ALIGN: &str = "align";
+    pub(crate) const ORDERED: &str = "ordered";
+    pub(crate) const CHECKED: &str = "checked";
+    pub(crate) const COLUMN: &str = "column";
+    pub(crate) const ROW: &str = "row";
+    pub(crate) const LAST_CELL_IN_ROW: &str = "last_cell_in_row";
+    pub(crate) const LAST_CELL_OF_IN_TABLE: &str = "last_cell_of_in_table";
 }
 
 /// Represents a typed attribute value that can be returned from or passed to attr/set_attr methods.
