@@ -415,7 +415,10 @@ impl Cli {
                 }));
                 let files = match files {
                     Some(f) => f,
-                    None => &glob("./**/*.mq").unwrap().map(|e| e.unwrap()).collect::<Vec<_>>(),
+                    None => &glob("./**/*.mq")
+                        .into_diagnostic()?
+                        .collect::<Result<Vec<_>, _>>()
+                        .into_diagnostic()?,
                 };
 
                 for file in files {
@@ -430,7 +433,7 @@ impl Cli {
 
                     if *check && formatted != content {
                         return Err(miette!("The input is not formatted"));
-                    } else if formatted.len() != content.len() {
+                    } else if formatted != content {
                         fs::write(file, formatted).into_diagnostic()?;
                     }
                 }
