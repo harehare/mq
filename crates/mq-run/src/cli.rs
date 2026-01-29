@@ -430,7 +430,7 @@ impl Cli {
 
                     if *check && formatted != content {
                         return Err(miette!("The input is not formatted"));
-                    } else {
+                    } else if formatted.len() != content.len() {
                         fs::write(file, formatted).into_diagnostic()?;
                     }
                 }
