@@ -64,6 +64,7 @@ impl Formatter {
             result.push('\n');
         }
 
+        self.output.clear();
         Ok(result)
     }
 
