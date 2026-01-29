@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use colored::Colorize;
+use glob::glob;
 use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
@@ -227,7 +228,7 @@ enum Commands {
         #[arg(short, long)]
         check: bool,
         /// Path to the mq file to format
-        files: Vec<PathBuf>,
+        files: Option<Vec<PathBuf>>,
     },
     /// Show functions documentation for the query
     Docs {
@@ -412,17 +413,27 @@ impl Cli {
                 let mut formatter = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
                     indent_width: *indent_width,
                 }));
+                let files = match files {
+                    Some(f) => f,
+                    None => &glob("./**/*.mq")
+                        .into_diagnostic()?
+                        .collect::<Result<Vec<_>, _>>()
+                        .into_diagnostic()?,
+                };
 
                 for file in files {
                     if !file.exists() {
                         return Err(miette!("File not found: {}", file.display()));
                     }
+
                     let content = fs::read_to_string(file).into_diagnostic()?;
-                    let formatted = formatter.format(&content).map_err(|e| miette!("{e}"))?;
+                    let formatted = formatter
+                        .format(&content)
+                        .map_err(|e| miette!("{}: {e}", file.display()))?;
 
                     if *check && formatted != content {
                         return Err(miette!("The input is not formatted"));
-                    } else {
+                    } else if formatted != content {
                         fs::write(file, formatted).into_diagnostic()?;
                     }
                 }
@@ -1013,7 +1024,7 @@ mod tests {
             commands: Some(Commands::Fmt {
                 indent_width: 2,
                 check: false,
-                files: vec![temp_file_path.clone()],
+                files: Some(vec![temp_file_path.clone()]),
             }),
             query: None,
             files: Some(vec![temp_file_path]),
@@ -1040,7 +1051,7 @@ mod tests {
             commands: Some(Commands::Fmt {
                 indent_width: 2,
                 check: true,
-                files: vec![temp_file_path.clone()],
+                files: Some(vec![temp_file_path.clone()]),
             }),
             query: None,
             files: Some(vec![temp_file_path]),
@@ -1878,7 +1889,7 @@ mod tests {
             commands: Some(Commands::Fmt {
                 indent_width: 2,
                 check: false,
-                files: vec![PathBuf::from("nonexistent.mq")],
+                files: Some(vec![PathBuf::from("nonexistent.mq")]),
             }),
             query: None,
             files: None,
@@ -1905,7 +1916,7 @@ mod tests {
             commands: Some(Commands::Fmt {
                 indent_width: 2,
                 check: true,
-                files: vec![temp_file],
+                files: Some(vec![temp_file]),
             }),
             query: None,
             files: None,
