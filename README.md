@@ -377,9 +377,10 @@ This makes it easy to add your own tools and workflows to `mq` without modifying
 The following external tools are available to extend mq's functionality:
 
 - [mq-mcp](https://github.com/harehare/mq-mcp) - Model Context Protocol (MCP) server implementation for AI assistants
-- [mq-view](https://github.com/harehare/mq-view) - viewer for Markdown content
-- [mq-tui](https://github.com/harehare/mq-tui) - Terminal User Interface (TUI) for interactive mq query
 - [mq-task](https://github.com/harehare/mq-task) - Task runner using mq for Markdown-based task definitions
+- [mq-tui](https://github.com/harehare/mq-tui) - Terminal User Interface (TUI) for interactive mq query
+- [mq-update](https://github.com/harehare/mq-update) - Update mq binary to the latest version
+- [mq-view](https://github.com/harehare/mq-view) - viewer for Markdown content
 
 ## Support
 
