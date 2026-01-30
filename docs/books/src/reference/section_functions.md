@@ -33,6 +33,54 @@ import "section"
 nodes | section::sections()
 ```
 
+### `filter_sections(md_nodes, predicate)`
+
+Filters sections based on a given predicate function. This function first converts the markdown nodes to sections and then applies the predicate to each section.
+
+**Parameters:**
+- `md_nodes`: Array of Markdown nodes to split into sections
+- `predicate`: Function that takes a section object and returns a boolean
+
+**Returns:**
+- Array of section objects that satisfy the predicate
+
+**Example:**
+```mq
+import "section"
+
+# Filter sections that have content
+nodes | section::filter_sections(fn(s): section::has_content(s);)
+
+# Filter sections by level
+nodes | section::filter_sections(fn(s): section::level(s) == 2;)
+```
+
+### `map_sections(md_nodes, mapper)`
+
+Maps sections using a given mapper function. This function first converts the markdown nodes to sections and then applies the mapper to each section's header and children.
+
+**Parameters:**
+- `md_nodes`: Array of Markdown nodes to split into sections
+- `mapper`: Function that takes a header node and children array, and returns a transformed value
+
+**Returns:**
+- Array of transformed values returned by the mapper function
+
+**Example:**
+```mq
+import "section"
+
+# Extract title and content length for each section
+nodes | section::map_sections(fn(header, children): 
+  {title: do header | to_text();, content_length: len(children)}
+;)
+
+# Transform sections to uppercase titles
+nodes | section::map_sections(fn(header, children): 
+  header | to_text() | upper()
+;)
+```
+
 ### `split(md_nodes, level)`
 
 Splits markdown nodes into sections based on header level. Each section includes a header and all content until the next header of the same level.
