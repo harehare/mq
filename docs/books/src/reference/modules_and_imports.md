@@ -6,7 +6,7 @@ mq provides several ways to organize and reuse code: `module`, `import`, and `in
 
 Defines a module to group related functions and prevent naming conflicts using the syntax `module name: ... end`.
 
-```js
+```mq
 module module_name:
   def function1(): ...
   def function2(): ...
@@ -15,13 +15,13 @@ end
 
 Functions within a module can be accessed using qualified access syntax:
 
-```js
+```mq
 module_name::function1()
 ```
 
 ### Examples
 
-```python
+```mq
 # Define a math module
 module math:
   def add(a, b): a + b;
@@ -46,20 +46,20 @@ The import directive searches for .mq files in the following locations:
 - `$ORIGIN/../lib` - Parent lib directory relative to the source file
 - `$ORIGIN` - Current directory relative to the source file
 
-```js
+```mq
 import "module_name"
 ```
 
 ### Examples
 
 **math.mq:**
-```python
+```mq
 def add(a, b): a + b;
 def sub(a, b): a - b;
 ```
 
 **main.mq:**
-```python
+```mq
 # Import the math module
 import "math"
 
@@ -75,20 +75,20 @@ Unlike `import`, functions are available without a namespace prefix.
 
 The include directive searches for .mq files in the same locations as `import`.
 
-```js
+```mq
 include "module_name"
 ```
 
 ### Examples
 
 **math.mq:**
-```python
+```mq
 def add(a, b): a + b;
 def sub(a, b): a - b;
 ```
 
 **main.mq:**
-```python
+```mq
 # Include math functions
 include "math"
 

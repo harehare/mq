@@ -4,7 +4,7 @@ The match expression enables pattern matching on values, providing a powerful wa
 
 ## Basic Syntax
 
-```ruby
+```mq
 match (value):
   | pattern: body
 end
@@ -16,7 +16,7 @@ The match expression evaluates the value and compares it against a series of pat
 
 Match against specific values:
 
-```ruby
+```mq
 match (x):
   | 1: "one"
   | 2: "two"
@@ -34,7 +34,7 @@ Literal patterns support:
 
 Match based on value type using the `:type_name` syntax:
 
-```ruby
+```mq
 match (value):
   | :string: "is string"
   | :number: "is number"
@@ -59,7 +59,7 @@ Available type patterns:
 
 Destructure arrays and bind elements to variables:
 
-```ruby
+```mq
 match (arr):
   | []: "empty array"
   | [x]: x
@@ -77,7 +77,7 @@ Array patter features:
 
 ### Rest Pattern Example
 
-```ruby
+```mq
 match (arr):
   | [head, ..tail]: tail
 end
@@ -88,7 +88,7 @@ end
 
 Destructure dictionaries and extract values:
 
-```ruby
+```mq
 match (obj):
   | {name, age}: name
   | {x, y}: add(x, y)
@@ -104,7 +104,7 @@ Dict pattern features:
 
 ### Example with Object
 
-```ruby
+```mq
 let person = {"name": "Alice", "age": 30, "city": "Tokyo"} |
 match (person):
   | {name, age}: s"${name} is ${age} years old"
@@ -118,7 +118,7 @@ end
 
 Bind the matched value to a variable:
 
-```ruby
+```mq
 match (value):
   | x: x + 1
 end
@@ -130,7 +130,7 @@ Variable binding captures the entire value and makes it available in the body ex
 
 The underscore `_` matches any value:
 
-```ruby
+```mq
 match (x):
   | 1: "one"
   | 2: "two"
@@ -144,7 +144,7 @@ Use the wildcard pattern as the last arm to handle all remaining cases.
 
 Add conditions to patterns using `if`:
 
-```ruby
+```mq
 match (n):
   | x if (x > 0): "positive"
   | x if (x < 0): "negative"
@@ -159,7 +159,7 @@ Guards allow you to:
 
 ### Guard Examples
 
-```ruby
+```mq
 # Match even numbers
 match (n):
   | x if (x % 2 == 0): "even"
@@ -177,7 +177,7 @@ end
 
 Combine multiple patterns for comprehensive matching:
 
-```ruby
+```mq
 match (value):
   | 0: "zero"
   | x if (x > 0): "positive"
@@ -196,7 +196,7 @@ Pattern matching provides several advantages over if expressions:
 
 ### Using If Expressions
 
-```ruby
+```mq
 if (type_of(x) == "number"):
   if (x == 0):
     "positive number"
@@ -215,7 +215,7 @@ else:
 
 ### Using Pattern Matching
 
-```ruby
+```mq
 match (x):
   | n if (n > 0): "positive number"
   | n if (n < 0): "negative number"
@@ -230,7 +230,7 @@ end
 
 ### Processing Different Data Types
 
-```ruby
+```mq
 def describe(value):
   match (value):
     | :none: "nothing"
@@ -249,7 +249,7 @@ def describe(value):
 
 ### Extracting Data from Structures
 
-```ruby
+```mq
 def get_first_name(user):
   match (user):
     | {name}: name
@@ -259,7 +259,7 @@ def get_first_name(user):
 
 ### Handling API Responses
 
-```ruby
+```mq
 def handle_response(response):
   match (response):
     | {status, data} if (eq(status, 200)): data

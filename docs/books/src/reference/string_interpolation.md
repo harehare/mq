@@ -13,7 +13,7 @@ s"text ${ident} more text"
 You can escape the `$` character in a string interpolation by using `$$`.
 This allows you to include literal `$` symbols in your interpolated strings.
 
-```python
+```mq
 let price = 25
 | s"The price is $$${price}"
 # => Output: "The price is $25"
@@ -21,7 +21,7 @@ let price = 25
 
 ## Examples
 
-```python
+```mq
 let name = "Alice"
 | let age = 30
 | s"Hello, my name is ${name} and I am ${age} years old."

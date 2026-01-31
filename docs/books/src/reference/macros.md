@@ -24,7 +24,7 @@ Macros differ from functions:
 
 ## Basic Examples
 
-```elixir
+```mq
 # Simple value transformation
 macro double(x) do
   x + x
@@ -49,7 +49,7 @@ end
 
 ## Advanced Examples
 
-```python
+```mq
 # Nested macro calls
 macro double(x): x + x
 macro quadruple(x): double(double(x))
@@ -74,7 +74,7 @@ def inc(n): n + 1;
 
 ### Practical Examples
 
-```python
+```mq
 # Basic injection
 macro make_expr(x) do
   quote: unquote(x) + 1

@@ -11,7 +11,7 @@ def function_name(parameters):
 
 ## Examples
 
-```python
+```mq
 # Function that doubles input
 def double(x):
   mul(x, 2);
@@ -31,14 +31,14 @@ You can define default values for function parameters. Parameters with default v
 
 ### Syntax
 
-```python
+```mq
 def function_name(param1, param2=default_value):
   program;
 ```
 
 ### Examples
 
-```python
+```mq
 # Function with default parameter
 def greet(name, greeting="Hello"):
   greeting + " " + name;

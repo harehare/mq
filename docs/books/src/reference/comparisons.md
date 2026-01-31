@@ -15,7 +15,7 @@ Standard comparison operators are supported:
 
 ### Examples
 
-```python
+```mq
 # Basic comparisons
 1 == 1
 # => true

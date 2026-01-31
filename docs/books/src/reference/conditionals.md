@@ -8,7 +8,7 @@ mq supports standard conditional operations through the following functions:
 
 ### Examples
 
-```python
+```mq
 # Basic comparisons
 and(true, true, true)
 true && true && true
