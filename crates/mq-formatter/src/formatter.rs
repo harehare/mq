@@ -98,7 +98,6 @@ impl Formatter {
             return Err(errors);
         }
 
-        self.output.reserve(code.len() * 2);
         self.format_with_cst(&mut nodes)
     }
 
@@ -173,7 +172,7 @@ impl Formatter {
             }
         });
 
-        let mut sorted_nodes = Vec::with_capacity(nodes.len() * 2);
+        let mut sorted_nodes = Vec::new();
         let mut prev_node: Option<mq_lang::Shared<mq_lang::CstNode>> = None;
 
         for (i, node) in nodes.iter_mut().enumerate() {
