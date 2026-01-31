@@ -144,12 +144,18 @@ impl Formatter {
         nodes: &mut Vec<mq_lang::Shared<mq_lang::CstNode>>,
     ) -> Vec<mq_lang::Shared<mq_lang::CstNode>> {
         let first_comments = if let Some(first_node) = nodes.first() {
-            first_node
+            let mut comments = first_node
                 .leading_trivia
                 .iter()
                 .filter(|trivia| trivia.is_comment())
                 .cloned()
-                .collect()
+                .collect::<Vec<_>>();
+
+            if !comments.is_empty() {
+                comments.push(mq_lang::CstTrivia::NewLine);
+            }
+
+            comments
         } else {
             Vec::new()
         };
