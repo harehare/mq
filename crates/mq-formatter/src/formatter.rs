@@ -184,9 +184,10 @@ impl Formatter {
             let node = if i == 0 && node.has_new_line() {
                 let mut node = (**node).clone();
 
-                if node.has_new_line() {
-                    node.leading_trivia
-                        .retain(|trivia| !matches!(trivia, mq_lang::CstTrivia::NewLine));
+                if node.has_new_line()
+                    && let Some(mq_lang::CstTrivia::NewLine) = node.leading_trivia.first()
+                {
+                    node.leading_trivia.remove(0);
                 }
 
                 &mq_lang::Shared::new(node)
