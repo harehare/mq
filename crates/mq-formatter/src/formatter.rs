@@ -56,7 +56,7 @@ impl From<CstNode> for SortPriority {
     }
 }
 
-pub fn ident(node: CstNode) -> Option<String> {
+pub(crate) fn ident(node: CstNode) -> Option<String> {
     match node {
         CstNode {
             kind:
