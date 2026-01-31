@@ -143,6 +143,17 @@ impl Formatter {
         &mut self,
         nodes: &mut Vec<mq_lang::Shared<mq_lang::CstNode>>,
     ) -> Vec<mq_lang::Shared<mq_lang::CstNode>> {
+        let first_comments = if let Some(first_node) = nodes.first() {
+            first_node
+                .leading_trivia
+                .iter()
+                .filter(|trivia| trivia.is_comment())
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         nodes.retain(|node| !node.is_pipe());
         nodes.sort_by(|a, b| {
             let priority_a: SortPriority = (&**a).into();
@@ -183,7 +194,13 @@ impl Formatter {
 
             let node = if i == 0 && node.has_new_line() {
                 let mut node = (**node).clone();
-                node.leading_trivia.clear();
+
+                if node.has_new_line() {
+                    node.leading_trivia
+                        .retain(|trivia| !matches!(trivia, mq_lang::CstTrivia::NewLine));
+                }
+
+                node.leading_trivia.extend(first_comments.clone());
                 &mq_lang::Shared::new(node)
             } else if !needs_pipe(node) && !node.has_new_line() {
                 let mut node = (**node).clone();
