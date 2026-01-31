@@ -596,3 +596,63 @@ table tbody tr:hover {
     background-color: transparent;
     color: inherit;
 }
+
+/* ===========================================
+   Playground Link Styles
+   =========================================== */
+
+.playground-link-wrapper {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: -0.5rem;
+    margin-bottom: 1rem;
+}
+
+.playground-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--mq-accent-primary);
+    background-color: transparent;
+    border: 1px solid var(--mq-border-default);
+    border-radius: 6px;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    font-family: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Noto Sans", Helvetica, Arial, sans-serif;
+}
+
+.playground-link::before {
+    content: "▶";
+    font-size: 0.7rem;
+}
+
+.playground-link:hover {
+    background-color: var(--mq-accent-primary);
+    color: var(--mq-code-bg);
+    border-color: var(--mq-accent-primary);
+    text-decoration: none;
+    box-shadow: 0 2px 8px rgba(103, 184, 227, 0.3);
+    transform: translateY(-1px);
+}
+
+.playground-link:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 4px rgba(103, 184, 227, 0.2);
+}
+
+/* Light theme adjustments */
+:root .playground-link {
+    color: #2563eb;
+    border-color: #cbd5e1;
+}
+
+:root .playground-link:hover {
+    background-color: #2563eb;
+    color: #ffffff;
+    border-color: #2563eb;
+}
