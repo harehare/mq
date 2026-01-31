@@ -326,7 +326,7 @@ impl Node {
         }
     }
 
-    pub fn ident(&self) -> Option<String> {
+    pub fn get_identifier(&self) -> Option<String> {
         match self {
             Node {
                 kind: NodeKind::Ident | NodeKind::Def,
