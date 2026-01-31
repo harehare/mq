@@ -2,7 +2,7 @@ use std::fmt::{self, Display};
 
 use smol_str::SmolStr;
 
-use crate::{Range, Token};
+use crate::{Module, Range, Token};
 use crate::{Shared, TokenKind};
 
 type Comment = (Range, String);
@@ -186,6 +186,24 @@ impl Display for Node {
 }
 
 impl Node {
+    pub fn new_pipe(with_new_line: bool) -> Self {
+        Node {
+            kind: NodeKind::Token,
+            token: Some(Shared::new(Token {
+                kind: TokenKind::Pipe,
+                range: Range::default(),
+                module_id: Module::TOP_LEVEL_MODULE_ID,
+            })),
+            leading_trivia: if with_new_line { vec![Trivia::NewLine] } else { vec![] },
+            trailing_trivia: vec![Trivia::Whitespace(Shared::new(Token {
+                kind: TokenKind::Whitespace(1),
+                range: Range::default(),
+                module_id: Module::TOP_LEVEL_MODULE_ID,
+            }))],
+            children: Vec::new(),
+        }
+    }
+
     pub fn has_new_line(&self) -> bool {
         self.leading_trivia.contains(&Trivia::NewLine)
     }
@@ -212,12 +230,22 @@ impl Node {
         matches!(self.kind, NodeKind::Token)
     }
 
+    pub fn is_eof(&self) -> bool {
+        matches!(self.kind, NodeKind::Eof)
+    }
+
     pub fn is_fn(&self) -> bool {
         matches!(self.kind, NodeKind::Fn)
     }
 
     pub fn is_def(&self) -> bool {
         matches!(self.kind, NodeKind::Def)
+    }
+
+    pub fn is_pipe(&self) -> bool {
+        self.token
+            .as_ref()
+            .is_some_and(|token| matches!(token.kind, TokenKind::Pipe))
     }
 
     pub fn comments(&self) -> Vec<Comment> {

@@ -74,6 +74,10 @@ pub fn ident(node: CstNode) -> Option<String> {
     }
 }
 
+pub fn needs_pipe(node: &CstNode) -> bool {
+    !matches!(node.kind, CstNodeKind::Def | CstNodeKind::Macro | CstNodeKind::Eof)
+}
+
 impl Formatter {
     pub fn new(config: Option<FormatterConfig>) -> Self {
         Self {
@@ -94,6 +98,8 @@ impl Formatter {
             return Err(errors);
         }
 
+        self.output.reserve(code.len() + 128);
+
         self.format_with_cst(&mut nodes)
     }
 
@@ -101,35 +107,11 @@ impl Formatter {
         &mut self,
         nodes: &mut Vec<mq_lang::Shared<mq_lang::CstNode>>,
     ) -> Result<String, mq_lang::CstErrorReporter> {
-        if self.config.sort_imports || self.config.sort_functions || self.config.sort_fields {
-            nodes.sort_by(|a, b| {
-                let priority_a: SortPriority = mq_lang::Shared::clone(a).as_ref().clone().into();
-                let priority_b: SortPriority = mq_lang::Shared::clone(b).as_ref().clone().into();
-
-                if priority_a != priority_b {
-                    return priority_a.cmp(&priority_b);
-                }
-
-                match priority_a {
-                    SortPriority::Import if self.config.sort_imports => {
-                        let ident_a = ident(mq_lang::Shared::clone(a).as_ref().clone());
-                        let ident_b = ident(mq_lang::Shared::clone(b).as_ref().clone());
-                        ident_a.cmp(&ident_b)
-                    }
-                    SortPriority::Let if self.config.sort_fields => {
-                        let ident_a = ident(mq_lang::Shared::clone(a).as_ref().clone());
-                        let ident_b = ident(mq_lang::Shared::clone(b).as_ref().clone());
-                        ident_a.cmp(&ident_b)
-                    }
-                    SortPriority::Def if self.config.sort_functions => {
-                        let ident_a = ident(mq_lang::Shared::clone(a).as_ref().clone());
-                        let ident_b = ident(mq_lang::Shared::clone(b).as_ref().clone());
-                        ident_a.cmp(&ident_b)
-                    }
-                    _ => std::cmp::Ordering::Equal,
-                }
-            });
-        }
+        let nodes = if self.config.sort_imports || self.config.sort_functions || self.config.sort_fields {
+            &mut self.sort_nodes(nodes)
+        } else {
+            nodes
+        };
 
         for node in nodes {
             self.format_node(mq_lang::Shared::clone(node), 0);
@@ -147,6 +129,55 @@ impl Formatter {
 
         self.output.clear();
         Ok(result)
+    }
+
+    fn sort_nodes(
+        &mut self,
+        nodes: &mut Vec<mq_lang::Shared<mq_lang::CstNode>>,
+    ) -> Vec<mq_lang::Shared<mq_lang::CstNode>> {
+        nodes.retain(|node| !node.is_pipe());
+        nodes.sort_by(|a, b| {
+            let priority_a: SortPriority = mq_lang::Shared::clone(a).as_ref().clone().into();
+            let priority_b: SortPriority = mq_lang::Shared::clone(b).as_ref().clone().into();
+
+            if priority_a != priority_b {
+                return priority_a.cmp(&priority_b);
+            }
+
+            match priority_a {
+                SortPriority::Import if self.config.sort_imports => {
+                    let ident_a = ident(mq_lang::Shared::clone(a).as_ref().clone());
+                    let ident_b = ident(mq_lang::Shared::clone(b).as_ref().clone());
+                    ident_a.cmp(&ident_b)
+                }
+                SortPriority::Let if self.config.sort_fields => {
+                    let ident_a = ident(mq_lang::Shared::clone(a).as_ref().clone());
+                    let ident_b = ident(mq_lang::Shared::clone(b).as_ref().clone());
+                    ident_a.cmp(&ident_b)
+                }
+                SortPriority::Def if self.config.sort_functions => {
+                    let ident_a = ident(mq_lang::Shared::clone(a).as_ref().clone());
+                    let ident_b = ident(mq_lang::Shared::clone(b).as_ref().clone());
+                    ident_a.cmp(&ident_b)
+                }
+                _ => std::cmp::Ordering::Equal,
+            }
+        });
+
+        let mut sorted_nodes = Vec::with_capacity(nodes.len() * 2);
+        let mut prev_node: Option<mq_lang::Shared<mq_lang::CstNode>> = None;
+
+        for (i, node) in nodes.iter().enumerate() {
+            if (needs_pipe(node) && i != 0) || (!node.is_eof() && prev_node.as_ref().is_some_and(|p| needs_pipe(p))) {
+                let pipe_node = mq_lang::CstNode::new_pipe(i != 0);
+                sorted_nodes.push(mq_lang::Shared::new(pipe_node));
+            }
+
+            sorted_nodes.push(mq_lang::Shared::clone(node));
+            prev_node = Some(mq_lang::Shared::clone(node));
+        }
+
+        sorted_nodes
     }
 
     fn format_node(&mut self, node: mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
