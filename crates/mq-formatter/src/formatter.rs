@@ -106,14 +106,17 @@ impl Formatter {
         &mut self,
         nodes: &mut Vec<mq_lang::Shared<mq_lang::CstNode>>,
     ) -> Result<String, mq_lang::CstErrorReporter> {
-        let nodes = if self.config.sort_imports || self.config.sort_functions || self.config.sort_fields {
-            &mut self.sort_nodes(nodes)
+        if self.config.sort_imports || self.config.sort_functions || self.config.sort_fields {
+            // When sorting is enabled, work on a sorted owned Vec.
+            let mut sorted_nodes = self.sort_nodes(nodes);
+            for node in &mut sorted_nodes {
+                self.format_node(mq_lang::Shared::clone(node), 0);
+            }
         } else {
-            nodes
-        };
-
-        for node in nodes {
-            self.format_node(mq_lang::Shared::clone(node), 0);
+            // When sorting is disabled, operate directly on the original nodes.
+            for node in nodes {
+                self.format_node(mq_lang::Shared::clone(node), 0);
+            }
         }
 
         if !self.output.contains('\n') {
