@@ -191,9 +191,14 @@ impl Formatter {
                 }
 
                 &mq_lang::Shared::new(node)
-            } else if !needs_pipe(node) && !node.has_new_line() {
+            } else if !needs_pipe(node)
+                && !node
+                    .leading_trivia
+                    .first()
+                    .is_some_and(|t| matches!(t, mq_lang::CstTrivia::NewLine))
+            {
                 let mut node = (**node).clone();
-                node.leading_trivia.push(mq_lang::CstTrivia::NewLine);
+                node.leading_trivia.insert(0, mq_lang::CstTrivia::NewLine);
                 &mq_lang::Shared::new(node)
             } else {
                 node
