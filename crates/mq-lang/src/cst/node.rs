@@ -329,12 +329,7 @@ impl Node {
     pub fn ident(&self) -> Option<String> {
         match self {
             Node {
-                kind: NodeKind::Ident,
-                token: Some(token),
-                ..
-            } => Some(token.to_string()),
-            Node {
-                kind: NodeKind::Def,
+                kind: NodeKind::Ident | NodeKind::Def,
                 token: Some(token),
                 ..
             } => Some(token.to_string()),
