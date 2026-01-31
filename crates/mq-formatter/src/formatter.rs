@@ -43,8 +43,8 @@ impl Default for FormatterConfig {
     }
 }
 
-impl From<CstNode> for SortPriority {
-    fn from(node: CstNode) -> Self {
+impl From<&CstNode> for SortPriority {
+    fn from(node: &CstNode) -> Self {
         match node.kind {
             CstNodeKind::Import => SortPriority::Import,
             CstNodeKind::Include => SortPriority::Include,
@@ -56,7 +56,7 @@ impl From<CstNode> for SortPriority {
     }
 }
 
-pub(crate) fn ident(node: CstNode) -> Option<String> {
+pub(crate) fn ident(node: &CstNode) -> Option<String> {
     match node {
         CstNode {
             kind:
@@ -130,14 +130,23 @@ impl Formatter {
         Ok(result)
     }
 
+    #[inline(always)]
+    fn should_insert_pipe_before(
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        index: usize,
+        prev_node: &Option<mq_lang::Shared<mq_lang::CstNode>>,
+    ) -> bool {
+        (needs_pipe(node) && index != 0) || (!node.is_eof() && prev_node.as_ref().is_some_and(|p| needs_pipe(p)))
+    }
+
     fn sort_nodes(
         &mut self,
         nodes: &mut Vec<mq_lang::Shared<mq_lang::CstNode>>,
     ) -> Vec<mq_lang::Shared<mq_lang::CstNode>> {
         nodes.retain(|node| !node.is_pipe());
         nodes.sort_by(|a, b| {
-            let priority_a: SortPriority = mq_lang::Shared::clone(a).as_ref().clone().into();
-            let priority_b: SortPriority = mq_lang::Shared::clone(b).as_ref().clone().into();
+            let priority_a: SortPriority = (&**a).into();
+            let priority_b: SortPriority = (&**b).into();
 
             if priority_a != priority_b {
                 return priority_a.cmp(&priority_b);
@@ -145,18 +154,18 @@ impl Formatter {
 
             match priority_a {
                 SortPriority::Import if self.config.sort_imports => {
-                    let ident_a = ident(mq_lang::Shared::clone(a).as_ref().clone());
-                    let ident_b = ident(mq_lang::Shared::clone(b).as_ref().clone());
+                    let ident_a = ident(a);
+                    let ident_b = ident(b);
                     ident_a.cmp(&ident_b)
                 }
                 SortPriority::Let if self.config.sort_fields => {
-                    let ident_a = ident(mq_lang::Shared::clone(a).as_ref().clone());
-                    let ident_b = ident(mq_lang::Shared::clone(b).as_ref().clone());
+                    let ident_a = ident(a);
+                    let ident_b = ident(b);
                     ident_a.cmp(&ident_b)
                 }
                 SortPriority::Def if self.config.sort_functions => {
-                    let ident_a = ident(mq_lang::Shared::clone(a).as_ref().clone());
-                    let ident_b = ident(mq_lang::Shared::clone(b).as_ref().clone());
+                    let ident_a = ident(a);
+                    let ident_b = ident(b);
                     ident_a.cmp(&ident_b)
                 }
                 _ => std::cmp::Ordering::Equal,
@@ -166,11 +175,23 @@ impl Formatter {
         let mut sorted_nodes = Vec::with_capacity(nodes.len() * 2);
         let mut prev_node: Option<mq_lang::Shared<mq_lang::CstNode>> = None;
 
-        for (i, node) in nodes.iter().enumerate() {
-            if (needs_pipe(node) && i != 0) || (!node.is_eof() && prev_node.as_ref().is_some_and(|p| needs_pipe(p))) {
+        for (i, node) in nodes.iter_mut().enumerate() {
+            if Self::should_insert_pipe_before(node, i, &prev_node) {
                 let pipe_node = mq_lang::CstNode::new_pipe(i != 0);
                 sorted_nodes.push(mq_lang::Shared::new(pipe_node));
             }
+
+            let node = if i == 0 && node.has_new_line() {
+                let mut node = (**node).clone();
+                node.leading_trivia.clear();
+                &mq_lang::Shared::new(node)
+            } else if !needs_pipe(node) && !node.has_new_line() {
+                let mut node = (**node).clone();
+                node.leading_trivia.push(mq_lang::CstTrivia::NewLine);
+                &mq_lang::Shared::new(node)
+            } else {
+                node
+            };
 
             sorted_nodes.push(mq_lang::Shared::clone(node));
             prev_node = Some(mq_lang::Shared::clone(node));
@@ -2719,8 +2740,9 @@ end
     #[case::sort_functions(
         r#"def z(): test;
 def a(): test;
-def m(): test;"#,
-        "\ndef a(): test;\ndef m(): test;def z(): test;\n"
+def m(): test;
+"#,
+        "def a(): test;\ndef m(): test;\ndef z(): test;\n"
     )]
     #[case::sort_fields(
         r#"let z = 1
@@ -2746,7 +2768,7 @@ macro m(): test"#,
 | let x = 1
 | nodes
 def a(): test;"#,
-        "let x = 1\n|\ndef a(): test;def z(): test;\n| nodes\n"
+        "let x = 1\n|\ndef a(): test;\ndef z(): test;\n| nodes\n"
     )]
     #[case::sort_with_piped_calls(
         r#"def z(): test;
@@ -2755,7 +2777,7 @@ def a(): test;"#,
 def a(): test;
 macro m(): test;
 | let y = 2"#,
-        "let x = 1\n| let y = 2\n|\ndef a(): test;def z(): test;\nmacro m(): test\n| add()\n| mul()\n| sub()\n| ;\n"
+        "let x = 1\n| let y = 2\n|\ndef a(): test;\ndef z(): test;\nmacro m(): test\n| add()\n| mul()\n| sub()\n| ;\n"
     )]
     #[case::sort_all_types(
         r#"add() | sub()
