@@ -17,3 +17,8 @@ rustc-hash = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}
+divan = {workspace = true}
+
+[[bench]]
+harness = false
+name = "benchmark"

@@ -2632,6 +2632,7 @@ dependencies = [
 name = "mq-formatter"
 version = "0.5.12"
 dependencies = [
+ "codspeed-divan-compat",
  "mq-lang",
  "rstest",
  "rustc-hash 2.1.1",

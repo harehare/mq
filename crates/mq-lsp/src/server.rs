@@ -185,7 +185,11 @@ impl LanguageServer for Backend {
 
         let text = Arc::clone(&self.text_map.get(&params.text_document.uri.to_string()).unwrap());
         let formatted_text = tokio::task::spawn_blocking(move || {
-            mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig { indent_width: 2 })).format(&text)
+            mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
+                indent_width: 2,
+                ..Default::default()
+            }))
+            .format(&text)
         })
         .await
         .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::InternalError))?

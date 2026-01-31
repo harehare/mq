@@ -1,3 +1,5 @@
+use mq_lang::{CstNode, CstNodeKind};
+
 #[allow(dead_code)]
 #[cfg(target_os = "windows")]
 const NEW_LINE: &str = "\r\n";
@@ -12,15 +14,68 @@ pub struct Formatter {
     indent_cache: Vec<String>,
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum SortPriority {
+    Import = 0,
+    Include = 1,
+    Let = 2,
+    Def = 3,
+    Macro = 4,
+    Other = 5,
+}
+
 #[derive(Clone, Debug)]
 pub struct FormatterConfig {
     pub indent_width: usize,
+    pub sort_imports: bool,
+    pub sort_functions: bool,
+    pub sort_fields: bool,
 }
 
 impl Default for FormatterConfig {
     fn default() -> Self {
-        Self { indent_width: 2 }
+        Self {
+            indent_width: 2,
+            sort_imports: false,
+            sort_functions: false,
+            sort_fields: false,
+        }
     }
+}
+
+impl From<&CstNode> for SortPriority {
+    fn from(node: &CstNode) -> Self {
+        match node.kind {
+            CstNodeKind::Import => SortPriority::Import,
+            CstNodeKind::Include => SortPriority::Include,
+            CstNodeKind::Let | CstNodeKind::Var => SortPriority::Let,
+            CstNodeKind::Def | CstNodeKind::Fn => SortPriority::Def,
+            CstNodeKind::Macro => SortPriority::Macro,
+            _ => SortPriority::Other,
+        }
+    }
+}
+
+pub(crate) fn ident(node: &CstNode) -> Option<String> {
+    match node {
+        CstNode {
+            kind:
+                CstNodeKind::Import
+                | CstNodeKind::Include
+                | CstNodeKind::Def
+                | CstNodeKind::Let
+                | CstNodeKind::Var
+                | CstNodeKind::Macro,
+            token: Some(token),
+            children,
+            ..
+        } if !children.is_empty() => Some(children[0].to_string()),
+        _ => None,
+    }
+}
+
+pub fn needs_pipe(node: &CstNode) -> bool {
+    !matches!(node.kind, CstNodeKind::Def | CstNodeKind::Macro | CstNodeKind::Eof)
 }
 
 impl Formatter {
@@ -37,21 +92,28 @@ impl Formatter {
             return Ok(String::new());
         }
 
-        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (mut nodes, errors) = mq_lang::parse_recovery(code);
 
         if errors.has_errors() {
             return Err(errors);
         }
 
-        self.format_with_cst(&nodes)
+        self.format_with_cst(&mut nodes)
     }
 
     pub fn format_with_cst(
         &mut self,
-        nodes: &Vec<mq_lang::Shared<mq_lang::CstNode>>,
+        nodes: &mut Vec<mq_lang::Shared<mq_lang::CstNode>>,
     ) -> Result<String, mq_lang::CstErrorReporter> {
-        for node in nodes {
-            self.format_node(mq_lang::Shared::clone(node), 0);
+        if self.config.sort_imports || self.config.sort_functions || self.config.sort_fields {
+            let sorted_nodes = self.sort_nodes(nodes);
+            for node in sorted_nodes {
+                self.format_node(node, 0);
+            }
+        } else {
+            for node in nodes {
+                self.format_node(mq_lang::Shared::clone(node), 0);
+            }
         }
 
         if !self.output.contains('\n') {
@@ -66,6 +128,87 @@ impl Formatter {
 
         self.output.clear();
         Ok(result)
+    }
+
+    #[inline(always)]
+    fn should_insert_pipe_before(
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        index: usize,
+        prev_node: &Option<mq_lang::Shared<mq_lang::CstNode>>,
+    ) -> bool {
+        (needs_pipe(node) && index != 0) || (!node.is_eof() && prev_node.as_ref().is_some_and(|p| needs_pipe(p)))
+    }
+
+    fn sort_nodes(
+        &mut self,
+        nodes: &mut Vec<mq_lang::Shared<mq_lang::CstNode>>,
+    ) -> Vec<mq_lang::Shared<mq_lang::CstNode>> {
+        nodes.retain(|node| !node.is_pipe());
+        nodes.sort_by(|a, b| {
+            let priority_a: SortPriority = (&**a).into();
+            let priority_b: SortPriority = (&**b).into();
+
+            if priority_a != priority_b {
+                return priority_a.cmp(&priority_b);
+            }
+
+            match priority_a {
+                SortPriority::Import if self.config.sort_imports => {
+                    let ident_a = ident(a);
+                    let ident_b = ident(b);
+                    ident_a.cmp(&ident_b)
+                }
+                SortPriority::Let if self.config.sort_fields => {
+                    let ident_a = ident(a);
+                    let ident_b = ident(b);
+                    ident_a.cmp(&ident_b)
+                }
+                SortPriority::Def if self.config.sort_functions => {
+                    let ident_a = ident(a);
+                    let ident_b = ident(b);
+                    ident_a.cmp(&ident_b)
+                }
+                _ => std::cmp::Ordering::Equal,
+            }
+        });
+
+        let mut sorted_nodes = Vec::new();
+        let mut prev_node: Option<mq_lang::Shared<mq_lang::CstNode>> = None;
+
+        for (i, node) in nodes.iter_mut().enumerate() {
+            if Self::should_insert_pipe_before(node, i, &prev_node) {
+                let pipe_node = mq_lang::CstNode::new_pipe(i != 0);
+                sorted_nodes.push(mq_lang::Shared::new(pipe_node));
+            }
+
+            let node = if i == 0 && node.has_new_line() {
+                let mut node = (**node).clone();
+
+                if node.has_new_line() {
+                    while matches!(node.leading_trivia.first(), Some(mq_lang::CstTrivia::NewLine)) {
+                        node.leading_trivia.remove(0);
+                    }
+                }
+
+                &mq_lang::Shared::new(node)
+            } else if !needs_pipe(node)
+                && !node
+                    .leading_trivia
+                    .first()
+                    .is_some_and(|t| matches!(t, mq_lang::CstTrivia::NewLine))
+            {
+                let mut node = (**node).clone();
+                node.leading_trivia.insert(0, mq_lang::CstTrivia::NewLine);
+                &mq_lang::Shared::new(node)
+            } else {
+                node
+            };
+
+            sorted_nodes.push(mq_lang::Shared::clone(node));
+            prev_node = Some(mq_lang::Shared::clone(node));
+        }
+
+        sorted_nodes
     }
 
     fn format_node(&mut self, node: mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
@@ -2592,6 +2735,82 @@ end
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::sort_imports(
+        r#"import "c.mq"
+| import "a.mq"
+| import "b.mq""#,
+        r#"import "a.mq"
+| import "b.mq"
+| import "c.mq"
+"#
+    )]
+    #[case::sort_functions(
+        r#"def z(): test;
+def a(): test;
+def m(): test;
+"#,
+        "def a(): test;\ndef m(): test;\ndef z(): test;\n"
+    )]
+    #[case::sort_fields(
+        r#"let z = 1
+| let a = 2
+| let m = 3"#,
+        r#"let a = 2
+| let m = 3
+| let z = 1
+"#
+    )]
+    #[case::sort_mixed(
+        r#"let z = 1
+| import "b.mq"
+def y(): test;
+| let a = 2
+| import "a.mq"
+def b(): test;
+macro m(): test"#,
+        "import \"a.mq\"\n| import \"b.mq\"\n| let a = 2\n| let z = 1\n|\ndef b(): test;\ndef y(): test;\nmacro m(): test\n"
+    )]
+    #[case::sort_with_other(
+        r#"def z(): test;
+| let x = 1
+| nodes
+def a(): test;"#,
+        "let x = 1\n|\ndef a(): test;\ndef z(): test;\n| nodes\n"
+    )]
+    #[case::sort_with_piped_calls(
+        r#"def z(): test;
+| let x = 1
+| add() | mul() | sub()
+def a(): test;
+macro m(): test;
+| let y = 2"#,
+        "let x = 1\n| let y = 2\n|\ndef a(): test;\ndef z(): test;\nmacro m(): test\n| add()\n| mul()\n| sub()\n| ;\n"
+    )]
+    #[case::sort_all_types(
+        r#"add() | sub()
+def func_b(): test;
+| let var_z = 1
+| import "z.mq"
+macro mac_y(): test;
+| let var_a = 2
+def func_a(): test;
+| mul() | div()
+| import "a.mq"
+macro mac_x(): test;"#,
+        "import \"a.mq\"\n| import \"z.mq\"\n| let var_a = 2\n| let var_z = 1\n|\ndef func_a(): test;\ndef func_b(): test;\nmacro mac_y(): test\nmacro mac_x(): test\n| add()\n| sub()\n| ;\n| mul()\n| div()\n| ;\n"
+    )]
+    fn test_format_with_sort(#[case] code: &str, #[case] expected: &str) {
+        let config = FormatterConfig {
+            indent_width: 2,
+            sort_imports: true,
+            sort_functions: true,
+            sort_fields: true,
+        };
+        let result = Formatter::new(Some(config)).format(code);
         assert_eq!(result.unwrap(), expected);
     }
 }
