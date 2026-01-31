@@ -98,8 +98,7 @@ impl Formatter {
             return Err(errors);
         }
 
-        self.output.reserve(code.len() + 128);
-
+        self.output.reserve(code.len() * 2);
         self.format_with_cst(&mut nodes)
     }
 
@@ -2704,6 +2703,81 @@ end
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::sort_imports(
+        r#"import "c.mq"
+| import "a.mq"
+| import "b.mq""#,
+        r#"import "a.mq"
+| import "b.mq"
+| import "c.mq"
+"#
+    )]
+    #[case::sort_functions(
+        r#"def z(): test;
+def a(): test;
+def m(): test;"#,
+        "\ndef a(): test;\ndef m(): test;def z(): test;\n"
+    )]
+    #[case::sort_fields(
+        r#"let z = 1
+| let a = 2
+| let m = 3"#,
+        r#"let a = 2
+| let m = 3
+| let z = 1
+"#
+    )]
+    #[case::sort_mixed(
+        r#"let z = 1
+| import "b.mq"
+def y(): test;
+| let a = 2
+| import "a.mq"
+def b(): test;
+macro m(): test"#,
+        "import \"a.mq\"\n| import \"b.mq\"\n| let a = 2\n| let z = 1\n|\ndef b(): test;\ndef y(): test;\nmacro m(): test\n"
+    )]
+    #[case::sort_with_other(
+        r#"def z(): test;
+| let x = 1
+| nodes
+def a(): test;"#,
+        "let x = 1\n|\ndef a(): test;def z(): test;\n| nodes\n"
+    )]
+    #[case::sort_with_piped_calls(
+        r#"def z(): test;
+| let x = 1
+| add() | mul() | sub()
+def a(): test;
+macro m(): test;
+| let y = 2"#,
+        "let x = 1\n| let y = 2\n|\ndef a(): test;def z(): test;\nmacro m(): test\n| add()\n| mul()\n| sub()\n| ;\n"
+    )]
+    #[case::sort_all_types(
+        r#"add() | sub()
+def func_b(): test;
+| let var_z = 1
+| import "z.mq"
+macro mac_y(): test;
+| let var_a = 2
+def func_a(): test;
+| mul() | div()
+| import "a.mq"
+macro mac_x(): test;"#,
+        "import \"a.mq\"\n| import \"z.mq\"\n| let var_a = 2\n| let var_z = 1\n|\ndef func_a(): test;\ndef func_b(): test;\nmacro mac_y(): test\nmacro mac_x(): test\n| add()\n| sub()\n| ;\n| mul()\n| div()\n| ;\n"
+    )]
+    fn test_format_with_sort(#[case] code: &str, #[case] expected: &str) {
+        let config = FormatterConfig {
+            indent_width: 2,
+            sort_imports: true,
+            sort_functions: true,
+            sort_fields: true,
+        };
+        let result = Formatter::new(Some(config)).format(code);
         assert_eq!(result.unwrap(), expected);
     }
 }
