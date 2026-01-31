@@ -11,7 +11,7 @@ fn(parameters): program;
 
 ## Examples
 
-```python
+```mq
 # Basic Anonymous Function
 nodes | map(fn(x): add(x, "1");)
 
@@ -25,13 +25,13 @@ Anonymous functions also support default parameter values, just like named funct
 
 ### Syntax
 
-```python
+```mq
 fn(param1, param2=default_value): program;
 ```
 
 ### Examples
 
-```python
+```mq
 # Anonymous function with default parameter
 let multiply = fn(x, factor=2): x * factor;
 

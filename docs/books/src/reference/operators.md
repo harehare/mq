@@ -10,7 +10,7 @@ The pipe operator (`|`) enables sequential processing of filters, where the outp
 
 ### Examples
 
-```js
+```mq
 # Basic pipe usage
 42 | add(1) | mul(2)
 # => 86
@@ -38,7 +38,7 @@ The range operator generates arrays of values from a starting point to an ending
 
 ### Examples
 
-```js
+```mq
 # Numeric ranges
 1..5
 # => [1, 2, 3, 4, 5]

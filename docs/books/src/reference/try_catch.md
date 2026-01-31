@@ -18,7 +18,7 @@ try <expr> catch <expr>
 
 ### Basic Error Handling
 
-```python
+```mq
 # When the expression succeeds
 try: "value" catch: "unknown"
 
@@ -28,7 +28,7 @@ try: get("missing") catch: "default"
 
 ### Chaining with Pipe
 
-```python
+```mq
 # Try to parse as JSON, fallback to raw string
 try: from_json() catch: self
 
@@ -38,7 +38,7 @@ try: do get("data") | from_json(); catch: []
 
 ### Nested Try-Catch
 
-```python
+```mq
 # Multiple fallback levels
 try: get("primary") catch: try: get("secondary") catch: "default"
 ```
@@ -49,7 +49,7 @@ The error suppression operator `?` provides a concise way to handle errors by re
 
 ### Examples
 
-```python
+```mq
 # Equivalent to a regular try-catch with a default value
 get("missing")?
 ```

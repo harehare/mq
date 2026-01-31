@@ -4,7 +4,7 @@ The current value being processed can be referenced as `self` or `.` (dot). Both
 
 ### Examples
 
-```python
+```mq
 # These expressions are equivalent
 "hello" | upcase()
 "hello" | upcase(self)

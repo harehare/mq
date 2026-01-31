@@ -7,6 +7,7 @@ title = "mq - jq like tool for markdown processing"
 
 [output.html]
 additional-css = ["theme/custom.css"]
+additional-js = ["theme/highlight-mq.js"]
 default-theme = "navy"
 git-repository-url = "https://github.com/harehare/mq"
 no-section-label = true

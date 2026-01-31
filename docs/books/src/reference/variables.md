@@ -4,7 +4,7 @@
 
 The `let` binds an immutable value to an identifier for later use:
 
-```js
+```mq
 # Binds 42 to x
 let x = 42
 # Uses x in an expression
@@ -19,7 +19,7 @@ Once a variable is declared with `let`, its value cannot be changed.
 
 The `var` declares a mutable variable that can be reassigned:
 
-```js
+```mq
 # Declares a mutable variable
 var counter = 0
 # Reassigns the value
@@ -29,7 +29,7 @@ counter = counter + 1
 
 Variables declared with `var` can be modified using the assignment operator (`=`):
 
-```js
+```mq
 var total = 100
 | total = total - 25
 # total is now 75

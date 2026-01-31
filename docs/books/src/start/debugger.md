@@ -109,7 +109,7 @@ Breakpoints:
 
 You can also set breakpoints directly in your mq code using the `breakpoint()` function:
 
-```python
+```mq
 def process_data(items) {
    breakpoint()  # Execution will pause here when debugger is attached
    | items | filter(fn(item): item == "test")
