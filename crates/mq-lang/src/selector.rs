@@ -75,6 +75,8 @@ pub enum Selector {
     ///
     /// The first `Option<usize>` specifies row index, the second specifies column index.
     Table(Option<usize>, Option<usize>),
+    /// Matches table alignment elements.
+    TableAlign,
     /// Matches text nodes.
     Text,
     /// Matches horizontal rule elements (e.g., `---`, `***`, `___`).
@@ -142,10 +144,6 @@ pub enum AttrKind {
     Column,
     /// The row index of a table cell.
     Row,
-    /// Whether this is the last cell in its row.
-    LastCellInRow,
-    /// Whether this is the last cell in the entire table.
-    LastCellOfInTable,
 
     /// The alignment of a table header (left, right, center, none).
     Align,
@@ -175,8 +173,6 @@ impl Display for AttrKind {
             AttrKind::Checked => write!(f, ".checked"),
             AttrKind::Column => write!(f, ".column"),
             AttrKind::Row => write!(f, ".row"),
-            AttrKind::LastCellInRow => write!(f, ".last_cell_in_row"),
-            AttrKind::LastCellOfInTable => write!(f, ".last_cell_of_in_table"),
             AttrKind::Align => write!(f, ".align"),
             AttrKind::Name => write!(f, ".name"),
         }
@@ -282,6 +278,9 @@ impl TryFrom<&Token> for Selector {
                 // Table
                 ".table" => Ok(Selector::Table(None, None)),
 
+                // Table Align
+                ".table_align" => Ok(Selector::TableAlign),
+
                 // Attribute selectors - Common
                 ".value" => Ok(Selector::Attr(AttrKind::Value)),
                 ".values" => Ok(Selector::Attr(AttrKind::Values)),
@@ -313,8 +312,6 @@ impl TryFrom<&Token> for Selector {
                 // Attribute selectors - TableCell
                 ".column" => Ok(Selector::Attr(AttrKind::Column)),
                 ".row" => Ok(Selector::Attr(AttrKind::Row)),
-                ".last_cell_in_row" => Ok(Selector::Attr(AttrKind::LastCellInRow)),
-                ".last_cell_of_in_table" => Ok(Selector::Attr(AttrKind::LastCellOfInTable)),
 
                 // Attribute selectors - TableHeader
                 ".align" => Ok(Selector::Attr(AttrKind::Align)),
@@ -367,6 +364,7 @@ impl Display for Selector {
             Selector::Table(Some(row), None) => write!(f, ".[{}]", row),
             Selector::Table(Some(row), Some(col)) => write!(f, ".[{}][{}]", row, col),
             Selector::Table(None, Some(col)) => write!(f, ".[][{}]", col),
+            Selector::TableAlign => write!(f, ".table_align"),
             Selector::Text => write!(f, ".text"),
             Selector::HorizontalRule => write!(f, ".horizontal_rule"),
             Selector::Definition => write!(f, ".definition"),
@@ -471,6 +469,8 @@ mod tests {
     #[case::text(".text", Selector::Text, ".text")]
     // Table
     #[case::table(".table", Selector::Table(None, None), ".table")]
+    // Table Align
+    #[case::table_align(".table_align", Selector::TableAlign, ".table_align")]
     // Attribute selectors - Common
     #[case::attr_value(".value", Selector::Attr(AttrKind::Value), ".value")]
     #[case::attr_values(".values", Selector::Attr(AttrKind::Values), ".values")]
@@ -496,12 +496,6 @@ mod tests {
     // Attribute selectors - TableCell
     #[case::attr_column(".column", Selector::Attr(AttrKind::Column), ".column")]
     #[case::attr_row(".row", Selector::Attr(AttrKind::Row), ".row")]
-    #[case::attr_last_cell_in_row(".last_cell_in_row", Selector::Attr(AttrKind::LastCellInRow), ".last_cell_in_row")]
-    #[case::attr_last_cell_of_in_table(
-        ".last_cell_of_in_table",
-        Selector::Attr(AttrKind::LastCellOfInTable),
-        ".last_cell_of_in_table"
-    )]
     // Attribute selectors - TableHeader
     #[case::attr_align(".align", Selector::Attr(AttrKind::Align), ".align")]
     // Attribute selectors - MDX

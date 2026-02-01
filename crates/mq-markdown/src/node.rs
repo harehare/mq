@@ -1348,6 +1348,10 @@ impl Node {
         matches!(self, Self::Definition(_))
     }
 
+    pub fn is_table_align(&self) -> bool {
+        matches!(self, Self::TableAlign(_))
+    }
+
     pub fn is_code(&self, lang: Option<SmolStr>) -> bool {
         if let Self::Code(Code { lang: node_lang, .. }) = &self {
             if lang.is_none() {
