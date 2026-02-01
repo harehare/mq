@@ -2725,6 +2725,14 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
     );
 
     map.insert(
+        SmolStr::new(".table_align"),
+        BuiltinSelectorDoc {
+            description: "Selects a table align node.",
+            params: &[],
+        },
+    );
+
+    map.insert(
         SmolStr::new(".html"),
         BuiltinSelectorDoc {
             description: "Selects an HTML node.",
@@ -3851,6 +3859,7 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> bool {
             (None, None, mq_markdown::Node::TableCell(_)) | (None, None, mq_markdown::Node::TableAlign(_)) => true,
             _ => false,
         },
+        Selector::TableAlign => node.is_table_align(),
         Selector::Html => node.is_html(),
         Selector::Footnote => node.is_footnote(),
         Selector::MdxJsxFlowElement => node.is_mdx_jsx_flow_element(),
