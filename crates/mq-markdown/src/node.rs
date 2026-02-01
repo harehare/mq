@@ -3889,7 +3889,7 @@ mod tests {
     #[case::code(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), meta: Some("meta".to_string()), fence: true, position: None}), attr_keys::FENCE, Some(AttrValue::Boolean(true)))]
     #[case::code(Node::Code(Code{value: "code".to_string(), lang: None, meta: None, fence: false, position: None}), attr_keys::FENCE, Some(AttrValue::Boolean(false)))]
     #[case::code_inline(Node::CodeInline(CodeInline{value: "inline".into(), position: None}), attr_keys::VALUE, Some(AttrValue::String("inline".to_string())))]
-    #[case::code_inline(Node::MathInline(MathInline{value: "math".into(), position: None}), attr_keys::VALUE, Some(AttrValue::String("math".to_string())))]
+    #[case::math_inline(Node::MathInline(MathInline{value: "math".into(), position: None}), attr_keys::VALUE, Some(AttrValue::String("math".to_string())))]
     #[case::math(Node::Math(Math{value: "math".to_string(), position: None}), attr_keys::VALUE, Some(AttrValue::String("math".to_string())))]
     #[case::yaml(Node::Yaml(Yaml{value: "yaml".to_string(), position: None}), attr_keys::VALUE, Some(AttrValue::String("yaml".to_string())))]
     #[case::toml(Node::Toml(Toml{value: "toml".to_string(), position: None}), attr_keys::VALUE, Some(AttrValue::String("toml".to_string())))]
@@ -4194,18 +4194,6 @@ mod tests {
         "row",
         "5",
         Node::TableCell(TableCell{column: 1, row: 5, values: vec![], position: None})
-    )]
-    #[case(
-        Node::TableCell(TableCell{column: 1, row: 2, values: vec![], position: None}),
-        "last_cell_in_row",
-        "true",
-        Node::TableCell(TableCell{column: 1, row: 2, values: vec![], position: None})
-    )]
-    #[case(
-        Node::TableCell(TableCell{column: 1, row: 2, values: vec![], position: None}),
-        "last_cell_of_in_table",
-        "true",
-        Node::TableCell(TableCell{column: 1, row: 2, values: vec![], position: None})
     )]
     #[case(
         Node::Definition(Definition{ident: "id".to_string(), url: Url::new(attr_keys::URL.to_string()), title: None, label: None, position: None}),
