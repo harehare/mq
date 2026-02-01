@@ -153,7 +153,7 @@ impl From<mq_markdown::Node> for MarkdownType {
             mq_markdown::Node::LinkRef(_) => MarkdownType::LinkRef,
             mq_markdown::Node::Math(_) => MarkdownType::Math,
             mq_markdown::Node::List(_) => MarkdownType::List,
-            mq_markdown::Node::TableHeader(_) => MarkdownType::TableHeader,
+            mq_markdown::Node::TableAlign(_) => MarkdownType::TableHeader,
             mq_markdown::Node::TableRow(_) => MarkdownType::TableRow,
             mq_markdown::Node::TableCell(_) => MarkdownType::TableCell,
             mq_markdown::Node::Code(_) => MarkdownType::Code,
