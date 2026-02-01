@@ -5,6 +5,7 @@ import "csv"
 | import "xml"
 | import "fuzzy"
 | import "section"
+| import "table"
 | include "test"
 
 | let csv_input = "a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n" |
@@ -243,6 +244,38 @@ def test_section_flatten():
   | assert(is_array(flattened))
 end
 
+| let table_md = "| A | B | C |\n| --- | --- | --- |\n| 1 | 2 | 3 |\n| 4 | 5 | 6 |"
+| let test_table = to_markdown(table_md) |
+
+def test_table_remove_column():
+  let result = do test_table | map(fn(cell): table::remove_column(cell, 0);) | to_string();
+  | assert(!contains(to_string(result), "A"))
+  | assert(contains(to_string(result), "B"))
+  | assert(contains(to_string(result), "C"))
+end
+
+def test_table_remove_row():
+  let result = do test_table | map(fn(cell): table::remove_row(cell, 1);) | to_string();
+  | assert(contains(result, "A"))
+  | assert(!contains(result, "1"))
+  | assert(contains(result, "4"))
+end
+
+def test_table_set_align_single():
+  let result = do test_table | map(fn(cell): table::set_align(cell, "left");) | to_string();
+  | assert(contains(result, "|:---|"))
+end
+
+def test_table_set_align_array():
+  let result = do test_table | map(fn(cell): table::set_align(cell, ["left", "center", "right"]);) | to_string();
+  | assert(contains(result, "|:---|:---:|---:|"))
+end
+
+def test_table_set_align_column_index():
+  let result = do test_table | map(fn(cell): table::set_align(cell, "center", 1);) | to_string();
+  | assert(contains(result, ":---:"))
+end
+
 | run_tests([
   # csv
   test_case("CSV Parse for Dict", test_csv_parse_for_dict),
@@ -281,5 +314,11 @@ end
   test_case("Section Level", test_section_level),
   test_case("Section Nth", test_section_nth),
   test_case("Section Titles", test_section_titles),
-  test_case("Section Flatten", test_section_flatten)
+  test_case("Section Flatten", test_section_flatten),
+  # table
+  test_case("Table Remove Column", test_table_remove_column),
+  test_case("Table Remove Row", test_table_remove_row),
+  test_case("Table Set Align Single", test_table_set_align_single),
+  test_case("Table Set Align Array", test_table_set_align_array),
+  test_case("Table Set Align Column Index", test_table_set_align_column_index)
 ])
