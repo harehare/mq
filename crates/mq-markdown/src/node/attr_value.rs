@@ -21,8 +21,6 @@ pub mod attr_keys {
     pub(crate) const CHECKED: &str = "checked";
     pub(crate) const COLUMN: &str = "column";
     pub(crate) const ROW: &str = "row";
-    pub(crate) const LAST_CELL_IN_ROW: &str = "last_cell_in_row";
-    pub(crate) const LAST_CELL_OF_IN_TABLE: &str = "last_cell_of_in_table";
 }
 
 /// Represents a typed attribute value that can be returned from or passed to attr/set_attr methods.

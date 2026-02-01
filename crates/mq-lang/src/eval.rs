@@ -3520,24 +3520,18 @@ mod tests {
                     row: 0,
                     column: 0,
                     values: vec!["Cell 1".to_string().into()],
-                    last_cell_in_row: false,
-                    last_cell_in_table: false,
                     position: None
                 }),
                 mq_markdown::Node::TableCell(mq_markdown::TableCell{
                     row: 0,
                     column: 1,
                     values: vec!["Cell 2".to_string().into()],
-                    last_cell_in_row: false,
-                    last_cell_in_table: false,
                     position: None
                 }),
                 mq_markdown::Node::TableCell(mq_markdown::TableCell{
                     row: 0,
                     column: 2,
                     values: vec!["Cell 3".to_string().into()],
-                    last_cell_in_row: true,
-                    last_cell_in_table: false,
                     position: None
                 }),
             ],
@@ -3556,16 +3550,12 @@ mod tests {
                     row: 0,
                     column: 0,
                     values: vec!["Cell 1".to_string().into()],
-                    last_cell_in_row: false,
-                    last_cell_in_table: false,
                     position: None
                 }),
                 mq_markdown::Node::TableCell(mq_markdown::TableCell{
                     row: 0,
                     column: 1,
                     values: vec!["Cell 2".to_string().into()],
-                    last_cell_in_row: true,
-                    last_cell_in_table: false,
                     position: None
                 }),
             ],
