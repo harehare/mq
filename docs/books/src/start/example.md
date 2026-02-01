@@ -61,7 +61,7 @@ select(!.code)
 
 **Input example**:
 
-```markdown
+````markdown
 This is a paragraph.
 
 ```js
@@ -69,7 +69,7 @@ console.log("code");
 ```
 
 Another paragraph.
-```
+````
 
 **Output**: Returns only the paragraph elements, excluding the code block.
 
@@ -83,19 +83,19 @@ select(.code.lang == "js")
 
 **Input example**:
 
-```markdown
-````js
+````markdown
+```js
 const x = 1;
-````
-
-````python
-x = 1
-````
-
-````js
-const y = 2;
-````
 ```
+
+```python
+x = 1
+```
+
+```js
+const y = 2;
+```
+````
 
 **Output**: Returns only the two JavaScript code blocks.
 
