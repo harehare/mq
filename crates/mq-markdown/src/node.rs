@@ -138,6 +138,18 @@ impl From<mdast::AlignKind> for TableAlignKind {
     }
 }
 
+impl From<&str> for TableAlignKind {
+    fn from(value: &str) -> Self {
+        match value {
+            "left" | ":---" => Self::Left,
+            "right" | "---:" => Self::Right,
+            "center" | ":---:" => Self::Center,
+            "---" => Self::None,
+            _ => Self::None,
+        }
+    }
+}
+
 impl Display for TableAlignKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -175,7 +187,7 @@ pub struct TableCell {
     pub column: usize,
     pub row: usize,
     pub last_cell_in_row: bool,
-    pub last_cell_of_in_table: bool,
+    pub last_cell_in_table: bool,
     #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
@@ -198,7 +210,7 @@ pub struct TableRow {
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase", tag = "type")
 )]
-pub struct TableHeader {
+pub struct TableAlign {
     pub align: Vec<TableAlignKind>,
     #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
@@ -614,7 +626,7 @@ pub enum Node {
     LinkRef(LinkRef),
     Math(Math),
     List(List),
-    TableHeader(TableHeader),
+    TableAlign(TableAlign),
     TableRow(TableRow),
     TableCell(TableCell),
     Code(Code),
@@ -831,7 +843,7 @@ impl Node {
                 .collect::<String>(),
             Self::TableCell(TableCell {
                 last_cell_in_row,
-                last_cell_of_in_table,
+                last_cell_in_table: last_cell_of_in_table,
                 values,
                 ..
             }) => {
@@ -841,7 +853,7 @@ impl Node {
                     format!("|{}", values_to_string(&values, options))
                 }
             }
-            Self::TableHeader(TableHeader { align, .. }) => {
+            Self::TableAlign(TableAlign { align, .. }) => {
                 format!("|{}|", align.iter().map(|a| a.to_string()).join("|"))
             }
             Self::Blockquote(Blockquote { values, .. }) => values_to_string(&values, options)
@@ -1075,7 +1087,7 @@ impl Node {
             Self::Strong(v) => values_to_value(v.values),
             Self::Text(t) => t.value,
             Self::Break { .. } => String::new(),
-            Self::TableHeader(_) => String::new(),
+            Self::TableAlign(_) => String::new(),
             Self::MdxFlowExpression(mdx) => mdx.value.to_string(),
             Self::MdxJsxFlowElement(mdx) => values_to_value(mdx.children),
             Self::MdxTextExpression(mdx) => mdx.value.to_string(),
@@ -1116,7 +1128,7 @@ impl Node {
             Self::LinkRef(_) => "link_ref".into(),
             Self::Math(_) => "math".into(),
             Self::List(_) => "list".into(),
-            Self::TableHeader(_) => "table_header".into(),
+            Self::TableAlign(_) => "table_header".into(),
             Self::TableRow(_) => "table_row".into(),
             Self::TableCell(_) => "table_cell".into(),
             Self::Code(_) => "code".into(),
@@ -1154,7 +1166,7 @@ impl Node {
             Self::Code(c) => c.position = pos,
             Self::TableCell(c) => c.position = pos,
             Self::TableRow(r) => r.position = pos,
-            Self::TableHeader(c) => c.position = pos,
+            Self::TableAlign(c) => c.position = pos,
             Self::List(l) => l.position = pos,
             Self::Strong(s) => s.position = pos,
             Self::MdxFlowExpression(m) => m.position = pos,
@@ -1191,7 +1203,7 @@ impl Node {
             Self::Code(c) => c.position.clone(),
             Self::TableCell(c) => c.position.clone(),
             Self::TableRow(r) => r.position.clone(),
-            Self::TableHeader(c) => c.position.clone(),
+            Self::TableAlign(c) => c.position.clone(),
             Self::List(l) => l.position.clone(),
             Self::Strong(s) => s.position.clone(),
             Self::MdxFlowExpression(m) => m.position.clone(),
@@ -1489,7 +1501,7 @@ impl Node {
                 Self::Definition(def)
             }
             node @ Self::Break { .. } => node,
-            node @ Self::TableHeader(_) => node,
+            node @ Self::TableAlign(_) => node,
             node @ Self::HorizontalRule { .. } => node,
             Self::Text(mut text) => {
                 text.value = value.to_string();
@@ -1739,7 +1751,7 @@ impl Node {
                 column,
                 row,
                 last_cell_in_row,
-                last_cell_of_in_table,
+                last_cell_in_table: last_cell_of_in_table,
                 values,
                 ..
             }) => match attr {
@@ -1751,7 +1763,7 @@ impl Node {
                 attr_keys::VALUES | attr_keys::CHILDREN => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
-            Node::TableHeader(TableHeader { align, .. }) => match attr {
+            Node::TableAlign(TableAlign { align, .. }) => match attr {
                 attr_keys::ALIGN => Some(AttrValue::String(
                     align.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(","),
                 )),
@@ -1989,25 +2001,16 @@ impl Node {
                     };
                 }
                 attr_keys::LAST_CELL_OF_IN_TABLE => {
-                    c.last_cell_of_in_table = match value {
+                    c.last_cell_in_table = match value {
                         AttrValue::Boolean(b) => b,
                         _ => value_str == "true",
                     };
                 }
                 _ => (),
             },
-            Node::TableHeader(th) => {
+            Node::TableAlign(th) => {
                 if attr == attr_keys::ALIGN {
-                    th.align = value_str
-                        .split(',')
-                        .map(|s| match s.trim() {
-                            ":---" => TableAlignKind::Left,
-                            "---:" => TableAlignKind::Right,
-                            ":---:" => TableAlignKind::Center,
-                            "---" => TableAlignKind::None,
-                            _ => TableAlignKind::None,
-                        })
-                        .collect();
+                    th.align = value_str.split(',').map(|s| s.trim().into()).collect();
                 }
             }
             Node::MdxFlowExpression(m) => {
@@ -2081,7 +2084,7 @@ impl Node {
                                             row,
                                             column,
                                             last_cell_in_row: table_row.children.len() - 1 == column,
-                                            last_cell_of_in_table: table_row.children.len() - 1 == column
+                                            last_cell_in_table: table_row.children.len() - 1 == column
                                                 && table.children.len() - 1 == row,
                                             values: Self::mdast_children_to_node(node.clone()),
                                             position: node.position().map(|p| p.clone().into()),
@@ -2092,7 +2095,7 @@ impl Node {
                                 })
                                 .collect(),
                             if row == 0 {
-                                vec![Self::TableHeader(TableHeader {
+                                vec![Self::TableAlign(TableAlign {
                                     align: table.align.iter().map(|a| (*a).into()).collect::<Vec<_>>(),
                                     position: n.position().map(|p| Position {
                                         start: Point {
@@ -2653,19 +2656,19 @@ mod tests {
            "test".to_string(),
            Node::Html(Html{ value: "test".to_string(), position: None }))]
     #[case::table_row(Node::TableRow(TableRow{ values: vec![
-                        Node::TableCell(TableCell{values: vec!["test1".to_string().into()], row:0, column:1, last_cell_in_row: false, last_cell_of_in_table: false, position: None}),
-                        Node::TableCell(TableCell{values: vec!["test2".to_string().into()], row:0, column:2, last_cell_in_row: true, last_cell_of_in_table: false, position: None})
+                        Node::TableCell(TableCell{values: vec!["test1".to_string().into()], row:0, column:1, last_cell_in_row: false, last_cell_in_table: false, position: None}),
+                        Node::TableCell(TableCell{values: vec!["test2".to_string().into()], row:0, column:2, last_cell_in_row: true, last_cell_in_table: false, position: None})
                     ]
                     , position: None }),
            "test3,test4".to_string(),
            Node::TableRow(TableRow{ values: vec![
-                        Node::TableCell(TableCell{values: vec!["test3".to_string().into()], row:0, column:1, last_cell_in_row: false, last_cell_of_in_table: false, position: None}),
-                        Node::TableCell(TableCell{values: vec!["test4".to_string().into()], row:0, column:2, last_cell_in_row: true, last_cell_of_in_table: false, position: None})
+                        Node::TableCell(TableCell{values: vec!["test3".to_string().into()], row:0, column:1, last_cell_in_row: false, last_cell_in_table: false, position: None}),
+                        Node::TableCell(TableCell{values: vec!["test4".to_string().into()], row:0, column:2, last_cell_in_row: true, last_cell_in_table: false, position: None})
                     ]
                     , position: None }))]
-    #[case::table_cell(Node::TableCell(TableCell{values: vec!["test1".to_string().into()], row:0, column:1, last_cell_in_row: false, last_cell_of_in_table: false, position: None}),
+    #[case::table_cell(Node::TableCell(TableCell{values: vec!["test1".to_string().into()], row:0, column:1, last_cell_in_row: false, last_cell_in_table: false, position: None}),
             "test2".to_string(),
-            Node::TableCell(TableCell{values: vec!["test2".to_string().into()], row:0, column:1, last_cell_in_row: false, last_cell_of_in_table: false, position: None}),)]
+            Node::TableCell(TableCell{values: vec!["test2".to_string().into()], row:0, column:1, last_cell_in_row: false, last_cell_in_table: false, position: None}),)]
     #[case::link_ref(Node::LinkRef(LinkRef{ident: "test2".to_string(), values: vec![attr_keys::VALUE.to_string().into()], label: Some("test2".to_string()), position: None}),
             "test2".to_string(),
             Node::LinkRef(LinkRef{ident: "test2".to_string(), values: vec![attr_keys::VALUE.to_string().into()], label: Some("test2".to_string()), position: None}),)]
@@ -2794,13 +2797,13 @@ mod tests {
             Node::Text(Text{value: "new".to_string(), position: None}),
             Node::Text(Text{value: "second".to_string(), position: None})
         ], position: None}))]
-    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}),
         "new",
         1,
-        Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+        Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec![
             Node::Text(Text{value: "first".to_string(), position: None}),
             Node::Text(Text{value: "new".to_string(), position: None})
         ], position: None}))]
@@ -3157,11 +3160,11 @@ mod tests {
     #[case::list(Node::List(List{index: 0, level: 1, checked: Some(false), ordered: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  - [ ] test")]
     #[case::list(Node::List(List{index: 0, level: 1, checked: None, ordered: true, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  1. test")]
     #[case::list(Node::List(List{index: 0, level: 1, checked: Some(false), ordered: true, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  1. [ ] test")]
-    #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), RenderOptions::default(), "|test")]
-    #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), RenderOptions::default(), "|test|")]
-    #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "|test")]
-    #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "|test|")]
-    #[case::table_header(Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right, TableAlignKind::Center, TableAlignKind::None], position: None}), RenderOptions::default(), "|:---|---:|:---:|---|")]
+    #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), RenderOptions::default(), "|test")]
+    #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), RenderOptions::default(), "|test|")]
+    #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "|test")]
+    #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_in_table: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "|test|")]
+    #[case::table_header(Node::TableAlign(TableAlign{align: vec![TableAlignKind::Left, TableAlignKind::Right, TableAlignKind::Center, TableAlignKind::None], position: None}), RenderOptions::default(), "|:---|---:|:---:|---|")]
     #[case::block_quote(Node::Blockquote(Blockquote{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "> test")]
     #[case::block_quote(Node::Blockquote(Blockquote{values: vec!["test\ntest2".to_string().into()], position: None}), RenderOptions::default(), "> test\n> test2")]
     #[case::code(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), fence: true, meta: None, position: None}), RenderOptions::default(), "```rust\ncode\n```")]
@@ -3349,9 +3352,9 @@ mod tests {
     #[case(Node::LinkRef(LinkRef{ident: "".to_string(), values: Vec::new(), label: None, position: None}), "link_ref")]
     #[case(Node::Math(Math{value: "".to_string(), position: None}), "math")]
     #[case(Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: Vec::new(), position: None}), "list")]
-    #[case(Node::TableHeader(TableHeader{align: Vec::new(), position: None}), "table_header")]
+    #[case(Node::TableAlign(TableAlign{align: Vec::new(), position: None}), "table_header")]
     #[case(Node::TableRow(TableRow{values: Vec::new(), position: None}), "table_row")]
-    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: Vec::new(), position: None}), "table_cell")]
+    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: Vec::new(), position: None}), "table_cell")]
     #[case(Node::Code(Code{value: "".to_string(), lang: None, fence: true, meta: None, position: None}), "code")]
     #[case(Node::Strong(Strong{values: Vec::new(), position: None}), "strong")]
     #[case(Node::HorizontalRule(HorizontalRule{position: None}), "Horizontal_rule")]
@@ -3386,11 +3389,11 @@ mod tests {
     #[case(Node::Math(Math{value: "test".to_string(), position: None}), "test")]
     #[case(Node::Code(Code{value: "test".to_string(), lang: None, fence: true, meta: None, position: None}), "test")]
     #[case(Node::Strong(Strong{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
-    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
-    #[case(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None})], position: None}), "test")]
+    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
+    #[case(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None})], position: None}), "test")]
     #[case(Node::Break(Break{position: None}), "")]
     #[case(Node::HorizontalRule(HorizontalRule{position: None}), "")]
-    #[case(Node::TableHeader(TableHeader{align: Vec::new(), position: None}), "")]
+    #[case(Node::TableAlign(TableAlign{align: Vec::new(), position: None}), "")]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: None}), "test")]
     #[case(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: None}), "test")]
     #[case(Node::MdxJsEsm(MdxJsEsm{value: "test".into(), position: None}), "test")]
@@ -3423,9 +3426,9 @@ mod tests {
     #[case(Node::Math(Math{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Code(Code{value: "".to_string(), lang: None, fence: true, meta: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Strong(Strong{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::TableRow(TableRow{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::TableHeader(TableHeader{align: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::TableAlign(TableAlign{align: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Break(Break{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::HorizontalRule(HorizontalRule{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
@@ -3491,13 +3494,13 @@ mod tests {
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}), 1, Some(Node::Text(Text{value: "second".to_string(), position: None})))]
-    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec![
         Node::Text(Text{value: "cell content".to_string(), position: None})
     ], position: None}), 0, Some(Node::Text(Text{value: "cell content".to_string(), position: None})))]
     #[case(Node::TableRow(TableRow{values: vec![
-        Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: Vec::new(), position: None}),
-        Node::TableCell(TableCell{column: 1, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None})
-    ], position: None}), 1, Some(Node::TableCell(TableCell{column: 1, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None})))]
+        Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: Vec::new(), position: None}),
+        Node::TableCell(TableCell{column: 1, row: 0, last_cell_in_row: true, last_cell_in_table: false, values: Vec::new(), position: None})
+    ], position: None}), 1, Some(Node::TableCell(TableCell{column: 1, row: 0, last_cell_in_row: true, last_cell_in_table: false, values: Vec::new(), position: None})))]
     #[case(Node::Text(Text{value: "plain text".to_string(), position: None}), 0, None)]
     #[case(Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None}), 0, None)]
     #[case(Node::Html(Html{value: "<div>".to_string(), position: None}), 0, None)]
@@ -3524,7 +3527,7 @@ mod tests {
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
     #[case(Node::Footnote(Footnote{ident: "id".to_string(), values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
-    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}),
+    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
     #[case(Node::TableRow(TableRow{values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
@@ -3642,29 +3645,29 @@ mod tests {
         ], position: None})
     )]
     #[case(
-        &mut Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+        &mut Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec![
             Node::Text(Text{value: "old".to_string(), position: None})
         ], position: None}),
         Node::Fragment(Fragment{values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ]}),
-        Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+        Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ], position: None})
     )]
     #[case(
         &mut Node::TableRow(TableRow{values: vec![
-            Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+            Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec![
                 Node::Text(Text{value: "old".to_string(), position: None})
             ], position: None})
         ], position: None}),
         Node::Fragment(Fragment{values: vec![
-            Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+            Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec![
                 Node::Text(Text{value: "new".to_string(), position: None})
             ], position: None})
         ]}),
         Node::TableRow(TableRow{values: vec![
-            Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+            Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec![
                 Node::Text(Text{value: "new".to_string(), position: None})
             ], position: None})
         ], position: None})
@@ -3778,12 +3781,12 @@ mod tests {
     #[case(Node::Math(Math{value: "x^2".to_string(), position: None}),
         Position{start: Point{line: 1, column: 1}, end: Point{line: 3, column: 3}},
         Node::Math(Math{value: "x^2".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 3, column: 3}})}))]
-    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![Node::Text(Text{value: "cell".to_string(), position: None})], position: None}),
+    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec![Node::Text(Text{value: "cell".to_string(), position: None})], position: None}),
         Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 6}},
-        Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![Node::Text(Text{value: "cell".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 6}})})], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 6}})}))]
-    #[case(Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: None}),
+        Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec![Node::Text(Text{value: "cell".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 6}})})], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 6}})}))]
+    #[case(Node::TableAlign(TableAlign{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: None}),
         Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 15}},
-        Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 15}})}))]
+        Node::TableAlign(TableAlign{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 15}})}))]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: None}),
         Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 7}},
         Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 7}})}))]
@@ -3830,13 +3833,13 @@ mod tests {
                 Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})})
             ], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
     #[case(Node::TableRow(TableRow{values: vec![
-            Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+            Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec![
                 Node::Text(Text{value: "cell".to_string(), position: None})
             ], position: None})
         ], position: None}),
             Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 10}},
             Node::TableRow(TableRow{values: vec![
-                Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+                Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_in_table: false, values: vec![
                     Node::Text(Text{value: "cell".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 10}})})
                 ], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 10}})})
             ], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 10}})}))]
@@ -3942,11 +3945,11 @@ mod tests {
     #[case(Node::List(List{index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "level", Some(AttrValue::Integer(1)))]
     #[case(Node::List(List{index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "ordered", Some(AttrValue::Boolean(true)))]
     #[case(Node::List(List{index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), attr_keys::CHECKED, Some(AttrValue::Boolean(true)))]
-    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None}), "column", Some(AttrValue::Integer(1)))]
-    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None}), "row", Some(AttrValue::Integer(2)))]
-    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None}), "last_cell_in_row", Some(AttrValue::Boolean(true)))]
-    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None}), "last_cell_of_in_table", Some(AttrValue::Boolean(false)))]
-    #[case(Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: None}), "align", Some(AttrValue::String(":---,---:".to_string())))]
+    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_in_table: false, values: Vec::new(), position: None}), "column", Some(AttrValue::Integer(1)))]
+    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_in_table: false, values: Vec::new(), position: None}), "row", Some(AttrValue::Integer(2)))]
+    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_in_table: false, values: Vec::new(), position: None}), "last_cell_in_row", Some(AttrValue::Boolean(true)))]
+    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_in_table: false, values: Vec::new(), position: None}), "last_cell_of_in_table", Some(AttrValue::Boolean(false)))]
+    #[case(Node::TableAlign(TableAlign{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: None}), "align", Some(AttrValue::String(":---,---:".to_string())))]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "expr".into(), position: None}), attr_keys::VALUE, Some(AttrValue::String("expr".to_string())))]
     #[case(Node::MdxTextExpression(MdxTextExpression{value: "expr".into(), position: None}), attr_keys::VALUE, Some(AttrValue::String("expr".to_string())))]
     #[case(Node::MdxJsEsm(MdxJsEsm{value: "esm".into(), position: None}), attr_keys::VALUE, Some(AttrValue::String("esm".to_string())))]
@@ -3981,7 +3984,7 @@ mod tests {
             column: 1,
             row: 2,
             last_cell_in_row: false,
-            last_cell_of_in_table: false,
+            last_cell_in_table: false,
             values: vec![Node::Text(Text {
                 value: "cell_value".to_string(),
                 position: None,
@@ -4109,7 +4112,7 @@ mod tests {
             column: 0,
             row: 0,
             last_cell_in_row: false,
-            last_cell_of_in_table: false,
+            last_cell_in_table: false,
             values: vec![
             Node::Text(Text {
                 value: "cell".to_string(),
@@ -4218,28 +4221,28 @@ mod tests {
         Node::List(List{index: 1, level: 2, checked: Some(true), ordered: true, values: vec![], position: None})
     )]
     #[case(
-        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}),
+        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_in_table: false, values: vec![], position: None}),
         "column",
         "3",
-        Node::TableCell(TableCell{column: 3, row: 2, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None})
+        Node::TableCell(TableCell{column: 3, row: 2, last_cell_in_row: false, last_cell_in_table: false, values: vec![], position: None})
     )]
     #[case(
-        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}),
+        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_in_table: false, values: vec![], position: None}),
         "row",
         "5",
-        Node::TableCell(TableCell{column: 1, row: 5, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None})
+        Node::TableCell(TableCell{column: 1, row: 5, last_cell_in_row: false, last_cell_in_table: false, values: vec![], position: None})
     )]
     #[case(
-        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}),
+        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_in_table: false, values: vec![], position: None}),
         "last_cell_in_row",
         "true",
-        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: false, values: vec![], position: None})
+        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_in_table: false, values: vec![], position: None})
     )]
     #[case(
-        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}),
+        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_in_table: false, values: vec![], position: None}),
         "last_cell_of_in_table",
         "true",
-        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_of_in_table: true, values: vec![], position: None})
+        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_in_table: true, values: vec![], position: None})
     )]
     #[case(
         Node::Definition(Definition{ident: "id".to_string(), url: Url::new(attr_keys::URL.to_string()), title: None, label: None, position: None}),
@@ -4339,22 +4342,22 @@ mod tests {
     )]
     #[case(Node::Empty, attr_keys::VALUE, "ignored", Node::Empty)]
     #[case(
-        Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: None}),
+        Node::TableAlign(TableAlign{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: None}),
         "align",
         "---,:---:",
-        Node::TableHeader(TableHeader{align: vec![TableAlignKind::None, TableAlignKind::Center], position: None})
+        Node::TableAlign(TableAlign{align: vec![TableAlignKind::None, TableAlignKind::Center], position: None})
     )]
     #[case(
-        Node::TableHeader(TableHeader{align: vec![], position: None}),
+        Node::TableAlign(TableAlign{align: vec![], position: None}),
         "align",
         ":---,---:",
-        Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: None})
+        Node::TableAlign(TableAlign{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: None})
     )]
     #[case(
-        Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left], position: None}),
+        Node::TableAlign(TableAlign{align: vec![TableAlignKind::Left], position: None}),
         "unknown",
         "ignored",
-        Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left], position: None})
+        Node::TableAlign(TableAlign{align: vec![TableAlignKind::Left], position: None})
     )]
     #[case(
         Node::MdxFlowExpression(MdxFlowExpression{value: "old".into(), position: None}),

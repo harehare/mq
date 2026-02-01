@@ -1675,7 +1675,7 @@ define_builtin!(TO_MD_TABLE_ROW, ParamNum::Range(1, u8::MAX), |_, _, args, _| {
                             column: current_index - 1,
                             values: vec![v.to_string().into()],
                             last_cell_in_row: i == args_num - 1 && j == array_num - 1,
-                            last_cell_of_in_table: false,
+                            last_cell_in_table: false,
                             position: None,
                         })
                     })
@@ -1688,7 +1688,7 @@ define_builtin!(TO_MD_TABLE_ROW, ParamNum::Range(1, u8::MAX), |_, _, args, _| {
                     column: current_index - 1,
                     values: vec![v.to_string().into()],
                     last_cell_in_row: i == args_num - 1,
-                    last_cell_of_in_table: false,
+                    last_cell_in_table: false,
                     position: None,
                 })]
             }
@@ -3852,7 +3852,7 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> bool {
                     column: column2,
                     row: row2,
                     last_cell_in_row: _,
-                    last_cell_of_in_table: _,
+                    last_cell_in_table: _,
                     ..
                 }),
             ) => *row1 == row2 && *column1 == column2,
@@ -3860,7 +3860,7 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> bool {
             (None, Some(column1), mq_markdown::Node::TableCell(mq_markdown::TableCell { column: column2, .. })) => {
                 *column1 == column2
             }
-            (None, None, mq_markdown::Node::TableCell(_)) | (None, None, mq_markdown::Node::TableHeader(_)) => true,
+            (None, None, mq_markdown::Node::TableCell(_)) | (None, None, mq_markdown::Node::TableAlign(_)) => true,
             _ => false,
         },
         Selector::Html => node.is_html(),
@@ -4350,39 +4350,39 @@ mod tests {
     )]
     #[case::table_cell_with_matching_row_col(
         Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()],
-                                               last_cell_in_row: false, last_cell_of_in_table: false, position: None }),
+                                               last_cell_in_row: false, last_cell_in_table: false, position: None }),
         Selector::Table(Some(1), Some(2)),
         true
     )]
     #[case::table_cell_with_wrong_row(
         Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()],
-                                               last_cell_in_row: false, last_cell_of_in_table: false, position: None }),
+                                               last_cell_in_row: false, last_cell_in_table: false, position: None }),
         Selector::Table(Some(2), Some(2)),
         false
     )]
     #[case::table_cell_with_only_row(
         Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()],
-                                               last_cell_in_row: false, last_cell_of_in_table: false, position: None }),
+                                               last_cell_in_row: false, last_cell_in_table: false, position: None }),
         Selector::Table(Some(1), None),
         true
     )]
     #[case::table_header_with_no_row_col(
-        Node::TableHeader(mq_markdown::TableHeader { align: vec![], position: None }),
+        Node::TableAlign(mq_markdown::TableAlign { align: vec![], position: None }),
         Selector::Table(None, None),
         true
     )]
     #[case::table_header_with_only_row(
-        Node::TableHeader(mq_markdown::TableHeader { align: vec![], position: None }),
+        Node::TableAlign(mq_markdown::TableAlign { align: vec![], position: None }),
         Selector::Table(Some(2), None),
         false
     )]
     #[case::table_header_with_only_col(
-        Node::TableHeader(mq_markdown::TableHeader { align: vec![], position: None }),
+        Node::TableAlign(mq_markdown::TableAlign { align: vec![], position: None }),
         Selector::Table(None, Some(3)),
         false
     )]
     #[case::table_header_with_row_col(
-        Node::TableHeader(mq_markdown::TableHeader { align: vec![], position: None }),
+        Node::TableAlign(mq_markdown::TableAlign { align: vec![], position: None }),
         Selector::Table(Some(1), Some(1)),
         false
     )]

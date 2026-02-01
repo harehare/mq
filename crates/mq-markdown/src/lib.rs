@@ -86,7 +86,7 @@ pub use node::{
     Blockquote, Break, Code, CodeInline, Definition, Delete, Emphasis, Footnote, FootnoteRef, Fragment, Heading,
     HorizontalRule, Html, Image, ImageRef, Link, LinkRef, List, ListStyle, Math, MathInline, MdxFlowExpression,
     MdxJsEsm, MdxJsxFlowElement, MdxJsxTextElement, MdxTextExpression, Node, Point, Position, RenderOptions, Strong,
-    TableAlignKind, TableCell, TableHeader, TableRow, Text, Title, TitleSurroundStyle, Toml, Url, UrlSurroundStyle,
+    TableAlign, TableAlignKind, TableCell, TableRow, Text, Title, TitleSurroundStyle, Toml, Url, UrlSurroundStyle,
     Yaml, attr_value::AttrValue,
 };
 
