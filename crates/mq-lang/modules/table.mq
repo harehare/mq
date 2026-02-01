@@ -1,0 +1,25 @@
+# Removes a column from a table by its index
+def remove_column(node, index):
+  node | .table | select(self.column != index)
+end
+
+# Removes a row from a table by its index
+def remove_row(node, index):
+  node | .table | select(self.row != index)
+end
+
+def set_align(node, align, column_index=None):
+  let target_node = do node | .table_align;
+  | target_node
+  | if (is_array(align)):
+      set_attr("align", join(align, ","))
+    elif (is_none(column_index)):
+      set_attr("align", align)
+    else:
+      do
+        let current_align = do target_node | attr("align") | split(",");
+        | set_attr("align", do set(current_align, column_index, align) | join(",");)
+      end
+end
+
+
