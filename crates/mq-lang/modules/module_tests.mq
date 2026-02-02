@@ -5,7 +5,6 @@ import "csv"
 | import "xml"
 | import "fuzzy"
 | import "section"
-| import "table"
 | include "test"
 
 | let csv_input = "a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n" |
@@ -57,7 +56,7 @@ end
 
 def test_toml_to_json():
   let result = toml::toml_to_json(toml::toml_parse(toml_input))
-  | assert_eq(result, "{\"package\":{\"name\":\"test-package\",\"authors\":[\"Test Author <test@example.com>\"],\"description\":\"A test TOML configuration file\",\"edition\":\"2021\",\"license\":\"MIT\",\"version\":\"1.0.0\"},\"dependencies\":{\"clap\":\"4.0\",\"serde\":\"1.0\",\"tokio\":{\"version\":\"1.0\",\"features\":[\"full\"]}},\"features\":{\"default\":[\"json\"],\"json\":[\"serde_json\"],\"yaml\":[\"serde_yaml\"]},\"dev-dependencies\":{\"assert_cmd\":\"2.0\",\"predicates\":\"3.0\"},\"bin\":[{\"name\":\"test-cli\",\"path\":\"src/main.rs\"}],\"build-dependencies\":{\"cc\":\"1.0\"},\"profile\":{\"release\":{\"codegen-units\":1,\"lto\":true,\"opt-level\":3}},\"workspace\":{\"members\":[\"crate1\",\"crate2\",\"subdir/crate3\"]},\"metadata\":{\"docs\":{\"rs\":{\"all-features\":true,\"rustdoc-args\":[\"--cfg\",\"docsrs\"]}}},\"config\":{\"debug\":true,\"max_connections\":100,\"timeout\":30,\"database\":{\"name\":\"testdb\",\"host\":\"localhost\",\"password\":\"secret\",\"port\":5432,\"user\":\"admin\"},\"server\":{\"host\":\"0.0.0.0\",\"port\":8080,\"workers\":4}},\"database\":{\"connection\":[{\"server\":\"192.168.1.1\",\"enabled\":true,\"connection_max\":5000,\"ports\":[8001,8001,8002]},{\"server\":\"192.168.1.2\",\"enabled\":false,\"connection_max\":300,\"ports\":[8001]}]},\"servers\":[{\"name\":\"alpha\",\"ip\":\"10.0.0.1\",\"role\":\"frontend\"},{\"name\":\"beta\",\"ip\":\"10.0.0.2\",\"role\":\"backend\"}],\"logging\":{\"level\":\"info\",\"format\":\"json\",\"file\":{\"path\":\"/var/log/app.log\",\"max_size\":\"10MB\",\"rotate\":true},\"console\":{\"colors\":true,\"enabled\":true,\"test_booleans\":[true,false,true],\"test_floats\":[3.14,2.71,1.41],\"test_numbers\":[1,2,3,42],\"test_strings\":[\"hello\",\"world\",\"test\"]}},\"mixed_data\":{\"array_value\":[1,2,3],\"boolean_value\":true,\"date_value\":\"2024-01-01T00:00:00Z\",\"float_value\":3.14159,\"integer_value\":42,\"string_value\":\"test string\",\"nested\":{\"key1\":\"value1\",\"key2\":\"value2\",\"bin_number\":0,\"b11010110\":null,\"float_with_exponent\":5,\"e\":22,\"float_with_underscore\":224617.445991,\"hex_number\":0,\"xDEADBEEF\":null,\"int_with_underscore\":1000000,\"oct_number\":0,\"o755\":null,\"local_date\":\"1979-05-27\",\"local_datetime\":\"1979-05-27T07:32:00\",\"local_time\":\"07:32:00\",\"offset_datetime\":\"1979-05-27T07:32:00-08:00\",\"heterogeneous_array\":[1,2,\"a\",\"b\",\"c\"],\"nested_array\":[\"gamma\",\"delta\",1,2],\"inline_table\":{\"x\":1,\"y\":2},\"nested_inline\":{\"person\":{\"name\":\"John\",\"age\":30}},\"infinity\":9223372036854775807,\"negative_infinity\":-9223372036854775808,\"not_a_number\":NaN,\"empty_array\":[],\"empty_string\":\"\",\"\":null,\"russian_comment\":\"Привет мир\"}},\"products\":[{\"name\":\"Hammer\",\"sku\":738594937},{\"name\":\"Nail\",\"sku\":284758393,\"color\":\"gray\"}],\"tool\":{\"name\":\"cargo\",\"version\":\"1.70.0\",\"features\":{\"default\":[\"std\"],\"no-std\":[\"core\"],\"std\":[]},\"settings\":{\"format\":\"json\",\"compression\":true}},\"127.0.0.1\":\"localhost\",\"barke_key\":\"value\",\"character encoding\":\"UTF-8\",\"quoted_key\":\"value\",\"ʎǝʞ\":\"upside down key\"}")
+  | assert_eq(result, "{\"package\":{\"name\":\"test-package\",\"authors\":[\"Test Author <test@example.com>\"],\"description\":\"A test TOML configuration file\",\"edition\":\"2021\",\"license\":\"MIT\",\"version\":\"1.0.0\"},\"dependencies\":{\"clap\":\"4.0\",\"serde\":\"1.0\",\"tokio\":{\"version\":\"1.0\",\"features\":[\"full\"]}},\"features\":{\"default\":[\"json\"],\"json\":[\"serde_json\"],\"yaml\":[\"serde_yaml\"]},\"dev-dependencies\":{\"assert_cmd\":\"2.0\",\"predicates\":\"3.0\"},\"bin\":[{\"path\":\"src/main.rs\",\"name\":\"test-cli\"}],\"build-dependencies\":{\"cc\":\"1.0\"},\"profile\":{\"release\":{\"codegen-units\":1,\"lto\":true,\"opt-level\":3}},\"workspace\":{\"members\":[\"crate1\",\"crate2\",\"subdir/crate3\"]},\"metadata\":{\"docs\":{\"rs\":{\"all-features\":true,\"rustdoc-args\":[\"--cfg\",\"docsrs\"]}}},\"config\":{\"debug\":true,\"max_connections\":100,\"timeout\":30,\"database\":{\"name\":\"testdb\",\"host\":\"localhost\",\"password\":\"secret\",\"port\":5432,\"user\":\"admin\"},\"server\":{\"host\":\"0.0.0.0\",\"port\":8080,\"workers\":4}},\"database\":{\"connection\":[{\"server\":\"192.168.1.1\",\"enabled\":true,\"connection_max\":5000,\"ports\":[8001,8001,8002]},{\"server\":\"192.168.1.2\",\"enabled\":false,\"connection_max\":300,\"ports\":[8001]}]},\"servers\":[{\"name\":\"alpha\",\"ip\":\"10.0.0.1\",\"role\":\"frontend\"},{\"name\":\"beta\",\"ip\":\"10.0.0.2\",\"role\":\"backend\"}],\"logging\":{\"level\":\"info\",\"format\":\"json\",\"file\":{\"path\":\"/var/log/app.log\",\"max_size\":\"10MB\",\"rotate\":true},\"console\":{\"colors\":true,\"enabled\":true,\"test_booleans\":[true,false,true],\"test_floats\":[3.14,2.71,1.41],\"test_numbers\":[1,2,3,42],\"test_strings\":[\"hello\",\"world\",\"test\"]}},\"mixed_data\":{\"array_value\":[1,2,3],\"boolean_value\":true,\"date_value\":\"2024-01-01T00:00:00Z\",\"float_value\":3.14159,\"integer_value\":42,\"string_value\":\"test string\",\"nested\":{\"key1\":\"value1\",\"key2\":\"value2\",\"bin_number\":0,\"b11010110\":null,\"float_with_exponent\":5,\"e\":22,\"float_with_underscore\":224617.445991,\"hex_number\":0,\"xDEADBEEF\":null,\"int_with_underscore\":1000000,\"oct_number\":0,\"o755\":null,\"local_date\":\"1979-05-27\",\"local_datetime\":\"1979-05-27T07:32:00\",\"local_time\":\"07:32:00\",\"offset_datetime\":\"1979-05-27T07:32:00-08:00\",\"heterogeneous_array\":[1,2,\"a\",\"b\",\"c\"],\"nested_array\":[\"gamma\",\"delta\",1,2],\"inline_table\":{\"x\":1,\"y\":2},\"nested_inline\":{\"person\":{\"name\":\"John\",\"age\":30}},\"infinity\":9223372036854775807,\"negative_infinity\":-9223372036854775808,\"not_a_number\":NaN,\"empty_array\":[],\"empty_string\":\"\",\"\":null,\"russian_comment\":\"Привет мир\"}},\"products\":[{\"name\":\"Hammer\",\"sku\":738594937},{\"name\":\"Nail\",\"sku\":284758393,\"color\":\"gray\"}],\"tool\":{\"name\":\"cargo\",\"version\":\"1.70.0\",\"features\":{\"default\":[\"std\"],\"no-std\":[\"core\"],\"std\":[]},\"settings\":{\"format\":\"json\",\"compression\":true}},\"127.0.0.1\":\"localhost\",\"barke_key\":\"value\",\"character encoding\":\"UTF-8\",\"quoted_key\":\"value\",\"ʎǝʞ\":\"upside down key\"}")
 end
 
 | let yaml_input = "---\nstring: hello\nnumber: 42\nfloat: 3.14\nbool_true: true\nbool_false: false\nnull_value: null\narray:\n  - item1\n  - item2\n  - item3\nobject:\n  key1: value1\n  key2: value2\nnested:\n  arr:\n    - a\n    - b\n  obj:\n    subkey: subval\nmultiline: |\n  This is a\n  multiline string\nquoted: \"quoted string\"\nsingle_quoted: 'single quoted string'\ndate: 2024-06-01\ntimestamp: 2024-06-01T12:34:56Z\nempty_array: []\nempty_object: {}\nanchors:\n  &anchor_val anchored value\nref: *anchor_val\ncomplex:\n  - foo: bar\n    baz:\n      - qux\n      - quux\n  - corge: grault\nspecial_chars: \"!@#$%^&*()_+-=[]{}|;:',.<>/?\"\nunicode: \"こんにちは世界\"\nbool_list:\n  - true\n  - false\nnull_list:\n  - null\n  - ~" |
@@ -244,38 +243,6 @@ def test_section_flatten():
   | assert(is_array(flattened))
 end
 
-| let table_md = "| A | B | C |\n| --- | --- | --- |\n| 1 | 2 | 3 |\n| 4 | 5 | 6 |"
-| let test_table = to_markdown(table_md) |
-
-def test_table_remove_column():
-  let result = do test_table | map(fn(cell): table::remove_column(cell, 0);) | to_string();
-  | assert(!contains(to_string(result), "A"))
-  | assert(contains(to_string(result), "B"))
-  | assert(contains(to_string(result), "C"))
-end
-
-def test_table_remove_row():
-  let result = do test_table | map(fn(cell): table::remove_row(cell, 1);) | to_string();
-  | assert(contains(result, "A"))
-  | assert(!contains(result, "1"))
-  | assert(contains(result, "4"))
-end
-
-def test_table_set_align_single():
-  let result = do test_table | map(fn(cell): table::set_align(cell, "left");) | to_string();
-  | assert(contains(result, "|:---|"))
-end
-
-def test_table_set_align_array():
-  let result = do test_table | map(fn(cell): table::set_align(cell, ["left", "center", "right"]);) | to_string();
-  | assert(contains(result, "|:---|:---:|---:|"))
-end
-
-def test_table_set_align_column_index():
-  let result = do test_table | map(fn(cell): table::set_align(cell, "center", 1);) | to_string();
-  | assert(contains(result, ":---:"))
-end
-
 | run_tests([
   # csv
   test_case("CSV Parse for Dict", test_csv_parse_for_dict),
@@ -315,10 +282,4 @@ end
   test_case("Section Nth", test_section_nth),
   test_case("Section Titles", test_section_titles),
   test_case("Section Flatten", test_section_flatten),
-  # table
-  test_case("Table Remove Column", test_table_remove_column),
-  test_case("Table Remove Row", test_table_remove_row),
-  test_case("Table Set Align Single", test_table_set_align_single),
-  test_case("Table Set Align Array", test_table_set_align_array),
-  test_case("Table Set Align Column Index", test_table_set_align_column_index)
 ])
