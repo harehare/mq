@@ -538,4 +538,3 @@ end
 
 # Loads a markdown file from the specified path
 def load_markdown(path): read_file(path) | to_markdown();
-
