@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-lang"
 readme = "../../README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.12"
+version = "0.5.13"
 
 [dependencies]
 base64 = {workspace = true}
