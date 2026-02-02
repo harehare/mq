@@ -204,6 +204,7 @@ def is_text(text): to_md_name(text) == "text";
 def is_list(list): to_md_name(list) == "list";
 
 # Checks if markdown node's URL matches a specified URL
+# deprecated: use select(.link.url == url) instead
 def matches_url(node, url): get_url(node) == url;
 
 # Checks if markdown is MDX Flow Expression
@@ -534,4 +535,7 @@ def rpad(s, length, pad_str = " "):
         | s + final_pad
       end
 end
+
+# Loads a markdown file from the specified path
+def load_markdown(path): read_file(path) | to_markdown();
 
