@@ -896,6 +896,20 @@ impl Formatter {
 
     fn format_ident(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
+
+        // Check if this is a variadic parameter (exactly 1 child with Asterisk token)
+        let is_variadic = node.children.len() == 1
+            && node.children[0]
+                .token
+                .as_ref()
+                .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::Asterisk));
+
+        if is_variadic {
+            self.output.push('*');
+            self.output.push_str(&node.to_string());
+            return;
+        }
+
         self.output.push_str(&node.to_string());
 
         // Handle parameter with default value
@@ -2731,6 +2745,13 @@ end
         a+b+c;",
         "def calc(a = 1, b = 2, c = 3 + 1):
   a + b + c;
+"
+    )]
+    #[case::def_expr_with_variadic(
+        "def calc(v,*args):
+        v + args;",
+        "def calc(v, *args):
+  v + args;
 "
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {

@@ -1138,6 +1138,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             ));
         }
 
+        // Macros should not support variadic parameters
+        if params.iter().any(|p| p.is_variadic) {
+            return Err(SyntaxError::MacroParametersCannotBeVariadic(
+                (*self.token_arena[macro_token_id]).clone(),
+            ));
+        }
+
         self.consume_colon();
 
         let expr = match self.tokens.next() {
@@ -1823,6 +1830,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let mut params: Params = SmallVec::new();
         let mut prev_token: Option<&TokenKind> = None;
         let mut seen_default = false;
+        let mut seen_variadic = false;
 
         while let Some(token) = self.tokens.next() {
             match &token.kind {
@@ -1854,7 +1862,32 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     None => return Err(SyntaxError::UnexpectedToken((**token).clone())),
                 },
                 TokenKind::SemiColon => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+                TokenKind::Asterisk => {
+                    // Variadic parameter: *name
+                    if seen_variadic {
+                        return Err(SyntaxError::MultipleVariadicParameters((**token).clone()));
+                    }
+                    let ident_token = match self.tokens.next() {
+                        Some(t) => t,
+                        None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+                    };
+                    match &ident_token.kind {
+                        TokenKind::Ident(name) => {
+                            let ident = IdentWithToken::new_with_token(name, Some(Shared::clone(ident_token)));
+                            params.push(Param::variadic(ident));
+                            seen_variadic = true;
+                        }
+                        _ => {
+                            return Err(SyntaxError::UnexpectedToken((**ident_token).clone()));
+                        }
+                    }
+                }
                 TokenKind::Ident(name) => {
+                    // Non-variadic param after variadic is an error
+                    if seen_variadic {
+                        return Err(SyntaxError::VariadicParameterMustBeLast((**token).clone()));
+                    }
+
                     // Parse parameter name
                     let ident = IdentWithToken::new_with_token(name, Some(Shared::clone(token)));
 
@@ -6394,6 +6427,100 @@ mod tests {
                 )),
             }),
         ]))]
+    #[case::def_with_variadic_param(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(SmolStr::new("f"))),
+            token(TokenKind::LParen),
+            token(TokenKind::Asterisk),
+            token(TokenKind::Ident(SmolStr::new("args"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("args"))),
+            token(TokenKind::SemiColon)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Def(
+                        IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
+                        smallvec![
+                            Param::variadic(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args"))))))),
+                        ],
+                        vec![Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args")))))))),
+                        })],
+                )),
+            }),
+        ]))]
+    #[case::def_with_regular_and_variadic_param(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(SmolStr::new("f"))),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("a"))),
+            token(TokenKind::Comma),
+            token(TokenKind::Asterisk),
+            token(TokenKind::Ident(SmolStr::new("rest"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("rest"))),
+            token(TokenKind::SemiColon)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Def(
+                        IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
+                        smallvec![
+                            Param::new(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
+                            Param::variadic(IdentWithToken::new_with_token("rest", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("rest"))))))),
+                        ],
+                        vec![Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("rest", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("rest")))))))),
+                        })],
+                )),
+            }),
+        ]))]
+    #[case::def_variadic_param_not_last(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(SmolStr::new("f"))),
+            token(TokenKind::LParen),
+            token(TokenKind::Asterisk),
+            token(TokenKind::Ident(SmolStr::new("a"))),
+            token(TokenKind::Comma),
+            token(TokenKind::Ident(SmolStr::new("b"))),
+            token(TokenKind::RParen),
+        ],
+        Err(SyntaxError::VariadicParameterMustBeLast(Token{range: Range::default(), kind: TokenKind::Ident(SmolStr::new("b")), module_id: 1.into()})))]
+    #[case::def_multiple_variadic_params(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(SmolStr::new("f"))),
+            token(TokenKind::LParen),
+            token(TokenKind::Asterisk),
+            token(TokenKind::Ident(SmolStr::new("a"))),
+            token(TokenKind::Comma),
+            token(TokenKind::Asterisk),
+            token(TokenKind::Ident(SmolStr::new("b"))),
+            token(TokenKind::RParen),
+        ],
+        Err(SyntaxError::MultipleVariadicParameters(Token{range: Range::default(), kind: TokenKind::Asterisk, module_id: 1.into()})))]
+    #[case::macro_variadic_param(
+        vec![
+            token(TokenKind::Macro),
+            token(TokenKind::Ident(SmolStr::new("m"))),
+            token(TokenKind::LParen),
+            token(TokenKind::Asterisk),
+            token(TokenKind::Ident(SmolStr::new("args"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("args"))),
+        ],
+        Err(SyntaxError::MacroParametersCannotBeVariadic(Token{range: Range::default(), kind: TokenKind::Macro, module_id: 1.into()})))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, SyntaxError>) {
         let mut arena = Arena::new(10);
         let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();

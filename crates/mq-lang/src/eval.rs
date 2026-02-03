@@ -1456,12 +1456,27 @@ impl<T: ModuleResolver> Evaluator<T> {
             self.debugger.write().unwrap().push_call_stack(Shared::clone(&node));
 
             let new_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(fn_env))));
-            let required_params = params.iter().filter(|p| p.default.is_none()).count();
+            let has_variadic = params.iter().any(|p| p.is_variadic);
+            let required_params = params.iter().filter(|p| p.default.is_none() && !p.is_variadic).count();
 
             let arg_count = args.len();
             let param_count = params.len();
 
-            let use_self_param = if arg_count >= required_params && arg_count <= param_count {
+            let use_self_param = if has_variadic {
+                if arg_count >= required_params {
+                    false
+                } else if arg_count + 1 >= required_params {
+                    true
+                } else {
+                    return Err(RuntimeError::InvalidNumberOfArguments {
+                        token: (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
+                        name: ident.to_string(),
+                        expected: required_params as u8,
+                        actual: args.len() as u8,
+                    }
+                    .into());
+                }
+            } else if arg_count >= required_params && arg_count <= param_count {
                 false
             } else if arg_count + 1 >= required_params && arg_count < param_count {
                 true
@@ -1483,7 +1498,14 @@ impl<T: ModuleResolver> Evaluator<T> {
             }
 
             for param in param_iter {
-                if let Some(arg) = arg_iter.next() {
+                if param.is_variadic {
+                    // Collect all remaining arguments into an array
+                    let mut variadic_args = Vec::new();
+                    for arg in arg_iter.by_ref() {
+                        variadic_args.push(self.eval_expr(runtime_value, arg, env)?);
+                    }
+                    define(&new_env, param.ident.name, RuntimeValue::Array(variadic_args));
+                } else if let Some(arg) = arg_iter.next() {
                     let val = self.eval_expr(runtime_value, arg, env)?;
                     define(&new_env, param.ident.name, val);
                 } else if let Some(default_expr) = &param.default {

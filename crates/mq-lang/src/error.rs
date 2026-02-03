@@ -195,6 +195,15 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::MacroParametersCannotHaveDefaults(_)) => {
                 Some(Cow::Borrowed("Macro parameters cannot have default values."))
             }
+            InnerError::Syntax(SyntaxError::VariadicParameterMustBeLast(_)) => Some(Cow::Borrowed(
+                "Variadic parameter (*) must be the last parameter in the parameter list.",
+            )),
+            InnerError::Syntax(SyntaxError::MultipleVariadicParameters(_)) => Some(Cow::Borrowed(
+                "Only one variadic parameter (*) is allowed per function.",
+            )),
+            InnerError::Syntax(SyntaxError::MacroParametersCannotBeVariadic(_)) => {
+                Some(Cow::Borrowed("Macro parameters cannot be variadic."))
+            }
             InnerError::Runtime(RuntimeError::UserDefined { .. }) => {
                 Some(Cow::Borrowed("A user-defined error occurred during evaluation."))
             }
@@ -308,6 +317,15 @@ impl Diagnostic for Error {
             ),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotHaveDefaults(_))) => Some(
                 Cow::Borrowed("Parse error in module: macro parameters cannot have default values."),
+            ),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::VariadicParameterMustBeLast(_))) => Some(
+                Cow::Borrowed("Parse error in module: variadic parameter must be the last parameter."),
+            ),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MultipleVariadicParameters(_))) => Some(
+                Cow::Borrowed("Parse error in module: only one variadic parameter is allowed."),
+            ),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotBeVariadic(_))) => Some(
+                Cow::Borrowed("Parse error in module: macro parameters cannot be variadic."),
             ),
             InnerError::Runtime(RuntimeError::UndefinedMacro(_)) => {
                 Some(Cow::Borrowed("Macro expansion error: undefined macro used."))
