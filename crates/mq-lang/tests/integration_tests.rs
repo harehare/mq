@@ -1920,6 +1920,27 @@ fn engine() -> DefaultEngine {
     to_markdown("```\ntest\n```") | .code | first() | .code.value |= "updated" | .code.value | to_text()"#,
     vec!["".into()],
     Ok(vec!["updated".into()].into()))]
+#[case::variadic_all_args("def f(*args): args; | f(1, 2, 3)",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])].into()))]
+#[case::variadic_with_regular_param("def f(a, *rest): rest; | f(1, 2, 3)",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])].into()))]
+#[case::variadic_empty_rest("def f(a, *rest): rest; | f(1)",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Array(vec![])].into()))]
+#[case::variadic_no_args("def f(*args): args; | f()",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Array(vec![])].into()))]
+#[case::variadic_with_pipe("def f(a, *rest): [a, rest]; | 10 | f(20, 30)",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(20.into()), RuntimeValue::Array(vec![RuntimeValue::Number(30.into())])])].into()))]
+#[case::variadic_with_two_regular_params("def f(a, b, *rest): [a, b, rest]; | f(1, 2, 3, 4)",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Array(vec![RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())])])].into()))]
+#[case::variadic_fn_syntax("let g = fn(*args): args; | g(1, 2)",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())])].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
@@ -1953,6 +1974,9 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
     | double(1, 2, 3)
     ", vec![RuntimeValue::Number(0.into())],)]
 #[case::unquote_outside_quote("unquote(5)", vec![RuntimeValue::Number(0.into())],)]
+#[case::variadic_not_last_param("def f(*a, b): a", vec![RuntimeValue::Number(0.into())],)]
+#[case::multiple_variadic_params("def f(*a, *b): a", vec![RuntimeValue::Number(0.into())],)]
+#[case::macro_variadic_param("macro m(*args): args", vec![RuntimeValue::Number(0.into())],)]
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
 }

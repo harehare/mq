@@ -25,7 +25,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
                                     format!(
                                         "```mq\n{}({})\n```\n\n{deprecated_notice}{doc}",
                                         &symbol.value.unwrap_or_default(),
-                                        args.iter().map(|p| p.name.as_str()).join(", "),
+                                        args.iter().map(|p| p.to_string()).join(", "),
                                         deprecated_notice = deprecated_notice,
                                         doc = symbol.doc.iter().map(|(_, doc)| doc).join("\n")
                                     )

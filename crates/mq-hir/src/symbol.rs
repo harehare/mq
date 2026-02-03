@@ -12,6 +12,7 @@ slotmap::new_key_type! { pub struct SymbolId; }
 pub struct ParamInfo {
     pub name: SmolStr,
     pub has_default: bool,
+    pub is_variadic: bool,
 }
 
 impl From<&str> for ParamInfo {
@@ -19,13 +20,18 @@ impl From<&str> for ParamInfo {
         ParamInfo {
             name: SmolStr::from(name),
             has_default: false,
+            is_variadic: false,
         }
     }
 }
 
 impl std::fmt::Display for ParamInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)
+        if self.is_variadic {
+            write!(f, "*{}", self.name)
+        } else {
+            write!(f, "{}", self.name)
+        }
     }
 }
 
@@ -150,7 +156,7 @@ impl Symbol {
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match &self.kind {
-            SymbolKind::Function(args) => &format!("function({})", args.iter().map(|p| p.name.as_str()).join(", ")),
+            SymbolKind::Function(args) => &format!("function({})", args.iter().map(|p| p.to_string()).join(", ")),
             _ => self.value.as_ref().map_or("", |value| value.as_str()),
         };
         write!(f, "{}", s)
@@ -175,7 +181,7 @@ mod tests {
 
     #[rstest]
     #[case(SymbolKind::Function(Vec::new()), true)]
-    #[case(SymbolKind::Function(vec![ParamInfo { name: SmolStr::from("param"), has_default: false }]), true)]
+    #[case(SymbolKind::Function(vec![ParamInfo { name: SmolStr::from("param"), has_default: false, is_variadic: false }]), true)]
     #[case(SymbolKind::Variable, false)]
     #[case(SymbolKind::Call, false)]
     fn test_is_function(#[case] kind: SymbolKind, #[case] expected: bool) {

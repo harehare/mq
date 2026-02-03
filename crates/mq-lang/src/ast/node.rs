@@ -17,11 +17,16 @@ use std::{
 pub struct Param {
     pub ident: IdentWithToken,
     pub default: Option<Shared<Node>>,
+    pub is_variadic: bool,
 }
 
 impl Display for Param {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.ident)
+        if self.is_variadic {
+            write!(f, "*{}", self.ident)
+        } else {
+            write!(f, "{}", self.ident)
+        }
     }
 }
 
@@ -34,6 +39,16 @@ impl Param {
         Self {
             ident: name,
             default: default_value,
+            is_variadic: false,
+        }
+    }
+
+    /// Creates a variadic parameter (e.g., `*args`)
+    pub fn variadic(name: IdentWithToken) -> Self {
+        Self {
+            ident: name,
+            default: None,
+            is_variadic: true,
         }
     }
 }
