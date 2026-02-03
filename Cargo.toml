@@ -64,7 +64,7 @@ percent-encoding = "2.3.2"
 proptest = "1.9"
 pyo3 = "0.27.2"
 rayon = "1.11.0"
-regex-lite = "0.1.8"
+regex-lite = "0.1.9"
 reqwest = {version = "0.12", default-features = false}
 robots_txt = "0.7"
 rstest = "0.26.1"
