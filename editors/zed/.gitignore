@@ -1,2 +1,2 @@
-*.wasm
 /grammars/*
+extension.wasm
