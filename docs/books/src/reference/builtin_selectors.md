@@ -2,14 +2,14 @@
 
 | Selector Name           | Description                                                     | Parameters      | Example                 |
 | ----------------------- | --------------------------------------------------------------- | --------------- | ----------------------- |
-| `.h`, `.h(depth)`       | Selects a heading node with the specified depth.                | None, `depth`   | `.h`, `.h(6)`           |
+| `.h`       | Selects a heading node with the specified depth.                | None   | `.h`           |
 | `.h1`                   | Selects a heading node with the 1 depth.                        | None            | `.h1`                   |
 | `.h2`                   | Selects a heading node with the 2 depth.                        | None            | `.h2`                   |
 | `.h3`                   | Selects a heading node with the 3 depth.                        | None            | `.h3`                   |
 | `.h4`                   | Selects a heading node with the 4 depth.                        | None            | `.h4`                   |
 | `.h5`                   | Selects a heading node with the 5 depth.                        | None            | `.h5`                   |
 | `.h6`                   | Selects a heading node with the 6 depth.                        | None            | `.h6`                   |
-| `.code`                 | Selects a code block node with the specified language.          | `lang`          | `.code "rust"`          |
+| `.code`                 | Selects a code block node with the specified language.          | None          | `.code`          |
 | `.code_inline`          | Selects an inline code node.                                    | None            | `.code_inline`          |
 | `.inline_math`          | Selects an inline math node.                                    | None            | `.inline_math`          |
 | `.strong`               | Selects a strong (bold) node.                                   | None            | `.strong`               |

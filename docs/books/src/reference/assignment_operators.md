@@ -8,7 +8,7 @@ The basic assignment operator (`=`) assigns a value to a variable.
 
 ### Usage
 
-```js
+```mq
 let x = 10 |
 let name = "mq" |
 let items = [1, 2, 3]
@@ -20,7 +20,7 @@ The update operator (`|=`) applies an expression to a selected value and updates
 
 ### Usage
 
-```js
+```mq
 <selector.value> |= expr
 ```
 
@@ -28,7 +28,7 @@ The left side specifies what to update using a selector, and the right side is t
 
 ### Examples
 
-```js
+```mq
 # Update a code block
 .code.value |= "test" | to_text()
 # => test
@@ -46,7 +46,7 @@ Compound assignment operators combine an arithmetic or logical operation with as
 
 Adds a value to a variable and assigns the result back to the variable.
 
-```js
+```mq
 var x = 10 |
 x += 5
 # => x is now 15
@@ -60,7 +60,7 @@ count += 1
 
 Subtracts a value from a variable and assigns the result back to the variable.
 
-```js
+```mq
 var x = 10 |
 x -= 3
 # => x is now 7
@@ -74,7 +74,7 @@ balance -= 25
 
 Multiplies a variable by a value and assigns the result back to the variable.
 
-```js
+```mq
 var x = 5 |
 x *= 3
 # => x is now 15
@@ -88,7 +88,7 @@ price *= 1.1
 
 Divides a variable by a value and assigns the result back to the variable.
 
-```js
+```mq
 var x = 20 |
 x /= 4
 # => x is now 5
@@ -102,7 +102,7 @@ total /= 2
 
 Computes the remainder of dividing a variable by a value and assigns the result back to the variable.
 
-```js
+```mq
 var x = 17 |
 x %= 5
 # => x is now 2
@@ -116,7 +116,7 @@ count %= 10
 
 Divides a variable by a value, floors the result (rounds down to the nearest integer), and assigns it back to the variable.
 
-```ruby
+```mq
 var x = 17 |
 x //= 5
 # => x is now 3

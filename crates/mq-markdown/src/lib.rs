@@ -83,11 +83,11 @@ mod markdown;
 mod node;
 pub use markdown::{Markdown, to_html};
 pub use node::{
-    AttrValue, Blockquote, Break, Code, CodeInline, Definition, Delete, Emphasis, Footnote, FootnoteRef, Fragment,
-    Heading, HorizontalRule, Html, Image, ImageRef, Link, LinkRef, List, ListStyle, Math, MathInline,
-    MdxFlowExpression, MdxJsEsm, MdxJsxFlowElement, MdxJsxTextElement, MdxTextExpression, Node, Point, Position,
-    RenderOptions, Strong, TableAlignKind, TableCell, TableHeader, TableRow, Text, Title, TitleSurroundStyle, Toml,
-    Url, UrlSurroundStyle, Yaml,
+    Blockquote, Break, Code, CodeInline, Definition, Delete, Emphasis, Footnote, FootnoteRef, Fragment, Heading,
+    HorizontalRule, Html, Image, ImageRef, Link, LinkRef, List, ListStyle, Math, MathInline, MdxFlowExpression,
+    MdxJsEsm, MdxJsxFlowElement, MdxJsxTextElement, MdxTextExpression, Node, Point, Position, RenderOptions, Strong,
+    TableAlign, TableAlignKind, TableCell, TableRow, Text, Title, TitleSurroundStyle, Toml, Url, UrlSurroundStyle,
+    Yaml, attr_value::AttrValue,
 };
 
 #[cfg(feature = "html-to-markdown")]

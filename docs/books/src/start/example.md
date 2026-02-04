@@ -8,7 +8,7 @@ This page demonstrates practical examples of mq queries for common Markdown proc
 
 Extract all headings from a markdown document:
 
-```js
+```mq
 .h
 ```
 
@@ -27,7 +27,7 @@ Extract all headings from a markdown document:
 
 Extract the second row from a markdown table:
 
-```js
+```mq
 .[1][]
 ```
 **Input example**:
@@ -45,7 +45,7 @@ Extract the second row from a markdown table:
 
 Extract the second list from the document:
 
-```js
+```mq
 .[1]
 ```
 
@@ -55,13 +55,13 @@ Extract the second list from the document:
 
 Filter out all code blocks from a document, keeping only prose content:
 
-```js
+```mq
 select(!.code)
 ```
 
 **Input example**:
 
-```markdown
+````markdown
 This is a paragraph.
 
 ```js
@@ -69,7 +69,7 @@ console.log("code");
 ```
 
 Another paragraph.
-```
+````
 
 **Output**: Returns only the paragraph elements, excluding the code block.
 
@@ -77,25 +77,25 @@ Another paragraph.
 
 Select only code blocks with a specific language:
 
-```js
+```mq
 select(.code.lang == "js")
 ```
 
 **Input example**:
 
-```markdown
-````js
+````markdown
+```js
 const x = 1;
-````
-
-````python
-x = 1
-````
-
-````js
-const y = 2;
-````
 ```
+
+```python
+x = 1
+```
+
+```js
+const y = 2;
+```
+````
 
 **Output**: Returns only the two JavaScript code blocks.
 
@@ -103,7 +103,7 @@ const y = 2;
 
 Get a list of all programming languages used in code blocks:
 
-```js
+```mq
 .code.lang
 ```
 
@@ -115,7 +115,7 @@ Get a list of all programming languages used in code blocks:
 
 Select all MDX components (JSX-like elements in Markdown):
 
-```python
+```mq
 select(is_mdx())
 ```
 
@@ -138,7 +138,7 @@ Another paragraph.
 
 Get all URLs from markdown links:
 
-```js
+```mq
 .link.url
 ```
 
@@ -155,7 +155,7 @@ Check out [mq](https://mqlang.org) and [GitHub](https://github.com).
 
 Create a hierarchical table of contents from headings:
 
-```js
+```mq
 .h
 | let link = to_link("#" + to_text(self), to_text(self), "")
 | let level = .h.depth
@@ -184,7 +184,7 @@ Create a hierarchical table of contents from headings:
 
 Create an XML sitemap from markdown files:
 
-```scala
+```mq
 def sitemap(item, base_url):
     let path = replace(to_text(item), ".md", ".html")
     | let loc = base_url + path
@@ -215,7 +215,7 @@ $ mq 'sitemap(__FILE__, "https://example.com")' docs/**/*.md
 
 Create reusable functions for complex transformations:
 
-```ruby
+```mq
 def snake_to_camel(x):
   let words = split(x, "_")
   | foreach (word, words):
@@ -234,7 +234,7 @@ end
 
 Transform each element in an array:
 
-```js
+```mq
 map([1, 2, 3, 4, 5], fn(x): x + 1;)
 ```
 
@@ -244,7 +244,7 @@ map([1, 2, 3, 4, 5], fn(x): x + 1;)
 
 Select elements that meet a condition:
 
-```js
+```mq
 filter([5, 15, 8, 20, 3], fn(x): x > 10;)
 ```
 
@@ -254,7 +254,7 @@ filter([5, 15, 8, 20, 3], fn(x): x > 10;)
 
 Combine array elements into a single value:
 
-```js
+```mq
 fold([1, 2, 3, 4], 0, fn(acc, x): acc + x;)
 ```
 
@@ -326,7 +326,7 @@ $ mq -P 5 '.h1' docs/**/*.md
 
 Extract specific sections to create focused context for LLM inputs:
 
-```js
+```mq
 select(.h || .code) | self[:10]
 ```
 
@@ -343,7 +343,7 @@ $ mq -A 'let headers = count_by(fn(x): x | select(.h);)
 ```
 ### Generate Documentation Index
 
-```js
+```mq
 .h
 | let level = .h.level
 | let text = to_text(self)

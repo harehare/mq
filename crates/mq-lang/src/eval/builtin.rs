@@ -140,6 +140,16 @@ define_builtin!(
     }
 );
 
+define_builtin!(DEBUG, ParamNum::Range(1, u8::MAX), |_, current_value, args, _| {
+    if args.len() == 1 {
+        eprintln!("DEBUG: {}", args[0]);
+    } else {
+        eprintln!("DEBUG:\n{}", args.iter().map(|v| format!(" - {}", v)).join("\n"));
+    }
+
+    Ok(current_value.clone())
+});
+
 define_builtin!(TYPE, ParamNum::Fixed(1), |_, _, args, _| match args.first() {
     Some(value) => Ok(value.name().to_string().into()),
     None => Ok(RuntimeValue::NONE),
@@ -1647,38 +1657,28 @@ define_builtin!(TO_MD_LIST, ParamNum::Fixed(2), |_, _, args, _| match args.as_sl
 });
 
 define_builtin!(TO_MD_TABLE_ROW, ParamNum::Range(1, u8::MAX), |_, _, args, _| {
-    let args_num = args.len();
     let mut current_index = 0;
     let values = args
         .iter()
-        .enumerate()
-        .flat_map(|(i, arg)| match arg {
-            RuntimeValue::Array(array) => {
-                let array_num = array.len();
-                array
-                    .iter()
-                    .enumerate()
-                    .map(move |(j, v)| {
-                        current_index += 1;
-                        mq_markdown::Node::TableCell(mq_markdown::TableCell {
-                            row: 0,
-                            column: current_index - 1,
-                            values: vec![v.to_string().into()],
-                            last_cell_in_row: i == args_num - 1 && j == array_num - 1,
-                            last_cell_of_in_table: false,
-                            position: None,
-                        })
+        .flat_map(|arg| match arg {
+            RuntimeValue::Array(array) => array
+                .iter()
+                .map(move |v| {
+                    current_index += 1;
+                    mq_markdown::Node::TableCell(mq_markdown::TableCell {
+                        row: 0,
+                        column: current_index - 1,
+                        values: vec![v.to_string().into()],
+                        position: None,
                     })
-                    .collect::<Vec<_>>()
-            }
+                })
+                .collect::<Vec<_>>(),
             v => {
                 current_index += 1;
                 vec![mq_markdown::Node::TableCell(mq_markdown::TableCell {
                     row: 0,
                     column: current_index - 1,
                     values: vec![v.to_string().into()],
-                    last_cell_in_row: i == args_num - 1,
-                    last_cell_of_in_table: false,
                     position: None,
                 })]
             }
@@ -2395,6 +2395,7 @@ const HASH_TO_TEXT: u64 = fnv1a_hash_64("to_text");
 const HASH_TRUNC: u64 = fnv1a_hash_64("trunc");
 const HASH_TRIM: u64 = fnv1a_hash_64("trim");
 const HASH_TYPE: u64 = fnv1a_hash_64("type");
+const HASH_DEBUG: u64 = fnv1a_hash_64("debug");
 const HASH_UNIQ: u64 = fnv1a_hash_64("uniq");
 const HASH_UPDATE: u64 = fnv1a_hash_64("update");
 const HASH_UPCASE: u64 = fnv1a_hash_64("upcase");
@@ -2430,6 +2431,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_DICT => Some(&DICT),
         HASH_DIV => Some(&DIV),
         HASH_DOWNCASE => Some(&DOWNCASE),
+        HASH_DEBUG => Some(&DEBUG),
         HASH_ENDS_WITH => Some(&ENDS_WITH),
         HASH_ENTRIES => Some(&ENTRIES),
         HASH_EQ => Some(&EQ),
@@ -2723,6 +2725,14 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
     );
 
     map.insert(
+        SmolStr::new(".table_align"),
+        BuiltinSelectorDoc {
+            description: "Selects a table align node.",
+            params: &[],
+        },
+    );
+
+    map.insert(
         SmolStr::new(".html"),
         BuiltinSelectorDoc {
             description: "Selects an HTML node.",
@@ -2945,6 +2955,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Prints a message to standard output and returns the current value.",
             params: &["message"],
+        },
+    );
+    map.insert(
+        SmolStr::new("debug"),
+        BuiltinFunctionDoc {
+            description: "Prints the debug information of the given value(s).",
+            params: &["values"],
         },
     );
     map.insert(
@@ -3832,8 +3849,6 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> bool {
                 mq_markdown::Node::TableCell(mq_markdown::TableCell {
                     column: column2,
                     row: row2,
-                    last_cell_in_row: _,
-                    last_cell_of_in_table: _,
                     ..
                 }),
             ) => *row1 == row2 && *column1 == column2,
@@ -3841,9 +3856,10 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> bool {
             (None, Some(column1), mq_markdown::Node::TableCell(mq_markdown::TableCell { column: column2, .. })) => {
                 *column1 == column2
             }
-            (None, None, mq_markdown::Node::TableCell(_)) | (None, None, mq_markdown::Node::TableHeader(_)) => true,
+            (None, None, mq_markdown::Node::TableCell(_)) | (None, None, mq_markdown::Node::TableAlign(_)) => true,
             _ => false,
         },
+        Selector::TableAlign => node.is_table_align(),
         Selector::Html => node.is_html(),
         Selector::Footnote => node.is_footnote(),
         Selector::MdxJsxFlowElement => node.is_mdx_jsx_flow_element(),
@@ -4330,40 +4346,37 @@ mod tests {
         false
     )]
     #[case::table_cell_with_matching_row_col(
-        Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()],
-                                               last_cell_in_row: false, last_cell_of_in_table: false, position: None }),
+        Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()], position: None }),
         Selector::Table(Some(1), Some(2)),
         true
     )]
     #[case::table_cell_with_wrong_row(
-        Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()],
-                                               last_cell_in_row: false, last_cell_of_in_table: false, position: None }),
+        Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()], position: None }),
         Selector::Table(Some(2), Some(2)),
         false
     )]
     #[case::table_cell_with_only_row(
-        Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()],
-                                               last_cell_in_row: false, last_cell_of_in_table: false, position: None }),
+        Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()], position: None }),
         Selector::Table(Some(1), None),
         true
     )]
     #[case::table_header_with_no_row_col(
-        Node::TableHeader(mq_markdown::TableHeader { align: vec![], position: None }),
+        Node::TableAlign(mq_markdown::TableAlign { align: vec![], position: None }),
         Selector::Table(None, None),
         true
     )]
     #[case::table_header_with_only_row(
-        Node::TableHeader(mq_markdown::TableHeader { align: vec![], position: None }),
+        Node::TableAlign(mq_markdown::TableAlign { align: vec![], position: None }),
         Selector::Table(Some(2), None),
         false
     )]
     #[case::table_header_with_only_col(
-        Node::TableHeader(mq_markdown::TableHeader { align: vec![], position: None }),
+        Node::TableAlign(mq_markdown::TableAlign { align: vec![], position: None }),
         Selector::Table(None, Some(3)),
         false
     )]
     #[case::table_header_with_row_col(
-        Node::TableHeader(mq_markdown::TableHeader { align: vec![], position: None }),
+        Node::TableAlign(mq_markdown::TableAlign { align: vec![], position: None }),
         Selector::Table(Some(1), Some(1)),
         false
     )]

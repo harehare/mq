@@ -26,6 +26,11 @@ def filter_sections(md_nodes, predicate):
   sections(md_nodes) | filter(fn(section): predicate(section);)
 end
 
+# Maps sections using a given mapper function.
+def map_sections(md_nodes, mapper):
+  sections(md_nodes) | map(fn(section): mapper(section[:header], section[:children]);)
+end
+
 # Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.
 def split(md_nodes, level):
   if (is_empty(md_nodes)):

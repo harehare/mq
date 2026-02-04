@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-formatter"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.12"
+version = "0.5.13"
 
 [dependencies]
 mq-lang = {workspace = true, features = ["cst"]}
@@ -17,3 +17,8 @@ rustc-hash = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}
+divan = {workspace = true}
+
+[[bench]]
+harness = false
+name = "benchmark"

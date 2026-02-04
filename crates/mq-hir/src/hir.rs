@@ -1155,11 +1155,19 @@ impl Hir {
                 // Check if parameter has default value
                 // In CST, param with default has children: ident, '=', default_expr
                 let has_default = child.children.len() > 1;
+                // Check if parameter is variadic
+                // In CST, variadic param has exactly 1 child with Asterisk token
+                let is_variadic = child.children.len() == 1
+                    && child.children[0]
+                        .token
+                        .as_ref()
+                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::Asterisk));
                 let param_name = child.name().unwrap_or("arg".into());
 
                 param_info.push(ParamInfo {
                     name: param_name.clone(),
                     has_default,
+                    is_variadic,
                 });
 
                 self.add_symbol(Symbol {
@@ -1233,11 +1241,17 @@ impl Hir {
             params.iter().skip(1).for_each(|child| {
                 // Macros should not have defaults, but we still need to store param info
                 let has_default = child.children.len() > 1;
+                let is_variadic = child.children.len() == 1
+                    && child.children[0]
+                        .token
+                        .as_ref()
+                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::Asterisk));
                 let param_name = child.name().unwrap_or("arg".into());
 
                 param_info.push(ParamInfo {
                     name: param_name.clone(),
                     has_default,
+                    is_variadic,
                 });
 
                 self.add_symbol(Symbol {
@@ -1334,11 +1348,18 @@ impl Hir {
                 // Check if parameter has default value
                 // In CST, param with default has children: ident, '=', default_expr
                 let has_default = child.children.len() > 1;
+                // Check if parameter is variadic
+                let is_variadic = child.children.len() == 1
+                    && child.children[0]
+                        .token
+                        .as_ref()
+                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::Asterisk));
                 let param_name = child.name().unwrap_or("arg".into());
 
                 param_info.push(crate::symbol::ParamInfo {
                     name: param_name.clone(),
                     has_default,
+                    is_variadic,
                 });
 
                 self.add_symbol(Symbol {

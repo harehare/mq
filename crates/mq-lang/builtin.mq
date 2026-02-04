@@ -204,6 +204,7 @@ def is_text(text): to_md_name(text) == "text";
 def is_list(list): to_md_name(list) == "list";
 
 # Checks if markdown node's URL matches a specified URL
+# deprecated: use select(.link.url == url) instead
 def matches_url(node, url): get_url(node) == url;
 
 # Checks if markdown is MDX Flow Expression
@@ -239,9 +240,6 @@ def fill(value, n):
   else:
     foreach (i, range(0, n - 1)): value;
 end
-
-# Prints the debug information of the given value.
-def debug(msg): stderr(s"DEBUG: ${to_string(msg)}");
 
 # Sorts an array using a key function that extracts a comparable value for each element.
 def sort_by(arr, f):
@@ -510,3 +508,33 @@ def inspect(value) do
   | value
 end
 
+# Left-pads a string to a specified length using a given padding string.
+def lpad(s, length, pad_str = " "):
+  let pad_needed = length - len(s)
+  | if (pad_needed <= 0):
+      s
+    else: do
+        let full_repeats = floor(pad_needed / len(pad_str))
+        | let remainder = pad_needed % len(pad_str)
+        | let full_pad = do foreach (_, range(0, full_repeats - 1)): pad_str; | join("");
+        | let final_pad = full_pad + slice(pad_str, 0, remainder)
+        | final_pad + s
+      end
+end
+
+# Right-pads a string to a specified length using a given padding string.
+def rpad(s, length, pad_str = " "):
+  let pad_needed = length - len(s)
+  | if (pad_needed <= 0):
+      s
+    else: do
+        let full_repeats = floor(pad_needed / len(pad_str))
+        | let remainder = pad_needed % len(pad_str)
+        | let full_pad = do foreach (_, range(0, full_repeats - 1)): pad_str; | join("");
+        | let final_pad = full_pad + slice(pad_str, 0, remainder)
+        | s + final_pad
+      end
+end
+
+# Loads a markdown file from the specified path
+def load_markdown(path): read_file(path) | to_markdown();

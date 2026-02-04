@@ -22,7 +22,7 @@
 | `compact_map` |  Maps over an array and removes None values from the result. | `arr`, `f` | compact_map(arr, f) |
 | `contains` |  Checks if string contains a substring | `haystack`, `needle` | contains(haystack, needle) |
 | `count_by` |  Returns the count of elements in the array that satisfy the provided function. | `arr`, `f` | count_by(arr, f) |
-| `debug` |  Prints the debug information of the given value. | `msg` | debug(msg) |
+| `debug` | Prints the debug information of the given value(s). | `values` | debug(values) |
 | `decrease_header_level` | Decreases the level of a markdown heading node by one, down to a minimum of 1. | `heading_node` | decrease_header_level(heading_node) |
 | `del` | Deletes the element at the specified index in the array or string. | `array_or_string`, `index` | del(array_or_string, index) |
 | `dict` | Creates a new, empty dict. |  | dict() |
@@ -100,12 +100,15 @@
 | `keys` | Returns an array of keys from the dict. | `dict` | keys(dict) |
 | `last` |  Returns the last element of an array | `arr` | last(arr) |
 | `len` | Returns the length of the given string or array. | `value` | len(value) |
+| `load_markdown` |  Loads a markdown file from the specified path | `path` | load_markdown(path) |
+| `lpad` |  Left-pads a string to a specified length using a given padding string. | `s`, `length`, `pad_str` | lpad(s, length, pad_str) |
 | `lt` | Checks if the first value is less than the second value. | `value1`, `value2` | lt(value1, value2) |
 | `lte` | Checks if the first value is less than or equal to the second value. | `value1`, `value2` | lte(value1, value2) |
 | `ltrimstr` |  Removes prefix string from input if it exists | `s`, `left` | ltrimstr(s, left) |
 | `map` |  Applies a given function to each element of the provided array and returns a new array with the results. | `v`, `f` | map(v, f) |
 | `markdowns` |  Returns markdown if input is markdown, None otherwise | `m` | markdowns(m) |
-| `matches_url` |  Checks if markdown node's URL matches a specified URL | `node`, `url` | matches_url(node, url) |
+| ~~`matches_url`~~ |  Checks if markdown node's URL matches a specified URL |
+|  deprecated: use select(.link.url == url) instead | `node`, `url` | matches_url(node, url) |
 | `max` | Returns the maximum of two values. | `value1`, `value2` | max(value1, value2) |
 | `min` | Returns the minimum of two values. | `value1`, `value2` | min(value1, value2) |
 | `mod` | Calculates the remainder of the division of the first value by the second value. | `value1`, `value2` | mod(value1, value2) |
@@ -130,6 +133,7 @@
 | `reverse` | Reverses the given string or array. | `value` | reverse(value) |
 | `rindex` | Finds the last occurrence of a substring in the given string. | `string`, `substring` | rindex(string, substring) |
 | `round` | Rounds the given number to the nearest integer. | `number` | round(number) |
+| `rpad` |  Right-pads a string to a specified length using a given padding string. | `s`, `length`, `pad_str` | rpad(s, length, pad_str) |
 | `rtrimstr` |  Removes suffix string from input if it exists | `s`, `right` | rtrimstr(s, right) |
 | `second` |  Returns the second element of an array | `arr` | second(arr) |
 | `select` |  Returns value if condition is true, None otherwise | `v`, `f` | select(v, f) |

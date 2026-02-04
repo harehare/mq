@@ -97,7 +97,7 @@ pub fn response(
                                     params
                                         .iter()
                                         .enumerate()
-                                        .map(|(i, name)| format!("${{{}:{}}}", i + 1, name))
+                                        .map(|(i, p)| format!("${{{}:{}}}", i + 1, p))
                                         .join(", ")
                                 )),
                                 insert_text_format: Some(InsertTextFormat::SNIPPET),

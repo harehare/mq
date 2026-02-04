@@ -4,7 +4,7 @@
 
 The if expression evaluates a condition and executes code based on the result:
 
-```js
+```mq
  if (eq(x, 1)):
    "one"
  elif (eq(x, 2)):
@@ -13,7 +13,7 @@ The if expression evaluates a condition and executes code based on the result:
    "other"
 ```
 
-```js
+```mq
  if (eq(x, 1)):
    do "one" | upcase();
  elif (eq(x, 2)):
@@ -24,7 +24,7 @@ The if expression evaluates a condition and executes code based on the result:
    end
 ```
 
-```js
+```mq
  if (eq(x, 1)):
    "one"
 ```
@@ -36,7 +36,7 @@ The conditions must evaluate to boolean values.
 
 The while loop repeatedly executes code while a condition is true:
 
-```ruby
+```mq
 let x = 5 |
 while (x > 0):
   let x = x - 1 | x
@@ -46,7 +46,7 @@ end
 
 You can use `break: <expr>` to return a value from a while loop:
 
-```ruby
+```mq
 var x = 10 |
 while (x > 0):
   x = x - 1 |
@@ -62,7 +62,7 @@ end
 
 The foreach loop iterates over elements in an array:
 
-```ruby
+```mq
 let items = array(1, 2, 3) |
 foreach (x, items):
    sub(x, 1)
@@ -72,7 +72,7 @@ end
 
 You can use `break: <expr>` to exit early and return a specific value instead of an array:
 
-```ruby
+```mq
 let items = array(1, 2, 3, 4, 5) |
 foreach (x, items):
   if(x > 3):
@@ -93,7 +93,7 @@ Foreach loops are useful for:
 
 The loop expression creates an infinite loop that continues until explicitly terminated with `break`:
 
-```ruby
+```mq
 var x = 0 |
 loop:
   x = x + 1 |
@@ -107,7 +107,7 @@ end
 
 The loop can be controlled using `break` to exit the loop and `continue` to skip to the next iteration:
 
-```ruby
+```mq
 var x = 0 |
 loop:
   x = x + 1 |
@@ -123,7 +123,7 @@ end
 
 The `break` statement can return a value from a loop using the `break: <expr>` syntax. This allows loops to be used as expressions that produce a specific value when exited:
 
-```ruby
+```mq
 var x = 0 |
 loop:
   x = x + 1 |

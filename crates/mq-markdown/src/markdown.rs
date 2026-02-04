@@ -2,11 +2,10 @@
 use crate::html_to_markdown;
 #[cfg(feature = "html-to-markdown")]
 use crate::html_to_markdown::ConversionOptions;
+use crate::node::{Node, Position, RenderOptions, TableAlign, TableCell};
 use markdown::Constructs;
 use miette::miette;
 use std::{fmt, str::FromStr};
-
-use crate::node::{Node, Position, RenderOptions};
 
 #[derive(Debug, Clone)]
 pub struct Markdown {
@@ -26,11 +25,64 @@ impl fmt::Display for Markdown {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut pre_position: Option<Position> = None;
         let mut is_first = true;
+        let mut current_table_row: Option<usize> = None;
 
         // Pre-allocate buffer to reduce allocations
         let mut buffer = String::with_capacity(self.nodes.len() * 50); // Reasonable estimate
 
-        for node in &self.nodes {
+        for (i, node) in self.nodes.iter().enumerate() {
+            // Handle TableCell specially - group by row
+            if let Node::TableCell(TableCell { row, values, .. }) = node {
+                let value = values
+                    .iter()
+                    .map(|v| v.to_string_with(&self.options))
+                    .collect::<String>();
+
+                // Check if this is a new row
+                let is_new_row = current_table_row != Some(*row);
+
+                if is_new_row {
+                    // End previous row if exists
+                    if current_table_row.is_some() {
+                        buffer.push_str("|\n");
+                    }
+                    current_table_row = Some(*row);
+                }
+
+                // Output cell: |content
+                buffer.push('|');
+                buffer.push_str(&value);
+
+                // Check if this is the last cell in the row
+                let next_node = self.nodes.get(i + 1);
+                let next_is_different_row = next_node.is_none_or(
+                    |next| !matches!(next, Node::TableCell(TableCell { row: next_row, .. }) if *next_row == *row),
+                );
+
+                if next_is_different_row {
+                    buffer.push_str("|\n");
+                    current_table_row = None;
+                }
+
+                pre_position = node.position();
+                is_first = false;
+                continue;
+            }
+
+            // Handle TableAlign specially - always add newline after
+            if let Node::TableAlign(TableAlign { align, .. }) = node {
+                use itertools::Itertools;
+                buffer.push('|');
+                buffer.push_str(&align.iter().map(|a| a.to_string()).join("|"));
+                buffer.push_str("|\n");
+                pre_position = node.position();
+                is_first = false;
+                continue;
+            }
+
+            // Reset table row tracking for non-TableCell nodes
+            current_table_row = None;
+
             let value = node.to_string_with(&self.options);
 
             if value.is_empty() || value == "\n" {

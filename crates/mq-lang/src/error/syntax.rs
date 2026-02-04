@@ -43,6 +43,15 @@ pub enum SyntaxError {
     /// Macro parameters cannot have default values.
     #[error("Macro parameters cannot have default values")]
     MacroParametersCannotHaveDefaults(Token),
+    /// A variadic parameter must be the last parameter.
+    #[error("Variadic parameter must be the last parameter")]
+    VariadicParameterMustBeLast(Token),
+    /// Multiple variadic parameters are not allowed.
+    #[error("Multiple variadic parameters are not allowed")]
+    MultipleVariadicParameters(Token),
+    /// Macro parameters cannot be variadic.
+    #[error("Macro parameters cannot be variadic")]
+    MacroParametersCannotBeVariadic(Token),
 }
 
 impl SyntaxError {
@@ -62,6 +71,9 @@ impl SyntaxError {
             SyntaxError::MacroParamsMustBeIdents(token) => Some(token),
             SyntaxError::ParameterWithoutDefaultAfterDefault(token) => Some(token),
             SyntaxError::MacroParametersCannotHaveDefaults(token) => Some(token),
+            SyntaxError::VariadicParameterMustBeLast(token) => Some(token),
+            SyntaxError::MultipleVariadicParameters(token) => Some(token),
+            SyntaxError::MacroParametersCannotBeVariadic(token) => Some(token),
         }
     }
 }

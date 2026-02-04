@@ -14,18 +14,19 @@ members = [
   "crates/mq-web-api",
   "crates/mq-dap",
   "crates/mq-crawler",
+  "editors/zed",
 ]
 resolver = "3"
 
 [workspace.dependencies]
 # Internal crates
-mq-dap = {path = "crates/mq-dap", version = "0.5.12"}
-mq-formatter = {path = "crates/mq-formatter", version = "0.5.12"}
-mq-hir = {path = "crates/mq-hir", version = "0.5.12"}
-mq-lang = {path = "crates/mq-lang", version = "0.5.12"}
-mq-lsp = {path = "crates/mq-lsp", version = "0.5.12"}
-mq-markdown = {path = "crates/mq-markdown", version = "0.5.12"}
-mq-repl = {path = "crates/mq-repl", version = "0.5.12"}
+mq-dap = {path = "crates/mq-dap", version = "0.5.13"}
+mq-formatter = {path = "crates/mq-formatter", version = "0.5.13"}
+mq-hir = {path = "crates/mq-hir", version = "0.5.13"}
+mq-lang = {path = "crates/mq-lang", version = "0.5.13"}
+mq-lsp = {path = "crates/mq-lsp", version = "0.5.13"}
+mq-markdown = {path = "crates/mq-markdown", version = "0.5.13"}
+mq-repl = {path = "crates/mq-repl", version = "0.5.13"}
 # External dependencies
 arbitrary = {version = "1.4.2", features = ["derive"]}
 arboard = {version = "3.6.1", default-features = false}
@@ -36,7 +37,7 @@ base64 = "0.22.1"
 bimap = "0.6.3"
 cbindgen = "0.29.2"
 chrono = "0.4.43"
-clap = "4.5.54"
+clap = "4.5.57"
 colored = "3.1.1"
 crossbeam = "0.8.4"
 crossbeam-channel = "0.5.15"
@@ -64,7 +65,7 @@ percent-encoding = "2.3.2"
 proptest = "1.9"
 pyo3 = "0.27.2"
 rayon = "1.11.0"
-regex-lite = "0.1.8"
+regex-lite = "0.1.9"
 reqwest = {version = "0.12", default-features = false}
 robots_txt = "0.7"
 rstest = "0.26.1"
