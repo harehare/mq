@@ -542,7 +542,7 @@ def load_markdown(path): read_file(path) | to_markdown();
 # Prints the debug information of the given value(s).
 def debug(*args):
   if (len(args) == 1):
-    stderr("DEBUG: " + to_string(args[0]))
+    stderr(s"DEBUG: ${args[0]}")
   else:
-    stderr("DEBUG:\n" + join(map(args, fn(arg): s" - ${arg}";), "\n"))
+    stderr("DEBUG:\n" + do args | map(fn(arg): s" - ${arg}";) | join("\n");)
 end
