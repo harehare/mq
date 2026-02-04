@@ -48,8 +48,8 @@ impl MqExtension {
                 zed::Os::Windows => "pc-windows-msvc",
             },
             extension = match platform {
-                zed::Os::Mac | zed::Os::Linux => "tar.gz",
-                zed::Os::Windows => "zip",
+                zed::Os::Mac | zed::Os::Linux => "",
+                zed::Os::Windows => "exe",
             }
         );
 
@@ -62,21 +62,14 @@ impl MqExtension {
         let version_dir = format!("mq-lsp-{}", release.version);
         let binary_path = format!("{version_dir}/mq-lsp");
 
-        if !std::fs::metadata(&binary_path).map_or(false, |stat| stat.is_file()) {
+        if !std::fs::metadata(&binary_path).is_ok_and(|stat| stat.is_file()) {
             zed::set_language_server_installation_status(
                 language_server_id,
                 &zed::LanguageServerInstallationStatus::Downloading,
             );
 
-            zed::download_file(
-                &asset.download_url,
-                &version_dir,
-                match platform {
-                    zed::Os::Mac | zed::Os::Linux => zed::DownloadedFileType::GzipTar,
-                    zed::Os::Windows => zed::DownloadedFileType::Zip,
-                },
-            )
-            .map_err(|e| format!("failed to download file: {e}"))?;
+            zed::download_file(&asset.download_url, &version_dir, zed::DownloadedFileType::Uncompressed)
+                .map_err(|e| format!("failed to download file: {e}"))?;
 
             let entries = std::fs::read_dir(".").map_err(|e| format!("failed to list working directory {e}"))?;
             for entry in entries {

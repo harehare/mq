@@ -12,13 +12,7 @@ repository = "https://github.com/harehare/mq"
 repository = "https://github.com/harehare/tree-sitter-mq"
 commit = "main"
 
-[languages.mq]
-name = "mq"
-grammar = "mq"
-path_suffixes = ["mq"]
-line_comments = ["#"]
-block_comment = [""]
-
 [language_servers.mq-lsp]
 name = "mq-lsp"
 languages = ["mq"]
+
