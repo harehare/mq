@@ -6,5 +6,6 @@
 (block_expr) @indent
 (module_expr) @indent
 (macro_expr) @indent
+(loop_expr) @indent
 
 "end" @outdent
