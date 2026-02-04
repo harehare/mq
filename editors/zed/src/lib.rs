@@ -35,23 +35,25 @@ impl MqExtension {
         )?;
 
         let (platform, arch) = zed::current_platform();
-        let asset_name = format!(
-            "mq-lsp-{arch}-{os}.{extension}",
-            arch = match arch {
-                zed::Architecture::Aarch64 => "aarch64",
-                zed::Architecture::X8664 => "x86_64",
-                zed::Architecture::X86 => return Err("unsupported architecture".into()),
-            },
-            os = match platform {
-                zed::Os::Mac => "apple-darwin",
-                zed::Os::Linux => "unknown-linux-gnu",
-                zed::Os::Windows => "pc-windows-msvc",
-            },
-            extension = match platform {
-                zed::Os::Mac | zed::Os::Linux => "",
-                zed::Os::Windows => "exe",
-            }
-        );
+        let arch = match arch {
+            zed::Architecture::Aarch64 => "aarch64",
+            zed::Architecture::X8664 => "x86_64",
+            zed::Architecture::X86 => return Err("unsupported architecture".into()),
+        };
+        let os = match platform {
+            zed::Os::Mac => "apple-darwin",
+            zed::Os::Linux => "unknown-linux-gnu",
+            zed::Os::Windows => "pc-windows-msvc",
+        };
+        let extension = match platform {
+            zed::Os::Mac | zed::Os::Linux => "",
+            zed::Os::Windows => "exe",
+        };
+        let asset_name = if extension.is_empty() {
+            format!("mq-lsp-{arch}-{os}")
+        } else {
+            format!("mq-lsp-{arch}-{os}.{extension}")
+        };
 
         let asset = release
             .assets
