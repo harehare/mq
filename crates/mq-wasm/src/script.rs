@@ -316,6 +316,10 @@ impl mq_lang::ModuleResolver for WasmModuleResolver {
         })
     }
 
+    fn get_path(&self, module_name: &str) -> Result<String, mq_lang::ModuleError> {
+        Ok(module_name.to_string())
+    }
+
     fn search_paths(&self) -> Vec<std::path::PathBuf> {
         vec![]
     }

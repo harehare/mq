@@ -100,6 +100,10 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         }
     }
 
+    pub fn get_module_path(&self, module_name: &str) -> Result<String, ModuleError> {
+        self.resolver.get_path(module_name)
+    }
+
     #[cfg(feature = "debugger")]
     pub fn set_source_code(&mut self, source_code: String) {
         self.source_code = Some(source_code);

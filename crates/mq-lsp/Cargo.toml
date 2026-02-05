@@ -13,6 +13,7 @@ version = "0.5.13"
 
 [dependencies]
 bimap = {workspace = true}
+clap = {workspace = true, features = ["derive"]}
 dashmap = {workspace = true}
 itertools = {workspace = true}
 miette = {workspace = true, features = ["fancy"]}

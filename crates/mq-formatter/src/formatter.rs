@@ -66,7 +66,7 @@ pub(crate) fn ident(node: &CstNode) -> Option<String> {
                 | CstNodeKind::Let
                 | CstNodeKind::Var
                 | CstNodeKind::Macro,
-            token: Some(token),
+            token: Some(_),
             children,
             ..
         } if !children.is_empty() => Some(children[0].to_string()),

@@ -2729,6 +2729,7 @@ name = "mq-lsp"
 version = "0.5.13"
 dependencies = [
  "bimap",
+ "clap",
  "dashmap",
  "itertools 0.14.0",
  "miette",
