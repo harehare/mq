@@ -15,9 +15,17 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
             source,
             mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
         ) {
-            symbol.source.text_range.map(|text_range| {
-                GotoDefinitionResponse::Scalar(Location {
-                    uri: ls_types::Uri::from_str(url.as_ref()).unwrap(),
+            symbol.source.text_range.and_then(|text_range| {
+                // Get the URL for the symbol's actual source file
+                // Returns None for builtin symbols (no file to navigate to)
+                let target_url = symbol
+                    .source
+                    .source_id
+                    .and_then(|sid| hir_guard.url_by_source(&sid))
+                    .cloned()?;
+
+                Some(GotoDefinitionResponse::Scalar(Location {
+                    uri: ls_types::Uri::from_str(target_url.as_ref()).unwrap(),
                     range: Range {
                         start: Position {
                             line: text_range.start.line - 1,
@@ -28,7 +36,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
                             character: (text_range.end.column - 1) as u32,
                         },
                     },
-                })
+                }))
             })
         } else {
             None
@@ -76,6 +84,40 @@ mod tests {
         hir.add_code(Some(url.clone()), "let x = 42;");
 
         let result = response(Arc::new(RwLock::new(hir)), url, Position::new(0, 11));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_goto_definition_call_to_definition() {
+        let mut hir = Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+        // Define function then call it
+        hir.add_code(Some(url.clone()), "def helper(): 42 end | helper()");
+
+        // Position on helper() call (at character 24, after "| ")
+        let result = response(Arc::new(RwLock::new(hir)), url.clone(), Position::new(0, 24));
+
+        // Should navigate to the function definition in the same file
+        assert!(result.is_some());
+        if let Some(GotoDefinitionResponse::Scalar(location)) = result {
+            assert_eq!(location.uri.to_string(), url.to_string());
+            // Definition starts at "def helper"
+            assert_eq!(location.range.start, Position::new(0, 4));
+        } else {
+            panic!("Expected Scalar response");
+        }
+    }
+
+    #[test]
+    fn test_goto_definition_builtin_returns_none() {
+        let mut hir = Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+        hir.add_code(Some(url.clone()), "\"test\" | len");
+
+        // Position on "len" builtin function call (at character 10)
+        let result = response(Arc::new(RwLock::new(hir)), url.clone(), Position::new(0, 10));
+
+        // Builtins should return None (no file to navigate to)
         assert!(result.is_none());
     }
 }
