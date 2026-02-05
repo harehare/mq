@@ -1,0 +1,45 @@
+# Extract table structures from a list of markdown nodes.
+def tables(md_nodes):
+  if (is_empty(md_nodes)):
+    []
+  else:
+    do
+      var tables = []
+      | var current_align = []
+      | var current_row_index = -1
+      | var current_row = []
+      | var current_rows = []
+      | var i = 0
+      | let nodes_len = len(md_nodes)
+      | while (i < nodes_len):
+          let node = md_nodes[i]
+          | if (is_table_cell(node)):
+              if (node.row != current_row_index) do
+                  if (!is_empty(current_row)):
+                    current_rows += [current_row]
+                  | current_row = []
+                  | current_row_index = node.row
+                  | current_row = [node]
+                end
+              else:
+                current_row += node
+            elif (is_table_align(node)): current_align = node
+            else: do
+                if (!is_empty(current_rows)) do
+                    tables += [{type: :table, align: current_align, rows: current_rows}]
+                    | current_align = []
+                    | current_rows = []
+                    | current_row = []
+                    | current_row_index = -1
+                  end
+              end
+          | i = i + 1
+          | None
+        end
+      | if (!is_empty(current_rows)) do
+            tables += [{type: :table, align: current_align, rows: current_rows}]
+          end
+      | tables
+    end
+end
+

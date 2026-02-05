@@ -1119,7 +1119,7 @@ impl Node {
             Self::LinkRef(_) => "link_ref".into(),
             Self::Math(_) => "math".into(),
             Self::List(_) => "list".into(),
-            Self::TableAlign(_) => "table_header".into(),
+            Self::TableAlign(_) => "table_align".into(),
             Self::TableRow(_) => "table_row".into(),
             Self::TableCell(_) => "table_cell".into(),
             Self::Code(_) => "code".into(),
