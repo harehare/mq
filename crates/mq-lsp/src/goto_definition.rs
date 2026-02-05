@@ -24,8 +24,13 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
                     .and_then(|sid| hir_guard.url_by_source(&sid))
                     .cloned()?;
 
+                let uri = match ls_types::Uri::from_str(target_url.as_ref()) {
+                    Ok(uri) => uri,
+                    Err(_) => return None,
+                };
+
                 Some(GotoDefinitionResponse::Scalar(Location {
-                    uri: ls_types::Uri::from_str(target_url.as_ref()).unwrap(),
+                    uri,
                     range: Range {
                         start: Position {
                             line: text_range.start.line - 1,
