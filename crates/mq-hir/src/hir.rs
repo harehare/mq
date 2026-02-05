@@ -632,7 +632,9 @@ impl Hir {
         {
             let _ = node.children_without_token().first().map(|child| {
                 let module_name = child.name().unwrap();
-                if let Ok(url) = Url::parse(&format!("file:///{}", module_name)) {
+                let module_path = self.module_loader.get_module_path(&module_name);
+
+                if let Ok(url) = Url::parse(&format!("file:///{}", module_path.unwrap_or(module_name.to_string()))) {
                     let code = self.module_loader.resolve(&module_name);
                     let (module_source_id, _) = self.add_code(Some(url), &code.unwrap_or_default());
 
