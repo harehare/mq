@@ -5,6 +5,7 @@ import "csv"
 | import "xml"
 | import "fuzzy"
 | import "section"
+| import "table"
 | include "test"
 
 | let csv_input = "a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n" |
@@ -243,6 +244,55 @@ def test_section_flatten():
   | assert(is_array(flattened))
 end
 
+| let table_md = "| Name | Age | City |\n| --- | --- | --- |\n| Alice | 30 | Tokyo |\n| Bob | 25 | Osaka |\n"
+| let table_nodes = to_markdown(table_md) |
+
+def test_table_tables():
+  let result = table::tables(table_nodes)
+  | assert_eq(len(result), 1)
+  | let t = result[0]
+  | assert_eq(t[:type], :table)
+  | assert_eq(len(t[:header]), 3)
+  | assert_eq(len(t[:rows]), 2)
+end
+
+def test_table_tables_empty():
+  let result = table::tables([])
+  | assert_eq(result, [])
+end
+
+def test_table_add_row():
+  let t = first(table::tables(table_nodes))
+  | let t = table::add_row(t, ["Charlie", "35", "Nagoya"])
+  | assert_eq(len(t[:rows]), 3)
+end
+
+def test_table_add_column():
+  let t = first(table::tables(table_nodes))
+  | let t = table::add_column(t, ["Country", "Japan", "Japan"])
+  | assert_eq(len(t[:header]), 3)
+  | assert_eq(len(t[:rows][0]), 4)
+end
+
+def test_table_remove_row():
+  let t = first(table::tables(table_nodes))
+  | let t = table::remove_row(t, 0)
+  | assert_eq(len(t[:rows]), 1)
+end
+
+def test_table_remove_column():
+  let t = first(table::tables(table_nodes))
+  | let t = table::remove_column(t, 0)
+  | assert_eq(len(t[:rows][0]), 2)
+end
+
+def test_table_to_markdown():
+  let t = first(table::tables(table_nodes))
+  | let md_result = table::to_markdown(t)
+  | assert(is_array(md_result))
+  | assert(len(md_result) > 0)
+end
+
 | run_tests([
   # csv
   test_case("CSV Parse for Dict", test_csv_parse_for_dict),
@@ -282,4 +332,12 @@ end
   test_case("Section Nth", test_section_nth),
   test_case("Section Titles", test_section_titles),
   test_case("Section Flatten", test_section_flatten),
+  # table
+  test_case("Table Tables", test_table_tables),
+  test_case("Table Tables Empty", test_table_tables_empty),
+  test_case("Table Add Row", test_table_add_row),
+  test_case("Table Add Column", test_table_add_column),
+  test_case("Table Remove Row", test_table_remove_row),
+  test_case("Table Remove Column", test_table_remove_column),
+  test_case("Table To Markdown", test_table_to_markdown),
 ])

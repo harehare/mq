@@ -1119,7 +1119,7 @@ impl Node {
             Self::LinkRef(_) => "link_ref".into(),
             Self::Math(_) => "math".into(),
             Self::List(_) => "list".into(),
-            Self::TableAlign(_) => "table_header".into(),
+            Self::TableAlign(_) => "table_align".into(),
             Self::TableRow(_) => "table_row".into(),
             Self::TableCell(_) => "table_cell".into(),
             Self::Code(_) => "code".into(),
@@ -3137,7 +3137,7 @@ mod tests {
     #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, values: vec!["test".to_string().into()], position: None})], position: None}), RenderOptions::default(), "|test|")]
     #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "test")]
     #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "test")]
-    #[case::table_header(Node::TableAlign(TableAlign{align: vec![TableAlignKind::Left, TableAlignKind::Right, TableAlignKind::Center, TableAlignKind::None], position: None}), RenderOptions::default(), "|:---|---:|:---:|---|")]
+    #[case::table_align(Node::TableAlign(TableAlign{align: vec![TableAlignKind::Left, TableAlignKind::Right, TableAlignKind::Center, TableAlignKind::None], position: None}), RenderOptions::default(), "|:---|---:|:---:|---|")]
     #[case::block_quote(Node::Blockquote(Blockquote{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "> test")]
     #[case::block_quote(Node::Blockquote(Blockquote{values: vec!["test\ntest2".to_string().into()], position: None}), RenderOptions::default(), "> test\n> test2")]
     #[case::code(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), fence: true, meta: None, position: None}), RenderOptions::default(), "```rust\ncode\n```")]
@@ -3325,7 +3325,7 @@ mod tests {
     #[case(Node::LinkRef(LinkRef{ident: "".to_string(), values: Vec::new(), label: None, position: None}), "link_ref")]
     #[case(Node::Math(Math{value: "".to_string(), position: None}), "math")]
     #[case(Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: Vec::new(), position: None}), "list")]
-    #[case(Node::TableAlign(TableAlign{align: Vec::new(), position: None}), "table_header")]
+    #[case(Node::TableAlign(TableAlign{align: Vec::new(), position: None}), "table_align")]
     #[case(Node::TableRow(TableRow{values: Vec::new(), position: None}), "table_row")]
     #[case(Node::TableCell(TableCell{column: 0, row: 0, values: Vec::new(), position: None}), "table_cell")]
     #[case(Node::Code(Code{value: "".to_string(), lang: None, fence: true, meta: None, position: None}), "code")]

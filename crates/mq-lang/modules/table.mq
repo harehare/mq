@@ -1,0 +1,97 @@
+# Extract table structures from a list of markdown nodes.
+def tables(md_nodes):
+  if (is_empty(md_nodes)):
+    []
+  else:
+    do
+      var tables = []
+      | var current_align = []
+      | var current_row_index = -1
+      | var current_row = []
+      | var current_rows = []
+      | var i = 0
+      | let nodes_len = len(md_nodes)
+      | while (i < nodes_len):
+          let node = md_nodes[i]
+          | if (is_table_cell(node)):
+              if (node.row != current_row_index) do
+                  if (!is_empty(current_row)):
+                    current_rows += [current_row]
+                  | current_row = []
+                  | current_row_index = node.row
+                  | current_row = [node]
+                end
+              else:
+                current_row += node
+            elif (is_table_align(node)): current_align = node
+            else: do
+                if (!is_empty(current_rows)) do
+                    tables += [{type: :table, align: current_align, header: current_rows[0], rows: current_rows[1:]}]
+                    | current_align = []
+                    | current_rows = []
+                    | current_row = []
+                    | current_row_index = -1
+                  end
+              end
+          | i = i + 1
+          | None
+        end
+      | if (!is_empty(current_row)) do
+            current_rows += [current_row]
+          end
+      | if (!is_empty(current_rows)) do
+            tables += [{type: :table, align: current_align, header: current_rows[0], rows: current_rows[1:]}]
+          end
+      | tables
+    end
+end
+
+# Add a new row to a table.
+def add_row(table, row):
+  if (len(row) != len(table[:header])):
+    error("Row length does not match table header length.")
+  else: do
+      var i = 0
+      | let cells = foreach (cell, row):
+              to_md_table_cell(cell, len(table[:rows]), i)
+              | i += 1
+            end
+      | set(table, :rows, table[:rows] + [cells])
+    end
+end
+
+# Add a new column to a table.
+def add_column(table, col):
+  if (len(col) != len(table[:rows]) + 1):
+    error("Column length does not match table row count.")
+  else: do
+      let header_cell = to_md_table_cell(col[0], 0, len(table[:header]))
+      | let new_header = table[:header] + [header_cell]
+      | var i = 0
+      | let new_rows = foreach (row, table[:rows]):
+              let cell = to_md_table_cell(col[i], i, len(row) - 1)
+              | i += 1
+              | row + [cell]
+            end
+      | set(table, :header, new_header) | set(table, :rows, new_rows)
+    end
+end
+
+# Remove a row from a table at the specified index.
+def remove_row(table, row_index):
+  set(table, :rows, del(table[:rows], row_index))
+end
+
+# Remove a column from a table at the specified index.
+def remove_column(table, col_index):
+  let rows = foreach (row, table[:rows]):
+      del(row, col_index)
+    end
+  | set(table, :rows, rows)
+end
+
+# Convert a table structure back into a list of markdown nodes.
+def to_markdown(table)
+  table[:header] + table[:align] + flatten(table[:rows])
+end
+

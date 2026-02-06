@@ -20,6 +20,7 @@ pub fn module_name(name: &str) -> Cow<'static, str> {
         "xml" => Cow::Borrowed("xml.mq"),
         "toml" => Cow::Borrowed("toml.mq"),
         "test" => Cow::Borrowed("test.mq"),
+        "section" => Cow::Borrowed("section.mq"),
         "fuzzy" => Cow::Borrowed("fuzzy.mq"),
         _ => Cow::Owned(format!("{}.mq", name)),
     }
