@@ -26,7 +26,7 @@ def tables(md_nodes):
             elif (is_table_align(node)): current_align = node
             else: do
                 if (!is_empty(current_rows)) do
-                    tables += [{type: :table, align: current_align, rows: current_rows}]
+                    tables += [{type: :table, align: current_align, header: current_rows[0], rows: current_rows[1:]}]
                     | current_align = []
                     | current_rows = []
                     | current_row = []
@@ -37,9 +37,27 @@ def tables(md_nodes):
           | None
         end
       | if (!is_empty(current_rows)) do
-            tables += [{type: :table, align: current_align, rows: current_rows}]
+            tables += [{type: :table, align: current_align, header: current_rows[0], rows: current_rows[1:]}]
           end
       | tables
     end
+end
+
+# Remove a row from a table at the specified index.
+def remove_row(table, row_index):
+  set(table, :rows, del(table[:rows], row_index))
+end
+
+# Remove a column from a table at the specified index.
+def remove_column(table, col_index):
+  let rows = foreach (row, table[:rows]):
+      del(row, col_index)
+    end
+  | set(table, :rows, rows)
+end
+
+# Convert a table structure back into a list of markdown nodes.
+def to_markdown(table):
+  table[:header] + table[:align] + flatten(table[:rows])
 end
 
