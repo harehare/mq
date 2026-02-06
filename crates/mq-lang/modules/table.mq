@@ -36,6 +36,9 @@ def tables(md_nodes):
           | i = i + 1
           | None
         end
+      | if (!is_empty(current_row)) do
+            current_rows += [current_row]
+          end
       | if (!is_empty(current_rows)) do
             tables += [{type: :table, align: current_align, header: current_rows[0], rows: current_rows[1:]}]
           end
