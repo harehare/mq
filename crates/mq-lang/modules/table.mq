@@ -43,6 +43,37 @@ def tables(md_nodes):
     end
 end
 
+# Add a new row to a table.
+def add_row(table, row):
+  if (len(row) != len(table[:header])):
+    error("Row length does not match table header length.")
+  else: do
+      var i = 0
+      | let cells = foreach (cell, row):
+              to_md_table_cell(cell, len(table[:rows]), i)
+              | i += 1
+            end
+      | set(table, :rows, table[:rows] + [cells])
+    end
+end
+
+# Add a new column to a table.
+def add_column(table, col):
+  if (len(col) != len(table[:rows]) + 1):
+    error("Column length does not match table row count.")
+  else: do
+      let header_cell = to_md_table_cell(col[0], 0, len(table[:header]))
+      | let new_header = table[:header] + [header_cell]
+      | var i = 0
+      | let new_rows = foreach (row, table[:rows]):
+              let cell = to_md_table_cell(col[i], i + 1, len(row))
+              | i += 1
+              | row + [cell]
+            end
+      | set(table, :header, new_header) | set(table, :rows, new_rows)
+    end
+end
+
 # Remove a row from a table at the specified index.
 def remove_row(table, row_index):
   set(table, :rows, del(table[:rows], row_index))

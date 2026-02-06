@@ -1681,6 +1681,25 @@ define_builtin!(TO_MD_TABLE_ROW, ParamNum::Range(1, u8::MAX), |_, _, args, _| {
     ))
 });
 
+define_builtin!(TO_MD_TABLE_CELL, ParamNum::Fixed(3), |_, _, mut args, _| {
+    match args.as_mut_slice() {
+        [value, RuntimeValue::Number(row), RuntimeValue::Number(column)] => Ok(RuntimeValue::Markdown(
+            mq_markdown::Node::TableCell(mq_markdown::TableCell {
+                row: (row.value() - 1.0) as usize,
+                column: (column.value() - 1.0) as usize,
+                values: vec![value.to_string().into()],
+                position: None,
+            }),
+            None,
+        )),
+        [a, b, c] => Err(Error::InvalidTypes(
+            "table_cell".to_string(),
+            vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+        )),
+        _ => unreachable!(),
+    }
+});
+
 define_builtin!(GET_TITLE, ParamNum::Fixed(1), |_, _, mut args, _| {
     match args.as_mut_slice() {
         [
@@ -2377,6 +2396,7 @@ const HASH_TO_MATH_INLINE: u64 = fnv1a_hash_64("to_math_inline");
 const HASH_TO_MD_LIST: u64 = fnv1a_hash_64("to_md_list");
 const HASH_TO_MD_NAME: u64 = fnv1a_hash_64("to_md_name");
 const HASH_TO_MD_TABLE_ROW: u64 = fnv1a_hash_64("to_md_table_row");
+const HASH_TO_MD_TABLE_CELL: u64 = fnv1a_hash_64("to_md_table_cell");
 const HASH_TO_MD_TEXT: u64 = fnv1a_hash_64("to_md_text");
 const HASH_TO_NUMBER: u64 = fnv1a_hash_64("to_number");
 const HASH_TO_STRING: u64 = fnv1a_hash_64("to_string");
@@ -2500,6 +2520,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_TO_MD_LIST => Some(&TO_MD_LIST),
         HASH_TO_MD_NAME => Some(&TO_MD_NAME),
         HASH_TO_MD_TABLE_ROW => Some(&TO_MD_TABLE_ROW),
+        HASH_TO_MD_TABLE_CELL => Some(&TO_MD_TABLE_CELL),
         HASH_TO_MD_TEXT => Some(&TO_MD_TEXT),
         HASH_TO_NUMBER => Some(&TO_NUMBER),
         HASH_TO_STRING => Some(&TO_STRING),
@@ -3492,6 +3513,14 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &["cells"],
         },
     );
+    map.insert(
+        SmolStr::new("to_md_table_cell"),
+        BuiltinFunctionDoc {
+            description: "Creates a markdown table cell node with the given values.",
+            params: &["cells"],
+        },
+    );
+
     map.insert(
         SmolStr::new("get_title"),
         BuiltinFunctionDoc {
