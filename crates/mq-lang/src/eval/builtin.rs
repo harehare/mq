@@ -1685,8 +1685,8 @@ define_builtin!(TO_MD_TABLE_CELL, ParamNum::Fixed(3), |_, _, mut args, _| {
     match args.as_mut_slice() {
         [value, RuntimeValue::Number(row), RuntimeValue::Number(column)] => Ok(RuntimeValue::Markdown(
             mq_markdown::Node::TableCell(mq_markdown::TableCell {
-                row: (row.value() - 1.0) as usize,
-                column: (column.value() - 1.0) as usize,
+                row: row.value() as usize,
+                column: column.value() as usize,
                 values: vec![value.to_string().into()],
                 position: None,
             }),

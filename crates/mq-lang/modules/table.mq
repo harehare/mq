@@ -69,7 +69,7 @@ def add_column(table, col):
       | let new_header = table[:header] + [header_cell]
       | var i = 0
       | let new_rows = foreach (row, table[:rows]):
-              let cell = to_md_table_cell(col[i], i + 1, len(row))
+              let cell = to_md_table_cell(col[i], i, len(row) - 1)
               | i += 1
               | row + [cell]
             end
@@ -91,7 +91,7 @@ def remove_column(table, col_index):
 end
 
 # Convert a table structure back into a list of markdown nodes.
-def to_markdown(table):
+def to_markdown(table)
   table[:header] + table[:align] + flatten(table[:rows])
 end
 
