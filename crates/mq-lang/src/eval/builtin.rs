@@ -3516,8 +3516,8 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("to_md_table_cell"),
         BuiltinFunctionDoc {
-            description: "Creates a markdown table cell node with the given values.",
-            params: &["cells"],
+            description: "Creates a markdown table cell node with the given value at the specified row and column.",
+            params: &["value", "row", "column"],
         },
     );
 
