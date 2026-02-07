@@ -555,29 +555,32 @@ impl<T: ModuleResolver> Evaluator<T> {
                     .module_loader
                     .load_from_file(&module_name, Shared::clone(&self.token_arena));
 
-                if let Ok(module) = module {
-                    // Collect macros from the module
-                    // Create a new environment for the module exports
-                    let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
-                    let module_name_to_use = module.name.to_string();
+                match module {
+                    Ok(module) => {
+                        // Collect macros from the module
+                        // Create a new environment for the module exports
+                        let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+                        let module_name_to_use = module.name.to_string();
 
-                    self.load_module_with_env(module, &Shared::clone(&module_env))?;
+                        self.load_module_with_env(module, &Shared::clone(&module_env))?;
 
-                    // Register the module in the environment
-                    let module_runtime_value = RuntimeValue::Module(runtime_value::ModuleEnv::new(
-                        &module_name_to_use,
-                        Shared::clone(&module_env),
-                    ));
+                        // Register the module in the environment
+                        let module_runtime_value = RuntimeValue::Module(runtime_value::ModuleEnv::new(
+                            &module_name_to_use,
+                            Shared::clone(&module_env),
+                        ));
 
-                    define(&self.env, Ident::new(&module_name_to_use), module_runtime_value);
+                        define(&self.env, Ident::new(&module_name_to_use), module_runtime_value);
 
-                    Ok(RuntimeValue::Module(ModuleEnv::new(&module_name_to_use, module_env)))
-                } else if matches!(module, Err(ModuleError::AlreadyLoaded(_)))
-                    && let Ok(value) = resolve(&module_name, env)
-                {
-                    Ok(value)
-                } else {
-                    Err(RuntimeError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(module_name))).into())
+                        Ok(RuntimeValue::Module(ModuleEnv::new(&module_name_to_use, module_env)))
+                    }
+                    Err(ModuleError::AlreadyLoaded(_)) => match resolve(&module_name, env) {
+                        Ok(value) => Ok(value),
+                        Err(_) => {
+                            Err(RuntimeError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(module_name))).into())
+                        }
+                    },
+                    Err(e) => Err(RuntimeError::ModuleLoadError(e).into()),
                 }
             }
             _ => Err(RuntimeError::ModuleLoadError(ModuleError::InvalidModule).into()),
@@ -6009,7 +6012,7 @@ mod tests {
             Evaluator::new(loader, token_arena())
                 .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
             Err(InnerError::Runtime(RuntimeError::ModuleLoadError(
-                ModuleError::NotFound(Cow::Borrowed("not_found"))
+                ModuleError::IOError(Cow::Borrowed("Module `not_found.mq` not found"))
             )))
         );
     }
