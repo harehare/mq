@@ -43,13 +43,13 @@ impl Trivia {
         matches!(self, Trivia::Comment(_))
     }
 
-    pub fn comment(&self) -> String {
+    pub fn comment(&self) -> Option<&str> {
         match self {
             Trivia::Comment(token) => match &token.kind {
-                TokenKind::Comment(comment) => comment.to_string(),
-                _ => String::new(),
+                TokenKind::Comment(comment) => Some(comment.as_str()),
+                _ => None,
             },
-            _ => String::new(),
+            _ => None,
         }
     }
 
@@ -251,8 +251,7 @@ impl Node {
     pub fn comments(&self) -> Vec<Comment> {
         self.leading_trivia
             .iter()
-            .filter(|trivia| trivia.is_comment())
-            .map(|trivia| (trivia.range(), trivia.comment()))
+            .filter_map(|trivia| trivia.comment().map(|c| (trivia.range(), c.to_string())))
             .collect::<Vec<_>>()
     }
 
@@ -422,7 +421,7 @@ mod tests {
             range: Range::default(),
             module_id: ArenaId::new(0),
         })),
-        "test comment"
+        Some("test comment")
     )]
     #[case(
         Trivia::Whitespace(Shared::new(Token {
@@ -430,9 +429,9 @@ mod tests {
             range: Range::default(),
             module_id: ArenaId::new(0),
         })),
-        ""
+        None
     )]
-    fn test_trivia_comment(#[case] trivia: Trivia, #[case] expected: &str) {
+    fn test_trivia_comment(#[case] trivia: Trivia, #[case] expected: Option<&str>) {
         assert_eq!(trivia.comment(), expected);
     }
 
