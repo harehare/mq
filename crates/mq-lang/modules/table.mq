@@ -90,6 +90,25 @@ def remove_column(table, col_index):
   | set(table, :rows, rows)
 end
 
+# Map a function over each row in the table.
+def map_rows(table, f):
+  set(table, :rows, map(table[:rows], f))
+end
+
+# Filter rows in the table based on a predicate function.
+def filter_rows(table, f):
+  set(table, :rows, filter(table[:rows], f))
+end
+
+# Sort rows in the table by a specified column index or default sorting.
+def sort_rows(table, column_index = None):
+  let new_rows = if (column_index == None):
+    sort(table[:rows])
+  else:
+    sort_by(table[:rows], fn(row): row[column_index];)
+  | set(table, :rows, new_rows)
+end
+
 # Convert a table structure back into a list of markdown nodes.
 def to_markdown(table)
   table[:header] + table[:align] + flatten(table[:rows])

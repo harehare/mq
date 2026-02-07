@@ -293,6 +293,28 @@ def test_table_to_markdown():
   | assert(len(md_result) > 0)
 end
 
+def test_table_map_rows():
+  let t = first(table::tables(table_nodes))
+  | let md_result = table::map_rows(t, fn(row): map(row, upcase);)
+  | assert_eq(to_string(md_result[:rows][0][0]), "ALICE")
+  | assert_eq(to_string(md_result[:rows][1][0]), "BOB")
+end
+
+def test_table_filter_rows():
+  let t = first(table::tables(table_nodes))
+  | let md_result = table::filter_rows(t, fn(row): to_string(row[0]) == "Alice";)
+  | assert_eq(len(md_result[:rows]), 1)
+end
+
+def test_table_sort_rows():
+  let t = first(table::tables(table_nodes))
+  | let md_result = table::sort_rows(t, 1)
+  | assert_eq(to_string(md_result[:rows][0][0]), "Bob")
+
+  | let md_result = table::sort_rows(t)
+  | assert_eq(to_string(md_result[:rows][0][0]), "Alice")
+end
+
 | run_tests([
   # csv
   test_case("CSV Parse for Dict", test_csv_parse_for_dict),
@@ -340,4 +362,8 @@ end
   test_case("Table Remove Row", test_table_remove_row),
   test_case("Table Remove Column", test_table_remove_column),
   test_case("Table To Markdown", test_table_to_markdown),
+  test_case("Table Map Rows", test_table_map_rows),
+  test_case("Table Filter Rows", test_table_filter_rows),
+  test_case("Table Sort Rows", test_table_sort_rows),
 ])
+
