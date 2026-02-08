@@ -9,12 +9,15 @@ use crate::{Ident, Shared, lexer};
 use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;
 use std::iter::Peekable;
+use std::sync::LazyLock;
 
 use super::constants;
 use super::node::{AccessTarget, Args, Branches, Expr, Literal, Node, Param, Params};
 use super::{Program, TokenId};
 
 type IfExpr = (Option<Shared<Node>>, Shared<Node>);
+
+static GET_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::from(constants::GET));
 
 #[derive(Debug)]
 struct ArrayIndex(Option<usize>);
@@ -177,26 +180,24 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 token_id: operator_token_id,
                 expr: Shared::new(Expr::Assign(ident.clone(), rhs)),
             })),
-            Expr::Call(func_ident, args) if func_ident.name == Ident::from(constants::GET) && args.len() == 2 => {
-                match &*args[0].expr {
-                    Expr::Ident(var_ident) => Ok(Shared::new(Node {
-                        token_id: operator_token_id,
-                        expr: Shared::new(Expr::Assign(
-                            var_ident.clone(),
-                            Shared::new(Node {
-                                token_id: operator_token_id,
-                                expr: Shared::new(Expr::Call(
-                                    IdentWithToken::new_with_token(constants::SET, Some(Shared::clone(operator_token))),
-                                    smallvec![Shared::clone(&args[0]), Shared::clone(&args[1]), rhs,],
-                                )),
-                            }),
-                        )),
-                    })),
-                    _ => Err(SyntaxError::InvalidAssignmentTarget(
-                        (*self.token_arena[args[0].token_id]).clone(),
+            Expr::Call(func_ident, args) if func_ident.name == *GET_IDENT && args.len() == 2 => match &*args[0].expr {
+                Expr::Ident(var_ident) => Ok(Shared::new(Node {
+                    token_id: operator_token_id,
+                    expr: Shared::new(Expr::Assign(
+                        var_ident.clone(),
+                        Shared::new(Node {
+                            token_id: operator_token_id,
+                            expr: Shared::new(Expr::Call(
+                                IdentWithToken::new_with_token(constants::SET, Some(Shared::clone(operator_token))),
+                                smallvec![Shared::clone(&args[0]), Shared::clone(&args[1]), rhs,],
+                            )),
+                        }),
                     )),
-                }
-            }
+                })),
+                _ => Err(SyntaxError::InvalidAssignmentTarget(
+                    (*self.token_arena[args[0].token_id]).clone(),
+                )),
+            },
             _ => Err(SyntaxError::InvalidAssignmentTarget(
                 (*self.token_arena[lhs.token_id]).clone(),
             )),
