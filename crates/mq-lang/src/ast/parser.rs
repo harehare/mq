@@ -116,7 +116,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::EqEq | TokenKind::NeEq | TokenKind::Gt | TokenKind::Gte | TokenKind::Lt | TokenKind::Lte => 3,
             TokenKind::Plus | TokenKind::Minus => 4,
             TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent => 5,
-            TokenKind::RangeOp | TokenKind::Coalesce => 6,
+            TokenKind::DoubleDot | TokenKind::Coalesce => 6,
             _ => 0,
         }
     }
@@ -137,7 +137,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Or => constants::OR,
             TokenKind::Percent => constants::MOD,
             TokenKind::Plus => constants::ADD,
-            TokenKind::RangeOp => constants::RANGE,
+            TokenKind::DoubleDot => constants::RANGE,
             TokenKind::Slash => constants::DIV,
             _ => unreachable!(),
         }
@@ -301,7 +301,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     fn parse_primary_expr(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         match &token.kind {
-            TokenKind::Selector(_) => self.parse_selector(token),
+            TokenKind::Selector(_) | TokenKind::DoubleDot => self.parse_selector(token),
             TokenKind::Let => self.parse_let(token),
             TokenKind::Var => self.parse_var(token),
             TokenKind::Def => self.parse_def(token),
@@ -738,7 +738,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::Or
                 | TokenKind::Percent
                 | TokenKind::Plus
-                | TokenKind::RangeOp
+                | TokenKind::DoubleDot
                 | TokenKind::Slash
                 | TokenKind::PlusEqual
                 | TokenKind::MinusEqual
@@ -776,7 +776,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | Some(TokenKind::Percent)
                 | Some(TokenKind::Pipe)
                 | Some(TokenKind::Plus)
-                | Some(TokenKind::RangeOp)
+                | Some(TokenKind::DoubleDot)
                 | Some(TokenKind::RBrace)
                 | Some(TokenKind::RBracket)
                 | Some(TokenKind::RParen)
@@ -1490,7 +1490,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
 
                 // Check for rest pattern: ...rest
-                if matches!(token.kind, TokenKind::RangeOp) {
+                if matches!(token.kind, TokenKind::DoubleDot) {
                     self.tokens.next();
                     if let Some(ident_token) = self.tokens.next() {
                         if let TokenKind::Ident(name) = &ident_token.kind {
@@ -2065,41 +2065,42 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     /// Parse a selector without checking for attributes (to avoid infinite recursion)
     fn parse_selector_direct(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        if let TokenKind::Selector(selector) = &token.kind {
-            if selector == "." {
-                if self.is_next_token(|token_kind| matches!(token_kind, TokenKind::LBracket)) {
-                    self.parse_selector_table_args(Shared::clone(token))
+        match &token.kind {
+            TokenKind::Selector(selector) => {
+                if selector == "." {
+                    if self.is_next_token(|token_kind| matches!(token_kind, TokenKind::LBracket)) {
+                        self.parse_selector_table_args(Shared::clone(token))
+                    } else {
+                        Ok(Shared::new(Node {
+                            token_id: self.token_arena.alloc(Shared::clone(token)),
+                            expr: Shared::new(Expr::Self_),
+                        }))
+                    }
                 } else {
+                    let selector = Selector::try_from(&**token).map_err(SyntaxError::UnknownSelector)?;
+
                     Ok(Shared::new(Node {
                         token_id: self.token_arena.alloc(Shared::clone(token)),
-                        expr: Shared::new(Expr::Self_),
+                        expr: Shared::new(Expr::Selector(selector)),
                     }))
                 }
-            } else {
-                let selector = Selector::try_from(&**token).map_err(SyntaxError::UnknownSelector)?;
-
-                Ok(Shared::new(Node {
-                    token_id: self.token_arena.alloc(Shared::clone(token)),
-                    expr: Shared::new(Expr::Selector(selector)),
-                }))
             }
-        } else {
-            Err(SyntaxError::InsufficientTokens((**token).clone()))
+            TokenKind::DoubleDot => Ok(Shared::new(Node {
+                token_id: self.token_arena.alloc(Shared::clone(token)),
+                expr: Shared::new(Expr::Selector(Selector::Recursive)),
+            })),
+            _ => Err(SyntaxError::InsufficientTokens((**token).clone())),
         }
     }
 
     fn parse_selector(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        if let TokenKind::Selector(_) = &token.kind {
-            if self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_)))
-                && let Some(attr_token) = self.tokens.next()
-            {
-                return self.parse_selector_with_attribute(token, Shared::clone(attr_token));
-            }
-
-            self.parse_selector_direct(token)
-        } else {
-            Err(SyntaxError::InsufficientTokens((**token).clone()))
+        if self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_)))
+            && let Some(attr_token) = self.tokens.next()
+        {
+            return self.parse_selector_with_attribute(token, Shared::clone(attr_token));
         }
+
+        self.parse_selector_direct(token)
     }
 
     // Parses arguments for table or list item selectors like `.[index1][index2]` (for tables) or `.[index1]` (for lists).
@@ -5026,7 +5027,7 @@ mod tests {
     #[case::range_simple(
                 vec![
                     token(TokenKind::NumberLiteral(1.into())),
-                    token(TokenKind::RangeOp),
+                    token(TokenKind::DoubleDot),
                     token(TokenKind::NumberLiteral(5.into())),
                     token(TokenKind::Eof)
                 ],
@@ -5034,7 +5035,7 @@ mod tests {
                     Shared::new(Node {
                         token_id: 1.into(),
                         expr: Shared::new(Expr::Call(
-                            IdentWithToken::new_with_token(constants::RANGE, Some(Shared::new(token(TokenKind::RangeOp)))),
+                            IdentWithToken::new_with_token(constants::RANGE, Some(Shared::new(token(TokenKind::DoubleDot)))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
@@ -5051,7 +5052,7 @@ mod tests {
     #[case::range_with_identifiers(
                 vec![
                     token(TokenKind::Ident(SmolStr::new("start"))),
-                    token(TokenKind::RangeOp),
+                    token(TokenKind::DoubleDot),
                     token(TokenKind::Ident(SmolStr::new("end"))),
                     token(TokenKind::Eof)
                 ],
@@ -5059,7 +5060,7 @@ mod tests {
                     Shared::new(Node {
                         token_id: 1.into(),
                         expr: Shared::new(Expr::Call(
-                            IdentWithToken::new_with_token(constants::RANGE, Some(Shared::new(token(TokenKind::RangeOp)))),
+                            IdentWithToken::new_with_token(constants::RANGE, Some(Shared::new(token(TokenKind::DoubleDot)))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
@@ -5076,7 +5077,7 @@ mod tests {
     #[case::range_error_missing_rhs(
                 vec![
                     token(TokenKind::NumberLiteral(1.into())),
-                    token(TokenKind::RangeOp),
+                    token(TokenKind::DoubleDot),
                     token(TokenKind::Eof)
                 ],
                 Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
@@ -7046,7 +7047,7 @@ mod tests {
             token(TokenKind::LBracket),
             token(TokenKind::Ident(SmolStr::new("first"))),
             token(TokenKind::Comma),
-            token(TokenKind::RangeOp),
+            token(TokenKind::DoubleDot),
             token(TokenKind::Ident(SmolStr::new("rest"))),
             token(TokenKind::RBracket),
             token(TokenKind::Colon),

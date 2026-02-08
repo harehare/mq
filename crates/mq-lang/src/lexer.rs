@@ -238,7 +238,7 @@ define_token_parser!(plus, "+", TokenKind::Plus);
 define_token_parser!(pipe, "|", TokenKind::Pipe);
 define_token_parser!(percent, "%", TokenKind::Percent);
 define_keyword_parser!(quote_, "quote", TokenKind::Quote);
-define_token_parser!(range_op, "..", TokenKind::RangeOp);
+define_token_parser!(range_op, "..", TokenKind::DoubleDot);
 define_token_parser!(r_bracket, "]", TokenKind::RBracket);
 define_token_parser!(r_paren, ")", TokenKind::RParen);
 define_token_parser!(r_brace, "}", TokenKind::RBrace);

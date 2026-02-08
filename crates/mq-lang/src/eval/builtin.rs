@@ -3838,8 +3838,8 @@ pub fn eval_builtin(
     )
 }
 
-pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> bool {
-    match selector {
+pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> RuntimeValue {
+    let is_match = match selector {
         Selector::Code => node.is_code(None),
         Selector::InlineCode => node.is_inline_code(),
         Selector::InlineMath => node.is_inline_math(),
@@ -3898,7 +3898,35 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> bool {
         Selector::MdxFlowExpression => node.is_mdx_flow_expression(),
         Selector::Definition => node.is_definition(),
         Selector::Attr(_) => false, // Attribute selectors don't match nodes directly
+        Selector::Recursive => return eval_recursive_selector(node),
+    };
+
+    if is_match {
+        RuntimeValue::Markdown(node.clone(), None)
+    } else {
+        RuntimeValue::NONE
     }
+}
+
+fn extract_recursive_node(node: &mq_markdown::Node) -> Vec<mq_markdown::Node> {
+    let mut children = vec![];
+
+    for child in node.children().into_iter() {
+        children.extend(extract_recursive_node(&child));
+        children.push(child);
+    }
+
+    children
+}
+
+/// Evaluates the recursive selector and returns all descendant nodes.
+fn eval_recursive_selector(node: &mq_markdown::Node) -> RuntimeValue {
+    RuntimeValue::Array(
+        extract_recursive_node(node)
+            .into_iter()
+            .map(|n| RuntimeValue::Markdown(n, None))
+            .collect(),
+    )
 }
 
 #[inline(always)]
@@ -4491,7 +4519,7 @@ mod tests {
         true
     )]
     fn test_eval_selector(#[case] node: Node, #[case] selector: Selector, #[case] expected: bool) {
-        assert_eq!(eval_selector(&node, &selector), expected);
+        assert_eq!(!eval_selector(&node, &selector).is_none(), expected);
     }
 
     #[rstest]

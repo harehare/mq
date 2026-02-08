@@ -1,4 +1,7 @@
-use crate::node::attr_value::{AttrValue, attr_keys};
+use crate::node::attr_value::{
+    AttrValue,
+    attr_keys::{self, CHILDREN},
+};
 use itertools::Itertools;
 use markdown::mdast::{self};
 use smol_str::SmolStr;
@@ -1132,6 +1135,14 @@ impl Node {
             Self::MdxJsEsm(_) => "mdx_js_esm".into(),
             Self::Text(_) => "text".into(),
             Self::Fragment(_) | Self::Empty => "".into(),
+        }
+    }
+
+    /// Get the children nodes of the current node.
+    pub fn children(&self) -> Vec<Node> {
+        match self.attr(CHILDREN) {
+            Some(AttrValue::Array(children)) => children,
+            _ => vec![],
         }
     }
 

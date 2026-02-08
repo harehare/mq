@@ -676,24 +676,12 @@ impl<T: ModuleResolver> Evaluator<T> {
     #[inline(always)]
     fn eval_selector_expr(runtime_value: &RuntimeValue, ident: &Selector) -> RuntimeValue {
         match runtime_value {
-            RuntimeValue::Markdown(node_value, _) => {
-                if builtin::eval_selector(node_value, ident) {
-                    runtime_value.clone()
-                } else {
-                    RuntimeValue::NONE
-                }
-            }
+            RuntimeValue::Markdown(node_value, _) => builtin::eval_selector(node_value, ident),
             RuntimeValue::Array(values) => {
                 let values = values
                     .iter()
                     .map(|value| match value {
-                        RuntimeValue::Markdown(node_value, _) => {
-                            if builtin::eval_selector(node_value, ident) {
-                                value.clone()
-                            } else {
-                                RuntimeValue::NONE
-                            }
-                        }
+                        RuntimeValue::Markdown(node_value, _) => builtin::eval_selector(node_value, ident),
                         _ => RuntimeValue::NONE,
                     })
                     .collect::<Vec<_>>();
