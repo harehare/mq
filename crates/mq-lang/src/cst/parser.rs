@@ -152,7 +152,7 @@ impl<'a> Parser<'a> {
             TokenKind::Or => Some(BinaryOp::Or),
             TokenKind::Percent => Some(BinaryOp::Modulo),
             TokenKind::Plus => Some(BinaryOp::Plus),
-            TokenKind::RangeOp => Some(BinaryOp::RangeOp),
+            TokenKind::DoubleDot => Some(BinaryOp::RangeOp),
             TokenKind::Slash => Some(BinaryOp::Division),
             TokenKind::PlusEqual => Some(BinaryOp::PlusEqual),
             TokenKind::MinusEqual => Some(BinaryOp::MinusEqual),
@@ -359,7 +359,7 @@ impl<'a> Parser<'a> {
             TokenKind::Ident(_) => self.parse_ident(leading_trivia),
             TokenKind::Self_ => self.parse_self(leading_trivia),
             TokenKind::Let | TokenKind::Var => self.parse_var_decl(leading_trivia, in_loop),
-            TokenKind::Selector(_) => self.parse_selector(leading_trivia),
+            TokenKind::Selector(_) | TokenKind::DoubleDot => self.parse_selector(leading_trivia),
             TokenKind::StringLiteral(_) | TokenKind::NumberLiteral(_) | TokenKind::BoolLiteral(_) | TokenKind::None => {
                 self.parse_node(NodeKind::Literal, leading_trivia)
             }
@@ -833,6 +833,7 @@ impl<'a> Parser<'a> {
                 node.children = children;
                 Ok(Shared::new(node))
             }
+            TokenKind::DoubleDot => Ok(Shared::new(node)),
             _ => {
                 Selector::try_from(&**token).map_err(ParseError::UnknownSelector)?;
 
@@ -1628,8 +1629,8 @@ impl<'a> Parser<'a> {
                 }
 
                 // Check for rest pattern: ..rest
-                if matches!(token.kind, TokenKind::RangeOp) {
-                    children.push(self.next_node(|kind| matches!(kind, TokenKind::RangeOp), NodeKind::Token)?);
+                if matches!(token.kind, TokenKind::DoubleDot) {
+                    children.push(self.next_node(|kind| matches!(kind, TokenKind::DoubleDot), NodeKind::Token)?);
 
                     // Parse rest identifier
                     let rest_leading_trivia = self.parse_leading_trivia();
@@ -4815,14 +4816,14 @@ mod tests {
     #[case::range(
         vec![
             Shared::new(token(TokenKind::Ident("a".into()))),
-            Shared::new(token(TokenKind::RangeOp)),
+            Shared::new(token(TokenKind::DoubleDot)),
             Shared::new(token(TokenKind::Ident("b".into()))),
         ],
         (
             vec![
                 Shared::new(Node {
                     kind: NodeKind::BinaryOp(BinaryOp::RangeOp),
-                    token: Some(Shared::new(token(TokenKind::RangeOp))),
+                    token: Some(Shared::new(token(TokenKind::DoubleDot))),
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: vec![
