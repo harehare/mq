@@ -1455,6 +1455,65 @@ fn engine() -> DefaultEngine {
               value: "rust".to_string(),
               position: None,
             }), None)].into()))]
+#[case::recursive_selector_with_children("nodes | ..",
+            vec![
+              RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{
+                  values: vec![
+                      mq_markdown::Node::Text(mq_markdown::Text { value: "hello".to_string(), position: None }),
+                      mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("url".to_string()), title: None, values: Vec::new(), position: None }),
+                  ],
+                  position: None,
+                  depth: 1,
+              }), None),
+            ],
+            Ok(vec![
+              RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello".to_string(), position: None }), None),
+              RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("url".to_string()), title: None, values: Vec::new(), position: None }), None),
+            ].into()))]
+#[case::recursive_selector_leaf_node("nodes | ..",
+            vec![
+              RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "leaf".to_string(), position: None }), None),
+            ],
+            Ok(vec![].into()))]
+#[case::recursive_selector_nested("nodes | ..",
+            vec![
+              RuntimeValue::Markdown(mq_markdown::Node::Blockquote(mq_markdown::Blockquote{
+                  values: vec![
+                      mq_markdown::Node::Heading(mq_markdown::Heading{
+                          values: vec![
+                              mq_markdown::Node::Text(mq_markdown::Text { value: "nested".to_string(), position: None }),
+                          ],
+                          position: None,
+                          depth: 2,
+                      }),
+                  ],
+                  position: None,
+              }), None),
+            ],
+            Ok(vec![
+              RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "nested".to_string(), position: None }), None),
+              RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{
+                  values: vec![
+                      mq_markdown::Node::Text(mq_markdown::Text { value: "nested".to_string(), position: None }),
+                  ],
+                  position: None,
+                  depth: 2,
+              }), None),
+            ].into()))]
+#[case::recursive_selector_pipe_filter("nodes | .. | filter(fn(x): select(x, .text);)",
+            vec![
+              RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{
+                  values: vec![
+                      mq_markdown::Node::Text(mq_markdown::Text { value: "hello".to_string(), position: None }),
+                      mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("url".to_string()), title: None, values: Vec::new(), position: None }),
+                  ],
+                  position: None,
+                  depth: 1,
+              }), None),
+            ],
+            Ok(vec![
+              RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello".to_string(), position: None }), None),
+            ].into()))]
 #[case::do_block_simple("
     do
       \"hello world\"

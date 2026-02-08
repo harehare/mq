@@ -4522,6 +4522,83 @@ mod tests {
         assert_eq!(!eval_selector(&node, &selector).is_none(), expected);
     }
 
+    #[test]
+    fn test_eval_recursive_selector_with_children() {
+        let node = Node::Heading(mq_markdown::Heading {
+            values: vec![
+                Node::Text(mq_markdown::Text {
+                    value: "hello".into(),
+                    position: None,
+                }),
+                Node::Link(mq_markdown::Link {
+                    url: mq_markdown::Url::new("url".into()),
+                    title: None,
+                    values: Vec::new(),
+                    position: None,
+                }),
+            ],
+            position: None,
+            depth: 1,
+        });
+        let result = eval_selector(&node, &Selector::Recursive);
+        assert_eq!(
+            result,
+            RuntimeValue::Array(vec![
+                RuntimeValue::Markdown(
+                    Node::Text(mq_markdown::Text {
+                        value: "hello".into(),
+                        position: None,
+                    }),
+                    None
+                ),
+                RuntimeValue::Markdown(
+                    Node::Link(mq_markdown::Link {
+                        url: mq_markdown::Url::new("url".into()),
+                        title: None,
+                        values: Vec::new(),
+                        position: None,
+                    }),
+                    None
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_eval_recursive_selector_leaf_node() {
+        let node = Node::Text(mq_markdown::Text {
+            value: "leaf".into(),
+            position: None,
+        });
+        let result = eval_selector(&node, &Selector::Recursive);
+        assert_eq!(result, RuntimeValue::Array(vec![]));
+    }
+
+    #[test]
+    fn test_eval_recursive_selector_nested() {
+        let inner_text = Node::Text(mq_markdown::Text {
+            value: "nested".into(),
+            position: None,
+        });
+        let heading = Node::Heading(mq_markdown::Heading {
+            values: vec![inner_text.clone()],
+            position: None,
+            depth: 2,
+        });
+        let node = Node::Blockquote(mq_markdown::Blockquote {
+            values: vec![heading.clone()],
+            position: None,
+        });
+        let result = eval_selector(&node, &Selector::Recursive);
+        assert_eq!(
+            result,
+            RuntimeValue::Array(vec![
+                RuntimeValue::Markdown(inner_text, None),
+                RuntimeValue::Markdown(heading, None),
+            ])
+        );
+    }
+
     #[rstest]
     #[case(ParamNum::None, 0, true)]
     #[case(ParamNum::None, 1, false)]
