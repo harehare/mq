@@ -1142,7 +1142,7 @@ impl Node {
     pub fn children(&self) -> Vec<Node> {
         match self.attr(CHILDREN) {
             Some(AttrValue::Array(children)) => children,
-            _ => vec![],
+            _ => Vec::new(),
         }
     }
 
