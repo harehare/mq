@@ -2759,6 +2759,9 @@ end
 "
     )]
     #[case::assign_with_selector_attr("value.test|= value.attr", "value.test |= value.attr")]
+    #[case::index_assign("arr[0]=10", "arr[0] = 10")]
+    #[case::index_assign_string_key("dict[\"key\"]=\"value\"", "dict[\"key\"] = \"value\"")]
+    #[case::index_compound_assign("arr[0]+=1", "arr[0] += 1")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

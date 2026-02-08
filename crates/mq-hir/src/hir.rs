@@ -2397,4 +2397,58 @@ end"#;
         // Builtin source has no URL
         assert!(hir.url_by_source(&hir.builtin.source_id).is_none());
     }
+
+    #[test]
+    fn test_var_index_assign() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = "var arr = [1, 2, 3] | arr[0] = 10 | arr";
+        hir.add_code(None, code);
+
+        let var_symbol = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Variable && s.value.as_deref() == Some("arr"));
+        assert!(var_symbol.is_some(), "Should have a Variable symbol for arr");
+
+        let ref_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, s)| s.kind == SymbolKind::Ref && s.value.as_deref() == Some("arr"))
+            .collect();
+        assert!(!ref_symbols.is_empty(), "Should have Ref symbols for arr usage");
+
+        assert!(hir.errors().is_empty(), "Should have no errors");
+    }
+
+    #[test]
+    fn test_var_index_compound_assign() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = "var arr = [1, 2, 3] | arr[0] += 1 | arr";
+        hir.add_code(None, code);
+
+        let var_symbol = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Variable && s.value.as_deref() == Some("arr"));
+        assert!(var_symbol.is_some(), "Should have a Variable symbol for arr");
+
+        assert!(hir.errors().is_empty(), "Should have no errors");
+    }
+
+    #[test]
+    fn test_dict_index_assign() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = r#"var d = {"a": 1} | d["a"] = 2 | d"#;
+        hir.add_code(None, code);
+
+        let var_symbol = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Variable && s.value.as_deref() == Some("d"));
+        assert!(var_symbol.is_some(), "Should have a Variable symbol for d");
+
+        assert!(hir.errors().is_empty(), "Should have no errors");
+    }
 }
