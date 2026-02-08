@@ -4,6 +4,7 @@ pub const ARRAY: &str = "array";
 pub const DICT: &str = "dict";
 
 pub const GET: &str = "get";
+pub const SET: &str = "set";
 pub const SLICE: &str = "slice";
 pub const ATTR: &str = "attr";
 pub const SET_ATTR: &str = "set_attr";

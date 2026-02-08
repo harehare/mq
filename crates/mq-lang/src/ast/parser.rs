@@ -151,20 +151,52 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         operator_token: &Shared<Token>,
         function_name: &'static str,
     ) -> Result<Shared<Node>, SyntaxError> {
+        let compound_rhs = Shared::new(Node {
+            token_id: operator_token_id,
+            expr: Shared::new(Expr::Call(
+                IdentWithToken::new_with_token(function_name, Some(Shared::clone(operator_token))),
+                smallvec![Shared::clone(lhs), rhs],
+            )),
+        });
+        self.create_assign(lhs, compound_rhs, operator_token_id, operator_token)
+    }
+
+    /// Creates an assignment node, handling both simple identifiers and indexed targets.
+    ///
+    /// - `x = rhs` → `Assign(x, rhs)`
+    /// - `arr[idx] = rhs` (lhs is `Call("get", [arr, idx])`) → `Assign(arr, set(arr, idx, rhs))`
+    fn create_assign(
+        &self,
+        lhs: &Shared<Node>,
+        rhs: Shared<Node>,
+        operator_token_id: TokenId,
+        operator_token: &Shared<Token>,
+    ) -> Result<Shared<Node>, SyntaxError> {
         match &*lhs.expr {
             Expr::Ident(ident) => Ok(Shared::new(Node {
                 token_id: operator_token_id,
-                expr: Shared::new(Expr::Assign(
-                    ident.clone(),
-                    Shared::new(Node {
-                        token_id: operator_token_id,
-                        expr: Shared::new(Expr::Call(
-                            IdentWithToken::new_with_token(function_name, Some(Shared::clone(operator_token))),
-                            smallvec![Shared::clone(lhs), rhs],
-                        )),
-                    }),
-                )),
+                expr: Shared::new(Expr::Assign(ident.clone(), rhs)),
             })),
+            Expr::Call(func_ident, args) if func_ident.name == Ident::from(constants::GET) && args.len() == 2 => {
+                match &*args[0].expr {
+                    Expr::Ident(var_ident) => Ok(Shared::new(Node {
+                        token_id: operator_token_id,
+                        expr: Shared::new(Expr::Assign(
+                            var_ident.clone(),
+                            Shared::new(Node {
+                                token_id: operator_token_id,
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(constants::SET, Some(Shared::clone(operator_token))),
+                                    smallvec![Shared::clone(&args[0]), Shared::clone(&args[1]), rhs,],
+                                )),
+                            }),
+                        )),
+                    })),
+                    _ => Err(SyntaxError::InvalidAssignmentTarget(
+                        (*self.token_arena[args[0].token_id]).clone(),
+                    )),
+                }
+            }
             _ => Err(SyntaxError::InvalidAssignmentTarget(
                 (*self.token_arena[lhs.token_id]).clone(),
             )),
@@ -211,17 +243,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
 
             lhs = match kind {
-                TokenKind::Equal => match &*lhs.expr {
-                    Expr::Ident(ident) => Shared::new(Node {
-                        token_id: operator_token_id,
-                        expr: Shared::new(Expr::Assign(ident.clone(), rhs)),
-                    }),
-                    _ => {
-                        return Err(SyntaxError::InvalidAssignmentTarget(
-                            (*parser.token_arena[lhs.token_id]).clone(),
-                        ));
-                    }
-                },
+                TokenKind::Equal => parser.create_assign(&lhs, rhs, operator_token_id, operator_token)?,
                 TokenKind::And => Shared::new(Node {
                     token_id: operator_token_id,
                     expr: Shared::new(Expr::And(lhs, rhs)),
@@ -245,38 +267,22 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::PercentEqual => {
                     parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, constants::MOD)?
                 }
-                TokenKind::DoubleSlashEqual => match &*lhs.expr {
-                    Expr::Ident(ident) => Shared::new(Node {
+                TokenKind::DoubleSlashEqual => {
+                    let floor_div_rhs = Shared::new(Node {
                         token_id: operator_token_id,
-                        expr: Shared::new(Expr::Assign(
-                            ident.clone(),
-                            Shared::new(Node {
+                        expr: Shared::new(Expr::Call(
+                            IdentWithToken::new_with_token(constants::FLOOR, Some(Shared::clone(operator_token))),
+                            smallvec![Shared::new(Node {
                                 token_id: operator_token_id,
                                 expr: Shared::new(Expr::Call(
-                                    IdentWithToken::new_with_token(
-                                        constants::FLOOR,
-                                        Some(Shared::clone(operator_token)),
-                                    ),
-                                    smallvec![Shared::new(Node {
-                                        token_id: operator_token_id,
-                                        expr: Shared::new(Expr::Call(
-                                            IdentWithToken::new_with_token(
-                                                constants::DIV,
-                                                Some(Shared::clone(operator_token))
-                                            ),
-                                            smallvec![lhs, rhs],
-                                        )),
-                                    }),],
+                                    IdentWithToken::new_with_token(constants::DIV, Some(Shared::clone(operator_token)),),
+                                    smallvec![Shared::clone(&lhs), rhs],
                                 )),
-                            }),
+                            })],
                         )),
-                    }),
-                    _ => {
-                        return Err(SyntaxError::InvalidAssignmentTarget(
-                            (*parser.token_arena[lhs.token_id]).clone(),
-                        ));
-                    }
-                },
+                    });
+                    parser.create_assign(&lhs, floor_div_rhs, operator_token_id, operator_token)?
+                }
 
                 _ => Shared::new(Node {
                     token_id: operator_token_id,
@@ -2806,6 +2812,175 @@ mod tests {
                         Shared::new(Node {
                             token_id: 2.into(),
                             expr: Shared::new(Expr::Literal(Literal::String("Alice".to_owned()))),
+                        }),
+                    )),
+                })
+            ]))]
+    #[case::index_assign(
+            vec![
+                token(TokenKind::Ident(SmolStr::new("arr"))),
+                token(TokenKind::LBracket),
+                token(TokenKind::NumberLiteral(0.into())),
+                token(TokenKind::RBracket),
+                token(TokenKind::Equal),
+                token(TokenKind::NumberLiteral(10.into())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 3.into(),
+                    expr: Shared::new(Expr::Assign(
+                        IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
+                        Shared::new(Node {
+                            token_id: 3.into(),
+                            expr: Shared::new(Expr::Call(
+                                IdentWithToken::new_with_token(constants::SET, Some(Shared::new(token(TokenKind::Equal)))),
+                                smallvec![
+                                    Shared::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 4.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::Number(10.into()))),
+                                    }),
+                                ],
+                            )),
+                        }),
+                    )),
+                })
+            ]))]
+    #[case::index_compound_assign(
+            vec![
+                token(TokenKind::Ident(SmolStr::new("arr"))),
+                token(TokenKind::LBracket),
+                token(TokenKind::NumberLiteral(0.into())),
+                token(TokenKind::RBracket),
+                token(TokenKind::PlusEqual),
+                token(TokenKind::NumberLiteral(1.into())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 3.into(),
+                    expr: Shared::new(Expr::Assign(
+                        IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
+                        Shared::new(Node {
+                            token_id: 3.into(),
+                            expr: Shared::new(Expr::Call(
+                                IdentWithToken::new_with_token(constants::SET, Some(Shared::new(token(TokenKind::PlusEqual)))),
+                                smallvec![
+                                    Shared::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 3.into(),
+                                        expr: Shared::new(Expr::Call(
+                                            IdentWithToken::new_with_token(constants::ADD, Some(Shared::new(token(TokenKind::PlusEqual)))),
+                                            smallvec![
+                                                Shared::new(Node {
+                                                    token_id: 2.into(),
+                                                    expr: Shared::new(Expr::Call(
+                                                        IdentWithToken::new_with_token(constants::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
+                                                        smallvec![
+                                                            Shared::new(Node {
+                                                                token_id: 0.into(),
+                                                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                                            }),
+                                                            Shared::new(Node {
+                                                                token_id: 1.into(),
+                                                                expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                                            }),
+                                                        ],
+                                                    )),
+                                                }),
+                                                Shared::new(Node {
+                                                    token_id: 4.into(),
+                                                    expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                                }),
+                                            ],
+                                        )),
+                                    }),
+                                ],
+                            )),
+                        }),
+                    )),
+                })
+            ]))]
+    #[case::index_double_slash_equal(
+            vec![
+                token(TokenKind::Ident(SmolStr::new("arr"))),
+                token(TokenKind::LBracket),
+                token(TokenKind::NumberLiteral(0.into())),
+                token(TokenKind::RBracket),
+                token(TokenKind::DoubleSlashEqual),
+                token(TokenKind::NumberLiteral(2.into())),
+                token(TokenKind::Eof)
+            ],
+            // arr[0] //= 2  →  arr = set(arr, 0, floor(div(get(arr, 0), 2)))
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 3.into(),
+                    expr: Shared::new(Expr::Assign(
+                        IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
+                        Shared::new(Node {
+                            token_id: 3.into(),
+                            expr: Shared::new(Expr::Call(
+                                IdentWithToken::new_with_token(constants::SET, Some(Shared::new(token(TokenKind::DoubleSlashEqual)))),
+                                smallvec![
+                                    Shared::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 3.into(),
+                                        expr: Shared::new(Expr::Call(
+                                            IdentWithToken::new_with_token(constants::FLOOR, Some(Shared::new(token(TokenKind::DoubleSlashEqual)))),
+                                            smallvec![Shared::new(Node {
+                                                token_id: 3.into(),
+                                                expr: Shared::new(Expr::Call(
+                                                    IdentWithToken::new_with_token(constants::DIV, Some(Shared::new(token(TokenKind::DoubleSlashEqual)))),
+                                                    smallvec![
+                                                        Shared::new(Node {
+                                                            token_id: 2.into(),
+                                                            expr: Shared::new(Expr::Call(
+                                                                IdentWithToken::new_with_token(constants::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
+                                                                smallvec![
+                                                                    Shared::new(Node {
+                                                                        token_id: 0.into(),
+                                                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                                                    }),
+                                                                    Shared::new(Node {
+                                                                        token_id: 1.into(),
+                                                                        expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                                                    }),
+                                                                ],
+                                                            )),
+                                                        }),
+                                                        Shared::new(Node {
+                                                            token_id: 4.into(),
+                                                            expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                                        }),
+                                                    ],
+                                                )),
+                                            })],
+                                        )),
+                                    }),
+                                ],
+                            )),
                         }),
                     )),
                 })
