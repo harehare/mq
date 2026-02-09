@@ -1,3 +1,7 @@
+/// Builtin function names used throughout the AST.
+///
+/// This module contains string constants for all builtin functions available in the mq language,
+/// including constructors, accessors, operators, and utility functions.
 pub mod builtins {
     pub const ARRAY: &str = "array";
     pub const DICT: &str = "dict";
@@ -32,6 +36,10 @@ pub mod builtins {
     pub const COALESCE: &str = "coalesce";
 }
 
+/// Reserved identifiers and special symbols used in the language.
+///
+/// This module contains string constants for reserved keywords and special symbols
+/// that have semantic meaning in the mq language, such as `self` and pattern matching wildcards.
 pub mod identifiers {
     pub const SELF: &str = "self";
     pub const PATTERN_MATCH_WILDCARD: &str = "_";
