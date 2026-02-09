@@ -13,8 +13,11 @@ use std::{
 pub mod attr_value;
 
 /// Color theme for rendering markdown nodes with optional ANSI escape codes.
+///
+/// Each field is a tuple of `(prefix, suffix)` ANSI escape code strings that
+/// wrap the corresponding markdown element during colored rendering.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ColorTheme {
+pub struct ColorTheme {
     pub heading: (&'static str, &'static str),
     pub code: (&'static str, &'static str),
     pub code_inline: (&'static str, &'static str),
@@ -72,6 +75,89 @@ impl ColorTheme {
         table_separator: ("\x1b[2m", "\x1b[0m"),
         math: ("\x1b[32m", "\x1b[0m"),
     };
+
+    /// Creates a color theme from the `MQ_COLORS` environment variable.
+    ///
+    /// The format is `key=SGR:key=SGR:...` where each key corresponds to a
+    /// markdown element and the value is a semicolon-separated list of SGR
+    /// (Select Graphic Rendition) parameters.
+    ///
+    /// Supported keys: `heading`, `code`, `code_inline`, `emphasis`, `strong`,
+    /// `link`, `link_url`, `image`, `blockquote`, `delete`, `hr`, `html`,
+    /// `frontmatter`, `list`, `table`, `math`.
+    ///
+    /// Unspecified keys use the default colored theme values.
+    /// Invalid entries are silently ignored.
+    ///
+    /// # Examples
+    ///
+    /// ```bash
+    /// # Make headings bold red, code green
+    /// MQ_COLORS="heading=1;31:code=32"
+    /// ```
+    /// Creates a color theme from the `MQ_COLORS` environment variable.
+    ///
+    /// Returns the default colored theme if `MQ_COLORS` is not set or empty.
+    #[cfg(feature = "color")]
+    pub fn from_env() -> Self {
+        match std::env::var("MQ_COLORS") {
+            Ok(v) if !v.is_empty() => Self::parse_colors(&v),
+            _ => Self::COLORED,
+        }
+    }
+
+    /// Parses a color configuration string into a `ColorTheme`.
+    ///
+    /// The format is `key=SGR:key=SGR:...` where each key corresponds to a
+    /// markdown element and the value is a semicolon-separated list of SGR
+    /// parameters. Unspecified keys use the default colored theme values.
+    /// Invalid entries are silently ignored.
+    #[cfg(feature = "color")]
+    pub fn parse_colors(spec: &str) -> Self {
+        let mut theme = Self::COLORED;
+
+        for entry in spec.split(':') {
+            let Some((key, sgr)) = entry.split_once('=') else {
+                continue;
+            };
+
+            if !Self::is_valid_sgr(sgr) {
+                continue;
+            }
+
+            let prefix: &'static str = Box::leak(format!("\x1b[{}m", sgr).into_boxed_str());
+            let pair = (prefix, "\x1b[0m");
+
+            match key {
+                "heading" => theme.heading = pair,
+                "code" => theme.code = pair,
+                "code_inline" => theme.code_inline = pair,
+                "emphasis" => theme.emphasis = pair,
+                "strong" => theme.strong = pair,
+                "link" => theme.link = pair,
+                "link_url" => theme.link_url = pair,
+                "image" => theme.image = pair,
+                "blockquote" => theme.blockquote_marker = pair,
+                "delete" => theme.delete = pair,
+                "hr" => theme.horizontal_rule = pair,
+                "html" => theme.html = pair,
+                "frontmatter" => theme.frontmatter = pair,
+                "list" => theme.list_marker = pair,
+                "table" => theme.table_separator = pair,
+                "math" => theme.math = pair,
+                _ => {}
+            }
+        }
+
+        theme
+    }
+
+    /// Validates that a string contains only valid SGR parameters
+    /// (semicolon-separated numbers).
+    #[allow(dead_code)]
+    fn is_valid_sgr(sgr: &str) -> bool {
+        !sgr.is_empty() && sgr.split(';').all(|part| part.parse::<u8>().is_ok())
+    }
 }
 
 type Level = u8;

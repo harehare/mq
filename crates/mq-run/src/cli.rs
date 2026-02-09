@@ -753,6 +753,11 @@ impl Cli {
             })
     }
 
+    /// Returns `true` if the `NO_COLOR` environment variable is set and non-empty.
+    fn is_no_color() -> bool {
+        std::env::var("NO_COLOR").is_ok_and(|v| !v.is_empty())
+    }
+
     #[inline(always)]
     fn write_ignore_pipe<W: Write>(handle: &mut W, data: &[u8]) -> miette::Result<()> {
         match handle.write_all(data) {
@@ -804,8 +809,9 @@ impl Cli {
             OutputFormat::Text => {
                 Self::write_ignore_pipe(&mut handle, markdown.to_text().as_bytes())?;
             }
-            OutputFormat::Markdown if self.output.color_output => {
-                Self::write_ignore_pipe(&mut handle, markdown.to_colored_string().as_bytes())?;
+            OutputFormat::Markdown if self.output.color_output && !Self::is_no_color() => {
+                let theme = mq_markdown::ColorTheme::from_env();
+                Self::write_ignore_pipe(&mut handle, markdown.to_colored_string_with_theme(&theme).as_bytes())?;
             }
             OutputFormat::Markdown => {
                 Self::write_ignore_pipe(&mut handle, markdown.to_string().as_bytes())?;

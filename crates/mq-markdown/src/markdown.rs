@@ -45,6 +45,12 @@ impl Markdown {
         self.render_with_theme(&ColorTheme::COLORED)
     }
 
+    /// Returns a colored string representation using the given color theme.
+    #[cfg(feature = "color")]
+    pub fn to_colored_string_with_theme(&self, theme: &ColorTheme) -> String {
+        self.render_with_theme(theme)
+    }
+
     fn render_with_theme(&self, theme: &ColorTheme) -> String {
         let mut pre_position: Option<Position> = None;
         let mut is_first = true;
@@ -422,6 +428,69 @@ mod color_tests {
         let plain = md.to_string();
 
         assert!(!plain.contains("\x1b["));
+    }
+
+    #[test]
+    fn test_parse_colors_overrides_specified_keys() {
+        let theme = ColorTheme::parse_colors("heading=1;31:code=34");
+        assert_eq!(theme.heading, ("\x1b[1;31m", "\x1b[0m"));
+        assert_eq!(theme.code, ("\x1b[34m", "\x1b[0m"));
+        // Unspecified keys remain default
+        assert_eq!(theme.emphasis, ColorTheme::COLORED.emphasis);
+    }
+
+    #[test]
+    fn test_parse_colors_ignores_invalid_entries() {
+        let theme = ColorTheme::parse_colors("heading=abc:code=32:=:badformat");
+        // Invalid "abc" is skipped, heading stays default
+        assert_eq!(theme.heading, ColorTheme::COLORED.heading);
+        // Valid "32" is applied
+        assert_eq!(theme.code, ("\x1b[32m", "\x1b[0m"));
+    }
+
+    #[test]
+    fn test_parse_colors_ignores_unknown_keys() {
+        let theme = ColorTheme::parse_colors("unknown=31:heading=33");
+        assert_eq!(theme.heading, ("\x1b[33m", "\x1b[0m"));
+    }
+
+    #[test]
+    fn test_parse_colors_all_keys() {
+        let theme = ColorTheme::parse_colors(
+            "heading=1:code=2:code_inline=3:emphasis=4:strong=5:link=6:link_url=7:\
+             image=8:blockquote=9:delete=10:hr=11:html=12:frontmatter=13:list=14:\
+             table=15:math=16",
+        );
+        assert_eq!(theme.heading.0, "\x1b[1m");
+        assert_eq!(theme.code.0, "\x1b[2m");
+        assert_eq!(theme.code_inline.0, "\x1b[3m");
+        assert_eq!(theme.emphasis.0, "\x1b[4m");
+        assert_eq!(theme.strong.0, "\x1b[5m");
+        assert_eq!(theme.link.0, "\x1b[6m");
+        assert_eq!(theme.link_url.0, "\x1b[7m");
+        assert_eq!(theme.image.0, "\x1b[8m");
+        assert_eq!(theme.blockquote_marker.0, "\x1b[9m");
+        assert_eq!(theme.delete.0, "\x1b[10m");
+        assert_eq!(theme.horizontal_rule.0, "\x1b[11m");
+        assert_eq!(theme.html.0, "\x1b[12m");
+        assert_eq!(theme.frontmatter.0, "\x1b[13m");
+        assert_eq!(theme.list_marker.0, "\x1b[14m");
+        assert_eq!(theme.table_separator.0, "\x1b[15m");
+        assert_eq!(theme.math.0, "\x1b[16m");
+    }
+
+    #[test]
+    fn test_parse_colors_empty_string() {
+        let theme = ColorTheme::parse_colors("");
+        assert_eq!(theme.heading, ColorTheme::COLORED.heading);
+    }
+
+    #[test]
+    fn test_colored_string_with_custom_theme() {
+        let theme = ColorTheme::parse_colors("heading=1;31");
+        let md = "# Title".parse::<Markdown>().unwrap();
+        let colored = md.to_colored_string_with_theme(&theme);
+        assert_eq!(colored, "\x1b[1;31m# Title\x1b[0m\n");
     }
 }
 
