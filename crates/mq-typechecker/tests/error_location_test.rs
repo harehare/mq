@@ -11,6 +11,7 @@ fn create_hir(code: &str) -> Hir {
     // Disable builtins before adding code to avoid type checking builtin functions
     hir.builtin.disabled = true;
     hir.add_code(None, code);
+    hir.resolve();
     hir
 }
 
@@ -71,8 +72,6 @@ fn test_error_location_if_branch_mismatch() {
                 println!("Got error type: {:?}", e);
             }
         }
-    } else {
-        println!("Note: If/else type checking requires builtin functions, skipping location check");
     }
 }
 
@@ -86,15 +85,12 @@ fn test_error_message_readability() {
         let error_msg = format!("{}", e);
         println!("Error message: {}", error_msg);
 
-        // The error message should be informative
-        assert!(
-            error_msg.contains("mismatch") || error_msg.contains("type"),
-            "Error message should mention type mismatch: {}",
-            error_msg
-        );
-    } else {
-        println!("Note: Array element type checking not yet producing errors");
-    }
+    // The error message should be informative
+    assert!(
+        error_msg.contains("mismatch") || error_msg.contains("type") || error_msg.contains("unify"),
+        "Error message should mention type mismatch: {}",
+        error_msg
+    );
 }
 
 #[test]
@@ -127,16 +123,13 @@ fn test_multiple_errors_show_locations() {
     } else {
         println!("Note: Multiple type errors not yet being detected");
     }
+    assert!(!errors.is_empty(), "Expected at least one type error");
 }
 
-/// Demonstrates how error locations will appear when the feature is fully implemented
 #[test]
-fn test_documentation_error_location_format() {
-    let code = r#"
-let x = 1;
-let y = "hello";
-x + y
-    "#;
+fn test_binary_op_type_error_location() {
+    let code = r#"1 + "hello""#;
+    let errors = check_types(code);
 
     let errors = check_types(code);
 

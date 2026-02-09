@@ -156,6 +156,16 @@ impl InferenceContext {
         std::mem::take(&mut self.constraints)
     }
 
+    /// Adds a type error to the collected errors
+    pub fn add_error(&mut self, error: TypeError) {
+        self.errors.push(error);
+    }
+
+    /// Takes all collected errors
+    pub fn take_errors(&mut self) -> Vec<TypeError> {
+        std::mem::take(&mut self.errors)
+    }
+
     /// Binds a type variable to a type
     pub fn bind_type_var(&mut self, var: TypeVarId, ty: Type) {
         self.substitutions.insert(var, ty);
@@ -186,8 +196,8 @@ impl InferenceContext {
         }
     }
 
-    /// Finalizes inference and returns symbol type schemes
-    pub fn finalize(self) -> FxHashMap<SymbolId, TypeScheme> {
+    /// Finalizes inference and returns symbol type schemes and collected errors
+    pub fn finalize(self) -> (FxHashMap<SymbolId, TypeScheme>, Vec<crate::TypeError>) {
         let mut result = FxHashMap::default();
 
         for (symbol, ty) in &self.symbol_types {
@@ -201,7 +211,7 @@ impl InferenceContext {
             result.insert(*symbol, scheme);
         }
 
-        result
+        (result, self.errors)
     }
 
     /// Gets all symbol types (for testing)
