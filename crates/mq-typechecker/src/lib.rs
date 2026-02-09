@@ -136,8 +136,9 @@ impl TypeChecker {
         // Collect errors before finalizing
         let errors = ctx.take_errors();
 
-        // Store inferred types
-        self.symbol_types = ctx.finalize();
+        // Store inferred types and collect errors
+        let (symbol_types, errors) = ctx.finalize();
+        self.symbol_types = symbol_types;
 
         errors
     }

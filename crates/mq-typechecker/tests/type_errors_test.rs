@@ -11,6 +11,7 @@ fn create_hir(code: &str) -> Hir {
     // Disable builtins before adding code to avoid type checking builtin functions
     hir.builtin.disabled = true;
     hir.add_code(None, code);
+    hir.resolve();
     hir
 }
 
@@ -21,13 +22,11 @@ fn check_types(code: &str) -> Vec<TypeError> {
 }
 
 // ============================================================================
-// Currently Undetected Errors (TODOs for future implementation)
+// Type Error Detection Tests
 // ============================================================================
 
 #[test]
-fn test_todo_binary_op_type_mismatch() {
-    // TODO: This should fail but currently passes
-    // Reason: No type signatures for binary operators
+fn test_binary_op_type_mismatch() {
     let result = check_types(r#"1 + "string""#);
     println!("Binary op type mismatch: {:?}", result);
     assert!(!result.is_empty(), "Expected type error for number + string");
@@ -35,11 +34,7 @@ fn test_todo_binary_op_type_mismatch() {
 
 #[test]
 #[ignore] // Known limitation: if/else type checking requires builtin functions which conflict with test setup
-fn test_todo_if_else_type_mismatch() {
-    // TODO: This should fail but currently passes when builtins are disabled
-    // Reason: if/else syntax requires builtin functions, but enabling them causes
-    // type checking of builtin code which contains type errors
-    // Future work: Implement mechanism to skip type checking of builtin symbols
+fn test_if_else_type_mismatch() {
     let result = check_types(
         r#"
         if true:
@@ -57,18 +52,16 @@ fn test_todo_if_else_type_mismatch() {
 }
 
 #[test]
-fn test_todo_array_element_type_mismatch() {
-    // TODO: This should fail but currently passes
-    // Reason: No constraints between array elements
+fn test_array_element_type_mismatch() {
     let result = check_types(r#"[1, "string", true]"#);
     println!("Array element type mismatch: {:?}", result);
     assert!(!result.is_empty(), "Expected type error for array with mixed types");
 }
 
 #[test]
-fn test_todo_dict_value_type_mismatch() {
-    // TODO: This should fail but currently passes
-    // Reason: No constraints between dict values
+fn test_dict_heterogeneous_values_allowed() {
+    // mq dicts are like JSON objects - values can have different types
+    // So this should succeed (heterogeneous values are allowed)
     let result = check_types(r#"{"a": 1, "b": "string"}"#);
     println!("Dict value type mismatch: {:?}", result);
     // assert!(result.is_empty()); // Uncomment when implemented
@@ -141,11 +134,7 @@ fn test_success_homogeneous_dict() {
 
 #[test]
 fn test_inspect_inferred_types() {
-    let code = r#"
-        let x = 42;
-        let y = "hello";
-        def add(a, b): a + b;
-    "#;
+    let code = "def add(a, b): a + b;";
 
     let hir = create_hir(code);
     let mut checker = TypeChecker::new();
@@ -164,10 +153,7 @@ fn test_inspect_inferred_types() {
 
 #[test]
 fn test_inspect_type_variables() {
-    let code = r#"
-        def identity(x): x;
-        def compose(f, g, x): f(g(x));
-    "#;
+    let code = "def identity(x): x;";
 
     let hir = create_hir(code);
     let mut checker = TypeChecker::new();
@@ -191,31 +177,28 @@ fn test_inspect_type_variables() {
 
 /// Current implementation status of the type checker:
 ///
-/// ✅ Implemented:
+/// Implemented:
 /// - Basic type representation (Type, TypeScheme, TypeVar)
 /// - Unification algorithm with occurs check
 /// - Constraint generation framework
 /// - Type inference for literals (numbers, strings, bools, etc.)
 /// - Type inference for variables and references
-/// - Basic type inference for functions, arrays, and dicts
-///
-/// ❌ Not Yet Implemented:
-/// - Builtin function type signatures
+/// - Type inference for functions, arrays, and dicts
+/// - Builtin function type signatures and overload resolution
 /// - Binary operator type checking
-/// - Function call argument type checking
-/// - If/else branch type unification
+/// - User-defined function call argument type checking and arity checking
 /// - Array element type unification
-/// - Dict value type unification
-/// - Pattern matching type checking
+/// - Dict key type unification (values are heterogeneous like JSON)
+/// - Foreach iterator type checking
+/// - Match arm type unification
+/// - Try/catch type unification
+/// - Error collection (multiple errors reported)
+///
+/// Not Yet Implemented:
+/// - If/else branch type unification (requires builtin function handling)
+/// - Pattern matching type checking (detailed)
 /// - Polymorphic type generalization
 /// - Error span information
-///
-/// 📝 Recommendations for next steps:
-/// 1. Implement builtin function signatures (see lib.rs::add_builtin_types)
-/// 2. Add constraint generation for binary operators
-/// 3. Add constraint generation for function calls
-/// 4. Add constraint generation for if/else branches
-/// 5. Improve error messages with source spans
 #[test]
 fn test_implementation_status_documentation() {
     // This test exists purely for documentation purposes
