@@ -242,7 +242,7 @@ define_token_parser!(range_op, "..", TokenKind::DoubleDot);
 define_token_parser!(r_bracket, "]", TokenKind::RBracket);
 define_token_parser!(r_paren, ")", TokenKind::RParen);
 define_token_parser!(r_brace, "}", TokenKind::RBrace);
-define_keyword_parser!(self_, constants::SELF, TokenKind::Self_);
+define_keyword_parser!(self_, constants::identifiers::SELF, TokenKind::Self_);
 define_token_parser!(semi_colon, ";", TokenKind::SemiColon);
 define_keyword_parser!(try_, "try", TokenKind::Try);
 define_keyword_parser!(unquote_, "unquote", TokenKind::Unquote);

@@ -792,7 +792,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
             ast::Expr::Call(ident, args) => {
                 #[cfg(feature = "debugger")]
-                if ident.name == constants::BREAKPOINT.into() {
+                if ident.name == constants::builtins::BREAKPOINT.into() {
                     self.eval_debugger(runtime_value, Shared::clone(node), Shared::clone(env));
                     return Ok(runtime_value.clone());
                 }
@@ -6598,7 +6598,7 @@ mod debugger_tests {
         let mut evaluator: Evaluator = Evaluator::new(ModuleLoader::default(), token_arena);
         evaluator.debugger_handler = Shared::clone(&handler);
 
-        let program = vec![ast_call(constants::BREAKPOINT, SmallVec::new())];
+        let program = vec![ast_call(constants::builtins::BREAKPOINT, SmallVec::new())];
         let runtime_values = vec![RuntimeValue::String("test".to_string())];
 
         let result = evaluator.eval(&program, runtime_values.into_iter());

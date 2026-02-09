@@ -1550,7 +1550,7 @@ impl<'a> Parser<'a> {
 
         match &token.kind {
             // Wildcard pattern: _
-            TokenKind::Ident(name) if name == constants::PATTERN_MATCH_WILDCARD => {
+            TokenKind::Ident(name) if name == constants::identifiers::PATTERN_MATCH_WILDCARD => {
                 self.tokens.next();
                 let trailing_trivia = self.parse_trailing_trivia();
                 Ok(Shared::new(Node {

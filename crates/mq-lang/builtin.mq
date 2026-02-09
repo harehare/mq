@@ -293,7 +293,7 @@ end
 
 # Skips elements from the beginning of an array while the provided function returns true
 def skip_while(arr, f):
-  let si = if (not(is_array(arr))):
+  let si = if (!is_array(arr)):
     error("first argument must be an array")
   elif (is_empty(arr)):
     0
@@ -309,15 +309,17 @@ end
 
 # Takes elements from the beginning of an array while the provided function returns true
 def take_while(arr, f):
-  var i = 0
-  | let ti =
+  let ti =
     if (not(is_array(arr))):
       error("first argument must be an array")
     elif (is_empty(arr)):
       0
     else:
-      while (and(i < len(arr), f(get(arr, i)))):
-        i += 1 | i
+      do
+        var i = 0
+        | while (and(i < len(arr), f(get(arr, i)))):
+            i += 1 | i
+          end
       end
   | if (is_none(ti)): []
     else:
@@ -326,21 +328,23 @@ end
 
 # Groups elements of an array by the result of applying a function to each element
 def group_by(arr, f):
-  var i = 0
-  | var groups = dict()
+  var groups = dict()
   | if (not(is_array(arr))):
       error("first argument must be an array")
     elif (is_empty(arr)):
       dict()
     else:
-      while (not(is_none(get(arr, i)))):
-        let v = get(arr, i)
-        | i += 1
-        | let key = to_string(f(v))
-        | let existing = get(groups, key)
-        | let new_group = if (is_none(existing)): [v] else: existing + v
-        | groups = set(groups, key, new_group)
-        | groups
+      do
+        var i = 0
+        | while (not(is_none(get(arr, i)))):
+            let v = get(arr, i)
+            | i += 1
+            | let key = to_string(f(v))
+            | let existing = get(groups, key)
+            | let new_group = if (is_none(existing)): [v] else: existing + v
+            | groups = set(groups, key, new_group)
+            | groups
+          end
       end
 end
 
@@ -363,38 +367,42 @@ end
 
 # Reduces an array to a single value by applying a function, starting from an initial value.
 def fold(arr, init, f):
-  var acc = init
-  | var i = 0
-  | if (not(is_array(arr))):
-      error("first argument must be an array")
-    elif (is_empty(arr)):
-      init
-    else:
-      while (i != len(arr)):
-        acc = f(acc, get(arr, i))
-        | i += 1
-        | acc
-      end
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)):
+    init
+  else:
+    do
+      var acc = init
+      | var i = 0
+      | while (i != len(arr)):
+          acc = f(acc, get(arr, i))
+          | i += 1
+          | acc
+        end
+    end
 end
 
 # Returns a new array with duplicate elements removed, comparing by the result of the provided function.
 def unique_by(arr, f):
-  var seen = dict()
-  | var result = []
-  | var i = 0
-  | if (not(is_array(arr))):
-      error("first argument must be an array")
-    elif (is_empty(arr)): []
-    else:
-      while (i != len(arr)):
-        let item = get(arr, i)
-        | let key = to_string(f(item))
-        | let already_seen = get(seen, key)
-        | result = if (is_none(already_seen)): result + item else: result
-        | seen = if (is_none(already_seen)): set(seen, key, true) else: seen
-        | i += 1
-        | result
-      end
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)): []
+  else:
+    do
+      var seen = dict()
+      | var result = []
+      | var i = 0
+      | while (i != len(arr)):
+          let item = get(arr, i)
+          | let key = to_string(f(item))
+          | let already_seen = get(seen, key)
+          | result = if (is_none(already_seen)): result + item else: result
+          | seen = if (is_none(already_seen)): set(seen, key, true) else: seen
+          | i += 1
+          | result
+        end
+    end
 end
 
 # Returns the input value unchanged.
