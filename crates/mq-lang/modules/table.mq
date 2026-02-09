@@ -99,8 +99,7 @@ end
 
 # Filter tables from markdown nodes based on a predicate function.
 def filter_tables(tables, f):
-  let filtered_tables = filter(tables, fn(table): f(table[:header], table[:rows]);)
-  | filtered_tables
+  filter(tables, fn(table): f(table[:header], table[:rows]);)
 end
 
 # Filter rows in the table based on a predicate function.
