@@ -12,11 +12,8 @@ fn debug_abs_typechecking() {
 
     println!("\n===== Starting type checking =====");
     let mut checker = TypeChecker::new();
-    let result = checker.check(&hir);
+    let errors = checker.check(&hir);
 
-    println!("\nType checking result: {:?}", result);
-
-    if let Err(e) = result {
-        println!("\nError details: {:#?}", e);
-    }
+    println!("\nType checking errors: {:?}", errors);
+    assert!(errors.is_empty(), "abs(42) should type check successfully");
 }

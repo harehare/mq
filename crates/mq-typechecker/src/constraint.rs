@@ -1,6 +1,5 @@
 //! Constraint generation for type inference.
 
-use crate::Result;
 use crate::infer::InferenceContext;
 use crate::types::{Type, TypeVarId};
 use mq_hir::{Hir, SymbolId, SymbolKind};
@@ -43,7 +42,7 @@ fn get_symbol_range(hir: &Hir, symbol_id: SymbolId) -> Option<mq_lang::Range> {
 }
 
 /// Generates type constraints from HIR
-pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> Result<()> {
+pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
     // Use a two-pass approach to ensure literals have concrete types before operators use them
 
     // Pass 1: Assign types to literals, variables, and simple constructs
@@ -62,8 +61,9 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> Result<()>
             | SymbolKind::None
             | SymbolKind::Variable
             | SymbolKind::Parameter
-            | SymbolKind::PatternVariable => {
-                generate_symbol_constraints(hir, symbol_id, symbol.kind.clone(), ctx)?;
+            | SymbolKind::PatternVariable
+            | SymbolKind::Function(_) => {
+                generate_symbol_constraints(hir, symbol_id, symbol.kind.clone(), ctx);
             }
             _ => {}
         }
@@ -81,19 +81,55 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> Result<()>
         if ctx.get_symbol_type(symbol_id).is_some() {
             continue;
         }
-        generate_symbol_constraints(hir, symbol_id, symbol.kind.clone(), ctx)?;
+        generate_symbol_constraints(hir, symbol_id, symbol.kind.clone(), ctx);
     }
+}
 
-    Ok(())
+/// Resolves a builtin function call using overload resolution
+fn resolve_builtin_call(
+    ctx: &mut InferenceContext,
+    symbol_id: SymbolId,
+    func_name: &str,
+    arg_tys: &[Type],
+    range: Option<mq_lang::Range>,
+) {
+    let resolved_arg_tys: Vec<Type> = arg_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
+    let is_builtin = ctx.get_builtin_overloads(func_name).is_some();
+
+    if let Some(resolved_ty) = ctx.resolve_overload(func_name, &resolved_arg_tys) {
+        if let Type::Function(param_tys, ret_ty) = resolved_ty {
+            for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
+                ctx.add_constraint(Constraint::Equal(arg_ty.clone(), param_ty.clone(), range));
+            }
+            ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
+        } else {
+            let ty_var = ctx.fresh_var();
+            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+        }
+    } else if is_builtin {
+        ctx.add_error(crate::TypeError::UnificationError {
+            left: format!(
+                "{} with arguments ({})",
+                func_name,
+                resolved_arg_tys
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            right: "no matching overload".to_string(),
+            span: None,
+        });
+        let ty_var = ctx.fresh_var();
+        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+    } else {
+        let ret_ty = Type::Var(ctx.fresh_var());
+        ctx.set_symbol_type(symbol_id, ret_ty);
+    }
 }
 
 /// Generates constraints for a single symbol
-fn generate_symbol_constraints(
-    hir: &Hir,
-    symbol_id: SymbolId,
-    kind: SymbolKind,
-    ctx: &mut InferenceContext,
-) -> Result<()> {
+fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind, ctx: &mut InferenceContext) {
     match kind {
         // Literals have concrete types
         SymbolKind::Number => {
@@ -160,7 +196,7 @@ fn generate_symbol_constraints(
                             ctx.add_constraint(Constraint::Equal(ref_ty, builtin_ty, range));
                         }
                         // For multiple overloads, the type will be resolved at the call site
-                        return Ok(());
+                        return;
                     }
                 }
 
@@ -207,12 +243,14 @@ fn generate_symbol_constraints(
                                 ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                             }
                         } else {
-                            // No matching overload found - return error
-                            return Err(crate::TypeError::UnificationError {
+                            // No matching overload found - collect error
+                            ctx.add_error(crate::TypeError::UnificationError {
                                 left: format!("{} with arguments ({}, {})", op_name, resolved_left, resolved_right),
                                 right: "no matching overload".to_string(),
                                 span: None,
                             });
+                            let ty_var = ctx.fresh_var();
+                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                         }
                     } else {
                         // Not enough operands
@@ -255,12 +293,14 @@ fn generate_symbol_constraints(
                                 ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                             }
                         } else {
-                            // No matching overload found - return error
-                            return Err(crate::TypeError::UnificationError {
+                            // No matching overload found - collect error
+                            ctx.add_error(crate::TypeError::UnificationError {
                                 left: format!("{} with argument ({})", op_name, resolved_operand),
                                 right: "no matching overload".to_string(),
                                 span: None,
                             });
+                            let ty_var = ctx.fresh_var();
+                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                         }
                     } else {
                         let ty_var = ctx.fresh_var();
@@ -285,49 +325,45 @@ fn generate_symbol_constraints(
                         .map(|&arg_id| ctx.get_or_create_symbol_type(arg_id))
                         .collect();
 
-                    // Resolve argument types to get their concrete values if already determined
-                    let resolved_arg_tys: Vec<Type> = arg_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
+                    let range = get_symbol_range(hir, symbol_id);
 
-                    // Check if this is a builtin function
-                    let is_builtin = ctx.get_builtin_overloads(func_name.as_str()).is_some();
+                    // Try user-defined function first (via HIR reference resolution)
+                    if let Some(def_id) = hir.resolve_reference_symbol(symbol_id) {
+                        let def_symbol = hir.symbol(def_id);
+                        let is_user_defined = def_symbol.map(|s| !hir.is_builtin_symbol(s)).unwrap_or(false);
 
-                    // Try to resolve as a builtin function first
-                    if let Some(resolved_ty) = ctx.resolve_overload(func_name.as_str(), &resolved_arg_tys) {
-                        // resolved_ty is the matched function type
-                        if let Type::Function(param_tys, ret_ty) = resolved_ty {
-                            let range = get_symbol_range(hir, symbol_id);
+                        if is_user_defined {
+                            let func_ty = ctx.get_or_create_symbol_type(def_id);
 
-                            // Add constraints for each argument
-                            for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
-                                ctx.add_constraint(Constraint::Equal(arg_ty.clone(), param_ty.clone(), range));
+                            if let Type::Function(param_tys, ret_ty) = &func_ty {
+                                // Check arity
+                                if param_tys.len() != arg_tys.len() {
+                                    ctx.add_error(crate::TypeError::WrongArity {
+                                        expected: param_tys.len(),
+                                        found: arg_tys.len(),
+                                        span: None,
+                                    });
+                                } else {
+                                    // Unify argument types with parameter types
+                                    for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
+                                        ctx.add_constraint(Constraint::Equal(arg_ty.clone(), param_ty.clone(), range));
+                                    }
+                                }
+                                ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
+                            } else {
+                                // The definition exists but isn't a function type yet
+                                let ret_ty = Type::Var(ctx.fresh_var());
+                                let expected_func_ty = Type::function(arg_tys.clone(), ret_ty.clone());
+                                ctx.add_constraint(Constraint::Equal(func_ty, expected_func_ty, range));
+                                ctx.set_symbol_type(symbol_id, ret_ty);
                             }
-
-                            // Set the call result type
-                            ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
+                        } else {
+                            // Resolved to a builtin - handle via overload resolution
+                            resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range);
                         }
-                    } else if is_builtin {
-                        // Builtin function exists but no matching overload - return error
-                        return Err(crate::TypeError::UnificationError {
-                            left: format!(
-                                "{} with arguments ({})",
-                                func_name,
-                                resolved_arg_tys
-                                    .iter()
-                                    .map(|t| t.to_string())
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            ),
-                            right: "no matching overload".to_string(),
-                            span: None,
-                        });
                     } else {
-                        // Not a builtin function - handle as a user-defined function
-                        // Create result type
-                        let ret_ty = Type::Var(ctx.fresh_var());
-
-                        // For now, just assign a fresh type variable
-                        // TODO: Look up user-defined function and unify with its type
-                        ctx.set_symbol_type(symbol_id, ret_ty);
+                        // No HIR resolution - try builtin overload resolution
+                        resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range);
                     }
                 } else {
                     let ty_var = ctx.fresh_var();
@@ -368,13 +404,37 @@ fn generate_symbol_constraints(
         }
 
         SymbolKind::Dict => {
-            // Dict keys and values should have consistent types
-            // For now, use fresh type variables
-            // TODO: Process dict entries properly
-            let key_ty_var = ctx.fresh_var();
-            let val_ty_var = ctx.fresh_var();
-            let dict_ty = Type::dict(Type::Var(key_ty_var), Type::Var(val_ty_var));
-            ctx.set_symbol_type(symbol_id, dict_ty);
+            // Dict structure in HIR: Dict -> key_symbol -> value_expr
+            // Direct children of Dict are the key symbols
+            // Note: mq dicts are like JSON objects - values can have different types
+            // So we only unify key types, not value types
+            let key_symbols = get_children(hir, symbol_id);
+            if key_symbols.is_empty() {
+                let key_ty_var = ctx.fresh_var();
+                let val_ty_var = ctx.fresh_var();
+                let dict_ty = Type::dict(Type::Var(key_ty_var), Type::Var(val_ty_var));
+                ctx.set_symbol_type(symbol_id, dict_ty);
+            } else {
+                let key_ty_var = ctx.fresh_var();
+                let val_ty_var = ctx.fresh_var();
+                let key_ty = Type::Var(key_ty_var);
+                let range = get_symbol_range(hir, symbol_id);
+
+                for &key_id in &key_symbols {
+                    // Key symbol type - all keys should be the same type
+                    let k_ty = ctx.get_or_create_symbol_type(key_id);
+                    ctx.add_constraint(Constraint::Equal(key_ty.clone(), k_ty, range));
+
+                    // Process value expressions (to assign types to them)
+                    let value_children = get_children(hir, key_id);
+                    for &val_id in &value_children {
+                        ctx.get_or_create_symbol_type(val_id);
+                    }
+                }
+
+                let dict_ty = Type::dict(key_ty, Type::Var(val_ty_var));
+                ctx.set_symbol_type(symbol_id, dict_ty);
+            }
         }
 
         // Control flow constructs
@@ -420,21 +480,85 @@ fn generate_symbol_constraints(
         }
 
         SymbolKind::Foreach => {
-            // TODO: Iterator type checking
-            let ty_var = ctx.fresh_var();
-            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            // Foreach: iterable should be an array, loop variable gets element type
+            let children = get_children(hir, symbol_id);
+            let range = get_symbol_range(hir, symbol_id);
+
+            // Children layout: [variable, iterable, body...]
+            if children.len() >= 2 {
+                let elem_ty_var = ctx.fresh_var();
+                let elem_ty = Type::Var(elem_ty_var);
+
+                // The iterable should be an array
+                let iterable_ty = ctx.get_or_create_symbol_type(children[1]);
+                ctx.add_constraint(Constraint::Equal(iterable_ty, Type::array(elem_ty.clone()), range));
+
+                // The loop variable gets the element type
+                let var_ty = ctx.get_or_create_symbol_type(children[0]);
+                ctx.add_constraint(Constraint::Equal(var_ty, elem_ty, range));
+
+                // The result type comes from the body (last child)
+                if children.len() > 2 {
+                    let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
+                    ctx.set_symbol_type(symbol_id, body_ty);
+                } else {
+                    let ty_var = ctx.fresh_var();
+                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                }
+            } else {
+                let ty_var = ctx.fresh_var();
+                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            }
         }
 
         SymbolKind::Match => {
             // All match arms should have the same type
-            let ty_var = ctx.fresh_var();
-            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            let children = get_children(hir, symbol_id);
+            let range = get_symbol_range(hir, symbol_id);
+
+            if children.len() > 1 {
+                // First child is the match expression, rest are arms
+                let arm_children: Vec<_> = children[1..].to_vec();
+
+                if !arm_children.is_empty() {
+                    let result_ty_var = ctx.fresh_var();
+                    let result_ty = Type::Var(result_ty_var);
+
+                    // Unify all arm result types
+                    for &arm_id in &arm_children {
+                        let arm_ty = ctx.get_or_create_symbol_type(arm_id);
+                        ctx.add_constraint(Constraint::Equal(result_ty.clone(), arm_ty, range));
+                    }
+
+                    ctx.set_symbol_type(symbol_id, result_ty);
+                } else {
+                    let ty_var = ctx.fresh_var();
+                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                }
+            } else {
+                let ty_var = ctx.fresh_var();
+                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            }
         }
 
         SymbolKind::Try => {
-            // Try expression type
-            let ty_var = ctx.fresh_var();
-            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            // Try/Catch: try body and catch body should have the same type
+            let children = get_children(hir, symbol_id);
+            let range = get_symbol_range(hir, symbol_id);
+
+            if children.len() >= 2 {
+                // First child is try body, second is catch body
+                let try_ty = ctx.get_or_create_symbol_type(children[0]);
+                let catch_ty = ctx.get_or_create_symbol_type(children[1]);
+                ctx.add_constraint(Constraint::Equal(try_ty.clone(), catch_ty, range));
+                ctx.set_symbol_type(symbol_id, try_ty);
+            } else if !children.is_empty() {
+                let try_ty = ctx.get_or_create_symbol_type(children[0]);
+                ctx.set_symbol_type(symbol_id, try_ty);
+            } else {
+                let ty_var = ctx.fresh_var();
+                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            }
         }
 
         // Other kinds
@@ -444,8 +568,6 @@ fn generate_symbol_constraints(
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }
     }
-
-    Ok(())
 }
 
 #[cfg(test)]

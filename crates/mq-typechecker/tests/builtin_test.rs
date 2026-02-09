@@ -15,7 +15,7 @@ fn create_hir(code: &str) -> Hir {
 }
 
 /// Helper function to run type checker
-fn check_types(code: &str) -> Result<(), TypeError> {
+fn check_types(code: &str) -> Vec<TypeError> {
     let hir = create_hir(code);
     let mut checker = TypeChecker::new();
     checker.check(&hir)
@@ -35,7 +35,13 @@ fn check_types(code: &str) -> Result<(), TypeError> {
 #[case::abs_string("abs(\"hello\")", false)] // Should fail: wrong type
 fn test_unary_math_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 #[rstest]
@@ -49,7 +55,13 @@ fn test_unary_math_functions(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::pow("2 ^ 8", true)]
 fn test_arithmetic_operators(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 #[rstest]
@@ -60,7 +72,13 @@ fn test_arithmetic_operators(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::lt_string("\"a\" < \"b\"", false)] // Should fail: wrong type
 fn test_comparison_operators(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 #[rstest]
@@ -70,7 +88,13 @@ fn test_comparison_operators(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::ne_strings("\"a\" != \"b\"", true)]
 fn test_equality_operators(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 #[rstest]
@@ -80,7 +104,13 @@ fn test_equality_operators(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::max_strings("max(\"a\", \"b\")", true)]
 fn test_min_max(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 #[rstest]
@@ -91,7 +121,13 @@ fn test_min_max(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::and_number("1 && 2", false)] // Should fail: wrong type
 fn test_logical_operators(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 #[rstest]
@@ -100,7 +136,13 @@ fn test_logical_operators(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::is_nan("is_nan(1.0)", true)]
 fn test_special_number_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 // ============================================================================
@@ -114,7 +156,13 @@ fn test_special_number_functions(#[case] code: &str, #[case] should_succeed: boo
 #[case::downcase_number("downcase(42)", false)] // Should fail: wrong type
 fn test_string_case_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 #[rstest]
@@ -124,7 +172,13 @@ fn test_string_case_functions(#[case] code: &str, #[case] should_succeed: bool) 
 #[case::rindex("rindex(\"hello\", \"l\")", true)]
 fn test_string_search_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 #[rstest]
@@ -134,7 +188,13 @@ fn test_string_search_functions(#[case] code: &str, #[case] should_succeed: bool
 #[case::join("join([\"a\", \"b\"], \",\")", true)]
 fn test_string_manipulation_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 #[rstest]
@@ -143,7 +203,13 @@ fn test_string_manipulation_functions(#[case] code: &str, #[case] should_succeed
 #[case::utf8bytelen("utf8bytelen(\"hello\")", true)]
 fn test_string_codepoint_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 #[rstest]
@@ -153,7 +219,13 @@ fn test_string_codepoint_functions(#[case] code: &str, #[case] should_succeed: b
 #[case::url_encode("url_encode(\"hello world\")", true)]
 fn test_string_encoding_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 // ============================================================================
@@ -168,7 +240,13 @@ fn test_string_encoding_functions(#[case] code: &str, #[case] should_succeed: bo
 #[case::compact("compact([1, none, 2])", true)]
 fn test_array_manipulation_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 #[rstest]
@@ -178,7 +256,13 @@ fn test_array_manipulation_functions(#[case] code: &str, #[case] should_succeed:
 #[case::insert("insert([1, 3], 1, 2)", true)]
 fn test_array_access_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 #[rstest]
@@ -187,7 +271,13 @@ fn test_array_access_functions(#[case] code: &str, #[case] should_succeed: bool)
 #[case::repeat("repeat(\"x\", 3)", true)]
 fn test_array_creation_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 // ============================================================================
@@ -200,7 +290,13 @@ fn test_array_creation_functions(#[case] code: &str, #[case] should_succeed: boo
 #[case::entries("entries({\"a\": 1, \"b\": 2})", true)]
 fn test_dict_query_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 #[rstest]
@@ -210,7 +306,13 @@ fn test_dict_query_functions(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::update("update({\"a\": 1}, {\"b\": 2})", true)]
 fn test_dict_manipulation_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 // ============================================================================
@@ -224,7 +326,13 @@ fn test_dict_manipulation_functions(#[case] code: &str, #[case] should_succeed: 
 #[case::type_of("type(42)", true)]
 fn test_type_conversion_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 // ============================================================================
@@ -237,7 +345,13 @@ fn test_type_conversion_functions(#[case] code: &str, #[case] should_succeed: bo
 #[case::to_date("to_date(1704067200000, \"%Y-%m-%d\")", true)]
 fn test_datetime_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 // ============================================================================
@@ -250,7 +364,13 @@ fn test_datetime_functions(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::input("input()", true)]
 fn test_io_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 // ============================================================================
@@ -264,7 +384,13 @@ fn test_io_functions(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::mixed_operations("to_string(len(split(\"a,b,c\", \",\")))", true)]
 fn test_complex_builtin_expressions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }
 
 // ============================================================================
@@ -280,5 +406,11 @@ fn test_complex_builtin_expressions(#[case] code: &str, #[case] should_succeed: 
 #[case::len_wrong_arity("len()", false)] // Missing argument
 fn test_builtin_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
-    assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
 }

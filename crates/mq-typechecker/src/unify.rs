@@ -24,21 +24,21 @@ fn range_to_span(range: &mq_lang::Range) -> miette::SourceSpan {
 }
 
 /// Solves type constraints through unification
-pub fn solve_constraints(ctx: &mut InferenceContext) -> Result<()> {
+pub fn solve_constraints(ctx: &mut InferenceContext) {
     let constraints = ctx.take_constraints();
 
     for constraint in constraints {
         match constraint {
             Constraint::Equal(t1, t2, range) => {
-                unify(ctx, &t1, &t2, range)?;
+                if let Err(err) = unify(ctx, &t1, &t2, range) {
+                    ctx.add_error(err);
+                }
             }
             Constraint::Instance(_t, _var, _range) => {
                 // TODO: Handle type scheme instantiation
             }
         }
     }
-
-    Ok(())
 }
 
 /// Unifies two types
