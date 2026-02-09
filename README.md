@@ -257,6 +257,8 @@ Options:
           Specify a query to insert between files as a separator
   -o, --output <FILE>
           Output to the specified file
+  -C, --color-output
+          Colorize markdown output
       --list
           List all available subcommands (built-in and external)
   -P <PARALLEL_THRESHOLD>
