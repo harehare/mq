@@ -306,6 +306,12 @@ def test_table_filter_rows():
   | assert_eq(len(md_result[:rows]), 1)
 end
 
+def test_table_filter_tables():
+  let tables = table::tables(table_nodes)
+  | let tables = table::filter_tables(tables, fn(header, rows): to_string(header[0]) != "Name";)
+  | assert_eq(len(tables), 0)
+end
+
 def test_table_sort_rows():
   let t = first(table::tables(table_nodes))
   | let md_result = table::sort_rows(t, 1)
@@ -364,6 +370,7 @@ end
   test_case("Table To Markdown", test_table_to_markdown),
   test_case("Table Map Rows", test_table_map_rows),
   test_case("Table Filter Rows", test_table_filter_rows),
+  test_case("Table Filter Tables", test_table_filter_tables),
   test_case("Table Sort Rows", test_table_sort_rows),
 ])
 
