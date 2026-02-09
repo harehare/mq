@@ -61,7 +61,12 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
             | SymbolKind::None
             | SymbolKind::Variable
             | SymbolKind::Parameter
+<<<<<<< HEAD
             | SymbolKind::PatternVariable => {
+=======
+            | SymbolKind::PatternVariable
+            | SymbolKind::Function(_) => {
+>>>>>>> 02334e86 (✨ Refactor type checker to return a list of type errors instead of a Result)
                 generate_symbol_constraints(hir, symbol_id, symbol.kind.clone(), ctx);
             }
             _ => {}
@@ -100,6 +105,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
 
         generate_symbol_constraints(hir, symbol_id, symbol.kind.clone(), ctx);
     }
+}
 
     // Pass 4: Process Block symbols (pipe chains)
     // Children are now typed, so we can thread output types through the chain
@@ -427,9 +433,9 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                             for (arg_ty, param_ty) in effective_arg_tys.iter().zip(param_tys.iter()) {
                                 ctx.add_constraint(Constraint::Equal(arg_ty.clone(), param_ty.clone(), range));
                             }
-
-                            // Set the call result type
-                            ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
+                        } else {
+                            // Resolved to a builtin - handle via overload resolution
+                            resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range);
                         }
                     } else {
                         // Check if it's a known builtin with wrong arguments
@@ -537,13 +543,37 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
         }
 
         SymbolKind::Dict => {
-            // Dict keys and values should have consistent types
-            // For now, use fresh type variables
-            // TODO: Process dict entries properly
-            let key_ty_var = ctx.fresh_var();
-            let val_ty_var = ctx.fresh_var();
-            let dict_ty = Type::dict(Type::Var(key_ty_var), Type::Var(val_ty_var));
-            ctx.set_symbol_type(symbol_id, dict_ty);
+            // Dict structure in HIR: Dict -> key_symbol -> value_expr
+            // Direct children of Dict are the key symbols
+            // Note: mq dicts are like JSON objects - values can have different types
+            // So we only unify key types, not value types
+            let key_symbols = get_children(hir, symbol_id);
+            if key_symbols.is_empty() {
+                let key_ty_var = ctx.fresh_var();
+                let val_ty_var = ctx.fresh_var();
+                let dict_ty = Type::dict(Type::Var(key_ty_var), Type::Var(val_ty_var));
+                ctx.set_symbol_type(symbol_id, dict_ty);
+            } else {
+                let key_ty_var = ctx.fresh_var();
+                let val_ty_var = ctx.fresh_var();
+                let key_ty = Type::Var(key_ty_var);
+                let range = get_symbol_range(hir, symbol_id);
+
+                for &key_id in &key_symbols {
+                    // Key symbol type - all keys should be the same type
+                    let k_ty = ctx.get_or_create_symbol_type(key_id);
+                    ctx.add_constraint(Constraint::Equal(key_ty.clone(), k_ty, range));
+
+                    // Process value expressions (to assign types to them)
+                    let value_children = get_children(hir, key_id);
+                    for &val_id in &value_children {
+                        ctx.get_or_create_symbol_type(val_id);
+                    }
+                }
+
+                let dict_ty = Type::dict(key_ty, Type::Var(val_ty_var));
+                ctx.set_symbol_type(symbol_id, dict_ty);
+            }
         }
 
         // Control flow constructs
