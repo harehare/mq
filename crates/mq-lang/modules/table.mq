@@ -1,3 +1,5 @@
+# This module is under development. APIs and behavior may change without notice.
+
 # Extract table structures from a list of markdown nodes.
 def tables(md_nodes):
   if (is_empty(md_nodes)):
@@ -93,6 +95,12 @@ end
 # Map a function over each row in the table.
 def map_rows(table, f):
   set(table, :rows, map(table[:rows], f))
+end
+
+# Filter tables from markdown nodes based on a predicate function.
+def filter_tables(tables, f):
+  let filtered_tables = filter(tables, fn(table): f(table[:header], table[:rows]);)
+  | filtered_tables
 end
 
 # Filter rows in the table based on a predicate function.
