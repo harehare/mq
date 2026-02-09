@@ -2,7 +2,7 @@
 use crate::html_to_markdown;
 #[cfg(feature = "html-to-markdown")]
 use crate::html_to_markdown::ConversionOptions;
-use crate::node::{Node, Position, RenderOptions, TableAlign, TableCell};
+use crate::node::{ColorTheme, Node, Position, RenderOptions, TableAlign, TableCell, render_values};
 use markdown::Constructs;
 use miette::miette;
 use std::{fmt, str::FromStr};
@@ -23,37 +23,51 @@ impl FromStr for Markdown {
 
 impl fmt::Display for Markdown {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.render_with_theme(&ColorTheme::PLAIN))
+    }
+}
+
+impl Markdown {
+    pub fn new(nodes: Vec<Node>) -> Self {
+        Self {
+            nodes,
+            options: RenderOptions::default(),
+        }
+    }
+
+    pub fn set_options(&mut self, options: RenderOptions) {
+        self.options = options;
+    }
+
+    /// Returns a colored string representation of the markdown using ANSI escape codes.
+    #[cfg(feature = "color")]
+    pub fn to_colored_string(&self) -> String {
+        self.render_with_theme(&ColorTheme::COLORED)
+    }
+
+    fn render_with_theme(&self, theme: &ColorTheme) -> String {
         let mut pre_position: Option<Position> = None;
         let mut is_first = true;
         let mut current_table_row: Option<usize> = None;
 
-        // Pre-allocate buffer to reduce allocations
-        let mut buffer = String::with_capacity(self.nodes.len() * 50); // Reasonable estimate
+        let mut buffer = String::with_capacity(self.nodes.len() * 50);
 
         for (i, node) in self.nodes.iter().enumerate() {
-            // Handle TableCell specially - group by row
             if let Node::TableCell(TableCell { row, values, .. }) = node {
-                let value = values
-                    .iter()
-                    .map(|v| v.to_string_with(&self.options))
-                    .collect::<String>();
+                let value = render_values(values, &self.options, theme);
 
-                // Check if this is a new row
                 let is_new_row = current_table_row != Some(*row);
 
                 if is_new_row {
-                    // End previous row if exists
                     if current_table_row.is_some() {
                         buffer.push_str("|\n");
                     }
                     current_table_row = Some(*row);
                 }
 
-                // Output cell: |content
                 buffer.push('|');
                 buffer.push_str(&value);
 
-                // Check if this is the last cell in the row
                 let next_node = self.nodes.get(i + 1);
                 let next_is_different_row = next_node.is_none_or(
                     |next| !matches!(next, Node::TableCell(TableCell { row: next_row, .. }) if *next_row == *row),
@@ -69,7 +83,6 @@ impl fmt::Display for Markdown {
                 continue;
             }
 
-            // Handle TableAlign specially - always add newline after
             if let Node::TableAlign(TableAlign { align, .. }) = node {
                 use itertools::Itertools;
                 buffer.push('|');
@@ -80,10 +93,9 @@ impl fmt::Display for Markdown {
                 continue;
             }
 
-            // Reset table row tracking for non-TableCell nodes
             current_table_row = None;
 
-            let value = node.to_string_with(&self.options);
+            let value = node.render_with_theme(&self.options, theme);
 
             if value.is_empty() || value == "\n" {
                 pre_position = None;
@@ -98,7 +110,6 @@ impl fmt::Display for Markdown {
 
                 pre_position = Some(pos.clone());
 
-                // Write newlines directly to buffer instead of creating temp string
                 for _ in 0..new_line_count {
                     buffer.push('\n');
                 }
@@ -114,25 +125,12 @@ impl fmt::Display for Markdown {
             }
         }
 
-        // Write final result to formatter
         if buffer.is_empty() || buffer.ends_with('\n') {
-            write!(f, "{}", buffer)
+            buffer
         } else {
-            writeln!(f, "{}", buffer)
+            buffer.push('\n');
+            buffer
         }
-    }
-}
-
-impl Markdown {
-    pub fn new(nodes: Vec<Node>) -> Self {
-        Self {
-            nodes,
-            options: RenderOptions::default(),
-        }
-    }
-
-    pub fn set_options(&mut self, options: RenderOptions) {
-        self.options = options;
     }
 
     pub fn from_mdx_str(content: &str) -> miette::Result<Self> {
@@ -381,6 +379,49 @@ mod tests {
         assert!(formatted.contains("1. Item 1"));
         assert!(formatted.contains("2. Item 2"));
         assert!(formatted.contains("3. Item 2"));
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "color")]
+mod color_tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::heading("# Title", "\x1b[1m\x1b[36m# Title\x1b[0m\n")]
+    #[case::emphasis("*italic*", "\x1b[3m\x1b[33m*italic*\x1b[0m\n")]
+    #[case::strong("**bold**", "\x1b[1m**bold**\x1b[0m\n")]
+    #[case::code_inline("`code`", "\x1b[32m`code`\x1b[0m\n")]
+    #[case::code_block("```rust\nlet x = 1;\n```", "\x1b[32m```rust\nlet x = 1;\n```\x1b[0m\n")]
+    #[case::link("[text](url)", "\x1b[4m\x1b[34m[text](url)\x1b[0m\n")]
+    #[case::image("![alt](url)", "\x1b[35m![alt](url)\x1b[0m\n")]
+    #[case::delete("~~deleted~~", "\x1b[31m\x1b[2m~~deleted~~\x1b[0m\n")]
+    #[case::horizontal_rule("---", "\x1b[2m---\x1b[0m\n")]
+    #[case::blockquote("> quote", "\x1b[2m> \x1b[0mquote\n")]
+    #[case::math_inline("$x^2$", "\x1b[32m$x^2$\x1b[0m\n")]
+    #[case::list("- item", "\x1b[33m-\x1b[0m item\n")]
+    fn test_to_colored_string(#[case] input: &str, #[case] expected: &str) {
+        let md = input.parse::<Markdown>().unwrap();
+        assert_eq!(md.to_colored_string(), expected);
+    }
+
+    #[test]
+    fn test_colored_output_contains_ansi_codes() {
+        let md = "# Hello\n\n**bold** and *italic*".parse::<Markdown>().unwrap();
+        let colored = md.to_colored_string();
+
+        assert!(colored.contains("\x1b["));
+        assert!(colored.contains("\x1b[0m"));
+    }
+
+    #[test]
+    fn test_plain_output_has_no_ansi_codes() {
+        let md = "# Hello\n\n**bold** and *italic*".parse::<Markdown>().unwrap();
+        let plain = md.to_string();
+
+        assert!(!plain.contains("\x1b["));
     }
 }
 

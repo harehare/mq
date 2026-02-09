@@ -12,6 +12,68 @@ use std::{
 
 pub mod attr_value;
 
+/// Color theme for rendering markdown nodes with optional ANSI escape codes.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ColorTheme {
+    pub heading: (&'static str, &'static str),
+    pub code: (&'static str, &'static str),
+    pub code_inline: (&'static str, &'static str),
+    pub emphasis: (&'static str, &'static str),
+    pub strong: (&'static str, &'static str),
+    pub link: (&'static str, &'static str),
+    pub link_url: (&'static str, &'static str),
+    pub image: (&'static str, &'static str),
+    pub blockquote_marker: (&'static str, &'static str),
+    pub delete: (&'static str, &'static str),
+    pub horizontal_rule: (&'static str, &'static str),
+    pub html: (&'static str, &'static str),
+    pub frontmatter: (&'static str, &'static str),
+    pub list_marker: (&'static str, &'static str),
+    pub table_separator: (&'static str, &'static str),
+    pub math: (&'static str, &'static str),
+}
+
+impl ColorTheme {
+    pub const PLAIN: Self = Self {
+        heading: ("", ""),
+        code: ("", ""),
+        code_inline: ("", ""),
+        emphasis: ("", ""),
+        strong: ("", ""),
+        link: ("", ""),
+        link_url: ("", ""),
+        image: ("", ""),
+        blockquote_marker: ("", ""),
+        delete: ("", ""),
+        horizontal_rule: ("", ""),
+        html: ("", ""),
+        frontmatter: ("", ""),
+        list_marker: ("", ""),
+        table_separator: ("", ""),
+        math: ("", ""),
+    };
+
+    #[cfg(feature = "color")]
+    pub const COLORED: Self = Self {
+        heading: ("\x1b[1m\x1b[36m", "\x1b[0m"),
+        code: ("\x1b[32m", "\x1b[0m"),
+        code_inline: ("\x1b[32m", "\x1b[0m"),
+        emphasis: ("\x1b[3m\x1b[33m", "\x1b[0m"),
+        strong: ("\x1b[1m", "\x1b[0m"),
+        link: ("\x1b[4m\x1b[34m", "\x1b[0m"),
+        link_url: ("\x1b[34m", "\x1b[0m"),
+        image: ("\x1b[35m", "\x1b[0m"),
+        blockquote_marker: ("\x1b[2m", "\x1b[0m"),
+        delete: ("\x1b[31m\x1b[2m", "\x1b[0m"),
+        horizontal_rule: ("\x1b[2m", "\x1b[0m"),
+        html: ("\x1b[2m", "\x1b[0m"),
+        frontmatter: ("\x1b[2m", "\x1b[0m"),
+        list_marker: ("\x1b[33m", "\x1b[0m"),
+        table_separator: ("\x1b[2m", "\x1b[0m"),
+        math: ("\x1b[32m", "\x1b[0m"),
+    };
+}
+
 type Level = u8;
 
 pub const EMPTY_NODE: Node = Node::Text(Text {
@@ -817,6 +879,16 @@ impl Node {
     }
 
     pub fn to_string_with(&self, options: &RenderOptions) -> String {
+        self.render_with_theme(options, &ColorTheme::PLAIN)
+    }
+
+    /// Returns a colored string representation of this node using ANSI escape codes.
+    #[cfg(feature = "color")]
+    pub fn to_colored_string_with(&self, options: &RenderOptions) -> String {
+        self.render_with_theme(options, &ColorTheme::COLORED)
+    }
+
+    pub(crate) fn render_with_theme(&self, options: &RenderOptions, theme: &ColorTheme) -> String {
         match self.clone() {
             Self::List(List {
                 level,
@@ -826,34 +898,43 @@ impl Node {
                 index,
                 ..
             }) => {
+                let marker = if ordered {
+                    format!("{}.", index + 1)
+                } else {
+                    options.list_style.to_string()
+                };
+                let (ms, me) = theme.list_marker;
                 format!(
-                    "{}{} {}{}",
+                    "{}{}{}{} {}{}",
                     "  ".repeat(level as usize),
-                    if ordered {
-                        format!("{}.", index + 1)
-                    } else {
-                        options.list_style.to_string()
-                    },
+                    ms,
+                    marker,
+                    me,
                     checked.map(|it| if it { "[x] " } else { "[ ] " }).unwrap_or_else(|| ""),
-                    values_to_string(&values, options)
+                    render_values(&values, options, theme)
                 )
             }
             Self::TableRow(TableRow { values, .. }) => {
+                let (ts, te) = theme.table_separator;
                 let cells = values
                     .iter()
-                    .map(|cell| cell.to_string_with(options))
+                    .map(|cell| cell.render_with_theme(options, theme))
                     .collect::<Vec<_>>()
                     .join("|");
-                format!("|{}|", cells)
+                format!("{}|{}{}|", ts, te, cells)
             }
-            Self::TableCell(TableCell { values, .. }) => values_to_string(&values, options),
+            Self::TableCell(TableCell { values, .. }) => render_values(&values, options, theme),
             Self::TableAlign(TableAlign { align, .. }) => {
-                format!("|{}|", align.iter().map(|a| a.to_string()).join("|"))
+                let (ts, te) = theme.table_separator;
+                format!("{}|{}|{}", ts, align.iter().map(|a| a.to_string()).join("|"), te)
             }
-            Self::Blockquote(Blockquote { values, .. }) => values_to_string(&values, options)
-                .split('\n')
-                .map(|line| format!("> {}", line))
-                .join("\n"),
+            Self::Blockquote(Blockquote { values, .. }) => {
+                let (bs, be) = theme.blockquote_marker;
+                render_values(&values, options, theme)
+                    .split('\n')
+                    .map(|line| format!("{}> {}{}", bs, be, line))
+                    .join("\n")
+            }
             Self::Code(Code {
                 value,
                 lang,
@@ -861,14 +942,15 @@ impl Node {
                 meta,
                 ..
             }) => {
+                let (cs, ce) = theme.code;
                 let meta = meta.as_deref().map(|meta| format!(" {}", meta)).unwrap_or_default();
 
                 match lang {
-                    Some(lang) => format!("```{}{}\n{}\n```", lang, meta, value),
+                    Some(lang) => format!("{}```{}{}\n{}\n```{}", cs, lang, meta, value, ce),
                     None if fence => {
-                        format!("```{}\n{}\n```", lang.as_deref().unwrap_or(""), value)
+                        format!("{}```{}\n{}\n```{}", cs, lang.as_deref().unwrap_or(""), value, ce)
                     }
-                    None => value.lines().map(|line| format!("    {}", line)).join("\n"),
+                    None => value.lines().map(|line| format!("{}    {}{}", cs, line, ce)).join("\n"),
                 }
             }
             Self::Definition(Definition {
@@ -878,74 +960,104 @@ impl Node {
                 title,
                 ..
             }) => {
+                let (us, ue) = theme.link_url;
                 format!(
-                    "[{}]: {}{}",
+                    "[{}]: {}{}{}{}",
                     label.unwrap_or(ident),
+                    us,
                     url.to_string_with(options),
+                    ue,
                     title
                         .map(|title| format!(" {}", title.to_string_with(options)))
                         .unwrap_or_default()
                 )
             }
             Self::Delete(Delete { values, .. }) => {
-                format!("~~{}~~", values_to_string(&values, options))
+                let (ds, de) = theme.delete;
+                format!("{}~~{}~~{}", ds, render_values(&values, options, theme), de)
             }
             Self::Emphasis(Emphasis { values, .. }) => {
-                format!("*{}*", values_to_string(&values, options))
+                let (es, ee) = theme.emphasis;
+                format!("{}*{}*{}", es, render_values(&values, options, theme), ee)
             }
             Self::Footnote(Footnote { values, ident, .. }) => {
-                format!("[^{}]: {}", ident, values_to_string(&values, options))
+                format!("[^{}]: {}", ident, render_values(&values, options, theme))
             }
             Self::FootnoteRef(FootnoteRef { label, .. }) => {
                 format!("[^{}]", label.unwrap_or_default())
             }
             Self::Heading(Heading { depth, values, .. }) => {
-                format!("{} {}", "#".repeat(depth as usize), values_to_string(&values, options))
+                let (hs, he) = theme.heading;
+                format!(
+                    "{}{} {}{}",
+                    hs,
+                    "#".repeat(depth as usize),
+                    render_values(&values, options, theme),
+                    he
+                )
             }
-            Self::Html(Html { value, .. }) => value,
-            Self::Image(Image { alt, url, title, .. }) => format!(
-                "![{}]({}{})",
-                alt,
-                url.replace(' ', "%20"),
-                title.map(|it| format!(" \"{}\"", it)).unwrap_or_default()
-            ),
+            Self::Html(Html { value, .. }) => {
+                let (hs, he) = theme.html;
+                format!("{}{}{}", hs, value, he)
+            }
+            Self::Image(Image { alt, url, title, .. }) => {
+                let (is, ie) = theme.image;
+                format!(
+                    "{}![{}]({}{}){}",
+                    is,
+                    alt,
+                    url.replace(' ', "%20"),
+                    title.map(|it| format!(" \"{}\"", it)).unwrap_or_default(),
+                    ie
+                )
+            }
             Self::ImageRef(ImageRef { alt, ident, label, .. }) => {
+                let (is, ie) = theme.image;
                 if alt == ident {
-                    format!("![{}]", ident)
+                    format!("{}![{}]{}", is, ident, ie)
                 } else {
-                    format!("![{}][{}]", alt, label.unwrap_or(ident))
+                    format!("{}![{}][{}]{}", is, alt, label.unwrap_or(ident), ie)
                 }
             }
             Self::CodeInline(CodeInline { value, .. }) => {
-                format!("`{}`", value)
+                let (cs, ce) = theme.code_inline;
+                format!("{}`{}`{}", cs, value, ce)
             }
             Self::MathInline(MathInline { value, .. }) => {
-                format!("${}$", value)
+                let (ms, me) = theme.math;
+                format!("{}${}${}", ms, value, me)
             }
             Self::Link(Link { url, title, values, .. }) => {
+                let (ls, le) = theme.link;
                 format!(
-                    "[{}]({}{})",
-                    values_to_string(&values, options),
+                    "{}[{}]({}{}){}",
+                    ls,
+                    render_values(&values, options, theme),
                     url.to_string_with(options),
                     title
                         .map(|title| format!(" {}", title.to_string_with(options)))
                         .unwrap_or_default(),
+                    le
                 )
             }
             Self::LinkRef(LinkRef { values, label, .. }) => {
-                let ident = values_to_string(&values, options);
+                let (ls, le) = theme.link;
+                let ident = render_values(&values, options, theme);
 
                 label
                     .map(|label| {
                         if label == ident {
-                            format!("[{}]", ident)
+                            format!("{}[{}]{}", ls, ident, le)
                         } else {
-                            format!("[{}][{}]", ident, label)
+                            format!("{}[{}][{}]{}", ls, ident, label, le)
                         }
                     })
-                    .unwrap_or(format!("[{}]", ident))
+                    .unwrap_or(format!("{}[{}]{}", ls, ident, le))
             }
-            Self::Math(Math { value, .. }) => format!("$$\n{}\n$$", value),
+            Self::Math(Math { value, .. }) => {
+                let (ms, me) = theme.math;
+                format!("{}$$\n{}\n$${}", ms, value, me)
+            }
             Self::Text(Text { value, .. }) => value,
             Self::MdxFlowExpression(mdx_flow_expression) => {
                 format!("{{{}}}", mdx_flow_expression.value)
@@ -972,7 +1084,7 @@ impl Node {
                         "<{}{}>{}</{}>",
                         name,
                         attributes,
-                        values_to_string(&mdx_jsx_flow_element.children, options),
+                        render_values(&mdx_jsx_flow_element.children, options, theme),
                         name
                     )
                 }
@@ -999,7 +1111,7 @@ impl Node {
                         "<{}{}>{}</{}>",
                         name,
                         attributes,
-                        values_to_string(&mdx_jsx_text_element.children, options),
+                        render_values(&mdx_jsx_text_element.children, options, theme),
                         name
                     )
                 }
@@ -1009,21 +1121,33 @@ impl Node {
             }
             Self::MdxJsEsm(mdxjs_esm) => mdxjs_esm.value.to_string(),
             Self::Strong(Strong { values, .. }) => {
+                let (ss, se) = theme.strong;
                 format!(
-                    "**{}**",
+                    "{}**{}**{}",
+                    ss,
                     values
                         .iter()
-                        .map(|value| value.to_string_with(options))
-                        .collect::<String>()
+                        .map(|value| value.render_with_theme(options, theme))
+                        .collect::<String>(),
+                    se
                 )
             }
-            Self::Yaml(Yaml { value, .. }) => format!("---\n{}\n---", value),
-            Self::Toml(Toml { value, .. }) => format!("+++\n{}\n+++", value),
+            Self::Yaml(Yaml { value, .. }) => {
+                let (fs, fe) = theme.frontmatter;
+                format!("{}---\n{}\n---{}", fs, value, fe)
+            }
+            Self::Toml(Toml { value, .. }) => {
+                let (fs, fe) = theme.frontmatter;
+                format!("{}+++\n{}\n+++{}", fs, value, fe)
+            }
             Self::Break(_) => "\\".to_string(),
-            Self::HorizontalRule(_) => "---".to_string(),
+            Self::HorizontalRule(_) => {
+                let (hs, he) = theme.horizontal_rule;
+                format!("{}---{}", hs, he)
+            }
             Self::Fragment(Fragment { values }) => values
                 .iter()
-                .map(|value| value.to_string_with(options))
+                .map(|value| value.render_with_theme(options, theme))
                 .collect::<String>(),
             Self::Empty => String::new(),
         }
@@ -2528,6 +2652,10 @@ impl Node {
 }
 
 pub(crate) fn values_to_string(values: &[Node], options: &RenderOptions) -> String {
+    render_values(values, options, &ColorTheme::PLAIN)
+}
+
+pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &ColorTheme) -> String {
     let mut pre_position: Option<Position> = None;
     values
         .iter()
@@ -2552,13 +2680,17 @@ pub(crate) fn values_to_string(values: &[Node], options: &RenderOptions) -> Stri
                 pre_position = Some(pos);
 
                 if space.is_empty() {
-                    format!("{}{}", "\n".repeat(new_line_count), value.to_string_with(options))
+                    format!(
+                        "{}{}",
+                        "\n".repeat(new_line_count),
+                        value.render_with_theme(options, theme)
+                    )
                 } else {
                     format!(
                         "{}{}",
                         "\n".repeat(new_line_count),
                         value
-                            .to_string_with(options)
+                            .render_with_theme(options, theme)
                             .lines()
                             .map(|line| format!("{}{}", space, line))
                             .join("\n")
@@ -2566,7 +2698,7 @@ pub(crate) fn values_to_string(values: &[Node], options: &RenderOptions) -> Stri
                 }
             } else {
                 pre_position = None;
-                value.to_string_with(options)
+                value.render_with_theme(options, theme)
             }
         })
         .collect::<String>()

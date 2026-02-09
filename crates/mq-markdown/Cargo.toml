@@ -27,6 +27,7 @@ smol_str = {workspace = true}
 rstest = {workspace = true}
 
 [features]
+color = []
 default = ["std"]
 html-to-markdown = ["dep:scraper", "dep:ego-tree", "dep:serde_yaml"]
 json = ["dep:serde", "dep:serde_json", "smol_str/serde"]

@@ -29,7 +29,7 @@ mq-dap = {workspace = true, optional = true}
 mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
 mq-lang = {workspace = true, features = ["file-io"]}
-mq-markdown = {workspace = true, features = ["json", "html-to-markdown"]}
+mq-markdown = {workspace = true, features = ["json", "html-to-markdown", "color"]}
 mq-repl = {workspace = true}
 rayon = {workspace = true}
 regex-lite = {workspace = true, optional = true}
