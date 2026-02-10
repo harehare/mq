@@ -10,6 +10,7 @@ use std::collections::VecDeque;
 use std::io::BufRead;
 use std::io::IsTerminal;
 use std::io::{self, BufWriter, Read, Write};
+use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
 use std::{fs, path::PathBuf};
@@ -275,26 +276,58 @@ impl Cli {
         }
     }
 
-    /// Find all external commands (mq-* files in ~/.mq/bin)
+    /// Find all external commands (mq-* files in ~/.mq/bin and PATH)
     fn find_external_commands() -> Vec<String> {
-        let mut commands = Vec::new();
+        let mut seen = std::collections::HashSet::new();
 
-        if let Some(bin_dir) = Self::get_external_commands_dir()
-            && let Ok(entries) = fs::read_dir(bin_dir)
-        {
-            for entry in entries.flatten() {
-                if let Ok(file_name) = entry.file_name().into_string()
-                    && file_name.starts_with("mq-")
-                {
-                    // Remove "mq-" prefix to get the subcommand name
-                    let subcommand = file_name.strip_prefix("mq-").unwrap();
-                    commands.push(subcommand.to_string());
-                }
+        // Search ~/.mq/bin first
+        if let Some(bin_dir) = Self::get_external_commands_dir() {
+            Self::collect_mq_commands_from_dir(&bin_dir, &mut seen);
+        }
+
+        // Search PATH directories
+        if let Ok(path_var) = std::env::var("PATH") {
+            for dir in std::env::split_paths(&path_var) {
+                Self::collect_mq_commands_from_dir(&dir, &mut seen);
             }
         }
 
+        let mut commands: Vec<String> = seen.into_iter().collect();
         commands.sort();
         commands
+    }
+
+    /// Collect mq-* command names from a directory.
+    /// On Windows, strips known executable extensions (.exe, .cmd, .bat) from the subcommand name.
+    fn collect_mq_commands_from_dir(dir: &Path, seen: &mut std::collections::HashSet<String>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                if let Ok(file_name) = entry.file_name().into_string()
+                    && file_name.starts_with("mq-")
+                    && let Some(subcommand) = file_name.strip_prefix("mq-")
+                {
+                    let subcommand = Self::strip_executable_extension(subcommand);
+                    if !subcommand.is_empty() {
+                        seen.insert(subcommand);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Strip known executable extensions on Windows. On Unix, returns the name as-is.
+    fn strip_executable_extension(name: &str) -> String {
+        if cfg!(windows) {
+            let path = Path::new(name);
+            match path.extension().and_then(|e| e.to_str()) {
+                Some("exe" | "cmd" | "bat" | "com") => {
+                    path.file_stem().unwrap_or_default().to_string_lossy().to_string()
+                }
+                _ => name.to_string(),
+            }
+        } else {
+            name.to_string()
+        }
     }
 
     /// Execute an external subcommand
@@ -360,7 +393,10 @@ impl Cli {
         let external_commands = Self::find_external_commands();
         if !external_commands.is_empty() {
             output.push("".to_string());
-            output.push(format!("{}", "External subcommands (from ~/.mq/bin):".bold().yellow()));
+            output.push(format!(
+                "{}",
+                "External subcommands (from ~/.mq/bin and PATH):".bold().yellow()
+            ));
             for cmd in external_commands {
                 output.push(format!("  {}", cmd.bright_yellow()));
             }
@@ -1179,7 +1215,7 @@ mod tests {
 
     #[test]
     fn test_find_external_commands() {
-        // This test will only pass if ~/.mq/bin exists and contains mq-* files
+        // find_external_commands searches ~/.mq/bin and PATH for mq-* files
         let commands = Cli::find_external_commands();
         // We can't assert specific commands, but we can check the function works
         assert!(commands.iter().all(|cmd| !cmd.is_empty()));
@@ -1191,6 +1227,92 @@ mod tests {
         let dir = Cli::get_external_commands_dir();
         if let Some(path) = dir {
             assert!(path.ends_with(".mq/bin") || path.ends_with(".mq\\bin"));
+        }
+    }
+
+    #[test]
+    fn test_collect_mq_commands_from_dir() {
+        let temp_dir = std::env::temp_dir().join("mq-collect-test");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create test files: mq-foo, mq-bar, and a non-mq file
+        fs::write(temp_dir.join("mq-foo"), "").expect("Failed to write file");
+        fs::write(temp_dir.join("mq-bar"), "").expect("Failed to write file");
+        fs::write(temp_dir.join("other-cmd"), "").expect("Failed to write file");
+
+        let mut seen = std::collections::HashSet::new();
+        Cli::collect_mq_commands_from_dir(&temp_dir, &mut seen);
+
+        assert_eq!(seen.len(), 2);
+        assert!(seen.contains("foo"));
+        assert!(seen.contains("bar"));
+        assert!(!seen.contains("other-cmd"));
+    }
+
+    #[test]
+    fn test_collect_mq_commands_from_dir_deduplicates() {
+        let dir1 = std::env::temp_dir().join("mq-dedup-test-1");
+        let dir2 = std::env::temp_dir().join("mq-dedup-test-2");
+        fs::create_dir_all(&dir1).expect("Failed to create test directory");
+        fs::create_dir_all(&dir2).expect("Failed to create test directory");
+
+        defer! {
+            if dir1.exists() {
+                std::fs::remove_dir_all(&dir1).ok();
+            }
+            if dir2.exists() {
+                std::fs::remove_dir_all(&dir2).ok();
+            }
+        }
+
+        // Same command in both directories
+        fs::write(dir1.join("mq-dup"), "").expect("Failed to write file");
+        fs::write(dir2.join("mq-dup"), "").expect("Failed to write file");
+        fs::write(dir2.join("mq-unique"), "").expect("Failed to write file");
+
+        let mut seen = std::collections::HashSet::new();
+        Cli::collect_mq_commands_from_dir(&dir1, &mut seen);
+        Cli::collect_mq_commands_from_dir(&dir2, &mut seen);
+
+        assert_eq!(seen.len(), 2);
+        assert!(seen.contains("dup"));
+        assert!(seen.contains("unique"));
+    }
+
+    #[test]
+    fn test_collect_mq_commands_from_nonexistent_dir() {
+        let nonexistent = std::env::temp_dir().join("mq-nonexistent-dir");
+        let mut seen = std::collections::HashSet::new();
+        // Should not panic on nonexistent directory
+        Cli::collect_mq_commands_from_dir(&nonexistent, &mut seen);
+        assert!(seen.is_empty());
+    }
+
+    #[test]
+    fn test_strip_executable_extension() {
+        // On Unix, names are returned as-is
+        #[cfg(not(windows))]
+        {
+            assert_eq!(Cli::strip_executable_extension("foo"), "foo");
+            assert_eq!(Cli::strip_executable_extension("foo.exe"), "foo.exe");
+            assert_eq!(Cli::strip_executable_extension("foo.cmd"), "foo.cmd");
+        }
+
+        // On Windows, known extensions are stripped
+        #[cfg(windows)]
+        {
+            assert_eq!(Cli::strip_executable_extension("foo.exe"), "foo");
+            assert_eq!(Cli::strip_executable_extension("foo.cmd"), "foo");
+            assert_eq!(Cli::strip_executable_extension("foo.bat"), "foo");
+            assert_eq!(Cli::strip_executable_extension("foo.com"), "foo");
+            assert_eq!(Cli::strip_executable_extension("foo"), "foo");
+            assert_eq!(Cli::strip_executable_extension("foo.sh"), "foo.sh");
         }
     }
 
