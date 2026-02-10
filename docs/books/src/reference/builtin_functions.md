@@ -22,7 +22,7 @@
 | `compact_map` |  Maps over an array and removes None values from the result. | `arr`, `f` | compact_map(arr, f) |
 | `contains` |  Checks if string contains a substring | `haystack`, `needle` | contains(haystack, needle) |
 | `count_by` |  Returns the count of elements in the array that satisfy the provided function. | `arr`, `f` | count_by(arr, f) |
-| `debug` | Prints the debug information of the given value(s). | `values` | debug(values) |
+| `debug` |  Prints the debug information of the given value(s). | `args` | debug(args) |
 | `decrease_header_level` | Decreases the level of a markdown heading node by one, down to a minimum of 1. | `heading_node` | decrease_header_level(heading_node) |
 | `del` | Deletes the element at the specified index in the array or string. | `array_or_string`, `index` | del(array_or_string, index) |
 | `dict` | Creates a new, empty dict. |  | dict() |
@@ -92,7 +92,8 @@
 | `is_none` |  Checks if input is None | `n` | is_none(n) |
 | `is_number` |  Checks if input is a number | `n` | is_number(n) |
 | `is_string` |  Checks if input is a string | `s` | is_string(s) |
-| `is_table_header` |  Checks if markdown is table header | `md` | is_table_header(md) |
+| `is_table_align` |  Checks if markdown is table align | `md` | is_table_align(md) |
+| `is_table_cell` |  Checks if markdown is table cell | `md` | is_table_cell(md) |
 | `is_text` |  Checks if markdown is text | `text` | is_text(text) |
 | `is_toml` |  Checks if markdown is toml | `md` | is_toml(md) |
 | `is_yaml` |  Checks if markdown is yaml | `md` | is_yaml(md) |
@@ -176,6 +177,7 @@
 | `to_math_inline` | Creates an inline markdown math node with the given value. | `value` | to_math_inline(value) |
 | `to_md_list` | Creates a markdown list node with the given value and indent level. | `value`, `indent` | to_md_list(value, indent) |
 | `to_md_name` | Returns the name of the given markdown node. | `markdown` | to_md_name(markdown) |
+| `to_md_table_cell` | Creates a markdown table cell node with the given value at the specified row and column. | `value`, `row`, `column` | to_md_table_cell(value, row, column) |
 | `to_md_table_row` | Creates a markdown table row node with the given values. | `cells` | to_md_table_row(cells) |
 | `to_md_text` | Creates a markdown text node with the given value. | `value` | to_md_text(value) |
 | `to_mdx` | Parses an MDX string and returns an array of MDX nodes. | `mdx_string` | to_mdx(mdx_string) |
