@@ -13,6 +13,7 @@ use std::io::{self, BufWriter, Read, Write};
 use std::process::Command;
 use std::str::FromStr;
 use std::{fs, path::PathBuf};
+use which::which;
 
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
@@ -297,24 +298,12 @@ impl Cli {
     }
 
     /// Execute an external subcommand
-    fn execute_external_command(&self, args: &[String]) -> miette::Result<()> {
+    fn execute_external_command(&self, command_path: PathBuf, args: &[String]) -> miette::Result<()> {
         if args.is_empty() {
             return Err(miette!("No subcommand specified"));
         }
 
         let subcommand = &args[0];
-        let bin_dir = Self::get_external_commands_dir()
-            .ok_or_else(|| miette!("External commands directory (~/.mq/bin) not found"))?;
-
-        let command_path = bin_dir.join(format!("mq-{}", subcommand));
-
-        if !command_path.exists() {
-            return Err(miette!(
-                "External subcommand 'mq-{}' not found in ~/.mq/bin\nSearched at: {}",
-                subcommand,
-                command_path.display()
-            ));
-        }
 
         // Check if the file is executable
         #[cfg(unix)]
@@ -398,13 +387,22 @@ impl Cli {
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
             {
-                let command_path = bin_dir.join(format!("mq-{}", query_value));
-                if command_path.exists() {
+                let command_path = {
+                    let command_bin = format!("mq-{}", query_value);
+                    let command_path = bin_dir.join(&command_bin);
+                    if !command_path.exists() {
+                        which(&command_bin).ok()
+                    } else {
+                        Some(command_path)
+                    }
+                };
+
+                if let Some(command_path) = command_path {
                     let mut args = vec![query_value.clone()];
                     if let Some(files) = &self.files {
                         args.extend(files.iter().map(|p| p.to_string_lossy().to_string()));
                     }
-                    return self.execute_external_command(&args);
+                    return self.execute_external_command(command_path, &args);
                 }
             }
         }
