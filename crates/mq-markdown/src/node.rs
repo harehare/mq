@@ -138,7 +138,7 @@ impl ColorTheme<'_> {
 
     /// Validates that a string contains only valid SGR parameters
     /// (semicolon-separated numbers).
-    #[allow(dead_code)]
+    #[cfg(feature = "color")]
     fn is_valid_sgr(sgr: &str) -> bool {
         !sgr.is_empty() && sgr.split(';').all(|part| part.parse::<u8>().is_ok())
     }
