@@ -47,11 +47,11 @@ impl Markdown {
 
     /// Returns a colored string representation using the given color theme.
     #[cfg(feature = "color")]
-    pub fn to_colored_string_with_theme(&self, theme: &ColorTheme) -> String {
+    pub fn to_colored_string_with_theme(&self, theme: &ColorTheme<'_>) -> String {
         self.render_with_theme(theme)
     }
 
-    fn render_with_theme(&self, theme: &ColorTheme) -> String {
+    fn render_with_theme(&self, theme: &ColorTheme<'_>) -> String {
         let mut pre_position: Option<Position> = None;
         let mut is_first = true;
         let mut current_table_row: Option<usize> = None;
@@ -433,8 +433,10 @@ mod color_tests {
     #[test]
     fn test_parse_colors_overrides_specified_keys() {
         let theme = ColorTheme::parse_colors("heading=1;31:code=34");
-        assert_eq!(theme.heading, ("\x1b[1;31m", "\x1b[0m"));
-        assert_eq!(theme.code, ("\x1b[34m", "\x1b[0m"));
+        assert_eq!(theme.heading.0, "\x1b[1;31m");
+        assert_eq!(theme.heading.1, "\x1b[0m");
+        assert_eq!(theme.code.0, "\x1b[34m");
+        assert_eq!(theme.code.1, "\x1b[0m");
         // Unspecified keys remain default
         assert_eq!(theme.emphasis, ColorTheme::COLORED.emphasis);
     }
@@ -445,13 +447,15 @@ mod color_tests {
         // Invalid "abc" is skipped, heading stays default
         assert_eq!(theme.heading, ColorTheme::COLORED.heading);
         // Valid "32" is applied
-        assert_eq!(theme.code, ("\x1b[32m", "\x1b[0m"));
+        assert_eq!(theme.code.0, "\x1b[32m");
+        assert_eq!(theme.code.1, "\x1b[0m");
     }
 
     #[test]
     fn test_parse_colors_ignores_unknown_keys() {
         let theme = ColorTheme::parse_colors("unknown=31:heading=33");
-        assert_eq!(theme.heading, ("\x1b[33m", "\x1b[0m"));
+        assert_eq!(theme.heading.0, "\x1b[33m");
+        assert_eq!(theme.heading.1, "\x1b[0m");
     }
 
     #[test]

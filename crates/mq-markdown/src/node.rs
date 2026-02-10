@@ -10,6 +10,8 @@ use std::{
     fmt::{self, Display},
 };
 
+type ColorPair<'a> = (Cow<'a, str>, Cow<'a, str>);
+
 pub mod attr_value;
 
 /// Color theme for rendering markdown nodes with optional ANSI escape codes.
@@ -17,91 +19,73 @@ pub mod attr_value;
 /// Each field is a tuple of `(prefix, suffix)` ANSI escape code strings that
 /// wrap the corresponding markdown element during colored rendering.
 #[derive(Debug, Clone, Default)]
-pub struct ColorTheme {
-    pub heading: (&'static str, &'static str),
-    pub code: (&'static str, &'static str),
-    pub code_inline: (&'static str, &'static str),
-    pub emphasis: (&'static str, &'static str),
-    pub strong: (&'static str, &'static str),
-    pub link: (&'static str, &'static str),
-    pub link_url: (&'static str, &'static str),
-    pub image: (&'static str, &'static str),
-    pub blockquote_marker: (&'static str, &'static str),
-    pub delete: (&'static str, &'static str),
-    pub horizontal_rule: (&'static str, &'static str),
-    pub html: (&'static str, &'static str),
-    pub frontmatter: (&'static str, &'static str),
-    pub list_marker: (&'static str, &'static str),
-    pub table_separator: (&'static str, &'static str),
-    pub math: (&'static str, &'static str),
+pub struct ColorTheme<'a> {
+    pub heading: ColorPair<'a>,
+    pub code: ColorPair<'a>,
+    pub code_inline: ColorPair<'a>,
+    pub emphasis: ColorPair<'a>,
+    pub strong: ColorPair<'a>,
+    pub link: ColorPair<'a>,
+    pub link_url: ColorPair<'a>,
+    pub image: ColorPair<'a>,
+    pub blockquote_marker: ColorPair<'a>,
+    pub delete: ColorPair<'a>,
+    pub horizontal_rule: ColorPair<'a>,
+    pub html: ColorPair<'a>,
+    pub frontmatter: ColorPair<'a>,
+    pub list_marker: ColorPair<'a>,
+    pub table_separator: ColorPair<'a>,
+    pub math: ColorPair<'a>,
 }
 
-impl ColorTheme {
-    pub const PLAIN: Self = Self {
-        heading: ("", ""),
-        code: ("", ""),
-        code_inline: ("", ""),
-        emphasis: ("", ""),
-        strong: ("", ""),
-        link: ("", ""),
-        link_url: ("", ""),
-        image: ("", ""),
-        blockquote_marker: ("", ""),
-        delete: ("", ""),
-        horizontal_rule: ("", ""),
-        html: ("", ""),
-        frontmatter: ("", ""),
-        list_marker: ("", ""),
-        table_separator: ("", ""),
-        math: ("", ""),
+const EMPTY: Cow<'_, str> = Cow::Borrowed("");
+const RESET: Cow<'_, str> = Cow::Borrowed("\x1b[0m");
+
+impl ColorTheme<'_> {
+    pub const PLAIN: ColorTheme<'static> = ColorTheme {
+        heading: (EMPTY, EMPTY),
+        code: (EMPTY, EMPTY),
+        code_inline: (EMPTY, EMPTY),
+        emphasis: (EMPTY, EMPTY),
+        strong: (EMPTY, EMPTY),
+        link: (EMPTY, EMPTY),
+        link_url: (EMPTY, EMPTY),
+        image: (EMPTY, EMPTY),
+        blockquote_marker: (EMPTY, EMPTY),
+        delete: (EMPTY, EMPTY),
+        horizontal_rule: (EMPTY, EMPTY),
+        html: (EMPTY, EMPTY),
+        frontmatter: (EMPTY, EMPTY),
+        list_marker: (EMPTY, EMPTY),
+        table_separator: (EMPTY, EMPTY),
+        math: (EMPTY, EMPTY),
     };
 
     #[cfg(feature = "color")]
-    pub const COLORED: Self = Self {
-        heading: ("\x1b[1m\x1b[36m", "\x1b[0m"),
-        code: ("\x1b[32m", "\x1b[0m"),
-        code_inline: ("\x1b[32m", "\x1b[0m"),
-        emphasis: ("\x1b[3m\x1b[33m", "\x1b[0m"),
-        strong: ("\x1b[1m", "\x1b[0m"),
-        link: ("\x1b[4m\x1b[34m", "\x1b[0m"),
-        link_url: ("\x1b[34m", "\x1b[0m"),
-        image: ("\x1b[35m", "\x1b[0m"),
-        blockquote_marker: ("\x1b[2m", "\x1b[0m"),
-        delete: ("\x1b[31m\x1b[2m", "\x1b[0m"),
-        horizontal_rule: ("\x1b[2m", "\x1b[0m"),
-        html: ("\x1b[2m", "\x1b[0m"),
-        frontmatter: ("\x1b[2m", "\x1b[0m"),
-        list_marker: ("\x1b[33m", "\x1b[0m"),
-        table_separator: ("\x1b[2m", "\x1b[0m"),
-        math: ("\x1b[32m", "\x1b[0m"),
+    pub const COLORED: ColorTheme<'static> = ColorTheme {
+        heading: (Cow::Borrowed("\x1b[1m\x1b[36m"), RESET),
+        code: (Cow::Borrowed("\x1b[32m"), RESET),
+        code_inline: (Cow::Borrowed("\x1b[32m"), RESET),
+        emphasis: (Cow::Borrowed("\x1b[3m\x1b[33m"), RESET),
+        strong: (Cow::Borrowed("\x1b[1m"), RESET),
+        link: (Cow::Borrowed("\x1b[4m\x1b[34m"), RESET),
+        link_url: (Cow::Borrowed("\x1b[34m"), RESET),
+        image: (Cow::Borrowed("\x1b[35m"), RESET),
+        blockquote_marker: (Cow::Borrowed("\x1b[2m"), RESET),
+        delete: (Cow::Borrowed("\x1b[31m\x1b[2m"), RESET),
+        horizontal_rule: (Cow::Borrowed("\x1b[2m"), RESET),
+        html: (Cow::Borrowed("\x1b[2m"), RESET),
+        frontmatter: (Cow::Borrowed("\x1b[2m"), RESET),
+        list_marker: (Cow::Borrowed("\x1b[33m"), RESET),
+        table_separator: (Cow::Borrowed("\x1b[2m"), RESET),
+        math: (Cow::Borrowed("\x1b[32m"), RESET),
     };
 
     /// Creates a color theme from the `MQ_COLORS` environment variable.
-    ///
-    /// The format is `key=SGR:key=SGR:...` where each key corresponds to a
-    /// markdown element and the value is a semicolon-separated list of SGR
-    /// (Select Graphic Rendition) parameters.
-    ///
-    /// Supported keys: `heading`, `code`, `code_inline`, `emphasis`, `strong`,
-    /// `link`, `link_url`, `image`, `blockquote`, `delete`, `hr`, `html`,
-    /// `frontmatter`, `list`, `table`, `math`.
-    ///
-    /// Unspecified keys use the default colored theme values.
-    /// Invalid entries are silently ignored.
-    ///
-    /// # Examples
-    ///
-    /// ```bash
-    /// # Make headings bold red, code green
-    /// MQ_COLORS="heading=1;31:code=32"
-    /// ```
-    /// Creates a color theme from the `MQ_COLORS` environment variable.
-    ///
-    /// Returns the default colored theme if `MQ_COLORS` is not set or empty.
     #[cfg(feature = "color")]
-    pub fn from_env() -> Self {
+    pub fn from_env() -> ColorTheme<'static> {
         match std::env::var("MQ_COLORS") {
-            Ok(v) if !v.is_empty() => Self::parse_colors(&v),
+            Ok(v) if !v.is_empty() => ColorTheme::parse_colors(&v),
             _ => Self::COLORED,
         }
     }
@@ -113,7 +97,7 @@ impl ColorTheme {
     /// parameters. Unspecified keys use the default colored theme values.
     /// Invalid entries are silently ignored.
     #[cfg(feature = "color")]
-    pub fn parse_colors(spec: &str) -> Self {
+    pub fn parse_colors(spec: &str) -> ColorTheme<'static> {
         let mut theme = Self::COLORED;
 
         for entry in spec.split(':') {
@@ -125,8 +109,8 @@ impl ColorTheme {
                 continue;
             }
 
-            let prefix: &'static str = Box::leak(format!("\x1b[{}m", sgr).into_boxed_str());
-            let pair = (prefix, "\x1b[0m");
+            let prefix = Cow::Owned(format!("\x1b[{}m", sgr));
+            let pair = (prefix, RESET);
 
             match key {
                 "heading" => theme.heading = pair,
@@ -974,7 +958,7 @@ impl Node {
         self.render_with_theme(options, &ColorTheme::COLORED)
     }
 
-    pub(crate) fn render_with_theme(&self, options: &RenderOptions, theme: &ColorTheme) -> String {
+    pub(crate) fn render_with_theme(&self, options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
         match self.clone() {
             Self::List(List {
                 level,
@@ -989,7 +973,7 @@ impl Node {
                 } else {
                     options.list_style.to_string()
                 };
-                let (ms, me) = theme.list_marker;
+                let (ms, me) = &theme.list_marker;
                 format!(
                     "{}{}{}{} {}{}",
                     "  ".repeat(level as usize),
@@ -1001,7 +985,7 @@ impl Node {
                 )
             }
             Self::TableRow(TableRow { values, .. }) => {
-                let (ts, te) = theme.table_separator;
+                let (ts, te) = &theme.table_separator;
                 let cells = values
                     .iter()
                     .map(|cell| cell.render_with_theme(options, theme))
@@ -1011,11 +995,11 @@ impl Node {
             }
             Self::TableCell(TableCell { values, .. }) => render_values(&values, options, theme),
             Self::TableAlign(TableAlign { align, .. }) => {
-                let (ts, te) = theme.table_separator;
+                let (ts, te) = &theme.table_separator;
                 format!("{}|{}|{}", ts, align.iter().map(|a| a.to_string()).join("|"), te)
             }
             Self::Blockquote(Blockquote { values, .. }) => {
-                let (bs, be) = theme.blockquote_marker;
+                let (bs, be) = &theme.blockquote_marker;
                 render_values(&values, options, theme)
                     .split('\n')
                     .map(|line| format!("{}> {}{}", bs, be, line))
@@ -1028,7 +1012,7 @@ impl Node {
                 meta,
                 ..
             }) => {
-                let (cs, ce) = theme.code;
+                let (cs, ce) = &theme.code;
                 let meta = meta.as_deref().map(|meta| format!(" {}", meta)).unwrap_or_default();
 
                 match lang {
@@ -1046,7 +1030,7 @@ impl Node {
                 title,
                 ..
             }) => {
-                let (us, ue) = theme.link_url;
+                let (us, ue) = &theme.link_url;
                 format!(
                     "[{}]: {}{}{}{}",
                     label.unwrap_or(ident),
@@ -1059,11 +1043,11 @@ impl Node {
                 )
             }
             Self::Delete(Delete { values, .. }) => {
-                let (ds, de) = theme.delete;
+                let (ds, de) = &theme.delete;
                 format!("{}~~{}~~{}", ds, render_values(&values, options, theme), de)
             }
             Self::Emphasis(Emphasis { values, .. }) => {
-                let (es, ee) = theme.emphasis;
+                let (es, ee) = &theme.emphasis;
                 format!("{}*{}*{}", es, render_values(&values, options, theme), ee)
             }
             Self::Footnote(Footnote { values, ident, .. }) => {
@@ -1073,7 +1057,7 @@ impl Node {
                 format!("[^{}]", label.unwrap_or_default())
             }
             Self::Heading(Heading { depth, values, .. }) => {
-                let (hs, he) = theme.heading;
+                let (hs, he) = &theme.heading;
                 format!(
                     "{}{} {}{}",
                     hs,
@@ -1083,11 +1067,11 @@ impl Node {
                 )
             }
             Self::Html(Html { value, .. }) => {
-                let (hs, he) = theme.html;
+                let (hs, he) = &theme.html;
                 format!("{}{}{}", hs, value, he)
             }
             Self::Image(Image { alt, url, title, .. }) => {
-                let (is, ie) = theme.image;
+                let (is, ie) = &theme.image;
                 format!(
                     "{}![{}]({}{}){}",
                     is,
@@ -1098,7 +1082,7 @@ impl Node {
                 )
             }
             Self::ImageRef(ImageRef { alt, ident, label, .. }) => {
-                let (is, ie) = theme.image;
+                let (is, ie) = &theme.image;
                 if alt == ident {
                     format!("{}![{}]{}", is, ident, ie)
                 } else {
@@ -1106,15 +1090,15 @@ impl Node {
                 }
             }
             Self::CodeInline(CodeInline { value, .. }) => {
-                let (cs, ce) = theme.code_inline;
+                let (cs, ce) = &theme.code_inline;
                 format!("{}`{}`{}", cs, value, ce)
             }
             Self::MathInline(MathInline { value, .. }) => {
-                let (ms, me) = theme.math;
+                let (ms, me) = &theme.math;
                 format!("{}${}${}", ms, value, me)
             }
             Self::Link(Link { url, title, values, .. }) => {
-                let (ls, le) = theme.link;
+                let (ls, le) = &theme.link;
                 format!(
                     "{}[{}]({}{}){}",
                     ls,
@@ -1127,7 +1111,7 @@ impl Node {
                 )
             }
             Self::LinkRef(LinkRef { values, label, .. }) => {
-                let (ls, le) = theme.link;
+                let (ls, le) = &theme.link;
                 let ident = render_values(&values, options, theme);
 
                 label
@@ -1141,7 +1125,7 @@ impl Node {
                     .unwrap_or(format!("{}[{}]{}", ls, ident, le))
             }
             Self::Math(Math { value, .. }) => {
-                let (ms, me) = theme.math;
+                let (ms, me) = &theme.math;
                 format!("{}$$\n{}\n$${}", ms, value, me)
             }
             Self::Text(Text { value, .. }) => value,
@@ -1207,7 +1191,7 @@ impl Node {
             }
             Self::MdxJsEsm(mdxjs_esm) => mdxjs_esm.value.to_string(),
             Self::Strong(Strong { values, .. }) => {
-                let (ss, se) = theme.strong;
+                let (ss, se) = &theme.strong;
                 format!(
                     "{}**{}**{}",
                     ss,
@@ -1219,16 +1203,16 @@ impl Node {
                 )
             }
             Self::Yaml(Yaml { value, .. }) => {
-                let (fs, fe) = theme.frontmatter;
+                let (fs, fe) = &theme.frontmatter;
                 format!("{}---\n{}\n---{}", fs, value, fe)
             }
             Self::Toml(Toml { value, .. }) => {
-                let (fs, fe) = theme.frontmatter;
+                let (fs, fe) = &theme.frontmatter;
                 format!("{}+++\n{}\n+++{}", fs, value, fe)
             }
             Self::Break(_) => "\\".to_string(),
             Self::HorizontalRule(_) => {
-                let (hs, he) = theme.horizontal_rule;
+                let (hs, he) = &theme.horizontal_rule;
                 format!("{}---{}", hs, he)
             }
             Self::Fragment(Fragment { values }) => values
@@ -2741,7 +2725,7 @@ pub(crate) fn values_to_string(values: &[Node], options: &RenderOptions) -> Stri
     render_values(values, options, &ColorTheme::PLAIN)
 }
 
-pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &ColorTheme) -> String {
+pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
     let mut pre_position: Option<Position> = None;
     values
         .iter()
