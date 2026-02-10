@@ -39,6 +39,7 @@ pub struct ColorTheme<'a> {
 }
 
 const EMPTY: Cow<'_, str> = Cow::Borrowed("");
+#[cfg(feature = "color")]
 const RESET: Cow<'_, str> = Cow::Borrowed("\x1b[0m");
 
 impl ColorTheme<'_> {
