@@ -1,0 +1,25 @@
+[package]
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+categories = ["command-line-utilities", "text-processing"]
+description = "Type checker for mq"
+edition = "2024"
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query"]
+license = "MIT"
+name = "mq-typechecker"
+readme = "README.md"
+repository = "https://github.com/harehare/mq"
+version = "0.5.2"
+
+[dependencies]
+itertools = "0.14.0"
+miette = {version = "7.6.0"}
+mq-hir = {path = "../mq-hir", version = "0.5.2"}
+mq-lang = {path = "../mq-lang", version = "0.5.2", features = ["cst"]}
+rustc-hash = "2.1.1"
+slotmap = "1.0.7"
+smol_str = "0.1.1"
+thiserror = "1.0.40"
+
+[dev-dependencies]
+rstest = "0.17.0"
