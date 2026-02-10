@@ -10,7 +10,7 @@ name = "mq-web-api"
 publish = false
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.13"
+version = "0.5.14"
 
 [dependencies]
 async-trait = {workspace = true}

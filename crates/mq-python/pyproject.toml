@@ -13,7 +13,7 @@ license = {text = "MIT"}
 name = "markdown-query"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "0.5.13"
+version = "0.5.14"
 
 [tool.maturin]
 module-name = "mq.mq"

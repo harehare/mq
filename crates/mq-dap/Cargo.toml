@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-dap"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.13"
+version = "0.5.14"
 
 [dependencies]
 crossbeam-channel = {workspace = true}
