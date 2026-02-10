@@ -416,7 +416,6 @@ impl Cli {
         if !self.input.from_file
             && self.commands.is_none()
             && let Some(query_value) = &self.query
-            && let Some(bin_dir) = Self::get_external_commands_dir()
         {
             // Only treat as external command if query_value is a valid file name
             if query_value
@@ -425,7 +424,8 @@ impl Cli {
             {
                 let command_path = {
                     let command_bin = format!("mq-{}", query_value);
-                    let command_path = bin_dir.join(&command_bin);
+                    let command_path = Self::get_external_commands_dir().unwrap_or_default().join(&command_bin);
+
                     if !command_path.exists() {
                         which(&command_bin).ok()
                     } else {
