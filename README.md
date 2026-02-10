@@ -207,8 +207,8 @@ Commands:
   help   Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]
-  [FILES]...
+  [QUERY OR FILE]  
+  [FILES]...       
 
 Options:
   -A, --aggregate
@@ -228,7 +228,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
       --json
-
+          
       --csv
           Include the built-in CSV module
       --fuzzy
@@ -382,6 +382,28 @@ The following external tools are available to extend mq's functionality:
 - [mq-tui](https://github.com/harehare/mq-tui) - Terminal User Interface (TUI) for interactive mq query
 - [mq-update](https://github.com/harehare/mq-update) - Update mq binary to the latest version
 - [mq-view](https://github.com/harehare/mq-view) - viewer for Markdown content
+
+## Color Configuration
+
+Use `-C` (`--color-output`) to enable colorized markdown output:
+
+```sh
+mq -C '.h' README.md
+```
+
+Customize colors with the `MQ_COLORS` environment variable using `key=SGR` pairs separated by colons:
+
+```sh
+# Make headings bold red, code blocks blue
+export MQ_COLORS="heading=1;31:code=34"
+mq -C '.' README.md
+```
+
+Available keys: `heading`, `code`, `code_inline`, `emphasis`, `strong`, `link`, `link_url`, `image`, `blockquote`, `delete`, `hr`, `html`, `frontmatter`, `list`, `table`, `math`.
+
+Set `NO_COLOR=1` to disable all colored output (see [no-color.org](https://no-color.org/)).
+
+For the full color reference, see the [Environment Variables documentation](https://mqlang.org/book/reference/env/).
 
 ## Support
 

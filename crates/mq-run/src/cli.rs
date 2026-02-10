@@ -213,6 +213,10 @@ struct OutputArgs {
     /// Output to the specified file
     #[clap(short = 'o', long = "output", value_name = "FILE")]
     output_file: Option<PathBuf>,
+
+    /// Colorize markdown output
+    #[arg(short = 'C', long = "color-output", default_value_t = false)]
+    color_output: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -749,6 +753,11 @@ impl Cli {
             })
     }
 
+    /// Returns `true` if the `NO_COLOR` environment variable is set and non-empty.
+    fn is_no_color() -> bool {
+        std::env::var("NO_COLOR").is_ok_and(|v| !v.is_empty())
+    }
+
     #[inline(always)]
     fn write_ignore_pipe<W: Write>(handle: &mut W, data: &[u8]) -> miette::Result<()> {
         match handle.write_all(data) {
@@ -799,6 +808,10 @@ impl Cli {
             OutputFormat::Html => Self::write_ignore_pipe(&mut handle, markdown.to_html().as_bytes())?,
             OutputFormat::Text => {
                 Self::write_ignore_pipe(&mut handle, markdown.to_text().as_bytes())?;
+            }
+            OutputFormat::Markdown if self.output.color_output && !Self::is_no_color() => {
+                let theme = mq_markdown::ColorTheme::from_env();
+                Self::write_ignore_pipe(&mut handle, markdown.to_colored_string_with_theme(&theme).as_bytes())?;
             }
             OutputFormat::Markdown => {
                 Self::write_ignore_pipe(&mut handle, markdown.to_string().as_bytes())?;
@@ -1020,6 +1033,32 @@ mod tests {
 
             assert!(cli.run().is_ok());
         }
+    }
+
+    #[test]
+    fn test_cli_color_output() {
+        let (_, temp_file_path) = create_file("test_color.md", "# test");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                color_output: true,
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path.clone()]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
     }
 
     #[test]
