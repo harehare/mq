@@ -16,9 +16,10 @@ pub enum DocFormat {
 struct ModuleDoc {
     name: String,
     symbols: VecDeque<[String; 4]>,
+    selectors: VecDeque<[String; 2]>,
 }
 
-/// Generate documentation for mq functions and macros.
+/// Generate documentation for mq functions, macros, and selectors.
 ///
 /// If `module_names` or `files` is provided, only the specified modules/files are loaded.
 /// Both can be combined. If `include_builtin` is true, built-in functions are also included.
@@ -41,6 +42,7 @@ pub fn generate_docs(
             docs.push(ModuleDoc {
                 name: "Built-in".to_string(),
                 symbols: extract_symbols(&hir),
+                selectors: extract_selectors(&hir),
             });
         }
 
@@ -53,6 +55,7 @@ pub fn generate_docs(
                 docs.push(ModuleDoc {
                     name: filename.clone(),
                     symbols: extract_symbols(&hir),
+                    selectors: extract_selectors(&hir),
                 });
             }
         }
@@ -65,6 +68,7 @@ pub fn generate_docs(
                 docs.push(ModuleDoc {
                     name: module_name.clone(),
                     symbols: extract_symbols(&hir),
+                    selectors: extract_selectors(&hir),
                 });
             }
         }
@@ -76,6 +80,7 @@ pub fn generate_docs(
         vec![ModuleDoc {
             name: "Built-in functions and macros".to_string(),
             symbols: extract_symbols(&hir),
+            selectors: extract_selectors(&hir),
         }]
     };
 
@@ -119,9 +124,30 @@ fn extract_symbols(hir: &mq_hir::Hir) -> VecDeque<[String; 4]> {
         .collect()
 }
 
+/// Extract selector symbols from HIR.
+fn extract_selectors(hir: &mq_hir::Hir) -> VecDeque<[String; 2]> {
+    hir.symbols()
+        .sorted_by_key(|(_, symbol)| symbol.value.clone())
+        .filter_map(|(_, symbol)| match symbol {
+            mq_hir::Symbol {
+                kind: mq_hir::SymbolKind::Selector,
+                value: Some(value),
+                doc,
+                ..
+            } => {
+                let name = format!("`{}`", value);
+                let description = doc.iter().map(|(_, d)| d.to_string()).join("\n");
+                Some([name, description])
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 /// Format documentation as a Markdown table.
 fn format_markdown(module_docs: &[ModuleDoc]) -> Result<String, miette::Error> {
     let all_symbols: VecDeque<_> = module_docs.iter().flat_map(|m| m.symbols.iter()).cloned().collect();
+    let all_selectors: VecDeque<_> = module_docs.iter().flat_map(|m| m.selectors.iter()).cloned().collect();
 
     let mut doc_csv = all_symbols
         .iter()
@@ -146,12 +172,40 @@ fn format_markdown(module_docs: &[ModuleDoc]) -> Result<String, miette::Error> {
         )
         .map_err(|e| *e)?;
 
-    Ok(doc_values.values().iter().map(|v| v.to_string()).join("\n"))
+    let mut result = doc_values.values().iter().map(|v| v.to_string()).join("\n");
+
+    if !all_selectors.is_empty() {
+        let mut selector_csv = all_selectors
+            .iter()
+            .map(|[name, description]| {
+                mq_lang::RuntimeValue::String([name.as_str(), description.as_str()].into_iter().join("\t"))
+            })
+            .collect::<VecDeque<_>>();
+
+        selector_csv.push_front(mq_lang::RuntimeValue::String(
+            ["Selector", "Description"].iter().join("\t"),
+        ));
+
+        let mut engine = mq_lang::DefaultEngine::default();
+        engine.load_builtin_module();
+
+        let selector_values = engine
+            .eval(
+                r#"include "csv" | tsv_parse(false) | csv_to_markdown_table()"#,
+                mq_lang::raw_input(&selector_csv.iter().join("\n")).into_iter(),
+            )
+            .map_err(|e| *e)?;
+
+        result.push_str("\n\n## Selectors\n\n");
+        result.push_str(&selector_values.values().iter().map(|v| v.to_string()).join("\n"));
+    }
+
+    Ok(result)
 }
 
 /// Format documentation as plain text.
 fn format_text(module_docs: &[ModuleDoc]) -> String {
-    module_docs
+    let functions = module_docs
         .iter()
         .flat_map(|m| m.symbols.iter())
         .map(|[name, description, args, _]| {
@@ -159,7 +213,22 @@ fn format_text(module_docs: &[ModuleDoc]) -> String {
             let args = args.replace('`', "");
             format!("# {description}\ndef {name}({args})")
         })
-        .join("\n\n")
+        .join("\n\n");
+
+    let selectors = module_docs
+        .iter()
+        .flat_map(|m| m.selectors.iter())
+        .map(|[name, description]| {
+            let name = name.replace('`', "");
+            format!("# {description}\nselector {name}")
+        })
+        .join("\n\n");
+
+    if selectors.is_empty() {
+        functions
+    } else {
+        format!("{functions}\n\n{selectors}")
+    }
 }
 
 /// Build HTML table rows for a set of symbols.
@@ -197,6 +266,25 @@ fn build_table_rows(symbols: &VecDeque<[String; 4]>) -> String {
         .join("\n")
 }
 
+/// Build HTML table rows for a set of selectors.
+fn build_selector_table_rows(selectors: &VecDeque<[String; 2]>) -> String {
+    selectors
+        .iter()
+        .map(|[name, description]| {
+            let inner = name.trim_start_matches('`').trim_end_matches('`');
+            let name_html = format!("<code>{}</code>", escape_html(inner));
+            let desc_html = escape_html(description);
+
+            format!(
+                "                <tr>\n\
+                 \x20                 <td>{name_html}</td>\n\
+                 \x20                 <td>{desc_html}</td>\n\
+                 \x20               </tr>"
+            )
+        })
+        .join("\n")
+}
+
 /// Build a module page HTML block.
 fn build_module_page(id: &str, symbols: &VecDeque<[String; 4]>, active: bool) -> String {
     let rows = build_table_rows(symbols);
@@ -217,11 +305,32 @@ fn build_module_page(id: &str, symbols: &VecDeque<[String; 4]>, active: bool) ->
     )
 }
 
+/// Build a selector page HTML block.
+fn build_selector_page(id: &str, selectors: &VecDeque<[String; 2]>, active: bool) -> String {
+    let rows = build_selector_table_rows(selectors);
+    let count = selectors.len();
+    let active_class = if active { " active" } else { "" };
+    format!(
+        "<div class=\"module-page{active_class}\" id=\"{id}\">\n\
+         \x20 <div class=\"search-box\">\n\
+         \x20   <svg class=\"search-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"11\" cy=\"11\" r=\"8\"/><line x1=\"21\" y1=\"21\" x2=\"16.65\" y2=\"16.65\"/></svg>\n\
+         \x20   <input type=\"text\" class=\"search-input\" placeholder=\"Filter selectors...\" />\n\
+         \x20 </div>\n\
+         \x20 <p class=\"count\"><span class=\"count-num\">{count}</span> selectors</p>\n\
+         \x20 <table>\n\
+         \x20   <thead><tr><th>Selector</th><th>Description</th></tr></thead>\n\
+         \x20   <tbody>\n{rows}\n\x20   </tbody>\n\
+         \x20 </table>\n\
+         </div>"
+    )
+}
+
 /// Format documentation as a single-page HTML with sidebar navigation.
 fn format_html(module_docs: &[ModuleDoc]) -> String {
     let has_multiple = module_docs.len() > 1;
+    let has_selectors = module_docs.iter().any(|m| !m.selectors.is_empty());
 
-    // Build sidebar items
+    // Build sidebar items for modules (functions)
     let sidebar_items = if has_multiple {
         let all_count: usize = module_docs.iter().map(|m| m.symbols.len()).sum();
         let all_icon = svg_icon(
@@ -261,8 +370,30 @@ fn format_html(module_docs: &[ModuleDoc]) -> String {
         )
     };
 
-    // Build pages
-    let pages = if has_multiple {
+    // Build sidebar items for selectors
+    let selector_sidebar_items = if has_selectors {
+        let mut items = String::new();
+        for (i, m) in module_docs.iter().enumerate() {
+            if m.selectors.is_empty() {
+                continue;
+            }
+            let name = escape_html(&m.name);
+            let count = m.selectors.len();
+            let icon = selector_icon();
+            items.push_str(&format!(
+                "<a class=\"sidebar-link\" href=\"#\" data-module=\"sel-{i}\">\
+                 <span class=\"sidebar-icon\">{icon}</span>\
+                 <span class=\"sidebar-label\">{name}</span>\
+                 <span class=\"sidebar-count\">{count}</span></a>\n"
+            ));
+        }
+        items
+    } else {
+        String::new()
+    };
+
+    // Build function pages
+    let mut pages = if has_multiple {
         let all_symbols: VecDeque<_> = module_docs.iter().flat_map(|m| m.symbols.iter()).cloned().collect();
         let mut pages_html = build_module_page("mod-all", &all_symbols, true);
         for (i, m) in module_docs.iter().enumerate() {
@@ -272,6 +403,29 @@ fn format_html(module_docs: &[ModuleDoc]) -> String {
         pages_html
     } else {
         build_module_page("mod-all", &module_docs[0].symbols, true)
+    };
+
+    // Build selector pages
+    if has_selectors {
+        for (i, m) in module_docs.iter().enumerate() {
+            if m.selectors.is_empty() {
+                continue;
+            }
+            pages.push('\n');
+            pages.push_str(&build_selector_page(&format!("sel-{i}"), &m.selectors, false));
+        }
+    }
+
+    // Build selector sidebar section
+    let selector_section = if has_selectors {
+        format!(
+            "        <nav class=\"sidebar-section\">\n\
+             \x20         <div class=\"sidebar-section-title\">Selectors</div>\n\
+             {selector_sidebar_items}\
+             \x20       </nav>\n"
+        )
+    } else {
+        String::new()
     };
 
     format!(
@@ -632,6 +786,7 @@ fn format_html(module_docs: &[ModuleDoc]) -> String {
           <div class="sidebar-section-title">Modules</div>
 {sidebar_items}
         </nav>
+{selector_section}
       </aside>
 
       <div class="content">
@@ -722,6 +877,18 @@ fn module_icon(name: &str) -> String {
              <line x1=\"12\" y1=\"22.08\" x2=\"12\" y2=\"12\"/>",
         )
     }
+}
+
+/// Return an SVG icon for selector items.
+fn selector_icon() -> String {
+    // crosshair/target icon
+    svg_icon(
+        "<circle cx=\"12\" cy=\"12\" r=\"10\"/>\
+         <line x1=\"22\" y1=\"12\" x2=\"18\" y2=\"12\"/>\
+         <line x1=\"6\" y1=\"12\" x2=\"2\" y2=\"12\"/>\
+         <line x1=\"12\" y1=\"6\" x2=\"12\" y2=\"2\"/>\
+         <line x1=\"12\" y1=\"22\" x2=\"12\" y2=\"18\"/>",
+    )
 }
 
 /// Escape HTML special characters.
