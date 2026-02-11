@@ -13,7 +13,7 @@ version = "0.5.14"
 
 [dependencies]
 itertools = {workspace = true}
-mq-lang = {workspace = true, features = ["cst"]}
+mq-lang = {workspace = true, features = ["cst", "file-io"]}
 rustc-hash = {workspace = true}
 slotmap = {workspace = true}
 smol_str = {workspace = true}
