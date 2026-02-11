@@ -2223,4 +2223,292 @@ mod tests {
 
         assert!(cli.run().is_ok());
     }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_is_executable_file_unix_executable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = std::env::temp_dir().join("mq-exec-test-unix");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create an executable file
+        let exec_file = temp_dir.join("mq-executable");
+        fs::write(&exec_file, "#!/bin/sh\necho test").expect("Failed to write file");
+        fs::set_permissions(&exec_file, fs::Permissions::from_mode(0o755)).expect("Failed to set permissions");
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-executable")
+            .unwrap()
+            .unwrap();
+
+        assert!(Cli::is_executable_file(&entry), "Executable file should return true");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_is_executable_file_unix_non_executable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = std::env::temp_dir().join("mq-nonexec-test-unix");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create a non-executable file
+        let non_exec_file = temp_dir.join("mq-nonexecutable");
+        fs::write(&non_exec_file, "test content").expect("Failed to write file");
+        fs::set_permissions(&non_exec_file, fs::Permissions::from_mode(0o644)).expect("Failed to set permissions");
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-nonexecutable")
+            .unwrap()
+            .unwrap();
+
+        assert!(
+            !Cli::is_executable_file(&entry),
+            "Non-executable file should return false"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_is_executable_file_unix_directory() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = std::env::temp_dir().join("mq-dir-test-unix");
+        let sub_dir = temp_dir.join("mq-subdir");
+        fs::create_dir_all(&sub_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Set executable bit on directory (directories typically have x bit)
+        fs::set_permissions(&sub_dir, fs::Permissions::from_mode(0o755)).expect("Failed to set permissions");
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-subdir")
+            .unwrap()
+            .unwrap();
+
+        assert!(!Cli::is_executable_file(&entry), "Directory should return false");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_executable_file_windows_exe() {
+        let temp_dir = std::env::temp_dir().join("mq-exec-test-windows");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create .exe file
+        let exe_file = temp_dir.join("mq-test.exe");
+        fs::write(&exe_file, "test").expect("Failed to write file");
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-test.exe")
+            .unwrap()
+            .unwrap();
+
+        assert!(Cli::is_executable_file(&entry), ".exe file should return true");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_executable_file_windows_cmd() {
+        let temp_dir = std::env::temp_dir().join("mq-cmd-test-windows");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create .cmd file
+        let cmd_file = temp_dir.join("mq-test.cmd");
+        fs::write(&cmd_file, "@echo test").expect("Failed to write file");
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-test.cmd")
+            .unwrap()
+            .unwrap();
+
+        assert!(Cli::is_executable_file(&entry), ".cmd file should return true");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_executable_file_windows_bat() {
+        let temp_dir = std::env::temp_dir().join("mq-bat-test-windows");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create .bat file
+        let bat_file = temp_dir.join("mq-test.bat");
+        fs::write(&bat_file, "@echo test").expect("Failed to write file");
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-test.bat")
+            .unwrap()
+            .unwrap();
+
+        assert!(Cli::is_executable_file(&entry), ".bat file should return true");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_executable_file_windows_com() {
+        let temp_dir = std::env::temp_dir().join("mq-com-test-windows");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create .com file
+        let com_file = temp_dir.join("mq-test.com");
+        fs::write(&com_file, "test").expect("Failed to write file");
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-test.com")
+            .unwrap()
+            .unwrap();
+
+        assert!(Cli::is_executable_file(&entry), ".com file should return true");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_executable_file_windows_non_executable() {
+        let temp_dir = std::env::temp_dir().join("mq-nonexec-test-windows");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create non-executable file
+        let txt_file = temp_dir.join("mq-test.txt");
+        fs::write(&txt_file, "test").expect("Failed to write file");
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-test.txt")
+            .unwrap()
+            .unwrap();
+
+        assert!(!Cli::is_executable_file(&entry), ".txt file should return false");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_executable_file_windows_directory() {
+        let temp_dir = std::env::temp_dir().join("mq-dir-test-windows");
+        let sub_dir = temp_dir.join("mq-subdir");
+        fs::create_dir_all(&sub_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-subdir")
+            .unwrap()
+            .unwrap();
+
+        assert!(!Cli::is_executable_file(&entry), "Directory should return false");
+    }
+
+    #[test]
+    #[cfg(not(any(unix, windows)))]
+    fn test_is_executable_file_other_os() {
+        let temp_dir = std::env::temp_dir().join("mq-other-test");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create a regular file
+        let file = temp_dir.join("mq-test");
+        fs::write(&file, "test").expect("Failed to write file");
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-test")
+            .unwrap()
+            .unwrap();
+
+        // On other OS, should return true for regular files
+        assert!(
+            Cli::is_executable_file(&entry),
+            "Regular file should return true on other OS"
+        );
+    }
+
+    #[test]
+    #[cfg(not(any(unix, windows)))]
+    fn test_is_executable_file_other_os_directory() {
+        let temp_dir = std::env::temp_dir().join("mq-dir-other-test");
+        let sub_dir = temp_dir.join("mq-subdir");
+        fs::create_dir_all(&sub_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-subdir")
+            .unwrap()
+            .unwrap();
+
+        // Directory should return false even on other OS
+        assert!(
+            !Cli::is_executable_file(&entry),
+            "Directory should return false on other OS"
+        );
+    }
 }
