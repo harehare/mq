@@ -2832,7 +2832,6 @@ dependencies = [
  "mimalloc",
  "mq-dap",
  "mq-formatter",
- "mq-hir",
  "mq-lang",
  "mq-markdown",
  "mq-repl",
