@@ -361,7 +361,6 @@ impl Cli {
                 "  {} - Format mq files based on specified formatting options",
                 "fmt".green()
             ),
-            format!("  {} - Check syntax errors in mq files", "check".green()),
         ];
 
         #[cfg(feature = "debugger")]
