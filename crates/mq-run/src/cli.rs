@@ -332,10 +332,12 @@ impl Cli {
             let path = entry.path();
             let is_file = entry.metadata().map(|m| m.is_file()).unwrap_or(false);
             is_file
-                && path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|ext| matches!(ext.to_lowercase().as_str(), "exe" | "cmd" | "bat" | "com"))
+                && path.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
+                    ext.eq_ignore_ascii_case("exe")
+                        || ext.eq_ignore_ascii_case("cmd")
+                        || ext.eq_ignore_ascii_case("bat")
+                        || ext.eq_ignore_ascii_case("com")
+                })
         }
         #[cfg(not(any(unix, windows)))]
         {
