@@ -298,12 +298,12 @@ impl Cli {
     }
 
     /// Collect mq-* command names from a directory.
-    /// On Windows, strips known executable extensions (.exe, .cmd, .bat) from the subcommand name.
     fn collect_mq_commands_from_dir(dir: &Path, seen: &mut std::collections::HashSet<String>) {
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 if let Ok(file_name) = entry.file_name().into_string()
                     && file_name.starts_with("mq-")
+                    && Self::is_executable_file(&entry)
                     && let Some(subcommand) = file_name.strip_prefix("mq-")
                 {
                     let subcommand = Self::strip_executable_extension(subcommand);
@@ -312,6 +312,34 @@ impl Cli {
                     }
                 }
             }
+        }
+    }
+
+    /// Check if a directory entry is an executable file.
+    /// On Windows, checks for executable extensions (.exe, .cmd, .bat, .com).
+    /// On Unix, checks for the executable bit in file permissions.
+    fn is_executable_file(entry: &fs::DirEntry) -> bool {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            entry
+                .metadata()
+                .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+                .unwrap_or(false)
+        }
+        #[cfg(windows)]
+        {
+            let path = entry.path();
+            let is_file = entry.metadata().map(|m| m.is_file()).unwrap_or(false);
+            is_file
+                && path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|ext| matches!(ext.to_lowercase().as_str(), "exe" | "cmd" | "bat" | "com"))
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            entry.metadata().map(|m| m.is_file()).unwrap_or(false)
         }
     }
 
@@ -1241,10 +1269,21 @@ mod tests {
             }
         }
 
-        // Create test files: mq-foo, mq-bar, and a non-mq file
+        // Create test files: mq-foo, mq-bar, a non-mq file, and a non-executable mq file
         fs::write(temp_dir.join("mq-foo"), "").expect("Failed to write file");
         fs::write(temp_dir.join("mq-bar"), "").expect("Failed to write file");
         fs::write(temp_dir.join("other-cmd"), "").expect("Failed to write file");
+        fs::write(temp_dir.join("mq-noexec"), "").expect("Failed to write file");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // Set executable bit on mq-foo and mq-bar, but not mq-noexec
+            fs::set_permissions(temp_dir.join("mq-foo"), fs::Permissions::from_mode(0o755))
+                .expect("Failed to set permissions");
+            fs::set_permissions(temp_dir.join("mq-bar"), fs::Permissions::from_mode(0o755))
+                .expect("Failed to set permissions");
+        }
 
         let mut seen = std::collections::HashSet::new();
         Cli::collect_mq_commands_from_dir(&temp_dir, &mut seen);
@@ -1253,6 +1292,7 @@ mod tests {
         assert!(seen.contains("foo"));
         assert!(seen.contains("bar"));
         assert!(!seen.contains("other-cmd"));
+        assert!(!seen.contains("noexec"));
     }
 
     #[test]
@@ -1275,6 +1315,17 @@ mod tests {
         fs::write(dir1.join("mq-dup"), "").expect("Failed to write file");
         fs::write(dir2.join("mq-dup"), "").expect("Failed to write file");
         fs::write(dir2.join("mq-unique"), "").expect("Failed to write file");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(dir1.join("mq-dup"), fs::Permissions::from_mode(0o755))
+                .expect("Failed to set permissions");
+            fs::set_permissions(dir2.join("mq-dup"), fs::Permissions::from_mode(0o755))
+                .expect("Failed to set permissions");
+            fs::set_permissions(dir2.join("mq-unique"), fs::Permissions::from_mode(0o755))
+                .expect("Failed to set permissions");
+        }
 
         let mut seen = std::collections::HashSet::new();
         Cli::collect_mq_commands_from_dir(&dir1, &mut seen);
