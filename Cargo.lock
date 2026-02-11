@@ -2619,6 +2619,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-check"
+version = "0.5.14"
+dependencies = [
+ "clap",
+ "colored 3.1.1",
+ "miette",
+ "mq-hir",
+]
+
+[[package]]
 name = "mq-crawler"
 version = "0.5.14"
 dependencies = [
@@ -2657,6 +2667,18 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "mq-docs"
+version = "0.5.14"
+dependencies = [
+ "clap",
+ "itertools 0.14.0",
+ "miette",
+ "mq-hir",
+ "mq-lang",
+ "url",
 ]
 
 [[package]]
@@ -2810,7 +2832,6 @@ dependencies = [
  "mimalloc",
  "mq-dap",
  "mq-formatter",
- "mq-hir",
  "mq-lang",
  "mq-markdown",
  "mq-repl",

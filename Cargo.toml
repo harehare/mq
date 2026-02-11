@@ -13,14 +13,18 @@ members = [
   "crates/mq-python",
   "crates/mq-web-api",
   "crates/mq-dap",
+  "crates/mq-check",
   "crates/mq-crawler",
+  "crates/mq-docs",
   "editors/zed",
 ]
 resolver = "3"
 
 [workspace.dependencies]
 # Internal crates
+mq-check = {path = "crates/mq-check", version = "0.5.14"}
 mq-dap = {path = "crates/mq-dap", version = "0.5.14"}
+mq-docs = {path = "crates/mq-docs", version = "0.5.14"}
 mq-formatter = {path = "crates/mq-formatter", version = "0.5.14"}
 mq-hir = {path = "crates/mq-hir", version = "0.5.14"}
 mq-lang = {path = "crates/mq-lang", version = "0.5.14"}

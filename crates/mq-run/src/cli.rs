@@ -6,7 +6,6 @@ use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::DefaultEngine;
 use rayon::prelude::*;
-use std::collections::VecDeque;
 use std::io::BufRead;
 use std::io::IsTerminal;
 use std::io::{self, BufWriter, Read, Write};
@@ -82,13 +81,6 @@ enum OutputFormat {
     Text,
     Json,
     None,
-}
-
-#[derive(Clone, Debug, Default, clap::ValueEnum)]
-enum DocFormat {
-    #[default]
-    Markdown,
-    Text,
 }
 
 #[derive(Debug, Clone, Default, clap::ValueEnum)]
@@ -245,20 +237,6 @@ enum Commands {
         /// Path to the mq file to format
         files: Option<Vec<PathBuf>>,
     },
-    /// Show functions documentation for the query
-    Docs {
-        /// Specify additional module names to load for documentation
-        #[arg(short = 'M', long)]
-        module_names: Option<Vec<String>>,
-        /// Specify the documentation output format
-        #[arg(short = 'F', long, value_enum, default_value_t)]
-        format: DocFormat,
-    },
-    /// Check syntax errors in mq files
-    Check {
-        /// Path to the mq file to check
-        files: Vec<PathBuf>,
-    },
     /// Start a debug adapter for mq
     #[cfg(feature = "debugger")]
     Dap,
@@ -383,8 +361,6 @@ impl Cli {
                 "  {} - Format mq files based on specified formatting options",
                 "fmt".green()
             ),
-            format!("  {} - Show functions documentation for the query", "docs".green()),
-            format!("  {} - Check syntax errors in mq files", "check".green()),
         ];
 
         #[cfg(feature = "debugger")]
@@ -492,59 +468,6 @@ impl Cli {
                 }
 
                 Ok(())
-            }
-            Some(Commands::Docs { module_names, format }) => self.docs(module_names, format),
-            Some(Commands::Check { files }) => {
-                let stdout = io::stdout();
-                let mut handle = BufWriter::new(stdout.lock());
-                let mut has_error = false;
-
-                for file in files {
-                    if !file.exists() {
-                        return Err(miette!("File not found: {}", file.display()));
-                    }
-
-                    let content = fs::read_to_string(file).into_diagnostic()?;
-                    let mut hir = mq_hir::Hir::default();
-                    hir.add_code(None, &content);
-
-                    let errors = hir.error_ranges();
-                    let warnings = hir.warning_ranges();
-
-                    if !errors.is_empty() || !warnings.is_empty() {
-                        has_error = true;
-                        writeln!(handle, "Checking: {}", file.display()).into_diagnostic()?;
-
-                        for (message, range) in errors {
-                            writeln!(
-                                handle,
-                                "  {}: {} at line {}, column {}",
-                                "Error".red().bold(),
-                                message,
-                                range.start.line,
-                                range.start.column
-                            )
-                            .into_diagnostic()?;
-                        }
-
-                        for (message, range) in warnings {
-                            writeln!(
-                                handle,
-                                "  {}: {} at line {}, column {}",
-                                "Warning".yellow().bold(),
-                                message,
-                                range.start.line,
-                                range.start.column
-                            )
-                            .into_diagnostic()?;
-                        }
-                        writeln!(handle).into_diagnostic()?;
-                    }
-                }
-
-                handle.flush().into_diagnostic()?;
-
-                if has_error { Err(miette!("")) } else { Ok(()) }
             }
             #[cfg(feature = "debugger")]
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
@@ -861,92 +784,6 @@ impl Cli {
             && e.kind() != std::io::ErrorKind::BrokenPipe
         {
             return Err(miette!(e));
-        }
-
-        Ok(())
-    }
-
-    fn docs(&self, module_names: &Option<Vec<String>>, format: &DocFormat) -> Result<(), miette::Error> {
-        let mut hir = mq_hir::Hir::default();
-
-        if let Some(module_names) = module_names {
-            hir.builtin.disabled = true;
-
-            for module_name in module_names {
-                hir.add_code(None, &format!("include \"{}\"", module_name));
-            }
-        } else {
-            hir.add_code(None, "");
-        }
-
-        let symbols = hir
-            .symbols()
-            .sorted_by_key(|(_, symbol)| symbol.value.clone())
-            .filter_map(|(_, symbol)| match symbol {
-                mq_hir::Symbol {
-                    kind: mq_hir::SymbolKind::Function(params),
-                    value: Some(value),
-                    doc,
-                    ..
-                }
-                | mq_hir::Symbol {
-                    kind: mq_hir::SymbolKind::Macro(params),
-                    value: Some(value),
-                    doc,
-                    ..
-                } if !symbol.is_internal_function() => {
-                    let name = if symbol.is_deprecated() {
-                        format!("~~`{}`~~", value)
-                    } else {
-                        format!("`{}`", value)
-                    };
-                    let description = doc.iter().map(|(_, d)| d.to_string()).join("\n");
-                    let args = params.iter().map(|p| format!("`{}`", p.name)).join(", ");
-                    let example = format!("{}({})", value, params.iter().map(|p| p.name.as_str()).join(", "));
-
-                    Some([name, description, args, example])
-                }
-                _ => None,
-            })
-            .collect::<VecDeque<_>>();
-
-        match format {
-            DocFormat::Markdown => {
-                let mut doc_csv = symbols
-                    .iter()
-                    .map(|[name, description, args, example]| {
-                        mq_lang::RuntimeValue::String([name, description, args, example].into_iter().join("\t"))
-                    })
-                    .collect::<VecDeque<_>>();
-
-                doc_csv.push_front(mq_lang::RuntimeValue::String(
-                    ["Function Name", "Description", "Parameters", "Example"]
-                        .iter()
-                        .join("\t"),
-                ));
-
-                let mut engine = self.create_engine()?;
-                let doc_values = engine
-                    .eval(
-                        r#"include "csv" | tsv_parse(false) | csv_to_markdown_table()"#,
-                        mq_lang::raw_input(&doc_csv.iter().join("\n")).into_iter(),
-                    )
-                    .map_err(|e| *e)?;
-                self.print(doc_values)?;
-            }
-            DocFormat::Text => {
-                println!(
-                    "{}",
-                    symbols
-                        .iter()
-                        .map(|[name, description, args, _]| {
-                            let name = name.replace('`', "");
-                            let args = args.replace('`', "");
-                            format!("# {description}\ndef {name}({args})")
-                        })
-                        .join("\n\n")
-                );
-            }
         }
 
         Ok(())
@@ -1349,106 +1186,6 @@ mod tests {
         // Note: We can't easily test execute_external_command without modifying HOME
         // This test just verifies the command file was created correctly
         assert!(test_cmd_path.exists());
-    }
-
-    #[test]
-    fn test_cli_check_command_valid_file() {
-        let (_, temp_file_path) = create_file("test_check.mq", "def math(): 42;");
-        let temp_file_path_clone = temp_file_path.clone();
-
-        defer! {
-            if temp_file_path_clone.exists() {
-                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
-            }
-        }
-
-        let cli = Cli {
-            input: InputArgs::default(),
-            output: OutputArgs::default(),
-            commands: Some(Commands::Check {
-                files: vec![temp_file_path],
-            }),
-            query: None,
-            files: None,
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_ok());
-    }
-
-    #[test]
-    fn test_cli_check_command_invalid_file() {
-        let (_, temp_file_path) = create_file("test_check_invalid.mq", "def math(): 42; | unknown_var");
-        let temp_file_path_clone = temp_file_path.clone();
-
-        defer! {
-            if temp_file_path_clone.exists() {
-                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
-            }
-        }
-
-        let cli = Cli {
-            input: InputArgs::default(),
-            output: OutputArgs::default(),
-            commands: Some(Commands::Check {
-                files: vec![temp_file_path],
-            }),
-            query: None,
-            files: None,
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_err());
-    }
-
-    #[test]
-    fn test_cli_check_command_file_not_found() {
-        let cli = Cli {
-            input: InputArgs::default(),
-            output: OutputArgs::default(),
-            commands: Some(Commands::Check {
-                files: vec![PathBuf::from("nonexistent.mq")],
-            }),
-            query: None,
-            files: None,
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_err());
-    }
-
-    #[test]
-    fn test_docs_command_no_modules() {
-        let cli = Cli {
-            input: InputArgs::default(),
-            output: OutputArgs::default(),
-            commands: Some(Commands::Docs {
-                module_names: None,
-                format: DocFormat::Markdown,
-            }),
-            query: None,
-            files: None,
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_ok());
-    }
-
-    #[test]
-    fn test_docs_command_with_modules() {
-        let cli = Cli {
-            input: InputArgs::default(),
-            output: OutputArgs::default(),
-            commands: Some(Commands::Docs {
-                module_names: Some(vec!["string".to_string()]),
-                format: DocFormat::Markdown,
-            }),
-            query: None,
-            files: None,
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_ok());
     }
 
     #[test]
