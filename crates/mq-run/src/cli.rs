@@ -984,6 +984,7 @@ impl Cli {
 }
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use scopeguard::defer;
     use std::io::Write;
     use std::{fs::File, path::PathBuf};
@@ -1347,26 +1348,28 @@ mod tests {
         assert!(seen.is_empty());
     }
 
-    #[test]
-    fn test_strip_executable_extension() {
-        // On Unix, names are returned as-is
-        #[cfg(not(windows))]
-        {
-            assert_eq!(Cli::strip_executable_extension("foo"), "foo");
-            assert_eq!(Cli::strip_executable_extension("foo.exe"), "foo.exe");
-            assert_eq!(Cli::strip_executable_extension("foo.cmd"), "foo.cmd");
-        }
+    #[rstest]
+    #[case("foo", "foo")]
+    #[case("foo.exe", "foo.exe")]
+    #[case("foo.cmd", "foo.cmd")]
+    #[case("foo.bat", "foo.bat")]
+    #[case("foo.sh", "foo.sh")]
+    #[cfg(not(windows))]
+    fn test_strip_executable_extension_unix(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(Cli::strip_executable_extension(input), expected);
+    }
 
-        // On Windows, known extensions are stripped
-        #[cfg(windows)]
-        {
-            assert_eq!(Cli::strip_executable_extension("foo.exe"), "foo");
-            assert_eq!(Cli::strip_executable_extension("foo.cmd"), "foo");
-            assert_eq!(Cli::strip_executable_extension("foo.bat"), "foo");
-            assert_eq!(Cli::strip_executable_extension("foo.com"), "foo");
-            assert_eq!(Cli::strip_executable_extension("foo"), "foo");
-            assert_eq!(Cli::strip_executable_extension("foo.sh"), "foo.sh");
-        }
+    #[rstest]
+    #[case("foo.exe", "foo")]
+    #[case("foo.cmd", "foo")]
+    #[case("foo.bat", "foo")]
+    #[case("foo.com", "foo")]
+    #[case("foo", "foo")]
+    #[case("foo.sh", "foo.sh")]
+    #[case("foo.txt", "foo.txt")]
+    #[cfg(windows)]
+    fn test_strip_executable_extension_windows(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(Cli::strip_executable_extension(input), expected);
     }
 
     #[test]
@@ -2226,12 +2229,18 @@ mod tests {
         assert!(cli.run().is_ok());
     }
 
-    #[test]
+    #[rstest]
+    #[case("mq-exec-owner", 0o700, true)]
+    #[case("mq-exec-group", 0o010, true)]
+    #[case("mq-exec-other", 0o001, true)]
+    #[case("mq-exec-all", 0o755, true)]
+    #[case("mq-noexec-rw", 0o644, false)]
+    #[case("mq-noexec-ro", 0o444, false)]
     #[cfg(unix)]
-    fn test_is_executable_file_unix_executable() {
+    fn test_is_executable_file_unix(#[case] filename: &str, #[case] mode: u32, #[case] expected: bool) {
         use std::os::unix::fs::PermissionsExt;
 
-        let temp_dir = std::env::temp_dir().join("mq-exec-test-unix");
+        let temp_dir = std::env::temp_dir().join(format!("mq-exec-test-{filename}"));
         fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
 
         defer! {
@@ -2240,48 +2249,20 @@ mod tests {
             }
         }
 
-        // Create an executable file
-        let exec_file = temp_dir.join("mq-executable");
-        fs::write(&exec_file, "#!/bin/sh\necho test").expect("Failed to write file");
-        fs::set_permissions(&exec_file, fs::Permissions::from_mode(0o755)).expect("Failed to set permissions");
+        let file_path = temp_dir.join(filename);
+        fs::write(&file_path, "#!/bin/sh\necho test").expect("Failed to write file");
+        fs::set_permissions(&file_path, fs::Permissions::from_mode(mode)).expect("Failed to set permissions");
 
         let entry = fs::read_dir(&temp_dir)
             .expect("Failed to read dir")
-            .find(|e| e.as_ref().unwrap().file_name() == "mq-executable")
+            .find(|e| e.as_ref().unwrap().file_name().to_str() == Some(filename))
             .unwrap()
             .unwrap();
 
-        assert!(Cli::is_executable_file(&entry), "Executable file should return true");
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn test_is_executable_file_unix_non_executable() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let temp_dir = std::env::temp_dir().join("mq-nonexec-test-unix");
-        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
-
-        defer! {
-            if temp_dir.exists() {
-                std::fs::remove_dir_all(&temp_dir).ok();
-            }
-        }
-
-        // Create a non-executable file
-        let non_exec_file = temp_dir.join("mq-nonexecutable");
-        fs::write(&non_exec_file, "test content").expect("Failed to write file");
-        fs::set_permissions(&non_exec_file, fs::Permissions::from_mode(0o644)).expect("Failed to set permissions");
-
-        let entry = fs::read_dir(&temp_dir)
-            .expect("Failed to read dir")
-            .find(|e| e.as_ref().unwrap().file_name() == "mq-nonexecutable")
-            .unwrap()
-            .unwrap();
-
-        assert!(
-            !Cli::is_executable_file(&entry),
-            "Non-executable file should return false"
+        assert_eq!(
+            Cli::is_executable_file(&entry),
+            expected,
+            "File with mode {mode:#o} should return {expected}"
         );
     }
 
@@ -2300,7 +2281,6 @@ mod tests {
             }
         }
 
-        // Set executable bit on directory (directories typically have x bit)
         fs::set_permissions(&sub_dir, fs::Permissions::from_mode(0o755)).expect("Failed to set permissions");
 
         let entry = fs::read_dir(&temp_dir)
@@ -2312,10 +2292,19 @@ mod tests {
         assert!(!Cli::is_executable_file(&entry), "Directory should return false");
     }
 
-    #[test]
+    #[rstest]
+    #[case("mq-test.exe", true)]
+    #[case("mq-test.cmd", true)]
+    #[case("mq-test.bat", true)]
+    #[case("mq-test.com", true)]
+    #[case("mq-test.EXE", true)]
+    #[case("mq-test.Bat", true)]
+    #[case("mq-test.txt", false)]
+    #[case("mq-test.sh", false)]
+    #[case("mq-test", false)]
     #[cfg(windows)]
-    fn test_is_executable_file_windows_exe() {
-        let temp_dir = std::env::temp_dir().join("mq-exec-test-windows");
+    fn test_is_executable_file_windows(#[case] filename: &str, #[case] expected: bool) {
+        let temp_dir = std::env::temp_dir().join(format!("mq-exec-test-win-{}", filename.replace('.', "-")));
         fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
 
         defer! {
@@ -2324,117 +2313,20 @@ mod tests {
             }
         }
 
-        // Create .exe file
-        let exe_file = temp_dir.join("mq-test.exe");
-        fs::write(&exe_file, "test").expect("Failed to write file");
+        let file_path = temp_dir.join(filename);
+        fs::write(&file_path, "test").expect("Failed to write file");
 
         let entry = fs::read_dir(&temp_dir)
             .expect("Failed to read dir")
-            .find(|e| e.as_ref().unwrap().file_name() == "mq-test.exe")
+            .find(|e| e.as_ref().unwrap().file_name().to_str() == Some(filename))
             .unwrap()
             .unwrap();
 
-        assert!(Cli::is_executable_file(&entry), ".exe file should return true");
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn test_is_executable_file_windows_cmd() {
-        let temp_dir = std::env::temp_dir().join("mq-cmd-test-windows");
-        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
-
-        defer! {
-            if temp_dir.exists() {
-                std::fs::remove_dir_all(&temp_dir).ok();
-            }
-        }
-
-        // Create .cmd file
-        let cmd_file = temp_dir.join("mq-test.cmd");
-        fs::write(&cmd_file, "@echo test").expect("Failed to write file");
-
-        let entry = fs::read_dir(&temp_dir)
-            .expect("Failed to read dir")
-            .find(|e| e.as_ref().unwrap().file_name() == "mq-test.cmd")
-            .unwrap()
-            .unwrap();
-
-        assert!(Cli::is_executable_file(&entry), ".cmd file should return true");
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn test_is_executable_file_windows_bat() {
-        let temp_dir = std::env::temp_dir().join("mq-bat-test-windows");
-        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
-
-        defer! {
-            if temp_dir.exists() {
-                std::fs::remove_dir_all(&temp_dir).ok();
-            }
-        }
-
-        // Create .bat file
-        let bat_file = temp_dir.join("mq-test.bat");
-        fs::write(&bat_file, "@echo test").expect("Failed to write file");
-
-        let entry = fs::read_dir(&temp_dir)
-            .expect("Failed to read dir")
-            .find(|e| e.as_ref().unwrap().file_name() == "mq-test.bat")
-            .unwrap()
-            .unwrap();
-
-        assert!(Cli::is_executable_file(&entry), ".bat file should return true");
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn test_is_executable_file_windows_com() {
-        let temp_dir = std::env::temp_dir().join("mq-com-test-windows");
-        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
-
-        defer! {
-            if temp_dir.exists() {
-                std::fs::remove_dir_all(&temp_dir).ok();
-            }
-        }
-
-        // Create .com file
-        let com_file = temp_dir.join("mq-test.com");
-        fs::write(&com_file, "test").expect("Failed to write file");
-
-        let entry = fs::read_dir(&temp_dir)
-            .expect("Failed to read dir")
-            .find(|e| e.as_ref().unwrap().file_name() == "mq-test.com")
-            .unwrap()
-            .unwrap();
-
-        assert!(Cli::is_executable_file(&entry), ".com file should return true");
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn test_is_executable_file_windows_non_executable() {
-        let temp_dir = std::env::temp_dir().join("mq-nonexec-test-windows");
-        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
-
-        defer! {
-            if temp_dir.exists() {
-                std::fs::remove_dir_all(&temp_dir).ok();
-            }
-        }
-
-        // Create non-executable file
-        let txt_file = temp_dir.join("mq-test.txt");
-        fs::write(&txt_file, "test").expect("Failed to write file");
-
-        let entry = fs::read_dir(&temp_dir)
-            .expect("Failed to read dir")
-            .find(|e| e.as_ref().unwrap().file_name() == "mq-test.txt")
-            .unwrap()
-            .unwrap();
-
-        assert!(!Cli::is_executable_file(&entry), ".txt file should return false");
+        assert_eq!(
+            Cli::is_executable_file(&entry),
+            expected,
+            "File '{filename}' should return {expected}"
+        );
     }
 
     #[test]
@@ -2471,7 +2363,6 @@ mod tests {
             }
         }
 
-        // Create a regular file
         let file = temp_dir.join("mq-test");
         fs::write(&file, "test").expect("Failed to write file");
 
@@ -2481,7 +2372,6 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        // On other OS, should return true for regular files
         assert!(
             Cli::is_executable_file(&entry),
             "Regular file should return true on other OS"
@@ -2507,10 +2397,117 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        // Directory should return false even on other OS
         assert!(
             !Cli::is_executable_file(&entry),
             "Directory should return false on other OS"
         );
+    }
+
+    /// Test that Windows deduplicates commands with different executable extensions.
+    /// e.g., mq-foo.bat and mq-foo.exe in the same directory should produce only "foo".
+    #[test]
+    #[cfg(windows)]
+    fn test_collect_mq_commands_deduplicates_windows_extensions() {
+        let temp_dir = std::env::temp_dir().join("mq-win-dedup-ext-test");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create the same subcommand with multiple Windows executable extensions
+        fs::write(temp_dir.join("mq-foo.exe"), "test").expect("Failed to write file");
+        fs::write(temp_dir.join("mq-foo.bat"), "@echo test").expect("Failed to write file");
+        fs::write(temp_dir.join("mq-foo.cmd"), "@echo test").expect("Failed to write file");
+        fs::write(temp_dir.join("mq-bar.exe"), "test").expect("Failed to write file");
+
+        let mut seen = std::collections::HashSet::new();
+        Cli::collect_mq_commands_from_dir(&temp_dir, &mut seen);
+
+        assert_eq!(seen.len(), 2, "Should have exactly 2 unique commands");
+        assert!(seen.contains("foo"), "Should contain 'foo'");
+        assert!(seen.contains("bar"), "Should contain 'bar'");
+    }
+
+    /// Test that Windows deduplicates commands with different extensions across directories.
+    /// e.g., mq-foo.bat in dir1 and mq-foo.exe in dir2 should produce only "foo".
+    #[test]
+    #[cfg(windows)]
+    fn test_collect_mq_commands_deduplicates_across_dirs_windows() {
+        let dir1 = std::env::temp_dir().join("mq-win-cross-dedup-1");
+        let dir2 = std::env::temp_dir().join("mq-win-cross-dedup-2");
+        fs::create_dir_all(&dir1).expect("Failed to create test directory");
+        fs::create_dir_all(&dir2).expect("Failed to create test directory");
+
+        defer! {
+            if dir1.exists() {
+                std::fs::remove_dir_all(&dir1).ok();
+            }
+            if dir2.exists() {
+                std::fs::remove_dir_all(&dir2).ok();
+            }
+        }
+
+        fs::write(dir1.join("mq-foo.bat"), "@echo test").expect("Failed to write file");
+        fs::write(dir2.join("mq-foo.exe"), "test").expect("Failed to write file");
+        fs::write(dir2.join("mq-unique.cmd"), "@echo test").expect("Failed to write file");
+
+        let mut seen = std::collections::HashSet::new();
+        Cli::collect_mq_commands_from_dir(&dir1, &mut seen);
+        Cli::collect_mq_commands_from_dir(&dir2, &mut seen);
+
+        assert_eq!(seen.len(), 2, "Should have exactly 2 unique commands");
+        assert!(seen.contains("foo"), "Should contain 'foo'");
+        assert!(seen.contains("unique"), "Should contain 'unique'");
+    }
+
+    /// Test that collect_mq_commands_from_dir handles an empty directory correctly.
+    #[test]
+    fn test_collect_mq_commands_from_empty_dir() {
+        let temp_dir = std::env::temp_dir().join("mq-empty-dir-test");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        Cli::collect_mq_commands_from_dir(&temp_dir, &mut seen);
+        assert!(seen.is_empty(), "Empty directory should yield no commands");
+    }
+
+    /// Test that files without the mq- prefix are ignored even if executable.
+    #[test]
+    fn test_collect_mq_commands_ignores_non_mq_prefix() {
+        let temp_dir = std::env::temp_dir().join("mq-prefix-test");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create files without mq- prefix
+        fs::write(temp_dir.join("foo"), "test").expect("Failed to write file");
+        fs::write(temp_dir.join("bar-mq"), "test").expect("Failed to write file");
+        fs::write(temp_dir.join("mqfoo"), "test").expect("Failed to write file");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for name in &["foo", "bar-mq", "mqfoo"] {
+                fs::set_permissions(temp_dir.join(name), fs::Permissions::from_mode(0o755))
+                    .expect("Failed to set permissions");
+            }
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        Cli::collect_mq_commands_from_dir(&temp_dir, &mut seen);
+        assert!(seen.is_empty(), "Files without mq- prefix should be ignored");
     }
 }
