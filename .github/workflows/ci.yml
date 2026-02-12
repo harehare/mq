@@ -35,7 +35,6 @@ jobs:
       - uses: harehare/setup-mq@v1
       - uses: Swatinem/rust-cache@v2
       - name: Install tools
-        if: runner.os != 'Windows'
         uses: taiki-e/install-action@v2
         with:
           tool: nextest,cargo-llvm-cov
