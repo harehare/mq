@@ -55,6 +55,7 @@ pub struct Cli {
     files: Option<Vec<PathBuf>>,
 }
 
+#[cfg(unix)]
 const UNIX_EXECUTABLE_BITS: u32 = 0o111;
 
 /// Represents the input format for processing.
