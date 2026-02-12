@@ -5,13 +5,29 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      os:
+        description: 'OS to run tests on'
+        required: false
+        default: 'ubuntu-latest'
+        type: choice
+        options:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+          - all
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build_and_test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.os == 'all' && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') || fromJSON(format('["{0}"]', github.event.inputs.os))) || fromJSON('["ubuntu-latest"]') }}
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -19,6 +35,7 @@ jobs:
       - uses: harehare/setup-mq@v1
       - uses: Swatinem/rust-cache@v2
       - name: Install tools
+        if: runner.os != 'Windows'
         uses: taiki-e/install-action@v2
         with:
           tool: nextest,cargo-llvm-cov
@@ -29,8 +46,10 @@ jobs:
         env:
           NEXTEST_RETRIES: 3
       - name: Check docs
+        if: runner.os != 'Windows'
         run: just docs
       - name: Check for diffs in docs
+        if: runner.os != 'Windows'
         run: |
           if [[ -n $(git status --porcelain docs/) ]]; then
             echo "Error: Changes detected in docs directory. Please commit these changes."
@@ -38,10 +57,10 @@ jobs:
             exit 1
           fi
       - name: Generate code coverage
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == 'ubuntu-latest'
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v5
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
