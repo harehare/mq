@@ -1102,6 +1102,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_collect_mq_commands_from_dir() {
         let temp_dir = std::env::temp_dir().join("mq-collect-test");
         fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
@@ -1139,6 +1140,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_collect_mq_commands_from_dir_deduplicates() {
         let dir1 = std::env::temp_dir().join("mq-dedup-test-1");
         let dir2 = std::env::temp_dir().join("mq-dedup-test-2");
