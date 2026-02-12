@@ -56,6 +56,8 @@ pub struct Cli {
     files: Option<Vec<PathBuf>>,
 }
 
+const UNIX_EXECUTABLE_BITS: u32 = 0o111;
+
 /// Represents the input format for processing.
 /// - Markdown: Standard Markdown parsing.
 /// - Mdx: MDX parsing.
@@ -324,7 +326,7 @@ impl Cli {
             use std::os::unix::fs::PermissionsExt;
             entry
                 .metadata()
-                .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+                .map(|m| m.is_file() && m.permissions().mode() & UNIX_EXECUTABLE_BITS != 0)
                 .unwrap_or(false)
         }
         #[cfg(windows)]
