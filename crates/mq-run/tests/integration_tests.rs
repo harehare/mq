@@ -398,9 +398,20 @@ fn test_read_file() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut cmd = cargo::cargo_bin_cmd!("mq");
+    #[cfg(unix)]
     let assert = cmd
         .arg("--unbuffered")
-        .arg(format!(r#"read_file("{}")"#, temp_file_path.to_string_lossy(),))
+        .arg(format!(r#"read_file("{}")"#, temp_file_path.to_string_lossy()))
+        .arg(temp_file_path.to_string_lossy().to_string())
+        .assert();
+
+    #[cfg(windows)]
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg(format!(
+            r#"read_file("{}")"#,
+            temp_file_path.to_string_lossy().replace("\\", "/")
+        ))
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
 
