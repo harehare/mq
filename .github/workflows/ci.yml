@@ -40,6 +40,11 @@ jobs:
           tool: nextest,cargo-llvm-cov
       - name: Build
         run: just build
+      - name: Configure RUSTFLAGS for Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "RUSTFLAGS=${RUSTFLAGS} -C link-args=/STACK:8388608" >> $GITHUB_ENV
       - name: Run tests
         run: just test
         env:
