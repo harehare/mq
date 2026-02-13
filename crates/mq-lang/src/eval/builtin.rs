@@ -3741,7 +3741,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         SmolStr::new("capture"),
         BuiltinFunctionDoc {
             description: "Captures groups from the given string based on the specified regular expression pattern.",
-            params: &["regex", "input"],
+            params: &["string", "pattern"],
         },
     );
 
