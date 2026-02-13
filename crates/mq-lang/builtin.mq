@@ -119,6 +119,7 @@ def filter(v, f):
     end
 end
 
+# Executes a provided function once for each element in an array or each key-value pair in a dictionary.
 def each(v, f):
   let target = if (is_dict(v)): entries(v) else: v
   | var i = 0
