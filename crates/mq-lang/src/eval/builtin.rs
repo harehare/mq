@@ -419,6 +419,22 @@ define_builtin!(REGEX_MATCH, ParamNum::Fixed(2), |ident, _, mut args, _| {
     }
 });
 
+define_builtin!(CAPTURE, ParamNum::Fixed(2), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s), RuntimeValue::String(pattern)] => capture_re(s, pattern),
+        [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(pattern)] => node
+            .markdown_node()
+            .map(|md| capture_re(&md.value(), pattern))
+            .unwrap_or_else(|| Ok(RuntimeValue::new_dict())),
+        [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::new_dict()),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!(),
+    }
+});
+
 define_builtin!(DOWNCASE, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
     [node @ RuntimeValue::Markdown(_, _)] => node
         .markdown_node()
@@ -2306,6 +2322,7 @@ const HASH_ARRAY: u64 = fnv1a_hash_64(constants::builtins::ARRAY);
 const HASH_ATTR: u64 = fnv1a_hash_64(constants::builtins::ATTR);
 const HASH_BASE64: u64 = fnv1a_hash_64("base64");
 const HASH_BASE64D: u64 = fnv1a_hash_64("base64d");
+const HASH_CAPTURE: u64 = fnv1a_hash_64("capture");
 const HASH_CEIL: u64 = fnv1a_hash_64("ceil");
 const HASH_COMPACT: u64 = fnv1a_hash_64("compact");
 const HASH_COALESCE: u64 = fnv1a_hash_64("coalesce");
@@ -2432,6 +2449,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_ATTR => Some(&ATTR),
         HASH_BASE64 => Some(&BASE64),
         HASH_BASE64D => Some(&BASE64D),
+        HASH_CAPTURE => Some(&CAPTURE),
         HASH_CEIL => Some(&CEIL),
         HASH_COMPACT => Some(&COMPACT),
         HASH_COALESCE => Some(&COALESCE),
@@ -3719,6 +3737,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &[],
             },
     );
+    map.insert(
+        SmolStr::new("capture"),
+        BuiltinFunctionDoc {
+            description: "Captures groups from the given string based on the specified regular expression pattern.",
+            params: &["regex", "input"],
+        },
+    );
 
     map
 });
@@ -3984,6 +4009,33 @@ fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
             .map(|m| RuntimeValue::String(m.as_str().to_string()))
             .collect();
         Ok(RuntimeValue::Array(matches))
+    } else {
+        Err(Error::InvalidRegularExpression(pattern.to_string()))
+    }
+}
+
+fn _capture_re(re: &Regex, input: &str) -> Result<RuntimeValue, Error> {
+    match (re.capture_names(), re.captures(input)) {
+        (names, Some(caps)) => {
+            let mut result = BTreeMap::new();
+            for name in names.flatten() {
+                if let Some(m) = caps.name(name) {
+                    result.insert(Ident::new(name), RuntimeValue::String(m.as_str().to_string()));
+                }
+            }
+            Ok(RuntimeValue::Dict(result))
+        }
+        _ => Ok(RuntimeValue::new_dict()),
+    }
+}
+
+fn capture_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
+    let mut cache = REGEX_CACHE.lock().unwrap();
+    if let Some(re) = cache.get(pattern) {
+        _capture_re(re, input)
+    } else if let Ok(re) = RegexBuilder::new(pattern).size_limit(1 << 20).build() {
+        cache.insert(pattern.to_string(), re.clone());
+        _capture_re(&re, input)
     } else {
         Err(Error::InvalidRegularExpression(pattern.to_string()))
     }
