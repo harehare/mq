@@ -67,5 +67,5 @@ let name = "Alice" | s"Hello, ${name}!"
 try: risky_operation() catch: handle_error()
 
 # Pipe chains
-.h | select(.h.level == 2) | to_text() | upcase(self)
+.h | select(.h.level == 2) | to_text() | upcase()
 ```
