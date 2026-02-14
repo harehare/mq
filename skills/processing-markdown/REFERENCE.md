@@ -10,7 +10,7 @@
 
 ## String Functions
 
-`upcase`, `downcase`, `split(s, sep)`, `join(arr, sep)`, `trim`, `ltrimstr(s, prefix)`, `rtrimstr(s, suffix)`, `starts_with(s, prefix)`, `ends_with(s, suffix)`, `contains(sub)`, `index(s, sub)`, `rindex(s, sub)`, `slice(s, start, end)`, `replace(s, old, new)`, `gsub(s, pattern, rep)`, `regex_match(s, pat)`, `capture(s, pat)`, `repeat(s, n)`, `explode(s)`, `implode(arr)`, `url_encode(s)`, `base64(s)`, `base64d(s)`
+`upcase(input)`, `downcase(input)`, `split(s, sep)`, `join(arr, sep)`, `trim(input)`, `ltrimstr(s, prefix)`, `rtrimstr(s, suffix)`, `starts_with(s, prefix)`, `ends_with(s, suffix)`, `contains(haystack, needle)`, `index(s, sub)`, `rindex(s, sub)`, `slice(s, start, end)`, `replace(s, old, new)`, `gsub(s, pattern, rep)`, `regex_match(s, pat)`, `capture(s, pat)`, `repeat(s, n)`, `explode(s)`, `implode(arr)`, `url_encode(s)`, `base64(s)`, `base64d(s)`
 
 ## Array & Collection Functions
 
