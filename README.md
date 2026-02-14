@@ -200,9 +200,11 @@ For a comprehensive collection of practical examples, see the [Example Guide](ht
 Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 
 Commands:
-  repl  Start a REPL session for interactive query execution
-  fmt   Format mq files based on specified formatting options
-  help  Print this message or the help of the given subcommand(s)
+  repl   Start a REPL session for interactive query execution
+  fmt    Format mq files based on specified formatting options
+  docs   Show functions documentation for the query
+  check  Check syntax errors in mq files
+  help   Print this message or the help of the given subcommand(s)
 
 Arguments:
   [QUERY OR FILE]  
