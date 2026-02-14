@@ -200,15 +200,13 @@ For a comprehensive collection of practical examples, see the [Example Guide](ht
 Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 
 Commands:
-  repl   Start a REPL session for interactive query execution
-  fmt    Format mq files based on specified formatting options
-  docs   Show functions documentation for the query
-  check  Check syntax errors in mq files
-  help   Print this message or the help of the given subcommand(s)
+  repl  Start a REPL session for interactive query execution
+  fmt   Format mq files based on specified formatting options
+  help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]
-  [FILES]...
+  [QUERY OR FILE]  
+  [FILES]...       
 
 Options:
   -A, --aggregate
@@ -228,7 +226,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
       --json
-
+          
       --csv
           Include the built-in CSV module
       --fuzzy
@@ -353,7 +351,7 @@ markitdown test.xlsx | mq '.[][]'
 
 ## External Subcommands
 
-You can extend `mq` with custom subcommands by creating executable files starting with `mq-` in `~/.mq/bin/`:
+You can extend `mq` with custom subcommands by placing executable files starting with `mq-` in `~/.mq/bin/` or anywhere in your `PATH`.
 
 ```sh
 # Create a custom subcommand
@@ -382,6 +380,7 @@ The following external tools are available to extend mq's functionality:
 - [mq-check](https://github.com/harehare/mq-check) - A syntax and semantic checker for mq files.
 - [mq-conv](https://github.com/harehare/mq-conv) - A CLI tool for converting various file formats to Markdown.
 - [mq-docs](https://github.com/harehare/mq-docs) - A documentation generator for mq functions, macros, and selectors.
+- [mq-edit](https://github.com/harehare/mq-edit) - A terminal-based Markdown and code editor with WYSIWYG rendering and LSP support.
 - [mq-mcp](https://github.com/harehare/mq-mcp) - Model Context Protocol (MCP) server implementation for AI assistants
 - [mq-task](https://github.com/harehare/mq-task) - Task runner using mq for Markdown-based task definitions
 - [mq-tui](https://github.com/harehare/mq-tui) - Terminal User Interface (TUI) for interactive mq query
