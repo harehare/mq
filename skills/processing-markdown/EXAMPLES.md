@@ -44,7 +44,7 @@ let x = 42
 var counter = 0 | counter = counter + 1
 
 # Functions
-def double(x): mul(x, 2);
+def double(x): x * 2;
 map([1,2,3], fn(x): x * 2;)
 
 # Control flow
