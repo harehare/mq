@@ -1,5 +1,8 @@
 # mq Function Reference
 
+- All function calls require parentheses `()`.
+- If a function is called with missing arguments, the value passed through the pipe (`|`) will be used as the first argument.
+
 ## Table of Contents
 - String Functions
 - Array & Collection Functions
@@ -14,7 +17,7 @@
 
 ## Array & Collection Functions
 
-`len`, `reverse`, `sort`, `sort_by(arr, fn)`, `uniq`, `unique_by(arr, fn)`, `compact`, `flatten`, `first`, `last`, `nth(arr, n)`, `min`, `max`, `group_by(arr, fn)`, `pluck(arr, key)`, `any(arr, fn)`, `all(arr, fn)`, `map(arr, fn)`, `filter(arr, fn)`, `fold(arr, init, fn)`, `select(condition)`, `range(start, end, step)`
+`len`, `reverse`, `sort`, `sort_by(arr, fn)`, `uniq`, `unique_by(arr, fn)`, `compact`, `flatten`, `first`, `last`, `min`, `max`, `group_by(arr, fn)`, `pluck(arr, key)`, `any(arr, fn)`, `all(arr, fn)`, `map(arr, fn)`, `filter(arr, fn)`, `fold(arr, init, fn)`, `select(condition)`, `range(start, end, step)`
 
 ## Numeric Functions
 
@@ -41,3 +44,4 @@
 **Comparison**: `eq`, `ne`, `lt`, `lte`, `gt`, `gte`, `and`, `or`, `not`
 
 **Modules**: `include "csv"`, `include "yaml"`, `include "fuzzy"`, `include "test"`
+
