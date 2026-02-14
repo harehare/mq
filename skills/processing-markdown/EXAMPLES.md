@@ -64,7 +64,7 @@ foreach (x, [1, 2, 3]): add(x, 1) end
 let name = "Alice" | s"Hello, ${name}!"
 
 # Error handling
-try: risky_operation() catch: handle_error() end
+try: risky_operation() catch: handle_error()
 
 # Pipe chains
 .h | select(.h.level == 2) | to_text() | upcase(self)
