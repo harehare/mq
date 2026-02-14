@@ -143,6 +143,7 @@ struct InputArgs {
     #[arg(long, default_value_t = false)]
     stream: bool,
 
+    /// Include the built-in JSON module
     #[arg(long = "json", default_value_t = false)]
     include_json: bool,
 
