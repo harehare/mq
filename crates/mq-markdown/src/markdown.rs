@@ -55,6 +55,7 @@ impl Markdown {
         let mut pre_position: Option<Position> = None;
         let mut is_first = true;
         let mut current_table_row: Option<usize> = None;
+        let mut in_table = false;
 
         let mut buffer = String::with_capacity(self.nodes.len() * 50);
 
@@ -67,6 +68,15 @@ impl Markdown {
                 if is_new_row {
                     if current_table_row.is_some() {
                         buffer.push_str("|\n");
+                    } else if !in_table && let Some(pos) = node.position() {
+                        // Insert newlines before the first row of a table
+                        let new_line_count = pre_position
+                            .as_ref()
+                            .map(|p| pos.start.line.saturating_sub(p.end.line))
+                            .unwrap_or_else(|| if is_first { 0 } else { 1 });
+                        for _ in 0..new_line_count {
+                            buffer.push('\n');
+                        }
                     }
                     current_table_row = Some(*row);
                 }
@@ -86,6 +96,7 @@ impl Markdown {
 
                 pre_position = node.position();
                 is_first = false;
+                in_table = true;
                 continue;
             }
 
@@ -96,10 +107,12 @@ impl Markdown {
                 buffer.push_str("|\n");
                 pre_position = node.position();
                 is_first = false;
+                in_table = true;
                 continue;
             }
 
             current_table_row = None;
+            in_table = false;
 
             let value = node.render_with_theme(&self.options, theme);
 
@@ -286,6 +299,16 @@ mod tests {
         "| Column1 | Column2 | Column3 |\n|:--------|:--------:|---------:|\n| Left    | Center  | Right   |\n",
         7,
         "|Column1|Column2|Column3|\n|:---|:---:|---:|\n|Left|Center|Right|\n"
+    )]
+    #[case::table_after_paragraph(
+        "Paragraph\n\n| A | B |\n|---|---|\n| 1 | 2 |\n",
+        6,
+        "Paragraph\n\n|A|B|\n|---|---|\n|1|2|\n"
+    )]
+    #[case::table_after_heading(
+        "# Title\n\n| A | B |\n|---|---|\n| 1 | 2 |\n",
+        6,
+        "# Title\n\n|A|B|\n|---|---|\n|1|2|\n"
     )]
     fn test_markdown_from_str(#[case] input: &str, #[case] expected_nodes: usize, #[case] expected_output: &str) {
         let md = input.parse::<Markdown>().unwrap();
