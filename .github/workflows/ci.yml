@@ -33,6 +33,8 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: extractions/setup-just@v3
       - uses: harehare/setup-mq@v1
+        with:
+          bins: docs
       - uses: Swatinem/rust-cache@v2
       - name: Install tools
         uses: taiki-e/install-action@v2
@@ -79,3 +81,4 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check bans licenses sources
+
