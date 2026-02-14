@@ -34,7 +34,7 @@ jobs:
       - uses: extractions/setup-just@v3
       - uses: harehare/setup-mq@v1
         with:
-          bins: mq-docs
+          bins: docs
       - uses: Swatinem/rust-cache@v2
       - name: Install tools
         uses: taiki-e/install-action@v2
