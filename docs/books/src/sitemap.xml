@@ -50,6 +50,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/start/external_subcommands</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/start/example</loc>
     <priority>1.0</priority>
   </url>
@@ -142,47 +146,7 @@
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://mqlang.org/book/reference/builtins</loc>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://mqlang.org/book/reference/builtin_functions</loc>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://mqlang.org/book/reference/builtin_selectors</loc>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://mqlang.org/book/reference/selectors</loc>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://mqlang.org/book/reference/csv_functions</loc>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://mqlang.org/book/reference/fuzzy_functions</loc>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://mqlang.org/book/reference/json_functions</loc>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://mqlang.org/book/reference/section_functions</loc>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://mqlang.org/book/reference/toml_functions</loc>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://mqlang.org/book/reference/yaml_functions</loc>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://mqlang.org/book/reference/xml_functions</loc>
+    <loc>https://mqlang.org/book/builtins.html</loc>
     <priority>1.0</priority>
   </url>
 </urlset>

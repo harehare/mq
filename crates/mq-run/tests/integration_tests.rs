@@ -188,6 +188,26 @@ In {year}, the snowfall was above average.
     "# title\n\n## subtitle\n",
     Some("subtitle\n")
 )]
+#[case::capture_named_groups(
+    vec!["--unbuffered", "-I", "text", r#"capture("(?P<year>\\d{4})-(?P<month>\\d{2})-(?P<day>\\d{2})")"#],
+    "2024-01-15",
+    Some("{\"year\": \"2024\", \"month\": \"01\", \"day\": \"15\"}\n")
+)]
+#[case::capture_no_match(
+    vec!["--unbuffered", "-I", "text", r#"capture("(?P<year>\\d{4})-(?P<month>\\d{2})")"#],
+    "no-match-here",
+    Some("{}\n")
+)]
+#[case::capture_single_group(
+    vec!["--unbuffered", "-I", "text", r#"capture("(?P<name>[a-z]+)")"#],
+    "hello world",
+    Some("{\"name\": \"hello\"}\n")
+)]
+#[case::capture_markdown_node(
+    vec!["--unbuffered", r#".h | capture("(?P<level>\\w+)\\s+(?P<num>\\d+)")"#],
+    "# title 42\n",
+    Some("{\"level\": \"title\", \"num\": \"42\"}\n")
+)]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,
@@ -398,9 +418,20 @@ fn test_read_file() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut cmd = cargo::cargo_bin_cmd!("mq");
+    #[cfg(unix)]
     let assert = cmd
         .arg("--unbuffered")
-        .arg(format!(r#"read_file("{}")"#, temp_file_path.to_string_lossy(),))
+        .arg(format!(r#"read_file("{}")"#, temp_file_path.to_string_lossy()))
+        .arg(temp_file_path.to_string_lossy().to_string())
+        .assert();
+
+    #[cfg(windows)]
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg(format!(
+            r#"read_file("{}")"#,
+            temp_file_path.to_string_lossy().replace("\\", "/")
+        ))
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
 

@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript"],
+  "categories": {
+    "correctness": "error"
+  },
+  "env": {
+    "builtin": true
+  },
+  "ignorePatterns": ["dist"],
+  "overrides": [
+    {
+      "files": ["**/*.ts"],
+      "rules": {
+        "curly": "warn",
+        "eqeqeq": "warn",
+        "no-throw-literal": "warn",
+        "@typescript-eslint/no-explicit-any": "error",
+        "@typescript-eslint/no-require-imports": "error",
+        "@typescript-eslint/no-this-alias": "error",
+        "@typescript-eslint/no-unnecessary-type-constraint": "error",
+        "no-unused-vars": "error",
+        "no-var": "error",
+        "prefer-rest-params": "error",
+        "prefer-spread": "error"
+      }
+    }
+  ]
+}

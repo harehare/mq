@@ -113,6 +113,10 @@ deps:
 docs:
   ./scripts/update_doc.sh
 
+# Bump version for all crates
+bump-version:
+    cd scripts && ./bump_version.sh
+
 # Publish crates
 publish:
     cp -r crates/mq-run/assets crates/mq-hir
@@ -120,3 +124,4 @@ publish:
     cp -r crates/mq-run/assets crates/mq-markdown
     cp -r crates/mq-run/assets crates/mq-repl
     cargo publish --workspace
+

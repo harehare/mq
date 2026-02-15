@@ -1,0 +1,3683 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>mq - Function Reference</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg-primary: #2a3444;
+        --bg-secondary: #232d3b;
+        --bg-tertiary: #3d4a5c;
+        --text-primary: #e2e8f0;
+        --text-secondary: #cbd5e1;
+        --text-muted: #94a3b8;
+        --accent-primary: #67b8e3;
+        --accent-secondary: #4fc3f7;
+        --border-default: #4a5568;
+        --border-muted: #374151;
+        --code-bg: #1e293b;
+        --code-bg-inline: #374151;
+        --code-color: #e2e8f0;
+        --sidebar-width: 260px;
+      }
+
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html { height: 100%; scroll-behavior: smooth; }
+
+      body {
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+        font-family: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+        font-weight: 400;
+        line-height: 1.6;
+        min-height: 100vh;
+      }
+
+      /* ---- Layout ---- */
+      .layout {
+        display: flex;
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        background-color: var(--bg-secondary);
+        border-right: 1px solid var(--border-default);
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow-y: auto;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: var(--sidebar-width);
+        z-index: 50;
+      }
+
+      .sidebar-header {
+        border-bottom: 1px solid var(--border-default);
+        padding: 1.25rem 1.25rem 1rem;
+      }
+
+      .sidebar-header h1 {
+        color: var(--accent-primary);
+        font-size: 1.3rem;
+        font-weight: 700;
+        letter-spacing: -0.3px;
+      }
+
+      .sidebar-header p {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        margin-top: 0.2rem;
+      }
+
+      .sidebar-section {
+        padding: 0.75rem 0;
+      }
+
+      .sidebar-section-title {
+        color: var(--text-muted);
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.8px;
+        padding: 0.25rem 1.25rem 0.5rem;
+        text-transform: uppercase;
+      }
+
+      .sidebar-link {
+        align-items: center;
+        border-left: 3px solid transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        display: flex;
+        font-size: 0.85rem;
+        gap: 0.6rem;
+        padding: 0.5rem 1.25rem;
+        text-decoration: none;
+        transition: all 0.15s;
+      }
+
+      .sidebar-link:hover {
+        background-color: rgba(103, 184, 227, 0.06);
+        color: var(--text-primary);
+      }
+
+      .sidebar-link.active {
+        background-color: rgba(103, 184, 227, 0.1);
+        border-left-color: var(--accent-primary);
+        color: var(--accent-primary);
+        font-weight: 600;
+      }
+
+      .sidebar-icon {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+      }
+
+      .sidebar-icon svg {
+        height: 16px;
+        width: 16px;
+      }
+
+      .sidebar-label {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .sidebar-count {
+        background-color: var(--bg-tertiary);
+        border-radius: 10px;
+        color: var(--text-muted);
+        font-size: 0.7rem;
+        font-weight: 600;
+        min-width: 1.6rem;
+        padding: 0.1rem 0.45rem;
+        text-align: center;
+      }
+
+      .sidebar-link.active .sidebar-count {
+        background-color: rgba(103, 184, 227, 0.15);
+        color: var(--accent-primary);
+      }
+
+      .content {
+        flex: 1;
+        margin-left: var(--sidebar-width);
+        padding: 2rem 2.5rem;
+        max-width: calc(100% - var(--sidebar-width));
+      }
+
+      /* ---- Mobile sidebar toggle ---- */
+      .sidebar-toggle {
+        background-color: var(--bg-tertiary);
+        border: 1px solid var(--border-default);
+        border-radius: 8px;
+        color: var(--text-primary);
+        cursor: pointer;
+        display: none;
+        left: 1rem;
+        padding: 0.5rem;
+        position: fixed;
+        top: 1rem;
+        z-index: 60;
+      }
+
+      .sidebar-toggle svg {
+        display: block;
+        height: 20px;
+        width: 20px;
+      }
+
+      .sidebar-overlay {
+        background-color: rgba(0, 0, 0, 0.5);
+        display: none;
+        inset: 0;
+        position: fixed;
+        z-index: 40;
+      }
+
+      /* ---- Pages ---- */
+      .module-page { display: none; }
+      .module-page.active { display: block; }
+
+      .page-title {
+        color: var(--text-primary);
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+      }
+
+      .search-box {
+        margin-bottom: 1.5rem;
+        position: relative;
+      }
+
+      .search-box input {
+        background-color: var(--bg-tertiary);
+        border: 1px solid var(--border-default);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: 0.95rem;
+        padding: 0.75rem 1rem 0.75rem 2.5rem;
+        width: 100%;
+        transition: border-color 0.2s;
+      }
+
+      .search-box input:focus {
+        border-color: var(--accent-primary);
+        outline: none;
+      }
+
+      .search-box .search-icon {
+        color: var(--text-muted);
+        height: 16px;
+        left: 0.85rem;
+        pointer-events: none;
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 16px;
+      }
+
+      .count {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        margin-bottom: 1rem;
+      }
+
+      table { border-collapse: collapse; width: 100%; }
+
+      thead th {
+        background-color: var(--bg-tertiary);
+        border-bottom: 2px solid var(--accent-primary);
+        color: var(--accent-primary);
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        padding: 0.75rem 1rem;
+        position: sticky;
+        text-align: left;
+        text-transform: uppercase;
+        top: 0;
+        z-index: 5;
+      }
+
+      tbody tr {
+        border-bottom: 1px solid var(--border-muted);
+        cursor: pointer;
+        transition: background-color 0.15s;
+      }
+
+      tbody tr:hover { background-color: var(--bg-tertiary); }
+
+      tbody td {
+        font-size: 0.9rem;
+        padding: 0.65rem 1rem;
+        vertical-align: top;
+      }
+
+      tbody td:first-child { white-space: nowrap; }
+
+      code {
+        background-color: var(--code-bg-inline);
+        border-radius: 4px;
+        color: var(--code-color);
+        font-family: "Consolas", "Monaco", "Courier New", monospace;
+        font-size: 0.85em;
+        padding: 0.15em 0.4em;
+      }
+
+      del code { opacity: 0.6; }
+
+      footer {
+        border-top: 1px solid var(--border-default);
+        margin-left: var(--sidebar-width);
+        padding: 1.5rem 2.5rem;
+      }
+
+      footer p {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+      }
+
+      footer a {
+        color: var(--accent-primary);
+        text-decoration: none;
+      }
+
+      footer a:hover {
+        color: var(--accent-secondary);
+        text-decoration: underline;
+      }
+
+      @media (max-width: 768px) {
+        .sidebar {
+          transform: translateX(-100%);
+          transition: transform 0.25s ease;
+        }
+
+        .sidebar.open {
+          transform: translateX(0);
+        }
+
+        .sidebar-toggle {
+          display: block;
+        }
+
+        .sidebar-overlay.open {
+          display: block;
+        }
+
+        .content {
+          margin-left: 0;
+          max-width: 100%;
+          padding: 1.5rem 1rem;
+          padding-top: 4rem;
+        }
+
+        footer {
+          margin-left: 0;
+          padding: 1.5rem 1rem;
+        }
+
+        table { display: block; overflow-x: auto; }
+
+        tbody td, thead th {
+          font-size: 0.8rem;
+          padding: 0.6rem 0.75rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <button class="sidebar-toggle" id="sidebarToggle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <div class="layout">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <h1>mq</h1>
+          <p>Function Reference</p>
+        </div>
+        <nav class="sidebar-section">
+          <div class="sidebar-section-title">Modules</div>
+<a class="sidebar-link active" href="#" data-module="mod-all"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span><span class="sidebar-label">All</span><span class="sidebar-count">247</span></a>
+<a class="sidebar-link" href="#" data-module="mod-0"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span><span class="sidebar-label">Built-in</span><span class="sidebar-count">196</span></a>
+<a class="sidebar-link" href="#" data-module="mod-1"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span><span class="sidebar-label">json</span><span class="sidebar-count">5</span></a>
+<a class="sidebar-link" href="#" data-module="mod-2"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span><span class="sidebar-label">csv</span><span class="sidebar-count">7</span></a>
+<a class="sidebar-link" href="#" data-module="mod-3"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span><span class="sidebar-label">section</span><span class="sidebar-count">15</span></a>
+<a class="sidebar-link" href="#" data-module="mod-4"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span><span class="sidebar-label">toml</span><span class="sidebar-count">4</span></a>
+<a class="sidebar-link" href="#" data-module="mod-5"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span><span class="sidebar-label">yaml</span><span class="sidebar-count">9</span></a>
+<a class="sidebar-link" href="#" data-module="mod-6"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span><span class="sidebar-label">xml</span><span class="sidebar-count">3</span></a>
+<a class="sidebar-link" href="#" data-module="mod-7"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span><span class="sidebar-label">fuzzy</span><span class="sidebar-count">8</span></a>
+
+        </nav>
+        <nav class="sidebar-section">
+          <div class="sidebar-section-title">Selectors</div>
+<a class="sidebar-link" href="#" data-module="sel-0"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg></span><span class="sidebar-label">Built-in</span><span class="sidebar-count">41</span></a>
+        </nav>
+
+      </aside>
+
+      <div class="content">
+<div class="module-page active" id="mod-all">
+  <div class="search-box">
+    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" class="search-input" placeholder="Filter functions..." />
+  </div>
+  <p class="count"><span class="count-num">247</span> functions</p>
+  <table>
+    <thead><tr><th>Function</th><th>Description</th><th>Parameters</th><th>Example</th></tr></thead>
+    <tbody>
+                <tr>
+                  <td><code>abs</code></td>
+                  <td>Returns the absolute value of the given number.</td>
+                  <td><code>number</code></td>
+                  <td><code>abs(number)</code></td>
+                </tr>
+                <tr>
+                  <td><code>add</code></td>
+                  <td>Adds two values.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>add(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>all</code></td>
+                  <td> Returns true if all element in the array satisfies the provided function.</td>
+                  <td><code>v</code>, <code>f</code></td>
+                  <td><code>all(v, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>all_symbols</code></td>
+                  <td>Returns an array of all interned symbols.</td>
+                  <td></td>
+                  <td><code>all_symbols()</code></td>
+                </tr>
+                <tr>
+                  <td><code>and</code></td>
+                  <td>Performs a logical AND operation on two boolean values.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>and(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>any</code></td>
+                  <td> Returns true if any element in the array satisfies the provided function.</td>
+                  <td><code>v</code>, <code>f</code></td>
+                  <td><code>any(v, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>array</code></td>
+                  <td>Creates an array from the given values.</td>
+                  <td><code>values</code></td>
+                  <td><code>array(values)</code></td>
+                </tr>
+                <tr>
+                  <td><code>arrays</code></td>
+                  <td> Returns array if input is array, None otherwise</td>
+                  <td><code>a</code></td>
+                  <td><code>arrays(a)</code></td>
+                </tr>
+                <tr>
+                  <td><code>assert</code></td>
+                  <td>Asserts that two values are equal, returns the value if true, otherwise raises an error.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>assert(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>attr</code></td>
+                  <td>Retrieves the value of the specified attribute from a markdown node.</td>
+                  <td><code>markdown</code>, <code>attribute</code></td>
+                  <td><code>attr(markdown, attribute)</code></td>
+                </tr>
+                <tr>
+                  <td><code>base64</code></td>
+                  <td>Encodes the given string to base64.</td>
+                  <td><code>input</code></td>
+                  <td><code>base64(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>base64d</code></td>
+                  <td>Decodes the given base64 string.</td>
+                  <td><code>input</code></td>
+                  <td><code>base64d(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>between</code></td>
+                  <td> Checks if a value is between min and max (inclusive).</td>
+                  <td><code>value</code>, <code>min</code>, <code>max</code></td>
+                  <td><code>between(value, min, max)</code></td>
+                </tr>
+                <tr>
+                  <td><code>booleans</code></td>
+                  <td> Returns boolean if input is boolean, None otherwise</td>
+                  <td><code>b</code></td>
+                  <td><code>booleans(b)</code></td>
+                </tr>
+                <tr>
+                  <td><code>breakpoint</code></td>
+                  <td>Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.</td>
+                  <td></td>
+                  <td><code>breakpoint()</code></td>
+                </tr>
+                <tr>
+                  <td><code>capture</code></td>
+                  <td>Captures named groups from the given string based on the specified regular expression pattern and returns them as a dictionary keyed by group names.</td>
+                  <td><code>string</code>, <code>pattern</code></td>
+                  <td><code>capture(string, pattern)</code></td>
+                </tr>
+                <tr>
+                  <td><code>ceil</code></td>
+                  <td>Rounds the given number up to the nearest integer.</td>
+                  <td><code>number</code></td>
+                  <td><code>ceil(number)</code></td>
+                </tr>
+                <tr>
+                  <td><code>coalesce</code></td>
+                  <td>Returns the first non-None value from the two provided arguments.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>coalesce(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>compact</code></td>
+                  <td>Removes None values from the given array.</td>
+                  <td><code>array</code></td>
+                  <td><code>compact(array)</code></td>
+                </tr>
+                <tr>
+                  <td><code>compact_map</code></td>
+                  <td> Maps over an array and removes None values from the result.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>compact_map(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>contains</code></td>
+                  <td> Checks if string contains a substring</td>
+                  <td><code>haystack</code>, <code>needle</code></td>
+                  <td><code>contains(haystack, needle)</code></td>
+                </tr>
+                <tr>
+                  <td><code>count_by</code></td>
+                  <td> Returns the count of elements in the array that satisfy the provided function.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>count_by(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>debug</code></td>
+                  <td> Prints the debug information of the given value(s).</td>
+                  <td><code>args</code></td>
+                  <td><code>debug(args)</code></td>
+                </tr>
+                <tr>
+                  <td><code>decrease_header_level</code></td>
+                  <td>Decreases the level of a markdown heading node by one, down to a minimum of 1.</td>
+                  <td><code>heading_node</code></td>
+                  <td><code>decrease_header_level(heading_node)</code></td>
+                </tr>
+                <tr>
+                  <td><code>del</code></td>
+                  <td>Deletes the element at the specified index in the array or string.</td>
+                  <td><code>array_or_string</code>, <code>index</code></td>
+                  <td><code>del(array_or_string, index)</code></td>
+                </tr>
+                <tr>
+                  <td><code>dict</code></td>
+                  <td>Creates a new, empty dict.</td>
+                  <td></td>
+                  <td><code>dict()</code></td>
+                </tr>
+                <tr>
+                  <td><code>div</code></td>
+                  <td>Divides the first value by the second value.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>div(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>downcase</code></td>
+                  <td>Converts the given string to lowercase.</td>
+                  <td><code>input</code></td>
+                  <td><code>downcase(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>each</code></td>
+                  <td> Executes a provided function once for each element in an array or each key-value pair in a dictionary.</td>
+                  <td><code>v</code>, <code>f</code></td>
+                  <td><code>each(v, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>ends_with</code></td>
+                  <td>Checks if the given string ends with the specified substring.</td>
+                  <td><code>string</code>, <code>substring</code></td>
+                  <td><code>ends_with(string, substring)</code></td>
+                </tr>
+                <tr>
+                  <td><code>entries</code></td>
+                  <td>Returns an array of key-value pairs from the dict as arrays.</td>
+                  <td><code>dict</code></td>
+                  <td><code>entries(dict)</code></td>
+                </tr>
+                <tr>
+                  <td><code>eq</code></td>
+                  <td>Checks if two values are equal.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>eq(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>error</code></td>
+                  <td>Raises a user-defined error with the specified message.</td>
+                  <td><code>message</code></td>
+                  <td><code>error(message)</code></td>
+                </tr>
+                <tr>
+                  <td><code>explode</code></td>
+                  <td>Splits the given string into an array of characters.</td>
+                  <td><code>string</code></td>
+                  <td><code>explode(string)</code></td>
+                </tr>
+                <tr>
+                  <td><code>fill</code></td>
+                  <td> Returns an array of length n filled with the given value.</td>
+                  <td><code>value</code>, <code>n</code></td>
+                  <td><code>fill(value, n)</code></td>
+                </tr>
+                <tr>
+                  <td><code>filter</code></td>
+                  <td> Filters the elements of an array based on a provided callback function.</td>
+                  <td><code>v</code>, <code>f</code></td>
+                  <td><code>filter(v, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>find_index</code></td>
+                  <td> Returns the index of the first element in an array that satisfies the provided function.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>find_index(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>first</code></td>
+                  <td> Returns the first element of an array</td>
+                  <td><code>arr</code></td>
+                  <td><code>first(arr)</code></td>
+                </tr>
+                <tr>
+                  <td><code>flat_map</code></td>
+                  <td> Applies a function to each element and flattens the result into a single array</td>
+                  <td><code>v</code>, <code>f</code></td>
+                  <td><code>flat_map(v, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>flatten</code></td>
+                  <td>Flattens a nested array into a single level array.</td>
+                  <td><code>array</code></td>
+                  <td><code>flatten(array)</code></td>
+                </tr>
+                <tr>
+                  <td><code>floor</code></td>
+                  <td>Rounds the given number down to the nearest integer.</td>
+                  <td><code>number</code></td>
+                  <td><code>floor(number)</code></td>
+                </tr>
+                <tr>
+                  <td><code>fold</code></td>
+                  <td> Reduces an array to a single value by applying a function, starting from an initial value.</td>
+                  <td><code>arr</code>, <code>init</code>, <code>f</code></td>
+                  <td><code>fold(arr, init, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>from_date</code></td>
+                  <td>Converts a date string to a timestamp.</td>
+                  <td><code>date_str</code></td>
+                  <td><code>from_date(date_str)</code></td>
+                </tr>
+                <tr>
+                  <td><code>get</code></td>
+                  <td>Retrieves a value from a dict by its key. Returns None if the key is not found.</td>
+                  <td><code>obj</code>, <code>key</code></td>
+                  <td><code>get(obj, key)</code></td>
+                </tr>
+                <tr>
+                  <td><code>get_or</code></td>
+                  <td> Safely gets a value from a dict with a default if the key doesn't exist.</td>
+                  <td><code>dict</code>, <code>key</code>, <code>default</code></td>
+                  <td><code>get_or(dict, key, default)</code></td>
+                </tr>
+                <tr>
+                  <td><code>get_title</code></td>
+                  <td>Returns the title of a markdown node.</td>
+                  <td><code>node</code></td>
+                  <td><code>get_title(node)</code></td>
+                </tr>
+                <tr>
+                  <td><code>get_url</code></td>
+                  <td>Returns the url of a markdown node.</td>
+                  <td><code>node</code></td>
+                  <td><code>get_url(node)</code></td>
+                </tr>
+                <tr>
+                  <td><code>get_variable</code></td>
+                  <td>Retrieves the value of a symbol or variable from the current environment.</td>
+                  <td><code>symbol_or_string</code></td>
+                  <td><code>get_variable(symbol_or_string)</code></td>
+                </tr>
+                <tr>
+                  <td><code>group_by</code></td>
+                  <td> Groups elements of an array by the result of applying a function to each element</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>group_by(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>gsub</code></td>
+                  <td>Replaces all occurrences matching a regular expression pattern with the replacement string.</td>
+                  <td><code>from</code>, <code>pattern</code>, <code>to</code></td>
+                  <td><code>gsub(from, pattern, to)</code></td>
+                </tr>
+                <tr>
+                  <td><code>gt</code></td>
+                  <td>Checks if the first value is greater than the second value.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>gt(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>gte</code></td>
+                  <td>Checks if the first value is greater than or equal to the second value.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>gte(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>halt</code></td>
+                  <td>Terminates the program with the given exit code.</td>
+                  <td><code>exit_code</code></td>
+                  <td><code>halt(exit_code)</code></td>
+                </tr>
+                <tr>
+                  <td><code>halt_error</code></td>
+                  <td> Halts execution with error code 5</td>
+                  <td></td>
+                  <td><code>halt_error()</code></td>
+                </tr>
+                <tr>
+                  <td><code>identity</code></td>
+                  <td> Returns the input value unchanged.</td>
+                  <td><code>x</code></td>
+                  <td><code>identity(x)</code></td>
+                </tr>
+                <tr>
+                  <td><code>implode</code></td>
+                  <td>Joins an array of characters into a string.</td>
+                  <td><code>array</code></td>
+                  <td><code>implode(array)</code></td>
+                </tr>
+                <tr>
+                  <td><code>in</code></td>
+                  <td> Returns true if the element is in the array.</td>
+                  <td><code>v</code>, <code>elem</code></td>
+                  <td><code>in(v, elem)</code></td>
+                </tr>
+                <tr>
+                  <td><code>increase_header_level</code></td>
+                  <td>Increases the level of a markdown heading node by one, up to a maximum of 6.</td>
+                  <td><code>heading_node</code></td>
+                  <td><code>increase_header_level(heading_node)</code></td>
+                </tr>
+                <tr>
+                  <td><code>index</code></td>
+                  <td>Finds the first occurrence of a substring in the given string.</td>
+                  <td><code>string</code>, <code>substring</code></td>
+                  <td><code>index(string, substring)</code></td>
+                </tr>
+                <tr>
+                  <td><code>index_by</code></td>
+                  <td> Creates a dictionary indexed by a key extracted from each element.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>index_by(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>infinite</code></td>
+                  <td>Returns an infinite number value.</td>
+                  <td></td>
+                  <td><code>infinite()</code></td>
+                </tr>
+                <tr>
+                  <td><code>input</code></td>
+                  <td>Reads a line from standard input and returns it as a string.</td>
+                  <td></td>
+                  <td><code>input()</code></td>
+                </tr>
+                <tr>
+                  <td><code>insert</code></td>
+                  <td>Inserts a value into an array or string at the specified index, or into a dict with the specified key.</td>
+                  <td><code>target</code>, <code>index_or_key</code>, <code>value</code></td>
+                  <td><code>insert(target, index_or_key, value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>inspect</code></td>
+                  <td> Inspects a value by printing its string representation and returning the value.</td>
+                  <td><code>value</code></td>
+                  <td><code>inspect(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>intern</code></td>
+                  <td>Interns the given string, returning a canonical reference for efficient comparison.</td>
+                  <td><code>string</code></td>
+                  <td><code>intern(string)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_array</code></td>
+                  <td> Checks if input is an array</td>
+                  <td><code>a</code></td>
+                  <td><code>is_array(a)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_bool</code></td>
+                  <td> Checks if input is a boolean</td>
+                  <td><code>b</code></td>
+                  <td><code>is_bool(b)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_code</code></td>
+                  <td> Checks if markdown is code block</td>
+                  <td><code>md</code></td>
+                  <td><code>is_code(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_debug_mode</code></td>
+                  <td>Checks if the runtime is currently in debug mode, returning true if a debugger is attached.</td>
+                  <td></td>
+                  <td><code>is_debug_mode()</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_dict</code></td>
+                  <td> Checks if input is a dictionary</td>
+                  <td><code>d</code></td>
+                  <td><code>is_dict(d)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_em</code></td>
+                  <td> Checks if markdown is emphasis</td>
+                  <td><code>md</code></td>
+                  <td><code>is_em(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_empty</code></td>
+                  <td> Checks if string, array or dict is empty</td>
+                  <td><code>s</code></td>
+                  <td><code>is_empty(s)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h</code></td>
+                  <td> Checks if markdown is heading</td>
+                  <td><code>md</code></td>
+                  <td><code>is_h(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h1</code></td>
+                  <td> Checks if markdown is h1 heading</td>
+                  <td><code>md</code></td>
+                  <td><code>is_h1(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h2</code></td>
+                  <td> Checks if markdown is h2 heading</td>
+                  <td><code>md</code></td>
+                  <td><code>is_h2(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h3</code></td>
+                  <td> Checks if markdown is h3 heading</td>
+                  <td><code>md</code></td>
+                  <td><code>is_h3(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h4</code></td>
+                  <td> Checks if markdown is h4 heading</td>
+                  <td><code>md</code></td>
+                  <td><code>is_h4(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h5</code></td>
+                  <td> Checks if markdown is h5 heading</td>
+                  <td><code>md</code></td>
+                  <td><code>is_h5(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h6</code></td>
+                  <td> Checks if markdown is h6 heading</td>
+                  <td><code>md</code></td>
+                  <td><code>is_h6(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h_level</code></td>
+                  <td> Checks if markdown is a heading of the specified level (1-6)</td>
+                  <td><code>md</code>, <code>level</code></td>
+                  <td><code>is_h_level(md, level)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_html</code></td>
+                  <td> Checks if markdown is html</td>
+                  <td><code>md</code></td>
+                  <td><code>is_html(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_list</code></td>
+                  <td> Checks if markdown is list</td>
+                  <td><code>list</code></td>
+                  <td><code>is_list(list)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_markdown</code></td>
+                  <td> Checks if input is markdown</td>
+                  <td><code>m</code></td>
+                  <td><code>is_markdown(m)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_mdx</code></td>
+                  <td> Checks if markdown is MDX</td>
+                  <td><code>mdx</code></td>
+                  <td><code>is_mdx(mdx)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_mdx_flow_expression</code></td>
+                  <td> Checks if markdown is MDX Flow Expression</td>
+                  <td><code>mdx</code></td>
+                  <td><code>is_mdx_flow_expression(mdx)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_mdx_js_esm</code></td>
+                  <td> Checks if markdown is MDX Js Esm</td>
+                  <td><code>mdx</code></td>
+                  <td><code>is_mdx_js_esm(mdx)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_mdx_jsx_flow_element</code></td>
+                  <td> Checks if markdown is MDX Jsx Flow Element</td>
+                  <td><code>mdx</code></td>
+                  <td><code>is_mdx_jsx_flow_element(mdx)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_mdx_jsx_text_element</code></td>
+                  <td> Checks if markdown is MDX Jsx Text Element</td>
+                  <td><code>mdx</code></td>
+                  <td><code>is_mdx_jsx_text_element(mdx)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_mdx_text_expression</code></td>
+                  <td> Checks if markdown is MDX Text Expression</td>
+                  <td><code>mdx</code></td>
+                  <td><code>is_mdx_text_expression(mdx)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_none</code></td>
+                  <td> Checks if input is None</td>
+                  <td><code>n</code></td>
+                  <td><code>is_none(n)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_number</code></td>
+                  <td> Checks if input is a number</td>
+                  <td><code>n</code></td>
+                  <td><code>is_number(n)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_string</code></td>
+                  <td> Checks if input is a string</td>
+                  <td><code>s</code></td>
+                  <td><code>is_string(s)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_table_align</code></td>
+                  <td> Checks if markdown is table align</td>
+                  <td><code>md</code></td>
+                  <td><code>is_table_align(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_table_cell</code></td>
+                  <td> Checks if markdown is table cell</td>
+                  <td><code>md</code></td>
+                  <td><code>is_table_cell(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_text</code></td>
+                  <td> Checks if markdown is text</td>
+                  <td><code>text</code></td>
+                  <td><code>is_text(text)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_toml</code></td>
+                  <td> Checks if markdown is toml</td>
+                  <td><code>md</code></td>
+                  <td><code>is_toml(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_yaml</code></td>
+                  <td> Checks if markdown is yaml</td>
+                  <td><code>md</code></td>
+                  <td><code>is_yaml(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>join</code></td>
+                  <td>Joins the elements of an array into a string with the given separator.</td>
+                  <td><code>array</code>, <code>separator</code></td>
+                  <td><code>join(array, separator)</code></td>
+                </tr>
+                <tr>
+                  <td><code>keys</code></td>
+                  <td>Returns an array of keys from the dict.</td>
+                  <td><code>dict</code></td>
+                  <td><code>keys(dict)</code></td>
+                </tr>
+                <tr>
+                  <td><code>last</code></td>
+                  <td> Returns the last element of an array</td>
+                  <td><code>arr</code></td>
+                  <td><code>last(arr)</code></td>
+                </tr>
+                <tr>
+                  <td><code>len</code></td>
+                  <td>Returns the length of the given string or array.</td>
+                  <td><code>value</code></td>
+                  <td><code>len(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>load_markdown</code></td>
+                  <td> Loads a markdown file from the specified path</td>
+                  <td><code>path</code></td>
+                  <td><code>load_markdown(path)</code></td>
+                </tr>
+                <tr>
+                  <td><code>lpad</code></td>
+                  <td> Left-pads a string to a specified length using a given padding string.</td>
+                  <td><code>s</code>, <code>length</code>, <code>pad_str</code></td>
+                  <td><code>lpad(s, length, pad_str)</code></td>
+                </tr>
+                <tr>
+                  <td><code>lt</code></td>
+                  <td>Checks if the first value is less than the second value.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>lt(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>lte</code></td>
+                  <td>Checks if the first value is less than or equal to the second value.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>lte(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>ltrimstr</code></td>
+                  <td> Removes prefix string from input if it exists</td>
+                  <td><code>s</code>, <code>left</code></td>
+                  <td><code>ltrimstr(s, left)</code></td>
+                </tr>
+                <tr>
+                  <td><code>map</code></td>
+                  <td> Applies a given function to each element of the provided array and returns a new array with the results.</td>
+                  <td><code>v</code>, <code>f</code></td>
+                  <td><code>map(v, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>markdowns</code></td>
+                  <td> Returns markdown if input is markdown, None otherwise</td>
+                  <td><code>m</code></td>
+                  <td><code>markdowns(m)</code></td>
+                </tr>
+                <tr>
+                  <td><del><code>matches_url</code></del></td>
+                  <td> Checks if markdown node's URL matches a specified URL
+ deprecated: use select(.link.url == url) instead</td>
+                  <td><code>node</code>, <code>url</code></td>
+                  <td><code>matches_url(node, url)</code></td>
+                </tr>
+                <tr>
+                  <td><code>max</code></td>
+                  <td>Returns the maximum of two values.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>max(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>min</code></td>
+                  <td>Returns the minimum of two values.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>min(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>mod</code></td>
+                  <td>Calculates the remainder of the division of the first value by the second value.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>mod(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>mul</code></td>
+                  <td>Multiplies two values.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>mul(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>nan</code></td>
+                  <td>Returns a Not-a-Number (NaN) value.</td>
+                  <td></td>
+                  <td><code>nan()</code></td>
+                </tr>
+                <tr>
+                  <td><code>ne</code></td>
+                  <td>Checks if two values are not equal.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>ne(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>negate</code></td>
+                  <td>Returns the negation of the given number.</td>
+                  <td><code>number</code></td>
+                  <td><code>negate(number)</code></td>
+                </tr>
+                <tr>
+                  <td><code>not</code></td>
+                  <td>Performs a logical NOT operation on a boolean value.</td>
+                  <td><code>value</code></td>
+                  <td><code>not(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>now</code></td>
+                  <td>Returns the current timestamp.</td>
+                  <td></td>
+                  <td><code>now()</code></td>
+                </tr>
+                <tr>
+                  <td><code>numbers</code></td>
+                  <td> Returns number if input is number, None otherwise</td>
+                  <td><code>n</code></td>
+                  <td><code>numbers(n)</code></td>
+                </tr>
+                <tr>
+                  <td><code>or</code></td>
+                  <td>Performs a logical OR operation on two boolean values.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>or(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>partition</code></td>
+                  <td> Splits an array into two arrays: [matching, not_matching] based on a condition.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>partition(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>pluck</code></td>
+                  <td> Extracts values from an array of objects based on a specified selector.</td>
+                  <td><code>pluck_obj</code>, <code>selector</code></td>
+                  <td><code>pluck(pluck_obj, selector)</code></td>
+                </tr>
+                <tr>
+                  <td><code>pow</code></td>
+                  <td>Raises the base to the power of the exponent.</td>
+                  <td><code>base</code>, <code>exponent</code></td>
+                  <td><code>pow(base, exponent)</code></td>
+                </tr>
+                <tr>
+                  <td><code>print</code></td>
+                  <td>Prints a message to standard output and returns the current value.</td>
+                  <td><code>message</code></td>
+                  <td><code>print(message)</code></td>
+                </tr>
+                <tr>
+                  <td><code>range</code></td>
+                  <td>Creates an array from start to end with an optional step.</td>
+                  <td><code>start</code>, <code>end</code>, <code>step</code></td>
+                  <td><code>range(start, end, step)</code></td>
+                </tr>
+                <tr>
+                  <td><code>read_file</code></td>
+                  <td>Reads the contents of a file at the given path and returns it as a string.</td>
+                  <td><code>path</code></td>
+                  <td><code>read_file(path)</code></td>
+                </tr>
+                <tr>
+                  <td><code>regex_match</code></td>
+                  <td>Finds all matches of the given pattern in the string.</td>
+                  <td><code>string</code>, <code>pattern</code></td>
+                  <td><code>regex_match(string, pattern)</code></td>
+                </tr>
+                <tr>
+                  <td><code>reject</code></td>
+                  <td> Filters out elements that match the condition (opposite of filter).</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>reject(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>repeat</code></td>
+                  <td>Repeats the given string a specified number of times.</td>
+                  <td><code>string</code>, <code>count</code></td>
+                  <td><code>repeat(string, count)</code></td>
+                </tr>
+                <tr>
+                  <td><code>replace</code></td>
+                  <td>Replaces all occurrences of a substring with another substring.</td>
+                  <td><code>from</code>, <code>pattern</code>, <code>to</code></td>
+                  <td><code>replace(from, pattern, to)</code></td>
+                </tr>
+                <tr>
+                  <td><code>reverse</code></td>
+                  <td>Reverses the given string or array.</td>
+                  <td><code>value</code></td>
+                  <td><code>reverse(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>rindex</code></td>
+                  <td>Finds the last occurrence of a substring in the given string.</td>
+                  <td><code>string</code>, <code>substring</code></td>
+                  <td><code>rindex(string, substring)</code></td>
+                </tr>
+                <tr>
+                  <td><code>round</code></td>
+                  <td>Rounds the given number to the nearest integer.</td>
+                  <td><code>number</code></td>
+                  <td><code>round(number)</code></td>
+                </tr>
+                <tr>
+                  <td><code>rpad</code></td>
+                  <td> Right-pads a string to a specified length using a given padding string.</td>
+                  <td><code>s</code>, <code>length</code>, <code>pad_str</code></td>
+                  <td><code>rpad(s, length, pad_str)</code></td>
+                </tr>
+                <tr>
+                  <td><code>rtrimstr</code></td>
+                  <td> Removes suffix string from input if it exists</td>
+                  <td><code>s</code>, <code>right</code></td>
+                  <td><code>rtrimstr(s, right)</code></td>
+                </tr>
+                <tr>
+                  <td><code>second</code></td>
+                  <td> Returns the second element of an array</td>
+                  <td><code>arr</code></td>
+                  <td><code>second(arr)</code></td>
+                </tr>
+                <tr>
+                  <td><code>select</code></td>
+                  <td> Returns value if condition is true, None otherwise</td>
+                  <td><code>v</code>, <code>f</code></td>
+                  <td><code>select(v, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>set</code></td>
+                  <td>Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map.</td>
+                  <td><code>obj</code>, <code>key</code>, <code>value</code></td>
+                  <td><code>set(obj, key, value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>set_attr</code></td>
+                  <td>Sets the value of the specified attribute on a markdown node.</td>
+                  <td><code>markdown</code>, <code>attribute</code>, <code>value</code></td>
+                  <td><code>set_attr(markdown, attribute, value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>set_check</code></td>
+                  <td>Creates a markdown list node with the given checked state.</td>
+                  <td><code>list</code>, <code>checked</code></td>
+                  <td><code>set_check(list, checked)</code></td>
+                </tr>
+                <tr>
+                  <td><code>set_code_block_lang</code></td>
+                  <td>Sets the language of a markdown code block node.</td>
+                  <td><code>code_block</code>, <code>language</code></td>
+                  <td><code>set_code_block_lang(code_block, language)</code></td>
+                </tr>
+                <tr>
+                  <td><code>set_list_ordered</code></td>
+                  <td>Sets the ordered property of a markdown list node.</td>
+                  <td><code>list</code>, <code>ordered</code></td>
+                  <td><code>set_list_ordered(list, ordered)</code></td>
+                </tr>
+                <tr>
+                  <td><code>set_ref</code></td>
+                  <td>Sets the reference identifier for markdown nodes that support references (e.g., Definition, LinkRef, ImageRef, Footnote, FootnoteRef).</td>
+                  <td><code>node</code>, <code>reference_id</code></td>
+                  <td><code>set_ref(node, reference_id)</code></td>
+                </tr>
+                <tr>
+                  <td><code>set_variable</code></td>
+                  <td>Sets a symbol or variable in the current environment with the given value.</td>
+                  <td><code>symbol_or_string</code>, <code>value</code></td>
+                  <td><code>set_variable(symbol_or_string, value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>skip</code></td>
+                  <td> Skips the first n elements of an array and returns the rest</td>
+                  <td><code>arr</code>, <code>n</code></td>
+                  <td><code>skip(arr, n)</code></td>
+                </tr>
+                <tr>
+                  <td><code>skip_while</code></td>
+                  <td> Skips elements from the beginning of an array while the provided function returns true</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>skip_while(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>slice</code></td>
+                  <td>Extracts a substring from the given string.</td>
+                  <td><code>string</code>, <code>start</code>, <code>end</code></td>
+                  <td><code>slice(string, start, end)</code></td>
+                </tr>
+                <tr>
+                  <td><code>sort</code></td>
+                  <td>Sorts the elements of the given array.</td>
+                  <td><code>array</code></td>
+                  <td><code>sort(array)</code></td>
+                </tr>
+                <tr>
+                  <td><code>sort_by</code></td>
+                  <td> Sorts an array using a key function that extracts a comparable value for each element.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>sort_by(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>split</code></td>
+                  <td>Splits the given string by the specified separator.</td>
+                  <td><code>string</code>, <code>separator</code></td>
+                  <td><code>split(string, separator)</code></td>
+                </tr>
+                <tr>
+                  <td><code>starts_with</code></td>
+                  <td>Checks if the given string starts with the specified substring.</td>
+                  <td><code>string</code>, <code>substring</code></td>
+                  <td><code>starts_with(string, substring)</code></td>
+                </tr>
+                <tr>
+                  <td><code>stderr</code></td>
+                  <td>Prints a message to standard error and returns the current value.</td>
+                  <td><code>message</code></td>
+                  <td><code>stderr(message)</code></td>
+                </tr>
+                <tr>
+                  <td><code>sub</code></td>
+                  <td>Subtracts the second value from the first value.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>sub(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>sum_by</code></td>
+                  <td> Sums elements of an array after applying a transformation function.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>sum_by(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>take</code></td>
+                  <td> Takes the first n elements of an array</td>
+                  <td><code>arr</code>, <code>n</code></td>
+                  <td><code>take(arr, n)</code></td>
+                </tr>
+                <tr>
+                  <td><code>take_while</code></td>
+                  <td> Takes elements from the beginning of an array while the provided function returns true</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>take_while(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>tap</code></td>
+                  <td> Applies a function to a value and returns the value (useful for debugging or side effects).</td>
+                  <td><code>tap_value</code>, <code>tap_expr</code></td>
+                  <td><code>tap(tap_value, tap_expr)</code></td>
+                </tr>
+                <tr>
+                  <td><code>test</code></td>
+                  <td> Tests if string matches a pattern</td>
+                  <td><code>s</code>, <code>pattern</code></td>
+                  <td><code>test(s, pattern)</code></td>
+                </tr>
+                <tr>
+                  <td><code>times</code></td>
+                  <td> Executes an expression n times and returns an array of results.</td>
+                  <td><code>t_n</code>, <code>t_expr</code></td>
+                  <td><code>times(t_n, t_expr)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_array</code></td>
+                  <td>Converts the given value to an array.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_array(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_code</code></td>
+                  <td>Creates a markdown code block with the given value and language.</td>
+                  <td><code>value</code>, <code>language</code></td>
+                  <td><code>to_code(value, language)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_code_inline</code></td>
+                  <td>Creates an inline markdown code node with the given value.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_code_inline(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_date</code></td>
+                  <td>Converts a timestamp to a date string with the given format.</td>
+                  <td><code>timestamp</code>, <code>format</code></td>
+                  <td><code>to_date(timestamp, format)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_date_iso8601</code></td>
+                  <td> Formats a date to ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)</td>
+                  <td><code>d</code></td>
+                  <td><code>to_date_iso8601(d)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_em</code></td>
+                  <td>Creates a markdown emphasis (italic) node with the given value.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_em(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_h</code></td>
+                  <td>Creates a markdown heading node with the given value and depth.</td>
+                  <td><code>value</code>, <code>depth</code></td>
+                  <td><code>to_h(value, depth)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_hr</code></td>
+                  <td>Creates a markdown horizontal rule node.</td>
+                  <td></td>
+                  <td><code>to_hr()</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_html</code></td>
+                  <td>Converts the given markdown string to HTML.</td>
+                  <td><code>markdown</code></td>
+                  <td><code>to_html(markdown)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_image</code></td>
+                  <td>Creates a markdown image node with the given URL, alt text, and title.</td>
+                  <td><code>url</code>, <code>alt</code>, <code>title</code></td>
+                  <td><code>to_image(url, alt, title)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_link</code></td>
+                  <td>Creates a markdown link node  with the given  url and title.</td>
+                  <td><code>url</code>, <code>value</code>, <code>title</code></td>
+                  <td><code>to_link(url, value, title)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_markdown</code></td>
+                  <td>Parses a markdown string and returns an array of markdown nodes.</td>
+                  <td><code>markdown_string</code></td>
+                  <td><code>to_markdown(markdown_string)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_markdown_string</code></td>
+                  <td>Converts the given value(s) to a markdown string representation.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_markdown_string(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_math</code></td>
+                  <td>Creates a markdown math block with the given value.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_math(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_math_inline</code></td>
+                  <td>Creates an inline markdown math node with the given value.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_math_inline(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_md_list</code></td>
+                  <td>Creates a markdown list node with the given value and indent level.</td>
+                  <td><code>value</code>, <code>indent</code></td>
+                  <td><code>to_md_list(value, indent)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_md_name</code></td>
+                  <td>Returns the name of the given markdown node.</td>
+                  <td><code>markdown</code></td>
+                  <td><code>to_md_name(markdown)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_md_table_cell</code></td>
+                  <td>Creates a markdown table cell node with the given value at the specified row and column.</td>
+                  <td><code>value</code>, <code>row</code>, <code>column</code></td>
+                  <td><code>to_md_table_cell(value, row, column)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_md_table_row</code></td>
+                  <td>Creates a markdown table row node with the given values.</td>
+                  <td><code>cells</code></td>
+                  <td><code>to_md_table_row(cells)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_md_text</code></td>
+                  <td>Creates a markdown text node with the given value.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_md_text(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_mdx</code></td>
+                  <td>Parses an MDX string and returns an array of MDX nodes.</td>
+                  <td><code>mdx_string</code></td>
+                  <td><code>to_mdx(mdx_string)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_number</code></td>
+                  <td>Converts the given value to a number.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_number(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_string</code></td>
+                  <td>Converts the given value to a string.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_string(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_strong</code></td>
+                  <td>Creates a markdown strong (bold) node with the given value.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_strong(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_text</code></td>
+                  <td>Converts the given markdown node to plain text.</td>
+                  <td><code>markdown</code></td>
+                  <td><code>to_text(markdown)</code></td>
+                </tr>
+                <tr>
+                  <td><code>transpose</code></td>
+                  <td> Transposes a 2D array (matrix), swapping rows and columns.</td>
+                  <td><code>matrix</code></td>
+                  <td><code>transpose(matrix)</code></td>
+                </tr>
+                <tr>
+                  <td><code>trim</code></td>
+                  <td>Trims whitespace from both ends of the given string.</td>
+                  <td><code>input</code></td>
+                  <td><code>trim(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>trunc</code></td>
+                  <td>Truncates the given number to an integer by removing the fractional part.</td>
+                  <td><code>number</code></td>
+                  <td><code>trunc(number)</code></td>
+                </tr>
+                <tr>
+                  <td><code>type</code></td>
+                  <td>Returns the type of the given value.</td>
+                  <td><code>value</code></td>
+                  <td><code>type(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>uniq</code></td>
+                  <td>Removes duplicate elements from the given array.</td>
+                  <td><code>array</code></td>
+                  <td><code>uniq(array)</code></td>
+                </tr>
+                <tr>
+                  <td><code>unique_by</code></td>
+                  <td> Returns a new array with duplicate elements removed, comparing by the result of the provided function.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>unique_by(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>unless</code></td>
+                  <td> Executes the expression only if the condition is false.</td>
+                  <td><code>unless_cond</code>, <code>unless_expr</code></td>
+                  <td><code>unless(unless_cond, unless_expr)</code></td>
+                </tr>
+                <tr>
+                  <td><code>until</code></td>
+                  <td> Executes the expression repeatedly until the condition is true.</td>
+                  <td><code>until_cond</code>, <code>until_expr</code></td>
+                  <td><code>until(until_cond, until_expr)</code></td>
+                </tr>
+                <tr>
+                  <td><code>upcase</code></td>
+                  <td>Converts the given string to uppercase.</td>
+                  <td><code>input</code></td>
+                  <td><code>upcase(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>update</code></td>
+                  <td>Update the value with specified value.</td>
+                  <td><code>target_value</code>, <code>source_value</code></td>
+                  <td><code>update(target_value, source_value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>url_encode</code></td>
+                  <td>URL-encodes the given string.</td>
+                  <td><code>input</code></td>
+                  <td><code>url_encode(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>values</code></td>
+                  <td>Returns an array of values from the dict.</td>
+                  <td><code>dict</code></td>
+                  <td><code>values(dict)</code></td>
+                </tr>
+                <tr>
+                  <td><code>handle_string_char</code></td>
+                  <td></td>
+                  <td><code>char</code>, <code>escaped</code>, <code>pos</code></td>
+                  <td><code>handle_string_char(char, escaped, pos)</code></td>
+                </tr>
+                <tr>
+                  <td><code>json_parse</code></td>
+                  <td> Parses a JSON string and returns the corresponding data structure.</td>
+                  <td><code>input</code></td>
+                  <td><code>json_parse(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>json_stringify</code></td>
+                  <td> Serializes a value to a JSON string.</td>
+                  <td><code>data</code></td>
+                  <td><code>json_stringify(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>json_to_markdown_table</code></td>
+                  <td> Converts a JSON data structure to a Markdown table.</td>
+                  <td><code>data</code></td>
+                  <td><code>json_to_markdown_table(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>parse_object</code></td>
+                  <td></td>
+                  <td><code>input</code></td>
+                  <td><code>parse_object(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>csv_needs_quote</code></td>
+                  <td></td>
+                  <td><code>field</code>, <code>delimiter</code></td>
+                  <td><code>csv_needs_quote(field, delimiter)</code></td>
+                </tr>
+                <tr>
+                  <td><code>csv_parse</code></td>
+                  <td> Parses CSV content using a comma as the delimiter.</td>
+                  <td><code>input</code>, <code>has_header</code></td>
+                  <td><code>csv_parse(input, has_header)</code></td>
+                </tr>
+                <tr>
+                  <td><code>csv_parse_with_delimiter</code></td>
+                  <td> Parses CSV content with a specified delimiter and optional header row.</td>
+                  <td><code>input</code>, <code>delimiter</code>, <code>has_header</code></td>
+                  <td><code>csv_parse_with_delimiter(input, delimiter, has_header)</code></td>
+                </tr>
+                <tr>
+                  <td><code>csv_stringify</code></td>
+                  <td> Converts data to a CSV string with a specified delimiter.</td>
+                  <td><code>data</code>, <code>delimiter</code></td>
+                  <td><code>csv_stringify(data, delimiter)</code></td>
+                </tr>
+                <tr>
+                  <td><code>csv_to_json</code></td>
+                  <td> Converts CSV data to a JSON string.</td>
+                  <td><code>data</code></td>
+                  <td><code>csv_to_json(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>csv_to_markdown_table</code></td>
+                  <td> Converts CSV data to a Markdown table format.</td>
+                  <td><code>data</code></td>
+                  <td><code>csv_to_markdown_table(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>tsv_parse</code></td>
+                  <td> Parses TSV (Tab-Separated Values) content.</td>
+                  <td><code>input</code>, <code>has_header</code></td>
+                  <td><code>tsv_parse(input, has_header)</code></td>
+                </tr>
+                <tr>
+                  <td><code>all_nodes</code></td>
+                  <td> Returns all nodes of a section, including both the header and content.</td>
+                  <td><code>section</code></td>
+                  <td><code>all_nodes(section)</code></td>
+                </tr>
+                <tr>
+                  <td><code>collect</code></td>
+                  <td> Flattens sections back to markdown nodes for output.
+ This converts section objects back to their original markdown node arrays.</td>
+                  <td><code>sections</code></td>
+                  <td><code>collect(sections)</code></td>
+                </tr>
+                <tr>
+                  <td><code>content</code></td>
+                  <td> Returns the content of a section (all nodes except the header).</td>
+                  <td><code>section</code></td>
+                  <td><code>content(section)</code></td>
+                </tr>
+                <tr>
+                  <td><code>filter_sections</code></td>
+                  <td> Filters sections based on a given predicate function.</td>
+                  <td><code>md_nodes</code>, <code>predicate</code></td>
+                  <td><code>filter_sections(md_nodes, predicate)</code></td>
+                </tr>
+                <tr>
+                  <td><code>has_content</code></td>
+                  <td> Checks if a section has any content beyond the header.</td>
+                  <td><code>section</code></td>
+                  <td><code>has_content(section)</code></td>
+                </tr>
+                <tr>
+                  <td><code>level</code></td>
+                  <td> Returns the header level (1-6) of a section.</td>
+                  <td><code>section</code></td>
+                  <td><code>level(section)</code></td>
+                </tr>
+                <tr>
+                  <td><code>map_sections</code></td>
+                  <td> Maps sections using a given mapper function.</td>
+                  <td><code>md_nodes</code>, <code>mapper</code></td>
+                  <td><code>map_sections(md_nodes, mapper)</code></td>
+                </tr>
+                <tr>
+                  <td><code>nth</code></td>
+                  <td> Returns the nth section from an array of sections (0-indexed).</td>
+                  <td><code>sections</code>, <code>n</code></td>
+                  <td><code>nth(sections, n)</code></td>
+                </tr>
+                <tr>
+                  <td><code>sections</code></td>
+                  <td> Splits markdown nodes into sections based on headers.</td>
+                  <td><code>md_nodes</code></td>
+                  <td><code>sections(md_nodes)</code></td>
+                </tr>
+                <tr>
+                  <td><code>split</code></td>
+                  <td> Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.</td>
+                  <td><code>md_nodes</code>, <code>level</code></td>
+                  <td><code>split(md_nodes, level)</code></td>
+                </tr>
+                <tr>
+                  <td><code>title</code></td>
+                  <td> Returns the title text of a section (header text without the # symbols).</td>
+                  <td><code>section</code></td>
+                  <td><code>title(section)</code></td>
+                </tr>
+                <tr>
+                  <td><code>title_contains</code></td>
+                  <td> Filters the given list of sections, returning only those whose title contains the specified text.</td>
+                  <td><code>sections</code>, <code>text</code></td>
+                  <td><code>title_contains(sections, text)</code></td>
+                </tr>
+                <tr>
+                  <td><code>title_match</code></td>
+                  <td> Filters sections by a pattern match in the title text.</td>
+                  <td><code>sections</code>, <code>pattern</code></td>
+                  <td><code>title_match(sections, pattern)</code></td>
+                </tr>
+                <tr>
+                  <td><code>titles</code></td>
+                  <td> Extracts titles from all sections.</td>
+                  <td><code>sections</code></td>
+                  <td><code>titles(sections)</code></td>
+                </tr>
+                <tr>
+                  <td><code>toc</code></td>
+                  <td> Generates a table of contents from sections.</td>
+                  <td><code>sections</code></td>
+                  <td><code>toc(sections)</code></td>
+                </tr>
+                <tr>
+                  <td><code>toml_parse</code></td>
+                  <td> Parses a TOML string and returns the parsed data structure.</td>
+                  <td><code>input</code></td>
+                  <td><code>toml_parse(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>toml_stringify</code></td>
+                  <td> Converts a data structure to a TOML string representation.</td>
+                  <td><code>data</code></td>
+                  <td><code>toml_stringify(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>toml_to_json</code></td>
+                  <td> Converts a data structure to a JSON string representation.</td>
+                  <td><code>data</code></td>
+                  <td><code>toml_to_json(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>toml_to_markdown_table</code></td>
+                  <td> Converts a TOML data structure to a Markdown table.</td>
+                  <td><code>data</code></td>
+                  <td><code>toml_to_markdown_table(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>handle_empty_or_comment_line</code></td>
+                  <td></td>
+                  <td><code>lines</code>, <code>current_index</code>, <code>current_indent</code></td>
+                  <td><code>handle_empty_or_comment_line(lines, current_index, current_indent)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_digit</code></td>
+                  <td> Based on YAML 1.2 specification</td>
+                  <td><code>char</code></td>
+                  <td><code>is_digit(char)</code></td>
+                </tr>
+                <tr>
+                  <td><code>parse_yaml_content</code></td>
+                  <td></td>
+                  <td><code>input</code></td>
+                  <td><code>parse_yaml_content(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>parse_yaml_lines</code></td>
+                  <td></td>
+                  <td><code>lines</code>, <code>current_index</code>, <code>current_indent</code></td>
+                  <td><code>parse_yaml_lines(lines, current_index, current_indent)</code></td>
+                </tr>
+                <tr>
+                  <td><code>parse_yaml_lines_with_options</code></td>
+                  <td></td>
+                  <td><code>lines</code>, <code>current_index</code>, <code>current_indent</code>, <code>is_multi_line</code></td>
+                  <td><code>parse_yaml_lines_with_options(lines, current_index, current_indent, is_multi_line)</code></td>
+                </tr>
+                <tr>
+                  <td><code>yaml_parse</code></td>
+                  <td> Parses a YAML string and returns the parsed data structure.</td>
+                  <td><code>input</code></td>
+                  <td><code>yaml_parse(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>yaml_stringify</code></td>
+                  <td> Converts a data structure to a YAML string representation.</td>
+                  <td><code>data</code></td>
+                  <td><code>yaml_stringify(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>yaml_to_json</code></td>
+                  <td> Converts a data structure to a JSON string representation.</td>
+                  <td><code>data</code></td>
+                  <td><code>yaml_to_json(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>yaml_to_markdown_table</code></td>
+                  <td> Converts a YAML data structure to a Markdown table.</td>
+                  <td><code>data</code></td>
+                  <td><code>yaml_to_markdown_table(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>xml_parse</code></td>
+                  <td> Parses an XML string and returns the corresponding data structure.</td>
+                  <td><code>input</code></td>
+                  <td><code>xml_parse(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>xml_stringify</code></td>
+                  <td> Serializes a value to an XML string.</td>
+                  <td><code>data</code></td>
+                  <td><code>xml_stringify(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>xml_to_markdown_table</code></td>
+                  <td> Converts an XML data structure to a Markdown table.</td>
+                  <td><code>data</code></td>
+                  <td><code>xml_to_markdown_table(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>fuzzy_best_match</code></td>
+                  <td> Finds the best fuzzy match from candidates.</td>
+                  <td><code>candidates</code>, <code>query</code></td>
+                  <td><code>fuzzy_best_match(candidates, query)</code></td>
+                </tr>
+                <tr>
+                  <td><code>fuzzy_filter</code></td>
+                  <td> Filters candidates by minimum fuzzy match score using Jaro-Winkler.</td>
+                  <td><code>candidates</code>, <code>query</code>, <code>threshold</code></td>
+                  <td><code>fuzzy_filter(candidates, query, threshold)</code></td>
+                </tr>
+                <tr>
+                  <td><code>fuzzy_match</code></td>
+                  <td> Performs fuzzy matching on an array of strings using Jaro-Winkler distance.</td>
+                  <td><code>candidates</code>, <code>query</code></td>
+                  <td><code>fuzzy_match(candidates, query)</code></td>
+                </tr>
+                <tr>
+                  <td><code>fuzzy_match_jaro</code></td>
+                  <td> Performs fuzzy matching using Jaro distance.</td>
+                  <td><code>candidates</code>, <code>query</code></td>
+                  <td><code>fuzzy_match_jaro(candidates, query)</code></td>
+                </tr>
+                <tr>
+                  <td><code>fuzzy_match_levenshtein</code></td>
+                  <td> Performs fuzzy matching using Levenshtein distance.</td>
+                  <td><code>candidates</code>, <code>query</code></td>
+                  <td><code>fuzzy_match_levenshtein(candidates, query)</code></td>
+                </tr>
+                <tr>
+                  <td><code>jaro</code></td>
+                  <td> Calculates the Jaro distance between two strings (0.0 to 1.0, where 1.0 is exact match).</td>
+                  <td><code>s1</code>, <code>s2</code></td>
+                  <td><code>jaro(s1, s2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>jaro_winkler</code></td>
+                  <td> Calculates the Jaro-Winkler distance between two strings.</td>
+                  <td><code>s1</code>, <code>s2</code></td>
+                  <td><code>jaro_winkler(s1, s2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>levenshtein</code></td>
+                  <td> Calculates the Levenshtein distance between two strings.</td>
+                  <td><code>s1</code>, <code>s2</code></td>
+                  <td><code>levenshtein(s1, s2)</code></td>
+                </tr>
+    </tbody>
+  </table>
+</div>
+<div class="module-page" id="mod-0">
+  <div class="search-box">
+    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" class="search-input" placeholder="Filter functions..." />
+  </div>
+  <p class="count"><span class="count-num">196</span> functions</p>
+  <table>
+    <thead><tr><th>Function</th><th>Description</th><th>Parameters</th><th>Example</th></tr></thead>
+    <tbody>
+                <tr>
+                  <td><code>abs</code></td>
+                  <td>Returns the absolute value of the given number.</td>
+                  <td><code>number</code></td>
+                  <td><code>abs(number)</code></td>
+                </tr>
+                <tr>
+                  <td><code>add</code></td>
+                  <td>Adds two values.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>add(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>all</code></td>
+                  <td> Returns true if all element in the array satisfies the provided function.</td>
+                  <td><code>v</code>, <code>f</code></td>
+                  <td><code>all(v, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>all_symbols</code></td>
+                  <td>Returns an array of all interned symbols.</td>
+                  <td></td>
+                  <td><code>all_symbols()</code></td>
+                </tr>
+                <tr>
+                  <td><code>and</code></td>
+                  <td>Performs a logical AND operation on two boolean values.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>and(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>any</code></td>
+                  <td> Returns true if any element in the array satisfies the provided function.</td>
+                  <td><code>v</code>, <code>f</code></td>
+                  <td><code>any(v, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>array</code></td>
+                  <td>Creates an array from the given values.</td>
+                  <td><code>values</code></td>
+                  <td><code>array(values)</code></td>
+                </tr>
+                <tr>
+                  <td><code>arrays</code></td>
+                  <td> Returns array if input is array, None otherwise</td>
+                  <td><code>a</code></td>
+                  <td><code>arrays(a)</code></td>
+                </tr>
+                <tr>
+                  <td><code>assert</code></td>
+                  <td>Asserts that two values are equal, returns the value if true, otherwise raises an error.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>assert(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>attr</code></td>
+                  <td>Retrieves the value of the specified attribute from a markdown node.</td>
+                  <td><code>markdown</code>, <code>attribute</code></td>
+                  <td><code>attr(markdown, attribute)</code></td>
+                </tr>
+                <tr>
+                  <td><code>base64</code></td>
+                  <td>Encodes the given string to base64.</td>
+                  <td><code>input</code></td>
+                  <td><code>base64(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>base64d</code></td>
+                  <td>Decodes the given base64 string.</td>
+                  <td><code>input</code></td>
+                  <td><code>base64d(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>between</code></td>
+                  <td> Checks if a value is between min and max (inclusive).</td>
+                  <td><code>value</code>, <code>min</code>, <code>max</code></td>
+                  <td><code>between(value, min, max)</code></td>
+                </tr>
+                <tr>
+                  <td><code>booleans</code></td>
+                  <td> Returns boolean if input is boolean, None otherwise</td>
+                  <td><code>b</code></td>
+                  <td><code>booleans(b)</code></td>
+                </tr>
+                <tr>
+                  <td><code>breakpoint</code></td>
+                  <td>Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.</td>
+                  <td></td>
+                  <td><code>breakpoint()</code></td>
+                </tr>
+                <tr>
+                  <td><code>capture</code></td>
+                  <td>Captures named groups from the given string based on the specified regular expression pattern and returns them as a dictionary keyed by group names.</td>
+                  <td><code>string</code>, <code>pattern</code></td>
+                  <td><code>capture(string, pattern)</code></td>
+                </tr>
+                <tr>
+                  <td><code>ceil</code></td>
+                  <td>Rounds the given number up to the nearest integer.</td>
+                  <td><code>number</code></td>
+                  <td><code>ceil(number)</code></td>
+                </tr>
+                <tr>
+                  <td><code>coalesce</code></td>
+                  <td>Returns the first non-None value from the two provided arguments.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>coalesce(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>compact</code></td>
+                  <td>Removes None values from the given array.</td>
+                  <td><code>array</code></td>
+                  <td><code>compact(array)</code></td>
+                </tr>
+                <tr>
+                  <td><code>compact_map</code></td>
+                  <td> Maps over an array and removes None values from the result.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>compact_map(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>contains</code></td>
+                  <td> Checks if string contains a substring</td>
+                  <td><code>haystack</code>, <code>needle</code></td>
+                  <td><code>contains(haystack, needle)</code></td>
+                </tr>
+                <tr>
+                  <td><code>count_by</code></td>
+                  <td> Returns the count of elements in the array that satisfy the provided function.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>count_by(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>debug</code></td>
+                  <td> Prints the debug information of the given value(s).</td>
+                  <td><code>args</code></td>
+                  <td><code>debug(args)</code></td>
+                </tr>
+                <tr>
+                  <td><code>decrease_header_level</code></td>
+                  <td>Decreases the level of a markdown heading node by one, down to a minimum of 1.</td>
+                  <td><code>heading_node</code></td>
+                  <td><code>decrease_header_level(heading_node)</code></td>
+                </tr>
+                <tr>
+                  <td><code>del</code></td>
+                  <td>Deletes the element at the specified index in the array or string.</td>
+                  <td><code>array_or_string</code>, <code>index</code></td>
+                  <td><code>del(array_or_string, index)</code></td>
+                </tr>
+                <tr>
+                  <td><code>dict</code></td>
+                  <td>Creates a new, empty dict.</td>
+                  <td></td>
+                  <td><code>dict()</code></td>
+                </tr>
+                <tr>
+                  <td><code>div</code></td>
+                  <td>Divides the first value by the second value.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>div(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>downcase</code></td>
+                  <td>Converts the given string to lowercase.</td>
+                  <td><code>input</code></td>
+                  <td><code>downcase(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>each</code></td>
+                  <td> Executes a provided function once for each element in an array or each key-value pair in a dictionary.</td>
+                  <td><code>v</code>, <code>f</code></td>
+                  <td><code>each(v, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>ends_with</code></td>
+                  <td>Checks if the given string ends with the specified substring.</td>
+                  <td><code>string</code>, <code>substring</code></td>
+                  <td><code>ends_with(string, substring)</code></td>
+                </tr>
+                <tr>
+                  <td><code>entries</code></td>
+                  <td>Returns an array of key-value pairs from the dict as arrays.</td>
+                  <td><code>dict</code></td>
+                  <td><code>entries(dict)</code></td>
+                </tr>
+                <tr>
+                  <td><code>eq</code></td>
+                  <td>Checks if two values are equal.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>eq(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>error</code></td>
+                  <td>Raises a user-defined error with the specified message.</td>
+                  <td><code>message</code></td>
+                  <td><code>error(message)</code></td>
+                </tr>
+                <tr>
+                  <td><code>explode</code></td>
+                  <td>Splits the given string into an array of characters.</td>
+                  <td><code>string</code></td>
+                  <td><code>explode(string)</code></td>
+                </tr>
+                <tr>
+                  <td><code>fill</code></td>
+                  <td> Returns an array of length n filled with the given value.</td>
+                  <td><code>value</code>, <code>n</code></td>
+                  <td><code>fill(value, n)</code></td>
+                </tr>
+                <tr>
+                  <td><code>filter</code></td>
+                  <td> Filters the elements of an array based on a provided callback function.</td>
+                  <td><code>v</code>, <code>f</code></td>
+                  <td><code>filter(v, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>find_index</code></td>
+                  <td> Returns the index of the first element in an array that satisfies the provided function.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>find_index(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>first</code></td>
+                  <td> Returns the first element of an array</td>
+                  <td><code>arr</code></td>
+                  <td><code>first(arr)</code></td>
+                </tr>
+                <tr>
+                  <td><code>flat_map</code></td>
+                  <td> Applies a function to each element and flattens the result into a single array</td>
+                  <td><code>v</code>, <code>f</code></td>
+                  <td><code>flat_map(v, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>flatten</code></td>
+                  <td>Flattens a nested array into a single level array.</td>
+                  <td><code>array</code></td>
+                  <td><code>flatten(array)</code></td>
+                </tr>
+                <tr>
+                  <td><code>floor</code></td>
+                  <td>Rounds the given number down to the nearest integer.</td>
+                  <td><code>number</code></td>
+                  <td><code>floor(number)</code></td>
+                </tr>
+                <tr>
+                  <td><code>fold</code></td>
+                  <td> Reduces an array to a single value by applying a function, starting from an initial value.</td>
+                  <td><code>arr</code>, <code>init</code>, <code>f</code></td>
+                  <td><code>fold(arr, init, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>from_date</code></td>
+                  <td>Converts a date string to a timestamp.</td>
+                  <td><code>date_str</code></td>
+                  <td><code>from_date(date_str)</code></td>
+                </tr>
+                <tr>
+                  <td><code>get</code></td>
+                  <td>Retrieves a value from a dict by its key. Returns None if the key is not found.</td>
+                  <td><code>obj</code>, <code>key</code></td>
+                  <td><code>get(obj, key)</code></td>
+                </tr>
+                <tr>
+                  <td><code>get_or</code></td>
+                  <td> Safely gets a value from a dict with a default if the key doesn't exist.</td>
+                  <td><code>dict</code>, <code>key</code>, <code>default</code></td>
+                  <td><code>get_or(dict, key, default)</code></td>
+                </tr>
+                <tr>
+                  <td><code>get_title</code></td>
+                  <td>Returns the title of a markdown node.</td>
+                  <td><code>node</code></td>
+                  <td><code>get_title(node)</code></td>
+                </tr>
+                <tr>
+                  <td><code>get_url</code></td>
+                  <td>Returns the url of a markdown node.</td>
+                  <td><code>node</code></td>
+                  <td><code>get_url(node)</code></td>
+                </tr>
+                <tr>
+                  <td><code>get_variable</code></td>
+                  <td>Retrieves the value of a symbol or variable from the current environment.</td>
+                  <td><code>symbol_or_string</code></td>
+                  <td><code>get_variable(symbol_or_string)</code></td>
+                </tr>
+                <tr>
+                  <td><code>group_by</code></td>
+                  <td> Groups elements of an array by the result of applying a function to each element</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>group_by(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>gsub</code></td>
+                  <td>Replaces all occurrences matching a regular expression pattern with the replacement string.</td>
+                  <td><code>from</code>, <code>pattern</code>, <code>to</code></td>
+                  <td><code>gsub(from, pattern, to)</code></td>
+                </tr>
+                <tr>
+                  <td><code>gt</code></td>
+                  <td>Checks if the first value is greater than the second value.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>gt(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>gte</code></td>
+                  <td>Checks if the first value is greater than or equal to the second value.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>gte(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>halt</code></td>
+                  <td>Terminates the program with the given exit code.</td>
+                  <td><code>exit_code</code></td>
+                  <td><code>halt(exit_code)</code></td>
+                </tr>
+                <tr>
+                  <td><code>halt_error</code></td>
+                  <td> Halts execution with error code 5</td>
+                  <td></td>
+                  <td><code>halt_error()</code></td>
+                </tr>
+                <tr>
+                  <td><code>identity</code></td>
+                  <td> Returns the input value unchanged.</td>
+                  <td><code>x</code></td>
+                  <td><code>identity(x)</code></td>
+                </tr>
+                <tr>
+                  <td><code>implode</code></td>
+                  <td>Joins an array of characters into a string.</td>
+                  <td><code>array</code></td>
+                  <td><code>implode(array)</code></td>
+                </tr>
+                <tr>
+                  <td><code>in</code></td>
+                  <td> Returns true if the element is in the array.</td>
+                  <td><code>v</code>, <code>elem</code></td>
+                  <td><code>in(v, elem)</code></td>
+                </tr>
+                <tr>
+                  <td><code>increase_header_level</code></td>
+                  <td>Increases the level of a markdown heading node by one, up to a maximum of 6.</td>
+                  <td><code>heading_node</code></td>
+                  <td><code>increase_header_level(heading_node)</code></td>
+                </tr>
+                <tr>
+                  <td><code>index</code></td>
+                  <td>Finds the first occurrence of a substring in the given string.</td>
+                  <td><code>string</code>, <code>substring</code></td>
+                  <td><code>index(string, substring)</code></td>
+                </tr>
+                <tr>
+                  <td><code>index_by</code></td>
+                  <td> Creates a dictionary indexed by a key extracted from each element.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>index_by(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>infinite</code></td>
+                  <td>Returns an infinite number value.</td>
+                  <td></td>
+                  <td><code>infinite()</code></td>
+                </tr>
+                <tr>
+                  <td><code>input</code></td>
+                  <td>Reads a line from standard input and returns it as a string.</td>
+                  <td></td>
+                  <td><code>input()</code></td>
+                </tr>
+                <tr>
+                  <td><code>insert</code></td>
+                  <td>Inserts a value into an array or string at the specified index, or into a dict with the specified key.</td>
+                  <td><code>target</code>, <code>index_or_key</code>, <code>value</code></td>
+                  <td><code>insert(target, index_or_key, value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>inspect</code></td>
+                  <td> Inspects a value by printing its string representation and returning the value.</td>
+                  <td><code>value</code></td>
+                  <td><code>inspect(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>intern</code></td>
+                  <td>Interns the given string, returning a canonical reference for efficient comparison.</td>
+                  <td><code>string</code></td>
+                  <td><code>intern(string)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_array</code></td>
+                  <td> Checks if input is an array</td>
+                  <td><code>a</code></td>
+                  <td><code>is_array(a)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_bool</code></td>
+                  <td> Checks if input is a boolean</td>
+                  <td><code>b</code></td>
+                  <td><code>is_bool(b)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_code</code></td>
+                  <td> Checks if markdown is code block</td>
+                  <td><code>md</code></td>
+                  <td><code>is_code(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_debug_mode</code></td>
+                  <td>Checks if the runtime is currently in debug mode, returning true if a debugger is attached.</td>
+                  <td></td>
+                  <td><code>is_debug_mode()</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_dict</code></td>
+                  <td> Checks if input is a dictionary</td>
+                  <td><code>d</code></td>
+                  <td><code>is_dict(d)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_em</code></td>
+                  <td> Checks if markdown is emphasis</td>
+                  <td><code>md</code></td>
+                  <td><code>is_em(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_empty</code></td>
+                  <td> Checks if string, array or dict is empty</td>
+                  <td><code>s</code></td>
+                  <td><code>is_empty(s)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h</code></td>
+                  <td> Checks if markdown is heading</td>
+                  <td><code>md</code></td>
+                  <td><code>is_h(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h1</code></td>
+                  <td> Checks if markdown is h1 heading</td>
+                  <td><code>md</code></td>
+                  <td><code>is_h1(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h2</code></td>
+                  <td> Checks if markdown is h2 heading</td>
+                  <td><code>md</code></td>
+                  <td><code>is_h2(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h3</code></td>
+                  <td> Checks if markdown is h3 heading</td>
+                  <td><code>md</code></td>
+                  <td><code>is_h3(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h4</code></td>
+                  <td> Checks if markdown is h4 heading</td>
+                  <td><code>md</code></td>
+                  <td><code>is_h4(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h5</code></td>
+                  <td> Checks if markdown is h5 heading</td>
+                  <td><code>md</code></td>
+                  <td><code>is_h5(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h6</code></td>
+                  <td> Checks if markdown is h6 heading</td>
+                  <td><code>md</code></td>
+                  <td><code>is_h6(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_h_level</code></td>
+                  <td> Checks if markdown is a heading of the specified level (1-6)</td>
+                  <td><code>md</code>, <code>level</code></td>
+                  <td><code>is_h_level(md, level)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_html</code></td>
+                  <td> Checks if markdown is html</td>
+                  <td><code>md</code></td>
+                  <td><code>is_html(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_list</code></td>
+                  <td> Checks if markdown is list</td>
+                  <td><code>list</code></td>
+                  <td><code>is_list(list)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_markdown</code></td>
+                  <td> Checks if input is markdown</td>
+                  <td><code>m</code></td>
+                  <td><code>is_markdown(m)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_mdx</code></td>
+                  <td> Checks if markdown is MDX</td>
+                  <td><code>mdx</code></td>
+                  <td><code>is_mdx(mdx)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_mdx_flow_expression</code></td>
+                  <td> Checks if markdown is MDX Flow Expression</td>
+                  <td><code>mdx</code></td>
+                  <td><code>is_mdx_flow_expression(mdx)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_mdx_js_esm</code></td>
+                  <td> Checks if markdown is MDX Js Esm</td>
+                  <td><code>mdx</code></td>
+                  <td><code>is_mdx_js_esm(mdx)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_mdx_jsx_flow_element</code></td>
+                  <td> Checks if markdown is MDX Jsx Flow Element</td>
+                  <td><code>mdx</code></td>
+                  <td><code>is_mdx_jsx_flow_element(mdx)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_mdx_jsx_text_element</code></td>
+                  <td> Checks if markdown is MDX Jsx Text Element</td>
+                  <td><code>mdx</code></td>
+                  <td><code>is_mdx_jsx_text_element(mdx)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_mdx_text_expression</code></td>
+                  <td> Checks if markdown is MDX Text Expression</td>
+                  <td><code>mdx</code></td>
+                  <td><code>is_mdx_text_expression(mdx)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_none</code></td>
+                  <td> Checks if input is None</td>
+                  <td><code>n</code></td>
+                  <td><code>is_none(n)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_number</code></td>
+                  <td> Checks if input is a number</td>
+                  <td><code>n</code></td>
+                  <td><code>is_number(n)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_string</code></td>
+                  <td> Checks if input is a string</td>
+                  <td><code>s</code></td>
+                  <td><code>is_string(s)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_table_align</code></td>
+                  <td> Checks if markdown is table align</td>
+                  <td><code>md</code></td>
+                  <td><code>is_table_align(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_table_cell</code></td>
+                  <td> Checks if markdown is table cell</td>
+                  <td><code>md</code></td>
+                  <td><code>is_table_cell(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_text</code></td>
+                  <td> Checks if markdown is text</td>
+                  <td><code>text</code></td>
+                  <td><code>is_text(text)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_toml</code></td>
+                  <td> Checks if markdown is toml</td>
+                  <td><code>md</code></td>
+                  <td><code>is_toml(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_yaml</code></td>
+                  <td> Checks if markdown is yaml</td>
+                  <td><code>md</code></td>
+                  <td><code>is_yaml(md)</code></td>
+                </tr>
+                <tr>
+                  <td><code>join</code></td>
+                  <td>Joins the elements of an array into a string with the given separator.</td>
+                  <td><code>array</code>, <code>separator</code></td>
+                  <td><code>join(array, separator)</code></td>
+                </tr>
+                <tr>
+                  <td><code>keys</code></td>
+                  <td>Returns an array of keys from the dict.</td>
+                  <td><code>dict</code></td>
+                  <td><code>keys(dict)</code></td>
+                </tr>
+                <tr>
+                  <td><code>last</code></td>
+                  <td> Returns the last element of an array</td>
+                  <td><code>arr</code></td>
+                  <td><code>last(arr)</code></td>
+                </tr>
+                <tr>
+                  <td><code>len</code></td>
+                  <td>Returns the length of the given string or array.</td>
+                  <td><code>value</code></td>
+                  <td><code>len(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>load_markdown</code></td>
+                  <td> Loads a markdown file from the specified path</td>
+                  <td><code>path</code></td>
+                  <td><code>load_markdown(path)</code></td>
+                </tr>
+                <tr>
+                  <td><code>lpad</code></td>
+                  <td> Left-pads a string to a specified length using a given padding string.</td>
+                  <td><code>s</code>, <code>length</code>, <code>pad_str</code></td>
+                  <td><code>lpad(s, length, pad_str)</code></td>
+                </tr>
+                <tr>
+                  <td><code>lt</code></td>
+                  <td>Checks if the first value is less than the second value.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>lt(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>lte</code></td>
+                  <td>Checks if the first value is less than or equal to the second value.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>lte(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>ltrimstr</code></td>
+                  <td> Removes prefix string from input if it exists</td>
+                  <td><code>s</code>, <code>left</code></td>
+                  <td><code>ltrimstr(s, left)</code></td>
+                </tr>
+                <tr>
+                  <td><code>map</code></td>
+                  <td> Applies a given function to each element of the provided array and returns a new array with the results.</td>
+                  <td><code>v</code>, <code>f</code></td>
+                  <td><code>map(v, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>markdowns</code></td>
+                  <td> Returns markdown if input is markdown, None otherwise</td>
+                  <td><code>m</code></td>
+                  <td><code>markdowns(m)</code></td>
+                </tr>
+                <tr>
+                  <td><del><code>matches_url</code></del></td>
+                  <td> Checks if markdown node's URL matches a specified URL
+ deprecated: use select(.link.url == url) instead</td>
+                  <td><code>node</code>, <code>url</code></td>
+                  <td><code>matches_url(node, url)</code></td>
+                </tr>
+                <tr>
+                  <td><code>max</code></td>
+                  <td>Returns the maximum of two values.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>max(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>min</code></td>
+                  <td>Returns the minimum of two values.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>min(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>mod</code></td>
+                  <td>Calculates the remainder of the division of the first value by the second value.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>mod(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>mul</code></td>
+                  <td>Multiplies two values.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>mul(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>nan</code></td>
+                  <td>Returns a Not-a-Number (NaN) value.</td>
+                  <td></td>
+                  <td><code>nan()</code></td>
+                </tr>
+                <tr>
+                  <td><code>ne</code></td>
+                  <td>Checks if two values are not equal.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>ne(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>negate</code></td>
+                  <td>Returns the negation of the given number.</td>
+                  <td><code>number</code></td>
+                  <td><code>negate(number)</code></td>
+                </tr>
+                <tr>
+                  <td><code>not</code></td>
+                  <td>Performs a logical NOT operation on a boolean value.</td>
+                  <td><code>value</code></td>
+                  <td><code>not(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>now</code></td>
+                  <td>Returns the current timestamp.</td>
+                  <td></td>
+                  <td><code>now()</code></td>
+                </tr>
+                <tr>
+                  <td><code>numbers</code></td>
+                  <td> Returns number if input is number, None otherwise</td>
+                  <td><code>n</code></td>
+                  <td><code>numbers(n)</code></td>
+                </tr>
+                <tr>
+                  <td><code>or</code></td>
+                  <td>Performs a logical OR operation on two boolean values.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>or(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>partition</code></td>
+                  <td> Splits an array into two arrays: [matching, not_matching] based on a condition.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>partition(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>pluck</code></td>
+                  <td> Extracts values from an array of objects based on a specified selector.</td>
+                  <td><code>pluck_obj</code>, <code>selector</code></td>
+                  <td><code>pluck(pluck_obj, selector)</code></td>
+                </tr>
+                <tr>
+                  <td><code>pow</code></td>
+                  <td>Raises the base to the power of the exponent.</td>
+                  <td><code>base</code>, <code>exponent</code></td>
+                  <td><code>pow(base, exponent)</code></td>
+                </tr>
+                <tr>
+                  <td><code>print</code></td>
+                  <td>Prints a message to standard output and returns the current value.</td>
+                  <td><code>message</code></td>
+                  <td><code>print(message)</code></td>
+                </tr>
+                <tr>
+                  <td><code>range</code></td>
+                  <td>Creates an array from start to end with an optional step.</td>
+                  <td><code>start</code>, <code>end</code>, <code>step</code></td>
+                  <td><code>range(start, end, step)</code></td>
+                </tr>
+                <tr>
+                  <td><code>read_file</code></td>
+                  <td>Reads the contents of a file at the given path and returns it as a string.</td>
+                  <td><code>path</code></td>
+                  <td><code>read_file(path)</code></td>
+                </tr>
+                <tr>
+                  <td><code>regex_match</code></td>
+                  <td>Finds all matches of the given pattern in the string.</td>
+                  <td><code>string</code>, <code>pattern</code></td>
+                  <td><code>regex_match(string, pattern)</code></td>
+                </tr>
+                <tr>
+                  <td><code>reject</code></td>
+                  <td> Filters out elements that match the condition (opposite of filter).</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>reject(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>repeat</code></td>
+                  <td>Repeats the given string a specified number of times.</td>
+                  <td><code>string</code>, <code>count</code></td>
+                  <td><code>repeat(string, count)</code></td>
+                </tr>
+                <tr>
+                  <td><code>replace</code></td>
+                  <td>Replaces all occurrences of a substring with another substring.</td>
+                  <td><code>from</code>, <code>pattern</code>, <code>to</code></td>
+                  <td><code>replace(from, pattern, to)</code></td>
+                </tr>
+                <tr>
+                  <td><code>reverse</code></td>
+                  <td>Reverses the given string or array.</td>
+                  <td><code>value</code></td>
+                  <td><code>reverse(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>rindex</code></td>
+                  <td>Finds the last occurrence of a substring in the given string.</td>
+                  <td><code>string</code>, <code>substring</code></td>
+                  <td><code>rindex(string, substring)</code></td>
+                </tr>
+                <tr>
+                  <td><code>round</code></td>
+                  <td>Rounds the given number to the nearest integer.</td>
+                  <td><code>number</code></td>
+                  <td><code>round(number)</code></td>
+                </tr>
+                <tr>
+                  <td><code>rpad</code></td>
+                  <td> Right-pads a string to a specified length using a given padding string.</td>
+                  <td><code>s</code>, <code>length</code>, <code>pad_str</code></td>
+                  <td><code>rpad(s, length, pad_str)</code></td>
+                </tr>
+                <tr>
+                  <td><code>rtrimstr</code></td>
+                  <td> Removes suffix string from input if it exists</td>
+                  <td><code>s</code>, <code>right</code></td>
+                  <td><code>rtrimstr(s, right)</code></td>
+                </tr>
+                <tr>
+                  <td><code>second</code></td>
+                  <td> Returns the second element of an array</td>
+                  <td><code>arr</code></td>
+                  <td><code>second(arr)</code></td>
+                </tr>
+                <tr>
+                  <td><code>select</code></td>
+                  <td> Returns value if condition is true, None otherwise</td>
+                  <td><code>v</code>, <code>f</code></td>
+                  <td><code>select(v, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>set</code></td>
+                  <td>Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map.</td>
+                  <td><code>obj</code>, <code>key</code>, <code>value</code></td>
+                  <td><code>set(obj, key, value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>set_attr</code></td>
+                  <td>Sets the value of the specified attribute on a markdown node.</td>
+                  <td><code>markdown</code>, <code>attribute</code>, <code>value</code></td>
+                  <td><code>set_attr(markdown, attribute, value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>set_check</code></td>
+                  <td>Creates a markdown list node with the given checked state.</td>
+                  <td><code>list</code>, <code>checked</code></td>
+                  <td><code>set_check(list, checked)</code></td>
+                </tr>
+                <tr>
+                  <td><code>set_code_block_lang</code></td>
+                  <td>Sets the language of a markdown code block node.</td>
+                  <td><code>code_block</code>, <code>language</code></td>
+                  <td><code>set_code_block_lang(code_block, language)</code></td>
+                </tr>
+                <tr>
+                  <td><code>set_list_ordered</code></td>
+                  <td>Sets the ordered property of a markdown list node.</td>
+                  <td><code>list</code>, <code>ordered</code></td>
+                  <td><code>set_list_ordered(list, ordered)</code></td>
+                </tr>
+                <tr>
+                  <td><code>set_ref</code></td>
+                  <td>Sets the reference identifier for markdown nodes that support references (e.g., Definition, LinkRef, ImageRef, Footnote, FootnoteRef).</td>
+                  <td><code>node</code>, <code>reference_id</code></td>
+                  <td><code>set_ref(node, reference_id)</code></td>
+                </tr>
+                <tr>
+                  <td><code>set_variable</code></td>
+                  <td>Sets a symbol or variable in the current environment with the given value.</td>
+                  <td><code>symbol_or_string</code>, <code>value</code></td>
+                  <td><code>set_variable(symbol_or_string, value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>skip</code></td>
+                  <td> Skips the first n elements of an array and returns the rest</td>
+                  <td><code>arr</code>, <code>n</code></td>
+                  <td><code>skip(arr, n)</code></td>
+                </tr>
+                <tr>
+                  <td><code>skip_while</code></td>
+                  <td> Skips elements from the beginning of an array while the provided function returns true</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>skip_while(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>slice</code></td>
+                  <td>Extracts a substring from the given string.</td>
+                  <td><code>string</code>, <code>start</code>, <code>end</code></td>
+                  <td><code>slice(string, start, end)</code></td>
+                </tr>
+                <tr>
+                  <td><code>sort</code></td>
+                  <td>Sorts the elements of the given array.</td>
+                  <td><code>array</code></td>
+                  <td><code>sort(array)</code></td>
+                </tr>
+                <tr>
+                  <td><code>sort_by</code></td>
+                  <td> Sorts an array using a key function that extracts a comparable value for each element.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>sort_by(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>split</code></td>
+                  <td>Splits the given string by the specified separator.</td>
+                  <td><code>string</code>, <code>separator</code></td>
+                  <td><code>split(string, separator)</code></td>
+                </tr>
+                <tr>
+                  <td><code>starts_with</code></td>
+                  <td>Checks if the given string starts with the specified substring.</td>
+                  <td><code>string</code>, <code>substring</code></td>
+                  <td><code>starts_with(string, substring)</code></td>
+                </tr>
+                <tr>
+                  <td><code>stderr</code></td>
+                  <td>Prints a message to standard error and returns the current value.</td>
+                  <td><code>message</code></td>
+                  <td><code>stderr(message)</code></td>
+                </tr>
+                <tr>
+                  <td><code>sub</code></td>
+                  <td>Subtracts the second value from the first value.</td>
+                  <td><code>value1</code>, <code>value2</code></td>
+                  <td><code>sub(value1, value2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>sum_by</code></td>
+                  <td> Sums elements of an array after applying a transformation function.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>sum_by(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>take</code></td>
+                  <td> Takes the first n elements of an array</td>
+                  <td><code>arr</code>, <code>n</code></td>
+                  <td><code>take(arr, n)</code></td>
+                </tr>
+                <tr>
+                  <td><code>take_while</code></td>
+                  <td> Takes elements from the beginning of an array while the provided function returns true</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>take_while(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>tap</code></td>
+                  <td> Applies a function to a value and returns the value (useful for debugging or side effects).</td>
+                  <td><code>tap_value</code>, <code>tap_expr</code></td>
+                  <td><code>tap(tap_value, tap_expr)</code></td>
+                </tr>
+                <tr>
+                  <td><code>test</code></td>
+                  <td> Tests if string matches a pattern</td>
+                  <td><code>s</code>, <code>pattern</code></td>
+                  <td><code>test(s, pattern)</code></td>
+                </tr>
+                <tr>
+                  <td><code>times</code></td>
+                  <td> Executes an expression n times and returns an array of results.</td>
+                  <td><code>t_n</code>, <code>t_expr</code></td>
+                  <td><code>times(t_n, t_expr)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_array</code></td>
+                  <td>Converts the given value to an array.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_array(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_code</code></td>
+                  <td>Creates a markdown code block with the given value and language.</td>
+                  <td><code>value</code>, <code>language</code></td>
+                  <td><code>to_code(value, language)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_code_inline</code></td>
+                  <td>Creates an inline markdown code node with the given value.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_code_inline(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_date</code></td>
+                  <td>Converts a timestamp to a date string with the given format.</td>
+                  <td><code>timestamp</code>, <code>format</code></td>
+                  <td><code>to_date(timestamp, format)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_date_iso8601</code></td>
+                  <td> Formats a date to ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)</td>
+                  <td><code>d</code></td>
+                  <td><code>to_date_iso8601(d)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_em</code></td>
+                  <td>Creates a markdown emphasis (italic) node with the given value.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_em(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_h</code></td>
+                  <td>Creates a markdown heading node with the given value and depth.</td>
+                  <td><code>value</code>, <code>depth</code></td>
+                  <td><code>to_h(value, depth)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_hr</code></td>
+                  <td>Creates a markdown horizontal rule node.</td>
+                  <td></td>
+                  <td><code>to_hr()</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_html</code></td>
+                  <td>Converts the given markdown string to HTML.</td>
+                  <td><code>markdown</code></td>
+                  <td><code>to_html(markdown)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_image</code></td>
+                  <td>Creates a markdown image node with the given URL, alt text, and title.</td>
+                  <td><code>url</code>, <code>alt</code>, <code>title</code></td>
+                  <td><code>to_image(url, alt, title)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_link</code></td>
+                  <td>Creates a markdown link node  with the given  url and title.</td>
+                  <td><code>url</code>, <code>value</code>, <code>title</code></td>
+                  <td><code>to_link(url, value, title)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_markdown</code></td>
+                  <td>Parses a markdown string and returns an array of markdown nodes.</td>
+                  <td><code>markdown_string</code></td>
+                  <td><code>to_markdown(markdown_string)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_markdown_string</code></td>
+                  <td>Converts the given value(s) to a markdown string representation.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_markdown_string(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_math</code></td>
+                  <td>Creates a markdown math block with the given value.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_math(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_math_inline</code></td>
+                  <td>Creates an inline markdown math node with the given value.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_math_inline(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_md_list</code></td>
+                  <td>Creates a markdown list node with the given value and indent level.</td>
+                  <td><code>value</code>, <code>indent</code></td>
+                  <td><code>to_md_list(value, indent)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_md_name</code></td>
+                  <td>Returns the name of the given markdown node.</td>
+                  <td><code>markdown</code></td>
+                  <td><code>to_md_name(markdown)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_md_table_cell</code></td>
+                  <td>Creates a markdown table cell node with the given value at the specified row and column.</td>
+                  <td><code>value</code>, <code>row</code>, <code>column</code></td>
+                  <td><code>to_md_table_cell(value, row, column)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_md_table_row</code></td>
+                  <td>Creates a markdown table row node with the given values.</td>
+                  <td><code>cells</code></td>
+                  <td><code>to_md_table_row(cells)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_md_text</code></td>
+                  <td>Creates a markdown text node with the given value.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_md_text(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_mdx</code></td>
+                  <td>Parses an MDX string and returns an array of MDX nodes.</td>
+                  <td><code>mdx_string</code></td>
+                  <td><code>to_mdx(mdx_string)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_number</code></td>
+                  <td>Converts the given value to a number.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_number(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_string</code></td>
+                  <td>Converts the given value to a string.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_string(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_strong</code></td>
+                  <td>Creates a markdown strong (bold) node with the given value.</td>
+                  <td><code>value</code></td>
+                  <td><code>to_strong(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>to_text</code></td>
+                  <td>Converts the given markdown node to plain text.</td>
+                  <td><code>markdown</code></td>
+                  <td><code>to_text(markdown)</code></td>
+                </tr>
+                <tr>
+                  <td><code>transpose</code></td>
+                  <td> Transposes a 2D array (matrix), swapping rows and columns.</td>
+                  <td><code>matrix</code></td>
+                  <td><code>transpose(matrix)</code></td>
+                </tr>
+                <tr>
+                  <td><code>trim</code></td>
+                  <td>Trims whitespace from both ends of the given string.</td>
+                  <td><code>input</code></td>
+                  <td><code>trim(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>trunc</code></td>
+                  <td>Truncates the given number to an integer by removing the fractional part.</td>
+                  <td><code>number</code></td>
+                  <td><code>trunc(number)</code></td>
+                </tr>
+                <tr>
+                  <td><code>type</code></td>
+                  <td>Returns the type of the given value.</td>
+                  <td><code>value</code></td>
+                  <td><code>type(value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>uniq</code></td>
+                  <td>Removes duplicate elements from the given array.</td>
+                  <td><code>array</code></td>
+                  <td><code>uniq(array)</code></td>
+                </tr>
+                <tr>
+                  <td><code>unique_by</code></td>
+                  <td> Returns a new array with duplicate elements removed, comparing by the result of the provided function.</td>
+                  <td><code>arr</code>, <code>f</code></td>
+                  <td><code>unique_by(arr, f)</code></td>
+                </tr>
+                <tr>
+                  <td><code>unless</code></td>
+                  <td> Executes the expression only if the condition is false.</td>
+                  <td><code>unless_cond</code>, <code>unless_expr</code></td>
+                  <td><code>unless(unless_cond, unless_expr)</code></td>
+                </tr>
+                <tr>
+                  <td><code>until</code></td>
+                  <td> Executes the expression repeatedly until the condition is true.</td>
+                  <td><code>until_cond</code>, <code>until_expr</code></td>
+                  <td><code>until(until_cond, until_expr)</code></td>
+                </tr>
+                <tr>
+                  <td><code>upcase</code></td>
+                  <td>Converts the given string to uppercase.</td>
+                  <td><code>input</code></td>
+                  <td><code>upcase(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>update</code></td>
+                  <td>Update the value with specified value.</td>
+                  <td><code>target_value</code>, <code>source_value</code></td>
+                  <td><code>update(target_value, source_value)</code></td>
+                </tr>
+                <tr>
+                  <td><code>url_encode</code></td>
+                  <td>URL-encodes the given string.</td>
+                  <td><code>input</code></td>
+                  <td><code>url_encode(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>values</code></td>
+                  <td>Returns an array of values from the dict.</td>
+                  <td><code>dict</code></td>
+                  <td><code>values(dict)</code></td>
+                </tr>
+    </tbody>
+  </table>
+</div>
+<div class="module-page" id="mod-1">
+  <div class="search-box">
+    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" class="search-input" placeholder="Filter functions..." />
+  </div>
+  <p class="count"><span class="count-num">5</span> functions</p>
+  <table>
+    <thead><tr><th>Function</th><th>Description</th><th>Parameters</th><th>Example</th></tr></thead>
+    <tbody>
+                <tr>
+                  <td><code>handle_string_char</code></td>
+                  <td></td>
+                  <td><code>char</code>, <code>escaped</code>, <code>pos</code></td>
+                  <td><code>handle_string_char(char, escaped, pos)</code></td>
+                </tr>
+                <tr>
+                  <td><code>json_parse</code></td>
+                  <td> Parses a JSON string and returns the corresponding data structure.</td>
+                  <td><code>input</code></td>
+                  <td><code>json_parse(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>json_stringify</code></td>
+                  <td> Serializes a value to a JSON string.</td>
+                  <td><code>data</code></td>
+                  <td><code>json_stringify(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>json_to_markdown_table</code></td>
+                  <td> Converts a JSON data structure to a Markdown table.</td>
+                  <td><code>data</code></td>
+                  <td><code>json_to_markdown_table(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>parse_object</code></td>
+                  <td></td>
+                  <td><code>input</code></td>
+                  <td><code>parse_object(input)</code></td>
+                </tr>
+    </tbody>
+  </table>
+</div>
+<div class="module-page" id="mod-2">
+  <div class="search-box">
+    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" class="search-input" placeholder="Filter functions..." />
+  </div>
+  <p class="count"><span class="count-num">7</span> functions</p>
+  <table>
+    <thead><tr><th>Function</th><th>Description</th><th>Parameters</th><th>Example</th></tr></thead>
+    <tbody>
+                <tr>
+                  <td><code>csv_needs_quote</code></td>
+                  <td></td>
+                  <td><code>field</code>, <code>delimiter</code></td>
+                  <td><code>csv_needs_quote(field, delimiter)</code></td>
+                </tr>
+                <tr>
+                  <td><code>csv_parse</code></td>
+                  <td> Parses CSV content using a comma as the delimiter.</td>
+                  <td><code>input</code>, <code>has_header</code></td>
+                  <td><code>csv_parse(input, has_header)</code></td>
+                </tr>
+                <tr>
+                  <td><code>csv_parse_with_delimiter</code></td>
+                  <td> Parses CSV content with a specified delimiter and optional header row.</td>
+                  <td><code>input</code>, <code>delimiter</code>, <code>has_header</code></td>
+                  <td><code>csv_parse_with_delimiter(input, delimiter, has_header)</code></td>
+                </tr>
+                <tr>
+                  <td><code>csv_stringify</code></td>
+                  <td> Converts data to a CSV string with a specified delimiter.</td>
+                  <td><code>data</code>, <code>delimiter</code></td>
+                  <td><code>csv_stringify(data, delimiter)</code></td>
+                </tr>
+                <tr>
+                  <td><code>csv_to_json</code></td>
+                  <td> Converts CSV data to a JSON string.</td>
+                  <td><code>data</code></td>
+                  <td><code>csv_to_json(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>csv_to_markdown_table</code></td>
+                  <td> Converts CSV data to a Markdown table format.</td>
+                  <td><code>data</code></td>
+                  <td><code>csv_to_markdown_table(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>tsv_parse</code></td>
+                  <td> Parses TSV (Tab-Separated Values) content.</td>
+                  <td><code>input</code>, <code>has_header</code></td>
+                  <td><code>tsv_parse(input, has_header)</code></td>
+                </tr>
+    </tbody>
+  </table>
+</div>
+<div class="module-page" id="mod-3">
+  <div class="search-box">
+    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" class="search-input" placeholder="Filter functions..." />
+  </div>
+  <p class="count"><span class="count-num">15</span> functions</p>
+  <table>
+    <thead><tr><th>Function</th><th>Description</th><th>Parameters</th><th>Example</th></tr></thead>
+    <tbody>
+                <tr>
+                  <td><code>all_nodes</code></td>
+                  <td> Returns all nodes of a section, including both the header and content.</td>
+                  <td><code>section</code></td>
+                  <td><code>all_nodes(section)</code></td>
+                </tr>
+                <tr>
+                  <td><code>collect</code></td>
+                  <td> Flattens sections back to markdown nodes for output.
+ This converts section objects back to their original markdown node arrays.</td>
+                  <td><code>sections</code></td>
+                  <td><code>collect(sections)</code></td>
+                </tr>
+                <tr>
+                  <td><code>content</code></td>
+                  <td> Returns the content of a section (all nodes except the header).</td>
+                  <td><code>section</code></td>
+                  <td><code>content(section)</code></td>
+                </tr>
+                <tr>
+                  <td><code>filter_sections</code></td>
+                  <td> Filters sections based on a given predicate function.</td>
+                  <td><code>md_nodes</code>, <code>predicate</code></td>
+                  <td><code>filter_sections(md_nodes, predicate)</code></td>
+                </tr>
+                <tr>
+                  <td><code>has_content</code></td>
+                  <td> Checks if a section has any content beyond the header.</td>
+                  <td><code>section</code></td>
+                  <td><code>has_content(section)</code></td>
+                </tr>
+                <tr>
+                  <td><code>level</code></td>
+                  <td> Returns the header level (1-6) of a section.</td>
+                  <td><code>section</code></td>
+                  <td><code>level(section)</code></td>
+                </tr>
+                <tr>
+                  <td><code>map_sections</code></td>
+                  <td> Maps sections using a given mapper function.</td>
+                  <td><code>md_nodes</code>, <code>mapper</code></td>
+                  <td><code>map_sections(md_nodes, mapper)</code></td>
+                </tr>
+                <tr>
+                  <td><code>nth</code></td>
+                  <td> Returns the nth section from an array of sections (0-indexed).</td>
+                  <td><code>sections</code>, <code>n</code></td>
+                  <td><code>nth(sections, n)</code></td>
+                </tr>
+                <tr>
+                  <td><code>sections</code></td>
+                  <td> Splits markdown nodes into sections based on headers.</td>
+                  <td><code>md_nodes</code></td>
+                  <td><code>sections(md_nodes)</code></td>
+                </tr>
+                <tr>
+                  <td><code>split</code></td>
+                  <td> Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.</td>
+                  <td><code>md_nodes</code>, <code>level</code></td>
+                  <td><code>split(md_nodes, level)</code></td>
+                </tr>
+                <tr>
+                  <td><code>title</code></td>
+                  <td> Returns the title text of a section (header text without the # symbols).</td>
+                  <td><code>section</code></td>
+                  <td><code>title(section)</code></td>
+                </tr>
+                <tr>
+                  <td><code>title_contains</code></td>
+                  <td> Filters the given list of sections, returning only those whose title contains the specified text.</td>
+                  <td><code>sections</code>, <code>text</code></td>
+                  <td><code>title_contains(sections, text)</code></td>
+                </tr>
+                <tr>
+                  <td><code>title_match</code></td>
+                  <td> Filters sections by a pattern match in the title text.</td>
+                  <td><code>sections</code>, <code>pattern</code></td>
+                  <td><code>title_match(sections, pattern)</code></td>
+                </tr>
+                <tr>
+                  <td><code>titles</code></td>
+                  <td> Extracts titles from all sections.</td>
+                  <td><code>sections</code></td>
+                  <td><code>titles(sections)</code></td>
+                </tr>
+                <tr>
+                  <td><code>toc</code></td>
+                  <td> Generates a table of contents from sections.</td>
+                  <td><code>sections</code></td>
+                  <td><code>toc(sections)</code></td>
+                </tr>
+    </tbody>
+  </table>
+</div>
+<div class="module-page" id="mod-4">
+  <div class="search-box">
+    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" class="search-input" placeholder="Filter functions..." />
+  </div>
+  <p class="count"><span class="count-num">4</span> functions</p>
+  <table>
+    <thead><tr><th>Function</th><th>Description</th><th>Parameters</th><th>Example</th></tr></thead>
+    <tbody>
+                <tr>
+                  <td><code>toml_parse</code></td>
+                  <td> Parses a TOML string and returns the parsed data structure.</td>
+                  <td><code>input</code></td>
+                  <td><code>toml_parse(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>toml_stringify</code></td>
+                  <td> Converts a data structure to a TOML string representation.</td>
+                  <td><code>data</code></td>
+                  <td><code>toml_stringify(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>toml_to_json</code></td>
+                  <td> Converts a data structure to a JSON string representation.</td>
+                  <td><code>data</code></td>
+                  <td><code>toml_to_json(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>toml_to_markdown_table</code></td>
+                  <td> Converts a TOML data structure to a Markdown table.</td>
+                  <td><code>data</code></td>
+                  <td><code>toml_to_markdown_table(data)</code></td>
+                </tr>
+    </tbody>
+  </table>
+</div>
+<div class="module-page" id="mod-5">
+  <div class="search-box">
+    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" class="search-input" placeholder="Filter functions..." />
+  </div>
+  <p class="count"><span class="count-num">9</span> functions</p>
+  <table>
+    <thead><tr><th>Function</th><th>Description</th><th>Parameters</th><th>Example</th></tr></thead>
+    <tbody>
+                <tr>
+                  <td><code>handle_empty_or_comment_line</code></td>
+                  <td></td>
+                  <td><code>lines</code>, <code>current_index</code>, <code>current_indent</code></td>
+                  <td><code>handle_empty_or_comment_line(lines, current_index, current_indent)</code></td>
+                </tr>
+                <tr>
+                  <td><code>is_digit</code></td>
+                  <td> Based on YAML 1.2 specification</td>
+                  <td><code>char</code></td>
+                  <td><code>is_digit(char)</code></td>
+                </tr>
+                <tr>
+                  <td><code>parse_yaml_content</code></td>
+                  <td></td>
+                  <td><code>input</code></td>
+                  <td><code>parse_yaml_content(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>parse_yaml_lines</code></td>
+                  <td></td>
+                  <td><code>lines</code>, <code>current_index</code>, <code>current_indent</code></td>
+                  <td><code>parse_yaml_lines(lines, current_index, current_indent)</code></td>
+                </tr>
+                <tr>
+                  <td><code>parse_yaml_lines_with_options</code></td>
+                  <td></td>
+                  <td><code>lines</code>, <code>current_index</code>, <code>current_indent</code>, <code>is_multi_line</code></td>
+                  <td><code>parse_yaml_lines_with_options(lines, current_index, current_indent, is_multi_line)</code></td>
+                </tr>
+                <tr>
+                  <td><code>yaml_parse</code></td>
+                  <td> Parses a YAML string and returns the parsed data structure.</td>
+                  <td><code>input</code></td>
+                  <td><code>yaml_parse(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>yaml_stringify</code></td>
+                  <td> Converts a data structure to a YAML string representation.</td>
+                  <td><code>data</code></td>
+                  <td><code>yaml_stringify(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>yaml_to_json</code></td>
+                  <td> Converts a data structure to a JSON string representation.</td>
+                  <td><code>data</code></td>
+                  <td><code>yaml_to_json(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>yaml_to_markdown_table</code></td>
+                  <td> Converts a YAML data structure to a Markdown table.</td>
+                  <td><code>data</code></td>
+                  <td><code>yaml_to_markdown_table(data)</code></td>
+                </tr>
+    </tbody>
+  </table>
+</div>
+<div class="module-page" id="mod-6">
+  <div class="search-box">
+    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" class="search-input" placeholder="Filter functions..." />
+  </div>
+  <p class="count"><span class="count-num">3</span> functions</p>
+  <table>
+    <thead><tr><th>Function</th><th>Description</th><th>Parameters</th><th>Example</th></tr></thead>
+    <tbody>
+                <tr>
+                  <td><code>xml_parse</code></td>
+                  <td> Parses an XML string and returns the corresponding data structure.</td>
+                  <td><code>input</code></td>
+                  <td><code>xml_parse(input)</code></td>
+                </tr>
+                <tr>
+                  <td><code>xml_stringify</code></td>
+                  <td> Serializes a value to an XML string.</td>
+                  <td><code>data</code></td>
+                  <td><code>xml_stringify(data)</code></td>
+                </tr>
+                <tr>
+                  <td><code>xml_to_markdown_table</code></td>
+                  <td> Converts an XML data structure to a Markdown table.</td>
+                  <td><code>data</code></td>
+                  <td><code>xml_to_markdown_table(data)</code></td>
+                </tr>
+    </tbody>
+  </table>
+</div>
+<div class="module-page" id="mod-7">
+  <div class="search-box">
+    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" class="search-input" placeholder="Filter functions..." />
+  </div>
+  <p class="count"><span class="count-num">8</span> functions</p>
+  <table>
+    <thead><tr><th>Function</th><th>Description</th><th>Parameters</th><th>Example</th></tr></thead>
+    <tbody>
+                <tr>
+                  <td><code>fuzzy_best_match</code></td>
+                  <td> Finds the best fuzzy match from candidates.</td>
+                  <td><code>candidates</code>, <code>query</code></td>
+                  <td><code>fuzzy_best_match(candidates, query)</code></td>
+                </tr>
+                <tr>
+                  <td><code>fuzzy_filter</code></td>
+                  <td> Filters candidates by minimum fuzzy match score using Jaro-Winkler.</td>
+                  <td><code>candidates</code>, <code>query</code>, <code>threshold</code></td>
+                  <td><code>fuzzy_filter(candidates, query, threshold)</code></td>
+                </tr>
+                <tr>
+                  <td><code>fuzzy_match</code></td>
+                  <td> Performs fuzzy matching on an array of strings using Jaro-Winkler distance.</td>
+                  <td><code>candidates</code>, <code>query</code></td>
+                  <td><code>fuzzy_match(candidates, query)</code></td>
+                </tr>
+                <tr>
+                  <td><code>fuzzy_match_jaro</code></td>
+                  <td> Performs fuzzy matching using Jaro distance.</td>
+                  <td><code>candidates</code>, <code>query</code></td>
+                  <td><code>fuzzy_match_jaro(candidates, query)</code></td>
+                </tr>
+                <tr>
+                  <td><code>fuzzy_match_levenshtein</code></td>
+                  <td> Performs fuzzy matching using Levenshtein distance.</td>
+                  <td><code>candidates</code>, <code>query</code></td>
+                  <td><code>fuzzy_match_levenshtein(candidates, query)</code></td>
+                </tr>
+                <tr>
+                  <td><code>jaro</code></td>
+                  <td> Calculates the Jaro distance between two strings (0.0 to 1.0, where 1.0 is exact match).</td>
+                  <td><code>s1</code>, <code>s2</code></td>
+                  <td><code>jaro(s1, s2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>jaro_winkler</code></td>
+                  <td> Calculates the Jaro-Winkler distance between two strings.</td>
+                  <td><code>s1</code>, <code>s2</code></td>
+                  <td><code>jaro_winkler(s1, s2)</code></td>
+                </tr>
+                <tr>
+                  <td><code>levenshtein</code></td>
+                  <td> Calculates the Levenshtein distance between two strings.</td>
+                  <td><code>s1</code>, <code>s2</code></td>
+                  <td><code>levenshtein(s1, s2)</code></td>
+                </tr>
+    </tbody>
+  </table>
+</div>
+<div class="module-page" id="sel-0">
+  <div class="search-box">
+    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" class="search-input" placeholder="Filter selectors..." />
+  </div>
+  <p class="count"><span class="count-num">41</span> selectors</p>
+  <table>
+    <thead><tr><th>Selector</th><th>Description</th></tr></thead>
+    <tbody>
+                <tr>
+                  <td><code>.&lt;&gt;</code></td>
+                  <td>Selects an HTML node.</td>
+                </tr>
+                <tr>
+                  <td><code>.[]</code></td>
+                  <td>Selects a list node with the specified index and checked state.</td>
+                </tr>
+                <tr>
+                  <td><code>.[][]</code></td>
+                  <td>Selects a table cell node with the specified row and column.</td>
+                </tr>
+                <tr>
+                  <td><code>.blockquote</code></td>
+                  <td>Selects a blockquote node.</td>
+                </tr>
+                <tr>
+                  <td><code>.break</code></td>
+                  <td>Selects a break node.</td>
+                </tr>
+                <tr>
+                  <td><code>.code</code></td>
+                  <td>Selects a code block node with the specified language.</td>
+                </tr>
+                <tr>
+                  <td><code>.code_inline</code></td>
+                  <td>Selects an inline code node.</td>
+                </tr>
+                <tr>
+                  <td><code>.definition</code></td>
+                  <td>Selects a definition node.</td>
+                </tr>
+                <tr>
+                  <td><code>.delete</code></td>
+                  <td>Selects a delete (strikethrough) node.</td>
+                </tr>
+                <tr>
+                  <td><code>.emphasis</code></td>
+                  <td>Selects an emphasis (italic) node.</td>
+                </tr>
+                <tr>
+                  <td><code>.footnote</code></td>
+                  <td>Selects a footnote node.</td>
+                </tr>
+                <tr>
+                  <td><code>.footnote_ref</code></td>
+                  <td>Selects a footnote reference node.</td>
+                </tr>
+                <tr>
+                  <td><code>.h</code></td>
+                  <td>Selects a heading node with the specified depth.</td>
+                </tr>
+                <tr>
+                  <td><code>.h1</code></td>
+                  <td>Selects a heading node with the 1 depth.</td>
+                </tr>
+                <tr>
+                  <td><code>.h2</code></td>
+                  <td>Selects a heading node with the 2 depth.</td>
+                </tr>
+                <tr>
+                  <td><code>.h3</code></td>
+                  <td>Selects a heading node with the 3 depth.</td>
+                </tr>
+                <tr>
+                  <td><code>.h4</code></td>
+                  <td>Selects a heading node with the 4 depth.</td>
+                </tr>
+                <tr>
+                  <td><code>.h5</code></td>
+                  <td>Selects a heading node with the 5 depth.</td>
+                </tr>
+                <tr>
+                  <td><code>.h6</code></td>
+                  <td>Selects a heading node with the 6 depth.</td>
+                </tr>
+                <tr>
+                  <td><code>.heading</code></td>
+                  <td>Selects a heading node with the specified depth.</td>
+                </tr>
+                <tr>
+                  <td><code>.horizontal_rule</code></td>
+                  <td>Selects a horizontal rule node.</td>
+                </tr>
+                <tr>
+                  <td><code>.html</code></td>
+                  <td>Selects an HTML node.</td>
+                </tr>
+                <tr>
+                  <td><code>.image</code></td>
+                  <td>Selects an image node.</td>
+                </tr>
+                <tr>
+                  <td><code>.image_ref</code></td>
+                  <td>Selects an image reference node.</td>
+                </tr>
+                <tr>
+                  <td><code>.inline_math</code></td>
+                  <td>Selects an inline math node.</td>
+                </tr>
+                <tr>
+                  <td><code>.link</code></td>
+                  <td>Selects a link node.</td>
+                </tr>
+                <tr>
+                  <td><code>.link_ref</code></td>
+                  <td>Selects a link reference node.</td>
+                </tr>
+                <tr>
+                  <td><code>.list</code></td>
+                  <td>Selects a list node with the specified index and checked state.</td>
+                </tr>
+                <tr>
+                  <td><code>.math</code></td>
+                  <td>Selects a math node.</td>
+                </tr>
+                <tr>
+                  <td><code>.math_inline</code></td>
+                  <td>Selects a math inline node.</td>
+                </tr>
+                <tr>
+                  <td><code>.mdx_flow_expression</code></td>
+                  <td>Selects an MDX flow expression node.</td>
+                </tr>
+                <tr>
+                  <td><code>.mdx_js_esm</code></td>
+                  <td>Selects an MDX JS ESM node.</td>
+                </tr>
+                <tr>
+                  <td><code>.mdx_jsx_flow_element</code></td>
+                  <td>Selects an MDX JSX flow element node.</td>
+                </tr>
+                <tr>
+                  <td><code>.mdx_jsx_text_element</code></td>
+                  <td>Selects an MDX JSX text element node.</td>
+                </tr>
+                <tr>
+                  <td><code>.mdx_text_expression</code></td>
+                  <td>Selects an MDX text expression node.</td>
+                </tr>
+                <tr>
+                  <td><code>.strong</code></td>
+                  <td>Selects a strong (bold) node.</td>
+                </tr>
+                <tr>
+                  <td><code>.table</code></td>
+                  <td>Selects a table cell node with the specified row and column.</td>
+                </tr>
+                <tr>
+                  <td><code>.table_align</code></td>
+                  <td>Selects a table align node.</td>
+                </tr>
+                <tr>
+                  <td><code>.text</code></td>
+                  <td>Selects a text node.</td>
+                </tr>
+                <tr>
+                  <td><code>.toml</code></td>
+                  <td>Selects a TOML node.</td>
+                </tr>
+                <tr>
+                  <td><code>.yaml</code></td>
+                  <td>Selects a YAML node.</td>
+                </tr>
+    </tbody>
+  </table>
+</div>
+      </div>
+    </div>
+
+    <footer>
+      <p>Generated by <a href="https://github.com/harehare/mq">mq</a></p>
+    </footer>
+
+    <script>
+      // Sidebar navigation
+      document.querySelectorAll(".sidebar-link").forEach(function (link) {
+        link.addEventListener("click", function (e) {
+          e.preventDefault();
+          document.querySelectorAll(".sidebar-link").forEach(function (l) {
+            l.classList.remove("active");
+          });
+          link.classList.add("active");
+
+          var target = link.getAttribute("data-module");
+          document.querySelectorAll(".module-page").forEach(function (page) {
+            page.classList.toggle("active", page.id === target);
+          });
+
+          // Close mobile sidebar
+          document.getElementById("sidebar").classList.remove("open");
+          document.getElementById("sidebarOverlay").classList.remove("open");
+        });
+      });
+
+      // Search filter
+      document.querySelectorAll(".search-input").forEach(function (input) {
+        input.addEventListener("input", function () {
+          var page = input.closest(".module-page");
+          var q = input.value.toLowerCase();
+          var rows = page.querySelectorAll("tbody tr");
+          var visible = 0;
+          rows.forEach(function (row) {
+            var text = row.textContent.toLowerCase();
+            var show = text.includes(q);
+            row.style.display = show ? "" : "none";
+            if (show) visible++;
+          });
+          page.querySelector(".count-num").textContent = visible;
+        });
+      });
+
+      // Mobile sidebar toggle
+      document.getElementById("sidebarToggle").addEventListener("click", function () {
+        document.getElementById("sidebar").classList.toggle("open");
+        document.getElementById("sidebarOverlay").classList.toggle("open");
+      });
+      document.getElementById("sidebarOverlay").addEventListener("click", function () {
+        document.getElementById("sidebar").classList.remove("open");
+        document.getElementById("sidebarOverlay").classList.remove("open");
+      });
+    </script>
+  </body>
+</html>

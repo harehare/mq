@@ -13,6 +13,8 @@ mq is a jq-like command-line tool for Markdown processing. It allows you to easi
 
 ## Installation
 
+The "mq" extension is not yet published on the Zed Extensions.  
+
 1. Open Zed
 2. Open the Extensions panel (`cmd-shift-x` on macOS)
 3. Search for "mq"
@@ -41,3 +43,4 @@ Contributions are welcome! Please see the [mq repository](https://github.com/har
 ## License
 
 This extension is provided under the MIT License. See the [LICENSE](../../LICENSE) file for details.
+

@@ -7,7 +7,7 @@
   "homepage": "https://mqlang.org/",
   "icon": "assets/logo.png",
   "private": true,
-  "version": "0.5.13",
+  "version": "0.5.15",
   "engines": {
     "vscode": "^1.107.0"
   },
@@ -176,24 +176,22 @@
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "package": "npm run check-types && npm run lint && node esbuild.js --production",
     "check-types": "tsc --noEmit",
-    "lint": "eslint src"
+    "lint": "oxlint src"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "25.x",
     "@types/vscode": "^1.107.0",
     "@types/which": "^3.0.4",
-    "@typescript-eslint/eslint-plugin": "^8.54.0",
-    "@typescript-eslint/parser": "^8.54.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
-    "esbuild": "^0.27.2",
-    "eslint": "^9.39.2",
+    "esbuild": "^0.27.3",
     "npm-run-all": "^4.1.5",
+    "oxlint": "^1.47.0",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1",
-    "which": "^6.0.0"
+    "which": "^6.0.1"
   }
 }

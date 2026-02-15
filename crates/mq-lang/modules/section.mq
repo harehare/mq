@@ -1,5 +1,6 @@
 def _is_section(section): is_dict(section) && section[:type] == :section;
 
+# Splits markdown nodes into sections based on headers.
 def sections(md_nodes):
   if (is_empty(md_nodes)):
     []

@@ -281,6 +281,12 @@ impl Hir {
             .find_map(|(s, data)| data.url.as_ref().and_then(|u| if *u == *url { Some(s) } else { None }))
     }
 
+    /// Returns the URL associated with a given source_id.
+    /// Returns None if the source_id doesn't exist or has no associated URL.
+    pub fn url_by_source(&self, source_id: &SourceId) -> Option<&Url> {
+        self.sources.get(*source_id).and_then(|source| source.url.as_ref())
+    }
+
     fn scope_by_source(&self, source_id: &SourceId) -> Option<ScopeId> {
         self.scopes.iter().find_map(|(s, data)| {
             if data.source.source_id == Some(*source_id) {
@@ -593,7 +599,9 @@ impl Hir {
         {
             let _ = node.children_without_token().first().map(|child| {
                 let module_name = child.name().unwrap();
-                if let Ok(url) = Url::parse(&format!("file:///{}", module_name)) {
+                let module_path = self.module_loader.get_module_path(&module_name);
+
+                if let Ok(url) = Url::parse(&format!("file:///{}", module_path.unwrap_or(module_name.to_string()))) {
                     let code = self.module_loader.resolve(&module_name);
                     let (module_source_id, _) = self.add_code(Some(url), &code.unwrap_or_default());
 
@@ -624,7 +632,9 @@ impl Hir {
         {
             let _ = node.children_without_token().first().map(|child| {
                 let module_name = child.name().unwrap();
-                if let Ok(url) = Url::parse(&format!("file:///{}", module_name)) {
+                let module_path = self.module_loader.get_module_path(&module_name);
+
+                if let Ok(url) = Url::parse(&format!("file:///{}", module_path.unwrap_or(module_name.to_string()))) {
                     let code = self.module_loader.resolve(&module_name);
                     let (module_source_id, _) = self.add_code(Some(url), &code.unwrap_or_default());
 
@@ -2370,5 +2380,75 @@ end"#;
         }
 
         assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_url_by_source() {
+        let mut hir = Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+        let (source_id, _) = hir.add_code(Some(url.clone()), "let x = 1");
+
+        assert_eq!(hir.url_by_source(&source_id), Some(&url));
+    }
+
+    #[test]
+    fn test_url_by_source_builtin_returns_none() {
+        let hir = Hir::default();
+        // Builtin source has no URL
+        assert!(hir.url_by_source(&hir.builtin.source_id).is_none());
+    }
+
+    #[test]
+    fn test_var_index_assign() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = "var arr = [1, 2, 3] | arr[0] = 10 | arr";
+        hir.add_code(None, code);
+
+        let var_symbol = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Variable && s.value.as_deref() == Some("arr"));
+        assert!(var_symbol.is_some(), "Should have a Variable symbol for arr");
+
+        let ref_symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, s)| s.kind == SymbolKind::Ref && s.value.as_deref() == Some("arr"))
+            .collect();
+        assert!(!ref_symbols.is_empty(), "Should have Ref symbols for arr usage");
+
+        assert!(hir.errors().is_empty(), "Should have no errors");
+    }
+
+    #[test]
+    fn test_var_index_compound_assign() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = "var arr = [1, 2, 3] | arr[0] += 1 | arr";
+        hir.add_code(None, code);
+
+        let var_symbol = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Variable && s.value.as_deref() == Some("arr"));
+        assert!(var_symbol.is_some(), "Should have a Variable symbol for arr");
+
+        assert!(hir.errors().is_empty(), "Should have no errors");
+    }
+
+    #[test]
+    fn test_dict_index_assign() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = r#"var d = {"a": 1} | d["a"] = 2 | d"#;
+        hir.add_code(None, code);
+
+        let var_symbol = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Variable && s.value.as_deref() == Some("d"));
+        assert!(var_symbol.is_some(), "Should have a Variable symbol for d");
+
+        assert!(hir.errors().is_empty(), "Should have no errors");
     }
 }

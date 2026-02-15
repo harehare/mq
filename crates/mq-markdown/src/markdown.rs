@@ -2,7 +2,7 @@
 use crate::html_to_markdown;
 #[cfg(feature = "html-to-markdown")]
 use crate::html_to_markdown::ConversionOptions;
-use crate::node::{Node, Position, RenderOptions, TableAlign, TableCell};
+use crate::node::{ColorTheme, Node, Position, RenderOptions, TableAlign, TableCell, render_values};
 use markdown::Constructs;
 use miette::miette;
 use std::{fmt, str::FromStr};
@@ -23,37 +23,67 @@ impl FromStr for Markdown {
 
 impl fmt::Display for Markdown {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.render_with_theme(&ColorTheme::PLAIN))
+    }
+}
+
+impl Markdown {
+    pub fn new(nodes: Vec<Node>) -> Self {
+        Self {
+            nodes,
+            options: RenderOptions::default(),
+        }
+    }
+
+    pub fn set_options(&mut self, options: RenderOptions) {
+        self.options = options;
+    }
+
+    /// Returns a colored string representation of the markdown using ANSI escape codes.
+    #[cfg(feature = "color")]
+    pub fn to_colored_string(&self) -> String {
+        self.render_with_theme(&ColorTheme::COLORED)
+    }
+
+    /// Returns a colored string representation using the given color theme.
+    #[cfg(feature = "color")]
+    pub fn to_colored_string_with_theme(&self, theme: &ColorTheme<'_>) -> String {
+        self.render_with_theme(theme)
+    }
+
+    fn render_with_theme(&self, theme: &ColorTheme<'_>) -> String {
         let mut pre_position: Option<Position> = None;
         let mut is_first = true;
         let mut current_table_row: Option<usize> = None;
+        let mut in_table = false;
 
-        // Pre-allocate buffer to reduce allocations
-        let mut buffer = String::with_capacity(self.nodes.len() * 50); // Reasonable estimate
+        let mut buffer = String::with_capacity(self.nodes.len() * 50);
 
         for (i, node) in self.nodes.iter().enumerate() {
-            // Handle TableCell specially - group by row
             if let Node::TableCell(TableCell { row, values, .. }) = node {
-                let value = values
-                    .iter()
-                    .map(|v| v.to_string_with(&self.options))
-                    .collect::<String>();
+                let value = render_values(values, &self.options, theme);
 
-                // Check if this is a new row
                 let is_new_row = current_table_row != Some(*row);
 
                 if is_new_row {
-                    // End previous row if exists
                     if current_table_row.is_some() {
                         buffer.push_str("|\n");
+                    } else if !in_table && let Some(pos) = node.position() {
+                        // Insert newlines before the first row of a table
+                        let new_line_count = pre_position
+                            .as_ref()
+                            .map(|p| pos.start.line.saturating_sub(p.end.line))
+                            .unwrap_or_else(|| if is_first { 0 } else { 1 });
+                        for _ in 0..new_line_count {
+                            buffer.push('\n');
+                        }
                     }
                     current_table_row = Some(*row);
                 }
 
-                // Output cell: |content
                 buffer.push('|');
                 buffer.push_str(&value);
 
-                // Check if this is the last cell in the row
                 let next_node = self.nodes.get(i + 1);
                 let next_is_different_row = next_node.is_none_or(
                     |next| !matches!(next, Node::TableCell(TableCell { row: next_row, .. }) if *next_row == *row),
@@ -66,10 +96,10 @@ impl fmt::Display for Markdown {
 
                 pre_position = node.position();
                 is_first = false;
+                in_table = true;
                 continue;
             }
 
-            // Handle TableAlign specially - always add newline after
             if let Node::TableAlign(TableAlign { align, .. }) = node {
                 use itertools::Itertools;
                 buffer.push('|');
@@ -77,13 +107,14 @@ impl fmt::Display for Markdown {
                 buffer.push_str("|\n");
                 pre_position = node.position();
                 is_first = false;
+                in_table = true;
                 continue;
             }
 
-            // Reset table row tracking for non-TableCell nodes
             current_table_row = None;
+            in_table = false;
 
-            let value = node.to_string_with(&self.options);
+            let value = node.render_with_theme(&self.options, theme);
 
             if value.is_empty() || value == "\n" {
                 pre_position = None;
@@ -98,7 +129,6 @@ impl fmt::Display for Markdown {
 
                 pre_position = Some(pos.clone());
 
-                // Write newlines directly to buffer instead of creating temp string
                 for _ in 0..new_line_count {
                     buffer.push('\n');
                 }
@@ -114,25 +144,12 @@ impl fmt::Display for Markdown {
             }
         }
 
-        // Write final result to formatter
         if buffer.is_empty() || buffer.ends_with('\n') {
-            write!(f, "{}", buffer)
+            buffer
         } else {
-            writeln!(f, "{}", buffer)
+            buffer.push('\n');
+            buffer
         }
-    }
-}
-
-impl Markdown {
-    pub fn new(nodes: Vec<Node>) -> Self {
-        Self {
-            nodes,
-            options: RenderOptions::default(),
-        }
-    }
-
-    pub fn set_options(&mut self, options: RenderOptions) {
-        self.options = options;
     }
 
     pub fn from_mdx_str(content: &str) -> miette::Result<Self> {
@@ -283,6 +300,16 @@ mod tests {
         7,
         "|Column1|Column2|Column3|\n|:---|:---:|---:|\n|Left|Center|Right|\n"
     )]
+    #[case::table_after_paragraph(
+        "Paragraph\n\n| A | B |\n|---|---|\n| 1 | 2 |\n",
+        6,
+        "Paragraph\n\n|A|B|\n|---|---|\n|1|2|\n"
+    )]
+    #[case::table_after_heading(
+        "# Title\n\n| A | B |\n|---|---|\n| 1 | 2 |\n",
+        6,
+        "# Title\n\n|A|B|\n|---|---|\n|1|2|\n"
+    )]
     fn test_markdown_from_str(#[case] input: &str, #[case] expected_nodes: usize, #[case] expected_output: &str) {
         let md = input.parse::<Markdown>().unwrap();
         assert_eq!(md.nodes.len(), expected_nodes);
@@ -381,6 +408,116 @@ mod tests {
         assert!(formatted.contains("1. Item 1"));
         assert!(formatted.contains("2. Item 2"));
         assert!(formatted.contains("3. Item 2"));
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "color")]
+mod color_tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::heading("# Title", "\x1b[1m\x1b[36m# Title\x1b[0m\n")]
+    #[case::emphasis("*italic*", "\x1b[3m\x1b[33m*italic*\x1b[0m\n")]
+    #[case::strong("**bold**", "\x1b[1m**bold**\x1b[0m\n")]
+    #[case::code_inline("`code`", "\x1b[32m`code`\x1b[0m\n")]
+    #[case::code_block("```rust\nlet x = 1;\n```", "\x1b[32m```rust\nlet x = 1;\n```\x1b[0m\n")]
+    #[case::link("[text](url)", "\x1b[4m\x1b[34m[text](url)\x1b[0m\n")]
+    #[case::image("![alt](url)", "\x1b[35m![alt](url)\x1b[0m\n")]
+    #[case::delete("~~deleted~~", "\x1b[31m\x1b[2m~~deleted~~\x1b[0m\n")]
+    #[case::horizontal_rule("---", "\x1b[2m---\x1b[0m\n")]
+    #[case::blockquote("> quote", "\x1b[2m> \x1b[0mquote\n")]
+    #[case::math_inline("$x^2$", "\x1b[32m$x^2$\x1b[0m\n")]
+    #[case::list("- item", "\x1b[33m-\x1b[0m item\n")]
+    fn test_to_colored_string(#[case] input: &str, #[case] expected: &str) {
+        let md = input.parse::<Markdown>().unwrap();
+        assert_eq!(md.to_colored_string(), expected);
+    }
+
+    #[test]
+    fn test_colored_output_contains_ansi_codes() {
+        let md = "# Hello\n\n**bold** and *italic*".parse::<Markdown>().unwrap();
+        let colored = md.to_colored_string();
+
+        assert!(colored.contains("\x1b["));
+        assert!(colored.contains("\x1b[0m"));
+    }
+
+    #[test]
+    fn test_plain_output_has_no_ansi_codes() {
+        let md = "# Hello\n\n**bold** and *italic*".parse::<Markdown>().unwrap();
+        let plain = md.to_string();
+
+        assert!(!plain.contains("\x1b["));
+    }
+
+    #[test]
+    fn test_parse_colors_overrides_specified_keys() {
+        let theme = ColorTheme::parse_colors("heading=1;31:code=34");
+        assert_eq!(theme.heading.0, "\x1b[1;31m");
+        assert_eq!(theme.heading.1, "\x1b[0m");
+        assert_eq!(theme.code.0, "\x1b[34m");
+        assert_eq!(theme.code.1, "\x1b[0m");
+        // Unspecified keys remain default
+        assert_eq!(theme.emphasis, ColorTheme::COLORED.emphasis);
+    }
+
+    #[test]
+    fn test_parse_colors_ignores_invalid_entries() {
+        let theme = ColorTheme::parse_colors("heading=abc:code=32:=:badformat");
+        // Invalid "abc" is skipped, heading stays default
+        assert_eq!(theme.heading, ColorTheme::COLORED.heading);
+        // Valid "32" is applied
+        assert_eq!(theme.code.0, "\x1b[32m");
+        assert_eq!(theme.code.1, "\x1b[0m");
+    }
+
+    #[test]
+    fn test_parse_colors_ignores_unknown_keys() {
+        let theme = ColorTheme::parse_colors("unknown=31:heading=33");
+        assert_eq!(theme.heading.0, "\x1b[33m");
+        assert_eq!(theme.heading.1, "\x1b[0m");
+    }
+
+    #[test]
+    fn test_parse_colors_all_keys() {
+        let theme = ColorTheme::parse_colors(
+            "heading=1:code=2:code_inline=3:emphasis=4:strong=5:link=6:link_url=7:\
+             image=8:blockquote=9:delete=10:hr=11:html=12:frontmatter=13:list=14:\
+             table=15:math=16",
+        );
+        assert_eq!(theme.heading.0, "\x1b[1m");
+        assert_eq!(theme.code.0, "\x1b[2m");
+        assert_eq!(theme.code_inline.0, "\x1b[3m");
+        assert_eq!(theme.emphasis.0, "\x1b[4m");
+        assert_eq!(theme.strong.0, "\x1b[5m");
+        assert_eq!(theme.link.0, "\x1b[6m");
+        assert_eq!(theme.link_url.0, "\x1b[7m");
+        assert_eq!(theme.image.0, "\x1b[8m");
+        assert_eq!(theme.blockquote_marker.0, "\x1b[9m");
+        assert_eq!(theme.delete.0, "\x1b[10m");
+        assert_eq!(theme.horizontal_rule.0, "\x1b[11m");
+        assert_eq!(theme.html.0, "\x1b[12m");
+        assert_eq!(theme.frontmatter.0, "\x1b[13m");
+        assert_eq!(theme.list_marker.0, "\x1b[14m");
+        assert_eq!(theme.table_separator.0, "\x1b[15m");
+        assert_eq!(theme.math.0, "\x1b[16m");
+    }
+
+    #[test]
+    fn test_parse_colors_empty_string() {
+        let theme = ColorTheme::parse_colors("");
+        assert_eq!(theme.heading, ColorTheme::COLORED.heading);
+    }
+
+    #[test]
+    fn test_colored_string_with_custom_theme() {
+        let theme = ColorTheme::parse_colors("heading=1;31");
+        let md = "# Title".parse::<Markdown>().unwrap();
+        let colored = md.to_colored_string_with_theme(&theme);
+        assert_eq!(colored, "\x1b[1;31m# Title\x1b[0m\n");
     }
 }
 

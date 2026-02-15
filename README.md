@@ -13,14 +13,12 @@
 <h1 align="center">mq</h1>
 
 [![ci](https://github.com/harehare/mq/actions/workflows/ci.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/ci.yml)
-[![audit](https://github.com/harehare/mq/actions/workflows/audit.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/audit.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/harehare/mq)](https://github.com/harehare/mq/releases)
 [![codecov](https://codecov.io/gh/harehare/mq/graph/badge.svg?token=E4UD7Q9NC3)](https://codecov.io/gh/harehare/mq)
 [![CodSpeed Badge](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json?style=for-the-badge)](https://codspeed.io/harehare/mq)
-[![DeepWiki](https://img.shields.io/badge/DeepWiki-harehare%2Fmq-blue.svg?logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACwAAAAyCAYAAAAnWDnqAAAAAXNSR0IArs4c6QAAA05JREFUaEPtmUtyEzEQhtWTQyQLHNak2AB7ZnyXZMEjXMGeK/AIi+QuHrMnbChYY7MIh8g01fJoopFb0uhhEqqcbWTp06/uv1saEDv4O3n3dV60RfP947Mm9/SQc0ICFQgzfc4CYZoTPAswgSJCCUJUnAAoRHOAUOcATwbmVLWdGoH//PB8mnKqScAhsD0kYP3j/Yt5LPQe2KvcXmGvRHcDnpxfL2zOYJ1mFwrryWTz0advv1Ut4CJgf5uhDuDj5eUcAUoahrdY/56ebRWeraTjMt/00Sh3UDtjgHtQNHwcRGOC98BJEAEymycmYcWwOprTgcB6VZ5JK5TAJ+fXGLBm3FDAmn6oPPjR4rKCAoJCal2eAiQp2x0vxTPB3ALO2CRkwmDy5WohzBDwSEFKRwPbknEggCPB/imwrycgxX2NzoMCHhPkDwqYMr9tRcP5qNrMZHkVnOjRMWwLCcr8ohBVb1OMjxLwGCvjTikrsBOiA6fNyCrm8V1rP93iVPpwaE+gO0SsWmPiXB+jikdf6SizrT5qKasx5j8ABbHpFTx+vFXp9EnYQmLx02h1QTTrl6eDqxLnGjporxl3NL3agEvXdT0WmEost648sQOYAeJS9Q7bfUVoMGnjo4AZdUMQku50McDcMWcBPvr0SzbTAFDfvJqwLzgxwATnCgnp4wDl6Aa+Ax283gghmj+vj7feE2KBBRMW3FzOpLOADl0Isb5587h/U4gGvkt5v60Z1VLG8BhYjbzRwyQZemwAd6cCR5/XFWLYZRIMpX39AR0tjaGGiGzLVyhse5C9RKC6ai42ppWPKiBagOvaYk8lO7DajerabOZP46Lby5wKjw1HCRx7p9sVMOWGzb/vA1hwiWc6jm3MvQDTogQkiqIhJV0nBQBTU+3okKCFDy9WwferkHjtxib7t3xIUQtHxnIwtx4mpg26/HfwVNVDb4oI9RHmx5WGelRVlrtiw43zboCLaxv46AZeB3IlTkwouebTr1y2NjSpHz68WNFjHvupy3q8TFn3Hos2IAk4Ju5dCo8B3wP7VPr/FGaKiG+T+v+TQqIrOqMTL1VdWV1DdmcbO8KXBz6esmYWYKPwDL5b5FA1a0hwapHiom0r/cKaoqr+27/XcrS5UwSMbQAAAABJRU5ErkJggg==)](https://deepwiki.com/harehare/mq)
+[![audit](https://github.com/harehare/mq/actions/workflows/audit.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/audit.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/harehare/mq)](https://github.com/harehare/mq/releases)
 [![Crates.io](https://img.shields.io/crates/v/mq-lang)](https://crates.io/crates/mq-lang)
 [![npm](https://img.shields.io/npm/v/mq-web)](https://www.npmjs.com/package/mq-web)
-[![PyPI](https://img.shields.io/pypi/v/markdown-query)](https://pypi.org/project/markdown-query/)
 
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
 It's written in Rust, allowing you to easily slice, filter, map, and transform structured data.
@@ -74,13 +72,13 @@ The installer will:
 # Install from crates.io
 cargo install mq-run
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.13
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.15
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 # Install using binstall
-cargo binstall mq-run@0.5.13
+cargo binstall mq-run@0.5.15
 ```
 
 ### Binaries
@@ -89,13 +87,13 @@ You can download pre-built binaries from the [GitHub releases page](https://gith
 
 ```sh
 # macOS (Apple Silicon)
-curl -L https://github.com/harehare/mq/releases/download/v0.5.13/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.5.15/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux x86_64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.13/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.5.15/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux arm64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.13/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.5.15/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.13/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
+Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.15/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
 ```
 
 ### Homebrew
@@ -108,7 +106,7 @@ brew install mq
 ### Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.5.13
+$ docker run --rm ghcr.io/harehare/mq:0.5.15
 ```
 
 ### mq-lsp (Language Server)
@@ -127,11 +125,11 @@ curl -sSL https://mqlang.org/install_lsp.sh | bash
 # Install from crates.io
 cargo install mq-lsp
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-lsp --tag v0.5.13
+cargo install --git https://github.com/harehare/mq.git mq-lsp --tag v0.5.15
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-lsp
 # Install using binstall
-cargo binstall mq-lsp@0.5.13
+cargo binstall mq-lsp@0.5.15
 ```
 
 #### Binaries
@@ -140,13 +138,13 @@ You can download pre-built binaries from the [GitHub releases page](https://gith
 
 ```sh
 # macOS (Apple Silicon)
-curl -L https://github.com/harehare/mq/releases/download/v0.5.13/mq-lsp-aarch64-apple-darwin -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
+curl -L https://github.com/harehare/mq/releases/download/v0.5.15/mq-lsp-aarch64-apple-darwin -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
 # Linux x86_64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.13/mq-lsp-x86_64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
+curl -L https://github.com/harehare/mq/releases/download/v0.5.15/mq-lsp-x86_64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
 # Linux arm64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.13/mq-lsp-aarch64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
+curl -L https://github.com/harehare/mq/releases/download/v0.5.15/mq-lsp-aarch64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
 # Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.13/mq-lsp-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq-lsp.exe"
+Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.15/mq-lsp-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq-lsp.exe"
 ```
 
 ### Visual Studio Code Extension
@@ -156,6 +154,10 @@ You can install the VSCode extension from the [Visual Studio Marketplace](https:
 ### Neovim
 
 You can install the Neovim plugin by following the instructions in the [mq.nvim README](https://github.com/harehare/mq/blob/main/editors/neovim/README.md).
+
+### Zed
+
+You can install the Zed extension by following the instructions in the [zed-mq README](https://github.com/harehare/mq/blob/main/editors/zed/README.md).
 
 ### GitHub Actions
 
@@ -168,14 +170,13 @@ steps:
   - run: mq '.code' README.md
 ```
 
-## Python
+## Language Bindings
 
-You can use mq in Python through the `markdown-query` package:
+Language bindings are available for the following programming languages:
 
-```sh
-# Install from PyPI
-pip install markdown-query
-```
+- [mq_elixir](https://github.com/harehare/mq_elixir)
+- [mq-python](https://github.com/harehare/mq/blob/main/crates/mq-python)
+- [mq-ruby](https://github.com/harehare/mq-ruby)
 
 ## MCP (Model Context Protocol)
 
@@ -199,11 +200,9 @@ For a comprehensive collection of practical examples, see the [Example Guide](ht
 Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 
 Commands:
-  repl   Start a REPL session for interactive query execution
-  fmt    Format mq files based on specified formatting options
-  docs   Show functions documentation for the query
-  check  Check syntax errors in mq files
-  help   Print this message or the help of the given subcommand(s)
+  repl  Start a REPL session for interactive query execution
+  fmt   Format mq files based on specified formatting options
+  help  Print this message or the help of the given subcommand(s)
 
 Arguments:
   [QUERY OR FILE]  
@@ -227,7 +226,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
       --json
-          
+          Include the built-in JSON module
       --csv
           Include the built-in CSV module
       --fuzzy
@@ -256,6 +255,8 @@ Options:
           Specify a query to insert between files as a separator
   -o, --output <FILE>
           Output to the specified file
+  -C, --color-output
+          Colorize markdown output
       --list
           List all available subcommands (built-in and external)
   -P <PARALLEL_THRESHOLD>
@@ -348,9 +349,9 @@ markitdown https://github.com/harehare/mq | mq '.code'
 markitdown test.xlsx | mq '.[][]'
 ```
 
-### External Subcommands
+## External Subcommands
 
-You can extend `mq` with custom subcommands by creating executable files starting with `mq-` in `~/.mq/bin/`:
+You can extend `mq` with custom subcommands by placing executable files starting with `mq-` in `~/.mq/bin/` or anywhere in your `PATH`.
 
 ```sh
 # Create a custom subcommand
@@ -372,10 +373,14 @@ mq --list
 
 This makes it easy to add your own tools and workflows to `mq` without modifying the core binary.
 
-#### External Tools
+### External Tools
 
 The following external tools are available to extend mq's functionality:
 
+- [mq-check](https://github.com/harehare/mq-check) - A syntax and semantic checker for mq files.
+- [mq-conv](https://github.com/harehare/mq-conv) - A CLI tool for converting various file formats to Markdown.
+- [mq-docs](https://github.com/harehare/mq-docs) - A documentation generator for mq functions, macros, and selectors.
+- [mq-edit](https://github.com/harehare/mq-edit) - A terminal-based Markdown and code editor with WYSIWYG rendering and LSP support.
 - [mq-mcp](https://github.com/harehare/mq-mcp) - Model Context Protocol (MCP) server implementation for AI assistants
 - [mq-task](https://github.com/harehare/mq-task) - Task runner using mq for Markdown-based task definitions
 - [mq-tui](https://github.com/harehare/mq-tui) - Terminal User Interface (TUI) for interactive mq query

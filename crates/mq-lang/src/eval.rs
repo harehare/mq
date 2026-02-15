@@ -555,29 +555,32 @@ impl<T: ModuleResolver> Evaluator<T> {
                     .module_loader
                     .load_from_file(&module_name, Shared::clone(&self.token_arena));
 
-                if let Ok(module) = module {
-                    // Collect macros from the module
-                    // Create a new environment for the module exports
-                    let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
-                    let module_name_to_use = module.name.to_string();
+                match module {
+                    Ok(module) => {
+                        // Collect macros from the module
+                        // Create a new environment for the module exports
+                        let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+                        let module_name_to_use = module.name.to_string();
 
-                    self.load_module_with_env(module, &Shared::clone(&module_env))?;
+                        self.load_module_with_env(module, &Shared::clone(&module_env))?;
 
-                    // Register the module in the environment
-                    let module_runtime_value = RuntimeValue::Module(runtime_value::ModuleEnv::new(
-                        &module_name_to_use,
-                        Shared::clone(&module_env),
-                    ));
+                        // Register the module in the environment
+                        let module_runtime_value = RuntimeValue::Module(runtime_value::ModuleEnv::new(
+                            &module_name_to_use,
+                            Shared::clone(&module_env),
+                        ));
 
-                    define(&self.env, Ident::new(&module_name_to_use), module_runtime_value);
+                        define(&self.env, Ident::new(&module_name_to_use), module_runtime_value);
 
-                    Ok(RuntimeValue::Module(ModuleEnv::new(&module_name_to_use, module_env)))
-                } else if matches!(module, Err(ModuleError::AlreadyLoaded(_)))
-                    && let Ok(value) = resolve(&module_name, env)
-                {
-                    Ok(value)
-                } else {
-                    Err(RuntimeError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(module_name))).into())
+                        Ok(RuntimeValue::Module(ModuleEnv::new(&module_name_to_use, module_env)))
+                    }
+                    Err(ModuleError::AlreadyLoaded(_)) => match resolve(&module_name, env) {
+                        Ok(value) => Ok(value),
+                        Err(_) => {
+                            Err(RuntimeError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(module_name))).into())
+                        }
+                    },
+                    Err(e) => Err(RuntimeError::ModuleLoadError(e).into()),
                 }
             }
             _ => Err(RuntimeError::ModuleLoadError(ModuleError::InvalidModule).into()),
@@ -673,25 +676,16 @@ impl<T: ModuleResolver> Evaluator<T> {
     #[inline(always)]
     fn eval_selector_expr(runtime_value: &RuntimeValue, ident: &Selector) -> RuntimeValue {
         match runtime_value {
-            RuntimeValue::Markdown(node_value, _) => {
-                if builtin::eval_selector(node_value, ident) {
-                    runtime_value.clone()
-                } else {
-                    RuntimeValue::NONE
-                }
-            }
+            RuntimeValue::Markdown(node_value, _) => builtin::eval_selector(node_value, ident),
             RuntimeValue::Array(values) => {
                 let values = values
                     .iter()
-                    .map(|value| match value {
-                        RuntimeValue::Markdown(node_value, _) => {
-                            if builtin::eval_selector(node_value, ident) {
-                                value.clone()
-                            } else {
-                                RuntimeValue::NONE
-                            }
-                        }
-                        _ => RuntimeValue::NONE,
+                    .flat_map(|value| match value {
+                        RuntimeValue::Markdown(node_value, _) => match builtin::eval_selector(node_value, ident) {
+                            RuntimeValue::Array(arr) => arr,
+                            other => vec![other],
+                        },
+                        _ => vec![RuntimeValue::NONE],
                     })
                     .collect::<Vec<_>>();
 
@@ -798,7 +792,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
             ast::Expr::Call(ident, args) => {
                 #[cfg(feature = "debugger")]
-                if ident.name == constants::BREAKPOINT.into() {
+                if ident.name == constants::builtins::BREAKPOINT.into() {
                     self.eval_debugger(runtime_value, Shared::clone(node), Shared::clone(env));
                     return Ok(runtime_value.clone());
                 }
@@ -6009,7 +6003,7 @@ mod tests {
             Evaluator::new(loader, token_arena())
                 .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
             Err(InnerError::Runtime(RuntimeError::ModuleLoadError(
-                ModuleError::NotFound(Cow::Borrowed("not_found"))
+                ModuleError::IOError(Cow::Borrowed("Module `not_found.mq` not found"))
             )))
         );
     }
@@ -6604,7 +6598,7 @@ mod debugger_tests {
         let mut evaluator: Evaluator = Evaluator::new(ModuleLoader::default(), token_arena);
         evaluator.debugger_handler = Shared::clone(&handler);
 
-        let program = vec![ast_call(constants::BREAKPOINT, SmallVec::new())];
+        let program = vec![ast_call(constants::builtins::BREAKPOINT, SmallVec::new())];
         let runtime_values = vec![RuntimeValue::String("test".to_string())];
 
         let result = evaluator.eval(&program, runtime_values.into_iter());

@@ -66,7 +66,7 @@ pub(crate) fn ident(node: &CstNode) -> Option<String> {
                 | CstNodeKind::Let
                 | CstNodeKind::Var
                 | CstNodeKind::Macro,
-            token: Some(token),
+            token: Some(_),
             children,
             ..
         } if !children.is_empty() => Some(children[0].to_string()),
@@ -929,6 +929,10 @@ impl Formatter {
                 } else if matches!(child.kind, mq_lang::CstNodeKind::Ident) {
                     // Skip the first ident child (it's already been output as the parent token)
                     continue;
+                } else if matches!(child.kind, mq_lang::CstNodeKind::Selector) {
+                    // Format selector (attribute access like value.test) directly
+                    // to avoid inserting a newline from leading trivia
+                    self.format_selector(child, 0);
                 } else {
                     // Format default value expression
                     self.format_node(mq_lang::Shared::clone(child), 0);
@@ -2754,6 +2758,10 @@ end
   v + args;
 "
     )]
+    #[case::assign_with_selector_attr("value.test|= value.attr", "value.test |= value.attr")]
+    #[case::index_assign("arr[0]=10", "arr[0] = 10")]
+    #[case::index_assign_string_key("dict[\"key\"]=\"value\"", "dict[\"key\"] = \"value\"")]
+    #[case::index_compound_assign("arr[0]+=1", "arr[0] += 1")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

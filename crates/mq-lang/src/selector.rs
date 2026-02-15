@@ -91,6 +91,8 @@ pub enum Selector {
     MdxJsEsm,
     /// Matches MDX JSX flow elements.
     MdxJsxFlowElement,
+    /// Matches recursively all child nodes.
+    Recursive,
     /// Matches a specific attribute of a markdown node.
     Attr(AttrKind),
 }
@@ -281,6 +283,9 @@ impl TryFrom<&Token> for Selector {
                 // Table Align
                 ".table_align" => Ok(Selector::TableAlign),
 
+                // Recursive
+                ".." => Ok(Selector::Recursive),
+
                 // Attribute selectors - Common
                 ".value" => Ok(Selector::Attr(AttrKind::Value)),
                 ".values" => Ok(Selector::Attr(AttrKind::Values)),
@@ -372,6 +377,7 @@ impl Display for Selector {
             Selector::MdxTextExpression => write!(f, ".mdx_text_expression"),
             Selector::MdxJsEsm => write!(f, ".mdx_js_esm"),
             Selector::MdxJsxFlowElement => write!(f, ".mdx_jsx_flow_element"),
+            Selector::Recursive => write!(f, ".."),
             Selector::Attr(attr) => write!(f, "{}", attr),
         }
     }
@@ -471,6 +477,8 @@ mod tests {
     #[case::table(".table", Selector::Table(None, None), ".table")]
     // Table Align
     #[case::table_align(".table_align", Selector::TableAlign, ".table_align")]
+    // Recursive
+    #[case::recursive("..", Selector::Recursive, "..")]
     // Attribute selectors - Common
     #[case::attr_value(".value", Selector::Attr(AttrKind::Value), ".value")]
     #[case::attr_values(".values", Selector::Attr(AttrKind::Values), ".values")]

@@ -140,16 +140,6 @@ define_builtin!(
     }
 );
 
-define_builtin!(DEBUG, ParamNum::Range(1, u8::MAX), |_, current_value, args, _| {
-    if args.len() == 1 {
-        eprintln!("DEBUG: {}", args[0]);
-    } else {
-        eprintln!("DEBUG:\n{}", args.iter().map(|v| format!(" - {}", v)).join("\n"));
-    }
-
-    Ok(current_value.clone())
-});
-
 define_builtin!(TYPE, ParamNum::Fixed(1), |_, _, args, _| match args.first() {
     Some(value) => Ok(value.name().to_string().into()),
     None => Ok(RuntimeValue::NONE),
@@ -421,6 +411,22 @@ define_builtin!(REGEX_MATCH, ParamNum::Fixed(2), |ident, _, mut args, _| {
             .map(|md| match_re(&md.value(), pattern))
             .unwrap_or_else(|| Ok(RuntimeValue::EMPTY_ARRAY)),
         [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::EMPTY_ARRAY),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!(),
+    }
+});
+
+define_builtin!(CAPTURE, ParamNum::Fixed(2), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s), RuntimeValue::String(pattern)] => capture_re(s, pattern),
+        [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(pattern)] => node
+            .markdown_node()
+            .map(|md| capture_re(&md.value(), pattern))
+            .unwrap_or_else(|| Ok(RuntimeValue::new_dict())),
+        [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::new_dict()),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
@@ -1285,7 +1291,7 @@ define_builtin!(MUL, ParamNum::Fixed(2), |_, _, mut args, _| match args.as_mut_s
                             (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 * n2).into()),
                             (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
                             _ => Err(Error::InvalidTypes(
-                                constants::MUL.to_string(),
+                                constants::builtins::MUL.to_string(),
                                 vec![std::mem::take(&mut args[0]), std::mem::take(&mut args[1])],
                             )),
                         },
@@ -1301,7 +1307,7 @@ define_builtin!(MUL, ParamNum::Fixed(2), |_, _, mut args, _| match args.as_mut_s
             repeat(v, n.value() as usize)
         } else {
             Err(Error::InvalidTypes(
-                constants::MUL.to_string(),
+                constants::builtins::MUL.to_string(),
                 vec![std::mem::take(v), RuntimeValue::Number(*n)],
             ))
         }
@@ -1689,6 +1695,25 @@ define_builtin!(TO_MD_TABLE_ROW, ParamNum::Range(1, u8::MAX), |_, _, args, _| {
         mq_markdown::Node::TableRow(mq_markdown::TableRow { values, position: None }),
         None,
     ))
+});
+
+define_builtin!(TO_MD_TABLE_CELL, ParamNum::Fixed(3), |_, _, mut args, _| {
+    match args.as_mut_slice() {
+        [value, RuntimeValue::Number(row), RuntimeValue::Number(column)] => Ok(RuntimeValue::Markdown(
+            mq_markdown::Node::TableCell(mq_markdown::TableCell {
+                row: row.value() as usize,
+                column: column.value() as usize,
+                values: vec![value.to_string().into()],
+                position: None,
+            }),
+            None,
+        )),
+        [a, b, c] => Err(Error::InvalidTypes(
+            "table_cell".to_string(),
+            vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+        )),
+        _ => unreachable!(),
+    }
 });
 
 define_builtin!(GET_TITLE, ParamNum::Fixed(1), |_, _, mut args, _| {
@@ -2291,33 +2316,34 @@ const fn fnv1a_hash_64(s: &str) -> u64 {
 
 const HASH_ABS: u64 = fnv1a_hash_64("abs");
 const HASH_ADD: u64 = fnv1a_hash_64("add");
-const HASH_AND: u64 = fnv1a_hash_64(constants::AND);
+const HASH_AND: u64 = fnv1a_hash_64("and");
 const HASH_ALL_SYMBOLS: u64 = fnv1a_hash_64("all_symbols");
-const HASH_ARRAY: u64 = fnv1a_hash_64(constants::ARRAY);
-const HASH_ATTR: u64 = fnv1a_hash_64(constants::ATTR);
+const HASH_ARRAY: u64 = fnv1a_hash_64(constants::builtins::ARRAY);
+const HASH_ATTR: u64 = fnv1a_hash_64(constants::builtins::ATTR);
 const HASH_BASE64: u64 = fnv1a_hash_64("base64");
 const HASH_BASE64D: u64 = fnv1a_hash_64("base64d");
+const HASH_CAPTURE: u64 = fnv1a_hash_64("capture");
 const HASH_CEIL: u64 = fnv1a_hash_64("ceil");
 const HASH_COMPACT: u64 = fnv1a_hash_64("compact");
 const HASH_COALESCE: u64 = fnv1a_hash_64("coalesce");
 const HASH_DECREASE_HEADER_LEVEL: u64 = fnv1a_hash_64("decrease_header_level");
 const HASH_DEL: u64 = fnv1a_hash_64("del");
-const HASH_DICT: u64 = fnv1a_hash_64(constants::DICT);
-const HASH_DIV: u64 = fnv1a_hash_64(constants::DIV);
+const HASH_DICT: u64 = fnv1a_hash_64(constants::builtins::DICT);
+const HASH_DIV: u64 = fnv1a_hash_64(constants::builtins::DIV);
 const HASH_DOWNCASE: u64 = fnv1a_hash_64("downcase");
 const HASH_ENDS_WITH: u64 = fnv1a_hash_64("ends_with");
 const HASH_ENTRIES: u64 = fnv1a_hash_64("entries");
-const HASH_EQ: u64 = fnv1a_hash_64(constants::EQ);
+const HASH_EQ: u64 = fnv1a_hash_64(constants::builtins::EQ);
 const HASH_ERROR: u64 = fnv1a_hash_64("error");
 const HASH_EXPLODE: u64 = fnv1a_hash_64("explode");
 const HASH_AST_GET_ARGS: u64 = fnv1a_hash_64("_ast_get_args");
 const HASH_AST_TO_CODE: u64 = fnv1a_hash_64("_ast_to_code");
 const HASH_FLATTEN: u64 = fnv1a_hash_64("flatten");
-const HASH_FLOOR: u64 = fnv1a_hash_64(constants::FLOOR);
+const HASH_FLOOR: u64 = fnv1a_hash_64(constants::builtins::FLOOR);
 const HASH_FROM_DATE: u64 = fnv1a_hash_64("from_date");
-const HASH_GET: u64 = fnv1a_hash_64(constants::GET);
-const HASH_GT: u64 = fnv1a_hash_64(constants::GT);
-const HASH_GTE: u64 = fnv1a_hash_64(constants::GTE);
+const HASH_GET: u64 = fnv1a_hash_64(constants::builtins::GET);
+const HASH_GT: u64 = fnv1a_hash_64(constants::builtins::GT);
+const HASH_GTE: u64 = fnv1a_hash_64(constants::builtins::GTE);
 const HASH_GET_TITLE: u64 = fnv1a_hash_64("get_title");
 const HASH_GET_URL: u64 = fnv1a_hash_64("get_url");
 const HASH_GET_VARIABLE: u64 = fnv1a_hash_64("get_variable");
@@ -2334,22 +2360,22 @@ const HASH_IS_NAN: u64 = fnv1a_hash_64("is_nan");
 const HASH_JOIN: u64 = fnv1a_hash_64("join");
 const HASH_KEYS: u64 = fnv1a_hash_64("keys");
 const HASH_LEN: u64 = fnv1a_hash_64("len");
-const HASH_LT: u64 = fnv1a_hash_64(constants::LT);
-const HASH_LTE: u64 = fnv1a_hash_64(constants::LTE);
+const HASH_LT: u64 = fnv1a_hash_64(constants::builtins::LT);
+const HASH_LTE: u64 = fnv1a_hash_64(constants::builtins::LTE);
 const HASH_REGEX_MATCH: u64 = fnv1a_hash_64("regex_match");
 const HASH_MAX: u64 = fnv1a_hash_64("max");
 const HASH_MIN: u64 = fnv1a_hash_64("min");
 const HASH_NAN: u64 = fnv1a_hash_64("nan");
 const HASH_NEGATE: u64 = fnv1a_hash_64("negate");
-const HASH_MOD: u64 = fnv1a_hash_64(constants::MOD);
-const HASH_MUL: u64 = fnv1a_hash_64(constants::MUL);
-const HASH_NE: u64 = fnv1a_hash_64(constants::NE);
-const HASH_NOT: u64 = fnv1a_hash_64(constants::NOT);
+const HASH_MOD: u64 = fnv1a_hash_64(constants::builtins::MOD);
+const HASH_MUL: u64 = fnv1a_hash_64(constants::builtins::MUL);
+const HASH_NE: u64 = fnv1a_hash_64(constants::builtins::NE);
+const HASH_NOT: u64 = fnv1a_hash_64(constants::builtins::NOT);
 const HASH_NOW: u64 = fnv1a_hash_64("now");
-const HASH_OR: u64 = fnv1a_hash_64(constants::OR);
+const HASH_OR: u64 = fnv1a_hash_64("or");
 const HASH_POW: u64 = fnv1a_hash_64("pow");
 const HASH_PRINT: u64 = fnv1a_hash_64("print");
-const HASH_RANGE: u64 = fnv1a_hash_64(constants::RANGE);
+const HASH_RANGE: u64 = fnv1a_hash_64(constants::builtins::RANGE);
 const HASH_REPEAT: u64 = fnv1a_hash_64("repeat");
 const HASH_REPLACE: u64 = fnv1a_hash_64("replace");
 const HASH_REVERSE: u64 = fnv1a_hash_64("reverse");
@@ -2362,13 +2388,13 @@ const HASH_SET_CODE_BLOCK_LANG: u64 = fnv1a_hash_64("set_code_block_lang");
 const HASH_SET_LIST_ORDERED: u64 = fnv1a_hash_64("set_list_ordered");
 const HASH_SET_REF: u64 = fnv1a_hash_64("set_ref");
 const HASH_SET_VARIABLE: u64 = fnv1a_hash_64("set_variable");
-const HASH_SLICE: u64 = fnv1a_hash_64(constants::SLICE);
+const HASH_SLICE: u64 = fnv1a_hash_64(constants::builtins::SLICE);
 const HASH_SORT: u64 = fnv1a_hash_64("sort");
 const HASH_SORT_BY_IMPL: u64 = fnv1a_hash_64("_sort_by_impl");
 const HASH_SPLIT: u64 = fnv1a_hash_64("split");
 const HASH_STARTS_WITH: u64 = fnv1a_hash_64("starts_with");
 const HASH_STDERR: u64 = fnv1a_hash_64("stderr");
-const HASH_SUB: u64 = fnv1a_hash_64(constants::SUB);
+const HASH_SUB: u64 = fnv1a_hash_64(constants::builtins::SUB);
 const HASH_TO_ARRAY: u64 = fnv1a_hash_64("to_array");
 const HASH_TO_CODE: u64 = fnv1a_hash_64("to_code");
 const HASH_TO_CODE_INLINE: u64 = fnv1a_hash_64("to_code_inline");
@@ -2387,6 +2413,7 @@ const HASH_TO_MATH_INLINE: u64 = fnv1a_hash_64("to_math_inline");
 const HASH_TO_MD_LIST: u64 = fnv1a_hash_64("to_md_list");
 const HASH_TO_MD_NAME: u64 = fnv1a_hash_64("to_md_name");
 const HASH_TO_MD_TABLE_ROW: u64 = fnv1a_hash_64("to_md_table_row");
+const HASH_TO_MD_TABLE_CELL: u64 = fnv1a_hash_64("to_md_table_cell");
 const HASH_TO_MD_TEXT: u64 = fnv1a_hash_64("to_md_text");
 const HASH_TO_NUMBER: u64 = fnv1a_hash_64("to_number");
 const HASH_TO_STRING: u64 = fnv1a_hash_64("to_string");
@@ -2395,7 +2422,6 @@ const HASH_TO_TEXT: u64 = fnv1a_hash_64("to_text");
 const HASH_TRUNC: u64 = fnv1a_hash_64("trunc");
 const HASH_TRIM: u64 = fnv1a_hash_64("trim");
 const HASH_TYPE: u64 = fnv1a_hash_64("type");
-const HASH_DEBUG: u64 = fnv1a_hash_64("debug");
 const HASH_UNIQ: u64 = fnv1a_hash_64("uniq");
 const HASH_UPDATE: u64 = fnv1a_hash_64("update");
 const HASH_UPCASE: u64 = fnv1a_hash_64("upcase");
@@ -2423,6 +2449,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_ATTR => Some(&ATTR),
         HASH_BASE64 => Some(&BASE64),
         HASH_BASE64D => Some(&BASE64D),
+        HASH_CAPTURE => Some(&CAPTURE),
         HASH_CEIL => Some(&CEIL),
         HASH_COMPACT => Some(&COMPACT),
         HASH_COALESCE => Some(&COALESCE),
@@ -2431,7 +2458,6 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_DICT => Some(&DICT),
         HASH_DIV => Some(&DIV),
         HASH_DOWNCASE => Some(&DOWNCASE),
-        HASH_DEBUG => Some(&DEBUG),
         HASH_ENDS_WITH => Some(&ENDS_WITH),
         HASH_ENTRIES => Some(&ENTRIES),
         HASH_EQ => Some(&EQ),
@@ -2512,6 +2538,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_TO_MD_LIST => Some(&TO_MD_LIST),
         HASH_TO_MD_NAME => Some(&TO_MD_NAME),
         HASH_TO_MD_TABLE_ROW => Some(&TO_MD_TABLE_ROW),
+        HASH_TO_MD_TABLE_CELL => Some(&TO_MD_TABLE_CELL),
         HASH_TO_MD_TEXT => Some(&TO_MD_TEXT),
         HASH_TO_NUMBER => Some(&TO_NUMBER),
         HASH_TO_STRING => Some(&TO_STRING),
@@ -2958,13 +2985,6 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
-        SmolStr::new("debug"),
-        BuiltinFunctionDoc {
-            description: "Prints the debug information of the given value(s).",
-            params: &["values"],
-        },
-    );
-    map.insert(
         SmolStr::new("stderr"),
         BuiltinFunctionDoc {
             description: "Prints a message to standard error and returns the current value.",
@@ -2979,7 +2999,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
-        SmolStr::new(constants::ARRAY),
+        SmolStr::new(constants::builtins::ARRAY),
         BuiltinFunctionDoc {
             description: "Creates an array from the given values.",
             params: &["values"],
@@ -3168,7 +3188,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
-        SmolStr::new(constants::SLICE),
+        SmolStr::new(constants::builtins::SLICE),
         BuiltinFunctionDoc {
             description: "Extracts a substring from the given string.",
             params: &["string", "start", "end"],
@@ -3252,98 +3272,98 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
-        SmolStr::new(constants::EQ),
+        SmolStr::new(constants::builtins::EQ),
         BuiltinFunctionDoc {
             description: "Checks if two values are equal.",
             params: &["value1", "value2"],
         },
     );
     map.insert(
-        SmolStr::new(constants::NE),
+        SmolStr::new(constants::builtins::NE),
         BuiltinFunctionDoc {
             description: "Checks if two values are not equal.",
             params: &["value1", "value2"],
         },
     );
     map.insert(
-        SmolStr::new(constants::GT),
+        SmolStr::new(constants::builtins::GT),
         BuiltinFunctionDoc {
             description: "Checks if the first value is greater than the second value.",
             params: &["value1", "value2"],
         },
     );
     map.insert(
-        SmolStr::new(constants::GTE),
+        SmolStr::new(constants::builtins::GTE),
         BuiltinFunctionDoc {
             description: "Checks if the first value is greater than or equal to the second value.",
             params: &["value1", "value2"],
         },
     );
     map.insert(
-        SmolStr::new(constants::LT),
+        SmolStr::new(constants::builtins::LT),
         BuiltinFunctionDoc {
             description: "Checks if the first value is less than the second value.",
             params: &["value1", "value2"],
         },
     );
     map.insert(
-        SmolStr::new(constants::LTE),
+        SmolStr::new(constants::builtins::LTE),
         BuiltinFunctionDoc {
             description: "Checks if the first value is less than or equal to the second value.",
             params: &["value1", "value2"],
         },
     );
     map.insert(
-        SmolStr::new(constants::ADD),
+        SmolStr::new(constants::builtins::ADD),
         BuiltinFunctionDoc {
             description: "Adds two values.",
             params: &["value1", "value2"],
         },
     );
     map.insert(
-        SmolStr::new(constants::SUB),
+        SmolStr::new(constants::builtins::SUB),
         BuiltinFunctionDoc {
             description: "Subtracts the second value from the first value.",
             params: &["value1", "value2"],
         },
     );
     map.insert(
-        SmolStr::new(constants::DIV),
+        SmolStr::new(constants::builtins::DIV),
         BuiltinFunctionDoc {
             description: "Divides the first value by the second value.",
             params: &["value1", "value2"],
         },
     );
     map.insert(
-        SmolStr::new(constants::MUL),
+        SmolStr::new(constants::builtins::MUL),
         BuiltinFunctionDoc {
             description: "Multiplies two values.",
             params: &["value1", "value2"],
         },
     );
     map.insert(
-        SmolStr::new(constants::MOD),
+        SmolStr::new(constants::builtins::MOD),
         BuiltinFunctionDoc {
             description: "Calculates the remainder of the division of the first value by the second value.",
             params: &["value1", "value2"],
         },
     );
     map.insert(
-        SmolStr::new(constants::AND),
+        SmolStr::new("and"),
         BuiltinFunctionDoc {
             description: "Performs a logical AND operation on two boolean values.",
             params: &["value1", "value2"],
         },
     );
     map.insert(
-        SmolStr::new(constants::OR),
+        SmolStr::new("or"),
         BuiltinFunctionDoc {
             description: "Performs a logical OR operation on two boolean values.",
             params: &["value1", "value2"],
         },
     );
     map.insert(
-        SmolStr::new(constants::NOT),
+        SmolStr::new(constants::builtins::NOT),
         BuiltinFunctionDoc {
             description: "Performs a logical NOT operation on a boolean value.",
             params: &["value"],
@@ -3372,7 +3392,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
-        SmolStr::new(constants::FLOOR),
+        SmolStr::new(constants::builtins::FLOOR),
         BuiltinFunctionDoc {
             description: "Rounds the given number down to the nearest integer.",
             params: &["number"],
@@ -3393,7 +3413,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
-        SmolStr::new(constants::ATTR),
+        SmolStr::new(constants::builtins::ATTR),
         BuiltinFunctionDoc {
             description: "Retrieves the value of the specified attribute from a markdown node.",
             params: &["markdown", "attribute"],
@@ -3512,6 +3532,14 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
+        SmolStr::new("to_md_table_cell"),
+        BuiltinFunctionDoc {
+            description: "Creates a markdown table cell node with the given value at the specified row and column.",
+            params: &["value", "row", "column"],
+        },
+    );
+
+    map.insert(
         SmolStr::new("get_title"),
         BuiltinFunctionDoc {
             description: "Returns the title of a markdown node.",
@@ -3547,14 +3575,14 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
-        SmolStr::new(constants::DICT),
+        SmolStr::new(constants::builtins::DICT),
         BuiltinFunctionDoc {
             description: "Creates a new, empty dict.",
             params: &[],
         },
     );
     map.insert(
-        SmolStr::new(constants::GET),
+        SmolStr::new(constants::builtins::GET),
         BuiltinFunctionDoc {
             description: "Retrieves a value from a dict by its key. Returns None if the key is not found.",
             params: &["obj", "key"],
@@ -3589,7 +3617,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
-        SmolStr::new(constants::RANGE),
+        SmolStr::new(constants::builtins::RANGE),
         BuiltinFunctionDoc {
             description: "Creates an array from start to end with an optional step.",
             params: &["start", "end", "step"],
@@ -3703,11 +3731,18 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
-        SmolStr::new(constants::BREAKPOINT),
+        SmolStr::new(constants::builtins::BREAKPOINT),
         BuiltinFunctionDoc {
             description: "Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.",
             params: &[],
             },
+    );
+    map.insert(
+        SmolStr::new("capture"),
+        BuiltinFunctionDoc {
+            description: "Captures named groups from the given string based on the specified regular expression pattern and returns them as a dictionary keyed by group names.",
+            params: &["string", "pattern"],
+        },
     );
 
     map
@@ -3828,8 +3863,8 @@ pub fn eval_builtin(
     )
 }
 
-pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> bool {
-    match selector {
+pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> RuntimeValue {
+    let is_match = match selector {
         Selector::Code => node.is_code(None),
         Selector::InlineCode => node.is_inline_code(),
         Selector::InlineMath => node.is_inline_math(),
@@ -3888,7 +3923,35 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> bool {
         Selector::MdxFlowExpression => node.is_mdx_flow_expression(),
         Selector::Definition => node.is_definition(),
         Selector::Attr(_) => false, // Attribute selectors don't match nodes directly
+        Selector::Recursive => return eval_recursive_selector(node),
+    };
+
+    if is_match {
+        RuntimeValue::Markdown(node.clone(), None)
+    } else {
+        RuntimeValue::NONE
     }
+}
+
+fn extract_recursive_node(node: &mq_markdown::Node) -> Vec<mq_markdown::Node> {
+    let mut children = vec![];
+
+    for child in node.children().into_iter() {
+        children.extend(extract_recursive_node(&child));
+        children.push(child);
+    }
+
+    children
+}
+
+/// Evaluates the recursive selector and returns all descendant nodes.
+fn eval_recursive_selector(node: &mq_markdown::Node) -> RuntimeValue {
+    RuntimeValue::Array(
+        extract_recursive_node(node)
+            .into_iter()
+            .map(|n| RuntimeValue::Markdown(n, None))
+            .collect(),
+    )
 }
 
 #[inline(always)]
@@ -3946,6 +4009,33 @@ fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
             .map(|m| RuntimeValue::String(m.as_str().to_string()))
             .collect();
         Ok(RuntimeValue::Array(matches))
+    } else {
+        Err(Error::InvalidRegularExpression(pattern.to_string()))
+    }
+}
+
+fn _capture_re(re: &Regex, input: &str) -> Result<RuntimeValue, Error> {
+    match (re.capture_names(), re.captures(input)) {
+        (names, Some(caps)) => {
+            let mut result = BTreeMap::new();
+            for name in names.flatten() {
+                if let Some(m) = caps.name(name) {
+                    result.insert(Ident::new(name), RuntimeValue::String(m.as_str().to_string()));
+                }
+            }
+            Ok(RuntimeValue::Dict(result))
+        }
+        _ => Ok(RuntimeValue::new_dict()),
+    }
+}
+
+fn capture_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
+    let mut cache = REGEX_CACHE.lock().unwrap();
+    if let Some(re) = cache.get(pattern) {
+        _capture_re(re, input)
+    } else if let Ok(re) = RegexBuilder::new(pattern).size_limit(1 << 20).build() {
+        cache.insert(pattern.to_string(), re.clone());
+        _capture_re(&re, input)
     } else {
         Err(Error::InvalidRegularExpression(pattern.to_string()))
     }
@@ -4230,7 +4320,7 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
         }
         RuntimeValue::None => Ok(RuntimeValue::NONE),
         _ => Err(Error::InvalidTypes(
-            constants::MUL.to_string(),
+            constants::builtins::MUL.to_string(),
             vec![std::mem::take(value), RuntimeValue::Number(n.into())],
         )),
     }
@@ -4481,7 +4571,84 @@ mod tests {
         true
     )]
     fn test_eval_selector(#[case] node: Node, #[case] selector: Selector, #[case] expected: bool) {
-        assert_eq!(eval_selector(&node, &selector), expected);
+        assert_eq!(!eval_selector(&node, &selector).is_none(), expected);
+    }
+
+    #[test]
+    fn test_eval_recursive_selector_with_children() {
+        let node = Node::Heading(mq_markdown::Heading {
+            values: vec![
+                Node::Text(mq_markdown::Text {
+                    value: "hello".into(),
+                    position: None,
+                }),
+                Node::Link(mq_markdown::Link {
+                    url: mq_markdown::Url::new("url".into()),
+                    title: None,
+                    values: Vec::new(),
+                    position: None,
+                }),
+            ],
+            position: None,
+            depth: 1,
+        });
+        let result = eval_selector(&node, &Selector::Recursive);
+        assert_eq!(
+            result,
+            RuntimeValue::Array(vec![
+                RuntimeValue::Markdown(
+                    Node::Text(mq_markdown::Text {
+                        value: "hello".into(),
+                        position: None,
+                    }),
+                    None
+                ),
+                RuntimeValue::Markdown(
+                    Node::Link(mq_markdown::Link {
+                        url: mq_markdown::Url::new("url".into()),
+                        title: None,
+                        values: Vec::new(),
+                        position: None,
+                    }),
+                    None
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_eval_recursive_selector_leaf_node() {
+        let node = Node::Text(mq_markdown::Text {
+            value: "leaf".into(),
+            position: None,
+        });
+        let result = eval_selector(&node, &Selector::Recursive);
+        assert_eq!(result, RuntimeValue::Array(vec![]));
+    }
+
+    #[test]
+    fn test_eval_recursive_selector_nested() {
+        let inner_text = Node::Text(mq_markdown::Text {
+            value: "nested".into(),
+            position: None,
+        });
+        let heading = Node::Heading(mq_markdown::Heading {
+            values: vec![inner_text.clone()],
+            position: None,
+            depth: 2,
+        });
+        let node = Node::Blockquote(mq_markdown::Blockquote {
+            values: vec![heading.clone()],
+            position: None,
+        });
+        let result = eval_selector(&node, &Selector::Recursive);
+        assert_eq!(
+            result,
+            RuntimeValue::Array(vec![
+                RuntimeValue::Markdown(inner_text, None),
+                RuntimeValue::Markdown(heading, None),
+            ])
+        );
     }
 
     #[rstest]

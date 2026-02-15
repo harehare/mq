@@ -66,6 +66,7 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     std_module!(json);
     std_module!(section);
     std_module!(test);
+    std_module!(table);
     std_module!(toml);
     std_module!(xml);
     std_module!(yaml);
@@ -98,6 +99,10 @@ impl<T: ModuleResolver> ModuleLoader<T> {
                 .map(|s| Cow::Owned(s.to_string()))
                 .unwrap_or_else(|| Cow::Borrowed("<unknown>")),
         }
+    }
+
+    pub fn get_module_path(&self, module_name: &str) -> Result<String, ModuleError> {
+        self.resolver.get_path(module_name)
     }
 
     #[cfg(feature = "debugger")]

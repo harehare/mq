@@ -6,13 +6,14 @@ use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::DefaultEngine;
 use rayon::prelude::*;
-use std::collections::VecDeque;
 use std::io::BufRead;
 use std::io::IsTerminal;
 use std::io::{self, BufWriter, Read, Write};
+use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
 use std::{fs, path::PathBuf};
+use which::which;
 
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
@@ -54,6 +55,9 @@ pub struct Cli {
     files: Option<Vec<PathBuf>>,
 }
 
+#[cfg(unix)]
+const UNIX_EXECUTABLE_BITS: u32 = 0o111;
+
 /// Represents the input format for processing.
 /// - Markdown: Standard Markdown parsing.
 /// - Mdx: MDX parsing.
@@ -80,13 +84,6 @@ enum OutputFormat {
     Text,
     Json,
     None,
-}
-
-#[derive(Clone, Debug, Default, clap::ValueEnum)]
-enum DocFormat {
-    #[default]
-    Markdown,
-    Text,
 }
 
 #[derive(Debug, Clone, Default, clap::ValueEnum)]
@@ -146,6 +143,7 @@ struct InputArgs {
     #[arg(long, default_value_t = false)]
     stream: bool,
 
+    /// Include the built-in JSON module
     #[arg(long = "json", default_value_t = false)]
     include_json: bool,
 
@@ -213,6 +211,10 @@ struct OutputArgs {
     /// Output to the specified file
     #[clap(short = 'o', long = "output", value_name = "FILE")]
     output_file: Option<PathBuf>,
+
+    /// Colorize markdown output
+    #[arg(short = 'C', long = "color-output", default_value_t = false)]
+    color_output: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -239,20 +241,6 @@ enum Commands {
         /// Path to the mq file to format
         files: Option<Vec<PathBuf>>,
     },
-    /// Show functions documentation for the query
-    Docs {
-        /// Specify additional module names to load for documentation
-        #[arg(short = 'M', long)]
-        module_names: Option<Vec<String>>,
-        /// Specify the documentation output format
-        #[arg(short = 'F', long, value_enum, default_value_t)]
-        format: DocFormat,
-    },
-    /// Check syntax errors in mq files
-    Check {
-        /// Path to the mq file to check
-        files: Vec<PathBuf>,
-    },
     /// Start a debug adapter for mq
     #[cfg(feature = "debugger")]
     Dap,
@@ -270,47 +258,97 @@ impl Cli {
         }
     }
 
-    /// Find all external commands (mq-* files in ~/.mq/bin)
+    /// Find all external commands (mq-* files in ~/.mq/bin and PATH)
     fn find_external_commands() -> Vec<String> {
-        let mut commands = Vec::new();
+        let mut seen = std::collections::HashSet::new();
 
-        if let Some(bin_dir) = Self::get_external_commands_dir()
-            && let Ok(entries) = fs::read_dir(bin_dir)
-        {
-            for entry in entries.flatten() {
-                if let Ok(file_name) = entry.file_name().into_string()
-                    && file_name.starts_with("mq-")
-                {
-                    // Remove "mq-" prefix to get the subcommand name
-                    let subcommand = file_name.strip_prefix("mq-").unwrap();
-                    commands.push(subcommand.to_string());
-                }
+        // Search ~/.mq/bin first
+        if let Some(bin_dir) = Self::get_external_commands_dir() {
+            Self::collect_mq_commands_from_dir(&bin_dir, &mut seen);
+        }
+
+        // Search PATH directories
+        if let Ok(path_var) = std::env::var("PATH") {
+            for dir in std::env::split_paths(&path_var) {
+                Self::collect_mq_commands_from_dir(&dir, &mut seen);
             }
         }
 
+        let mut commands: Vec<String> = seen.into_iter().collect();
         commands.sort();
         commands
     }
 
+    /// Collect mq-* command names from a directory.
+    fn collect_mq_commands_from_dir(dir: &Path, seen: &mut std::collections::HashSet<String>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                if let Ok(file_name) = entry.file_name().into_string()
+                    && file_name.starts_with("mq-")
+                    && Self::is_executable_file(&entry)
+                    && let Some(subcommand) = file_name.strip_prefix("mq-")
+                {
+                    let subcommand = Self::strip_executable_extension(subcommand);
+                    if !subcommand.is_empty() {
+                        seen.insert(subcommand);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Check if a directory entry is an executable file.
+    /// On Windows, checks for executable extensions (.exe, .cmd, .bat, .com).
+    /// On Unix, checks for the executable bit in file permissions.
+    fn is_executable_file(entry: &fs::DirEntry) -> bool {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            entry
+                .metadata()
+                .map(|m| m.is_file() && m.permissions().mode() & UNIX_EXECUTABLE_BITS != 0)
+                .unwrap_or(false)
+        }
+        #[cfg(windows)]
+        {
+            let path = entry.path();
+            let is_file = entry.metadata().map(|m| m.is_file()).unwrap_or(false);
+            is_file
+                && path.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
+                    ext.eq_ignore_ascii_case("exe")
+                        || ext.eq_ignore_ascii_case("cmd")
+                        || ext.eq_ignore_ascii_case("bat")
+                        || ext.eq_ignore_ascii_case("com")
+                })
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            entry.metadata().map(|m| m.is_file()).unwrap_or(false)
+        }
+    }
+
+    /// Strip known executable extensions on Windows. On Unix, returns the name as-is.
+    fn strip_executable_extension(name: &str) -> String {
+        if cfg!(windows) {
+            let path = Path::new(name);
+            match path.extension().and_then(|e| e.to_str()) {
+                Some("exe" | "cmd" | "bat" | "com") => {
+                    path.file_stem().unwrap_or_default().to_string_lossy().to_string()
+                }
+                _ => name.to_string(),
+            }
+        } else {
+            name.to_string()
+        }
+    }
+
     /// Execute an external subcommand
-    fn execute_external_command(&self, args: &[String]) -> miette::Result<()> {
+    fn execute_external_command(&self, command_path: PathBuf, args: &[String]) -> miette::Result<()> {
         if args.is_empty() {
             return Err(miette!("No subcommand specified"));
         }
 
         let subcommand = &args[0];
-        let bin_dir = Self::get_external_commands_dir()
-            .ok_or_else(|| miette!("External commands directory (~/.mq/bin) not found"))?;
-
-        let command_path = bin_dir.join(format!("mq-{}", subcommand));
-
-        if !command_path.exists() {
-            return Err(miette!(
-                "External subcommand 'mq-{}' not found in ~/.mq/bin\nSearched at: {}",
-                subcommand,
-                command_path.display()
-            ));
-        }
 
         // Check if the file is executable
         #[cfg(unix)]
@@ -357,8 +395,6 @@ impl Cli {
                 "  {} - Format mq files based on specified formatting options",
                 "fmt".green()
             ),
-            format!("  {} - Show functions documentation for the query", "docs".green()),
-            format!("  {} - Check syntax errors in mq files", "check".green()),
         ];
 
         #[cfg(feature = "debugger")]
@@ -367,7 +403,10 @@ impl Cli {
         let external_commands = Self::find_external_commands();
         if !external_commands.is_empty() {
             output.push("".to_string());
-            output.push(format!("{}", "External subcommands (from ~/.mq/bin):".bold().yellow()));
+            output.push(format!(
+                "{}",
+                "External subcommands (from ~/.mq/bin and PATH):".bold().yellow()
+            ));
             for cmd in external_commands {
                 output.push(format!("  {}", cmd.bright_yellow()));
             }
@@ -387,20 +426,29 @@ impl Cli {
         if !self.input.from_file
             && self.commands.is_none()
             && let Some(query_value) = &self.query
-            && let Some(bin_dir) = Self::get_external_commands_dir()
         {
             // Only treat as external command if query_value is a valid file name
             if query_value
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
             {
-                let command_path = bin_dir.join(format!("mq-{}", query_value));
-                if command_path.exists() {
+                let command_path = {
+                    let command_bin = format!("mq-{}", query_value);
+                    let command_path = Self::get_external_commands_dir().unwrap_or_default().join(&command_bin);
+
+                    if !command_path.exists() {
+                        which(&command_bin).ok()
+                    } else {
+                        Some(command_path)
+                    }
+                };
+
+                if let Some(command_path) = command_path {
                     let mut args = vec![query_value.clone()];
                     if let Some(files) = &self.files {
                         args.extend(files.iter().map(|p| p.to_string_lossy().to_string()));
                     }
-                    return self.execute_external_command(&args);
+                    return self.execute_external_command(command_path, &args);
                 }
             }
         }
@@ -454,59 +502,6 @@ impl Cli {
                 }
 
                 Ok(())
-            }
-            Some(Commands::Docs { module_names, format }) => self.docs(module_names, format),
-            Some(Commands::Check { files }) => {
-                let stdout = io::stdout();
-                let mut handle = BufWriter::new(stdout.lock());
-                let mut has_error = false;
-
-                for file in files {
-                    if !file.exists() {
-                        return Err(miette!("File not found: {}", file.display()));
-                    }
-
-                    let content = fs::read_to_string(file).into_diagnostic()?;
-                    let mut hir = mq_hir::Hir::default();
-                    hir.add_code(None, &content);
-
-                    let errors = hir.error_ranges();
-                    let warnings = hir.warning_ranges();
-
-                    if !errors.is_empty() || !warnings.is_empty() {
-                        has_error = true;
-                        writeln!(handle, "Checking: {}", file.display()).into_diagnostic()?;
-
-                        for (message, range) in errors {
-                            writeln!(
-                                handle,
-                                "  {}: {} at line {}, column {}",
-                                "Error".red().bold(),
-                                message,
-                                range.start.line,
-                                range.start.column
-                            )
-                            .into_diagnostic()?;
-                        }
-
-                        for (message, range) in warnings {
-                            writeln!(
-                                handle,
-                                "  {}: {} at line {}, column {}",
-                                "Warning".yellow().bold(),
-                                message,
-                                range.start.line,
-                                range.start.column
-                            )
-                            .into_diagnostic()?;
-                        }
-                        writeln!(handle).into_diagnostic()?;
-                    }
-                }
-
-                handle.flush().into_diagnostic()?;
-
-                if has_error { Err(miette!("")) } else { Ok(()) }
             }
             #[cfg(feature = "debugger")]
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
@@ -749,6 +744,11 @@ impl Cli {
             })
     }
 
+    /// Returns `true` if the `NO_COLOR` environment variable is set and non-empty.
+    fn is_no_color() -> bool {
+        std::env::var("NO_COLOR").is_ok_and(|v| !v.is_empty())
+    }
+
     #[inline(always)]
     fn write_ignore_pipe<W: Write>(handle: &mut W, data: &[u8]) -> miette::Result<()> {
         match handle.write_all(data) {
@@ -800,6 +800,10 @@ impl Cli {
             OutputFormat::Text => {
                 Self::write_ignore_pipe(&mut handle, markdown.to_text().as_bytes())?;
             }
+            OutputFormat::Markdown if self.output.color_output && !Self::is_no_color() => {
+                let theme = mq_markdown::ColorTheme::from_env();
+                Self::write_ignore_pipe(&mut handle, markdown.to_colored_string_with_theme(&theme).as_bytes())?;
+            }
             OutputFormat::Markdown => {
                 Self::write_ignore_pipe(&mut handle, markdown.to_string().as_bytes())?;
             }
@@ -818,95 +822,10 @@ impl Cli {
 
         Ok(())
     }
-
-    fn docs(&self, module_names: &Option<Vec<String>>, format: &DocFormat) -> Result<(), miette::Error> {
-        let mut hir = mq_hir::Hir::default();
-
-        if let Some(module_names) = module_names {
-            hir.builtin.disabled = true;
-
-            for module_name in module_names {
-                hir.add_code(None, &format!("include \"{}\"", module_name));
-            }
-        } else {
-            hir.add_code(None, "");
-        }
-
-        let symbols = hir
-            .symbols()
-            .sorted_by_key(|(_, symbol)| symbol.value.clone())
-            .filter_map(|(_, symbol)| match symbol {
-                mq_hir::Symbol {
-                    kind: mq_hir::SymbolKind::Function(params),
-                    value: Some(value),
-                    doc,
-                    ..
-                }
-                | mq_hir::Symbol {
-                    kind: mq_hir::SymbolKind::Macro(params),
-                    value: Some(value),
-                    doc,
-                    ..
-                } if !symbol.is_internal_function() => {
-                    let name = if symbol.is_deprecated() {
-                        format!("~~`{}`~~", value)
-                    } else {
-                        format!("`{}`", value)
-                    };
-                    let description = doc.iter().map(|(_, d)| d.to_string()).join("\n");
-                    let args = params.iter().map(|p| format!("`{}`", p.name)).join(", ");
-                    let example = format!("{}({})", value, params.iter().map(|p| p.name.as_str()).join(", "));
-
-                    Some([name, description, args, example])
-                }
-                _ => None,
-            })
-            .collect::<VecDeque<_>>();
-
-        match format {
-            DocFormat::Markdown => {
-                let mut doc_csv = symbols
-                    .iter()
-                    .map(|[name, description, args, example]| {
-                        mq_lang::RuntimeValue::String([name, description, args, example].into_iter().join("\t"))
-                    })
-                    .collect::<VecDeque<_>>();
-
-                doc_csv.push_front(mq_lang::RuntimeValue::String(
-                    ["Function Name", "Description", "Parameters", "Example"]
-                        .iter()
-                        .join("\t"),
-                ));
-
-                let mut engine = self.create_engine()?;
-                let doc_values = engine
-                    .eval(
-                        r#"include "csv" | tsv_parse(false) | csv_to_markdown_table()"#,
-                        mq_lang::raw_input(&doc_csv.iter().join("\n")).into_iter(),
-                    )
-                    .map_err(|e| *e)?;
-                self.print(doc_values)?;
-            }
-            DocFormat::Text => {
-                println!(
-                    "{}",
-                    symbols
-                        .iter()
-                        .map(|[name, description, args, _]| {
-                            let name = name.replace('`', "");
-                            let args = args.replace('`', "");
-                            format!("# {description}\ndef {name}({args})")
-                        })
-                        .join("\n\n")
-                );
-            }
-        }
-
-        Ok(())
-    }
 }
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use scopeguard::defer;
     use std::io::Write;
     use std::{fs::File, path::PathBuf};
@@ -1020,6 +939,32 @@ mod tests {
 
             assert!(cli.run().is_ok());
         }
+    }
+
+    #[test]
+    fn test_cli_color_output() {
+        let (_, temp_file_path) = create_file("test_color.md", "# test");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                color_output: true,
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path.clone()]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
     }
 
     #[test]
@@ -1142,7 +1087,7 @@ mod tests {
 
     #[test]
     fn test_find_external_commands() {
-        // This test will only pass if ~/.mq/bin exists and contains mq-* files
+        // find_external_commands searches ~/.mq/bin and PATH for mq-* files
         let commands = Cli::find_external_commands();
         // We can't assert specific commands, but we can check the function works
         assert!(commands.iter().all(|cmd| !cmd.is_empty()));
@@ -1155,6 +1100,119 @@ mod tests {
         if let Some(path) = dir {
             assert!(path.ends_with(".mq/bin") || path.ends_with(".mq\\bin"));
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_collect_mq_commands_from_dir() {
+        let temp_dir = std::env::temp_dir().join("mq-collect-test");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create test files: mq-foo, mq-bar, a non-mq file, and a non-executable mq file
+        fs::write(temp_dir.join("mq-foo"), "").expect("Failed to write file");
+        fs::write(temp_dir.join("mq-bar"), "").expect("Failed to write file");
+        fs::write(temp_dir.join("other-cmd"), "").expect("Failed to write file");
+        fs::write(temp_dir.join("mq-noexec"), "").expect("Failed to write file");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // Set executable bit on mq-foo and mq-bar, but not mq-noexec
+            fs::set_permissions(temp_dir.join("mq-foo"), fs::Permissions::from_mode(0o755))
+                .expect("Failed to set permissions");
+            fs::set_permissions(temp_dir.join("mq-bar"), fs::Permissions::from_mode(0o755))
+                .expect("Failed to set permissions");
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        Cli::collect_mq_commands_from_dir(&temp_dir, &mut seen);
+
+        assert_eq!(seen.len(), 2);
+        assert!(seen.contains("foo"));
+        assert!(seen.contains("bar"));
+        assert!(!seen.contains("other-cmd"));
+        assert!(!seen.contains("noexec"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_collect_mq_commands_from_dir_deduplicates() {
+        let dir1 = std::env::temp_dir().join("mq-dedup-test-1");
+        let dir2 = std::env::temp_dir().join("mq-dedup-test-2");
+        fs::create_dir_all(&dir1).expect("Failed to create test directory");
+        fs::create_dir_all(&dir2).expect("Failed to create test directory");
+
+        defer! {
+            if dir1.exists() {
+                std::fs::remove_dir_all(&dir1).ok();
+            }
+            if dir2.exists() {
+                std::fs::remove_dir_all(&dir2).ok();
+            }
+        }
+
+        // Same command in both directories
+        fs::write(dir1.join("mq-dup"), "").expect("Failed to write file");
+        fs::write(dir2.join("mq-dup"), "").expect("Failed to write file");
+        fs::write(dir2.join("mq-unique"), "").expect("Failed to write file");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(dir1.join("mq-dup"), fs::Permissions::from_mode(0o755))
+                .expect("Failed to set permissions");
+            fs::set_permissions(dir2.join("mq-dup"), fs::Permissions::from_mode(0o755))
+                .expect("Failed to set permissions");
+            fs::set_permissions(dir2.join("mq-unique"), fs::Permissions::from_mode(0o755))
+                .expect("Failed to set permissions");
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        Cli::collect_mq_commands_from_dir(&dir1, &mut seen);
+        Cli::collect_mq_commands_from_dir(&dir2, &mut seen);
+
+        assert_eq!(seen.len(), 2);
+        assert!(seen.contains("dup"));
+        assert!(seen.contains("unique"));
+    }
+
+    #[test]
+    fn test_collect_mq_commands_from_nonexistent_dir() {
+        let nonexistent = std::env::temp_dir().join("mq-nonexistent-dir");
+        let mut seen = std::collections::HashSet::new();
+        // Should not panic on nonexistent directory
+        Cli::collect_mq_commands_from_dir(&nonexistent, &mut seen);
+        assert!(seen.is_empty());
+    }
+
+    #[rstest]
+    #[case("foo", "foo")]
+    #[case("foo.exe", "foo.exe")]
+    #[case("foo.cmd", "foo.cmd")]
+    #[case("foo.bat", "foo.bat")]
+    #[case("foo.sh", "foo.sh")]
+    #[cfg(not(windows))]
+    fn test_strip_executable_extension_unix(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(Cli::strip_executable_extension(input), expected);
+    }
+
+    #[rstest]
+    #[case("foo.exe", "foo")]
+    #[case("foo.cmd", "foo")]
+    #[case("foo.bat", "foo")]
+    #[case("foo.com", "foo")]
+    #[case("foo", "foo")]
+    #[case("foo.sh", "foo.sh")]
+    #[case("foo.txt", "foo.txt")]
+    #[cfg(windows)]
+    fn test_strip_executable_extension_windows(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(Cli::strip_executable_extension(input), expected);
     }
 
     #[test]
@@ -1190,106 +1248,6 @@ mod tests {
         // Note: We can't easily test execute_external_command without modifying HOME
         // This test just verifies the command file was created correctly
         assert!(test_cmd_path.exists());
-    }
-
-    #[test]
-    fn test_cli_check_command_valid_file() {
-        let (_, temp_file_path) = create_file("test_check.mq", "def math(): 42;");
-        let temp_file_path_clone = temp_file_path.clone();
-
-        defer! {
-            if temp_file_path_clone.exists() {
-                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
-            }
-        }
-
-        let cli = Cli {
-            input: InputArgs::default(),
-            output: OutputArgs::default(),
-            commands: Some(Commands::Check {
-                files: vec![temp_file_path],
-            }),
-            query: None,
-            files: None,
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_ok());
-    }
-
-    #[test]
-    fn test_cli_check_command_invalid_file() {
-        let (_, temp_file_path) = create_file("test_check_invalid.mq", "def math(): 42; | unknown_var");
-        let temp_file_path_clone = temp_file_path.clone();
-
-        defer! {
-            if temp_file_path_clone.exists() {
-                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
-            }
-        }
-
-        let cli = Cli {
-            input: InputArgs::default(),
-            output: OutputArgs::default(),
-            commands: Some(Commands::Check {
-                files: vec![temp_file_path],
-            }),
-            query: None,
-            files: None,
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_err());
-    }
-
-    #[test]
-    fn test_cli_check_command_file_not_found() {
-        let cli = Cli {
-            input: InputArgs::default(),
-            output: OutputArgs::default(),
-            commands: Some(Commands::Check {
-                files: vec![PathBuf::from("nonexistent.mq")],
-            }),
-            query: None,
-            files: None,
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_err());
-    }
-
-    #[test]
-    fn test_docs_command_no_modules() {
-        let cli = Cli {
-            input: InputArgs::default(),
-            output: OutputArgs::default(),
-            commands: Some(Commands::Docs {
-                module_names: None,
-                format: DocFormat::Markdown,
-            }),
-            query: None,
-            files: None,
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_ok());
-    }
-
-    #[test]
-    fn test_docs_command_with_modules() {
-        let cli = Cli {
-            input: InputArgs::default(),
-            output: OutputArgs::default(),
-            commands: Some(Commands::Docs {
-                module_names: Some(vec!["string".to_string()]),
-                format: DocFormat::Markdown,
-            }),
-            query: None,
-            files: None,
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_ok());
     }
 
     #[test]
@@ -2012,5 +1970,287 @@ mod tests {
         };
 
         assert!(cli.run().is_ok());
+    }
+
+    #[rstest]
+    #[case("mq-exec-owner", 0o700, true)]
+    #[case("mq-exec-group", 0o010, true)]
+    #[case("mq-exec-other", 0o001, true)]
+    #[case("mq-exec-all", 0o755, true)]
+    #[case("mq-noexec-rw", 0o644, false)]
+    #[case("mq-noexec-ro", 0o444, false)]
+    #[cfg(unix)]
+    fn test_is_executable_file_unix(#[case] filename: &str, #[case] mode: u32, #[case] expected: bool) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = std::env::temp_dir().join(format!("mq-exec-test-{filename}"));
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        let file_path = temp_dir.join(filename);
+        fs::write(&file_path, "#!/bin/sh\necho test").expect("Failed to write file");
+        fs::set_permissions(&file_path, fs::Permissions::from_mode(mode)).expect("Failed to set permissions");
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name().to_str() == Some(filename))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            Cli::is_executable_file(&entry),
+            expected,
+            "File with mode {mode:#o} should return {expected}"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_is_executable_file_unix_directory() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = std::env::temp_dir().join("mq-dir-test-unix");
+        let sub_dir = temp_dir.join("mq-subdir");
+        fs::create_dir_all(&sub_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        fs::set_permissions(&sub_dir, fs::Permissions::from_mode(0o755)).expect("Failed to set permissions");
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-subdir")
+            .unwrap()
+            .unwrap();
+
+        assert!(!Cli::is_executable_file(&entry), "Directory should return false");
+    }
+
+    #[rstest]
+    #[case("mq-test.exe", true)]
+    #[case("mq-test.cmd", true)]
+    #[case("mq-test.bat", true)]
+    #[case("mq-test.com", true)]
+    #[case("mq-test.EXE", true)]
+    #[case("mq-test.Bat", true)]
+    #[case("mq-test.txt", false)]
+    #[case("mq-test.sh", false)]
+    #[case("mq-test", false)]
+    #[cfg(windows)]
+    fn test_is_executable_file_windows(#[case] filename: &str, #[case] expected: bool) {
+        let temp_dir = std::env::temp_dir().join(format!("mq-exec-test-win-{}", filename.replace('.', "-")));
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        let file_path = temp_dir.join(filename);
+        fs::write(&file_path, "test").expect("Failed to write file");
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name().to_str() == Some(filename))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            Cli::is_executable_file(&entry),
+            expected,
+            "File '{filename}' should return {expected}"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_executable_file_windows_directory() {
+        let temp_dir = std::env::temp_dir().join("mq-dir-test-windows");
+        let sub_dir = temp_dir.join("mq-subdir");
+        fs::create_dir_all(&sub_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-subdir")
+            .unwrap()
+            .unwrap();
+
+        assert!(!Cli::is_executable_file(&entry), "Directory should return false");
+    }
+
+    #[test]
+    #[cfg(not(any(unix, windows)))]
+    fn test_is_executable_file_other_os() {
+        let temp_dir = std::env::temp_dir().join("mq-other-test");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        let file = temp_dir.join("mq-test");
+        fs::write(&file, "test").expect("Failed to write file");
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-test")
+            .unwrap()
+            .unwrap();
+
+        assert!(
+            Cli::is_executable_file(&entry),
+            "Regular file should return true on other OS"
+        );
+    }
+
+    #[test]
+    #[cfg(not(any(unix, windows)))]
+    fn test_is_executable_file_other_os_directory() {
+        let temp_dir = std::env::temp_dir().join("mq-dir-other-test");
+        let sub_dir = temp_dir.join("mq-subdir");
+        fs::create_dir_all(&sub_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        let entry = fs::read_dir(&temp_dir)
+            .expect("Failed to read dir")
+            .find(|e| e.as_ref().unwrap().file_name() == "mq-subdir")
+            .unwrap()
+            .unwrap();
+
+        assert!(
+            !Cli::is_executable_file(&entry),
+            "Directory should return false on other OS"
+        );
+    }
+
+    /// Test that Windows deduplicates commands with different executable extensions.
+    /// e.g., mq-foo.bat and mq-foo.exe in the same directory should produce only "foo".
+    #[test]
+    #[cfg(windows)]
+    fn test_collect_mq_commands_deduplicates_windows_extensions() {
+        let temp_dir = std::env::temp_dir().join("mq-win-dedup-ext-test");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create the same subcommand with multiple Windows executable extensions
+        fs::write(temp_dir.join("mq-foo.exe"), "test").expect("Failed to write file");
+        fs::write(temp_dir.join("mq-foo.bat"), "@echo test").expect("Failed to write file");
+        fs::write(temp_dir.join("mq-foo.cmd"), "@echo test").expect("Failed to write file");
+        fs::write(temp_dir.join("mq-bar.exe"), "test").expect("Failed to write file");
+
+        let mut seen = std::collections::HashSet::new();
+        Cli::collect_mq_commands_from_dir(&temp_dir, &mut seen);
+
+        assert_eq!(seen.len(), 2, "Should have exactly 2 unique commands");
+        assert!(seen.contains("foo"), "Should contain 'foo'");
+        assert!(seen.contains("bar"), "Should contain 'bar'");
+    }
+
+    /// Test that Windows deduplicates commands with different extensions across directories.
+    /// e.g., mq-foo.bat in dir1 and mq-foo.exe in dir2 should produce only "foo".
+    #[test]
+    #[cfg(windows)]
+    fn test_collect_mq_commands_deduplicates_across_dirs_windows() {
+        let dir1 = std::env::temp_dir().join("mq-win-cross-dedup-1");
+        let dir2 = std::env::temp_dir().join("mq-win-cross-dedup-2");
+        fs::create_dir_all(&dir1).expect("Failed to create test directory");
+        fs::create_dir_all(&dir2).expect("Failed to create test directory");
+
+        defer! {
+            if dir1.exists() {
+                std::fs::remove_dir_all(&dir1).ok();
+            }
+            if dir2.exists() {
+                std::fs::remove_dir_all(&dir2).ok();
+            }
+        }
+
+        fs::write(dir1.join("mq-foo.bat"), "@echo test").expect("Failed to write file");
+        fs::write(dir2.join("mq-foo.exe"), "test").expect("Failed to write file");
+        fs::write(dir2.join("mq-unique.cmd"), "@echo test").expect("Failed to write file");
+
+        let mut seen = std::collections::HashSet::new();
+        Cli::collect_mq_commands_from_dir(&dir1, &mut seen);
+        Cli::collect_mq_commands_from_dir(&dir2, &mut seen);
+
+        assert_eq!(seen.len(), 2, "Should have exactly 2 unique commands");
+        assert!(seen.contains("foo"), "Should contain 'foo'");
+        assert!(seen.contains("unique"), "Should contain 'unique'");
+    }
+
+    /// Test that collect_mq_commands_from_dir handles an empty directory correctly.
+    #[test]
+    fn test_collect_mq_commands_from_empty_dir() {
+        let temp_dir = std::env::temp_dir().join("mq-empty-dir-test");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        Cli::collect_mq_commands_from_dir(&temp_dir, &mut seen);
+        assert!(seen.is_empty(), "Empty directory should yield no commands");
+    }
+
+    /// Test that files without the mq- prefix are ignored even if executable.
+    #[test]
+    fn test_collect_mq_commands_ignores_non_mq_prefix() {
+        let temp_dir = std::env::temp_dir().join("mq-prefix-test");
+        fs::create_dir_all(&temp_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create files without mq- prefix
+        fs::write(temp_dir.join("foo"), "test").expect("Failed to write file");
+        fs::write(temp_dir.join("bar-mq"), "test").expect("Failed to write file");
+        fs::write(temp_dir.join("mqfoo"), "test").expect("Failed to write file");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for name in &["foo", "bar-mq", "mqfoo"] {
+                fs::set_permissions(temp_dir.join(name), fs::Permissions::from_mode(0o755))
+                    .expect("Failed to set permissions");
+            }
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        Cli::collect_mq_commands_from_dir(&temp_dir, &mut seen);
+        assert!(seen.is_empty(), "Files without mq- prefix should be ignored");
     }
 }

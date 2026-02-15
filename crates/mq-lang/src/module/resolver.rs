@@ -6,6 +6,7 @@ const DEFAULT_PATHS: [&str; 4] = ["$HOME/.mq", "$ORIGIN/../lib/mq", "$ORIGIN/../
 
 pub trait ModuleResolver: Clone + Default {
     fn resolve(&self, module_name: &str) -> Result<String, ModuleError>;
+    fn get_path(&self, module_name: &str) -> Result<String, ModuleError>;
     fn search_paths(&self) -> Vec<PathBuf>;
     fn set_search_paths(&mut self, paths: Vec<PathBuf>);
 }
@@ -19,7 +20,9 @@ pub fn module_name(name: &str) -> Cow<'static, str> {
         "xml" => Cow::Borrowed("xml.mq"),
         "toml" => Cow::Borrowed("toml.mq"),
         "test" => Cow::Borrowed("test.mq"),
+        "section" => Cow::Borrowed("section.mq"),
         "fuzzy" => Cow::Borrowed("fuzzy.mq"),
+        "table" => Cow::Borrowed("table.mq"),
         _ => Cow::Owned(format!("{}.mq", name)),
     }
 }
@@ -34,6 +37,11 @@ impl ModuleResolver for LocalFsModuleResolver {
         let file_path =
             search(module_name, &self.paths).map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))?;
         fs::read_to_string(&file_path).map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))
+    }
+
+    fn get_path(&self, module_name: &str) -> Result<String, ModuleError> {
+        let file_path = search(module_name, &self.paths)?;
+        Ok(file_path.to_str().unwrap_or_default().to_string())
     }
 
     fn search_paths(&self) -> Vec<PathBuf> {

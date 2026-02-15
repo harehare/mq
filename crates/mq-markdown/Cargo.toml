@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-markdown"
 readme = "../../README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.13"
+version = "0.5.15"
 
 [dependencies]
 ego-tree = {workspace = true, optional = true}
@@ -27,6 +27,7 @@ smol_str = {workspace = true}
 rstest = {workspace = true}
 
 [features]
+color = []
 default = ["std"]
 html-to-markdown = ["dep:scraper", "dep:ego-tree", "dep:serde_yaml"]
 json = ["dep:serde", "dep:serde_json", "smol_str/serde"]
