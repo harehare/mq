@@ -126,6 +126,14 @@ impl InferenceContext {
 
     /// Sets the type of a symbol
     pub fn set_symbol_type(&mut self, symbol: SymbolId, ty: Type) {
+        // If the symbol already has a type variable, bind it to the new type
+        // so that existing constraints referencing the old variable still resolve correctly
+        if let Some(Type::Var(old_var)) = self.symbol_types.get(&symbol) {
+            let old_var = *old_var;
+            if !matches!(ty, Type::Var(v) if v == old_var) {
+                self.bind_type_var(old_var, ty.clone());
+            }
+        }
         self.symbol_types.insert(symbol, ty);
     }
 

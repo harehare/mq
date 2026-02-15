@@ -1729,8 +1729,49 @@ impl Hir {
                         parent,
                     });
                 }
+                // Literal patterns: create a literal child symbol for type checking
+                mq_lang::TokenKind::StringLiteral(s) => {
+                    self.add_symbol(Symbol {
+                        value: Some(s.as_str().into()),
+                        kind: SymbolKind::String,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
+                mq_lang::TokenKind::NumberLiteral(n) => {
+                    self.add_symbol(Symbol {
+                        value: Some(n.to_string().into()),
+                        kind: SymbolKind::Number,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
+                mq_lang::TokenKind::BoolLiteral(b) => {
+                    self.add_symbol(Symbol {
+                        value: Some(b.to_string().into()),
+                        kind: SymbolKind::Boolean,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
+                mq_lang::TokenKind::None => {
+                    self.add_symbol(Symbol {
+                        value: Some("none".into()),
+                        kind: SymbolKind::None,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
                 _ => {
-                    // For other token types (literals, wildcards), no variable is introduced
+                    // For other token types (wildcards), no variable or literal is introduced
                 }
             }
         }
