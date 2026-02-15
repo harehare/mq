@@ -34,7 +34,9 @@ fn test_error_location_array_type_mismatch() {
 
     // Check that the error is a type mismatch
     match e {
-        TypeError::Mismatch { expected, found, span } => {
+        TypeError::Mismatch {
+            expected, found, span, ..
+        } => {
             println!("Expected: {}, Found: {}, Span: {:?}", expected, found, span);
         }
         _ => {

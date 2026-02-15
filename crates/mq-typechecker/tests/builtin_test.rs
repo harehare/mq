@@ -21,7 +21,7 @@ fn check_types(code: &str) -> Vec<TypeError> {
     checker.check(&hir)
 }
 
-// MATHEMATICAL FUNCTIONS
+// Mathematical Functions
 
 #[rstest]
 #[case::abs("abs(42)", true)]
@@ -232,9 +232,7 @@ fn test_string_encoding_functions(#[case] code: &str, #[case] should_succeed: bo
     );
 }
 
-// ============================================================================
-// ARRAY FUNCTIONS
-// ============================================================================
+// Array Functions
 
 #[rstest]
 #[case::flatten("flatten([[1, 2], [3, 4]])", true)]
@@ -284,9 +282,7 @@ fn test_array_creation_functions(#[case] code: &str, #[case] should_succeed: boo
     );
 }
 
-// ============================================================================
-// DICTIONARY FUNCTIONS
-// ============================================================================
+// Dictionary Functions
 
 #[rstest]
 #[case::keys("keys({\"a\": 1, \"b\": 2})", true)]
@@ -319,9 +315,7 @@ fn test_dict_manipulation_functions(#[case] code: &str, #[case] should_succeed: 
     );
 }
 
-// ============================================================================
-// TYPE CONVERSION FUNCTIONS
-// ============================================================================
+// Type Conversion Functions
 
 #[rstest]
 #[case::to_number("to_number(\"42\")", true)]
@@ -339,9 +333,7 @@ fn test_type_conversion_functions(#[case] code: &str, #[case] should_succeed: bo
     );
 }
 
-// ============================================================================
-// DATE/TIME FUNCTIONS
-// ============================================================================
+// Date/Time Functions
 
 #[rstest]
 #[case::now("now()", true)]
@@ -358,9 +350,7 @@ fn test_datetime_functions(#[case] code: &str, #[case] should_succeed: bool) {
     );
 }
 
-// ============================================================================
-// I/O AND UTILITY FUNCTIONS
-// ============================================================================
+// I/O And Utility Functions
 
 #[rstest]
 #[case::print("print(42)", true)]
@@ -377,9 +367,7 @@ fn test_io_functions(#[case] code: &str, #[case] should_succeed: bool) {
     );
 }
 
-// ============================================================================
-// COMPLEX EXPRESSIONS WITH BUILTINS
-// ============================================================================
+// Complex Expressions With Builtins
 
 #[rstest]
 #[case::chained_string_ops("upcase(trim(\"  hello  \"))", true)]
@@ -397,9 +385,7 @@ fn test_complex_builtin_expressions(#[case] code: &str, #[case] should_succeed: 
     );
 }
 
-// ============================================================================
-// PIPE TYPE PROPAGATION
-// ============================================================================
+// Pipe Type Propagation
 
 #[rstest]
 #[case::string_to_upcase("\"hello\" | upcase", true)]
@@ -419,9 +405,7 @@ fn test_pipe_type_propagation(#[case] code: &str, #[case] should_succeed: bool) 
     );
 }
 
-// ============================================================================
-// TYPE ERROR CASES
-// ============================================================================
+// Type Error Cases
 
 // --- Arithmetic error cases ---
 #[rstest]
