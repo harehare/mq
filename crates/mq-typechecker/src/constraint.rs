@@ -60,7 +60,8 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
             | SymbolKind::Variable
             | SymbolKind::Parameter
             | SymbolKind::PatternVariable
-            | SymbolKind::Function(_) => {
+            | SymbolKind::Function(_)
+            | SymbolKind::Macro(_) => {
                 generate_symbol_constraints(hir, symbol_id, symbol.kind.clone(), ctx);
             }
             _ => {}
@@ -81,23 +82,36 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
 
     // Pass 3: Process all other symbols (operators, calls, etc.) except Block
     // These can now reference the concrete types from pass 1 and piped inputs from pass 2
-    for (symbol_id, symbol) in hir.symbols() {
-        // Skip builtin symbols
-        if hir.is_builtin_symbol(symbol) {
-            continue;
-        }
-
-        // Skip if already processed in pass 1
-        if ctx.get_symbol_type(symbol_id).is_some() {
-            continue;
-        }
-
-        // Skip Block — handled in pass 4 after children are typed
-        if matches!(symbol.kind, SymbolKind::Block) {
-            continue;
-        }
-
-        generate_symbol_constraints(hir, symbol_id, symbol.kind.clone(), ctx);
+    // Process in reverse order so children (higher IDs) are typed before parents (lower IDs)
+    let pass3_symbols: Vec<(SymbolId, SymbolKind)> = hir
+        .symbols()
+        .filter(|(_, symbol)| {
+            if hir.is_builtin_symbol(symbol) {
+                return false;
+            }
+            // Skip kinds already processed in pass 1
+            if matches!(
+                symbol.kind,
+                SymbolKind::Number
+                    | SymbolKind::String
+                    | SymbolKind::Boolean
+                    | SymbolKind::Symbol
+                    | SymbolKind::None
+                    | SymbolKind::Variable
+                    | SymbolKind::Parameter
+                    | SymbolKind::PatternVariable
+                    | SymbolKind::Function(_)
+                    | SymbolKind::Macro(_)
+                    | SymbolKind::Block
+            ) {
+                return false;
+            }
+            true
+        })
+        .map(|(id, symbol)| (id, symbol.kind.clone()))
+        .collect();
+    for (symbol_id, kind) in pass3_symbols.into_iter().rev() {
+        generate_symbol_constraints(hir, symbol_id, kind, ctx);
     }
 
     // Pass 4: Process Block symbols (pipe chains)
@@ -220,6 +234,34 @@ fn resolve_builtin_call(
         let ret_ty = Type::Var(ctx.fresh_var());
         ctx.set_symbol_type(symbol_id, ret_ty);
     }
+}
+
+/// Determines the type of a Pattern symbol from its literal children.
+///
+/// Pattern types:
+/// - Has a Number child → Number
+/// - Has a String child → String
+/// - Has a Boolean child → Bool
+/// - Has a Symbol child → Symbol
+/// - Has a None child → None
+/// - Otherwise → fresh type variable (wildcard or variable pattern)
+fn resolve_pattern_type(hir: &Hir, pattern_id: SymbolId, ctx: &mut InferenceContext) -> Type {
+    let children = get_children(hir, pattern_id);
+    for &child_id in &children {
+        if let Some(child_symbol) = hir.symbol(child_id) {
+            match child_symbol.kind {
+                SymbolKind::Number => return Type::Number,
+                SymbolKind::String => return Type::String,
+                SymbolKind::Boolean => return Type::Bool,
+                SymbolKind::Symbol => return Type::Symbol,
+                SymbolKind::None => return Type::None,
+                SymbolKind::Array => return ctx.get_or_create_symbol_type(child_id),
+                _ => {}
+            }
+        }
+    }
+    // Wildcard or variable pattern - compatible with any type
+    Type::Var(ctx.fresh_var())
 }
 
 /// Generates constraints for a single symbol
@@ -635,8 +677,27 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
         }
 
         SymbolKind::While => {
-            let ty_var = ctx.fresh_var();
-            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            // While loop: condition must be Bool, result type from body
+            let children = get_children(hir, symbol_id);
+            let range = get_symbol_range(hir, symbol_id);
+
+            if !children.is_empty() {
+                // First child is the condition
+                let cond_ty = ctx.get_or_create_symbol_type(children[0]);
+                ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range));
+
+                // Result type comes from the body (last child after condition)
+                if children.len() > 1 {
+                    let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
+                    ctx.set_symbol_type(symbol_id, body_ty);
+                } else {
+                    let ty_var = ctx.fresh_var();
+                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                }
+            } else {
+                let ty_var = ctx.fresh_var();
+                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            }
         }
 
         SymbolKind::Foreach => {
@@ -671,23 +732,54 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             }
         }
 
+        SymbolKind::MatchArm | SymbolKind::Pattern => {
+            // These are handled by the Match handler below.
+            // Assign a fresh type variable as default.
+            let ty_var = ctx.fresh_var();
+            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+        }
+
         SymbolKind::Match => {
             // All match arms should have the same type
+            // Pattern types should be compatible with the match expression type
             let children = get_children(hir, symbol_id);
             let range = get_symbol_range(hir, symbol_id);
 
             if children.len() > 1 {
                 // First child is the match expression, rest are arms
+                let match_expr_ty = ctx.get_or_create_symbol_type(children[0]);
                 let arm_children: Vec<_> = children[1..].to_vec();
 
                 if !arm_children.is_empty() {
                     let result_ty_var = ctx.fresh_var();
                     let result_ty = Type::Var(result_ty_var);
 
-                    // Unify all arm result types
                     for &arm_id in &arm_children {
-                        let arm_ty = ctx.get_or_create_symbol_type(arm_id);
-                        ctx.add_constraint(Constraint::Equal(result_ty.clone(), arm_ty, range));
+                        let arm_children_inner = get_children(hir, arm_id);
+
+                        // Separate pattern and body children
+                        let mut body_ty = None;
+                        for &arm_child_id in &arm_children_inner {
+                            if let Some(arm_child_symbol) = hir.symbol(arm_child_id) {
+                                if matches!(arm_child_symbol.kind, SymbolKind::Pattern) {
+                                    // Determine pattern type from its literal children
+                                    let pattern_ty = resolve_pattern_type(hir, arm_child_id, ctx);
+                                    ctx.add_constraint(Constraint::Equal(match_expr_ty.clone(), pattern_ty, range));
+                                } else {
+                                    // Track the last non-Pattern child as the body
+                                    body_ty = Some(ctx.get_or_create_symbol_type(arm_child_id));
+                                }
+                            }
+                        }
+
+                        // MatchArm's type = body type; unify with result type
+                        if let Some(body_ty) = body_ty {
+                            ctx.set_symbol_type(arm_id, body_ty.clone());
+                            ctx.add_constraint(Constraint::Equal(result_ty.clone(), body_ty, range));
+                        } else {
+                            let arm_ty = ctx.get_or_create_symbol_type(arm_id);
+                            ctx.add_constraint(Constraint::Equal(result_ty.clone(), arm_ty, range));
+                        }
                     }
 
                     ctx.set_symbol_type(symbol_id, result_ty);
@@ -707,9 +799,26 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             let range = get_symbol_range(hir, symbol_id);
 
             if children.len() >= 2 {
-                // First child is try body, second is catch body
+                // First child is try body
                 let try_ty = ctx.get_or_create_symbol_type(children[0]);
-                let catch_ty = ctx.get_or_create_symbol_type(children[1]);
+
+                // Second child may be a Catch symbol wrapping the catch body
+                let catch_ty = if let Some(catch_symbol) = hir.symbol(children[1])
+                    && matches!(catch_symbol.kind, SymbolKind::Catch)
+                {
+                    // Look into Catch's children to get the actual catch body type
+                    let catch_children = get_children(hir, children[1]);
+                    if let Some(&last_child) = catch_children.last() {
+                        let body_ty = ctx.get_or_create_symbol_type(last_child);
+                        ctx.set_symbol_type(children[1], body_ty.clone());
+                        body_ty
+                    } else {
+                        ctx.get_or_create_symbol_type(children[1])
+                    }
+                } else {
+                    ctx.get_or_create_symbol_type(children[1])
+                };
+
                 ctx.add_constraint(Constraint::Equal(try_ty.clone(), catch_ty, range));
                 ctx.set_symbol_type(symbol_id, try_ty);
             } else if !children.is_empty() {
@@ -721,9 +830,77 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             }
         }
 
-        // Other kinds
+        // Macro definitions (same type logic as Function)
+        SymbolKind::Macro(params) => {
+            let param_tys: Vec<Type> = params.iter().map(|_| Type::Var(ctx.fresh_var())).collect();
+            let ret_ty = Type::Var(ctx.fresh_var());
+            let func_ty = Type::function(param_tys.clone(), ret_ty.clone());
+            ctx.set_symbol_type(symbol_id, func_ty);
+
+            // Bind parameter types to their parameter symbols
+            let children = get_children(hir, symbol_id);
+            let param_children: Vec<SymbolId> = children
+                .iter()
+                .filter(|&&child_id| {
+                    hir.symbol(child_id)
+                        .map(|s| matches!(s.kind, SymbolKind::Parameter))
+                        .unwrap_or(false)
+                })
+                .copied()
+                .collect();
+            for (param_sym, param_ty) in param_children.iter().zip(param_tys.iter()) {
+                let sym_ty = ctx.get_or_create_symbol_type(*param_sym);
+                let range = get_symbol_range(hir, *param_sym);
+                ctx.add_constraint(Constraint::Equal(sym_ty, param_ty.clone(), range));
+            }
+
+            // Connect macro body's type to the return type
+            let body_children: Vec<SymbolId> = children
+                .iter()
+                .filter(|&&child_id| {
+                    hir.symbol(child_id)
+                        .map(|s| !matches!(s.kind, SymbolKind::Parameter))
+                        .unwrap_or(false)
+                })
+                .copied()
+                .collect();
+            if let Some(&last_body) = body_children.last() {
+                let body_ty = ctx.get_or_create_symbol_type(last_body);
+                let range = get_symbol_range(hir, symbol_id);
+                ctx.add_constraint(Constraint::Equal(ret_ty, body_ty, range));
+            }
+        }
+
+        // Dynamic function calls
+        SymbolKind::CallDynamic => {
+            let children = get_children(hir, symbol_id);
+            if !children.is_empty() {
+                let callable_ty = ctx.get_or_create_symbol_type(children[0]);
+                let arg_tys: Vec<Type> = children[1..]
+                    .iter()
+                    .map(|&arg_id| ctx.get_or_create_symbol_type(arg_id))
+                    .collect();
+                let range = get_symbol_range(hir, symbol_id);
+
+                // Build the expected function type and unify with the callable
+                let ret_ty = Type::Var(ctx.fresh_var());
+                let expected_func_ty = Type::function(arg_tys, ret_ty.clone());
+                ctx.add_constraint(Constraint::Equal(callable_ty, expected_func_ty, range));
+                ctx.set_symbol_type(symbol_id, ret_ty);
+            } else {
+                let ty_var = ctx.fresh_var();
+                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            }
+        }
+
+        // Selector, QualifiedAccess, and other kinds that don't need deep type checking
+        SymbolKind::Selector | SymbolKind::QualifiedAccess => {
+            let ty_var = ctx.fresh_var();
+            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+        }
+
+        // Inert kinds: keywords, identifiers, arguments, imports, modules, etc.
         _ => {
-            // Default: assign a fresh type variable
             let ty_var = ctx.fresh_var();
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }

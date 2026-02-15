@@ -297,6 +297,128 @@ fn test_module_imports() {
     println!("Module import result: {:?}", result);
 }
 
+// While Loop
+
+#[test]
+fn test_while_loop() {
+    assert!(check_types("while (true): 1;").is_empty());
+}
+
+#[test]
+fn test_while_condition_must_be_bool() {
+    let errors = check_types("while (42): 1;");
+    assert!(!errors.is_empty(), "while with non-bool condition should fail");
+}
+
+// Macro Definition
+
+#[test]
+fn test_macro_definition() {
+    assert!(check_types("macro inc(x): x + 1;").is_empty());
+}
+
+#[test]
+fn test_macro_with_multiple_params() {
+    assert!(check_types("macro add(x, y): x + y;").is_empty());
+}
+
+// User-Defined Function Type Checking
+
+#[test]
+fn test_user_function_arg_type_mismatch() {
+    // add expects both args to be the same type (due to +)
+    let result = check_types(r#"def add(x, y): x + y; | add(1, "hello")"#);
+    println!("User function arg type mismatch: {:?}", result);
+    assert!(!result.is_empty(), "Expected type error for add(number, string)");
+}
+
+#[test]
+fn test_user_function_return_type_propagation() {
+    // get_num returns number, so get_num() + "hello" should fail
+    let result = check_types(r#"def get_num(): 42; | get_num() + "hello""#);
+    println!("Return type propagation: {:?}", result);
+    assert!(
+        !result.is_empty(),
+        "Expected type error for number + string via return type"
+    );
+}
+
+#[test]
+fn test_user_function_chained_calls() {
+    // Both functions work on numbers, should succeed
+    let result = check_types(r#"def double(x): x + x; | def negate(x): 0 - x; | double(negate(1))"#);
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(result.is_empty(), "Chained numeric function calls should succeed");
+}
+
+#[test]
+fn test_user_function_wrong_return_type_usage() {
+    // greet returns string, greet() + 1 should fail (string + number has no overload)
+    let result = check_types(r#"def greet(): "hello"; | greet() + 1"#);
+    println!("Wrong return type usage: {:?}", result);
+    assert!(!result.is_empty(), "Expected type error for string_return + number");
+}
+
+#[test]
+fn test_user_function_recursive_type_inference() {
+    // Recursive function should infer types correctly
+    let result = check_types(
+        r#"
+        def factorial(n):
+            if (n == 0):
+                1
+            else:
+                n * factorial(n - 1)
+            ;
+        ;
+    "#,
+    );
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(result.is_empty(), "Recursive factorial function should type check");
+}
+
+// Pipe Chains in Function Bodies
+
+#[test]
+fn test_pipe_in_function_body() {
+    // Pipe chain inside function body should work
+    let result = check_types("def f(x): x | x;");
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(result.is_empty(), "Pipe in function body should succeed");
+}
+
+#[test]
+fn test_pipe_chain_in_function_body() {
+    // Multiple pipes in function body
+    let result = check_types(
+        r#"
+        def process(x):
+            let y = x |
+            let z = y |
+            z
+        ;
+    "#,
+    );
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(result.is_empty(), "Pipe chain in function body should succeed");
+}
+
+// Try/Catch Type Mismatch
+
+#[test]
+fn test_try_catch_type_mismatch() {
+    let result = check_types(r#"try: 42 catch: "string";"#);
+    assert!(!result.is_empty(), "try/catch with different types should fail");
+}
+
 // Type Inference Verification
 
 #[test]
