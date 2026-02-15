@@ -9,7 +9,7 @@ use std::collections::HashSet;
 /// Converts a Range to a simplified miette::SourceSpan for error reporting.
 /// Note: This creates an approximate span based on line/column information.
 /// For accurate byte-level spans, the original source text would be needed.
-fn range_to_span(range: &mq_lang::Range) -> miette::SourceSpan {
+pub fn range_to_span(range: &mq_lang::Range) -> miette::SourceSpan {
     // Create an approximate offset based on line and column
     // This is a simple heuristic: assume average line length of 80 chars
     let line_offset = (range.start.line.saturating_sub(1) as usize) * 80;
@@ -71,6 +71,7 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
                     var: var_ty.to_string(),
                     ty: resolved_ty.to_string(),
                     span: range.as_ref().map(range_to_span),
+                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
                 });
                 return;
             }
@@ -95,6 +96,7 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
                     expected: params1.len(),
                     found: params2.len(),
                     span: range.as_ref().map(range_to_span),
+                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
                 });
                 return;
             }
@@ -117,6 +119,7 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
                 expected: resolved_t1.to_string(),
                 found: resolved_t2.to_string(),
                 span: range.as_ref().map(range_to_span),
+                location: range.as_ref().map(|r| (r.start.line, r.start.column)),
             });
         }
     }

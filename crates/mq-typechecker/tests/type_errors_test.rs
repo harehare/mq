@@ -21,10 +21,6 @@ fn check_types(code: &str) -> Vec<TypeError> {
     checker.check(&hir)
 }
 
-// ============================================================================
-// Type Error Detection Tests
-// ============================================================================
-
 #[test]
 fn test_binary_op_type_mismatch() {
     let result = check_types(r#"1 + "string""#);
@@ -107,10 +103,7 @@ fn test_success_homogeneous_dict() {
     assert!(check_types(r#"{"a": 1, "b": 2}"#).is_empty());
 }
 
-// ============================================================================
 // Demonstration: How to use the typechecker programmatically
-// ============================================================================
-
 #[test]
 fn test_inspect_inferred_types() {
     let code = "def add(a, b): a + b;";
@@ -150,10 +143,7 @@ fn test_inspect_type_variables() {
     }
 }
 
-// ============================================================================
-// Documentation: Current Implementation Status
-// ============================================================================
-
+/// Documentation: Current Implementation Status
 /// Current implementation status of the type checker:
 ///
 /// Implemented:

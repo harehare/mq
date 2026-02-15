@@ -2,6 +2,7 @@
 
 use crate::infer::InferenceContext;
 use crate::types::{Type, TypeVarId};
+use crate::unify::range_to_span;
 use mq_hir::{Hir, SymbolId, SymbolKind};
 use std::fmt;
 
@@ -174,7 +175,8 @@ fn resolve_builtin_call(
                     .join(", ")
             ),
             right: "no matching overload".to_string(),
-            span: None,
+            span: range.as_ref().map(range_to_span),
+            location: range.as_ref().map(|r| (r.start.line, r.start.column)),
         });
         let ty_var = ctx.fresh_var();
         ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
@@ -290,11 +292,8 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                                 ctx.add_error(crate::TypeError::Mismatch {
                                     expected: format!("argument matching {} overloads", name),
                                     found: arg_tys[0].to_string(),
-                                    span: range.as_ref().map(|r| {
-                                        let offset = (r.start.line.saturating_sub(1) as usize) * 80
-                                            + r.start.column.saturating_sub(1);
-                                        miette::SourceSpan::new(offset.into(), 1)
-                                    }),
+                                    span: range.as_ref().map(range_to_span),
+                                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
                                 });
                                 let ty_var = ctx.fresh_var();
                                 ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
@@ -367,7 +366,8 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                             ctx.add_error(crate::TypeError::UnificationError {
                                 left: format!("{} with arguments ({}, {})", op_name, resolved_left, resolved_right),
                                 right: "no matching overload".to_string(),
-                                span: None,
+                                span: range.as_ref().map(range_to_span),
+                                location: range.as_ref().map(|r| (r.start.line, r.start.column)),
                             });
                             let ty_var = ctx.fresh_var();
                             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
@@ -417,7 +417,8 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                             ctx.add_error(crate::TypeError::UnificationError {
                                 left: format!("{} with argument ({})", op_name, resolved_operand),
                                 right: "no matching overload".to_string(),
-                                span: None,
+                                span: range.as_ref().map(range_to_span),
+                                location: range.as_ref().map(|r| (r.start.line, r.start.column)),
                             });
                             let ty_var = ctx.fresh_var();
                             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
@@ -461,7 +462,8 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                                     ctx.add_error(crate::TypeError::WrongArity {
                                         expected: param_tys.len(),
                                         found: arg_tys.len(),
-                                        span: None,
+                                        span: range.as_ref().map(range_to_span),
+                                        location: range.as_ref().map(|r| (r.start.line, r.start.column)),
                                     });
                                 } else {
                                     // Unify argument types with parameter types
