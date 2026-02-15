@@ -925,8 +925,8 @@ impl Hir {
                 self.add_expr(then_expr, source_id, if_scope, Some(symbol_id));
 
                 for child in rest {
-                    self.add_elif_expr(child, source_id, scope_id, parent);
-                    self.add_else_expr(child, source_id, scope_id, parent);
+                    self.add_elif_expr(child, source_id, scope_id, Some(symbol_id));
+                    self.add_else_expr(child, source_id, scope_id, Some(symbol_id));
                 }
             }
         }
