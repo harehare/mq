@@ -51,6 +51,7 @@ pub enum TypeError {
         found: String,
         #[label("type mismatch here")]
         span: Option<miette::SourceSpan>,
+        location: Option<(u32, usize)>,
     },
 
     #[error("Cannot unify types: {left} and {right}")]
@@ -61,6 +62,7 @@ pub enum TypeError {
         right: String,
         #[label("cannot unify these types")]
         span: Option<miette::SourceSpan>,
+        location: Option<(u32, usize)>,
     },
 
     #[error("Occurs check failed: type variable {var} occurs in {ty}")]
@@ -71,6 +73,7 @@ pub enum TypeError {
         ty: String,
         #[label("infinite type")]
         span: Option<miette::SourceSpan>,
+        location: Option<(u32, usize)>,
     },
 
     #[error("Undefined symbol: {name}")]
@@ -80,6 +83,7 @@ pub enum TypeError {
         name: String,
         #[label("undefined symbol")]
         span: Option<miette::SourceSpan>,
+        location: Option<(u32, usize)>,
     },
 
     #[error("Wrong number of arguments: expected {expected}, found {found}")]
@@ -90,6 +94,7 @@ pub enum TypeError {
         found: usize,
         #[label("wrong number of arguments")]
         span: Option<miette::SourceSpan>,
+        location: Option<(u32, usize)>,
     },
 
     #[error("Type variable not found: {0}")]
@@ -99,6 +104,20 @@ pub enum TypeError {
     #[error("Internal error: {0}")]
     #[diagnostic(code(typechecker::internal_error))]
     Internal(String),
+}
+
+impl TypeError {
+    /// Returns the location (line, column) of the error, if available.
+    pub fn location(&self) -> Option<(u32, usize)> {
+        match self {
+            TypeError::Mismatch { location, .. }
+            | TypeError::UnificationError { location, .. }
+            | TypeError::OccursCheck { location, .. }
+            | TypeError::UndefinedSymbol { location, .. }
+            | TypeError::WrongArity { location, .. } => *location,
+            _ => None,
+        }
+    }
 }
 
 /// Type checker for mq programs

@@ -20,9 +20,7 @@ fn check_types(code: &str) -> Vec<TypeError> {
     checker.check(&hir)
 }
 
-// ============================================================================
-// SUCCESS CASES - These should type check successfully
-// ============================================================================
+// Success Cases - These should type check successfully
 
 #[test]
 fn test_literal_types() {
@@ -150,9 +148,7 @@ fn test_function_as_value() {
     assert!(check_types("def f(x): x + 1;\n| let g = f | g").is_empty());
 }
 
-// ============================================================================
-// ERROR CASES - These should fail type checking
-// ============================================================================
+// Error Cases - These should fail type checking
 
 #[test]
 fn test_type_mismatch_in_array() {
@@ -174,9 +170,7 @@ fn test_recursive_type() {
     println!("Recursive type result: {:?}", result);
 }
 
-// ============================================================================
-// COMPLEX PATTERNS
-// ============================================================================
+// Complex Patterns
 
 #[test]
 fn test_higher_order_functions() {
@@ -269,9 +263,7 @@ fn test_try_catch() {
     );
 }
 
-// ============================================================================
-// EDGE CASES
-// ============================================================================
+// Edge Cases
 
 #[test]
 fn test_empty_program() {
@@ -305,9 +297,7 @@ fn test_module_imports() {
     println!("Module import result: {:?}", result);
 }
 
-// ============================================================================
-// TYPE INFERENCE VERIFICATION
-// ============================================================================
+// Type Inference Verification
 
 #[test]
 fn test_inferred_types_basic() {
