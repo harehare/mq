@@ -32,9 +32,6 @@ pub fn solve_constraints(ctx: &mut InferenceContext) {
             Constraint::Equal(t1, t2, range) => {
                 unify(ctx, &t1, &t2, range);
             }
-            Constraint::Instance(_t, _var, _range) => {
-                // TODO: Handle type scheme instantiation
-            }
         }
     }
 }
