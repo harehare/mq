@@ -424,9 +424,11 @@ fn register_utility(ctx: &mut InferenceContext) {
 
 /// Markdown-specific functions
 fn register_markdown(ctx: &mut InferenceContext) {
-    // to_markdown: a -> markdown
+    // a -> markdown
     let a = ctx.fresh_var();
     register_unary(ctx, "to_markdown", Type::Var(a), Type::Markdown);
+    let a = ctx.fresh_var();
+    register_unary(ctx, "to_mdx", Type::Var(a), Type::Markdown);
 
     // markdown -> string functions
     register_many(
@@ -448,18 +450,20 @@ fn register_markdown(ctx: &mut InferenceContext) {
             "to_math",
             "to_math_inline",
             "to_md_table_row",
-            "to_mdx",
         ],
         vec![Type::Markdown],
         Type::Markdown,
     );
 
     // (markdown, number) -> markdown
-    register_binary(ctx, "to_h", Type::Markdown, Type::Number, Type::Markdown);
-    register_binary(ctx, "to_md_list", Type::Markdown, Type::Number, Type::Markdown);
+    let a = ctx.fresh_var();
+    register_binary(ctx, "to_h", Type::Var(a), Type::Number, Type::Markdown);
+    let a = ctx.fresh_var();
+    register_binary(ctx, "to_md_list", Type::Var(a), Type::Number, Type::Markdown);
 
     // (markdown, string) -> markdown/string
-    register_binary(ctx, "to_code", Type::Markdown, Type::String, Type::Markdown);
+    let a = ctx.fresh_var();
+    register_binary(ctx, "to_code", Type::Var(a), Type::String, Type::Markdown);
     register_binary(ctx, "attr", Type::Markdown, Type::String, Type::String);
 
     // (markdown, string, string) -> markdown

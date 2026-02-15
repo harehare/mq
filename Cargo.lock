@@ -2820,8 +2820,9 @@ dependencies = [
 
 [[package]]
 name = "mq-typechecker"
-version = "0.1.0"
+version = "0.5.15"
 dependencies = [
+ "clap",
  "itertools 0.14.0",
  "miette",
  "mq-hir",
@@ -2831,6 +2832,7 @@ dependencies = [
  "slotmap",
  "smol_str",
  "thiserror 2.0.18",
+ "url",
 ]
 
 [[package]]
