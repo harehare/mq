@@ -9,17 +9,23 @@ license = "MIT"
 name = "mq-typechecker"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.1.0"
+version = "0.5.15"
+
+[[bin]]
+name = "mq-typecheck"
+path = "src/main.rs"
 
 [dependencies]
+clap = { workspace = true, features = ["derive"] }
 itertools = { workspace = true }
-miette = { workspace = true }
+miette = { workspace = true, features = ["fancy"] }
 mq-hir = { workspace = true }
 mq-lang = { workspace = true, features = ["cst"] }
 rustc-hash = { workspace = true }
 slotmap = { workspace = true }
 smol_str = { workspace = true }
 thiserror = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
