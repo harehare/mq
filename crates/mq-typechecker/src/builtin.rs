@@ -514,8 +514,7 @@ fn register_markdown(ctx: &mut InferenceContext) {
 
 /// Variable/symbol management functions
 fn register_variable(ctx: &mut InferenceContext) {
-    let a = ctx.fresh_var();
-    register_nullary(ctx, "all_symbols", Type::array(Type::Var(a)));
+    register_nullary(ctx, "all_symbols", Type::array(Type::Symbol));
     register_unary(ctx, "get_variable", Type::String, Type::String);
     register_binary(ctx, "set_variable", Type::String, Type::String, Type::None);
     register_unary(ctx, "intern", Type::String, Type::Symbol);
