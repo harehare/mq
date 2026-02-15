@@ -119,7 +119,7 @@ impl TypeChecker {
 
     /// Runs type inference on the given HIR
     ///
-    /// Returns a list of type errors found. An empty list means success.
+    /// Returns a list of type errors found. An empty list means no errors.
     pub fn check(&mut self, hir: &Hir) -> Vec<TypeError> {
         // Create inference context
         let mut ctx = infer::InferenceContext::new();
@@ -127,18 +127,17 @@ impl TypeChecker {
         // Generate builtin type signatures
         builtin::register_all(&mut ctx);
 
-        // Generate constraints from HIR
+        // Generate constraints from HIR (collects errors internally)
         constraint::generate_constraints(hir, &mut ctx);
 
-        // Solve constraints through unification
+        // Solve constraints through unification (collects errors internally)
         unify::solve_constraints(&mut ctx);
 
         // Collect errors before finalizing
         let errors = ctx.take_errors();
 
-        // Store inferred types and collect errors
-        let (symbol_types, errors) = ctx.finalize();
-        self.symbol_types = symbol_types;
+        // Store inferred types
+        self.symbol_types = ctx.finalize();
 
         errors
     }

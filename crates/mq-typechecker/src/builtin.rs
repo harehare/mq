@@ -63,21 +63,63 @@ fn register_ternary(ctx: &mut InferenceContext, name: &str, p1: Type, p2: Type, 
 
 /// Arithmetic operators: +, -, *, /, %, ^, add, sub, mul, div, mod, pow
 fn register_arithmetic(ctx: &mut InferenceContext) {
-    // Addition: supports both numbers and strings
+    // Addition: number + number -> number
     register_binary(ctx, "+", Type::Number, Type::Number, Type::Number);
-    register_binary(ctx, "+", Type::String, Type::String, Type::String);
     register_binary(ctx, "add", Type::Number, Type::Number, Type::Number);
 
-    // Other arithmetic operators: (number, number) -> number
+    // Addition: string + string -> string
+    register_binary(ctx, "+", Type::String, Type::String, Type::String);
+    register_binary(ctx, "add", Type::String, Type::String, Type::String);
+
+    // Addition: string + number -> string (coercion)
+    register_binary(ctx, "+", Type::String, Type::Number, Type::String);
+    register_binary(ctx, "add", Type::String, Type::Number, Type::String);
+
+    // Addition: [a] + [a] -> [a] (array concatenation)
+    for name in ["+", "add"] {
+        let a = ctx.fresh_var();
+        register_binary(
+            ctx,
+            name,
+            Type::array(Type::Var(a)),
+            Type::array(Type::Var(a)),
+            Type::array(Type::Var(a)),
+        );
+    }
+
+    // Addition: markdown + markdown -> markdown
+    register_binary(ctx, "+", Type::Markdown, Type::Markdown, Type::Markdown);
+    register_binary(ctx, "add", Type::Markdown, Type::Markdown, Type::Markdown);
+
+    // Addition: markdown + string -> markdown
+    register_binary(ctx, "+", Type::Markdown, Type::String, Type::Markdown);
+    register_binary(ctx, "add", Type::Markdown, Type::String, Type::Markdown);
+
+    // Subtraction: (number, number) -> number
+    register_binary(ctx, "-", Type::Number, Type::Number, Type::Number);
+    register_binary(ctx, "sub", Type::Number, Type::Number, Type::Number);
+
+    // Multiplication: number * number -> number
+    register_binary(ctx, "*", Type::Number, Type::Number, Type::Number);
+    register_binary(ctx, "mul", Type::Number, Type::Number, Type::Number);
+
+    // Multiplication: [a] * number -> [a] (array repetition)
+    for name in ["*", "mul"] {
+        let a = ctx.fresh_var();
+        register_binary(
+            ctx,
+            name,
+            Type::array(Type::Var(a)),
+            Type::Number,
+            Type::array(Type::Var(a)),
+        );
+    }
+
+    // Division, modulo, power: (number, number) -> number
+    register_many(ctx, &["/", "%", "^"], vec![Type::Number, Type::Number], Type::Number);
     register_many(
         ctx,
-        &["-", "*", "/", "%", "^"],
-        vec![Type::Number, Type::Number],
-        Type::Number,
-    );
-    register_many(
-        ctx,
-        &["sub", "mul", "div", "mod", "pow"],
+        &["div", "mod", "pow"],
         vec![Type::Number, Type::Number],
         Type::Number,
     );
@@ -85,26 +127,16 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
 
 /// Comparison operators: <, >, <=, >=, ==, !=, lt, gt, lte, gte, eq, ne
 fn register_comparison(ctx: &mut InferenceContext) {
-    // Ordering: (number, number) -> bool
-    register_many(
-        ctx,
-        &["<", ">", "<=", ">="],
-        vec![Type::Number, Type::Number],
-        Type::Bool,
-    );
-    register_many(
-        ctx,
-        &["lt", "gt", "lte", "gte"],
-        vec![Type::Number, Type::Number],
-        Type::Bool,
-    );
+    // Ordering: supports number, string, symbol, bool
+    for name in ["<", ">", "<=", ">=", "lt", "gt", "lte", "gte"] {
+        register_binary(ctx, name, Type::Number, Type::Number, Type::Bool);
+        register_binary(ctx, name, Type::String, Type::String, Type::Bool);
+        register_binary(ctx, name, Type::Symbol, Type::Symbol, Type::Bool);
+        register_binary(ctx, name, Type::Bool, Type::Bool, Type::Bool);
+    }
 
     // Equality: forall a. (a, a) -> bool
-    for name in ["==", "!="] {
-        let a = ctx.fresh_var();
-        register_binary(ctx, name, Type::Var(a), Type::Var(a), Type::Bool);
-    }
-    for name in ["eq", "ne"] {
+    for name in ["==", "!=", "eq", "ne"] {
         let a = ctx.fresh_var();
         register_binary(ctx, name, Type::Var(a), Type::Var(a), Type::Bool);
     }
