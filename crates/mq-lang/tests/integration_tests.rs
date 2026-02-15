@@ -278,6 +278,12 @@ fn engine() -> DefaultEngine {
 #[case::rtrimstr("rtrimstr(\"test\")",
       vec![RuntimeValue::String("Stringtest".to_string())],
       Ok(vec![RuntimeValue::String("String".to_string())].into()))]
+#[case::ltrim("ltrim()",
+      vec![RuntimeValue::String(" test ".to_string())],
+      Ok(vec![RuntimeValue::String("test ".to_string())].into()))]
+#[case::rtrim("rtrim()",
+      vec![RuntimeValue::String(" test ".to_string())],
+      Ok(vec![RuntimeValue::String(" test".to_string())].into()))]
 #[case::is_empty("is_empty(\"\")",
       vec![RuntimeValue::String("String".to_string())],
       Ok(vec![RuntimeValue::TRUE].into()))]
