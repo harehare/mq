@@ -64,35 +64,14 @@ fn test_dict_heterogeneous_values_allowed() {
     // So this should succeed (heterogeneous values are allowed)
     let result = check_types(r#"{"a": 1, "b": "string"}"#);
     println!("Dict value type mismatch: {:?}", result);
-    // assert!(result.is_empty()); // Uncomment when implemented
+    assert!(result.is_empty(), "Dict with mixed value types should be allowed");
 }
 
 #[test]
-fn test_todo_function_arg_type_mismatch() {
-    // TODO: This should fail but currently passes
-    // Reason: No constraints between function parameters and arguments
-    let result = check_types(
-        r#"
-        def double(x): x + x;
-        double("hello")
-    "#,
-    );
-    println!("Function arg type mismatch: {:?}", result);
-    // assert!(result.is_empty()); // Uncomment when implemented
-}
-
-#[test]
-fn test_todo_function_arity_mismatch() {
-    // TODO: This should fail but currently passes
-    // Reason: No arity checking in function calls
-    let result = check_types(
-        r#"
-        def add(x, y): x + y;
-        add(1)
-    "#,
-    );
+fn test_function_arity_mismatch() {
+    let result = check_types("def add(x, y): x + y;\n| add(1)");
     println!("Function arity mismatch: {:?}", result);
-    // assert!(result.is_empty()); // Uncomment when implemented
+    assert!(!result.is_empty(), "Expected arity mismatch error");
 }
 
 // ============================================================================
@@ -110,7 +89,7 @@ fn test_success_simple_literal() {
 
 #[test]
 fn test_success_simple_variable() {
-    assert!(check_types("let x = 42; x").is_empty());
+    assert!(check_types("let x = 42 | x").is_empty());
 }
 
 #[test]

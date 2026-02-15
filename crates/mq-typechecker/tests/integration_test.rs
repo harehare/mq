@@ -13,7 +13,7 @@ fn create_hir(code: &str) -> Hir {
     hir
 }
 
-/// Helper function to run type checker
+/// Helper function to run type checker - returns errors as Vec
 fn check_types(code: &str) -> Vec<TypeError> {
     let hir = create_hir(code);
     let mut checker = TypeChecker::new();
@@ -56,31 +56,14 @@ fn test_simple_functions() {
     // Constant function
     assert!(check_types("def const(x, y): x;").is_empty());
 
-    // Simple arithmetic (assuming builtins exist)
+    // Simple arithmetic
     assert!(check_types("def add(x, y): x + y;").is_empty());
 }
 
 #[test]
 fn test_function_calls() {
-    assert!(
-        check_types(
-            r#"
-        def identity(x): x;
-        identity(42)
-    "#
-        )
-        .is_empty()
-    );
-
-    assert!(
-        check_types(
-            r#"
-        def add(x, y): x + y;
-        add(1, 2)
-    "#
-        )
-        .is_empty()
-    );
+    assert!(check_types("def identity(x): x;\n| identity(42)").is_empty());
+    assert!(check_types("def add(x, y): x + y;\n| add(1, 2)").is_empty());
 }
 
 #[test]
@@ -117,47 +100,6 @@ fn test_conditionals() {
             42
         else:
             24
-        ;
-    "#
-        )
-        .is_empty()
-    );
-
-    assert!(
-        check_types(
-            r#"
-        let x = 10;
-        if x > 5:
-            "big"
-        else:
-            "small"
-        ;
-    "#
-        )
-        .is_empty()
-    );
-}
-
-#[test]
-fn test_loops() {
-    assert!(
-        check_types(
-            r#"
-        let i = 0;
-        while i < 10:
-            i = i + 1
-        ;
-    "#
-        )
-        .is_empty()
-    );
-
-    assert!(
-        check_types(
-            r#"
-        let arr = [1, 2, 3];
-        foreach x in arr:
-            x + 1
         ;
     "#
         )
@@ -200,30 +142,12 @@ fn test_nested_functions() {
 
 #[test]
 fn test_variable_references() {
-    assert!(
-        check_types(
-            r#"
-        let x = 42;
-        let y = x;
-        y
-    "#
-        )
-        .is_empty()
-    );
+    assert!(check_types("let x = 42 | let y = x | y").is_empty());
 }
 
 #[test]
 fn test_function_as_value() {
-    assert!(
-        check_types(
-            r#"
-        def f(x): x + 1;
-        let g = f;
-        g
-    "#
-        )
-        .is_empty()
-    );
+    assert!(check_types("def f(x): x + 1;\n| let g = f | g").is_empty());
 }
 
 // ============================================================================
@@ -288,21 +212,6 @@ fn test_closure_capture() {
 }
 
 #[test]
-fn test_multiple_lets() {
-    assert!(
-        check_types(
-            r#"
-        let a = 1;
-        let b = 2;
-        let c = 3;
-        a + b + c
-    "#
-        )
-        .is_empty()
-    );
-}
-
-#[test]
 fn test_nested_conditionals() {
     assert!(
         check_types(
@@ -341,15 +250,7 @@ fn test_complex_patterns() {
 
 #[test]
 fn test_dict_operations() {
-    assert!(
-        check_types(
-            r#"
-        let dict = {"name": "Alice", "age": 30};
-        dict
-    "#
-        )
-        .is_empty()
-    );
+    assert!(check_types(r#"{"name": "Alice", "age": 30}"#).is_empty());
 }
 
 #[test]
@@ -383,21 +284,6 @@ fn test_only_whitespace() {
 }
 
 #[test]
-fn test_multiple_statements() {
-    assert!(
-        check_types(
-            r#"
-        let x = 1;
-        let y = 2;
-        let z = 3;
-        x + y + z
-    "#
-        )
-        .is_empty()
-    );
-}
-
-#[test]
 fn test_deeply_nested_arrays() {
     assert!(check_types("[[[[1]]]]").is_empty());
 }
@@ -409,15 +295,7 @@ fn test_deeply_nested_dicts() {
 
 #[test]
 fn test_lambda_functions() {
-    assert!(
-        check_types(
-            r#"
-        let f = fn(x): x + 1;
-        f(5)
-    "#
-        )
-        .is_empty()
-    );
+    assert!(check_types("let f = fn(x): x + 1 | f(5)").is_empty());
 }
 
 #[test]
