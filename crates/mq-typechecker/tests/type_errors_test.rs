@@ -60,6 +60,28 @@ fn test_function_arity_mismatch() {
     assert!(!result.is_empty(), "Expected arity mismatch error");
 }
 
+#[test]
+fn test_match_pattern_type_mismatch() {
+    // Matching a number against a string pattern should produce a type error
+    let result = check_types(r#"match (1): | "hello": "matched" end"#);
+    println!("Match pattern type mismatch: {:?}", result);
+    assert!(
+        !result.is_empty(),
+        "Expected type error for matching number against string pattern"
+    );
+}
+
+#[test]
+fn test_match_arm_body_type_mismatch() {
+    // Match arms with different body types should produce a type error
+    let result = check_types(r#"match (1): | 1: "one" | 2: 222 end"#);
+    println!("Match arm body type mismatch: {:?}", result);
+    assert!(
+        !result.is_empty(),
+        "Expected type error for match arms with different body types"
+    );
+}
+
 // ============================================================================
 // Expected Success Cases (should always pass)
 // ============================================================================
@@ -91,6 +113,55 @@ fn test_success_homogeneous_array() {
 #[test]
 fn test_success_homogeneous_dict() {
     assert!(check_types(r#"{"a": 1, "b": 2}"#).is_empty());
+}
+
+#[test]
+fn test_success_match_consistent_patterns() {
+    let result = check_types(r#"match (1): | 1: "one" | 2: "two" end"#);
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(
+        result.is_empty(),
+        "Match with consistent pattern/body types should succeed"
+    );
+}
+
+#[test]
+fn test_success_match_variable_pattern() {
+    let result = check_types(r#"match (1): | x: x end"#);
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(result.is_empty(), "Match with variable pattern should succeed");
+}
+
+#[test]
+fn test_success_while_loop() {
+    let result = check_types("while (true): 1;");
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(result.is_empty(), "While loop with bool condition should succeed");
+}
+
+#[test]
+fn test_while_condition_type_mismatch() {
+    let result = check_types("while (42): 1;");
+    println!("While condition type mismatch: {:?}", result);
+    assert!(
+        !result.is_empty(),
+        "Expected type error for while with non-bool condition"
+    );
+}
+
+#[test]
+fn test_success_macro_definition() {
+    let result = check_types("macro inc(x): x + 1;");
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(result.is_empty(), "Macro definition should succeed");
 }
 
 // Demonstration: How to use the typechecker programmatically
@@ -131,34 +202,4 @@ fn test_inspect_type_variables() {
             println!("{}: {}", name, type_scheme);
         }
     }
-}
-
-/// Documentation: Current Implementation Status
-/// Current implementation status of the type checker:
-///
-/// Implemented:
-/// - Basic type representation (Type, TypeScheme, TypeVar)
-/// - Unification algorithm with occurs check
-/// - Constraint generation framework
-/// - Type inference for literals (numbers, strings, bools, etc.)
-/// - Type inference for variables and references
-/// - Type inference for functions, arrays, and dicts
-/// - Builtin function type signatures and overload resolution
-/// - Binary operator type checking
-/// - User-defined function call argument type checking and arity checking
-/// - Array element type unification
-/// - Dict key type unification (values are heterogeneous like JSON)
-/// - Foreach iterator type checking
-/// - Match arm type unification
-/// - Try/catch type unification
-/// - Error collection (multiple errors reported)
-///
-/// Not Yet Implemented:
-/// - Pattern matching type checking (detailed)
-/// - Polymorphic type generalization
-/// - Error span information
-#[test]
-fn test_implementation_status_documentation() {
-    // This test exists purely for documentation purposes
-    // See the doc comment above for implementation status
 }

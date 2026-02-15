@@ -1,53 +1,17 @@
 <h1 align="center">mq-typechecker</h1>
 
-Type inference and checking for the mq language using Hindley-Milner type inference.
+Type inference and checking for the mq.
 
 ## Features
 
 - **Automatic Type Inference**: No type annotations required - types are inferred automatically
-- **Hindley-Milner Algorithm**: Robust and proven type inference algorithm
+- **Hindley-Milner Algorithm**: Robust and proven type inference algorithm with constraint-based unification
 - **HIR Integration**: Works seamlessly with mq's High-level Internal Representation
-- **CLI Support**: Type check mq files from the command line
-- **Detailed Error Messages**: Clear and actionable type error messages with source locations
+- **Error Collection**: Reports multiple type errors in a single pass
+- **Detailed Error Messages**: Clear and actionable type error messages with source locations (line, column, span)
 - **Readable Type Names**: Type errors display resolved type names (e.g., "number", "string") instead of raw type variables
-
-## Architecture
-
-The type checker consists of several key components:
-
-### Type Representation (`types.rs`)
-
-- `Type`: Represents types in the mq type system
-  - Basic types: `Int`, `Float`, `Number`, `String`, `Bool`, `Symbol`, `None`, `Markdown`
-  - Composite types: `Array<T>`, `Dict<K, V>`, `Function(Args) -> Ret`
-  - Type variables: `Var(TypeVarId)` for inference
-- `TypeScheme`: Polymorphic type schemes with quantified type variables
-- `TypeVarContext`: Manages fresh type variable generation
-- `Substitution`: Type variable substitutions for unification
-
-### Constraint Generation (`constraint.rs`)
-
-Generates type constraints from HIR symbols:
-- Assigns concrete types to literals
-- Creates fresh type variables for unknowns
-- Generates equality constraints for references
-- Handles function calls, arrays, dictionaries, control flow, etc.
-
-### Unification (`unify.rs`)
-
-Implements the unification algorithm:
-- Unifies types to find a consistent assignment
-- Performs occurs checks to prevent infinite types
-- Applies substitutions to resolve type variables
-- Handles complex types (arrays, dicts, functions)
-
-### Inference Engine (`infer.rs`)
-
-Coordinates the type inference process:
-- Maintains type variable context
-- Stores symbol-to-type mappings
-- Collects and solves constraints
-- Finalizes inferred types into type schemes
+- **Builtin Type Signatures**: Comprehensive type signatures for 100+ builtin functions and operators
+- **User-Defined Function Type Checking**: Detects argument type mismatches, arity errors, and return type propagation errors
 
 ## Usage
 
@@ -60,36 +24,23 @@ use mq_typechecker::TypeChecker;
 // Build HIR from mq code
 let mut hir = Hir::default();
 hir.add_code(None, "def add(x, y): x + y;");
+hir.resolve();
 
 // Run type checker
 let mut type_checker = TypeChecker::new();
-match type_checker.check(&hir) {
-    Ok(()) => {
-        // Type checking succeeded
-        for (symbol_id, type_scheme) in type_checker.symbol_types() {
-            println!("{:?} :: {}", symbol_id, type_scheme);
-        }
+let errors = type_checker.check(&hir);
+
+if errors.is_empty() {
+    // Type checking succeeded
+    for (symbol_id, type_scheme) in type_checker.symbol_types() {
+        println!("{:?} :: {}", symbol_id, type_scheme);
     }
-    Err(err) => {
-        // Type checking failed
+} else {
+    // Type checking found errors (multiple errors possible)
+    for err in &errors {
         eprintln!("Type error: {}", err);
     }
 }
-```
-
-### From the CLI
-
-Type check mq files:
-
-```bash
-# Basic type checking
-mq check file.mq
-
-# With verbose output showing inferred types
-mq check --verbose file.mq
-
-# Multiple files
-mq check file1.mq file2.mq file3.mq
 ```
 
 ## Type System
@@ -139,30 +90,12 @@ Type errors display clear, readable type names:
 
 Type variables are displayed with readable names (e.g., `'1v0`, `'2v1`) when unresolved, and as concrete types (e.g., `number`, `string`) when resolved.
 
-## Limitations & Future Work
-
-### Current Limitations
-
-1. **Builtin function signatures**: Builtin function types are not yet fully specified
-2. **Polymorphic generalization**: Currently creates monomorphic type schemes
-3. **Pattern matching**: Limited support for complex pattern types
-
-### Planned Enhancements
-
-- [ ] Complete builtin function type signatures
-- [ ] Implement full polymorphic type generalization
-- [ ] Add support for union types (e.g., `string | number`)
-- [ ] Add support for structural typing for dictionaries
-- [ ] Add support for type aliases
-- [ ] Incremental type checking for LSP
-- [ ] Improve source span accuracy for better error reporting
-
 ## Development
 
 ### Running Tests
 
 ```bash
-cargo test -p mq-typechecker
+just test
 ```
 
 ### Building
@@ -171,12 +104,6 @@ cargo test -p mq-typechecker
 cargo build -p mq-typechecker
 ```
 
-## References
-
-- **Hindley-Milner Type System**: The foundational type inference algorithm
-- **Algorithm W**: The type inference algorithm implementation
-- **mq-hir**: HIR provides symbol and scope information
-
 ## License
 
-See the main mq project license (MIT).
+MIT
