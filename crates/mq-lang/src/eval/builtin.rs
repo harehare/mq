@@ -566,6 +566,36 @@ define_builtin!(
 );
 
 define_builtin!(
+    LTRIM,
+    ParamNum::Fixed(1),
+    |ident, _, mut args, _| match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => Ok(s.trim_start().to_string().into()),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| Ok(node.update_markdown_value(md.to_string().trim_start())))
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
+        _ => unreachable!(),
+    }
+);
+
+define_builtin!(
+    RTRIM,
+    ParamNum::Fixed(1),
+    |ident, _, mut args, _| match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => Ok(s.trim_end().to_string().into()),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| Ok(node.update_markdown_value(md.to_string().trim_end())))
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
+        _ => unreachable!(),
+    }
+);
+
+define_builtin!(
     UPCASE,
     ParamNum::Fixed(1),
     |ident, _, mut args, _| match args.as_mut_slice() {
@@ -2362,7 +2392,9 @@ const HASH_KEYS: u64 = fnv1a_hash_64("keys");
 const HASH_LEN: u64 = fnv1a_hash_64("len");
 const HASH_LT: u64 = fnv1a_hash_64(constants::builtins::LT);
 const HASH_LTE: u64 = fnv1a_hash_64(constants::builtins::LTE);
+const HASH_LTRIM: u64 = fnv1a_hash_64("ltrim");
 const HASH_REGEX_MATCH: u64 = fnv1a_hash_64("regex_match");
+const HASH_RTRIM: u64 = fnv1a_hash_64("rtrim");
 const HASH_MAX: u64 = fnv1a_hash_64("max");
 const HASH_MIN: u64 = fnv1a_hash_64("min");
 const HASH_NAN: u64 = fnv1a_hash_64("nan");
@@ -2487,6 +2519,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_LEN => Some(&LEN),
         HASH_LT => Some(&LT),
         HASH_LTE => Some(&LTE),
+        HASH_LTRIM => Some(&LTRIM),
         HASH_REGEX_MATCH => Some(&REGEX_MATCH),
         HASH_MAX => Some(&MAX),
         HASH_MIN => Some(&MIN),
@@ -2506,6 +2539,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_REVERSE => Some(&REVERSE),
         HASH_RINDEX => Some(&RINDEX),
         HASH_ROUND => Some(&ROUND),
+        HASH_RTRIM => Some(&RTRIM),
         HASH_SET => Some(&SET),
         HASH_SET_ATTR => Some(&SET_ATTR),
         HASH_SET_CHECK => Some(&SET_CHECK),
@@ -3177,6 +3211,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         SmolStr::new("trim"),
         BuiltinFunctionDoc {
             description: "Trims whitespace from both ends of the given string.",
+            params: &["input"],
+        },
+    );
+    map.insert(
+        SmolStr::new("ltrim"),
+        BuiltinFunctionDoc {
+            description: "Trims whitespace from the left end of the given string.",
+            params: &["input"],
+        },
+    );
+    map.insert(
+        SmolStr::new("rtrim"),
+        BuiltinFunctionDoc {
+            description: "Trims whitespace from the right end of the given string.",
             params: &["input"],
         },
     );
