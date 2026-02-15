@@ -21,9 +21,7 @@ fn check_types(code: &str) -> Vec<TypeError> {
     checker.check(&hir)
 }
 
-// ============================================================================
 // MATHEMATICAL FUNCTIONS
-// ============================================================================
 
 #[rstest]
 #[case::abs("abs(42)", true)]
@@ -47,9 +45,12 @@ fn test_unary_math_functions(#[case] code: &str, #[case] should_succeed: bool) {
 #[rstest]
 #[case::add_numbers("1 + 2", true)]
 #[case::add_strings("\"hello\" + \"world\"", true)]
+#[case::add_string_number("\"value: \" + 42", true)] // String + number coercion
+#[case::add_arrays("[1, 2] + [3, 4]", true)] // Array concatenation
 #[case::add_mixed("1 + \"world\"", false)] // Should fail: type mismatch
 #[case::sub("10 - 5", true)]
 #[case::mul("3 * 4", true)]
+#[case::mul_array_repeat("[1, 2] * 3", true)] // Array repetition
 #[case::div("10 / 2", true)]
 #[case::mod_op("10 % 3", true)]
 #[case::pow("2 ^ 8", true)]
@@ -69,7 +70,10 @@ fn test_arithmetic_operators(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::gt("10 > 5", true)]
 #[case::lte("5 <= 10", true)]
 #[case::gte("10 >= 5", true)]
-#[case::lt_string("\"a\" < \"b\"", false)] // Should fail: wrong type
+#[case::lt_string("\"a\" < \"b\"", true)] // String comparison
+#[case::gt_string("\"z\" > \"a\"", true)] // String comparison
+#[case::lt_bool("true < false", true)] // Bool comparison (false < true)
+#[case::lt_mixed("\"a\" < 1", false)] // Should fail: mixed types
 fn test_comparison_operators(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(
@@ -394,28 +398,6 @@ fn test_complex_builtin_expressions(#[case] code: &str, #[case] should_succeed: 
 }
 
 // ============================================================================
-// TYPE ERROR CASES
-// ============================================================================
-
-#[rstest]
-#[case::abs_wrong_type("abs(\"not a number\")", false)]
-#[case::add_mixed_types("1 + \"string\"", false)]
-#[case::comparison_wrong_type("\"a\" < \"b\"", false)]
-#[case::logical_wrong_type("1 && 2", false)]
-#[case::downcase_wrong_type("downcase(42)", false)]
-#[case::len_wrong_arity("len()", false)] // Missing argument
-fn test_builtin_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
-    let result = check_types(code);
-    assert_eq!(
-        result.is_empty(),
-        should_succeed,
-        "Code: {}\nResult: {:?}",
-        code,
-        result
-    );
-}
-
-// ============================================================================
 // PIPE TYPE PROPAGATION
 // ============================================================================
 
@@ -427,6 +409,103 @@ fn test_builtin_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::chained_pipes("\"  hello  \" | trim | upcase", true)]
 #[case::number_to_upcase("42 | upcase", false)] // Number piped to string function
 fn test_pipe_type_propagation(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// ============================================================================
+// TYPE ERROR CASES
+// ============================================================================
+
+// --- Arithmetic error cases ---
+#[rstest]
+#[case::add_number_string("1 + \"string\"", false)] // number + string is invalid
+#[case::add_bool_number("true + 1", false)] // bool + number is invalid
+#[case::add_bool_string("true + \"s\"", false)] // bool + string is invalid
+#[case::sub_strings("\"a\" - \"b\"", false)] // strings cannot be subtracted
+#[case::sub_string_number("\"a\" - 1", false)] // string - number is invalid
+#[case::mul_string_number("\"a\" * 3", false)] // string * number is invalid
+#[case::div_strings("\"a\" / \"b\"", false)] // strings cannot be divided
+#[case::mod_strings("\"a\" % \"b\"", false)] // strings cannot use modulo
+#[case::sub_bool_bool("true - false", false)] // booleans cannot be subtracted
+fn test_arithmetic_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// --- Comparison error cases ---
+#[rstest]
+#[case::lt_string_number("\"a\" < 1", false)] // mixed types
+#[case::gt_number_string("1 > \"a\"", false)] // mixed types
+#[case::lte_bool_number("true <= 1", false)] // mixed types
+#[case::gte_string_bool("\"a\" >= true", false)] // mixed types
+fn test_comparison_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// --- Logical error cases ---
+#[rstest]
+#[case::and_numbers("1 && 2", false)] // numbers are not bool
+#[case::or_strings("\"a\" || \"b\"", false)] // strings are not bool
+#[case::not_number("!42", false)] // number is not bool
+fn test_logical_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// --- Function arity/type error cases ---
+#[rstest]
+#[case::abs_string("abs(\"not a number\")", false)] // wrong argument type
+#[case::downcase_number("downcase(42)", false)] // wrong argument type
+#[case::ceil_string("ceil(\"hello\")", false)] // wrong argument type
+#[case::floor_bool("floor(true)", false)] // wrong argument type
+#[case::len_no_args("len()", false)] // missing argument
+#[case::split_numbers("split(1, 2)", false)] // wrong argument types
+#[case::join_numbers("join(1, 2)", false)] // wrong argument types
+#[case::starts_with_numbers("starts_with(1, 2)", false)] // wrong argument types
+fn test_function_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// --- Pipe type error cases ---
+#[rstest]
+#[case::number_to_upcase("42 | upcase", false)] // number piped to string function
+#[case::number_to_trim("42 | trim", false)] // number piped to string function
+#[case::string_to_abs("\"hello\" | abs", false)] // string piped to number function
+#[case::string_to_ceil("\"hello\" | ceil", false)] // string piped to number function
+fn test_pipe_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),

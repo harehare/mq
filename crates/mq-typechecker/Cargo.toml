@@ -9,13 +9,13 @@ license = "MIT"
 name = "mq-typechecker"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.2"
+version = "0.1.0"
 
 [dependencies]
 itertools = "0.14.0"
 miette = {version = "7.6.0"}
-mq-hir = {path = "../mq-hir", version = "0.5.2"}
-mq-lang = {path = "../mq-lang", version = "0.5.2", features = ["cst"]}
+mq-hir = {path = "../mq-hir", version = "0.5.15"}
+mq-lang = {path = "../mq-lang", version = "0.5.15", features = ["cst"]}
 rustc-hash = "2.1.1"
 slotmap = "1.0.7"
 smol_str = "0.1.1"
