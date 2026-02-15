@@ -1,7 +1,7 @@
 //! Constraint generation for type inference.
 
 use crate::infer::InferenceContext;
-use crate::types::{Type, TypeVarId};
+use crate::types::Type;
 use crate::unify::range_to_span;
 use mq_hir::{Hir, SymbolId, SymbolKind};
 use std::fmt;
@@ -11,15 +11,12 @@ use std::fmt;
 pub enum Constraint {
     /// Two types must be equal
     Equal(Type, Type, Option<mq_lang::Range>),
-    /// A type must be an instance of a type scheme
-    Instance(Type, TypeVarId, Option<mq_lang::Range>),
 }
 
 impl fmt::Display for Constraint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Constraint::Equal(t1, t2, _) => write!(f, "{} ~ {}", t1, t2),
-            Constraint::Instance(t, var, _) => write!(f, "{} :: '{:?}", t, var),
         }
     }
 }
@@ -140,6 +137,45 @@ fn generate_block_constraints(hir: &Hir, symbol_id: SymbolId, ctx: &mut Inferenc
     // The Block's type is the last child's type
     let last_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
     ctx.set_symbol_type(symbol_id, last_ty);
+}
+
+/// Resolves the body type of an elif/else branch.
+///
+/// For Elif: children are [condition, body] — constrains condition to Bool, returns body type.
+/// For Else: children are [body] — returns body type.
+/// For other kinds: returns the symbol's type directly.
+fn resolve_branch_body_type(hir: &Hir, branch_id: SymbolId, ctx: &mut InferenceContext) -> Type {
+    if let Some(symbol) = hir.symbol(branch_id) {
+        let children = get_children(hir, branch_id);
+        match symbol.kind {
+            SymbolKind::Elif => {
+                if children.len() >= 2 {
+                    let range = get_symbol_range(hir, branch_id);
+                    // First child is condition
+                    let cond_ty = ctx.get_or_create_symbol_type(children[0]);
+                    ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range));
+                    // Last child is the body
+                    let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
+                    ctx.set_symbol_type(branch_id, body_ty.clone());
+                    body_ty
+                } else {
+                    ctx.get_or_create_symbol_type(branch_id)
+                }
+            }
+            SymbolKind::Else => {
+                if let Some(&last_child) = children.last() {
+                    let body_ty = ctx.get_or_create_symbol_type(last_child);
+                    ctx.set_symbol_type(branch_id, body_ty.clone());
+                    body_ty
+                } else {
+                    ctx.get_or_create_symbol_type(branch_id)
+                }
+            }
+            _ => ctx.get_or_create_symbol_type(branch_id),
+        }
+    } else {
+        ctx.get_or_create_symbol_type(branch_id)
+    }
 }
 
 /// Resolves a builtin function call using overload resolution
@@ -569,15 +605,15 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 let cond_ty = ctx.get_or_create_symbol_type(children[0]);
                 ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range));
 
-                // Subsequent children are then-branch and else-branches
+                // Subsequent children are then-branch and elif/else branches
                 // All branches should have the same type
                 if children.len() > 1 {
                     let branch_ty = ctx.get_or_create_symbol_type(children[1]);
                     ctx.set_symbol_type(symbol_id, branch_ty.clone());
 
-                    // Unify all branch types
+                    // Unify all branch types (elif/else children)
                     for &child_id in &children[2..] {
-                        let child_ty = ctx.get_or_create_symbol_type(child_id);
+                        let child_ty = resolve_branch_body_type(hir, child_id, ctx);
                         ctx.add_constraint(Constraint::Equal(branch_ty.clone(), child_ty, range));
                     }
                 } else {
@@ -591,9 +627,11 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
         }
 
         SymbolKind::Elif | SymbolKind::Else => {
-            // These are handled by their parent If node
-            let ty_var = ctx.fresh_var();
-            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            // Handled inline by the parent If handler via resolve_branch_body_type
+            if ctx.get_symbol_type(symbol_id).is_none() {
+                let ty_var = ctx.fresh_var();
+                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            }
         }
 
         SymbolKind::While => {

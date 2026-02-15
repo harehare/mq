@@ -29,18 +29,8 @@ fn test_binary_op_type_mismatch() {
 }
 
 #[test]
-#[ignore] // Known limitation: if/else type checking requires builtin functions which conflict with test setup
 fn test_if_else_type_mismatch() {
-    let result = check_types(
-        r#"
-        if true:
-            42
-        else:
-            "string"
-        ;
-    "#,
-    );
-    println!("If/else type mismatch: {:?}", result);
+    let result = check_types(r#"if (true): 42 else: "string";"#);
     assert!(
         !result.is_empty(),
         "Expected type error for if/else branches with different types"
@@ -164,7 +154,6 @@ fn test_inspect_type_variables() {
 /// - Error collection (multiple errors reported)
 ///
 /// Not Yet Implemented:
-/// - If/else branch type unification (requires builtin function handling)
 /// - Pattern matching type checking (detailed)
 /// - Polymorphic type generalization
 /// - Error span information
