@@ -1,5 +1,10 @@
 def _is_section(section): is_dict(section) && section[:type] == :section;
 
+# Returns sections whose title contains the specified pattern.
+def section(md_nodes, pattern):
+  sections(md_nodes) | title_contains(pattern) | flatten()
+end
+
 # Splits markdown nodes into sections based on headers.
 def sections(md_nodes):
   if (is_empty(md_nodes)):
@@ -182,7 +187,14 @@ end
 
 # Flattens sections back to markdown nodes for output.
 # This converts section objects back to their original markdown node arrays.
+# Deprecated: use `flatten` instead.
 def collect(sections):
+  flatten(sections)
+end
+
+# Flattens sections back to markdown nodes for output.
+# This converts section objects back to their original markdown node arrays.
+def flatten(sections):
   if (is_empty(sections)):
     []
   else:
@@ -193,3 +205,4 @@ def collect(sections):
         section
     end)
 end
+
