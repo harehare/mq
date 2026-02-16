@@ -2,6 +2,7 @@
 
 use mq_hir::Hir;
 use mq_typechecker::{TypeChecker, TypeError};
+use rstest::rstest;
 
 /// Helper function to create HIR from code
 fn create_hir(code: &str) -> Hir {
@@ -262,6 +263,26 @@ fn test_try_catch() {
     );
 }
 
+// Polymorphic Function Type Checking
+
+#[rstest]
+#[case::add_strings(r#"def add(x, y): x + y; | add("hello", "world")"#, true)]
+#[case::add_numbers("def add(x, y): x + y; | add(1, 2)", true)]
+#[case::add_mixed_types(r#"def add(x, y): x + y; | add(1, "hello")"#, false)]
+#[case::string_concat_in_fn(r#"def greet(name): "hello " + name; | greet("world")"#, true)]
+#[case::unary_negation("-42", true)]
+#[case::nested_polymorphic_ops("def calc(a, b): (a + b) * (a - b); | calc(3, 2)", true)]
+fn test_polymorphic_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nErrors: {:?}",
+        code,
+        result
+    );
+}
+
 // Edge Cases
 
 #[test]
@@ -323,61 +344,22 @@ fn test_macro_with_multiple_params() {
 
 // User-Defined Function Type Checking
 
-#[test]
-fn test_user_function_arg_type_mismatch() {
-    // add expects both args to be the same type (due to +)
-    let result = check_types(r#"def add(x, y): x + y; | add(1, "hello")"#);
-    println!("User function arg type mismatch: {:?}", result);
-    assert!(!result.is_empty(), "Expected type error for add(number, string)");
-}
-
-#[test]
-fn test_user_function_return_type_propagation() {
-    // get_num returns number, so get_num() + "hello" should fail
-    let result = check_types(r#"def get_num(): 42; | get_num() + "hello""#);
-    println!("Return type propagation: {:?}", result);
-    assert!(
-        !result.is_empty(),
-        "Expected type error for number + string via return type"
+#[rstest]
+#[case::arg_type_mismatch(r#"def add(x, y): x + y; | add(1, "hello")"#, false)]
+#[case::return_type_propagation(r#"def get_num(): 42; | get_num() + "hello""#, false)]
+#[case::chained_calls(r#"def double(x): x + x; | def negate(x): 0 - x; | double(negate(1))"#, true)]
+#[case::string_plus_number(r#"def greet(): "hello"; | greet() + 1"#, true)]
+#[case::string_minus_number(r#"def greet(): "hello"; | greet() - 1"#, false)]
+#[case::recursive_factorial("def factorial(n): if (n == 0): 1 else: n * factorial(n - 1);;", true)]
+fn test_user_function_type_checking(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nErrors: {:?}",
+        code,
+        result
     );
-}
-
-#[test]
-fn test_user_function_chained_calls() {
-    // Both functions work on numbers, should succeed
-    let result = check_types(r#"def double(x): x + x; | def negate(x): 0 - x; | double(negate(1))"#);
-    for e in &result {
-        eprintln!("Error: {}", e);
-    }
-    assert!(result.is_empty(), "Chained numeric function calls should succeed");
-}
-
-#[test]
-fn test_user_function_wrong_return_type_usage() {
-    // greet returns string, greet() + 1 should fail (string + number has no overload)
-    let result = check_types(r#"def greet(): "hello"; | greet() + 1"#);
-    println!("Wrong return type usage: {:?}", result);
-    assert!(!result.is_empty(), "Expected type error for string_return + number");
-}
-
-#[test]
-fn test_user_function_recursive_type_inference() {
-    // Recursive function should infer types correctly
-    let result = check_types(
-        r#"
-        def factorial(n):
-            if (n == 0):
-                1
-            else:
-                n * factorial(n - 1)
-            ;
-        ;
-    "#,
-    );
-    for e in &result {
-        eprintln!("Error: {}", e);
-    }
-    assert!(result.is_empty(), "Recursive factorial function should type check");
 }
 
 // Pipe Chains in Function Bodies

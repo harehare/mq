@@ -7,6 +7,23 @@ use mq_hir::SymbolId;
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
 
+/// A deferred overload resolution for operators with unresolved type variable operands.
+///
+/// When a binary or unary operator's operands are still type variables during constraint
+/// generation, we defer the overload resolution until after the first round of unification
+/// when the operand types may have been resolved.
+#[derive(Debug, Clone)]
+pub struct DeferredOverload {
+    /// The symbol ID of the operator
+    pub symbol_id: SymbolId,
+    /// The operator name (e.g., "+", "-", "*")
+    pub op_name: SmolStr,
+    /// The original type variables for the operands
+    pub operand_tys: Vec<Type>,
+    /// The source range for error reporting
+    pub range: Option<mq_lang::Range>,
+}
+
 /// Inference context maintains state during type inference
 pub struct InferenceContext {
     /// Type variable context for generating fresh variables
@@ -23,6 +40,8 @@ pub struct InferenceContext {
     errors: Vec<TypeError>,
     /// Piped input types for symbols in a pipe chain
     piped_inputs: FxHashMap<SymbolId, Type>,
+    /// Deferred overload resolutions for operators with unresolved type variable operands
+    deferred_overloads: Vec<DeferredOverload>,
 }
 
 impl InferenceContext {
@@ -36,6 +55,7 @@ impl InferenceContext {
             builtins: FxHashMap::default(),
             errors: Vec::new(),
             piped_inputs: FxHashMap::default(),
+            deferred_overloads: Vec::new(),
         }
     }
 
@@ -67,6 +87,16 @@ impl InferenceContext {
     /// Gets the piped input type for a symbol
     pub fn get_piped_input(&self, symbol: SymbolId) -> Option<&Type> {
         self.piped_inputs.get(&symbol)
+    }
+
+    /// Adds a deferred overload resolution
+    pub fn add_deferred_overload(&mut self, deferred: DeferredOverload) {
+        self.deferred_overloads.push(deferred);
+    }
+
+    /// Takes all deferred overloads (consumes them)
+    pub fn take_deferred_overloads(&mut self) -> Vec<DeferredOverload> {
+        std::mem::take(&mut self.deferred_overloads)
     }
 
     /// Resolves the best matching overload for a function call.
