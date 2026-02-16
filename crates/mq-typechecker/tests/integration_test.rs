@@ -9,7 +9,6 @@ fn create_hir(code: &str) -> Hir {
     // Disable builtins before adding code to avoid type checking builtin functions
     hir.builtin.disabled = true;
     hir.add_code(None, code);
-    hir.resolve();
     hir
 }
 
