@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process;
 
 use clap::Parser;
+use colored::Colorize;
 use mq_hir::Hir;
 use mq_typechecker::TypeChecker;
 use url::Url;
@@ -27,7 +28,11 @@ fn main() {
             let code = match std::fs::read_to_string(path) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("Error reading file {}: {}", path.display(), e);
+                    eprintln!(
+                        "{} {}",
+                        "error:".truecolor(239, 68, 68).bold(),
+                        format!("reading file {}: {}", path.display(), e).truecolor(226, 232, 240),
+                    );
                     process::exit(1);
                 }
             };
@@ -38,7 +43,11 @@ fn main() {
         None => {
             let mut code = String::new();
             if let Err(e) = std::io::stdin().read_to_string(&mut code) {
-                eprintln!("Error reading stdin: {}", e);
+                eprintln!(
+                    "{} {}",
+                    "error:".truecolor(239, 68, 68).bold(),
+                    format!("reading stdin: {}", e).truecolor(226, 232, 240),
+                );
                 process::exit(1);
             }
             (code, None)
@@ -53,36 +62,126 @@ fn main() {
     let errors = checker.check(&hir);
 
     for error in &errors {
-        if let Some((line, col)) = error.location() {
-            eprintln!("{}:{}  {}", line, col, error);
-        } else {
-            eprintln!("{}", error);
-        }
+        print_error(error);
     }
 
     if cli.show_types {
-        println!("=== Inferred Types ===");
-        for (symbol_id, type_scheme) in checker.symbol_types() {
-            if let Some(symbol) = hir.symbol(*symbol_id)
-                && !hir.is_builtin_symbol(symbol)
-                && let Some(name) = &symbol.value
-            {
-                println!("  {}: {}", name, type_scheme);
-            }
-        }
+        print_inferred_types(&checker, &hir);
     }
 
     if errors.is_empty() {
         if !cli.show_types {
-            println!("No type errors found.");
+            eprintln!(
+                "{}  {}",
+                "✓".truecolor(16, 185, 129).bold(),
+                "No type errors found.".truecolor(16, 185, 129),
+            );
         }
         process::exit(0);
     } else {
+        eprintln!();
         eprintln!(
-            "\n{} type error{} found.",
-            errors.len(),
-            if errors.len() == 1 { "" } else { "s" }
+            "{}  {} type error{} found.",
+            "✗".truecolor(239, 68, 68).bold(),
+            errors.len().to_string().truecolor(239, 68, 68).bold(),
+            if errors.len() == 1 { "" } else { "s" },
         );
         process::exit(1);
     }
+}
+
+/// Prints a type error with rich formatting.
+fn print_error(error: &mq_typechecker::TypeError) {
+    let location_str = if let Some((line, col)) = error.location() {
+        format!("{}:{}", line, col)
+    } else {
+        String::new()
+    };
+
+    let error_msg = format!("{}", error);
+
+    if !location_str.is_empty() {
+        eprintln!(
+            "  {} {} {}",
+            location_str.truecolor(148, 163, 184),
+            "│".truecolor(74, 85, 104),
+            format_error_message(&error_msg),
+        );
+    } else {
+        eprintln!("  {}", format_error_message(&error_msg),);
+    }
+}
+
+/// Formats an error message with colored type names.
+fn format_error_message(msg: &str) -> String {
+    // Color "error" label and highlight type names in the message
+    if let Some(rest) = msg.strip_prefix("Type mismatch: expected ")
+        && let Some((expected, found)) = rest.split_once(", found ")
+    {
+        return format!(
+            "{} expected {}, found {}",
+            "type mismatch:".truecolor(239, 68, 68).bold(),
+            expected.truecolor(103, 184, 227),
+            found.truecolor(251, 146, 60),
+        );
+    }
+    if let Some(rest) = msg.strip_prefix("Cannot unify types: ")
+        && let Some((left, right)) = rest.split_once(" and ")
+    {
+        return format!(
+            "{} {} and {}",
+            "cannot unify:".truecolor(239, 68, 68).bold(),
+            left.truecolor(103, 184, 227),
+            right.truecolor(251, 146, 60),
+        );
+    }
+    if let Some(rest) = msg.strip_prefix("Wrong number of arguments: expected ")
+        && let Some((expected, found)) = rest.split_once(", found ")
+    {
+        return format!(
+            "{} expected {}, found {}",
+            "wrong arity:".truecolor(239, 68, 68).bold(),
+            expected.truecolor(103, 184, 227),
+            found.truecolor(251, 146, 60),
+        );
+    }
+    if let Some(name) = msg.strip_prefix("Undefined symbol: ") {
+        return format!(
+            "{} {}",
+            "undefined symbol:".truecolor(239, 68, 68).bold(),
+            name.truecolor(167, 139, 250),
+        );
+    }
+
+    // Fallback: just color the whole message
+    format!("{}", msg.truecolor(239, 68, 68))
+}
+
+/// Prints inferred types with rich formatting.
+fn print_inferred_types(checker: &TypeChecker, hir: &Hir) {
+    eprintln!();
+    eprintln!("  {}", "Inferred Types".truecolor(103, 184, 227).bold(),);
+    eprintln!("  {}", "──────────────".truecolor(74, 85, 104),);
+
+    let mut has_types = false;
+    for (symbol_id, type_scheme) in checker.symbol_types() {
+        if let Some(symbol) = hir.symbol(*symbol_id)
+            && !hir.is_builtin_symbol(symbol)
+            && let Some(name) = &symbol.value
+        {
+            has_types = true;
+            eprintln!(
+                "  {} {} {}",
+                name.to_string().truecolor(167, 139, 250),
+                ":".truecolor(148, 163, 184),
+                type_scheme.to_string().truecolor(103, 184, 227),
+            );
+        }
+    }
+
+    if !has_types {
+        eprintln!("  {}", "(no user-defined symbols)".truecolor(148, 163, 184),);
+    }
+
+    eprintln!();
 }

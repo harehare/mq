@@ -57,6 +57,20 @@ fn register_ternary(ctx: &mut InferenceContext, name: &str, p1: Type, p2: Type, 
     ctx.register_builtin(name, Type::function(vec![p1, p2, p3], ret));
 }
 
+/// Registers None propagation overloads: `(none) -> none` for multiple unary functions.
+fn register_none_propagation_unary(ctx: &mut InferenceContext, names: &[&str]) {
+    for name in names {
+        register_unary(ctx, name, Type::None, Type::None);
+    }
+}
+
+/// Registers None propagation overloads: `(none, none) -> none` for multiple binary functions.
+fn register_none_propagation_binary(ctx: &mut InferenceContext, names: &[&str]) {
+    for name in names {
+        register_binary(ctx, name, Type::None, Type::None, Type::None);
+    }
+}
+
 // =============================================================================
 // Category registration functions
 // =============================================================================
@@ -123,6 +137,12 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
         vec![Type::Number, Type::Number],
         Type::Number,
     );
+
+    // None propagation: (none, none) -> none for all arithmetic operators
+    register_none_propagation_binary(
+        ctx,
+        &["+", "-", "*", "/", "%", "^", "add", "sub", "mul", "div", "mod", "pow"],
+    );
 }
 
 /// Comparison operators: <, >, <=, >=, ==, !=, lt, gt, lte, gte, eq, ne
@@ -177,6 +197,9 @@ fn register_math(ctx: &mut InferenceContext) {
         register_binary(ctx, name, Type::String, Type::String, Type::String);
         register_binary(ctx, name, Type::Symbol, Type::Symbol, Type::Symbol);
     }
+
+    // None propagation for min/max
+    register_none_propagation_binary(ctx, &["min", "max"]);
 
     // Special number functions
     register_nullary(ctx, "nan", Type::Number);
@@ -235,6 +258,23 @@ fn register_string(ctx: &mut InferenceContext) {
         Type::String,
         Type::dict(Type::Var(k), Type::Var(v)),
     );
+
+    // None propagation for string functions
+    register_none_propagation_unary(
+        ctx,
+        &[
+            "downcase",
+            "upcase",
+            "trim",
+            "base64",
+            "base64d",
+            "url_encode",
+            "utf8bytelen",
+        ],
+    );
+    // gsub/replace: (none, string, string) -> none
+    register_ternary(ctx, "gsub", Type::None, Type::String, Type::String, Type::None);
+    register_ternary(ctx, "replace", Type::None, Type::String, Type::String, Type::None);
 }
 
 /// Array functions: flatten, reverse, sort, uniq, compact, len, slice, insert, range, repeat
@@ -299,6 +339,11 @@ fn register_array(ctx: &mut InferenceContext) {
     // repeat: (a, number) -> [a]
     let a = ctx.fresh_var();
     register_binary(ctx, "repeat", Type::Var(a), Type::Number, Type::array(Type::Var(a)));
+
+    // None propagation for array functions
+    register_none_propagation_unary(ctx, &["reverse", "sort", "uniq", "compact", "flatten", "len"]);
+    // slice: (none, number, number) -> none
+    register_ternary(ctx, "slice", Type::None, Type::Number, Type::Number, Type::None);
 }
 
 /// Dictionary functions: keys, values, entries, get, set, del, update, dict
@@ -380,6 +425,9 @@ fn register_dict(ctx: &mut InferenceContext) {
         Type::Var(v),
         Type::dict(Type::Var(k), Type::Var(v)),
     );
+
+    // None propagation for dict functions
+    register_none_propagation_unary(ctx, &["keys", "values", "entries"]);
 }
 
 /// Type conversion functions: to_number, to_string, to_array, type
@@ -514,6 +562,9 @@ fn register_markdown(ctx: &mut InferenceContext) {
     // (markdown, string) -> markdown
     register_binary(ctx, "set_code_block_lang", Type::Markdown, Type::String, Type::Markdown);
     register_binary(ctx, "set_ref", Type::Markdown, Type::String, Type::Markdown);
+
+    // None propagation for markdown -> string functions
+    register_none_propagation_unary(ctx, &["to_text", "to_html", "to_markdown_string"]);
 }
 
 /// Variable/symbol management functions
