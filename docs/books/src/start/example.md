@@ -209,6 +209,116 @@ $ mq 'sitemap(__FILE__, "https://example.com")' docs/**/*.md
 </url>
 ```
 
+## Section Operations
+
+### Extract Sections by Title
+
+Extract sections whose title contains a specific text:
+
+```mq
+include "section" | nodes | section("Installation")
+```
+
+**Input example**:
+
+```markdown
+# Introduction
+
+Welcome to the project.
+
+## Installation
+
+Run the following command:
+
+## Usage
+
+Use the tool like this.
+```
+
+**Output**: Returns the "Installation" section with its header and content.
+
+### Split Document by Header Level
+
+Split a document into sections based on header level:
+
+```mq
+include "section" | nodes | split(2)
+```
+
+**Input example**:
+
+```markdown
+# Main Title
+
+## Section 1
+
+Content of section 1.
+
+## Section 2
+
+Content of section 2.
+
+## Section 3
+
+Content of section 3.
+```
+
+**Output**: Returns an array of section objects split at `##` headers.
+
+### Generate Table of Contents from Sections
+
+Generate a table of contents from sections:
+
+```mq
+include "section" | nodes | sections() | toc()
+```
+
+**Input example**:
+
+```markdown
+# Introduction
+
+Some text.
+
+## Getting Started
+
+More text.
+
+### Prerequisites
+
+Details here.
+
+## Advanced Usage
+
+Advanced content.
+```
+
+**Output**: `["- Introduction", "  - Getting Started", "    - Prerequisites", "  - Advanced Usage"]`
+
+### Filter Sections with Content
+
+Filter sections that have content beyond the header:
+
+```mq
+include "section" | nodes | sections() | filter(fn(s): has_content(s);) | titles()
+```
+
+**Input example**:
+
+```markdown
+# Introduction
+
+Welcome to the project.
+
+## Empty Section
+
+## Usage
+
+Use the tool like this.
+```
+
+**Output**: `["Introduction", "Usage"]`
+
 ## Custom Functions and Programming
 
 ### Define Custom Function
