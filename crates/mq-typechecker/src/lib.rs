@@ -152,6 +152,10 @@ impl TypeChecker {
         // Solve constraints through unification (collects errors internally)
         unify::solve_constraints(&mut ctx);
 
+        // Process deferred overload resolutions (operators with type variable operands)
+        // After the first round of unification, operand types may now be resolved
+        Self::resolve_deferred_overloads(&mut ctx);
+
         // Collect errors before finalizing
         let errors = ctx.take_errors();
 
@@ -159,6 +163,57 @@ impl TypeChecker {
         self.symbol_types = ctx.finalize();
 
         errors
+    }
+
+    /// Resolves deferred overloads after the first round of unification.
+    ///
+    /// Binary/unary operators whose operands were type variables during constraint
+    /// generation are re-processed now that operand types may be known.
+    fn resolve_deferred_overloads(ctx: &mut infer::InferenceContext) {
+        let deferred = ctx.take_deferred_overloads();
+        if deferred.is_empty() {
+            return;
+        }
+
+        for d in &deferred {
+            let resolved_operands: Vec<types::Type> = d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
+
+            if let Some(resolved_ty) = ctx.resolve_overload(&d.op_name, &resolved_operands) {
+                if let types::Type::Function(param_tys, ret_ty) = resolved_ty
+                    && param_tys.len() == d.operand_tys.len()
+                {
+                    // Add constraints for operand types
+                    for (operand_ty, param_ty) in d.operand_tys.iter().zip(param_tys.iter()) {
+                        ctx.add_constraint(constraint::Constraint::Equal(
+                            operand_ty.clone(),
+                            param_ty.clone(),
+                            d.range,
+                        ));
+                    }
+                    // Set the result type
+                    ctx.set_symbol_type(d.symbol_id, *ret_ty);
+                }
+            } else {
+                // Check if all operands are now concrete (not type variables)
+                let all_concrete = resolved_operands.iter().all(|ty| !ty.is_var());
+                if all_concrete {
+                    let args_str = resolved_operands
+                        .iter()
+                        .map(|t| t.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    ctx.add_error(TypeError::UnificationError {
+                        left: format!("{} with arguments ({})", d.op_name, args_str),
+                        right: "no matching overload".to_string(),
+                        span: d.range.as_ref().map(unify::range_to_span),
+                        location: d.range.as_ref().map(|r| (r.start.line, r.start.column)),
+                    });
+                }
+            }
+        }
+
+        // Run unification again with the new constraints
+        unify::solve_constraints(ctx);
     }
 
     /// Gets the type of a symbol
