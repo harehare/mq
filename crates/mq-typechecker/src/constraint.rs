@@ -1,9 +1,10 @@
 //! Constraint generation for type inference.
 
-use crate::infer::InferenceContext;
+use crate::infer::{DeferredOverload, InferenceContext};
 use crate::types::Type;
 use crate::unify::range_to_span;
 use mq_hir::{Hir, SymbolId, SymbolKind};
+use smol_str::SmolStr;
 use std::fmt;
 
 /// Type constraint for unification
@@ -420,35 +421,46 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                         let resolved_left = ctx.resolve_type(&left_ty);
                         let resolved_right = ctx.resolve_type(&right_ty);
 
-                        // Try to resolve the best matching overload
-                        let arg_types = vec![resolved_left.clone(), resolved_right.clone()];
-                        if let Some(resolved_ty) = ctx.resolve_overload(op_name.as_str(), &arg_types) {
-                            // resolved_ty is the matched function type: (T1, T2) -> T3
-                            if let Type::Function(param_tys, ret_ty) = resolved_ty {
-                                if param_tys.len() == 2 {
-                                    ctx.add_constraint(Constraint::Equal(left_ty, param_tys[0].clone(), range));
-                                    ctx.add_constraint(Constraint::Equal(right_ty, param_tys[1].clone(), range));
-                                    ctx.set_symbol_type(symbol_id, *ret_ty);
+                        // If any operand is still a type variable, defer overload resolution
+                        // until after the first round of unification when types may be known
+                        if resolved_left.is_var() || resolved_right.is_var() {
+                            let ty_var = ctx.fresh_var();
+                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                            ctx.add_deferred_overload(DeferredOverload {
+                                symbol_id,
+                                op_name: SmolStr::new(op_name.as_str()),
+                                operand_tys: vec![left_ty, right_ty],
+                                range,
+                            });
+                        } else {
+                            // Try to resolve the best matching overload
+                            let arg_types = vec![resolved_left.clone(), resolved_right.clone()];
+                            if let Some(resolved_ty) = ctx.resolve_overload(op_name.as_str(), &arg_types) {
+                                // resolved_ty is the matched function type: (T1, T2) -> T3
+                                if let Type::Function(param_tys, ret_ty) = resolved_ty {
+                                    if param_tys.len() == 2 {
+                                        ctx.add_constraint(Constraint::Equal(left_ty, param_tys[0].clone(), range));
+                                        ctx.add_constraint(Constraint::Equal(right_ty, param_tys[1].clone(), range));
+                                        ctx.set_symbol_type(symbol_id, *ret_ty);
+                                    } else {
+                                        let ty_var = ctx.fresh_var();
+                                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                                    }
                                 } else {
-                                    // Fallback: just create a fresh type variable
                                     let ty_var = ctx.fresh_var();
                                     ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                                 }
                             } else {
-                                // Fallback: just create a fresh type variable
+                                // No matching overload found - collect error
+                                ctx.add_error(crate::TypeError::UnificationError {
+                                    left: format!("{} with arguments ({}, {})", op_name, resolved_left, resolved_right),
+                                    right: "no matching overload".to_string(),
+                                    span: range.as_ref().map(range_to_span),
+                                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                                });
                                 let ty_var = ctx.fresh_var();
                                 ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                             }
-                        } else {
-                            // No matching overload found - collect error
-                            ctx.add_error(crate::TypeError::UnificationError {
-                                left: format!("{} with arguments ({}, {})", op_name, resolved_left, resolved_right),
-                                right: "no matching overload".to_string(),
-                                span: range.as_ref().map(range_to_span),
-                                location: range.as_ref().map(|r| (r.start.line, r.start.column)),
-                            });
-                            let ty_var = ctx.fresh_var();
-                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                         }
                     } else {
                         // Not enough operands
@@ -475,31 +487,43 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                         // Resolve type to get its concrete value if already determined
                         let resolved_operand = ctx.resolve_type(&operand_ty);
 
-                        // Try to resolve the best matching overload
-                        let arg_types = vec![resolved_operand.clone()];
-                        if let Some(resolved_ty) = ctx.resolve_overload(op_name.as_str(), &arg_types) {
-                            if let Type::Function(param_tys, ret_ty) = resolved_ty {
-                                if param_tys.len() == 1 {
-                                    ctx.add_constraint(Constraint::Equal(operand_ty, param_tys[0].clone(), range));
-                                    ctx.set_symbol_type(symbol_id, *ret_ty);
+                        // If the operand is still a type variable, defer overload resolution
+                        if resolved_operand.is_var() {
+                            let ty_var = ctx.fresh_var();
+                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                            ctx.add_deferred_overload(DeferredOverload {
+                                symbol_id,
+                                op_name: SmolStr::new(op_name.as_str()),
+                                operand_tys: vec![operand_ty],
+                                range,
+                            });
+                        } else {
+                            // Try to resolve the best matching overload
+                            let arg_types = vec![resolved_operand.clone()];
+                            if let Some(resolved_ty) = ctx.resolve_overload(op_name.as_str(), &arg_types) {
+                                if let Type::Function(param_tys, ret_ty) = resolved_ty {
+                                    if param_tys.len() == 1 {
+                                        ctx.add_constraint(Constraint::Equal(operand_ty, param_tys[0].clone(), range));
+                                        ctx.set_symbol_type(symbol_id, *ret_ty);
+                                    } else {
+                                        let ty_var = ctx.fresh_var();
+                                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                                    }
                                 } else {
                                     let ty_var = ctx.fresh_var();
                                     ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                                 }
                             } else {
+                                // No matching overload found - collect error
+                                ctx.add_error(crate::TypeError::UnificationError {
+                                    left: format!("{} with argument ({})", op_name, resolved_operand),
+                                    right: "no matching overload".to_string(),
+                                    span: range.as_ref().map(range_to_span),
+                                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                                });
                                 let ty_var = ctx.fresh_var();
                                 ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                             }
-                        } else {
-                            // No matching overload found - collect error
-                            ctx.add_error(crate::TypeError::UnificationError {
-                                left: format!("{} with argument ({})", op_name, resolved_operand),
-                                right: "no matching overload".to_string(),
-                                span: range.as_ref().map(range_to_span),
-                                location: range.as_ref().map(|r| (r.start.line, r.start.column)),
-                            });
-                            let ty_var = ctx.fresh_var();
-                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                         }
                     } else {
                         let ty_var = ctx.fresh_var();
