@@ -44,6 +44,7 @@ export const Playground = () => {
   const [isUpdate, setIsUpdate] = useState(
     localStorage.getItem(IS_UPDATE_KEY) === "true",
   );
+  const [executionTime, setExecutionTime] = useState<number | null>(null);
   const [isEmbed, setIsEmbed] = useState(false);
   const [result, setResult] = useState("");
   const [listStyle, setListStyle] = useState<mq.Options["listStyle"]>(null);
@@ -270,12 +271,19 @@ export const Playground = () => {
     }
   }, [loadFiles]);
 
+  const [isFirstRun, setIsFirstRun] = useState(true);
+
   const handleRun = useCallback(async () => {
+    setIsFirstRun(false);
+
     if (!code || !markdown) {
       return;
     }
-    setResult("Running...");
+    setResult(isFirstRun ? "Initializing..." : "Running...");
     setAstResult("");
+    setExecutionTime(null);
+
+    const startTime = performance.now();
 
     try {
       setResult(
@@ -289,6 +297,9 @@ export const Playground = () => {
       );
     } catch (e) {
       setResult((e as Error).toString());
+    } finally {
+      const endTime = performance.now();
+      setExecutionTime(endTime - startTime);
     }
   }, [
     code,
@@ -305,12 +316,18 @@ export const Playground = () => {
       return;
     }
     setAstResult("Generating AST...");
+    setExecutionTime(null);
+
+    const startTime = performance.now();
 
     try {
       const ast = await mq.toAst(code);
       setAstResult(JSON.stringify(JSON.parse(ast), null, "  "));
     } catch (e) {
       setAstResult((e as Error).toString());
+    } finally {
+      const endTime = performance.now();
+      setExecutionTime(endTime - startTime);
     }
   }, [code]);
 
@@ -1420,7 +1437,10 @@ export const Playground = () => {
             </button>
             <button
               className={`tab ${activeTab === "ast" ? "active" : ""}`}
-              onClick={() => setActiveTab("ast")}
+              onClick={() => {
+                handleGenerateAst();
+                setActiveTab("ast");
+              }}
             >
               AST
             </button>
@@ -1586,6 +1606,13 @@ export const Playground = () => {
               </span>
             )}
           </div>
+          {executionTime && (
+            <div className="footer-right">
+              <div className="execution-time">
+                {executionTime.toFixed(2)} ms
+              </div>
+            </div>
+          )}
         </footer>
       )}
 
