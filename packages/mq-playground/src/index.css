@@ -137,6 +137,16 @@ body {
   gap: 4px;
 }
 
+.execution-time {
+  background-color: light-dark(rgba(103, 184, 227, 0.15), rgba(103, 184, 227, 0.2));
+  color: light-dark(#67b8e3, #67b8e3);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
 .file-tree-panel {
   width: 250px;
   min-width: 200px;
