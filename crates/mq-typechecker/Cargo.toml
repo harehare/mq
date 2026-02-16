@@ -17,6 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { workspace = true, features = ["derive"] }
+colored = { workspace = true }
 itertools = { workspace = true }
 miette = { workspace = true, features = ["fancy"] }
 mq-hir = { workspace = true }

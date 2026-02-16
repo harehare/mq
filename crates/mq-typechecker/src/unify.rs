@@ -52,17 +52,26 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
         // Type variables
         (Type::Var(v1), Type::Var(v2)) if v1 == v2 => {}
 
-        (Type::Var(var), ty) | (ty, Type::Var(var)) => {
-            // Check if the variable is already resolved
-            if let Some(resolved) = ctx.get_type_var(*var) {
-                unify(ctx, &resolved, ty, range);
-                return;
-            }
+        (Type::Var(_), _) | (_, Type::Var(_)) => {
+            // Resolve type variable chains iteratively before unifying
+            let t1 = resolve_var_chain(ctx, t1);
+            let t2 = resolve_var_chain(ctx, t2);
+
+            // After resolution, if neither is a Var, unify the resolved types
+            let (var, ty) = match (&t1, &t2) {
+                (Type::Var(v1), Type::Var(v2)) if v1 == v2 => return,
+                (Type::Var(var), ty) => (*var, ty),
+                (ty, Type::Var(var)) => (*var, ty),
+                _ => {
+                    unify(ctx, &t1, &t2, range);
+                    return;
+                }
+            };
 
             // Occurs check: ensure var doesn't occur in ty
-            if occurs_check(*var, ty) {
+            if occurs_check(var, ty) {
                 // Resolve types for better error messages
-                let var_ty = ctx.resolve_type(&Type::Var(*var));
+                let var_ty = ctx.resolve_type(&Type::Var(var));
                 let resolved_ty = ctx.resolve_type(ty);
                 ctx.add_error(TypeError::OccursCheck {
                     var: var_ty.to_string(),
@@ -74,7 +83,7 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
             }
 
             // Bind the type variable
-            ctx.bind_type_var(*var, ty.clone());
+            ctx.bind_type_var(var, ty.clone());
         }
 
         // Arrays
@@ -135,16 +144,14 @@ fn occurs_check(var: TypeVarId, ty: &Type) -> bool {
     }
 }
 
-/// Applies substitutions to resolve all type variables
+/// Applies substitutions to resolve all type variables.
+///
+/// Type variable chains are followed iteratively to avoid stack overflow.
 pub fn apply_substitution(ctx: &InferenceContext, ty: &Type) -> Type {
-    match ty {
-        Type::Var(var) => {
-            if let Some(resolved) = ctx.get_type_var(*var) {
-                apply_substitution(ctx, &resolved)
-            } else {
-                ty.clone()
-            }
-        }
+    // Follow type variable chains iteratively
+    let ty = resolve_var_chain(ctx, ty);
+    match &ty {
+        Type::Var(_) => ty,
         Type::Array(elem) => Type::Array(Box::new(apply_substitution(ctx, elem))),
         Type::Dict(key, value) => Type::Dict(
             Box::new(apply_substitution(ctx, key)),
@@ -154,7 +161,25 @@ pub fn apply_substitution(ctx: &InferenceContext, ty: &Type) -> Type {
             let new_params = params.iter().map(|p| apply_substitution(ctx, p)).collect();
             Type::Function(new_params, Box::new(apply_substitution(ctx, ret)))
         }
-        _ => ty.clone(),
+        _ => ty,
+    }
+}
+
+/// Follows a type variable substitution chain iteratively until reaching
+/// a non-variable type or an unbound variable.
+fn resolve_var_chain(ctx: &InferenceContext, ty: &Type) -> Type {
+    let mut current = ty.clone();
+    loop {
+        match &current {
+            Type::Var(var) => {
+                if let Some(bound) = ctx.get_type_var(*var) {
+                    current = bound;
+                } else {
+                    return current;
+                }
+            }
+            _ => return current,
+        }
     }
 }
 

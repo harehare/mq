@@ -204,23 +204,40 @@ impl InferenceContext {
         self.substitutions.get(&var).cloned()
     }
 
-    /// Resolves a type by following type variable bindings
+    /// Resolves a type by following type variable bindings.
+    ///
+    /// Type variable chains (var1 → var2 → ... → concrete) are followed iteratively
+    /// to avoid stack overflow on long chains.
     pub fn resolve_type(&self, ty: &Type) -> Type {
-        match ty {
-            Type::Var(var) => {
-                if let Some(bound) = self.substitutions.get(var) {
-                    self.resolve_type(bound)
-                } else {
-                    ty.clone()
-                }
-            }
+        // Follow type variable chains iteratively
+        let ty = self.resolve_var_chain(ty);
+        match &ty {
+            Type::Var(_) => ty,
             Type::Array(elem) => Type::Array(Box::new(self.resolve_type(elem))),
             Type::Dict(key, value) => Type::Dict(Box::new(self.resolve_type(key)), Box::new(self.resolve_type(value))),
             Type::Function(params, ret) => {
                 let new_params = params.iter().map(|p| self.resolve_type(p)).collect();
                 Type::Function(new_params, Box::new(self.resolve_type(ret)))
             }
-            _ => ty.clone(),
+            _ => ty,
+        }
+    }
+
+    /// Follows a type variable substitution chain iteratively until reaching
+    /// a non-variable type or an unbound variable.
+    fn resolve_var_chain(&self, ty: &Type) -> Type {
+        let mut current = ty.clone();
+        loop {
+            match &current {
+                Type::Var(var) => {
+                    if let Some(bound) = self.substitutions.get(var) {
+                        current = bound.clone();
+                    } else {
+                        return current;
+                    }
+                }
+                _ => return current,
+            }
         }
     }
 
