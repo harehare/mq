@@ -24,7 +24,6 @@ use mq_typechecker::TypeChecker;
 // Build HIR from mq code
 let mut hir = Hir::default();
 hir.add_code(None, "def add(x, y): x + y;");
-hir.resolve();
 
 // Run type checker
 let mut type_checker = TypeChecker::new();
