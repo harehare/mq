@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: extractions/setup-just@v3
-      - uses: harehare/setup-mq@v1
+      - uses: harehare/setup-mq@b50819a23b5a6b69eb3653c3679c989c1d4b25a6
         with:
           bins: docs
       - uses: Swatinem/rust-cache@v2
