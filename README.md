@@ -178,13 +178,6 @@ Language bindings are available for the following programming languages:
 - [mq-python](https://github.com/harehare/mq/blob/main/crates/mq-python)
 - [mq-ruby](https://github.com/harehare/mq-ruby)
 
-## MCP (Model Context Protocol)
-
-mq provides an MCP server implementation that allows AI assistants to process Markdown and HTML content using mq's query language.
-
-- [mq-mcp documentation](https://github.com/harehare/mq-mcp)
-- [Getting started with MCP](https://mqlang.org/book/start/mcp)
-
 ## Usage
 
 For more detailed usage and examples, refer to the [documentation](https://mqlang.org/book/).
