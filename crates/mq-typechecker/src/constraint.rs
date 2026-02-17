@@ -149,6 +149,16 @@ fn generate_block_constraints(hir: &Hir, symbol_id: SymbolId, ctx: &mut Inferenc
         ctx.set_piped_input(children[i], prev_ty);
     }
 
+    // Re-process children that received piped input and are Call or Ref,
+    // since they were already processed in Pass 3 before piped inputs were set
+    for &child_id in children.iter().skip(1) {
+        if let Some(child_symbol) = hir.symbol(child_id)
+            && matches!(child_symbol.kind, SymbolKind::Call | SymbolKind::Ref)
+        {
+            generate_symbol_constraints(hir, child_id, child_symbol.kind.clone(), ctx);
+        }
+    }
+
     // The Block's type is the last child's type
     let last_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
     ctx.set_symbol_type(symbol_id, last_ty);
@@ -190,6 +200,42 @@ fn resolve_branch_body_type(hir: &Hir, branch_id: SymbolId, ctx: &mut InferenceC
         }
     } else {
         ctx.get_or_create_symbol_type(branch_id)
+    }
+}
+
+/// Builds the argument type list for a piped builtin function call.
+///
+/// When a function is called via pipe (e.g., `arr | join(",")`) the piped value
+/// becomes the implicit first argument. This function checks if there's a piped input
+/// and whether prepending it produces a valid overload match. If so, the piped input
+/// is prepended; otherwise, only the explicit arguments are returned.
+fn build_piped_call_args(
+    ctx: &mut InferenceContext,
+    symbol_id: SymbolId,
+    explicit_arg_tys: &[Type],
+    func_name: &str,
+) -> Vec<Type> {
+    if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
+        // Try with piped input prepended first
+        let mut piped_args = vec![piped_ty];
+        piped_args.extend_from_slice(explicit_arg_tys);
+
+        // Check if this produces a valid overload match
+        let resolved_piped: Vec<Type> = piped_args.iter().map(|ty| ctx.resolve_type(ty)).collect();
+        if ctx.resolve_overload(func_name, &resolved_piped).is_some() {
+            return piped_args;
+        }
+
+        // If piped version doesn't match, try without piped input
+        let resolved_explicit: Vec<Type> = explicit_arg_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
+        if ctx.resolve_overload(func_name, &resolved_explicit).is_some() {
+            return explicit_arg_tys.to_vec();
+        }
+
+        // Neither matched; return piped version so error message is more informative
+        piped_args
+    } else {
+        explicit_arg_tys.to_vec()
     }
 }
 
@@ -541,9 +587,9 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             // Get the function name from the Call symbol itself
             if let Some(call_symbol) = hir.symbol(symbol_id) {
                 if let Some(func_name) = &call_symbol.value {
-                    // All children are arguments
+                    // All children are explicit arguments
                     let children = get_children(hir, symbol_id);
-                    let arg_tys: Vec<Type> = children
+                    let explicit_arg_tys: Vec<Type> = children
                         .iter()
                         .map(|&arg_id| ctx.get_or_create_symbol_type(arg_id))
                         .collect();
@@ -560,16 +606,16 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
 
                             if let Type::Function(param_tys, ret_ty) = &func_ty {
                                 // Check arity
-                                if param_tys.len() != arg_tys.len() {
+                                if param_tys.len() != explicit_arg_tys.len() {
                                     ctx.add_error(crate::TypeError::WrongArity {
                                         expected: param_tys.len(),
-                                        found: arg_tys.len(),
+                                        found: explicit_arg_tys.len(),
                                         span: range.as_ref().map(range_to_span),
                                         location: range.as_ref().map(|r| (r.start.line, r.start.column)),
                                     });
                                 } else {
                                     // Unify argument types with parameter types
-                                    for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
+                                    for (arg_ty, param_ty) in explicit_arg_tys.iter().zip(param_tys.iter()) {
                                         ctx.add_constraint(Constraint::Equal(arg_ty.clone(), param_ty.clone(), range));
                                     }
                                 }
@@ -577,16 +623,20 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                             } else {
                                 // The definition exists but isn't a function type yet
                                 let ret_ty = Type::Var(ctx.fresh_var());
-                                let expected_func_ty = Type::function(arg_tys.clone(), ret_ty.clone());
+                                let expected_func_ty = Type::function(explicit_arg_tys.clone(), ret_ty.clone());
                                 ctx.add_constraint(Constraint::Equal(func_ty, expected_func_ty, range));
                                 ctx.set_symbol_type(symbol_id, ret_ty);
                             }
                         } else {
                             // Resolved to a builtin - handle via overload resolution
+                            // If there's piped input, prepend it as the implicit first argument
+                            let arg_tys = build_piped_call_args(ctx, symbol_id, &explicit_arg_tys, func_name);
                             resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range);
                         }
                     } else {
                         // No HIR resolution - try builtin overload resolution
+                        // If there's piped input, prepend it as the implicit first argument
+                        let arg_tys = build_piped_call_args(ctx, symbol_id, &explicit_arg_tys, func_name);
                         resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range);
                     }
                 } else {

@@ -499,3 +499,27 @@ fn test_pipe_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
         result
     );
 }
+
+// --- Piped function calls (pipe value as implicit first argument) ---
+#[rstest]
+#[case::piped_join("[\"a\", \"b\"] | join(\",\")", true)] // array piped as first arg to join
+#[case::piped_split("\"a,b,c\" | split(\",\")", true)] // string piped as first arg to split
+#[case::piped_starts_with("\"hello\" | starts_with(\"he\")", true)]
+#[case::piped_ends_with("\"hello\" | ends_with(\"lo\")", true)]
+#[case::piped_index("\"hello\" | index(\"ll\")", true)]
+#[case::piped_replace("\"hello\" | replace(\"l\", \"r\")", true)]
+#[case::piped_gsub("\"hello\" | gsub(\"l\", \"r\")", true)]
+#[case::piped_slice("[1, 2, 3, 4] | slice(1, 3)", true)]
+#[case::piped_repeat("\"x\" | repeat(3)", true)]
+#[case::piped_join_wrong_type("42 | join(\",\")", false)] // number piped to join (expects array)
+#[case::piped_split_wrong_type("42 | split(\",\")", false)] // number piped to split (expects string)
+fn test_piped_function_calls(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}

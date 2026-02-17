@@ -2823,6 +2823,7 @@ name = "mq-typechecker"
 version = "0.5.15"
 dependencies = [
  "clap",
+ "colored 3.1.1",
  "itertools 0.14.0",
  "miette",
  "mq-hir",
