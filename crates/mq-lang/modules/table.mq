@@ -48,6 +48,11 @@ def tables(md_nodes):
     end
 end
 
+# Set the alignment for a table.
+def set_align(table, align):
+  set(table, :align, set_attr(table[:align], "align", join(map(align, to_string), ",")))
+end
+
 # Add a new row to a table.
 def add_row(table, row):
   if (len(row) != len(table[:header])):

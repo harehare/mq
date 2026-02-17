@@ -261,6 +261,12 @@ def test_table_tables_empty():
   | assert_eq(result, [])
 end
 
+def test_table_set_align():
+  let t1 = do table::tables(table_nodes) | first();
+  | let t1 = table::set_align(t1, [:left, :center, :right])
+  | assert_eq(to_string(t1[:align]), "|:---|:---:|---:|")
+end
+
 def test_table_add_row():
   let t = first(table::tables(table_nodes))
   | let t = table::add_row(t, ["Charlie", "35", "Nagoya"])
@@ -372,5 +378,6 @@ end
   test_case("Table Filter Rows", test_table_filter_rows),
   test_case("Table Filter Tables", test_table_filter_tables),
   test_case("Table Sort Rows", test_table_sort_rows),
+  test_case("Table Set Align", test_table_set_align),
 ])
 
