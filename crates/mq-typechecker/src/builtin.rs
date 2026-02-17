@@ -172,6 +172,14 @@ fn register_logical(ctx: &mut InferenceContext) {
         Type::Bool,
     );
 
+    // Variadic logical: or/and with 3-6 boolean arguments
+    for n in 3..=6 {
+        let params = vec![Type::Bool; n];
+        for name in ["or", "and"] {
+            ctx.register_builtin(name, Type::function(params.clone(), Type::Bool));
+        }
+    }
+
     // Unary logical: bool -> bool
     register_unary(ctx, "!", Type::Bool, Type::Bool);
     register_unary(ctx, "not", Type::Bool, Type::Bool);
@@ -340,6 +348,9 @@ fn register_array(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_binary(ctx, "repeat", Type::Var(a), Type::Number, Type::array(Type::Var(a)));
 
+    // slice: (string, number, number) -> string
+    register_ternary(ctx, "slice", Type::String, Type::Number, Type::Number, Type::String);
+
     // None propagation for array functions
     register_none_propagation_unary(ctx, &["reverse", "sort", "uniq", "compact", "flatten", "len"]);
     // slice: (none, number, number) -> none
@@ -416,6 +427,10 @@ fn register_dict(ctx: &mut InferenceContext) {
         Type::dict(Type::Var(k), Type::Var(v)),
     );
 
+    // dict: () -> {k: v} (empty dict constructor)
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_nullary(ctx, "dict", Type::dict(Type::Var(k), Type::Var(v)));
+
     // dict: (k, v) -> {k: v}
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
     register_binary(
@@ -425,6 +440,23 @@ fn register_dict(ctx: &mut InferenceContext) {
         Type::Var(v),
         Type::dict(Type::Var(k), Type::Var(v)),
     );
+
+    // dict: ([a]) -> {k: v} (construct dict from entries array)
+    let (a, k, v) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
+    register_unary(
+        ctx,
+        "dict",
+        Type::array(Type::Var(a)),
+        Type::dict(Type::Var(k), Type::Var(v)),
+    );
+
+    // len: ({k: v}) -> number
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_unary(ctx, "len", Type::dict(Type::Var(k), Type::Var(v)), Type::Number);
+
+    // get: ([a], number) -> a (array element access)
+    let a = ctx.fresh_var();
+    register_binary(ctx, "get", Type::array(Type::Var(a)), Type::Number, Type::Var(a));
 
     // None propagation for dict functions
     register_none_propagation_unary(ctx, &["keys", "values", "entries"]);
@@ -453,11 +485,14 @@ fn register_datetime(ctx: &mut InferenceContext) {
 
 /// I/O and control flow functions: print, stderr, error, halt, input
 fn register_io(ctx: &mut InferenceContext) {
-    // print/stderr: a -> a (side effect)
+    // print/stderr: a -> a (side effect), also (a, b) -> a for format strings
     let a = ctx.fresh_var();
     register_unary(ctx, "print", Type::Var(a), Type::Var(a));
     let a = ctx.fresh_var();
     register_unary(ctx, "stderr", Type::Var(a), Type::Var(a));
+    // stderr with 2 args (e.g., format string with interpolation)
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(ctx, "stderr", Type::Var(a), Type::Var(b), Type::Var(a));
 
     register_unary(ctx, "error", Type::String, Type::None);
     register_unary(ctx, "halt", Type::Number, Type::None);
