@@ -647,7 +647,11 @@ impl<T: ModuleResolver> Evaluator<T> {
                                 self.call_fn(&fn_value, call_node, func_name.name, args, runtime_value, env)
                             }
                             Err(_) => {
-                                let token = get_token(Shared::clone(&self.token_arena), token_id);
+                                let token = func_name
+                                    .token
+                                    .as_ref()
+                                    .cloned()
+                                    .unwrap_or(get_token(Shared::clone(&self.token_arena), token_id));
                                 Err(RuntimeError::NotDefined((*token).clone(), func_name.name.to_string()).into())
                             }
                         }
@@ -666,8 +670,11 @@ impl<T: ModuleResolver> Evaluator<T> {
                 }
             }
             _ => {
-                let token = get_token(Shared::clone(&self.token_arena), token_id);
-                let last_module = module_path.last().map(|m| m.name.to_string()).unwrap_or_default();
+                let (token, last_module) = module_path
+                    .last()
+                    .map(|m| (m.token.clone(), m.name.to_string()))
+                    .unwrap_or_default();
+                let token = token.unwrap_or(get_token(Shared::clone(&self.token_arena), token_id));
                 Err(RuntimeError::NotDefined((*token).clone(), last_module).into())
             }
         }
