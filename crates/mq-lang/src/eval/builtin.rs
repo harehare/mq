@@ -306,6 +306,7 @@ define_builtin!(TO_MARKDOWN_STRING, ParamNum::Fixed(1), |_, _, args, _| {
 });
 
 define_builtin!(TO_STRING, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
+    [RuntimeValue::Symbol(s)] => Ok(s.as_str().into()),
     [o] => Ok(o.to_string().into()),
     _ => unreachable!(),
 });

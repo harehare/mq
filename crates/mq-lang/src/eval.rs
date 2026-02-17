@@ -2607,6 +2607,11 @@ mod tests {
             ast_call("to_string", SmallVec::new())
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)]))]
+    #[case::to_string_symbol(vec![RuntimeValue::Symbol("test".to_string().into())],
+       vec![
+            ast_call("to_string", SmallVec::new())
+       ],
+       Ok(vec![RuntimeValue::String("test".to_string())]))]
     #[case::split1(vec![RuntimeValue::String("test1,test2".to_string())],
        vec![
             ast_call("split", smallvec![
