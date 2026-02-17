@@ -115,7 +115,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
         generate_symbol_constraints(hir, symbol_id, kind, ctx);
     }
 
-    // Pass 4: Process Block symbols (pipe chains)
+    // Pass 4: Process Block symbols and Function body pipe chains
     // Children are now typed, so we can thread output types through the chain
     for (symbol_id, symbol) in hir.symbols() {
         if hir.is_builtin_symbol(symbol) {
@@ -123,6 +123,10 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
         }
         if matches!(symbol.kind, SymbolKind::Block) {
             generate_block_constraints(hir, symbol_id, ctx);
+        }
+        // Handle implicit pipe chains in Function/Macro bodies
+        if matches!(symbol.kind, SymbolKind::Function(_) | SymbolKind::Macro(_)) {
+            generate_function_body_pipe_constraints(hir, symbol_id, ctx);
         }
     }
 }
@@ -164,6 +168,43 @@ fn generate_block_constraints(hir: &Hir, symbol_id: SymbolId, ctx: &mut Inferenc
     ctx.set_symbol_type(symbol_id, last_ty);
 }
 
+/// Generates pipe constraints for implicit pipe chains in Function/Macro bodies.
+///
+/// When a function body has multiple non-parameter children (e.g., `def f(x): a | b`),
+/// the output of each expression flows into the next as piped input.
+fn generate_function_body_pipe_constraints(hir: &Hir, symbol_id: SymbolId, ctx: &mut InferenceContext) {
+    let children = get_children(hir, symbol_id);
+
+    // Get non-parameter body children
+    let body_children: Vec<SymbolId> = children
+        .into_iter()
+        .filter(|&child_id| {
+            hir.symbol(child_id)
+                .map(|s| !matches!(s.kind, SymbolKind::Parameter | SymbolKind::Keyword))
+                .unwrap_or(false)
+        })
+        .collect();
+
+    if body_children.len() <= 1 {
+        return;
+    }
+
+    // Thread types through the pipe chain
+    for i in 1..body_children.len() {
+        let prev_ty = ctx.get_or_create_symbol_type(body_children[i - 1]);
+        ctx.set_piped_input(body_children[i], prev_ty);
+    }
+
+    // Re-process Call/Ref children that received piped input
+    for &child_id in body_children.iter().skip(1) {
+        if let Some(child_symbol) = hir.symbol(child_id)
+            && matches!(child_symbol.kind, SymbolKind::Call | SymbolKind::Ref)
+        {
+            generate_symbol_constraints(hir, child_id, child_symbol.kind.clone(), ctx);
+        }
+    }
+}
+
 /// Resolves the body type of an elif/else branch.
 ///
 /// For Elif: children are [condition, body] — constrains condition to Bool, returns body type.
@@ -203,6 +244,21 @@ fn resolve_branch_body_type(hir: &Hir, branch_id: SymbolId, ctx: &mut InferenceC
     }
 }
 
+/// Checks if a symbol might receive piped input later (i.e., is inside a Block
+/// or a Function/Macro body with multiple expressions).
+fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool {
+    hir.symbol(symbol_id)
+        .and_then(|s| s.parent)
+        .and_then(|parent_id| hir.symbol(parent_id))
+        .map(|parent| {
+            matches!(
+                parent.kind,
+                SymbolKind::Block | SymbolKind::Function(_) | SymbolKind::Macro(_)
+            )
+        })
+        .unwrap_or(false)
+}
+
 /// Builds the argument type list for a piped builtin function call.
 ///
 /// When a function is called via pipe (e.g., `arr | join(",")`) the piped value
@@ -239,13 +295,17 @@ fn build_piped_call_args(
     }
 }
 
-/// Resolves a builtin function call using overload resolution
+/// Resolves a builtin function call using overload resolution.
+///
+/// If `defer_error` is true (e.g., the call might receive piped input later),
+/// no error is generated on mismatch — only a fresh type variable is assigned.
 fn resolve_builtin_call(
     ctx: &mut InferenceContext,
     symbol_id: SymbolId,
     func_name: &str,
     arg_tys: &[Type],
     range: Option<mq_lang::Range>,
+    defer_error: bool,
 ) {
     let resolved_arg_tys: Vec<Type> = arg_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
     let is_builtin = ctx.get_builtin_overloads(func_name).is_some();
@@ -260,7 +320,7 @@ fn resolve_builtin_call(
             let ty_var = ctx.fresh_var();
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }
-    } else if is_builtin {
+    } else if is_builtin && !defer_error {
         ctx.add_error(crate::TypeError::UnificationError {
             left: format!(
                 "{} with arguments ({})",
@@ -587,8 +647,16 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             // Get the function name from the Call symbol itself
             if let Some(call_symbol) = hir.symbol(symbol_id) {
                 if let Some(func_name) = &call_symbol.value {
-                    // All children are explicit arguments
-                    let children = get_children(hir, symbol_id);
+                    // All children are explicit arguments (filter out Keyword symbols
+                    // which are syntax elements like `fn` in lambda expressions)
+                    let children: Vec<SymbolId> = get_children(hir, symbol_id)
+                        .into_iter()
+                        .filter(|&child_id| {
+                            hir.symbol(child_id)
+                                .map(|s| !matches!(s.kind, SymbolKind::Keyword))
+                                .unwrap_or(true)
+                        })
+                        .collect();
                     let explicit_arg_tys: Vec<Type> = children
                         .iter()
                         .map(|&arg_id| ctx.get_or_create_symbol_type(arg_id))
@@ -605,17 +673,34 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                             let func_ty = ctx.get_or_create_symbol_type(def_id);
 
                             if let Type::Function(param_tys, ret_ty) = &func_ty {
+                                // Try piped input if explicit args don't match arity
+                                let arg_tys = if param_tys.len() != explicit_arg_tys.len() {
+                                    if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
+                                        let mut piped_args = vec![piped_ty];
+                                        piped_args.extend(explicit_arg_tys.iter().cloned());
+                                        piped_args
+                                    } else {
+                                        explicit_arg_tys.clone()
+                                    }
+                                } else {
+                                    explicit_arg_tys.clone()
+                                };
+
                                 // Check arity
-                                if param_tys.len() != explicit_arg_tys.len() {
-                                    ctx.add_error(crate::TypeError::WrongArity {
-                                        expected: param_tys.len(),
-                                        found: explicit_arg_tys.len(),
-                                        span: range.as_ref().map(range_to_span),
-                                        location: range.as_ref().map(|r| (r.start.line, r.start.column)),
-                                    });
+                                if param_tys.len() != arg_tys.len() {
+                                    // If arity doesn't match and the call might receive piped input later
+                                    // (inside a Block), defer the error until Pass 4 re-processing
+                                    if !might_receive_piped_input(hir, symbol_id) {
+                                        ctx.add_error(crate::TypeError::WrongArity {
+                                            expected: param_tys.len(),
+                                            found: arg_tys.len(),
+                                            span: range.as_ref().map(range_to_span),
+                                            location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                                        });
+                                    }
                                 } else {
                                     // Unify argument types with parameter types
-                                    for (arg_ty, param_ty) in explicit_arg_tys.iter().zip(param_tys.iter()) {
+                                    for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
                                         ctx.add_constraint(Constraint::Equal(arg_ty.clone(), param_ty.clone(), range));
                                     }
                                 }
@@ -631,13 +716,16 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                             // Resolved to a builtin - handle via overload resolution
                             // If there's piped input, prepend it as the implicit first argument
                             let arg_tys = build_piped_call_args(ctx, symbol_id, &explicit_arg_tys, func_name);
-                            resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range);
+                            // Defer error if call might receive piped input later (inside a Block)
+                            let defer = might_receive_piped_input(hir, symbol_id);
+                            resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
                         }
                     } else {
                         // No HIR resolution - try builtin overload resolution
                         // If there's piped input, prepend it as the implicit first argument
                         let arg_tys = build_piped_call_args(ctx, symbol_id, &explicit_arg_tys, func_name);
-                        resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range);
+                        let defer = might_receive_piped_input(hir, symbol_id);
+                        resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
                     }
                 } else {
                     let ty_var = ctx.fresh_var();
