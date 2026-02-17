@@ -2,7 +2,7 @@
 
 use crate::TypeError;
 use crate::constraint::Constraint;
-use crate::types::{Type, TypeScheme, TypeVarContext, TypeVarId};
+use crate::types::{Substitution, Type, TypeScheme, TypeVarContext, TypeVarId};
 use mq_hir::SymbolId;
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
@@ -146,7 +146,26 @@ impl InferenceContext {
             }
         }
 
-        best_match.map(|(ty, _score)| ty)
+        best_match.map(|(ty, _score)| self.instantiate_fresh(&ty))
+    }
+
+    /// Instantiates fresh type variables in a type to avoid contamination
+    /// when the same overload is used multiple times.
+    fn instantiate_fresh(&mut self, ty: &Type) -> Type {
+        let free_vars = ty.free_vars();
+        if free_vars.is_empty() {
+            return ty.clone();
+        }
+        // Deduplicate: same var appearing multiple times should map to the same fresh var
+        let mut seen = rustc_hash::FxHashSet::default();
+        let mut subst = Substitution::empty();
+        for var in free_vars {
+            if seen.insert(var) {
+                let fresh = self.fresh_var();
+                subst.insert(var, Type::Var(fresh));
+            }
+        }
+        ty.apply_subst(&subst)
     }
 
     /// Generates a fresh type variable
