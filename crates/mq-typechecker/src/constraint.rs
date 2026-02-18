@@ -163,6 +163,10 @@ fn generate_block_constraints(hir: &Hir, symbol_id: SymbolId, ctx: &mut Inferenc
         }
     }
 
+    // Propagate piped input through UnaryOp to inner Call/Ref children.
+    // e.g., `x | !is_empty()` — piped input flows through `!` to `is_empty()`
+    propagate_piped_input_through_unary_ops(hir, &children, ctx);
+
     // The Block's type is the last child's type
     let last_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
     ctx.set_symbol_type(symbol_id, last_ty);
@@ -201,6 +205,37 @@ fn generate_function_body_pipe_constraints(hir: &Hir, symbol_id: SymbolId, ctx: 
             && matches!(child_symbol.kind, SymbolKind::Call | SymbolKind::Ref)
         {
             generate_symbol_constraints(hir, child_id, child_symbol.kind.clone(), ctx);
+        }
+    }
+
+    // Propagate piped input through UnaryOp to inner Call/Ref children
+    propagate_piped_input_through_unary_ops(hir, &body_children, ctx);
+}
+
+/// Propagates piped input through UnaryOp nodes to their inner Call/Ref children.
+///
+/// When a pipe chain contains `x | !f()`, the piped value from `x` flows through
+/// the `!` (UnaryOp) to `f()` (Call). This function handles that propagation and
+/// re-processes the inner Call/Ref to pick up the piped input.
+fn propagate_piped_input_through_unary_ops(
+    hir: &Hir,
+    children: &[SymbolId],
+    ctx: &mut InferenceContext,
+) {
+    for &child_id in children.iter().skip(1) {
+        if let Some(child_symbol) = hir.symbol(child_id)
+            && matches!(child_symbol.kind, SymbolKind::UnaryOp)
+            && let Some(piped_ty) = ctx.get_piped_input(child_id).cloned()
+        {
+            let inner_children = get_children(hir, child_id);
+            for &inner_id in &inner_children {
+                if let Some(inner_sym) = hir.symbol(inner_id)
+                    && matches!(inner_sym.kind, SymbolKind::Call | SymbolKind::Ref)
+                {
+                    ctx.set_piped_input(inner_id, piped_ty.clone());
+                    generate_symbol_constraints(hir, inner_id, inner_sym.kind.clone(), ctx);
+                }
+            }
         }
     }
 }
@@ -246,17 +281,35 @@ fn resolve_branch_body_type(hir: &Hir, branch_id: SymbolId, ctx: &mut InferenceC
 
 /// Checks if a symbol might receive piped input later (i.e., is inside a Block
 /// or a Function/Macro body with multiple expressions).
+///
+/// Also handles the case where a Call/Ref is inside a UnaryOp that is itself
+/// inside a Block, e.g., `x | !f()` where `f()` eventually receives piped input.
 fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool {
-    hir.symbol(symbol_id)
-        .and_then(|s| s.parent)
-        .and_then(|parent_id| hir.symbol(parent_id))
-        .map(|parent| {
-            matches!(
-                parent.kind,
-                SymbolKind::Block | SymbolKind::Function(_) | SymbolKind::Macro(_)
-            )
-        })
-        .unwrap_or(false)
+    let parent_id = match hir.symbol(symbol_id).and_then(|s| s.parent) {
+        Some(id) => id,
+        None => return false,
+    };
+    let parent = match hir.symbol(parent_id) {
+        Some(p) => p,
+        None => return false,
+    };
+    if matches!(
+        parent.kind,
+        SymbolKind::Block | SymbolKind::Function(_) | SymbolKind::Macro(_)
+    ) {
+        return true;
+    }
+    // Check grandparent: if parent is UnaryOp inside a pipe-capable construct
+    if matches!(parent.kind, SymbolKind::UnaryOp)
+        && let Some(grandparent_id) = parent.parent
+        && let Some(grandparent) = hir.symbol(grandparent_id)
+    {
+        return matches!(
+            grandparent.kind,
+            SymbolKind::Block | SymbolKind::Function(_) | SymbolKind::Macro(_)
+        );
+    }
+    false
 }
 
 /// Builds the argument type list for a piped builtin function call.
@@ -309,6 +362,24 @@ fn resolve_builtin_call(
 ) {
     let resolved_arg_tys: Vec<Type> = arg_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
     let is_builtin = ctx.get_builtin_overloads(func_name).is_some();
+    let has_unresolved_args = resolved_arg_tys.iter().any(|ty| ty.is_var());
+
+    // If any argument is still a type variable and there are multiple overloads,
+    // defer resolution to avoid committing to the wrong overload
+    if has_unresolved_args && is_builtin {
+        let overload_count = ctx.get_builtin_overloads(func_name).map(|o| o.len()).unwrap_or(0);
+        if overload_count > 1 {
+            let ty_var = ctx.fresh_var();
+            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            ctx.add_deferred_overload(DeferredOverload {
+                symbol_id,
+                op_name: SmolStr::new(func_name),
+                operand_tys: arg_tys.to_vec(),
+                range,
+            });
+            return;
+        }
+    }
 
     if let Some(resolved_ty) = ctx.resolve_overload(func_name, &resolved_arg_tys) {
         if let Type::Function(param_tys, ret_ty) = resolved_ty {
@@ -509,6 +580,38 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 let def_ty = ctx.get_or_create_symbol_type(def_id);
                 let range = get_symbol_range(hir, symbol_id);
                 ctx.add_constraint(Constraint::Equal(ref_ty, def_ty, range));
+            } else {
+                // No HIR resolution — try builtin registry by name as fallback
+                if let Some(symbol) = hir.symbol(symbol_id)
+                    && let Some(name) = &symbol.value
+                    && ctx.get_builtin_overloads(name.as_str()).is_some()
+                {
+                    if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
+                        let arg_tys = vec![piped_ty];
+                        if let Some(Type::Function(param_tys, ret_ty)) =
+                            ctx.resolve_overload(name.as_str(), &arg_tys)
+                        {
+                            let range = get_symbol_range(hir, symbol_id);
+                            for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
+                                ctx.add_constraint(Constraint::Equal(
+                                    arg_ty.clone(),
+                                    param_ty.clone(),
+                                    range,
+                                ));
+                            }
+                            ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
+                            return;
+                        }
+                    }
+
+                    let overload_count = ctx.get_builtin_overloads(name.as_str()).map(|o| o.len()).unwrap_or(0);
+                    let ref_ty = ctx.get_or_create_symbol_type(symbol_id);
+                    if overload_count == 1 {
+                        let builtin_ty = ctx.get_builtin_overloads(name.as_str()).unwrap()[0].clone();
+                        let range = get_symbol_range(hir, symbol_id);
+                        ctx.add_constraint(Constraint::Equal(ref_ty, builtin_ty, range));
+                    }
+                }
             }
         }
 
@@ -667,7 +770,8 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                     // Try user-defined function first (via HIR reference resolution)
                     if let Some(def_id) = hir.resolve_reference_symbol(symbol_id) {
                         let def_symbol = hir.symbol(def_id);
-                        let is_user_defined = def_symbol.map(|s| !hir.is_builtin_symbol(s)).unwrap_or(false);
+                        let is_user_defined =
+                            def_symbol.map(|s| !hir.is_builtin_symbol(s)).unwrap_or(false);
 
                         if is_user_defined {
                             let func_ty = ctx.get_or_create_symbol_type(def_id);
