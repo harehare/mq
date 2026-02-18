@@ -2796,6 +2796,38 @@ mod tests {
        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "base64d".to_string(),
                                                     args: vec![1.to_string().into()]})))]
+    #[case::base64url_encode(
+        vec![RuntimeValue::String("hello".into())],
+        vec![
+            ast_call("base64url", smallvec![
+            ])
+        ],
+        Ok(vec![RuntimeValue::String("aGVsbG8".into())])
+    )]
+    #[case::base64url_decode(
+        vec![RuntimeValue::String("aGVsbG8".into())],
+        vec![
+            ast_call("base64urld", smallvec![
+            ])
+        ],
+        Ok(vec![RuntimeValue::String("hello".into())])
+    )]
+    #[case::base64url(vec![RuntimeValue::Number(1.into())],
+       vec![
+            ast_call("base64url", smallvec![
+            ])
+       ],
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "base64url".to_string(),
+                                                    args: vec![1.to_string().into()]})))]
+    #[case::base64urld(vec![RuntimeValue::Number(1.into())],
+       vec![
+            ast_call("base64urld", smallvec![
+            ])
+       ],
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "base64urld".to_string(),
+                                                    args: vec![1.to_string().into()]})))]
     #[case::def(vec![RuntimeValue::String("test1,test2".to_string())],
        vec![
             ast_node(ast::Expr::Def(
