@@ -18,6 +18,10 @@ struct Cli {
     /// Display inferred types for all symbols
     #[arg(long)]
     show_types: bool,
+
+    /// Disable automatic builtin preloading (use when checking builtin.mq itself)
+    #[arg(long)]
+    no_builtins: bool,
 }
 
 fn main() {
@@ -55,6 +59,9 @@ fn main() {
     };
 
     let mut hir = Hir::default();
+    if cli.no_builtins {
+        hir.builtin.disabled = true;
+    }
     hir.add_code(source_url, &code);
     hir.resolve();
 
