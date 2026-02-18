@@ -231,6 +231,42 @@ define_builtin!(
     }
 );
 
+define_builtin!(BASE64URL, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => base64url(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| {
+                base64url(md.value().as_str()).and_then(|b| match b {
+                    RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                    a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                })
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
+define_builtin!(
+    BASE64URLD,
+    ParamNum::Fixed(1),
+    |ident, _, mut args, _| match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => base64urld(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| {
+                base64urld(md.value().as_str()).and_then(|o| match o {
+                    RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                    a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                })
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
+        _ => unreachable!(),
+    }
+);
+
 define_builtin!(
     MIN,
     ParamNum::Fixed(2),
@@ -2353,6 +2389,8 @@ const HASH_ARRAY: u64 = fnv1a_hash_64(constants::builtins::ARRAY);
 const HASH_ATTR: u64 = fnv1a_hash_64(constants::builtins::ATTR);
 const HASH_BASE64: u64 = fnv1a_hash_64("base64");
 const HASH_BASE64D: u64 = fnv1a_hash_64("base64d");
+const HASH_BASE64URL: u64 = fnv1a_hash_64("base64url");
+const HASH_BASE64URLD: u64 = fnv1a_hash_64("base64urld");
 const HASH_CAPTURE: u64 = fnv1a_hash_64("capture");
 const HASH_CEIL: u64 = fnv1a_hash_64("ceil");
 const HASH_COMPACT: u64 = fnv1a_hash_64("compact");
@@ -2482,6 +2520,8 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_ATTR => Some(&ATTR),
         HASH_BASE64 => Some(&BASE64),
         HASH_BASE64D => Some(&BASE64D),
+        HASH_BASE64URL => Some(&BASE64URL),
+        HASH_BASE64URLD => Some(&BASE64URLD),
         HASH_CAPTURE => Some(&CAPTURE),
         HASH_CEIL => Some(&CEIL),
         HASH_COMPACT => Some(&COMPACT),
@@ -3079,6 +3119,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         SmolStr::new("base64d"),
         BuiltinFunctionDoc {
             description: "Decodes the given base64 string.",
+            params: &["input"],
+        },
+    );
+    map.insert(
+        SmolStr::new("base64url"),
+        BuiltinFunctionDoc {
+            description: "Encodes the given string to URL-safe base64.",
+            params: &["input"],
+        },
+    );
+    map.insert(
+        SmolStr::new("base64urld"),
+        BuiltinFunctionDoc {
+            description: "Decodes the given URL-safe base64 string.",
             params: &["input"],
         },
     );
@@ -4031,6 +4085,19 @@ fn base64(input: &str) -> Result<RuntimeValue, Error> {
 #[inline(always)]
 fn base64d(input: &str) -> Result<RuntimeValue, Error> {
     BASE64_STANDARD
+        .decode(input)
+        .map_err(Error::InvalidBase64String)
+        .map(|v| RuntimeValue::String(String::from_utf8_lossy(&v).to_string()))
+}
+
+#[inline(always)]
+fn base64url(input: &str) -> Result<RuntimeValue, Error> {
+    Ok(RuntimeValue::String(BASE64_URL_SAFE_NO_PAD.encode(input)))
+}
+
+#[inline(always)]
+fn base64urld(input: &str) -> Result<RuntimeValue, Error> {
+    BASE64_URL_SAFE_NO_PAD
         .decode(input)
         .map_err(Error::InvalidBase64String)
         .map(|v| RuntimeValue::String(String::from_utf8_lossy(&v).to_string()))
