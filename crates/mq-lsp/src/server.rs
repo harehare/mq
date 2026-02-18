@@ -184,6 +184,20 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
 
+        // Handle work done progress
+        let progress = if let Some(token) = params.work_done_progress_params.work_done_token.clone() {
+            self.client.create_work_done_progress(token.clone()).await.ok();
+            Some(
+                self.client
+                    .progress(token, "Formatting")
+                    .with_message("Formatting document...")
+                    .begin()
+                    .await,
+            )
+        } else {
+            None
+        };
+
         let text = Arc::clone(&self.text_map.get(&params.text_document.uri.to_string()).unwrap());
         let formatted_text = tokio::task::spawn_blocking(move || {
             mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
@@ -195,6 +209,11 @@ impl LanguageServer for Backend {
         .await
         .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::InternalError))?
         .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::ParseError))?;
+
+        // End work done progress
+        if let Some(progress) = progress {
+            progress.finish_with_message("Formatting complete").await;
+        }
 
         Ok(Some(vec![ls_types::TextEdit {
             range: ls_types::Range::new(
@@ -219,6 +238,20 @@ impl LanguageServer for Backend {
             Arc::clone(&text)
         } else {
             return Ok(None);
+        };
+
+        // Handle work done progress
+        let progress = if let Some(token) = params.work_done_progress_params.work_done_token.clone() {
+            self.client.create_work_done_progress(token.clone()).await.ok();
+            Some(
+                self.client
+                    .progress(token, "Range Formatting")
+                    .with_message("Formatting range...")
+                    .begin()
+                    .await,
+            )
+        } else {
+            None
         };
 
         let lines: Vec<&str> = text.lines().collect();
@@ -269,6 +302,11 @@ impl LanguageServer for Backend {
         .await
         .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::InternalError))?
         .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::ParseError))?;
+
+        // End work done progress
+        if let Some(progress) = progress {
+            progress.finish_with_message("Range formatting complete").await;
+        }
 
         Ok(Some(vec![ls_types::TextEdit {
             range: params.range,

@@ -1,7 +1,7 @@
 use tower_lsp_server::ls_types::{
-    CompletionOptions, ExecuteCommandOptions, HoverProviderCapability, OneOf, SemanticTokensFullOptions,
-    SemanticTokensLegend, SemanticTokensOptions, SemanticTokensServerCapabilities, ServerCapabilities,
-    TextDocumentSyncCapability, TextDocumentSyncKind,
+    CompletionOptions, DocumentFormattingOptions, DocumentRangeFormattingOptions, ExecuteCommandOptions,
+    HoverProviderCapability, OneOf, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+    SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
 };
 
 use crate::semantic_tokens;
@@ -22,8 +22,16 @@ pub fn server_capabilities() -> ServerCapabilities {
             ],
             ..Default::default()
         }),
-        document_formatting_provider: Some(OneOf::Left(true)),
-        document_range_formatting_provider: Some(OneOf::Left(true)),
+        document_formatting_provider: Some(OneOf::Right(DocumentFormattingOptions {
+            work_done_progress_options: tower_lsp_server::ls_types::WorkDoneProgressOptions {
+                work_done_progress: Some(true),
+            },
+        })),
+        document_range_formatting_provider: Some(OneOf::Right(DocumentRangeFormattingOptions {
+            work_done_progress_options: tower_lsp_server::ls_types::WorkDoneProgressOptions {
+                work_done_progress: Some(true),
+            },
+        })),
         document_symbol_provider: Some(OneOf::Left(true)),
         definition_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
