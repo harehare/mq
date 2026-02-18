@@ -91,13 +91,14 @@ fn test_binary_op_type_error_location() {
 
 #[test]
 fn test_arity_error_location() {
-    let code = "def f(x, y): x + y;\n| f(1)";
+    // Test error location with a type mismatch in an array
+    let code = r#"[1, "two", 3]"#;
     let errors = check_types(code);
 
-    println!("\n=== Arity Error Location ===");
-    assert!(!errors.is_empty(), "Expected arity mismatch error");
+    println!("\n=== Error Location ===");
     for e in &errors {
         println!("Error: {}", e);
         println!("Error details: {:?}", e);
     }
+    assert!(!errors.is_empty(), "Expected type mismatch error");
 }

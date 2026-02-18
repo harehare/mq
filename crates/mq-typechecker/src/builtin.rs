@@ -494,8 +494,12 @@ fn register_io(ctx: &mut InferenceContext) {
     let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
     register_binary(ctx, "stderr", Type::Var(a), Type::Var(b), Type::Var(a));
 
-    register_unary(ctx, "error", Type::String, Type::None);
-    register_unary(ctx, "halt", Type::Number, Type::None);
+    // error/halt never return, so use a fresh type variable (acts as bottom/never type)
+    // This allows error() in if/else branches without type conflicts
+    let a = ctx.fresh_var();
+    register_unary(ctx, "error", Type::String, Type::Var(a));
+    let a = ctx.fresh_var();
+    register_unary(ctx, "halt", Type::Number, Type::Var(a));
     register_nullary(ctx, "input", Type::String);
 }
 

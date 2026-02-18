@@ -150,8 +150,8 @@ impl InferenceContext {
     }
 
     /// Instantiates fresh type variables in a type to avoid contamination
-    /// when the same overload is used multiple times.
-    fn instantiate_fresh(&mut self, ty: &Type) -> Type {
+    /// when the same overload or user-defined function is used at multiple call sites.
+    pub fn instantiate_fresh(&mut self, ty: &Type) -> Type {
         let free_vars = ty.free_vars();
         if free_vars.is_empty() {
             return ty.clone();
