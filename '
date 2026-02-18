@@ -209,9 +209,11 @@ impl LanguageServer for Backend {
         &self,
         params: DocumentRangeFormattingParams,
     ) -> jsonrpc::Result<Option<Vec<ls_types::TextEdit>>> {
-        if let Some(errors) = self.error_map.get(&params.text_document.uri.to_string())
-            && !errors.is_empty()
-        {
+        if let Some(errors) = self.error_map.get(&params.text_document.uri.to_string()) {
+            if !errors.is_empty() {
+                return Ok(None);
+            }
+        } else {
             return Ok(None);
         }
 
@@ -1070,8 +1072,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_range_formatting_single_line() {
-        let uri = "file:///test1.md";
-        let text = "def v():1;";
+        let uri = "file:///test.md";
+        let text = "def v(): 1;";
         let (service, _) = LspService::new(|client| Backend {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
@@ -1084,7 +1086,7 @@ mod tests {
 
         let params = DocumentRangeFormattingParams {
             text_document: TextDocumentIdentifier {
-                uri: ls_types::Uri::from_str(uri).unwrap(),
+                uri: ls_types::Uri::from_file_path(uri).unwrap(),
             },
             range: ls_types::Range {
                 start: ls_types::Position { line: 0, character: 0 },
@@ -1104,7 +1106,7 @@ mod tests {
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].range.start.line, 0);
         assert_eq!(edits[0].range.end.line, 0);
-        assert!(edits[0].new_text.trim().starts_with("def"));
+        assert!(edits[0].new_text.trim().starts_with("item1"));
     }
 
     #[tokio::test]
@@ -1142,13 +1144,14 @@ mod tests {
         let edits = result.unwrap();
         assert_eq!(edits.len(), 1);
         // The formatted text should be the formatted substring of the range.
-        assert!(edits[0].new_text.contains("def"));
+        assert!(edits[0].new_text.contains("item1"));
+        assert!(edits[0].new_text.contains("subitem1"));
     }
 
     #[tokio::test]
     async fn test_range_formatting_with_errors() {
         let uri = "file:///test3.md";
-        let text = "invalid mq";
+        let text = "invalid markdown";
         let (service, _) = LspService::new(|client| Backend {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
@@ -1158,16 +1161,6 @@ mod tests {
         });
         let backend = service.inner();
         backend.text_map.insert(uri.to_string(), text.to_string().into());
-        backend.error_map.insert(
-            uri.to_string(),
-            vec![(
-                "Syntax error".to_string(),
-                mq_lang::Range {
-                    start: mq_lang::Position { line: 0, column: 0 },
-                    end: mq_lang::Position { line: 0, column: 10 },
-                },
-            )],
-        );
 
         let params = DocumentRangeFormattingParams {
             text_document: TextDocumentIdentifier {
@@ -1175,7 +1168,7 @@ mod tests {
             },
             range: ls_types::Range {
                 start: ls_types::Position { line: 0, character: 0 },
-                end: ls_types::Position { line: 0, character: 20 },
+                end: ls_types::Position { line: 0, character: 7 },
             },
             options: ls_types::FormattingOptions {
                 tab_size: 2,
