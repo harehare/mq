@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-repl"
 readme = "../../README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.15"
+version = "0.5.16"
 
 [dependencies]
 colored = {workspace = true}
