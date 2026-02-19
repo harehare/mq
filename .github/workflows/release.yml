@@ -95,7 +95,7 @@ jobs:
       - name: Build
         run: just build-target ${{ matrix.target }}
       - name: Build deb package
-        run: cargo deb -p mq-run --no-build --target ${{ matrix.target }}
+        run: cargo deb -p mq-run --no-build --target ${{ matrix.target }} --output target/${{ matrix.target }}/debian/mq-${{ matrix.target }}.deb
       - name: Upload deb artifact
         uses: actions/upload-artifact@v6
         with:
@@ -134,7 +134,7 @@ jobs:
       - name: Build
         run: just build-target ${{ matrix.target }}
       - name: Build rpm package
-        run: cargo generate-rpm -p crates/mq-run --target ${{ matrix.target }}
+        run: cargo generate-rpm -p crates/mq-run --target ${{ matrix.target }} -o target/${{ matrix.target }}/generate-rpm/mq-${{ matrix.target }}.rpm
       - name: Upload rpm artifact
         uses: actions/upload-artifact@v6
         with:
