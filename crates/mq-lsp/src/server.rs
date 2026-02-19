@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 
 use bimap::BiMap;
 use dashmap::DashMap;
+use tower_lsp_server::ls_types::DocumentRangeFormattingParams;
 use url::Url;
 
 use crate::{
@@ -183,6 +184,20 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
 
+        // Handle work done progress
+        let progress = if let Some(token) = params.work_done_progress_params.work_done_token.clone() {
+            self.client.create_work_done_progress(token.clone()).await.ok();
+            Some(
+                self.client
+                    .progress(token, "Formatting")
+                    .with_message("Formatting document...")
+                    .begin()
+                    .await,
+            )
+        } else {
+            None
+        };
+
         let text = Arc::clone(&self.text_map.get(&params.text_document.uri.to_string()).unwrap());
         let formatted_text = tokio::task::spawn_blocking(move || {
             mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
@@ -195,12 +210,107 @@ impl LanguageServer for Backend {
         .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::InternalError))?
         .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::ParseError))?;
 
+        // End work done progress
+        if let Some(progress) = progress {
+            progress.finish_with_message("Formatting complete").await;
+        }
+
         Ok(Some(vec![ls_types::TextEdit {
             range: ls_types::Range::new(
                 ls_types::Position::new(0, 0),
                 ls_types::Position::new(formatted_text.lines().count() as u32, u32::MAX),
             ),
             new_text: formatted_text,
+        }]))
+    }
+
+    async fn range_formatting(
+        &self,
+        params: DocumentRangeFormattingParams,
+    ) -> jsonrpc::Result<Option<Vec<ls_types::TextEdit>>> {
+        if let Some(errors) = self.error_map.get(&params.text_document.uri.to_string())
+            && !errors.is_empty()
+        {
+            return Ok(None);
+        }
+
+        let text = if let Some(text) = self.text_map.get(&params.text_document.uri.to_string()) {
+            Arc::clone(&text)
+        } else {
+            return Ok(None);
+        };
+
+        // Handle work done progress
+        let progress = if let Some(token) = params.work_done_progress_params.work_done_token.clone() {
+            self.client.create_work_done_progress(token.clone()).await.ok();
+            Some(
+                self.client
+                    .progress(token, "Range Formatting")
+                    .with_message("Formatting range...")
+                    .begin()
+                    .await,
+            )
+        } else {
+            None
+        };
+
+        let lines: Vec<&str> = text.lines().collect();
+        let start_line = params.range.start.line as usize;
+        let start_char = params.range.start.character as usize;
+        let end_line = params.range.end.line as usize;
+        let end_char = params.range.end.character as usize;
+
+        if start_line >= lines.len() || end_line > lines.len() || start_line > end_line {
+            return Ok(None);
+        }
+
+        // Extract the text in the specified range (line and character based).
+        let mut selected = String::new();
+        if start_line == end_line {
+            // Single line selection
+            let line = lines.get(start_line).unwrap_or(&"");
+            let start = start_char.min(line.len());
+            let end = end_char.min(line.len());
+            selected.push_str(&line[start..end]);
+        } else {
+            // First line: from start_char to end of line
+            let first_line = lines.get(start_line).unwrap_or(&"");
+            let start = start_char.min(first_line.len());
+            selected.push_str(&first_line[start..]);
+            selected.push('\n');
+            // Middle lines: whole lines
+            for l in (start_line + 1)..end_line {
+                if let Some(line) = lines.get(l) {
+                    selected.push_str(line);
+                    selected.push('\n');
+                }
+            }
+            // Last line: from 0 to end_char
+            if let Some(last_line) = lines.get(end_line) {
+                let end = end_char.min(last_line.len());
+                selected.push_str(&last_line[..end]);
+            }
+        }
+
+        let formatted_range = tokio::task::spawn_blocking(move || {
+            mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
+                indent_width: 2,
+                ..Default::default()
+            }))
+            .format(&selected)
+        })
+        .await
+        .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::InternalError))?
+        .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::ParseError))?;
+
+        // End work done progress
+        if let Some(progress) = progress {
+            progress.finish_with_message("Range formatting complete").await;
+        }
+
+        Ok(Some(vec![ls_types::TextEdit {
+            range: params.range,
+            new_text: formatted_range,
         }]))
     }
 }
@@ -374,7 +484,7 @@ pub async fn start(config: LspConfig) {
 
 #[cfg(test)]
 mod tests {
-    use tower_lsp_server::ls_types;
+    use tower_lsp_server::ls_types::{self, TextDocumentIdentifier};
 
     use super::*;
 
@@ -994,5 +1104,126 @@ mod tests {
 
         // Diagnostics should be published with warning severity
         backend.diagnostics(uri, None).await;
+    }
+
+    #[tokio::test]
+    async fn test_range_formatting_single_line() {
+        let uri = "file:///test1.md";
+        let text = "def v():1;";
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+        });
+        let backend = service.inner();
+        backend.text_map.insert(uri.to_string(), text.to_string().into());
+
+        let params = DocumentRangeFormattingParams {
+            text_document: TextDocumentIdentifier {
+                uri: ls_types::Uri::from_str(uri).unwrap(),
+            },
+            range: ls_types::Range {
+                start: ls_types::Position { line: 0, character: 0 },
+                end: ls_types::Position { line: 0, character: 10 },
+            },
+            options: ls_types::FormattingOptions {
+                tab_size: 2,
+                insert_spaces: true,
+                ..Default::default()
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        let result = backend.range_formatting(params).await.unwrap();
+        assert!(result.is_some());
+        let edits = result.unwrap();
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].range.start.line, 0);
+        assert_eq!(edits[0].range.end.line, 0);
+        assert!(edits[0].new_text.trim().starts_with("def"));
+    }
+
+    #[tokio::test]
+    async fn test_range_formatting_multi_line() {
+        let uri = "file:///test2.md";
+        let text = "def v():1;\ndef w():2;\ndef x():3;";
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+        });
+        let backend = service.inner();
+        backend.text_map.insert(uri.to_string(), text.to_string().into());
+
+        let params = DocumentRangeFormattingParams {
+            text_document: TextDocumentIdentifier {
+                uri: ls_types::Uri::from_str(uri).unwrap(),
+            },
+            range: ls_types::Range {
+                start: ls_types::Position { line: 1, character: 0 },
+                end: ls_types::Position { line: 2, character: 10 },
+            },
+            options: ls_types::FormattingOptions {
+                tab_size: 2,
+                insert_spaces: true,
+                ..Default::default()
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        let result = backend.range_formatting(params).await.unwrap();
+        assert!(result.is_some());
+        let edits = result.unwrap();
+        assert_eq!(edits.len(), 1);
+        // The formatted text should be the formatted substring of the range.
+        assert!(edits[0].new_text.contains("def"));
+    }
+
+    #[tokio::test]
+    async fn test_range_formatting_with_errors() {
+        let uri = "file:///test3.md";
+        let text = "invalid mq";
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+        });
+        let backend = service.inner();
+        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend.error_map.insert(
+            uri.to_string(),
+            vec![(
+                "Syntax error".to_string(),
+                mq_lang::Range {
+                    start: mq_lang::Position { line: 0, column: 0 },
+                    end: mq_lang::Position { line: 0, column: 10 },
+                },
+            )],
+        );
+
+        let params = DocumentRangeFormattingParams {
+            text_document: TextDocumentIdentifier {
+                uri: ls_types::Uri::from_str(uri).unwrap(),
+            },
+            range: ls_types::Range {
+                start: ls_types::Position { line: 0, character: 0 },
+                end: ls_types::Position { line: 0, character: 20 },
+            },
+            options: ls_types::FormattingOptions {
+                tab_size: 2,
+                insert_spaces: true,
+                ..Default::default()
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        let result = backend.range_formatting(params).await.unwrap();
+        assert!(result.is_none());
     }
 }
