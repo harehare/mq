@@ -73,7 +73,8 @@ impl Markdown {
                         let new_line_count = pre_position
                             .as_ref()
                             .map(|p| pos.start.line.saturating_sub(p.end.line))
-                            .unwrap_or_else(|| if is_first { 0 } else { 1 });
+                            .unwrap_or_else(|| if is_first { 0 } else { 1 })
+                            .min(2);
                         for _ in 0..new_line_count {
                             buffer.push('\n');
                         }
@@ -125,7 +126,8 @@ impl Markdown {
                 let new_line_count = pre_position
                     .as_ref()
                     .map(|p| pos.start.line.saturating_sub(p.end.line))
-                    .unwrap_or_else(|| if is_first { 0 } else { 1 });
+                    .unwrap_or_else(|| if is_first { 0 } else { 1 })
+                    .min(2);
 
                 pre_position = Some(pos.clone());
 
@@ -134,9 +136,11 @@ impl Markdown {
                 }
                 buffer.push_str(&value);
             } else {
+                if !is_first {
+                    buffer.push('\n');
+                }
                 pre_position = None;
                 buffer.push_str(&value);
-                buffer.push('\n');
             }
 
             if is_first {
@@ -310,6 +314,8 @@ mod tests {
         6,
         "# Title\n\n|A|B|\n|---|---|\n|1|2|\n"
     )]
+    #[case::excessive_blank_lines("# Title\n\n\n\nParagraph", 2, "# Title\n\nParagraph\n")]
+    #[case::three_blank_lines("Para 1\n\n\n\n\nPara 2", 2, "Para 1\n\nPara 2\n")]
     fn test_markdown_from_str(#[case] input: &str, #[case] expected_nodes: usize, #[case] expected_output: &str) {
         let md = input.parse::<Markdown>().unwrap();
         assert_eq!(md.nodes.len(), expected_nodes);

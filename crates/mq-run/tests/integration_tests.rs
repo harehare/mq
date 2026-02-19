@@ -170,7 +170,7 @@ In {year}, the snowfall was above average.
 "#,
     Some(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<root><item><type>Heading</type><value>title1</value></item><item><type>Heading</type><value>title2</value></item></root>\n\n",
+<root><item><type>Heading</type><value>title1</value></item><item><type>Heading</type><value>title2</value></item></root>\n",
     )
 )]
 #[case::test_option_success(
