@@ -73,7 +73,8 @@ impl Markdown {
                         let new_line_count = pre_position
                             .as_ref()
                             .map(|p| pos.start.line.saturating_sub(p.end.line))
-                            .unwrap_or_else(|| if is_first { 0 } else { 1 });
+                            .unwrap_or_else(|| if is_first { 0 } else { 1 })
+                            .min(2);
                         for _ in 0..new_line_count {
                             buffer.push('\n');
                         }
