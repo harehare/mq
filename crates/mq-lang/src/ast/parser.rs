@@ -116,8 +116,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             | TokenKind::DoubleSlashEqual => 0,
             TokenKind::Or => 1,
             TokenKind::And => 2,
-            TokenKind::EqEq | TokenKind::NeEq | TokenKind::Gt | TokenKind::Gte | TokenKind::Lt | TokenKind::Lte => 3,
-            TokenKind::Plus | TokenKind::Minus | TokenKind::TildeEqual => 4,
+            TokenKind::EqEq
+            | TokenKind::NeEq
+            | TokenKind::Gt
+            | TokenKind::Gte
+            | TokenKind::Lt
+            | TokenKind::Lte
+            | TokenKind::TildeEqual => 3,
+            TokenKind::Plus | TokenKind::Minus => 4,
             TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent => 5,
             TokenKind::DoubleDot | TokenKind::Coalesce => 6,
             _ => 0,
