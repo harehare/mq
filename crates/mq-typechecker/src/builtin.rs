@@ -105,6 +105,22 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     register_binary(ctx, "+", Type::Markdown, Type::Markdown, Type::Markdown);
     register_binary(ctx, "add", Type::Markdown, Type::Markdown, Type::Markdown);
 
+    // Addition: [a] + a -> [a] (array element append)
+    for name in ["+", "add"] {
+        let a = ctx.fresh_var();
+        register_binary(
+            ctx,
+            name,
+            Type::array(Type::Var(a)),
+            Type::Var(a),
+            Type::array(Type::Var(a)),
+        );
+    }
+
+    // Addition: markdown + markdown -> markdown
+    register_binary(ctx, "+", Type::Markdown, Type::Markdown, Type::Markdown);
+    register_binary(ctx, "add", Type::Markdown, Type::Markdown, Type::Markdown);
+
     // Addition: markdown + string -> markdown
     register_binary(ctx, "+", Type::Markdown, Type::String, Type::Markdown);
     register_binary(ctx, "add", Type::Markdown, Type::String, Type::Markdown);

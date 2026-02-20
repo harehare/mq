@@ -217,11 +217,7 @@ fn generate_function_body_pipe_constraints(hir: &Hir, symbol_id: SymbolId, ctx: 
 /// When a pipe chain contains `x | !f()`, the piped value from `x` flows through
 /// the `!` (UnaryOp) to `f()` (Call). This function handles that propagation and
 /// re-processes the inner Call/Ref to pick up the piped input.
-fn propagate_piped_input_through_unary_ops(
-    hir: &Hir,
-    children: &[SymbolId],
-    ctx: &mut InferenceContext,
-) {
+fn propagate_piped_input_through_unary_ops(hir: &Hir, children: &[SymbolId], ctx: &mut InferenceContext) {
     for &child_id in children.iter().skip(1) {
         if let Some(child_symbol) = hir.symbol(child_id)
             && matches!(child_symbol.kind, SymbolKind::UnaryOp)
@@ -467,10 +463,24 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             ctx.set_symbol_type(symbol_id, ty);
         }
 
-        // Variables and parameters get fresh type variables
-        SymbolKind::Variable | SymbolKind::Parameter | SymbolKind::PatternVariable => {
+        // Parameters and pattern variables get fresh type variables
+        SymbolKind::Parameter | SymbolKind::PatternVariable => {
             let ty_var = ctx.fresh_var();
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+        }
+
+        // Variables get fresh type variables, constrained to their initializer
+        SymbolKind::Variable => {
+            let ty_var = ctx.fresh_var();
+            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+
+            // Connect variable type to its initializer expression (last child)
+            let children = get_children(hir, symbol_id);
+            if let Some(&last_child) = children.last() {
+                let child_ty = ctx.get_or_create_symbol_type(last_child);
+                let range = get_symbol_range(hir, symbol_id);
+                ctx.add_constraint(Constraint::Equal(Type::Var(ty_var), child_ty, range));
+            }
         }
 
         // Function definitions
@@ -578,6 +588,13 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 // Normal reference resolution
                 let ref_ty = ctx.get_or_create_symbol_type(symbol_id);
                 let def_ty = ctx.get_or_create_symbol_type(def_id);
+                // Instantiate fresh type variables for function references to enable
+                // polymorphic use at different call/reference sites
+                let def_ty = if matches!(def_ty, Type::Function(_, _)) {
+                    ctx.instantiate_fresh(&def_ty)
+                } else {
+                    def_ty
+                };
                 let range = get_symbol_range(hir, symbol_id);
                 ctx.add_constraint(Constraint::Equal(ref_ty, def_ty, range));
             } else {
@@ -588,16 +605,10 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 {
                     if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
                         let arg_tys = vec![piped_ty];
-                        if let Some(Type::Function(param_tys, ret_ty)) =
-                            ctx.resolve_overload(name.as_str(), &arg_tys)
-                        {
+                        if let Some(Type::Function(param_tys, ret_ty)) = ctx.resolve_overload(name.as_str(), &arg_tys) {
                             let range = get_symbol_range(hir, symbol_id);
                             for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
-                                ctx.add_constraint(Constraint::Equal(
-                                    arg_ty.clone(),
-                                    param_ty.clone(),
-                                    range,
-                                ));
+                                ctx.add_constraint(Constraint::Equal(arg_ty.clone(), param_ty.clone(), range));
                             }
                             ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
                             return;
@@ -770,11 +781,12 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                     // Try user-defined function first (via HIR reference resolution)
                     if let Some(def_id) = hir.resolve_reference_symbol(symbol_id) {
                         let def_symbol = hir.symbol(def_id);
-                        let is_user_defined =
-                            def_symbol.map(|s| !hir.is_builtin_symbol(s)).unwrap_or(false);
+                        let is_user_defined = def_symbol.map(|s| !hir.is_builtin_symbol(s)).unwrap_or(false);
 
                         if is_user_defined {
                             let func_ty = ctx.get_or_create_symbol_type(def_id);
+                            // Instantiate fresh type variables so each call site is independent
+                            let func_ty = ctx.instantiate_fresh(&func_ty);
 
                             if let Type::Function(param_tys, ret_ty) = &func_ty {
                                 // Try piped input if explicit args don't match arity
@@ -984,10 +996,10 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 let var_ty = ctx.get_or_create_symbol_type(children[0]);
                 ctx.add_constraint(Constraint::Equal(var_ty, elem_ty, range));
 
-                // The result type comes from the body (last child)
+                // The result type is an array of body values (foreach collects results)
                 if children.len() > 2 {
                     let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
-                    ctx.set_symbol_type(symbol_id, body_ty);
+                    ctx.set_symbol_type(symbol_id, Type::array(body_ty));
                 } else {
                     let ty_var = ctx.fresh_var();
                     ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
