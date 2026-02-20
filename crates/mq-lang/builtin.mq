@@ -57,7 +57,7 @@ def is_empty(s):
 end
 
 # Tests if string matches a pattern
-def test(s, pattern): regex_match(s, pattern) | !is_empty();
+def test(s, pattern): is_regex_match(s, pattern);
 
 # Returns value if condition is true, None otherwise
 def select(v, f): if (f): v;

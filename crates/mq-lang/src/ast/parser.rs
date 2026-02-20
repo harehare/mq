@@ -117,7 +117,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Or => 1,
             TokenKind::And => 2,
             TokenKind::EqEq | TokenKind::NeEq | TokenKind::Gt | TokenKind::Gte | TokenKind::Lt | TokenKind::Lte => 3,
-            TokenKind::Plus | TokenKind::Minus => 4,
+            TokenKind::Plus | TokenKind::Minus | TokenKind::TildeEqual => 4,
             TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent => 5,
             TokenKind::DoubleDot | TokenKind::Coalesce => 6,
             _ => 0,
@@ -139,6 +139,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Plus => constants::builtins::ADD,
             TokenKind::DoubleDot => constants::builtins::RANGE,
             TokenKind::Slash => constants::builtins::DIV,
+            TokenKind::TildeEqual => constants::builtins::IS_REGEX_MATCH,
             _ => unreachable!(),
         }
     }
@@ -310,7 +311,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     });
                     parser.create_assign(&lhs, floor_div_rhs, operator_token_id, operator_token)?
                 }
-
                 _ => Shared::new(Node {
                     token_id: operator_token_id,
                     expr: Shared::new(Expr::Call(
@@ -783,6 +783,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::PercentEqual
                 | TokenKind::DoubleSlashEqual
                 | TokenKind::StarEqual
+                | TokenKind::TildeEqual
         )
     }
 
@@ -827,6 +828,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | Some(TokenKind::StarEqual)
                 | Some(TokenKind::DoubleSlashEqual)
                 | Some(TokenKind::PercentEqual)
+                | Some(TokenKind::TildeEqual)
                 | None
         )
     }

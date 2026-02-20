@@ -161,6 +161,7 @@ impl<'a> Parser<'a> {
             TokenKind::DoubleSlashEqual => Some(BinaryOp::DoubleDivisionEqual),
             TokenKind::PercentEqual => Some(BinaryOp::ModuloEqual),
             TokenKind::PipeEqual => Some(BinaryOp::PipeEqual),
+            TokenKind::TildeEqual => Some(BinaryOp::RegexMatch),
             _ => None,
         }
     }

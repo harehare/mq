@@ -2006,6 +2006,9 @@ fn engine() -> DefaultEngine {
 #[case::variadic_fn_syntax("let g = fn(*args): args; | g(1, 2)",
     vec![RuntimeValue::Number(0.into())],
     Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())])].into()))]
+#[case::regex_op(r#""test1" =~ "[a-z0-9]+""#,
+    vec![RuntimeValue::None],
+    Ok(vec![true.into()].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

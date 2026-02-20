@@ -148,6 +148,7 @@ pub enum BinaryOp {
     Plus,
     PlusEqual,
     RangeOp,
+    RegexMatch,
 }
 
 impl BinaryOp {
