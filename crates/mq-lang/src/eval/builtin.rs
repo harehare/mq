@@ -462,8 +462,8 @@ define_builtin!(IS_REGEX_MATCH, ParamNum::Fixed(2), |ident, _, mut args, _| {
         [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(pattern)] => node
             .markdown_node()
             .map(|md| is_match_re(&md.value(), pattern))
-            .unwrap_or_else(|| Ok(RuntimeValue::EMPTY_ARRAY)),
-        [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::EMPTY_ARRAY),
+            .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
+        [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
