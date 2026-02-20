@@ -2009,6 +2009,12 @@ fn engine() -> DefaultEngine {
 #[case::regex_op(r#""test1" =~ "[a-z0-9]+""#,
     vec![RuntimeValue::None],
     Ok(vec![true.into()].into()))]
+#[case::regex_non_match(r#""abc" =~ "[0-9]+""#,
+    vec![RuntimeValue::None],
+    Ok(vec![false.into()].into()))]
+#[case::regex_complex_pattern(r#""abc123XYZ" =~ "[a-z]+[0-9]+[A-Z]+""#,
+    vec![RuntimeValue::None],
+    Ok(vec![true.into()].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
