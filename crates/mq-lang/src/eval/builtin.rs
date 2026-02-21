@@ -2343,9 +2343,7 @@ define_builtin!(SHIFT_LEFT, ParamNum::Fixed(2), |_, _, mut args, _| {
             if let mq_markdown::Node::Heading(heading) = node {
                 let shift_amount = n.to_int() as u8;
 
-                if shift_amount < heading.depth {
-                    heading.depth -= shift_amount;
-                }
+                heading.depth = heading.depth.saturating_sub(shift_amount).max(1);
                 Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
             } else {
                 Ok(RuntimeValue::Markdown(
