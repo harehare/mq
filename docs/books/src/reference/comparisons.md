@@ -48,3 +48,41 @@ not(false)
 and(x > 0, x < 10)
 # =>  true if 0 < x < 10
 ```
+
+### Regex Match Operator
+
+The `=~` operator tests whether a string matches a regular expression pattern. It returns `true` if the pattern matches and `false` otherwise.
+
+#### Syntax
+
+```
+string =~ pattern
+```
+
+This is equivalent to calling `is_regex_match(string, pattern)`.
+
+#### Examples
+
+```mq
+# Basic regex match
+"hello world" =~ "hello"
+# => true
+
+"hello world" =~ "^world"
+# => false
+
+# Match digits
+"abc123" =~ "[0-9]+"
+# => true
+
+"abc" =~ "^[0-9]+$"
+# => false
+
+# Use in a conditional
+"foo bar" | if (. =~ "foo"): "matched" else: "no match"
+# => matched
+
+# Complex patterns
+"2024-01-15" =~ "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+# => true
+```
