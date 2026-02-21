@@ -2015,6 +2015,18 @@ fn engine() -> DefaultEngine {
 #[case::regex_complex_pattern(r#""abc123XYZ" =~ "[a-z]+[0-9]+[A-Z]+""#,
     vec![RuntimeValue::None],
     Ok(vec![true.into()].into()))]
+#[case::regex_none_input(r#". =~ "foo""#,
+    vec![RuntimeValue::None],
+    Ok(vec![false.into()].into()))]
+#[case::regex_markdown_match(r#". =~ "hello""#,
+    vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello world".to_string(), position: None }), None)],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }), None)].into()))]
+#[case::regex_markdown_non_match(r#". =~ "foo""#,
+    vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello world".to_string(), position: None }), None)],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "false".to_string() }), None)].into()))]
+#[case::regex_in_if(r#""test" | if (. =~ "test"): true else: false"#,
+    vec![RuntimeValue::None],
+    Ok(vec![true.into()].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
@@ -2051,6 +2063,7 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::variadic_not_last_param("def f(*a, b): a", vec![RuntimeValue::Number(0.into())],)]
 #[case::multiple_variadic_params("def f(*a, *b): a", vec![RuntimeValue::Number(0.into())],)]
 #[case::macro_variadic_param("macro m(*args): args", vec![RuntimeValue::Number(0.into())],)]
+#[case::regex_invalid_pattern(r#""abc" =~ "[invalid""#, vec![RuntimeValue::None],)]
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
 }
