@@ -925,8 +925,8 @@ impl Hir {
                 self.add_expr(then_expr, source_id, if_scope, Some(symbol_id));
 
                 for child in rest {
-                    self.add_elif_expr(child, source_id, scope_id, parent);
-                    self.add_else_expr(child, source_id, scope_id, parent);
+                    self.add_elif_expr(child, source_id, scope_id, Some(symbol_id));
+                    self.add_else_expr(child, source_id, scope_id, Some(symbol_id));
                 }
             }
         }
@@ -1009,7 +1009,7 @@ impl Hir {
             ..
         } = &**node
         {
-            self.add_symbol(Symbol {
+            let symbol_id = self.add_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Call,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -1022,7 +1022,7 @@ impl Hir {
                 // Process all arguments recursively to handle complex expressions
                 // This ensures that identifiers inside bracket access (e.g., vars in vars["x"])
                 // are properly registered as Ref symbols that can be resolved
-                self.add_expr(child, source_id, scope_id, parent);
+                self.add_expr(child, source_id, scope_id, Some(symbol_id));
             });
         }
     }
@@ -1729,8 +1729,49 @@ impl Hir {
                         parent,
                     });
                 }
+                // Literal patterns: create a literal child symbol for type checking
+                mq_lang::TokenKind::StringLiteral(s) => {
+                    self.add_symbol(Symbol {
+                        value: Some(s.as_str().into()),
+                        kind: SymbolKind::String,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
+                mq_lang::TokenKind::NumberLiteral(n) => {
+                    self.add_symbol(Symbol {
+                        value: Some(n.to_string().into()),
+                        kind: SymbolKind::Number,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
+                mq_lang::TokenKind::BoolLiteral(b) => {
+                    self.add_symbol(Symbol {
+                        value: Some(b.to_string().into()),
+                        kind: SymbolKind::Boolean,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
+                mq_lang::TokenKind::None => {
+                    self.add_symbol(Symbol {
+                        value: Some("none".into()),
+                        kind: SymbolKind::None,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
                 _ => {
-                    // For other token types (literals, wildcards), no variable is introduced
+                    // For other token types (wildcards), no variable or literal is introduced
                 }
             }
         }
