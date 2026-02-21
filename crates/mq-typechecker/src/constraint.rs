@@ -321,23 +321,17 @@ fn build_piped_call_args(
     func_name: &str,
 ) -> Vec<Type> {
     if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
-        // Try with piped input prepended first
-        let mut piped_args = vec![piped_ty];
-        piped_args.extend_from_slice(explicit_arg_tys);
-
-        // Check if this produces a valid overload match
-        let resolved_piped: Vec<Type> = piped_args.iter().map(|ty| ctx.resolve_type(ty)).collect();
-        if ctx.resolve_overload(func_name, &resolved_piped).is_some() {
-            return piped_args;
-        }
-
-        // If piped version doesn't match, try without piped input
+        // Try explicit args first — if they already match an overload,
+        // the piped input should not be prepended (it flows through unchanged)
         let resolved_explicit: Vec<Type> = explicit_arg_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
         if ctx.resolve_overload(func_name, &resolved_explicit).is_some() {
             return explicit_arg_tys.to_vec();
         }
 
-        // Neither matched; return piped version so error message is more informative
+        // Explicit args don't match; try with piped input prepended as implicit first argument
+        let mut piped_args = vec![piped_ty];
+        piped_args.extend_from_slice(explicit_arg_tys);
+
         piped_args
     } else {
         explicit_arg_tys.to_vec()
@@ -537,8 +531,10 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 if let Some(symbol) = hir.symbol(def_id)
                     && let Some(name) = &symbol.value
                 {
-                    // Check if this is a builtin function
-                    let has_builtin = ctx.get_builtin_overloads(name.as_str()).is_some();
+                    // Only treat as builtin if the resolved definition is actually a builtin symbol,
+                    // not a user-defined parameter/variable that happens to share a builtin name
+                    let has_builtin =
+                        hir.is_builtin_symbol(symbol) && ctx.get_builtin_overloads(name.as_str()).is_some();
                     if has_builtin {
                         // If there's a piped input, treat this as a call with the piped value
                         if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
