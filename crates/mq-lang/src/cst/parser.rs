@@ -162,6 +162,8 @@ impl<'a> Parser<'a> {
             TokenKind::PercentEqual => Some(BinaryOp::ModuloEqual),
             TokenKind::PipeEqual => Some(BinaryOp::PipeEqual),
             TokenKind::TildeEqual => Some(BinaryOp::RegexMatch),
+            TokenKind::LeftShift => Some(BinaryOp::LeftShift),
+            TokenKind::RightShift => Some(BinaryOp::RightShift),
             _ => None,
         }
     }

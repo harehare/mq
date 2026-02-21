@@ -149,6 +149,8 @@ pub enum BinaryOp {
     PlusEqual,
     RangeOp,
     RegexMatch,
+    LeftShift,
+    RightShift,
 }
 
 impl BinaryOp {
