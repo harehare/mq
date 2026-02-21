@@ -65,6 +65,17 @@ fn main() {
     hir.add_code(source_url, &code);
     hir.resolve();
 
+    // Debug: dump HIR structure
+    if std::env::var("DUMP_HIR").is_ok() {
+        for (id, symbol) in hir.symbols() {
+            eprintln!(
+                "{:?} | {:?} | value={:?} | parent={:?}",
+                id, symbol.kind, symbol.value, symbol.parent
+            );
+        }
+        eprintln!("---");
+    }
+
     let mut checker = TypeChecker::new();
     let errors = checker.check(&hir);
 
