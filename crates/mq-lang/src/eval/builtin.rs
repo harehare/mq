@@ -1548,50 +1548,6 @@ define_builtin!(TO_H, ParamNum::Fixed(2), |_, _, args, _| match args.as_slice() 
     _ => Ok(RuntimeValue::NONE),
 });
 
-define_builtin!(
-    INCREASE_HEADER_LEVEL,
-    ParamNum::Fixed(1),
-    |_, _, mut args, _| match args.as_mut_slice() {
-        [RuntimeValue::Markdown(node, selector)] => {
-            if let mq_markdown::Node::Heading(heading) = node {
-                if heading.depth < 6 {
-                    heading.depth += 1;
-                }
-                Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
-            } else {
-                Ok(RuntimeValue::Markdown(
-                    std::mem::replace(node, mq_markdown::Node::Empty),
-                    selector.take(),
-                ))
-            }
-        }
-        [a] => Ok(std::mem::take(a)),
-        _ => unreachable!(),
-    }
-);
-
-define_builtin!(
-    DECREASE_HEADER_LEVEL,
-    ParamNum::Fixed(1),
-    |_, _, mut args, _| match args.as_mut_slice() {
-        [RuntimeValue::Markdown(node, selector)] => {
-            if let mq_markdown::Node::Heading(heading) = node {
-                if heading.depth > 1 {
-                    heading.depth -= 1;
-                }
-                Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
-            } else {
-                Ok(RuntimeValue::Markdown(
-                    std::mem::replace(node, mq_markdown::Node::Empty),
-                    selector.take(),
-                ))
-            }
-        }
-        [a] => Ok(std::mem::take(a)),
-        _ => unreachable!(),
-    }
-);
-
 define_builtin!(TO_HR, ParamNum::Fixed(0), |_, _, _, _| {
     Ok(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }).into())
 });
@@ -2368,6 +2324,74 @@ define_builtin!(_AST_TO_CODE, ParamNum::Fixed(1), |_, _, args, _| {
     }
 });
 
+define_builtin!(SHIFT_LEFT, ParamNum::Fixed(2), |_, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(v), RuntimeValue::Number(n)] => v
+            .to_int()
+            .checked_shl(n.value() as u32)
+            .map(|result| RuntimeValue::Number(result.into()))
+            .ok_or_else(|| Error::Runtime("Shift amount is too large".to_string())),
+        [RuntimeValue::String(v), RuntimeValue::Number(n)] => {
+            let shift_amount = n.value() as usize;
+            if shift_amount >= v.len() {
+                Ok(RuntimeValue::String(String::new()))
+            } else {
+                Ok(RuntimeValue::String(v[shift_amount..].to_string()))
+            }
+        }
+        [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
+            if let mq_markdown::Node::Heading(heading) = node {
+                let shift_amount = n.to_int() as u8;
+
+                if heading.depth - shift_amount >= 1 {
+                    heading.depth -= shift_amount;
+                }
+                Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
+            } else {
+                Ok(RuntimeValue::Markdown(
+                    std::mem::replace(node, mq_markdown::Node::Empty),
+                    selector.take(),
+                ))
+            }
+        }
+        _ => Ok(RuntimeValue::NONE),
+    }
+});
+
+define_builtin!(SHIFT_RIGHT, ParamNum::Fixed(2), |_, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(v), RuntimeValue::Number(n)] => v
+            .to_int()
+            .checked_shr(n.value() as u32)
+            .map(|result| RuntimeValue::Number(result.into()))
+            .ok_or_else(|| Error::Runtime("Shift amount is too large".to_string())),
+        [RuntimeValue::String(v), RuntimeValue::Number(n)] => {
+            let shift_amount = n.value() as usize;
+            if shift_amount >= v.len() {
+                Ok(RuntimeValue::String(String::new()))
+            } else {
+                Ok(RuntimeValue::String(v[..v.len() - shift_amount].to_string()))
+            }
+        }
+        [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
+            if let mq_markdown::Node::Heading(heading) = node {
+                let shift_amount = n.to_int() as u8;
+
+                if heading.depth + shift_amount <= 6 {
+                    heading.depth += shift_amount;
+                }
+                Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
+            } else {
+                Ok(RuntimeValue::Markdown(
+                    std::mem::replace(node, mq_markdown::Node::Empty),
+                    selector.take(),
+                ))
+            }
+        }
+        _ => Ok(RuntimeValue::NONE),
+    }
+});
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2411,7 +2435,6 @@ const HASH_CAPTURE: u64 = fnv1a_hash_64("capture");
 const HASH_CEIL: u64 = fnv1a_hash_64("ceil");
 const HASH_COMPACT: u64 = fnv1a_hash_64("compact");
 const HASH_COALESCE: u64 = fnv1a_hash_64("coalesce");
-const HASH_DECREASE_HEADER_LEVEL: u64 = fnv1a_hash_64("decrease_header_level");
 const HASH_DEL: u64 = fnv1a_hash_64("del");
 const HASH_DICT: u64 = fnv1a_hash_64(constants::builtins::DICT);
 const HASH_DIV: u64 = fnv1a_hash_64(constants::builtins::DIV);
@@ -2435,7 +2458,6 @@ const HASH_GET_VARIABLE: u64 = fnv1a_hash_64("get_variable");
 const HASH_GSUB: u64 = fnv1a_hash_64("gsub");
 const HASH_HALT: u64 = fnv1a_hash_64("halt");
 const HASH_IMPLODE: u64 = fnv1a_hash_64("implode");
-const HASH_INCREASE_HEADER_LEVEL: u64 = fnv1a_hash_64("increase_header_level");
 const HASH_INDEX: u64 = fnv1a_hash_64("index");
 const HASH_INSERT: u64 = fnv1a_hash_64("insert");
 const HASH_INFINITE: u64 = fnv1a_hash_64("infinite");
@@ -2477,6 +2499,8 @@ const HASH_SET_LIST_ORDERED: u64 = fnv1a_hash_64("set_list_ordered");
 const HASH_SET_REF: u64 = fnv1a_hash_64("set_ref");
 const HASH_SET_VARIABLE: u64 = fnv1a_hash_64("set_variable");
 const HASH_SLICE: u64 = fnv1a_hash_64(constants::builtins::SLICE);
+const HASH_SHIFT_LEFT: u64 = fnv1a_hash_64(constants::builtins::SHIFT_LEFT);
+const HASH_SHIFT_RIGHT: u64 = fnv1a_hash_64(constants::builtins::SHIFT_RIGHT);
 const HASH_SORT: u64 = fnv1a_hash_64("sort");
 const HASH_SORT_BY_IMPL: u64 = fnv1a_hash_64("_sort_by_impl");
 const HASH_SPLIT: u64 = fnv1a_hash_64("split");
@@ -2543,7 +2567,6 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_CEIL => Some(&CEIL),
         HASH_COMPACT => Some(&COMPACT),
         HASH_COALESCE => Some(&COALESCE),
-        HASH_DECREASE_HEADER_LEVEL => Some(&DECREASE_HEADER_LEVEL),
         HASH_DEL => Some(&DEL),
         HASH_DICT => Some(&DICT),
         HASH_DIV => Some(&DIV),
@@ -2565,7 +2588,6 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_GSUB => Some(&GSUB),
         HASH_HALT => Some(&HALT),
         HASH_IMPLODE => Some(&IMPLODE),
-        HASH_INCREASE_HEADER_LEVEL => Some(&INCREASE_HEADER_LEVEL),
         HASH_INDEX => Some(&INDEX),
         HASH_INFINITE => Some(&INFINITE),
         HASH_IS_DEBUG_MODE => Some(&IS_DEBUG_MODE),
@@ -2607,6 +2629,8 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_SET_REF => Some(&SET_REF),
         HASH_SET_VARIABLE => Some(&SET_VARIABLE),
         HASH_SLICE => Some(&SLICE),
+        HASH_SHIFT_LEFT => Some(&SHIFT_LEFT),
+        HASH_SHIFT_RIGHT => Some(&SHIFT_RIGHT),
         HASH_SORT => Some(&SORT),
         HASH_SORT_BY_IMPL => Some(&_SORT_BY_IMPL),
         HASH_SPLIT => Some(&SPLIT),
@@ -3758,20 +3782,6 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &["target", "index_or_key", "value"],
             },
         );
-    map.insert(
-        SmolStr::new("increase_header_level"),
-        BuiltinFunctionDoc {
-            description: "Increases the level of a markdown heading node by one, up to a maximum of 6.",
-            params: &["heading_node"],
-        },
-    );
-    map.insert(
-        SmolStr::new("decrease_header_level"),
-        BuiltinFunctionDoc {
-            description: "Decreases the level of a markdown heading node by one, down to a minimum of 1.",
-            params: &["heading_node"],
-        },
-    );
 
     #[cfg(feature = "file-io")]
     map.insert(
@@ -3870,6 +3880,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Captures named groups from the given string based on the specified regular expression pattern and returns them as a dictionary keyed by group names.",
             params: &["string", "pattern"],
+        },
+    );
+    map.insert(
+        SmolStr::new(constants::builtins::SHIFT_LEFT),
+        BuiltinFunctionDoc {
+            description: "Performs a bitwise left shift operation on the given value by the specified number of positions.",
+            params: &["value", "shift_amount"],
+        },
+    );
+    map.insert(
+        SmolStr::new(constants::builtins::SHIFT_RIGHT),
+        BuiltinFunctionDoc {
+            description: "Performs a bitwise right shift operation on the given value by the specified number of positions.",
+            params: &["value", "shift_amount"],
         },
     );
 

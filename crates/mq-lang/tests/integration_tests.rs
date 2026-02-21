@@ -2039,6 +2039,36 @@ fn engine() -> DefaultEngine {
 #[case::regex_in_if(r#""test" | if (. =~ "test"): true else: false"#,
     vec![RuntimeValue::None],
     Ok(vec![true.into()].into()))]
+#[case::shift_left_number("shift_left(1, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()),)]
+#[case::shift_right_number("shift_right(4, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()),)]
+#[case::shift_right_header_level_h1("to_markdown(\"# Heading 1\") | first() | shift_right(1)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 2,
+        values: vec!["Heading 1".to_string().into()],
+        position: None
+    }), None)].into()))]
+#[case::shift_right_header_level_h6("to_markdown(\"###### Heading 6\") | first() | shift_right(1)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 6,
+        values: vec!["Heading 6".to_string().into()],
+        position: None
+    }), None)].into()))]
+#[case::shift_left_header_level_h2("to_markdown(\"## Heading 2\") | first() | shift_left(1)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 1,
+        values: vec!["Heading 2".to_string().into()],
+        position: None
+    }), None)].into()))]
+#[case::shift_left_header_level_h1("to_markdown(\"# Heading 1\") | first() | shift_left(1)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 1,
+        values: vec!["Heading 1".to_string().into()],
+        position: None
+    }), None)].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

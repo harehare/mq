@@ -26,6 +26,11 @@ impl Number {
         self.0
     }
 
+    /// Returns the underlying `u64` value.
+    pub fn to_int(self) -> u64 {
+        self.0 as u64
+    }
+
     /// Returns `true` if the number represents an integer value.
     ///
     /// Uses epsilon comparison to account for floating-point precision.

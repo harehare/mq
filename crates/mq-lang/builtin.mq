@@ -558,3 +558,14 @@ def debug(*args):
   else:
     stderr("DEBUG:\n" + do args | map(fn(arg): s" - ${arg}";) | join("\n");)
 end
+
+# Increases the level of a markdown heading node by one, up to a maximum of 6.
+def increase_header_level(node):
+  shift_right(node, 1)
+end
+
+# Decreases the level of a markdown heading node by one, down to a minimum of 1.
+def decrease_header_level(node):
+  shift_left(node, 1)
+end
+

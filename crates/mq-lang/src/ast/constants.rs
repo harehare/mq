@@ -5,6 +5,8 @@ pub mod builtins {
     pub const GET: &str = "get";
     pub const SET: &str = "set";
     pub const SLICE: &str = "slice";
+    pub const SHIFT_LEFT: &str = "shift_left";
+    pub const SHIFT_RIGHT: &str = "shift_right";
     pub const ATTR: &str = "attr";
     pub const SET_ATTR: &str = "set_attr";
     pub const LEN: &str = "len";
