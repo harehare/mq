@@ -178,10 +178,19 @@ impl TypeChecker {
         for d in &deferred {
             let resolved_operands: Vec<types::Type> = d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
 
+            eprintln!(
+                "[DEBUG deferred] op={}, operand_tys={:?}, resolved={:?}",
+                d.op_name, d.operand_tys, resolved_operands
+            );
+
             if let Some(resolved_ty) = ctx.resolve_overload(&d.op_name, &resolved_operands) {
                 if let types::Type::Function(param_tys, ret_ty) = resolved_ty
                     && param_tys.len() == d.operand_tys.len()
                 {
+                    eprintln!(
+                        "[DEBUG deferred]   matched: param_tys={:?}, ret={:?}",
+                        param_tys, ret_ty
+                    );
                     // Add constraints for operand types
                     for (operand_ty, param_ty) in d.operand_tys.iter().zip(param_tys.iter()) {
                         ctx.add_constraint(constraint::Constraint::Equal(
