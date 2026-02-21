@@ -1,6 +1,6 @@
 //! Constraint generation for type inference.
 
-use crate::infer::{DeferredOverload, InferenceContext};
+use crate::infer::{DeferredOverload, DeferredUserCall, InferenceContext};
 use crate::types::Type;
 use crate::unify::range_to_span;
 use mq_hir::{Hir, SymbolId, SymbolKind};
@@ -275,6 +275,31 @@ fn resolve_branch_body_type(hir: &Hir, branch_id: SymbolId, ctx: &mut InferenceC
     }
 }
 
+/// Checks if a symbol is a foreach iterable reference.
+///
+/// In the HIR, `foreach (var, iterable): body;` is represented as:
+/// - Parent has children: [Foreach, Variable, Ref(iterable)]
+/// - The iterable is a `Ref` sibling of `Foreach` under the same parent
+///
+/// These Refs should not receive piped input since they are iterable function
+/// references whose arguments are not represented in the HIR.
+fn is_foreach_iterable_ref(hir: &Hir, symbol_id: SymbolId) -> bool {
+    let symbol = match hir.symbol(symbol_id) {
+        Some(s) => s,
+        None => return false,
+    };
+    if !matches!(symbol.kind, SymbolKind::Ref) {
+        return false;
+    }
+    let parent_id = match symbol.parent {
+        Some(id) => id,
+        None => return false,
+    };
+    // Check if any sibling under the same parent is a Foreach
+    hir.symbols()
+        .any(|(_, s)| s.parent == Some(parent_id) && matches!(s.kind, SymbolKind::Foreach))
+}
+
 /// Checks if a symbol might receive piped input later (i.e., is inside a Block
 /// or a Function/Macro body with multiple expressions).
 ///
@@ -500,10 +525,38 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 })
                 .copied()
                 .collect();
-            for (param_sym, param_ty) in param_children.iter().zip(param_tys.iter()) {
+            for (i, (param_sym, param_ty)) in param_children.iter().zip(param_tys.iter()).enumerate() {
                 let sym_ty = ctx.get_or_create_symbol_type(*param_sym);
                 let range = get_symbol_range(hir, *param_sym);
                 ctx.add_constraint(Constraint::Equal(sym_ty, param_ty.clone(), range));
+
+                // Connect default parameter values to their parameter types.
+                // In HIR, parameters with defaults have `has_default: true` and the
+                // default value expression appears as the next non-parameter, non-keyword
+                // child after the parameter in the children list.
+                if i < params.len() && params[i].has_default {
+                    // Find the default value expression: it follows the parameter in the children
+                    // list and is not a Parameter or Keyword
+                    let param_pos = children.iter().position(|&c| c == *param_sym);
+                    if let Some(pos) = param_pos {
+                        // Look at the next child after this parameter
+                        if let Some(&default_id) = children.get(pos + 1) {
+                            if let Some(default_sym) = hir.symbol(default_id)
+                                && !matches!(
+                                    default_sym.kind,
+                                    SymbolKind::Parameter | SymbolKind::Keyword
+                                )
+                            {
+                                let default_ty = ctx.get_or_create_symbol_type(default_id);
+                                ctx.add_constraint(Constraint::Equal(
+                                    param_ty.clone(),
+                                    default_ty,
+                                    range,
+                                ));
+                            }
+                        }
+                    }
+                }
             }
 
             // Connect function body's type to the return type
@@ -536,6 +589,16 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                     let has_builtin =
                         hir.is_builtin_symbol(symbol) && ctx.get_builtin_overloads(name.as_str()).is_some();
                     if has_builtin {
+                        // Skip piped input handling for foreach iterable Refs.
+                        // In HIR, `foreach (var, iterable)` stores the iterable as a Ref
+                        // sibling of the Foreach symbol. These Refs should not be called
+                        // with piped input since they reference the iterable function.
+                        if is_foreach_iterable_ref(hir, symbol_id) {
+                            let ty_var = ctx.fresh_var();
+                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                            return;
+                        }
+
                         // If there's a piped input, treat this as a call with the piped value
                         if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
                             let arg_tys = vec![piped_ty];
@@ -549,7 +612,14 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                                     return;
                                 }
                             } else {
-                                // Piped input doesn't match any overload - type error
+                                // Piped input doesn't match any overload — defer if the piped
+                                // input is still a type variable (it may resolve later)
+                                let resolved_piped = ctx.resolve_type(&arg_tys[0]);
+                                if resolved_piped.is_var() {
+                                    let ty_var = ctx.fresh_var();
+                                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                                    return;
+                                }
                                 let range = get_symbol_range(hir, symbol_id);
                                 ctx.add_error(crate::TypeError::Mismatch {
                                     expected: format!("argument matching {} overloads", name),
@@ -780,9 +850,9 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                         let is_user_defined = def_symbol.map(|s| !hir.is_builtin_symbol(s)).unwrap_or(false);
 
                         if is_user_defined {
-                            let func_ty = ctx.get_or_create_symbol_type(def_id);
+                            let original_func_ty = ctx.get_or_create_symbol_type(def_id);
                             // Instantiate fresh type variables so each call site is independent
-                            let func_ty = ctx.instantiate_fresh(&func_ty);
+                            let func_ty = ctx.instantiate_fresh(&original_func_ty);
 
                             if let Type::Function(param_tys, ret_ty) = &func_ty {
                                 // Try piped input if explicit args don't match arity
@@ -817,6 +887,18 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                                     }
                                 }
                                 ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
+
+                                // Track this call for post-unification resolution.
+                                // After unification, the original function's return type
+                                // will be concrete, allowing propagation to this call site.
+                                ctx.add_deferred_user_call(DeferredUserCall {
+                                    call_symbol_id: symbol_id,
+                                    def_id,
+                                    fresh_param_tys: param_tys.clone(),
+                                    fresh_ret_ty: ret_ty.as_ref().clone(),
+                                    arg_tys,
+                                    range,
+                                });
                             } else {
                                 // The definition exists but isn't a function type yet
                                 let ret_ty = Type::Var(ctx.fresh_var());

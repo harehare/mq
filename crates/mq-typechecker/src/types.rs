@@ -163,14 +163,16 @@ impl Type {
             // Type variables get low score (prefer concrete types)
             (Type::Var(_), _) | (_, Type::Var(_)) => Some(10),
 
-            // Arrays: sum element scores
-            (Type::Array(elem1), Type::Array(elem2)) => elem1.match_score(elem2).map(|s| s / 2),
+            // Arrays: structural match scores higher than bare type variable
+            (Type::Array(elem1), Type::Array(elem2)) => {
+                elem1.match_score(elem2).map(|s| s + 20)
+            }
 
-            // Dicts: sum key and value scores
+            // Dicts: structural match scores higher than bare type variable
             (Type::Dict(k1, v1), Type::Dict(k2, v2)) => {
                 let key_score = k1.match_score(k2)?;
                 let val_score = v1.match_score(v2)?;
-                Some((key_score + val_score) / 2)
+                Some((key_score + val_score) / 2 + 20)
             }
 
             // Functions: sum all parameter scores and return score
