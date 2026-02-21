@@ -24,6 +24,26 @@ pub struct DeferredOverload {
     pub range: Option<mq_lang::Range>,
 }
 
+/// A deferred user-defined function call for post-unification type checking.
+///
+/// After unification, the original function's return type will be resolved from
+/// its body, and we can propagate it to the call site and verify argument types.
+#[derive(Debug, Clone)]
+pub struct DeferredUserCall {
+    /// The call site symbol ID
+    pub call_symbol_id: SymbolId,
+    /// The function definition symbol ID
+    pub def_id: SymbolId,
+    /// The fresh (instantiated) parameter types at this call site
+    pub fresh_param_tys: Vec<Type>,
+    /// The fresh (instantiated) return type at this call site
+    pub fresh_ret_ty: Type,
+    /// The actual argument types at the call site
+    pub arg_tys: Vec<Type>,
+    /// Source range for error reporting
+    pub range: Option<mq_lang::Range>,
+}
+
 /// Inference context maintains state during type inference
 pub struct InferenceContext {
     /// Type variable context for generating fresh variables
@@ -42,6 +62,8 @@ pub struct InferenceContext {
     piped_inputs: FxHashMap<SymbolId, Type>,
     /// Deferred overload resolutions for operators with unresolved type variable operands
     deferred_overloads: Vec<DeferredOverload>,
+    /// Deferred user-defined function calls for post-unification type checking
+    deferred_user_calls: Vec<DeferredUserCall>,
 }
 
 impl InferenceContext {
@@ -56,6 +78,7 @@ impl InferenceContext {
             errors: Vec::new(),
             piped_inputs: FxHashMap::default(),
             deferred_overloads: Vec::new(),
+            deferred_user_calls: Vec::new(),
         }
     }
 
@@ -97,6 +120,16 @@ impl InferenceContext {
     /// Takes all deferred overloads (consumes them)
     pub fn take_deferred_overloads(&mut self) -> Vec<DeferredOverload> {
         std::mem::take(&mut self.deferred_overloads)
+    }
+
+    /// Adds a deferred user-defined function call
+    pub fn add_deferred_user_call(&mut self, call: DeferredUserCall) {
+        self.deferred_user_calls.push(call);
+    }
+
+    /// Takes all deferred user calls (consumes them)
+    pub fn take_deferred_user_calls(&mut self) -> Vec<DeferredUserCall> {
+        std::mem::take(&mut self.deferred_user_calls)
     }
 
     /// Resolves the best matching overload for a function call.

@@ -318,6 +318,19 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::array(Type::Var(a)),
     );
 
+    // flatten: [a] -> [a] (identity for already-flat arrays)
+    let a = ctx.fresh_var();
+    register_unary(ctx, "flatten", Type::array(Type::Var(a)), Type::array(Type::Var(a)));
+
+    // flatten: {k: v} -> {k: v} (identity/passthrough for dicts)
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_unary(
+        ctx,
+        "flatten",
+        Type::dict(Type::Var(k), Type::Var(v)),
+        Type::dict(Type::Var(k), Type::Var(v)),
+    );
+
     // len: [a] -> number, string -> number
     let a = ctx.fresh_var();
     register_unary(ctx, "len", Type::array(Type::Var(a)), Type::Number);
@@ -463,6 +476,15 @@ fn register_dict(ctx: &mut InferenceContext) {
         ctx,
         "dict",
         Type::array(Type::Var(a)),
+        Type::dict(Type::Var(k), Type::Var(v)),
+    );
+
+    // dict: ({k: v}) -> {k: v} (identity/passthrough for dicts)
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_unary(
+        ctx,
+        "dict",
+        Type::dict(Type::Var(k), Type::Var(v)),
         Type::dict(Type::Var(k), Type::Var(v)),
     );
 

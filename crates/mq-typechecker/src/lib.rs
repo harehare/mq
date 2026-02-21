@@ -169,43 +169,59 @@ impl TypeChecker {
     ///
     /// Binary/unary operators whose operands were type variables during constraint
     /// generation are re-processed now that operand types may be known.
+    /// Runs unification after each resolution so that type information propagates
+    /// incrementally to subsequent deferred overloads.
     fn resolve_deferred_overloads(ctx: &mut infer::InferenceContext) {
         let deferred = ctx.take_deferred_overloads();
         if deferred.is_empty() {
             return;
         }
 
-        for d in &deferred {
-            let resolved_operands: Vec<types::Type> = d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
+        // Resolve deferred overloads in multiple passes.
+        // Each pass resolves overloads that have at least one concrete operand.
+        // Overloads with all-Var operands are deferred to subsequent passes,
+        // as intermediate unification may resolve their types.
+        let mut remaining = deferred;
+        let max_passes = 3;
+        for _ in 0..max_passes {
+            let mut next_remaining = Vec::new();
 
-            eprintln!(
-                "[DEBUG deferred] op={}, operand_tys={:?}, resolved={:?}",
-                d.op_name, d.operand_tys, resolved_operands
-            );
+            for d in &remaining {
+                let resolved_operands: Vec<types::Type> =
+                    d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
 
-            if let Some(resolved_ty) = ctx.resolve_overload(&d.op_name, &resolved_operands) {
-                if let types::Type::Function(param_tys, ret_ty) = resolved_ty
-                    && param_tys.len() == d.operand_tys.len()
-                {
-                    eprintln!(
-                        "[DEBUG deferred]   matched: param_tys={:?}, ret={:?}",
-                        param_tys, ret_ty
-                    );
-                    // Add constraints for operand types
-                    for (operand_ty, param_ty) in d.operand_tys.iter().zip(param_tys.iter()) {
-                        ctx.add_constraint(constraint::Constraint::Equal(
-                            operand_ty.clone(),
-                            param_ty.clone(),
-                            d.range,
-                        ));
-                    }
-                    // Set the result type
-                    ctx.set_symbol_type(d.symbol_id, *ret_ty);
-                }
-            } else {
-                // Check if all operands are now concrete (not type variables)
+                let all_vars = resolved_operands.iter().all(|ty| ty.is_var());
                 let all_concrete = resolved_operands.iter().all(|ty| !ty.is_var());
-                if all_concrete {
+
+                // Skip resolution when all operands are still type variables
+                // and there are multiple overloads — we can't determine the correct one
+                if all_vars {
+                    let overload_count = ctx
+                        .get_builtin_overloads(&d.op_name)
+                        .map(|o| o.len())
+                        .unwrap_or(0);
+                    if overload_count > 1 {
+                        next_remaining.push(d.clone());
+                        continue;
+                    }
+                }
+
+                if let Some(resolved_ty) = ctx.resolve_overload(&d.op_name, &resolved_operands) {
+                    if let types::Type::Function(param_tys, ret_ty) = resolved_ty
+                        && param_tys.len() == d.operand_tys.len()
+                    {
+                        for (operand_ty, param_ty) in d.operand_tys.iter().zip(param_tys.iter()) {
+                            ctx.add_constraint(constraint::Constraint::Equal(
+                                operand_ty.clone(),
+                                param_ty.clone(),
+                                d.range,
+                            ));
+                        }
+                        ctx.set_symbol_type(d.symbol_id, *ret_ty);
+                        // Solve constraints incrementally
+                        unify::solve_constraints(ctx);
+                    }
+                } else if all_concrete {
                     let args_str = resolved_operands
                         .iter()
                         .map(|t| t.to_string())
@@ -217,11 +233,63 @@ impl TypeChecker {
                         span: d.range.as_ref().map(unify::range_to_span),
                         location: d.range.as_ref().map(|r| (r.start.line, r.start.column)),
                     });
+                } else {
+                    // Some operands resolved but no match — defer to next pass
+                    next_remaining.push(d.clone());
                 }
+            }
+
+            if next_remaining.len() == remaining.len() {
+                // No progress — resolve remaining with best-effort
+                for d in &next_remaining {
+                    let resolved_operands: Vec<types::Type> =
+                        d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
+                    if let Some(resolved_ty) = ctx.resolve_overload(&d.op_name, &resolved_operands)
+                    {
+                        if let types::Type::Function(param_tys, ret_ty) = resolved_ty
+                            && param_tys.len() == d.operand_tys.len()
+                        {
+                            for (operand_ty, param_ty) in
+                                d.operand_tys.iter().zip(param_tys.iter())
+                            {
+                                ctx.add_constraint(constraint::Constraint::Equal(
+                                    operand_ty.clone(),
+                                    param_ty.clone(),
+                                    d.range,
+                                ));
+                            }
+                            ctx.set_symbol_type(d.symbol_id, *ret_ty);
+                        }
+                    } else {
+                        let all_concrete = resolved_operands.iter().all(|ty| !ty.is_var());
+                        if all_concrete {
+                            let args_str = resolved_operands
+                                .iter()
+                                .map(|t| t.to_string())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            ctx.add_error(TypeError::UnificationError {
+                                left: format!("{} with arguments ({})", d.op_name, args_str),
+                                right: "no matching overload".to_string(),
+                                span: d.range.as_ref().map(unify::range_to_span),
+                                location: d
+                                    .range
+                                    .as_ref()
+                                    .map(|r| (r.start.line, r.start.column)),
+                            });
+                        }
+                    }
+                }
+                break;
+            }
+
+            remaining = next_remaining;
+            if remaining.is_empty() {
+                break;
             }
         }
 
-        // Run unification again with the new constraints
+        // Final unification pass
         unify::solve_constraints(ctx);
     }
 
