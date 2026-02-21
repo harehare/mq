@@ -26,9 +26,9 @@ impl Number {
         self.0
     }
 
-    /// Returns the underlying `u64` value.
-    pub fn to_int(self) -> u64 {
-        self.0 as u64
+    /// Returns the underlying `i64` value, truncating any fractional part.
+    pub fn to_int(self) -> i64 {
+        self.0 as i64
     }
 
     /// Returns `true` if the number represents an integer value.

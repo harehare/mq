@@ -2341,7 +2341,7 @@ define_builtin!(SHIFT_LEFT, ParamNum::Fixed(2), |_, _, mut args, _| {
         }
         [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
             if let mq_markdown::Node::Heading(heading) = node {
-                let shift_amount = n.to_int() as u8;
+                let shift_amount = n.to_int().max(0).min(u8::MAX as i64) as u8;
 
                 heading.depth = heading.depth.saturating_sub(shift_amount).max(1);
                 Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
@@ -2373,7 +2373,7 @@ define_builtin!(SHIFT_RIGHT, ParamNum::Fixed(2), |_, _, mut args, _| {
         }
         [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
             if let mq_markdown::Node::Heading(heading) = node {
-                let shift_amount = n.to_int().min(u8::MAX as _) as u8;
+                let shift_amount = n.to_int().max(0).min(u8::MAX as i64) as u8;
 
                 if heading.depth + shift_amount <= 6 {
                     heading.depth += shift_amount;
