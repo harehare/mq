@@ -23,6 +23,8 @@ pub mod builtins {
     pub const MOD: &str = "mod";
     pub const FLOOR: &str = "floor";
 
+    pub const IS_REGEX_MATCH: &str = "is_regex_match";
+
     pub const NOT: &str = "not";
     pub const NEGATE: &str = "negate";
 

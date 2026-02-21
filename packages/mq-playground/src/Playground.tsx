@@ -1141,7 +1141,7 @@ export const Playground = () => {
           ],
           [/;/, "delimiter"],
           [
-            /(\/\/=|<=|>=|==|!=|&&|\+=|-=|\*=|\/=|\|=|=|\||:|;|\?|!|\+|-|\*|\/|%|<|>)/,
+            /(\/\/=|<=|>=|==|!=|=~|&&|\+=|-=|\*=|\/=|\|=|=|\||:|;|\?|!|\+|-|\*|\/|%|<|>)/,
             "operator",
           ],
           [/"/, { token: "string", next: "@multilineString" }],
@@ -1155,7 +1155,7 @@ export const Playground = () => {
         ],
         multilineString: [
           [/\$\{[^}]*\}/, "variable"],
-          [/\\./, "string.escape"], // handle escaped characters (including \")
+          [/\\./, "string.escape"], // handle escaped characters (including \" )
           [/[^\\"]+/, "string"], // match all except backslash and quote
           [/"/, { token: "string", next: "@pop" }],
         ],

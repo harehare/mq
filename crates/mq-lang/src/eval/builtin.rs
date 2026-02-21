@@ -456,6 +456,22 @@ define_builtin!(REGEX_MATCH, ParamNum::Fixed(2), |ident, _, mut args, _| {
     }
 });
 
+define_builtin!(IS_REGEX_MATCH, ParamNum::Fixed(2), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s), RuntimeValue::String(pattern)] => is_match_re(s, pattern),
+        [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(pattern)] => node
+            .markdown_node()
+            .map(|md| is_match_re(&md.value(), pattern))
+            .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
+        [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!(),
+    }
+});
+
 define_builtin!(CAPTURE, ParamNum::Fixed(2), |ident, _, mut args, _| {
     match args.as_mut_slice() {
         [RuntimeValue::String(s), RuntimeValue::String(pattern)] => capture_re(s, pattern),
@@ -2426,6 +2442,7 @@ const HASH_INFINITE: u64 = fnv1a_hash_64("infinite");
 const HASH_INPUT: u64 = fnv1a_hash_64("input");
 const HASH_IS_DEBUG_MODE: u64 = fnv1a_hash_64("is_debug_mode");
 const HASH_IS_NAN: u64 = fnv1a_hash_64("is_nan");
+const HASH_IS_REGEX_MATCH: u64 = fnv1a_hash_64("is_regex_match");
 const HASH_JOIN: u64 = fnv1a_hash_64("join");
 const HASH_KEYS: u64 = fnv1a_hash_64("keys");
 const HASH_LEN: u64 = fnv1a_hash_64("len");
@@ -2553,6 +2570,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_INFINITE => Some(&INFINITE),
         HASH_IS_DEBUG_MODE => Some(&IS_DEBUG_MODE),
         HASH_IS_NAN => Some(&IS_NAN),
+        HASH_IS_REGEX_MATCH => Some(&IS_REGEX_MATCH),
         HASH_INSERT => Some(&INSERT),
         HASH_INPUT => Some(&INPUT),
         HASH_JOIN => Some(&JOIN),
@@ -3217,6 +3235,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         SmolStr::new("regex_match"),
         BuiltinFunctionDoc {
             description: "Finds all matches of the given pattern in the string.",
+            params: &["string", "pattern"],
+        },
+    );
+    map.insert(
+        SmolStr::new("is_regex_match"),
+        BuiltinFunctionDoc {
+            description: "Checks if the given pattern matches the string.",
             params: &["string", "pattern"],
         },
     );
@@ -4125,6 +4150,18 @@ fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
             .map(|m| RuntimeValue::String(m.as_str().to_string()))
             .collect();
         Ok(RuntimeValue::Array(matches))
+    } else {
+        Err(Error::InvalidRegularExpression(pattern.to_string()))
+    }
+}
+
+fn is_match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
+    let mut cache = REGEX_CACHE.lock().unwrap();
+    if let Some(re) = cache.get(pattern) {
+        Ok(re.is_match(input).into())
+    } else if let Ok(re) = RegexBuilder::new(pattern).size_limit(1 << 20).build() {
+        cache.insert(pattern.to_string(), re.clone());
+        Ok(re.is_match(input).into())
     } else {
         Err(Error::InvalidRegularExpression(pattern.to_string()))
     }
