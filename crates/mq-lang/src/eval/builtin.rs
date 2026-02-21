@@ -2333,11 +2333,8 @@ define_builtin!(SHIFT_LEFT, ParamNum::Fixed(2), |_, _, mut args, _| {
             .ok_or_else(|| Error::Runtime("Shift amount is too large".to_string())),
         [RuntimeValue::String(v), RuntimeValue::Number(n)] => {
             let shift_amount = n.value() as usize;
-            if shift_amount >= v.len() {
-                Ok(RuntimeValue::String(String::new()))
-            } else {
-                Ok(RuntimeValue::String(v[shift_amount..].to_string()))
-            }
+            let shifted: String = v.chars().skip(shift_amount).collect();
+            Ok(RuntimeValue::String(shifted))
         }
         [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
             if let mq_markdown::Node::Heading(heading) = node {
