@@ -2362,10 +2362,13 @@ define_builtin!(SHIFT_RIGHT, ParamNum::Fixed(2), |_, _, mut args, _| {
             .ok_or_else(|| Error::Runtime("Shift amount is too large".to_string())),
         [RuntimeValue::String(v), RuntimeValue::Number(n)] => {
             let shift_amount = n.value() as usize;
-            if shift_amount >= v.len() {
+            let char_len = v.chars().count();
+            if shift_amount >= char_len {
                 Ok(RuntimeValue::String(String::new()))
             } else {
-                Ok(RuntimeValue::String(v[..v.len() - shift_amount].to_string()))
+                let keep = char_len - shift_amount;
+                let result: String = v.chars().take(keep).collect();
+                Ok(RuntimeValue::String(result))
             }
         }
         [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
