@@ -162,6 +162,8 @@ impl<'a> Parser<'a> {
             TokenKind::PercentEqual => Some(BinaryOp::ModuloEqual),
             TokenKind::PipeEqual => Some(BinaryOp::PipeEqual),
             TokenKind::TildeEqual => Some(BinaryOp::RegexMatch),
+            TokenKind::LeftShift => Some(BinaryOp::LeftShift),
+            TokenKind::RightShift => Some(BinaryOp::RightShift),
             _ => None,
         }
     }
@@ -4961,6 +4963,74 @@ mod tests {
                 Shared::new(Node {
                     kind: NodeKind::BinaryOp(BinaryOp::Multiplication),
                     token: Some(Shared::new(token(TokenKind::Asterisk))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::left_shift(
+        vec![
+            Shared::new(token(TokenKind::Ident("a".into()))),
+            Shared::new(token(TokenKind::LeftShift)),
+            Shared::new(token(TokenKind::Ident("b".into()))),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::BinaryOp(BinaryOp::LeftShift),
+                    token: Some(Shared::new(token(TokenKind::LeftShift))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::right_shift(
+        vec![
+            Shared::new(token(TokenKind::Ident("a".into()))),
+            Shared::new(token(TokenKind::RightShift)),
+            Shared::new(token(TokenKind::Ident("b".into()))),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::BinaryOp(BinaryOp::RightShift),
+                    token: Some(Shared::new(token(TokenKind::RightShift))),
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: vec![

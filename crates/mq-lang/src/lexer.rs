@@ -266,6 +266,8 @@ define_token_parser!(percent_equal, "%=", TokenKind::PercentEqual);
 define_token_parser!(double_slash_equal, "//=", TokenKind::DoubleSlashEqual);
 define_token_parser!(pipe_equal, "|=", TokenKind::PipeEqual);
 define_token_parser!(tilde_equal, "=~", TokenKind::TildeEqual);
+define_token_parser!(left_shift, "<<", TokenKind::LeftShift);
+define_token_parser!(right_shift, ">>", TokenKind::RightShift);
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
@@ -288,7 +290,7 @@ fn punctuations(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
-fn binary_op(input: Span) -> IResult<Span, Token> {
+fn assignment_op(input: Span) -> IResult<Span, Token> {
     alt((
         plus_equal,
         minus_equal,
@@ -297,13 +299,22 @@ fn binary_op(input: Span) -> IResult<Span, Token> {
         percent_equal,
         double_slash_equal,
         pipe_equal,
+    ))
+    .parse(input)
+}
+
+fn binary_op(input: Span) -> IResult<Span, Token> {
+    alt((
+        assignment_op,
         eq_eq,
         ne_eq,
+        left_shift,
+        right_shift,
+        tilde_equal,
         lte,
         gte,
         lt,
         gt,
-        tilde_equal,
         equal,
         plus,
         minus,
