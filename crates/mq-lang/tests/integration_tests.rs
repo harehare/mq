@@ -2085,6 +2085,18 @@ fn engine() -> DefaultEngine {
         values: vec!["Heading 1".to_string().into()],
         position: None
     }), None)].into()))]
+#[case::shift_left_string_basic("\"abcdef\" | shift_left(2)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("cdef".to_string())].into()))]
+#[case::shift_right_string_basic("\"abcdef\" | shift_right(2)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("abcd".to_string())].into()))]
+#[case::shift_left_string_amount_greater_than_length("\"abc\" | shift_left(10)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("".to_string())].into()))]
+#[case::shift_right_string_amount_equal_to_length("\"abc\" | shift_right(3)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("".to_string())].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
