@@ -79,7 +79,7 @@ This is equivalent to calling `is_regex_match(string, pattern)`.
 # => false
 
 # Use in a conditional
-"foo bar" | if . =~ "foo" then "matched" else "no match" end
+"foo bar" | if (. =~ "foo"): "matched" else: "no match"
 # => matched
 
 # Complex patterns
