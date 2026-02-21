@@ -3885,7 +3885,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new(constants::builtins::SHIFT_LEFT),
         BuiltinFunctionDoc {
-            description: "Performs a bitwise left shift operation on the given value by the specified number of positions.",
+            description: "Performs a left shift operation on the given value: for numbers, this is a bitwise left shift by the specified number of positions; for strings, this removes characters from the start; for Markdown headings, this increases the heading level accordingly.",
             params: &["value", "shift_amount"],
         },
     );
