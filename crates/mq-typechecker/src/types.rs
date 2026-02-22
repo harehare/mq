@@ -222,17 +222,11 @@ impl Type {
 
 /// Converts a TypeVarId to a readable name like `'a`, `'b`, ..., `'z`, `'a1`, `'b1`, etc.
 ///
-/// Extracts the numeric index from the slotmap key's debug format (`{index}v{version}`)
-/// and maps it to a human-readable alphabetic name.
+/// Uses the slotmap key's index (via `KeyData`) for a reliable numeric index,
+/// then maps it to a human-readable alphabetic name.
 fn type_var_name(id: TypeVarId) -> String {
-    let id_str = format!("{:?}", id);
-    // Extract the numeric index from slotmap debug format: "TypeVarId({index}v{version})"
-    let index = id_str
-        .strip_prefix("TypeVarId(")
-        .and_then(|s| s.strip_suffix(")"))
-        .and_then(|inner| inner.split('v').next())
-        .and_then(|idx_str| idx_str.parse::<usize>().ok())
-        .unwrap_or(0);
+    use slotmap::Key;
+    let index = id.data().as_ffi() as u32 as usize;
 
     let letter = (b'a' + (index % 26) as u8) as char;
     let suffix = index / 26;
