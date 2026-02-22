@@ -2332,7 +2332,7 @@ define_builtin!(SHIFT_LEFT, ParamNum::Fixed(2), |_, _, mut args, _| {
             .map(|result| RuntimeValue::Number(result.into()))
             .ok_or_else(|| Error::Runtime("Shift amount is too large".to_string())),
         [RuntimeValue::String(v), RuntimeValue::Number(n)] => {
-            let shift_amount = n.value() as usize;
+            let shift_amount = n.to_int().max(0) as usize;
             let shifted: String = v.chars().skip(shift_amount).collect();
             Ok(RuntimeValue::String(shifted))
         }
