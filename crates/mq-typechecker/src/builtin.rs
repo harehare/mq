@@ -17,6 +17,8 @@ pub fn register_all(ctx: &mut InferenceContext) {
     register_array(ctx);
     register_dict(ctx);
     register_type_conversion(ctx);
+    register_type_checks(ctx);
+    register_collection(ctx);
     register_datetime(ctx);
     register_io(ctx);
     register_utility(ctx);
@@ -121,6 +123,14 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     register_binary(ctx, "+", Type::Markdown, Type::String, Type::Markdown);
     register_binary(ctx, "add", Type::Markdown, Type::String, Type::Markdown);
 
+    // Addition: string + any -> string (dynamic coercion fallback)
+    // mq uses `+` for string concatenation with any type (e.g., `"text" + value`
+    // where `value` is type-guarded at runtime via `is_string`, `is_bool`, etc.)
+    for name in ["+", "add"] {
+        let a = ctx.fresh_var();
+        register_binary(ctx, name, Type::String, Type::Var(a), Type::String);
+    }
+
     // Subtraction: (number, number) -> number
     register_binary(ctx, "-", Type::Number, Type::Number, Type::Number);
     register_binary(ctx, "sub", Type::Number, Type::Number, Type::Number);
@@ -197,6 +207,7 @@ fn register_comparison(ctx: &mut InferenceContext) {
         let a = ctx.fresh_var();
         register_binary(ctx, name, Type::Var(a), Type::Var(a), Type::Bool);
     }
+
 }
 
 /// Logical operators: &&, ||, !, and, or, not, unary-, negate
@@ -208,6 +219,13 @@ fn register_logical(ctx: &mut InferenceContext) {
         vec![Type::Bool, Type::Bool],
         Type::Bool,
     );
+
+    // mq is dynamically typed and uses truthy/falsy semantics for logical operators.
+    // `&&` and `||` can accept any types (e.g., `none || "default"`, `is_array(x) && len(x)`).
+    for name in ["&&", "||", "and", "or"] {
+        let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+        register_binary(ctx, name, Type::Var(a), Type::Var(b), Type::Var(b));
+    }
 
     // Variadic logical: or/and with 3-6 boolean arguments
     for n in 3..=6 {
@@ -270,6 +288,10 @@ fn register_string(ctx: &mut InferenceContext) {
 
     // String manipulation
     register_ternary(ctx, "replace", Type::String, Type::String, Type::String, Type::String);
+    // Generic fallback for replace: (a, string, string) -> a
+    // Handles dynamically typed code where the first argument type is runtime-guarded
+    let a = ctx.fresh_var();
+    register_ternary(ctx, "replace", Type::Var(a), Type::String, Type::String, Type::Var(a));
     register_ternary(ctx, "gsub", Type::String, Type::String, Type::String, Type::String);
     register_binary(ctx, "split", Type::String, Type::String, Type::array(Type::String));
     register_binary(ctx, "join", Type::array(Type::String), Type::String, Type::String);
@@ -435,6 +457,11 @@ fn register_dict(ctx: &mut InferenceContext) {
         Type::array(Type::Var(k)),
     );
 
+    // Generic fallback: keys/values/entries accept any type (for dynamically typed code
+    // where the argument type is determined by runtime guards like `is_dict`)
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_unary(ctx, "keys", Type::Var(a), Type::array(Type::Var(b)));
+
     // values: {k: v} -> [v]
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
     register_unary(
@@ -550,6 +577,73 @@ fn register_type_conversion(ctx: &mut InferenceContext) {
 
     let a = ctx.fresh_var();
     register_unary(ctx, "type", Type::Var(a), Type::String);
+}
+
+/// Type check functions: is_none, is_array, is_dict, is_string, is_number, is_bool, is_empty
+fn register_type_checks(ctx: &mut InferenceContext) {
+    // Type predicate functions: (a) -> bool
+    for name in ["is_none", "is_array", "is_dict", "is_string", "is_number", "is_bool"] {
+        let a = ctx.fresh_var();
+        register_unary(ctx, name, Type::Var(a), Type::Bool);
+    }
+
+    // is_empty: (string) -> bool, ([a]) -> bool, ({k: v}) -> bool
+    register_unary(ctx, "is_empty", Type::String, Type::Bool);
+    let a = ctx.fresh_var();
+    register_unary(ctx, "is_empty", Type::array(Type::Var(a)), Type::Bool);
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_unary(ctx, "is_empty", Type::dict(Type::Var(k), Type::Var(v)), Type::Bool);
+}
+
+/// Collection functions: first, last, map
+fn register_collection(ctx: &mut InferenceContext) {
+    // first: ([a]) -> a
+    let a = ctx.fresh_var();
+    register_unary(ctx, "first", Type::array(Type::Var(a)), Type::Var(a));
+
+    // first: (string) -> string (first character)
+    register_unary(ctx, "first", Type::String, Type::String);
+
+    // last: ([a]) -> a
+    let a = ctx.fresh_var();
+    register_unary(ctx, "last", Type::array(Type::Var(a)), Type::Var(a));
+
+    // last: (string) -> string (last character)
+    register_unary(ctx, "last", Type::String, Type::String);
+
+    // map: ([a], (a) -> b) -> [b]
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "map",
+        Type::array(Type::Var(a)),
+        Type::function(vec![Type::Var(a)], Type::Var(b)),
+        Type::array(Type::Var(b)),
+    );
+
+    // map: ({k: v}, (v) -> b) -> {k: b} (dict map)
+    let (k, v, b) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "map",
+        Type::dict(Type::Var(k), Type::Var(v)),
+        Type::function(vec![Type::Var(v)], Type::Var(b)),
+        Type::dict(Type::Var(k), Type::Var(b)),
+    );
+
+    // Generic fallback: map(a, (a) -> b) -> [b]
+    // Handles dynamically typed code where the collection type is runtime-guarded
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "map",
+        Type::Var(a),
+        Type::function(vec![Type::Var(a)], Type::Var(b)),
+        Type::array(Type::Var(b)),
+    );
+
+    // None propagation
+    register_none_propagation_unary(ctx, &["first", "last"]);
 }
 
 /// Date/time functions: now, from_date, to_date

@@ -21,59 +21,23 @@ fn check_types(code: &str) -> Vec<TypeError> {
 }
 
 #[test]
-fn test_error_location_array_type_mismatch() {
-    // Array with mixed types should produce an error with location info
+fn test_heterogeneous_array_allowed() {
+    // mq is dynamically typed — heterogeneous arrays (used as tuples) are valid
     let code = r#"[1, 2, "string"]"#;
     let errors = check_types(code);
-
-    assert!(!errors.is_empty(), "Expected type error for mixed-type array");
-    let e = &errors[0];
-    println!("Error with location: {:?}", e);
-    println!("Error display: {}", e);
-
-    // Check that the error is a type mismatch
-    match e {
-        TypeError::Mismatch {
-            expected, found, span, ..
-        } => {
-            println!("Expected: {}, Found: {}, Span: {:?}", expected, found, span);
-        }
-        _ => {
-            println!("Got error type: {:?}", e);
-        }
-    }
-}
-
-#[test]
-fn test_error_message_readability() {
-    // Test that error messages are human-readable
-    let code = r#"[1, 2, 3, "four"]"#;
-    let errors = check_types(code);
-
-    assert!(!errors.is_empty(), "Expected type error for mixed-type array");
-    let error_msg = format!("{}", errors[0]);
-    println!("Error message: {}", error_msg);
-
-    // The error message should be informative
     assert!(
-        error_msg.contains("mismatch") || error_msg.contains("type") || error_msg.contains("unify"),
-        "Error message should mention type mismatch: {}",
-        error_msg
+        errors.is_empty(),
+        "Heterogeneous arrays should be allowed (tuple pattern): {:?}",
+        errors
     );
 }
 
 #[test]
-fn test_multiple_errors_show_locations() {
-    // Code with multiple type errors - now errors are collected
-    let code = r#"[1, "two"]"#;
+fn test_homogeneous_array_no_error() {
+    // Homogeneous arrays should not produce errors
+    let code = r#"[1, 2, 3]"#;
     let errors = check_types(code);
-
-    println!("Found {} errors", errors.len());
-    for (i, e) in errors.iter().enumerate() {
-        println!("Error {}: {:?}", i + 1, e);
-        println!("Error {} display: {}", i + 1, e);
-    }
-    assert!(!errors.is_empty(), "Expected at least one type error");
+    assert!(errors.is_empty(), "Homogeneous array should have no errors");
 }
 
 #[test]
@@ -90,15 +54,33 @@ fn test_binary_op_type_error_location() {
 }
 
 #[test]
-fn test_arity_error_location() {
-    // Test error location with a type mismatch in an array
-    let code = r#"[1, "two", 3]"#;
+fn test_error_message_readability() {
+    // Test that error messages are human-readable
+    let code = r#"1 + "hello""#;
     let errors = check_types(code);
 
-    println!("\n=== Error Location ===");
-    for e in &errors {
-        println!("Error: {}", e);
-        println!("Error details: {:?}", e);
+    assert!(!errors.is_empty(), "Expected type error");
+    let error_msg = format!("{}", errors[0]);
+    println!("Error message: {}", error_msg);
+
+    // The error message should be informative
+    assert!(
+        error_msg.contains("mismatch") || error_msg.contains("type") || error_msg.contains("unify"),
+        "Error message should mention type mismatch: {}",
+        error_msg
+    );
+}
+
+#[test]
+fn test_multiple_errors_show_locations() {
+    // Code with type error in binary operation
+    let code = r#"1 + "two""#;
+    let errors = check_types(code);
+
+    println!("Found {} errors", errors.len());
+    for (i, e) in errors.iter().enumerate() {
+        println!("Error {}: {:?}", i + 1, e);
+        println!("Error {} display: {}", i + 1, e);
     }
-    assert!(!errors.is_empty(), "Expected type mismatch error");
+    assert!(!errors.is_empty(), "Expected at least one type error");
 }

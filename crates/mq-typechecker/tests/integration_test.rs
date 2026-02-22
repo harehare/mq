@@ -151,9 +151,14 @@ fn test_function_as_value() {
 // Error Cases - These should fail type checking
 
 #[test]
-fn test_type_mismatch_in_array() {
+fn test_heterogeneous_array_allowed() {
+    // mq is dynamically typed — heterogeneous arrays (used as tuples) are valid
     let result = check_types(r#"[1, "string", true]"#);
-    assert!(!result.is_empty(), "Expected type error for heterogeneous array");
+    assert!(
+        result.is_empty(),
+        "Heterogeneous arrays should be allowed: {:?}",
+        result
+    );
 }
 
 #[test]
