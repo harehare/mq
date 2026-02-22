@@ -71,7 +71,7 @@ The right shift operator (`>>`) maps to the `shift_right(value, amount)` builtin
 
 | Operand type     | Behavior                                                        |
 |------------------|-----------------------------------------------------------------|
-| Number           | Bitwise right shift: divides the value by `2^amount`            |
+| Number           | Bitwise right shift on the truncated integer value (shifts the bits right by `amount`) |
 | String           | Removes `amount` characters from the **end** of the string      |
 | Markdown Heading | Increases the heading depth by `amount` (demotes the heading, e.g. `#` → `##`), maximum depth is 6 |
 
