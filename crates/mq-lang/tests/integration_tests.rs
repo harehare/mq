@@ -2071,7 +2071,7 @@ fn engine() -> DefaultEngine {
         values: vec!["Heading 2".to_string().into()],
         position: None
     }), None)].into()))]
-#[case::shift_left_header_level_h2("let md = do to_markdown(\"## Heading 2\") | first(); | md << 1",
+#[case::shift_left_header_level_h2_via_binding("let md = do to_markdown(\"## Heading 2\") | first(); | md << 1",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
         depth: 1,
