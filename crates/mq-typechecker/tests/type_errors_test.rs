@@ -37,10 +37,15 @@ fn test_if_else_type_mismatch() {
 }
 
 #[test]
-fn test_array_element_type_mismatch() {
+fn test_heterogeneous_array_allowed() {
+    // mq is dynamically typed — heterogeneous arrays (used as tuples) are valid
     let result = check_types(r#"[1, "string", true]"#);
-    println!("Array element type mismatch: {:?}", result);
-    assert!(!result.is_empty(), "Expected type error for array with mixed types");
+    println!("Heterogeneous array: {:?}", result);
+    assert!(
+        result.is_empty(),
+        "Heterogeneous arrays should be allowed (tuple pattern): {:?}",
+        result
+    );
 }
 
 #[test]

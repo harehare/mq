@@ -925,7 +925,10 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
 
         // Collections
         SymbolKind::Array => {
-            // Array elements should have consistent types
+            // Array elements should have consistent types when possible.
+            // mq is dynamically typed and allows heterogeneous arrays (e.g., [string, number]
+            // used as tuples). When elements have different concrete types, we skip
+            // unification to avoid cascading false-positive type errors.
             let children = get_children(hir, symbol_id);
             if children.is_empty() {
                 // Empty array - element type is a fresh type variable
@@ -939,15 +942,33 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                     .map(|&child_id| ctx.get_or_create_symbol_type(child_id))
                     .collect();
 
-                // All elements should have the same type
-                let elem_ty = elem_tys[0].clone();
-                let range = get_symbol_range(hir, symbol_id);
-                for ty in &elem_tys[1..] {
-                    ctx.add_constraint(Constraint::Equal(elem_ty.clone(), ty.clone(), range));
-                }
+                // Resolve element types to check for heterogeneous concrete types
+                let resolved_tys: Vec<Type> = elem_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
+                let concrete_tys: Vec<&Type> = resolved_tys.iter().filter(|ty| !ty.is_var()).collect();
 
-                let array_ty = Type::array(elem_ty);
-                ctx.set_symbol_type(symbol_id, array_ty);
+                // Check if concrete types are all the same (homogeneous)
+                let is_heterogeneous = concrete_tys.len() >= 2
+                    && concrete_tys
+                        .windows(2)
+                        .any(|w| std::mem::discriminant(w[0]) != std::mem::discriminant(w[1]));
+
+                if is_heterogeneous {
+                    // Heterogeneous array (used as tuple) — use fresh type variable
+                    // to avoid corrupting type inference for downstream code
+                    let elem_ty_var = ctx.fresh_var();
+                    let array_ty = Type::array(Type::Var(elem_ty_var));
+                    ctx.set_symbol_type(symbol_id, array_ty);
+                } else {
+                    // Homogeneous or unresolved — unify all element types
+                    let elem_ty = elem_tys[0].clone();
+                    let range = get_symbol_range(hir, symbol_id);
+                    for ty in &elem_tys[1..] {
+                        ctx.add_constraint(Constraint::Equal(elem_ty.clone(), ty.clone(), range));
+                    }
+
+                    let array_ty = Type::array(elem_ty);
+                    ctx.set_symbol_type(symbol_id, array_ty);
+                }
             }
         }
 

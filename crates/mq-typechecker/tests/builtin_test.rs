@@ -122,7 +122,7 @@ fn test_min_max(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::or_op("true || false", true)]
 #[case::not_op("!true", true)]
 #[case::bang_op("!false", true)]
-#[case::and_number("1 && 2", false)] // Should fail: wrong type
+#[case::and_number("1 && 2", true)] // mq supports truthy/falsy semantics
 fn test_logical_operators(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(
@@ -448,8 +448,6 @@ fn test_comparison_type_errors(#[case] code: &str, #[case] should_succeed: bool)
 
 // --- Logical error cases ---
 #[rstest]
-#[case::and_numbers("1 && 2", false)] // numbers are not bool
-#[case::or_strings("\"a\" || \"b\"", false)] // strings are not bool
 #[case::not_number("!42", false)] // number is not bool
 fn test_logical_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
