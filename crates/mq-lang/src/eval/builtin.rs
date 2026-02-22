@@ -2336,6 +2336,10 @@ define_builtin!(SHIFT_LEFT, ParamNum::Fixed(2), |_, _, mut args, _| {
             let shifted: String = v.chars().skip(shift_amount).collect();
             Ok(RuntimeValue::String(shifted))
         }
+        [RuntimeValue::Array(arr), v] => {
+            arr.push(std::mem::take(v));
+            Ok(RuntimeValue::Array(std::mem::take(arr)))
+        }
         [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
             if let mq_markdown::Node::Heading(heading) = node {
                 let shift_amount = n.to_int().max(0).min(u8::MAX as i64) as u8;
@@ -2349,7 +2353,12 @@ define_builtin!(SHIFT_LEFT, ParamNum::Fixed(2), |_, _, mut args, _| {
                 ))
             }
         }
-        _ => Ok(RuntimeValue::NONE),
+        [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
+        [a, b] => Err(Error::InvalidTypes(
+            constants::builtins::SHIFT_LEFT.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!(),
     }
 });
 
@@ -2371,6 +2380,10 @@ define_builtin!(SHIFT_RIGHT, ParamNum::Fixed(2), |_, _, mut args, _| {
                 Ok(RuntimeValue::String(result))
             }
         }
+        [v, RuntimeValue::Array(arr)] => {
+            arr.insert(0, std::mem::take(v));
+            Ok(RuntimeValue::Array(std::mem::take(arr)))
+        }
         [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
             if let mq_markdown::Node::Heading(heading) = node {
                 let shift_amount = n.to_int().max(0).min(u8::MAX as i64) as u8;
@@ -2386,7 +2399,12 @@ define_builtin!(SHIFT_RIGHT, ParamNum::Fixed(2), |_, _, mut args, _| {
                 ))
             }
         }
-        _ => Ok(RuntimeValue::NONE),
+        [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
+        [a, b] => Err(Error::InvalidTypes(
+            constants::builtins::SHIFT_RIGHT.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!(),
     }
 });
 
