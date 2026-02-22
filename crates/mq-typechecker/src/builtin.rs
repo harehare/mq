@@ -89,10 +89,6 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     register_binary(ctx, "+", Type::String, Type::Number, Type::String);
     register_binary(ctx, "add", Type::String, Type::Number, Type::String);
 
-    // Addition: number + string -> string (coercion)
-    register_binary(ctx, "+", Type::Number, Type::String, Type::String);
-    register_binary(ctx, "add", Type::Number, Type::String, Type::String);
-
     // Addition: [a] + [a] -> [a] (array concatenation)
     for name in ["+", "add"] {
         let a = ctx.fresh_var();
@@ -120,10 +116,6 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
             Type::array(Type::Var(a)),
         );
     }
-
-    // Addition: markdown + markdown -> markdown
-    register_binary(ctx, "+", Type::Markdown, Type::Markdown, Type::Markdown);
-    register_binary(ctx, "add", Type::Markdown, Type::Markdown, Type::Markdown);
 
     // Addition: markdown + string -> markdown
     register_binary(ctx, "+", Type::Markdown, Type::String, Type::Markdown);
@@ -158,10 +150,35 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
         Type::Number,
     );
 
+    // Bit shift operators: (number, number) -> number
+    register_many(
+        ctx,
+        &["<<", ">>", "shift_left", "shift_right"],
+        vec![Type::Number, Type::Number],
+        Type::Number,
+    );
+
     // None propagation: (none, none) -> none for all arithmetic operators
     register_none_propagation_binary(
         ctx,
-        &["+", "-", "*", "/", "%", "^", "add", "sub", "mul", "div", "mod", "pow"],
+        &[
+            "+",
+            "-",
+            "*",
+            "/",
+            "%",
+            "^",
+            "add",
+            "sub",
+            "mul",
+            "div",
+            "mod",
+            "pow",
+            "<<",
+            ">>",
+            "shift_left",
+            "shift_right",
+        ],
     );
 }
 
@@ -191,13 +208,6 @@ fn register_logical(ctx: &mut InferenceContext) {
         vec![Type::Bool, Type::Bool],
         Type::Bool,
     );
-
-    // mq is dynamically typed and uses truthy/falsy semantics for logical operators.
-    // `||` and `&&` can accept any types (e.g., `none || "default"`, `val && transform(val)`).
-    for name in ["&&", "||", "and", "or"] {
-        let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
-        register_binary(ctx, name, Type::Var(a), Type::Var(b), Type::Var(b));
-    }
 
     // Variadic logical: or/and with 3-6 boolean arguments
     for n in 3..=6 {
@@ -244,8 +254,13 @@ fn register_math(ctx: &mut InferenceContext) {
 
 /// String functions: downcase, upcase, trim, starts_with, ends_with, etc.
 fn register_string(ctx: &mut InferenceContext) {
-    // Case conversion: string -> string
-    register_many(ctx, &["downcase", "upcase", "trim"], vec![Type::String], Type::String);
+    // Case conversion and trimming: string -> string
+    register_many(
+        ctx,
+        &["downcase", "upcase", "trim", "ltrim", "rtrim"],
+        vec![Type::String],
+        Type::String,
+    );
 
     // String search: (string, string) -> bool/number
     register_binary(ctx, "starts_with", Type::String, Type::String, Type::Bool);
@@ -277,11 +292,12 @@ fn register_string(ctx: &mut InferenceContext) {
         Type::String,
         Type::array(Type::String),
     );
+    register_binary(ctx, "is_regex_match", Type::String, Type::String, Type::Bool);
 
     // Encoding functions
     register_many(
         ctx,
-        &["base64", "base64d", "url_encode"],
+        &["base64", "base64d", "base64url", "base64urld", "url_encode"],
         vec![Type::String],
         Type::String,
     );
@@ -304,8 +320,12 @@ fn register_string(ctx: &mut InferenceContext) {
             "downcase",
             "upcase",
             "trim",
+            "ltrim",
+            "rtrim",
             "base64",
             "base64d",
+            "base64url",
+            "base64urld",
             "url_encode",
             "utf8bytelen",
         ],
@@ -393,6 +413,10 @@ fn register_array(ctx: &mut InferenceContext) {
 
     // slice: (string, number, number) -> string
     register_ternary(ctx, "slice", Type::String, Type::Number, Type::Number, Type::String);
+
+    // contains: ([a], a) -> bool
+    let a = ctx.fresh_var();
+    register_binary(ctx, "contains", Type::array(Type::Var(a)), Type::Var(a), Type::Bool);
 
     // None propagation for array functions
     register_none_propagation_unary(ctx, &["reverse", "sort", "uniq", "compact", "flatten", "len"]);
