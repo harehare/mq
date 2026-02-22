@@ -36,10 +36,11 @@ The shift operators (`<<` and `>>`) perform different operations depending on th
 
 The left shift operator (`<<`) maps to the `shift_left(value, amount)` builtin function.
 
-| Operand type     | Behavior                                                        |
-|------------------|-----------------------------------------------------------------|
-| Number           | Bitwise left shift: multiplies the value by `2^amount`          |
-| String           | Removes `amount` characters from the **start** of the string    |
+| Operand type     | Behavior                                                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------- |
+| Number           | Bitwise left shift: multiplies the value by `2^amount`                                              |
+| String           | Removes `amount` characters from the **start** of the string                                        |
+| Array            | Appends the value to the end of the array                                                           |
 | Markdown Heading | Decreases the heading depth by `amount` (promotes the heading, e.g. `##` → `#`), minimum depth is 1 |
 
 #### Examples
@@ -69,10 +70,11 @@ md << 1
 
 The right shift operator (`>>`) maps to the `shift_right(value, amount)` builtin function.
 
-| Operand type     | Behavior                                                        |
-|------------------|-----------------------------------------------------------------|
-| Number           | Bitwise right shift on the truncated integer value (shifts the bits right by `amount`) |
-| String           | Removes `amount` characters from the **end** of the string      |
+| Operand type     | Behavior                                                                                           |
+| ---------------- | -------------------------------------------------------------------------------------------------- |
+| Number           | Bitwise right shift on the truncated integer value (shifts the bits right by `amount`)             |
+| String           | Removes `amount` characters from the **end** of the string                                         |
+| Array            | Adds the value to the beginning of the array                                                       |
 | Markdown Heading | Increases the heading depth by `amount` (demotes the heading, e.g. `#` → `##`), maximum depth is 6 |
 
 #### Examples

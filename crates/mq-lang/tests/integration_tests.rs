@@ -2043,6 +2043,8 @@ fn engine() -> DefaultEngine {
 #[case::shift_left_number_operator("1 << 2", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()),)]
 #[case::shift_right_number("shift_right(4, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()),)]
 #[case::shift_right_number_operator("4 >> 2", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()),)]
+#[case::shift_left_array_operator("[1] << 2", vec![RuntimeValue::None], Ok(vec![vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())].into()].into()),)]
+#[case::shift_right_array_operator("2 >> [1]", vec![RuntimeValue::None], Ok(vec![vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(1.into())].into()].into()),)]
 #[case::shift_right_header_level_h1("to_markdown(\"# Heading 1\") | first() | shift_right(1)",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
