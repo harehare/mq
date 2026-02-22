@@ -540,20 +540,12 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                     let param_pos = children.iter().position(|&c| c == *param_sym);
                     if let Some(pos) = param_pos {
                         // Look at the next child after this parameter
-                        if let Some(&default_id) = children.get(pos + 1) {
-                            if let Some(default_sym) = hir.symbol(default_id)
-                                && !matches!(
-                                    default_sym.kind,
-                                    SymbolKind::Parameter | SymbolKind::Keyword
-                                )
-                            {
-                                let default_ty = ctx.get_or_create_symbol_type(default_id);
-                                ctx.add_constraint(Constraint::Equal(
-                                    param_ty.clone(),
-                                    default_ty,
-                                    range,
-                                ));
-                            }
+                        if let Some(&default_id) = children.get(pos + 1)
+                            && let Some(default_sym) = hir.symbol(default_id)
+                            && !matches!(default_sym.kind, SymbolKind::Parameter | SymbolKind::Keyword)
+                        {
+                            let default_ty = ctx.get_or_create_symbol_type(default_id);
+                            ctx.add_constraint(Constraint::Equal(param_ty.clone(), default_ty, range));
                         }
                     }
                 }

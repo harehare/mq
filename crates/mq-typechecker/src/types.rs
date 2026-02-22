@@ -164,9 +164,7 @@ impl Type {
             (Type::Var(_), _) | (_, Type::Var(_)) => Some(10),
 
             // Arrays: structural match scores higher than bare type variable
-            (Type::Array(elem1), Type::Array(elem2)) => {
-                elem1.match_score(elem2).map(|s| s + 20)
-            }
+            (Type::Array(elem1), Type::Array(elem2)) => elem1.match_score(elem2).map(|s| s + 20),
 
             // Dicts: structural match scores higher than bare type variable
             (Type::Dict(k1, v1), Type::Dict(k2, v2)) => {
@@ -222,17 +220,26 @@ impl Type {
     }
 }
 
-/// Converts a TypeVarId to a readable name.
-/// For simplicity, we just use a short representation of the debug format.
+/// Converts a TypeVarId to a readable name like `'a`, `'b`, ..., `'z`, `'a1`, `'b1`, etc.
+///
+/// Extracts the numeric index from the slotmap key's debug format (`{index}v{version}`)
+/// and maps it to a human-readable alphabetic name.
 fn type_var_name(id: TypeVarId) -> String {
     let id_str = format!("{:?}", id);
-    // Extract a simple representation from the debug format
-    // TypeVarId debug format is like "TypeVarId(1v0)" or similar
-    if let Some(inner) = id_str.strip_prefix("TypeVarId(").and_then(|s| s.strip_suffix(")")) {
-        format!("'{}", inner)
+    // Extract the numeric index from slotmap debug format: "TypeVarId({index}v{version})"
+    let index = id_str
+        .strip_prefix("TypeVarId(")
+        .and_then(|s| s.strip_suffix(")"))
+        .and_then(|inner| inner.split('v').next())
+        .and_then(|idx_str| idx_str.parse::<usize>().ok())
+        .unwrap_or(0);
+
+    let letter = (b'a' + (index % 26) as u8) as char;
+    let suffix = index / 26;
+    if suffix == 0 {
+        format!("'{}", letter)
     } else {
-        // Fallback: just use the whole debug representation
-        format!("'{}", id_str)
+        format!("'{}{}", letter, suffix)
     }
 }
 

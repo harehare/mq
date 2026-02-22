@@ -89,6 +89,10 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     register_binary(ctx, "+", Type::String, Type::Number, Type::String);
     register_binary(ctx, "add", Type::String, Type::Number, Type::String);
 
+    // Addition: number + string -> string (coercion)
+    register_binary(ctx, "+", Type::Number, Type::String, Type::String);
+    register_binary(ctx, "add", Type::Number, Type::String, Type::String);
+
     // Addition: [a] + [a] -> [a] (array concatenation)
     for name in ["+", "add"] {
         let a = ctx.fresh_var();
@@ -188,6 +192,13 @@ fn register_logical(ctx: &mut InferenceContext) {
         Type::Bool,
     );
 
+    // mq is dynamically typed and uses truthy/falsy semantics for logical operators.
+    // `||` and `&&` can accept any types (e.g., `none || "default"`, `val && transform(val)`).
+    for name in ["&&", "||", "and", "or"] {
+        let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+        register_binary(ctx, name, Type::Var(a), Type::Var(b), Type::Var(b));
+    }
+
     // Variadic logical: or/and with 3-6 boolean arguments
     for n in 3..=6 {
         let params = vec![Type::Bool; n];
@@ -247,6 +258,9 @@ fn register_string(ctx: &mut InferenceContext) {
     register_ternary(ctx, "gsub", Type::String, Type::String, Type::String, Type::String);
     register_binary(ctx, "split", Type::String, Type::String, Type::array(Type::String));
     register_binary(ctx, "join", Type::array(Type::String), Type::String, Type::String);
+
+    // contains: (string, string) -> bool
+    register_binary(ctx, "contains", Type::String, Type::String, Type::Bool);
 
     // Character/codepoint conversion
     register_unary(ctx, "explode", Type::String, Type::array(Type::Number));
