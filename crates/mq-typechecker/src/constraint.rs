@@ -1290,8 +1290,8 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 let resolved_try = ctx.resolve_type(&try_ty);
                 let resolved_catch = ctx.resolve_type(&catch_ty);
                 let both_concrete = !resolved_try.is_var() && !resolved_catch.is_var();
-                let different_types = both_concrete
-                    && std::mem::discriminant(&resolved_try) != std::mem::discriminant(&resolved_catch);
+                let different_types =
+                    both_concrete && std::mem::discriminant(&resolved_try) != std::mem::discriminant(&resolved_catch);
 
                 if different_types {
                     let ty_var = ctx.fresh_var();
