@@ -74,8 +74,8 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
                 let var_ty = ctx.resolve_type(&Type::Var(var));
                 let resolved_ty = ctx.resolve_type(ty);
                 ctx.add_error(TypeError::OccursCheck {
-                    var: var_ty.to_string(),
-                    ty: resolved_ty.to_string(),
+                    var: var_ty.display_renumbered(),
+                    ty: resolved_ty.display_renumbered(),
                     span: range.as_ref().map(range_to_span),
                     location: range.as_ref().map(|r| (r.start.line, r.start.column)),
                 });
@@ -118,12 +118,12 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
 
         // Mismatch
         _ => {
-            // Resolve types for better error messages
+            // Resolve types for better error messages (use renumbered display for clean names)
             let resolved_t1 = ctx.resolve_type(t1);
             let resolved_t2 = ctx.resolve_type(t2);
             ctx.add_error(TypeError::Mismatch {
-                expected: resolved_t1.to_string(),
-                found: resolved_t2.to_string(),
+                expected: resolved_t1.display_renumbered(),
+                found: resolved_t2.display_renumbered(),
                 span: range.as_ref().map(range_to_span),
                 location: range.as_ref().map(|r| (r.start.line, r.start.column)),
             });

@@ -1,5 +1,6 @@
 //! Type representations for the mq type system.
 
+use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
 use std::fmt;
 
@@ -218,6 +219,55 @@ impl Type {
             }
         }
     }
+
+    /// Formats the type with renumbered type variables starting from `'a`.
+    ///
+    /// This produces clean, sequential type variable names regardless of internal
+    /// slotmap indices, which can be very large due to builtin registrations.
+    /// For example, instead of `'y32` or `'x3`, this produces `'a`, `'b`, etc.
+    pub fn display_renumbered(&self) -> String {
+        let mut var_map = FxHashMap::default();
+        let mut counter = 0usize;
+        self.fmt_renumbered(&mut var_map, &mut counter)
+    }
+
+    /// Internal helper for renumbered formatting.
+    pub(crate) fn fmt_renumbered(&self, var_map: &mut FxHashMap<TypeVarId, usize>, counter: &mut usize) -> String {
+        match self {
+            Type::Int => "int".to_string(),
+            Type::Float => "float".to_string(),
+            Type::Number => "number".to_string(),
+            Type::String => "string".to_string(),
+            Type::Bool => "bool".to_string(),
+            Type::Symbol => "symbol".to_string(),
+            Type::None => "none".to_string(),
+            Type::Markdown => "markdown".to_string(),
+            Type::Array(elem) => format!("[{}]", elem.fmt_renumbered(var_map, counter)),
+            Type::Dict(key, value) => {
+                format!(
+                    "{{{}: {}}}",
+                    key.fmt_renumbered(var_map, counter),
+                    value.fmt_renumbered(var_map, counter)
+                )
+            }
+            Type::Function(params, ret) => {
+                let params_str = params
+                    .iter()
+                    .map(|p| p.fmt_renumbered(var_map, counter))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("({}) -> {}", params_str, ret.fmt_renumbered(var_map, counter))
+            }
+            Type::Var(id) => {
+                let index = *var_map.entry(*id).or_insert_with(|| {
+                    let i = *counter;
+                    *counter += 1;
+                    i
+                });
+                format_var_name(index)
+            }
+        }
+    }
 }
 
 /// Converts a TypeVarId to a readable name like `'a`, `'b`, ..., `'z`, `'a1`, `'b1`, etc.
@@ -227,7 +277,13 @@ impl Type {
 fn type_var_name(id: TypeVarId) -> String {
     use slotmap::Key;
     let index = id.data().as_ffi() as u32 as usize;
+    format_var_name(index)
+}
 
+/// Formats a type variable name from a sequential index.
+///
+/// Maps index 0 → `'a`, 1 → `'b`, ..., 25 → `'z`, 26 → `'a1`, etc.
+pub fn format_var_name(index: usize) -> String {
     let letter = (b'a' + (index % 26) as u8) as char;
     let suffix = index / 26;
     if suffix == 0 {
@@ -318,16 +374,24 @@ impl TypeScheme {
 impl fmt::Display for TypeScheme {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.quantified.is_empty() {
-            write!(f, "{}", self.ty)
+            // Monomorphic type — renumber for clean display
+            write!(f, "{}", self.ty.display_renumbered())
         } else {
+            // Polymorphic type — renumber quantified vars to 'a, 'b, ...
+            let mut var_map: FxHashMap<TypeVarId, usize> = FxHashMap::default();
+            for (i, var) in self.quantified.iter().enumerate() {
+                var_map.insert(*var, i);
+            }
+            let mut counter = self.quantified.len();
+
             write!(f, "forall ")?;
             for (i, var) in self.quantified.iter().enumerate() {
                 if i > 0 {
                     write!(f, " ")?;
                 }
-                write!(f, "{}", type_var_name(*var))?;
+                write!(f, "{}", format_var_name(var_map[var]))?;
             }
-            write!(f, ". {}", self.ty)
+            write!(f, ". {}", self.ty.fmt_renumbered(&mut var_map, &mut counter))
         }
     }
 }
