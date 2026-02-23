@@ -40,15 +40,48 @@ fn get_symbol_range(hir: &Hir, symbol_id: SymbolId) -> Option<mq_lang::Range> {
     hir.symbol(symbol_id).and_then(|symbol| symbol.source.text_range)
 }
 
+/// Checks if a symbol belongs to a module source (include/import/module).
+///
+/// Symbols from included/imported modules are trusted library code and should
+/// not be type-checked, similar to builtin symbols.
+fn is_module_symbol(
+    _hir: &Hir,
+    symbol: &mq_hir::Symbol,
+    module_source_ids: &rustc_hash::FxHashSet<mq_hir::SourceId>,
+) -> bool {
+    symbol
+        .source
+        .source_id
+        .is_some_and(|sid| module_source_ids.contains(&sid))
+}
+
+/// Collects all source IDs from include/import/module symbols.
+fn collect_module_source_ids(hir: &Hir) -> rustc_hash::FxHashSet<mq_hir::SourceId> {
+    let mut ids = rustc_hash::FxHashSet::default();
+    for (_, symbol) in hir.symbols() {
+        match symbol.kind {
+            SymbolKind::Include(source_id) | SymbolKind::Import(source_id) | SymbolKind::Module(source_id) => {
+                ids.insert(source_id);
+            }
+            _ => {}
+        }
+    }
+    ids
+}
+
 /// Generates type constraints from HIR
 pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
+    // Collect module source IDs to skip their symbols during type checking.
+    // Symbols from included/imported modules are trusted library code.
+    let module_source_ids = collect_module_source_ids(hir);
+
     // Use a two-pass approach to ensure literals have concrete types before operators use them
 
     // Pass 1: Assign types to literals, variables, and simple constructs
     // This ensures base types are established first
     for (symbol_id, symbol) in hir.symbols() {
-        // Skip builtin symbols to avoid type checking builtin function implementations
-        if hir.is_builtin_symbol(symbol) {
+        // Skip builtin and module symbols to avoid type checking their implementations
+        if hir.is_builtin_symbol(symbol) || is_module_symbol(hir, symbol, &module_source_ids) {
             continue;
         }
 
@@ -70,10 +103,14 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
     }
 
     // Pass 2: Set up piped inputs before processing operators/calls
-    // Root-level symbols (parent=None, not builtin) form an implicit pipe chain
+    // Root-level symbols (parent=None, not builtin/module) form an implicit pipe chain
     let root_symbols: Vec<SymbolId> = hir
         .symbols()
-        .filter(|(_, symbol)| symbol.parent.is_none() && !hir.is_builtin_symbol(symbol))
+        .filter(|(_, symbol)| {
+            symbol.parent.is_none()
+                && !hir.is_builtin_symbol(symbol)
+                && !is_module_symbol(hir, symbol, &module_source_ids)
+        })
         .map(|(id, _)| id)
         .collect();
     for i in 1..root_symbols.len() {
@@ -87,7 +124,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
     let pass3_symbols: Vec<(SymbolId, SymbolKind)> = hir
         .symbols()
         .filter(|(_, symbol)| {
-            if hir.is_builtin_symbol(symbol) {
+            if hir.is_builtin_symbol(symbol) || is_module_symbol(hir, symbol, &module_source_ids) {
                 return false;
             }
             // Skip kinds already processed in pass 1
@@ -118,7 +155,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
     // Pass 4: Process Block symbols and Function body pipe chains
     // Children are now typed, so we can thread output types through the chain
     for (symbol_id, symbol) in hir.symbols() {
-        if hir.is_builtin_symbol(symbol) {
+        if hir.is_builtin_symbol(symbol) || is_module_symbol(hir, symbol, &module_source_ids) {
             continue;
         }
         if matches!(symbol.kind, SymbolKind::Block) {
@@ -146,20 +183,19 @@ fn generate_block_constraints(hir: &Hir, symbol_id: SymbolId, ctx: &mut Inferenc
         return;
     }
 
-    // Thread types through the pipe chain:
-    // For each child after the first, set its piped_input to the previous child's type
+    // Thread types through the pipe chain sequentially:
+    // Set piped input and re-process each child before moving to the next,
+    // so that resolved types propagate correctly through the chain.
     for i in 1..children.len() {
         let prev_ty = ctx.get_or_create_symbol_type(children[i - 1]);
         ctx.set_piped_input(children[i], prev_ty);
-    }
 
-    // Re-process children that received piped input and are Call or Ref,
-    // since they were already processed in Pass 3 before piped inputs were set
-    for &child_id in children.iter().skip(1) {
-        if let Some(child_symbol) = hir.symbol(child_id)
+        // Re-process Call/Ref children that received piped input,
+        // since they were already processed in Pass 3 before piped inputs were set
+        if let Some(child_symbol) = hir.symbol(children[i])
             && matches!(child_symbol.kind, SymbolKind::Call | SymbolKind::Ref)
         {
-            generate_symbol_constraints(hir, child_id, child_symbol.kind.clone(), ctx);
+            generate_symbol_constraints(hir, children[i], child_symbol.kind.clone(), ctx);
         }
     }
 
@@ -193,18 +229,18 @@ fn generate_function_body_pipe_constraints(hir: &Hir, symbol_id: SymbolId, ctx: 
         return;
     }
 
-    // Thread types through the pipe chain
+    // Thread types through the pipe chain sequentially:
+    // Set piped input and re-process each child before moving to the next,
+    // so that resolved types propagate correctly through the chain.
     for i in 1..body_children.len() {
         let prev_ty = ctx.get_or_create_symbol_type(body_children[i - 1]);
         ctx.set_piped_input(body_children[i], prev_ty);
-    }
 
-    // Re-process Call/Ref children that received piped input
-    for &child_id in body_children.iter().skip(1) {
-        if let Some(child_symbol) = hir.symbol(child_id)
+        // Re-process Call/Ref children that received piped input
+        if let Some(child_symbol) = hir.symbol(body_children[i])
             && matches!(child_symbol.kind, SymbolKind::Call | SymbolKind::Ref)
         {
-            generate_symbol_constraints(hir, child_id, child_symbol.kind.clone(), ctx);
+            generate_symbol_constraints(hir, body_children[i], child_symbol.kind.clone(), ctx);
         }
     }
 
@@ -593,25 +629,39 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
 
                         // If there's a piped input, treat this as a call with the piped value
                         if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
-                            let arg_tys = vec![piped_ty];
+                            // Resolve the piped type through substitutions before overload resolution,
+                            // so that bound type variables are replaced with their concrete types.
+                            let resolved_piped = ctx.resolve_type(&piped_ty);
+
+                            // If the piped input is still a type variable, defer overload resolution
+                            // to avoid committing to a wrong overload when multiple are available.
+                            if resolved_piped.is_var() {
+                                let overload_count =
+                                    ctx.get_builtin_overloads(name.as_str()).map(|o| o.len()).unwrap_or(0);
+                                if overload_count > 1 {
+                                    let ty_var = ctx.fresh_var();
+                                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                                    ctx.add_deferred_overload(DeferredOverload {
+                                        symbol_id,
+                                        op_name: SmolStr::new(name.as_str()),
+                                        operand_tys: vec![piped_ty],
+                                        range: get_symbol_range(hir, symbol_id),
+                                    });
+                                    return;
+                                }
+                            }
+
+                            let arg_tys = vec![resolved_piped];
                             if let Some(resolved_ty) = ctx.resolve_overload(name.as_str(), &arg_tys) {
                                 if let Type::Function(param_tys, ret_ty) = resolved_ty {
                                     let range = get_symbol_range(hir, symbol_id);
-                                    for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
+                                    for (arg_ty, param_ty) in [piped_ty].iter().zip(param_tys.iter()) {
                                         ctx.add_constraint(Constraint::Equal(arg_ty.clone(), param_ty.clone(), range));
                                     }
                                     ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
                                     return;
                                 }
                             } else {
-                                // Piped input doesn't match any overload — defer if the piped
-                                // input is still a type variable (it may resolve later)
-                                let resolved_piped = ctx.resolve_type(&arg_tys[0]);
-                                if resolved_piped.is_var() {
-                                    let ty_var = ctx.fresh_var();
-                                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                                    return;
-                                }
                                 let range = get_symbol_range(hir, symbol_id);
                                 ctx.add_error(crate::TypeError::Mismatch {
                                     expected: format!("argument matching {} overloads", name),
