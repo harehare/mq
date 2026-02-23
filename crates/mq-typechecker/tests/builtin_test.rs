@@ -393,6 +393,9 @@ fn test_complex_builtin_expressions(#[case] code: &str, #[case] should_succeed: 
 #[case::number_to_abs("-42 | abs", true)]
 #[case::string_to_len("\"hello\" | len", true)]
 #[case::chained_pipes("\"  hello  \" | trim | upcase", true)]
+#[case::chained_string_to_len("\"hello\" | upcase | len", true)]
+#[case::chained_split_to_len("\"hello\" | split(\",\") | len", true)]
+#[case::chained_array_reverse_first("[1,2,3] | reverse | first", true)]
 #[case::number_to_upcase("42 | upcase", false)] // Number piped to string function
 fn test_pipe_type_propagation(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);

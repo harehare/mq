@@ -295,29 +295,9 @@ pub fn format_var_name(index: usize) -> String {
 
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Type::Int => write!(f, "int"),
-            Type::Float => write!(f, "float"),
-            Type::Number => write!(f, "number"),
-            Type::String => write!(f, "string"),
-            Type::Bool => write!(f, "bool"),
-            Type::Symbol => write!(f, "symbol"),
-            Type::None => write!(f, "none"),
-            Type::Markdown => write!(f, "markdown"),
-            Type::Array(elem) => write!(f, "[{}]", elem),
-            Type::Dict(key, value) => write!(f, "{{{}: {}}}", key, value),
-            Type::Function(params, ret) => {
-                write!(f, "(")?;
-                for (i, param) in params.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}", param)?;
-                }
-                write!(f, ") -> {}", ret)
-            }
-            Type::Var(id) => write!(f, "{}", type_var_name(*id)),
-        }
+        // Use display_renumbered() to produce clean, sequential type variable names
+        // regardless of internal slotmap indices.
+        write!(f, "{}", self.display_renumbered())
     }
 }
 
