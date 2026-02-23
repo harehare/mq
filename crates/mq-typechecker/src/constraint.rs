@@ -1077,16 +1077,37 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 let cond_ty = ctx.get_or_create_symbol_type(children[0]);
                 ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range));
 
-                // Subsequent children are then-branch and elif/else branches
-                // All branches should have the same type
+                // Subsequent children are then-branch and elif/else branches.
+                // mq is dynamically typed: branches may return different types
+                // (e.g., `if (...): true elif (...): false else: None`).
+                // Only unify branch types when all concrete types match;
+                // otherwise use a fresh type variable to avoid false positives.
                 if children.len() > 1 {
-                    let branch_ty = ctx.get_or_create_symbol_type(children[1]);
-                    ctx.set_symbol_type(symbol_id, branch_ty.clone());
-
-                    // Unify all branch types (elif/else children)
+                    let then_ty = ctx.get_or_create_symbol_type(children[1]);
+                    let mut branch_tys = vec![then_ty.clone()];
                     for &child_id in &children[2..] {
                         let child_ty = resolve_branch_body_type(hir, child_id, ctx);
-                        ctx.add_constraint(Constraint::Equal(branch_ty.clone(), child_ty, range));
+                        branch_tys.push(child_ty);
+                    }
+
+                    // Check if branches have different concrete types
+                    let resolved: Vec<Type> = branch_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
+                    let concrete: Vec<&Type> = resolved.iter().filter(|ty| !ty.is_var()).collect();
+                    let is_heterogeneous = concrete.len() >= 2
+                        && concrete
+                            .windows(2)
+                            .any(|w| std::mem::discriminant(w[0]) != std::mem::discriminant(w[1]));
+
+                    if is_heterogeneous {
+                        // Different concrete types in branches — use fresh type variable
+                        let ty_var = ctx.fresh_var();
+                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                    } else {
+                        // Homogeneous or unresolved — unify all branch types
+                        ctx.set_symbol_type(symbol_id, then_ty.clone());
+                        for ty in &branch_tys[1..] {
+                            ctx.add_constraint(Constraint::Equal(then_ty.clone(), ty.clone(), range));
+                        }
                     }
                 } else {
                     let ty_var = ctx.fresh_var();
@@ -1181,8 +1202,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 let arm_children: Vec<_> = children[1..].to_vec();
 
                 if !arm_children.is_empty() {
-                    let result_ty_var = ctx.fresh_var();
-                    let result_ty = Type::Var(result_ty_var);
+                    let mut arm_body_tys = Vec::new();
 
                     for &arm_id in &arm_children {
                         let arm_children_inner = get_children(hir, arm_id);
@@ -1202,17 +1222,34 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                             }
                         }
 
-                        // MatchArm's type = body type; unify with result type
                         if let Some(body_ty) = body_ty {
                             ctx.set_symbol_type(arm_id, body_ty.clone());
-                            ctx.add_constraint(Constraint::Equal(result_ty.clone(), body_ty, range));
+                            arm_body_tys.push(body_ty);
                         } else {
                             let arm_ty = ctx.get_or_create_symbol_type(arm_id);
-                            ctx.add_constraint(Constraint::Equal(result_ty.clone(), arm_ty, range));
+                            arm_body_tys.push(arm_ty);
                         }
                     }
 
-                    ctx.set_symbol_type(symbol_id, result_ty);
+                    // Check if arms have different concrete types (heterogeneous match)
+                    let resolved: Vec<Type> = arm_body_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
+                    let concrete: Vec<&Type> = resolved.iter().filter(|ty| !ty.is_var()).collect();
+                    let is_heterogeneous = concrete.len() >= 2
+                        && concrete
+                            .windows(2)
+                            .any(|w| std::mem::discriminant(w[0]) != std::mem::discriminant(w[1]));
+
+                    if is_heterogeneous {
+                        let ty_var = ctx.fresh_var();
+                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                    } else {
+                        let result_ty_var = ctx.fresh_var();
+                        let result_ty = Type::Var(result_ty_var);
+                        for ty in &arm_body_tys {
+                            ctx.add_constraint(Constraint::Equal(result_ty.clone(), ty.clone(), range));
+                        }
+                        ctx.set_symbol_type(symbol_id, result_ty);
+                    }
                 } else {
                     let ty_var = ctx.fresh_var();
                     ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
@@ -1224,7 +1261,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
         }
 
         SymbolKind::Try => {
-            // Try/Catch: try body and catch body should have the same type
+            // Try/Catch: try body and catch body may have different types in dynamically typed mq
             let children = get_children(hir, symbol_id);
             let range = get_symbol_range(hir, symbol_id);
 
@@ -1249,8 +1286,20 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                     ctx.get_or_create_symbol_type(children[1])
                 };
 
-                ctx.add_constraint(Constraint::Equal(try_ty.clone(), catch_ty, range));
-                ctx.set_symbol_type(symbol_id, try_ty);
+                // Only unify try/catch types if they're compatible
+                let resolved_try = ctx.resolve_type(&try_ty);
+                let resolved_catch = ctx.resolve_type(&catch_ty);
+                let both_concrete = !resolved_try.is_var() && !resolved_catch.is_var();
+                let different_types = both_concrete
+                    && std::mem::discriminant(&resolved_try) != std::mem::discriminant(&resolved_catch);
+
+                if different_types {
+                    let ty_var = ctx.fresh_var();
+                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                } else {
+                    ctx.add_constraint(Constraint::Equal(try_ty.clone(), catch_ty, range));
+                    ctx.set_symbol_type(symbol_id, try_ty);
+                }
             } else if !children.is_empty() {
                 let try_ty = ctx.get_or_create_symbol_type(children[0]);
                 ctx.set_symbol_type(symbol_id, try_ty);

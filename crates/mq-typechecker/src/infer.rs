@@ -219,6 +219,15 @@ impl InferenceContext {
         self.symbol_types.insert(symbol, ty);
     }
 
+    /// Sets the type of a symbol without binding the old type variable.
+    ///
+    /// Use this during deferred resolution phases where binding the old Var
+    /// would cascade through unification chains and corrupt types of unrelated
+    /// symbols that share the same type variable.
+    pub fn set_symbol_type_no_bind(&mut self, symbol: SymbolId, ty: Type) {
+        self.symbol_types.insert(symbol, ty);
+    }
+
     /// Gets the type of a symbol
     pub fn get_symbol_type(&self, symbol: SymbolId) -> Option<&Type> {
         self.symbol_types.get(&symbol)

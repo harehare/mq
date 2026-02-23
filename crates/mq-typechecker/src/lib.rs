@@ -226,7 +226,7 @@ impl TypeChecker {
                                 d.range,
                             ));
                         }
-                        ctx.set_symbol_type(d.symbol_id, *ret_ty);
+                        ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
                         // Solve constraints incrementally
                         unify::solve_constraints(ctx);
                     }
@@ -276,7 +276,7 @@ impl TypeChecker {
                                     d.range,
                                 ));
                             }
-                            ctx.set_symbol_type(d.symbol_id, *ret_ty);
+                            ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
                         }
                     } else {
                         let all_concrete = resolved_operands.iter().all(|ty| !ty.is_var());

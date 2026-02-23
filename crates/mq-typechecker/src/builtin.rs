@@ -306,6 +306,7 @@ fn register_string(ctx: &mut InferenceContext) {
     register_unary(ctx, "utf8bytelen", Type::String, Type::Number);
 
     // Regular expressions
+    register_binary(ctx, "test", Type::String, Type::String, Type::Bool);
     register_binary(
         ctx,
         "regex_match",
@@ -641,6 +642,61 @@ fn register_collection(ctx: &mut InferenceContext) {
         Type::array(Type::Var(b)),
     );
 
+    // filter: ([a], (a) -> bool) -> [a]
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "filter",
+        Type::array(Type::Var(a)),
+        Type::function(vec![Type::Var(a)], Type::Bool),
+        Type::array(Type::Var(a)),
+    );
+
+    // Generic fallback: filter(a, (a) -> bool) -> [b]
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "filter",
+        Type::Var(a),
+        Type::function(vec![Type::Var(a)], Type::Bool),
+        Type::array(Type::Var(b)),
+    );
+
+    // fold: ([a], b, (b, a) -> b) -> b
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_ternary(
+        ctx,
+        "fold",
+        Type::array(Type::Var(a)),
+        Type::Var(b),
+        Type::function(vec![Type::Var(b), Type::Var(a)], Type::Var(b)),
+        Type::Var(b),
+    );
+
+    // sort_by: ([a], (a) -> b) -> [a]
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "sort_by",
+        Type::array(Type::Var(a)),
+        Type::function(vec![Type::Var(a)], Type::Var(b)),
+        Type::array(Type::Var(a)),
+    );
+
+    // flat_map: ([a], (a) -> [b]) -> [b]
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "flat_map",
+        Type::array(Type::Var(a)),
+        Type::function(vec![Type::Var(a)], Type::array(Type::Var(b))),
+        Type::array(Type::Var(b)),
+    );
+
+    // in: ([a], a) -> bool
+    let a = ctx.fresh_var();
+    register_binary(ctx, "in", Type::array(Type::Var(a)), Type::Var(a), Type::Bool);
+
     // None propagation
     register_none_propagation_unary(ctx, &["first", "last"]);
 }
@@ -680,6 +736,42 @@ fn register_utility(ctx: &mut InferenceContext) {
 
 /// Markdown-specific functions
 fn register_markdown(ctx: &mut InferenceContext) {
+    // Markdown type check functions: (markdown) -> bool
+    for name in [
+        "is_h", "is_h1", "is_h2", "is_h3", "is_h4", "is_h5", "is_h6",
+        "is_p", "is_code", "is_code_inline", "is_code_block",
+        "is_em", "is_strong", "is_link", "is_image",
+        "is_list", "is_list_item", "is_table", "is_table_row", "is_table_cell",
+        "is_blockquote", "is_hr", "is_html", "is_text",
+        "is_softbreak", "is_hardbreak", "is_task_list_item",
+        "is_footnote", "is_footnote_ref", "is_strikethrough",
+        "is_math", "is_math_inline", "is_toml", "is_yaml",
+    ] {
+        register_unary(ctx, name, Type::Markdown, Type::Bool);
+    }
+
+    // is_h_level: (markdown, number) -> bool
+    register_binary(ctx, "is_h_level", Type::Markdown, Type::Number, Type::Bool);
+
+    // Markdown type check functions also accept any type (dynamic usage)
+    for name in [
+        "is_h", "is_h1", "is_h2", "is_h3", "is_h4", "is_h5", "is_h6",
+        "is_p", "is_code", "is_code_inline", "is_code_block",
+        "is_em", "is_strong", "is_link", "is_image",
+        "is_list", "is_list_item", "is_table", "is_table_row", "is_table_cell",
+        "is_blockquote", "is_hr", "is_html", "is_text",
+        "is_softbreak", "is_hardbreak", "is_task_list_item",
+        "is_footnote", "is_footnote_ref", "is_strikethrough",
+        "is_math", "is_math_inline", "is_toml", "is_yaml",
+    ] {
+        let a = ctx.fresh_var();
+        register_unary(ctx, name, Type::Var(a), Type::Bool);
+    }
+    {
+        let a = ctx.fresh_var();
+        register_binary(ctx, "is_h_level", Type::Var(a), Type::Number, Type::Bool);
+    }
+
     // a -> markdown
     let a = ctx.fresh_var();
     register_unary(ctx, "to_markdown", Type::Var(a), Type::Markdown);
