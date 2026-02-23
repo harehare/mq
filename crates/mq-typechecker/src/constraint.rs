@@ -961,9 +961,11 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                         .windows(2)
                         .any(|w| std::mem::discriminant(w[0]) != std::mem::discriminant(w[1]));
 
-                if is_heterogeneous {
-                    // Heterogeneous array (used as tuple) — use fresh type variable
-                    // to avoid corrupting type inference for downstream code
+                if is_heterogeneous || concrete_tys.len() != elem_tys.len() {
+                    // Heterogeneous or partially-unresolved array (used as tuple) —
+                    // use fresh type variable to avoid corrupting type inference
+                    // for downstream code. When some elements are still type variables,
+                    // we cannot know if they will resolve to compatible types.
                     let elem_ty_var = ctx.fresh_var();
                     let array_ty = Type::array(Type::Var(elem_ty_var));
                     ctx.set_symbol_type(symbol_id, array_ty);
