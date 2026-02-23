@@ -2741,6 +2741,7 @@ dependencies = [
  "smol_str",
  "string-interner",
  "thiserror 2.0.18",
+ "url",
 ]
 
 [[package]]

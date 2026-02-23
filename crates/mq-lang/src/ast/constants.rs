@@ -2,6 +2,7 @@ pub mod builtins {
     pub const ARRAY: &str = "array";
     pub const DICT: &str = "dict";
 
+    pub const CONVERT: &str = "convert";
     pub const GET: &str = "get";
     pub const SET: &str = "set";
     pub const SLICE: &str = "slice";

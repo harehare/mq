@@ -124,7 +124,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             | TokenKind::Lte
             | TokenKind::TildeEqual => 3,
             TokenKind::Plus | TokenKind::Minus | TokenKind::RightShift | TokenKind::LeftShift => 4,
-            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent => 5,
+            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent | TokenKind::Annotate => 5,
             TokenKind::DoubleDot | TokenKind::Coalesce => 6,
             _ => 0,
         }
@@ -148,6 +148,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::TildeEqual => constants::builtins::IS_REGEX_MATCH,
             TokenKind::LeftShift => constants::builtins::SHIFT_LEFT,
             TokenKind::RightShift => constants::builtins::SHIFT_RIGHT,
+            TokenKind::Annotate => constants::builtins::CONVERT,
             _ => unreachable!(),
         }
     }
@@ -794,6 +795,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::TildeEqual
                 | TokenKind::LeftShift
                 | TokenKind::RightShift
+                | TokenKind::Annotate
         )
     }
 
@@ -841,6 +843,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | Some(TokenKind::TildeEqual)
                 | Some(TokenKind::LeftShift)
                 | Some(TokenKind::RightShift)
+                | Some(TokenKind::Annotate)
                 | None
         )
     }

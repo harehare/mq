@@ -164,6 +164,7 @@ impl<'a> Parser<'a> {
             TokenKind::TildeEqual => Some(BinaryOp::RegexMatch),
             TokenKind::LeftShift => Some(BinaryOp::LeftShift),
             TokenKind::RightShift => Some(BinaryOp::RightShift),
+            TokenKind::Annotate => Some(BinaryOp::Annotate),
             _ => None,
         }
     }

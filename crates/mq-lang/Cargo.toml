@@ -29,6 +29,7 @@ smallvec = {workspace = true}
 smol_str = {workspace = true}
 string-interner = {workspace = true}
 thiserror = {workspace = true}
+url = {workspace = true}
 
 [features]
 ast-json = ["dep:serde", "dep:serde_json", "smallvec/serde", "smol_str/serde"]
