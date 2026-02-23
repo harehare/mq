@@ -100,6 +100,92 @@ md >> 1
 # => ## Heading 1
 ```
 
+## Conversion Operator (`@`)
+
+The conversion operator (`@`) converts a value to a different type or format. It maps to the `convert(value, type)` builtin function.
+
+### Usage
+
+```
+value @ type
+```
+
+The `type` operand can be a symbol or a string that specifies the target format. The supported conversion targets are:
+
+| Type (symbol)    | Type (string)                   | Behavior                                          |
+| ---------------- | ------------------------------- | ------------------------------------------------- |
+| `h1`             | `"#"`                           | Convert to a Markdown heading level 1             |
+| `h2`             | `"##"`                          | Convert to a Markdown heading level 2             |
+| `h3`             | `"###"`                         | Convert to a Markdown heading level 3             |
+| `h4`             | `"####"`                        | Convert to a Markdown heading level 4             |
+| `h5`             | `"#####"`                       | Convert to a Markdown heading level 5             |
+| `h6`             | `"######"`                      | Convert to a Markdown heading level 6             |
+| `html`           |                                 | Convert Markdown to an HTML string                |
+| `text`           |                                 | Extract the plain text content of a node          |
+| `sh`             |                                 | Shell-escape the value for safe use in shell commands |
+| `base64`         |                                 | Encode the value as a Base64 string               |
+| `uri`            |                                 | URL-encode the value                              |
+|                  | `">"`                           | Convert to a Markdown blockquote                  |
+|                  | `"-"`                           | Convert to a Markdown list item                   |
+|                  | `"~"`                           | Convert to a Markdown strikethrough               |
+|                  | `"<url>"` (a valid URL string)  | Convert to a Markdown link with the given URL     |
+
+### Examples
+
+```mq
+# Convert a string to a Markdown heading
+"Hello World" @ h1
+# => # Hello World
+
+"Hello World" @ h2
+# => ## Hello World
+
+# Convert using string syntax
+"Hello World" @ "##"
+# => ## Hello World
+
+# Convert to a blockquote
+"Important note" @ ">"
+# => > Important note
+
+# Convert to a list item
+"Item one" @ "-"
+# => - Item one
+
+# Convert to a strikethrough
+"old text" @ "~"
+# => ~~old text~~
+
+# Convert to a Markdown link
+"mq" @ "https://harehare.github.io/mq"
+# => [mq](https://harehare.github.io/mq)
+
+# Convert Markdown to HTML
+let md = do to_markdown("# Hello") | first(); |
+md @ html
+# => "<h1>Hello</h1>"
+
+# Extract plain text from a Markdown node
+let md = do to_markdown("## Hello World") | first(); |
+md @ text
+# => "Hello World"
+
+# Shell-escape a string for safe use in shell
+"hello world" @ sh
+# => 'hello world'
+
+"safe-string" @ sh
+# => safe-string
+
+# Encode to Base64
+"hello" @ base64
+# => "aGVsbG8="
+
+# URL-encode a string
+"hello world" @ uri
+# => "hello%20world"
+```
+
 ## .. Operator
 
 The range operator (`..`) creates sequences of consecutive values between a start and end point.
