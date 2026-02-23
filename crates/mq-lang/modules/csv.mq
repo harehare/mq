@@ -30,7 +30,7 @@ def _parse_csv_line(line, delimiter):
           do
             var end_pos = pos
             | var current_input = line[end_pos]
-            | let result = while (end_pos < line_count && current_input != delimiter && current_input != "\n" && current_input != "\r"):
+            | let result = while (end_pos < line_count && (current_input != delimiter) && (current_input != "\n") && (current_input != "\r")):
                           end_pos += 1
                           | current_input = line[end_pos]
                           | end_pos
