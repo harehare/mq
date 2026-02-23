@@ -207,7 +207,6 @@ fn register_comparison(ctx: &mut InferenceContext) {
         let a = ctx.fresh_var();
         register_binary(ctx, name, Type::Var(a), Type::Var(a), Type::Bool);
     }
-
 }
 
 /// Logical operators: &&, ||, !, and, or, not, unary-, negate

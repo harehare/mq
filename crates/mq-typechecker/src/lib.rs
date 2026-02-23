@@ -233,7 +233,7 @@ impl TypeChecker {
                 } else if all_concrete {
                     let args_str = resolved_operands
                         .iter()
-                        .map(|t| t.to_string())
+                        .map(|t| t.display_renumbered())
                         .collect::<Vec<_>>()
                         .join(", ");
                     ctx.add_error(TypeError::UnificationError {
@@ -283,7 +283,7 @@ impl TypeChecker {
                         if all_concrete {
                             let args_str = resolved_operands
                                 .iter()
-                                .map(|t| t.to_string())
+                                .map(|t| t.display_renumbered())
                                 .collect::<Vec<_>>()
                                 .join(", ");
                             ctx.add_error(TypeError::UnificationError {
@@ -432,7 +432,7 @@ impl TypeChecker {
                 if ctx.resolve_overload(&d.op_name, &substituted_operands).is_none() {
                     let args_str = substituted_operands
                         .iter()
-                        .map(|t| t.to_string())
+                        .map(|t| t.display_renumbered())
                         .collect::<Vec<_>>()
                         .join(", ");
                     ctx.add_error(TypeError::UnificationError {

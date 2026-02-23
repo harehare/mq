@@ -413,7 +413,7 @@ fn resolve_builtin_call(
                 func_name,
                 resolved_arg_tys
                     .iter()
-                    .map(|t| t.to_string())
+                    .map(|t| t.display_renumbered())
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
@@ -615,7 +615,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                                 let range = get_symbol_range(hir, symbol_id);
                                 ctx.add_error(crate::TypeError::Mismatch {
                                     expected: format!("argument matching {} overloads", name),
-                                    found: arg_tys[0].to_string(),
+                                    found: arg_tys[0].display_renumbered(),
                                     span: range.as_ref().map(range_to_span),
                                     location: range.as_ref().map(|r| (r.start.line, r.start.column)),
                                 });
@@ -731,7 +731,12 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                             } else {
                                 // No matching overload found - collect error
                                 ctx.add_error(crate::TypeError::UnificationError {
-                                    left: format!("{} with arguments ({}, {})", op_name, resolved_left, resolved_right),
+                                    left: format!(
+                                        "{} with arguments ({}, {})",
+                                        op_name,
+                                        resolved_left.display_renumbered(),
+                                        resolved_right.display_renumbered()
+                                    ),
                                     right: "no matching overload".to_string(),
                                     span: range.as_ref().map(range_to_span),
                                     location: range.as_ref().map(|r| (r.start.line, r.start.column)),
@@ -794,7 +799,11 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                             } else {
                                 // No matching overload found - collect error
                                 ctx.add_error(crate::TypeError::UnificationError {
-                                    left: format!("{} with argument ({})", op_name, resolved_operand),
+                                    left: format!(
+                                        "{} with argument ({})",
+                                        op_name,
+                                        resolved_operand.display_renumbered()
+                                    ),
                                     right: "no matching overload".to_string(),
                                     span: range.as_ref().map(range_to_span),
                                     location: range.as_ref().map(|r| (r.start.line, r.start.column)),
