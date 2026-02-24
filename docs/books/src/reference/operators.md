@@ -135,10 +135,10 @@ The `type` operand can be a symbol or a string that specifies the target format.
 
 ```mq
 # Convert a string to a Markdown heading
-"Hello World" @ h1
+"Hello World" @ :h1
 # => # Hello World
 
-"Hello World" @ h2
+"Hello World" @ :h2
 # => ## Hello World
 
 # Convert using string syntax
