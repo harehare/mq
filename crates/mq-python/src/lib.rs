@@ -83,7 +83,7 @@ use pyo3::prelude::*;
 use result::MQResult;
 use value::MQValue;
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 enum InputFormat {
     #[pyo3(name = "MARKDOWN")]
@@ -101,7 +101,7 @@ enum InputFormat {
     Null,
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ListStyle {
     #[pyo3(name = "DASH")]
@@ -113,7 +113,7 @@ pub enum ListStyle {
     Star,
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum TitleSurroundStyle {
     #[pyo3(name = "DOUBLE")]
@@ -125,7 +125,7 @@ pub enum TitleSurroundStyle {
     PAREN,
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum UrlSurroundStyle {
     #[pyo3(name = "ANGLE")]
@@ -135,7 +135,7 @@ pub enum UrlSurroundStyle {
     None,
 }
 
-#[pyclass(eq)]
+#[pyclass(eq, from_py_object)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 struct Options {
     #[pyo3(get, set)]
@@ -156,7 +156,7 @@ impl Options {
     }
 }
 
-#[pyclass(eq)]
+#[pyclass(eq, from_py_object)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 struct ConversionOptions {
     #[pyo3(get, set)]
