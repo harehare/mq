@@ -49,7 +49,7 @@ impl TryFrom<&RuntimeValue> for Convert {
 
     fn try_from(value: &RuntimeValue) -> Result<Self, Self::Error> {
         match value {
-            RuntimeValue::Symbol(symbol) => symbol.resolve_with(|s| match s {
+            RuntimeValue::Symbol(symbol) => match symbol.as_str().as_str() {
                 "h1" => Ok(Convert::Markdown(ConvertKind::Heading(1))),
                 "h2" => Ok(Convert::Markdown(ConvertKind::Heading(2))),
                 "h3" => Ok(Convert::Markdown(ConvertKind::Heading(3))),
@@ -64,7 +64,7 @@ impl TryFrom<&RuntimeValue> for Convert {
                 "uri" => Ok(Convert::UriEncode),
                 "urid" => Ok(Convert::UriDecode),
                 _ => Err(Error::InvalidConvert(symbol.to_string())),
-            }),
+            },
             RuntimeValue::String(s) => match s.as_str() {
                 "#" => Ok(Convert::Markdown(ConvertKind::Heading(1))),
                 "##" => Ok(Convert::Markdown(ConvertKind::Heading(2))),
