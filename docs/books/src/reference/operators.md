@@ -112,23 +112,24 @@ value @ type
 
 The `type` operand can be a symbol or a string that specifies the target format. The supported conversion targets are:
 
-| Type (symbol)    | Type (string)                   | Behavior                                          |
-| ---------------- | ------------------------------- | ------------------------------------------------- |
-| `h1`             | `"#"`                           | Convert to a Markdown heading level 1             |
-| `h2`             | `"##"`                          | Convert to a Markdown heading level 2             |
-| `h3`             | `"###"`                         | Convert to a Markdown heading level 3             |
-| `h4`             | `"####"`                        | Convert to a Markdown heading level 4             |
-| `h5`             | `"#####"`                       | Convert to a Markdown heading level 5             |
-| `h6`             | `"######"`                      | Convert to a Markdown heading level 6             |
-| `html`           |                                 | Convert Markdown to an HTML string                |
-| `text`           |                                 | Extract the plain text content of a node          |
-| `sh`             |                                 | Shell-escape the value for safe use in shell commands |
-| `base64`         |                                 | Encode the value as a Base64 string               |
-| `uri`            |                                 | URL-encode the value                              |
-|                  | `">"`                           | Convert to a Markdown blockquote                  |
-|                  | `"-"`                           | Convert to a Markdown list item                   |
-|                  | `"~"`                           | Convert to a Markdown strikethrough               |
-|                  | `"<url>"` (a valid URL string)  | Convert to a Markdown link with the given URL     |
+| Type (symbol) | Type (string)                  | Behavior                                              |
+| ------------- | ------------------------------ | ----------------------------------------------------- |
+| `h1`          | `"#"`                          | Convert to a Markdown heading level 1                 |
+| `h2`          | `"##"`                         | Convert to a Markdown heading level 2                 |
+| `h3`          | `"###"`                        | Convert to a Markdown heading level 3                 |
+| `h4`          | `"####"`                       | Convert to a Markdown heading level 4                 |
+| `h5`          | `"#####"`                      | Convert to a Markdown heading level 5                 |
+| `h6`          | `"######"`                     | Convert to a Markdown heading level 6                 |
+| `html`        |                                | Convert Markdown to an HTML string                    |
+| `text`        |                                | Extract the plain text content of a node              |
+| `sh`          |                                | Shell-escape the value for safe use in shell commands |
+| `base64`      |                                | Encode the value as a Base64 string                   |
+| `uri`         |                                | URL-encode the value                                  |
+| `urid`        |                                | URL-decode the value                                  |
+|               | `">"`                          | Convert to a Markdown blockquote                      |
+|               | `"-"`                          | Convert to a Markdown list item                       |
+|               | `"~~"`                         | Convert to a Markdown strikethrough                   |
+|               | `"<url>"` (a valid URL string) | Convert to a Markdown link with the given URL         |
 
 ### Examples
 

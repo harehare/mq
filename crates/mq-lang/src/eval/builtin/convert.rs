@@ -1,15 +1,17 @@
+use std::path::Path;
+
 use crate::RuntimeValue;
 use crate::eval::builtin::Error;
 use crate::number::Number;
 use base64::prelude::*;
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+use percent_encoding::{NON_ALPHANUMERIC, percent_decode, utf8_percent_encode};
 use url::Url;
 
 #[derive(Debug, Clone)]
 pub(crate) enum ConvertKind {
     Blockquote,
     Heading(u8),
-    Link(Url),
+    Link(String),
     ListItem,
     Strikethrough,
 }
@@ -19,9 +21,18 @@ pub(crate) enum Convert {
     Base64,
     Html,
     Markdown(ConvertKind),
-    Sh,
+    Shell,
     Text,
-    Uri,
+    UriEncode,
+    UriDecode,
+}
+
+fn is_url(s: &str) -> bool {
+    Url::parse(s).is_ok()
+}
+
+fn is_file_path(s: &str) -> bool {
+    Path::new(s).is_file()
 }
 
 impl TryFrom<&RuntimeValue> for Convert {
@@ -39,9 +50,10 @@ impl TryFrom<&RuntimeValue> for Convert {
 
                 "html" => Ok(Convert::Html),
                 "text" => Ok(Convert::Text),
-                "sh" => Ok(Convert::Sh),
+                "sh" => Ok(Convert::Shell),
                 "base64" => Ok(Convert::Base64),
-                "uri" => Ok(Convert::Uri),
+                "uri" => Ok(Convert::UriEncode),
+                "urid" => Ok(Convert::UriDecode),
                 _ => Err(Error::InvalidConvert(symbol.to_string())),
             },
             RuntimeValue::String(s) => match s.as_str() {
@@ -53,14 +65,10 @@ impl TryFrom<&RuntimeValue> for Convert {
                 "######" => Ok(Convert::Markdown(ConvertKind::Heading(6))),
                 ">" => Ok(Convert::Markdown(ConvertKind::Blockquote)),
                 "-" => Ok(Convert::Markdown(ConvertKind::ListItem)),
-                "~" => Ok(Convert::Markdown(ConvertKind::Strikethrough)),
-                s => {
-                    if let Ok(url) = Url::parse(s) {
-                        Ok(Convert::Markdown(ConvertKind::Link(url)))
-                    } else {
-                        Err(Error::InvalidConvert(s.to_string()))
-                    }
-                }
+                "~~" => Ok(Convert::Markdown(ConvertKind::Strikethrough)),
+                s if is_url(s) => Ok(Convert::Markdown(ConvertKind::Link(s.to_string()))),
+                s if is_file_path(s) => Ok(Convert::Markdown(ConvertKind::Link(s.to_string()))),
+                _ => Err(Error::InvalidConvert(format!("{:?}", value))),
             },
             _ => Err(Error::InvalidConvert(format!("{:?}", value))),
         }
@@ -83,7 +91,7 @@ impl Convert {
             },
             Convert::Html => to_html(input).unwrap_or(RuntimeValue::NONE),
             Convert::Text => to_text(input).unwrap_or(RuntimeValue::NONE),
-            Convert::Uri => match input {
+            Convert::UriEncode => match input {
                 RuntimeValue::String(s) => url_encode(s).unwrap_or(RuntimeValue::NONE),
                 RuntimeValue::Markdown(_node, _) => {
                     if let Some(md) = input.markdown_node() {
@@ -94,8 +102,19 @@ impl Convert {
                 }
                 _ => url_encode(&input.to_string()).unwrap_or(RuntimeValue::NONE),
             },
+            Convert::UriDecode => match input {
+                RuntimeValue::String(s) => url_decode(s).unwrap_or(RuntimeValue::NONE),
+                RuntimeValue::Markdown(_node, _) => {
+                    if let Some(md) = input.markdown_node() {
+                        url_decode(md.value().as_str()).unwrap_or(RuntimeValue::NONE)
+                    } else {
+                        RuntimeValue::NONE
+                    }
+                }
+                _ => url_decode(&input.to_string()).unwrap_or(RuntimeValue::NONE),
+            },
             Convert::Markdown(kind) => self.convert_to_markdown(input, kind),
-            Convert::Sh => {
+            Convert::Shell => {
                 // Shell script conversion - escape for safe shell usage
                 let text = match input {
                     RuntimeValue::String(s) => s.clone(),
@@ -332,6 +351,14 @@ pub fn url_encode(input: &str) -> Result<RuntimeValue, Error> {
     ))
 }
 
+/// URL decode
+#[inline(always)]
+pub fn url_decode(input: &str) -> Result<RuntimeValue, Error> {
+    Ok(RuntimeValue::String(
+        percent_decode(input.as_bytes()).decode_utf8_lossy().to_string(),
+    ))
+}
+
 /// Shell escape for safe use in shell commands
 #[inline(always)]
 pub fn shell_escape(input: &str) -> Result<RuntimeValue, Error> {
@@ -386,7 +413,7 @@ mod tests {
     #[case::h6_symbol(RuntimeValue::Symbol(Ident::new("h6")), Convert::Markdown(ConvertKind::Heading(6)))]
     #[case::html_symbol(RuntimeValue::Symbol(Ident::new("html")), Convert::Html)]
     #[case::text_symbol(RuntimeValue::Symbol(Ident::new("text")), Convert::Text)]
-    #[case::sh_symbol(RuntimeValue::Symbol(Ident::new("sh")), Convert::Sh)]
+    #[case::sh_symbol(RuntimeValue::Symbol(Ident::new("sh")), Convert::Shell)]
     #[case::h1_string(RuntimeValue::String("#".to_string()), Convert::Markdown(ConvertKind::Heading(1)))]
     #[case::h2_string(RuntimeValue::String("##".to_string()), Convert::Markdown(ConvertKind::Heading(2)))]
     #[case::h3_string(RuntimeValue::String("###".to_string()), Convert::Markdown(ConvertKind::Heading(3)))]
@@ -408,7 +435,7 @@ mod tests {
             (Convert::Markdown(ConvertKind::ListItem), Convert::Markdown(ConvertKind::ListItem)) => {}
             (Convert::Html, Convert::Html) => {}
             (Convert::Text, Convert::Text) => {}
-            (Convert::Sh, Convert::Sh) => {}
+            (Convert::Shell, Convert::Shell) => {}
             _ => panic!("convert mismatch"),
         }
     }
@@ -770,11 +797,12 @@ mod tests {
     // Test convert::convert for all converts
     #[rstest]
     #[case::base64(Convert::Base64, RuntimeValue::String("hello".to_string()), "aGVsbG8=")]
-    #[case::uri(Convert::Uri, RuntimeValue::String("hello world".to_string()), "hello%20world")]
+    #[case::uri_encode(Convert::UriEncode, RuntimeValue::String("hello world".to_string()), "hello%20world")]
+    #[case::uri_decode(Convert::UriDecode, RuntimeValue::String("hello%20world".to_string()), "hello world")]
     #[case::empty_base64(Convert::Base64, RuntimeValue::String("".to_string()), "")]
     #[case::empty_html(Convert::Html, RuntimeValue::String("".to_string()), "")]
     #[case::empty_text(Convert::Text, RuntimeValue::String("".to_string()), "")]
-    #[case::empty_uri(Convert::Uri, RuntimeValue::String("".to_string()), "")]
+    #[case::empty_uri(Convert::UriEncode, RuntimeValue::String("".to_string()), "")]
     fn test_convert_string_converts(#[case] convert: Convert, #[case] input: RuntimeValue, #[case] expected: &str) {
         let result = convert.convert(&input);
         assert_eq!(result, RuntimeValue::String(expected.to_string()));
@@ -804,7 +832,7 @@ mod tests {
 
     #[test]
     fn test_convert_sh() {
-        let convert = Convert::Sh;
+        let convert = Convert::Shell;
 
         // Simple string without special characters
         let input = RuntimeValue::String("echo hello".to_string());
@@ -885,7 +913,7 @@ mod tests {
     #[test]
     fn test_convert_markdown_link() {
         let url = Url::parse("https://example.com").unwrap();
-        let convert = Convert::Markdown(ConvertKind::Link(url.clone()));
+        let convert = Convert::Markdown(ConvertKind::Link(url.to_string()));
         let input = RuntimeValue::String("Click here".to_string());
         let result = convert.convert(&input);
 
