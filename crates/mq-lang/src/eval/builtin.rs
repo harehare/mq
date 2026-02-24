@@ -162,10 +162,7 @@ define_builtin!(
 
 define_builtin!(CONVERT, ParamNum::Fixed(2), |_, _, args, _| match args.as_slice() {
     [input, convert_value] => {
-        match Convert::try_from(convert_value) {
-            Ok(convert) => Ok(convert.convert(input)),
-            Err(e) => Err(Error::Runtime(e.to_string())),
-        }
+        Convert::try_from(convert_value).map(|convert| convert.convert(input))
     }
     _ => unreachable!(),
 });
