@@ -130,6 +130,7 @@ The `type` operand can be a symbol or a string that specifies the target format.
 |               | `"-"`                          | Convert to a Markdown list item                       |
 |               | `"~~"`                         | Convert to a Markdown strikethrough                   |
 |               | `"<url>"` (a valid URL string) | Convert to a Markdown link with the given URL         |
+|               | `**`  | Convert to a Markdown strong/bold          |
 
 ### Examples
 
