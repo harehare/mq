@@ -163,7 +163,7 @@ The `type` operand can be a symbol or a string that specifies the target format.
 
 # Convert Markdown to HTML
 let md = do to_markdown("# Hello") | first(); |
-md @ html
+md @ :html
 # => "<h1>Hello</h1>"
 
 # Extract plain text from a Markdown node
