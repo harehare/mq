@@ -76,7 +76,7 @@ pub enum RuntimeError {
     InvalidMacroResultAst(Token),
     #[error("Invalid macro result: expected AST value")]
     InvalidMacroResult(Token),
-    #[error("Invalid convert: {0}")]
+    #[error("Invalid convert: {1}")]
     InvalidConvert(Token, String),
 }
 
