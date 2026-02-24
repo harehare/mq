@@ -5073,6 +5073,38 @@ mod tests {
                 token(TokenKind::Eof)
             ],
             Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::convert_simple(
+            vec![
+                token(TokenKind::Ident(SmolStr::new("a"))),
+                token(TokenKind::Convert),
+                token(TokenKind::Ident(SmolStr::new("b"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 1.into(),
+                    expr: Shared::new(Expr::Call(
+                        IdentWithToken::new_with_token(constants::builtins::CONVERT, Some(Shared::new(token(TokenKind::Convert)))),
+                        smallvec![
+                            Shared::new(Node {
+                                token_id: 0.into(),
+                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                            }),
+                            Shared::new(Node {
+                                token_id: 2.into(),
+                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                            }),
+                        ],
+                    )),
+                })
+            ]))]
+    #[case::convert_error_missing_rhs(
+            vec![
+                token(TokenKind::Ident(SmolStr::new("a"))),
+                token(TokenKind::Convert),
+                token(TokenKind::Eof)
+            ],
+            Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     #[case::multiple_binary_operators(
             vec![
                 token(TokenKind::NumberLiteral(1.into())),
