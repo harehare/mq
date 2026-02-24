@@ -272,11 +272,9 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::UnquoteNotAllowedOutsideQuote(_)) => {
                 Some(Cow::Borrowed("unquote() can only be used inside quote()."))
             }
-            InnerError::Runtime(RuntimeError::InvalidConvert(format, _)) => {
-                Some(Cow::Owned(format!(
-                    "Invalid conversion format '{format}'. Check that this conversion is supported and that the value types match the expected types."
-                )))
-            }
+            InnerError::Runtime(RuntimeError::InvalidConvert(format, _)) => Some(Cow::Owned(format!(
+                "Invalid conversion format '{format}'. Check that this conversion is supported and that the value types match the expected types."
+            ))),
             InnerError::Module(ModuleError::NotFound(name)) => Some(Cow::Owned(format!(
                 "Module '{name}' not found. Check the module name or path."
             ))),
