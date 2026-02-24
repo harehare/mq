@@ -1,7 +1,7 @@
 use pyo3::pyclass;
 use std::{collections::HashMap, fmt};
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Debug, Clone)]
 pub enum MQValue {
     Array { value: Vec<MQValue> },
@@ -50,7 +50,7 @@ impl PartialEq for MQValue {
     }
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MarkdownType {
     Blockquote,
