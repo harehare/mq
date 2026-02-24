@@ -154,7 +154,7 @@ The `type` operand can be a symbol or a string that specifies the target format.
 # => - Item one
 
 # Convert to a strikethrough
-"old text" @ "~"
+"old text" @ "~~"
 # => ~~old text~~
 
 # Convert to a Markdown link
