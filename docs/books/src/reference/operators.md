@@ -172,18 +172,18 @@ md @ :text
 # => "Hello World"
 
 # Shell-escape a string for safe use in shell
-"hello world" @ sh
+"hello world" @ :sh
 # => 'hello world'
 
-"safe-string" @ sh
+"safe-string" @ :sh
 # => safe-string
 
 # Encode to Base64
-"hello" @ base64
+"hello" @ :base64
 # => "aGVsbG8="
 
 # URL-encode a string
-"hello world" @ uri
+"hello world" @ :uri
 # => "hello%20world"
 ```
 
