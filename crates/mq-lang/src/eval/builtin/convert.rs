@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use crate::RuntimeValue;
 use crate::eval::builtin::Error;
 use crate::number::Number;
@@ -7,16 +5,17 @@ use base64::prelude::*;
 use percent_encoding::{NON_ALPHANUMERIC, percent_decode, utf8_percent_encode};
 use url::Url;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ConvertKind {
     Blockquote,
     Heading(u8),
     Link(String),
     ListItem,
+    Strong,
     Strikethrough,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Convert {
     Base64,
     Html,
@@ -31,8 +30,18 @@ fn is_url(s: &str) -> bool {
     Url::parse(s).is_ok()
 }
 
+#[cfg(windows)]
 fn is_file_path(s: &str) -> bool {
-    Path::new(s).is_file()
+    s.starts_with(".\\")
+        || s.starts_with("..\\")
+        || s.starts_with("\\")
+        || s.chars().take(3).collect::<String>().ends_with(":\\")
+        || s.chars().take(3).collect::<String>().ends_with(":/")
+}
+
+#[cfg(unix)]
+fn is_file_path(s: &str) -> bool {
+    s.starts_with("./") || s.starts_with("../") || s.starts_with("/")
 }
 
 impl TryFrom<&RuntimeValue> for Convert {
@@ -66,6 +75,7 @@ impl TryFrom<&RuntimeValue> for Convert {
                 ">" => Ok(Convert::Markdown(ConvertKind::Blockquote)),
                 "-" => Ok(Convert::Markdown(ConvertKind::ListItem)),
                 "~~" => Ok(Convert::Markdown(ConvertKind::Strikethrough)),
+                "**" => Ok(Convert::Markdown(ConvertKind::Strong)),
                 s if is_url(s) => Ok(Convert::Markdown(ConvertKind::Link(s.to_string()))),
                 s if is_file_path(s) => Ok(Convert::Markdown(ConvertKind::Link(s.to_string()))),
                 _ => Err(Error::InvalidConvert(format!("{:?}", value))),
@@ -171,6 +181,13 @@ impl Convert {
             ),
             ConvertKind::Strikethrough => RuntimeValue::Markdown(
                 mq_markdown::Node::Delete(mq_markdown::Delete {
+                    values: vec![text.into()],
+                    position: None,
+                }),
+                None,
+            ),
+            ConvertKind::Strong => RuntimeValue::Markdown(
+                mq_markdown::Node::Strong(mq_markdown::Strong {
                     values: vec![text.into()],
                     position: None,
                 }),
@@ -422,6 +439,8 @@ mod tests {
     #[case::h6_string(RuntimeValue::String("######".to_string()), Convert::Markdown(ConvertKind::Heading(6)))]
     #[case::blockquote_string(RuntimeValue::String(">".to_string()), Convert::Markdown(ConvertKind::Blockquote))]
     #[case::list_item_string(RuntimeValue::String("-".to_string()), Convert::Markdown(ConvertKind::ListItem))]
+    #[case::strikethrough_string(RuntimeValue::String("~~".to_string()), Convert::Markdown(ConvertKind::Strikethrough))]
+    #[case::strong_string(RuntimeValue::String("**".to_string()), Convert::Markdown(ConvertKind::Strong))]
     fn test_convert_convert_try_from_valid(#[case] input: RuntimeValue, #[case] expected: Convert) {
         let result = Convert::try_from(&input);
         assert!(result.is_ok());
@@ -431,12 +450,7 @@ mod tests {
             (Convert::Markdown(ConvertKind::Heading(d1)), Convert::Markdown(ConvertKind::Heading(d2))) => {
                 assert_eq!(d1, d2);
             }
-            (Convert::Markdown(ConvertKind::Blockquote), Convert::Markdown(ConvertKind::Blockquote)) => {}
-            (Convert::Markdown(ConvertKind::ListItem), Convert::Markdown(ConvertKind::ListItem)) => {}
-            (Convert::Html, Convert::Html) => {}
-            (Convert::Text, Convert::Text) => {}
-            (Convert::Shell, Convert::Shell) => {}
-            _ => panic!("convert mismatch"),
+            (a, b) => assert_eq!(a, b),
         }
     }
 
