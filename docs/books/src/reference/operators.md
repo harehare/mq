@@ -168,7 +168,7 @@ md @ :html
 
 # Extract plain text from a Markdown node
 let md = do to_markdown("## Hello World") | first(); |
-md @ text
+md @ :text
 # => "Hello World"
 
 # Shell-escape a string for safe use in shell
