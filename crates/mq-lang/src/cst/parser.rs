@@ -5055,6 +5055,40 @@ mod tests {
             ErrorReporter::default()
         )
     )]
+    #[case::convert(
+        vec![
+            Shared::new(token(TokenKind::Ident("a".into()))),
+            Shared::new(token(TokenKind::Convert)),
+            Shared::new(token(TokenKind::Ident("b".into()))),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::BinaryOp(BinaryOp::Convert),
+                    token: Some(Shared::new(token(TokenKind::Convert))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
     #[case::multiple_binary_ops(
         vec![
             Shared::new(token(TokenKind::Ident("a".into()))),
