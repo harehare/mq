@@ -3927,6 +3927,8 @@ pub enum Error {
     AssignToImmutable(String),
     #[error("")]
     UndefinedVariable(String),
+    #[error("")]
+    InvalidConvert(String),
 }
 
 impl From<env::EnvError> for Error {
@@ -3984,6 +3986,9 @@ impl Error {
             }
             Error::UndefinedVariable(name) => {
                 RuntimeError::UndefinedVariable((*get_token(token_arena, node.token_id)).clone(), name.clone())
+            }
+            Error::InvalidConvert(format) => {
+                RuntimeError::InvalidConvert((*get_token(token_arena, node.token_id)).clone(), format.clone())
             }
         }
     }

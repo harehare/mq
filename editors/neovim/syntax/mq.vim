@@ -40,6 +40,9 @@ syn match mqOperator "\/="
 syn match mqOperator "\/\/="
 syn match mqOperator "\|="
 syn match mqOperator "=~"
+syn match mqOperator "@"
+syn match mqOperator "<<"
+syn match mqOperator ">>"
 
 
 " Numbers (including floats)

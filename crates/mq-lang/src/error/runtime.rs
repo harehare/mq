@@ -76,6 +76,8 @@ pub enum RuntimeError {
     InvalidMacroResultAst(Token),
     #[error("Invalid macro result: expected AST value")]
     InvalidMacroResult(Token),
+    #[error("Invalid convert: {0}")]
+    InvalidConvert(Token, String),
 }
 
 impl RuntimeError {
@@ -108,6 +110,7 @@ impl RuntimeError {
             RuntimeError::RecursionLimit => None,
             RuntimeError::InvalidMacroResultAst(token) => Some(token),
             RuntimeError::InvalidMacroResult(token) => Some(token),
+            RuntimeError::InvalidConvert(token, _) => Some(token),
         }
     }
 }

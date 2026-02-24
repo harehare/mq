@@ -272,6 +272,9 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::UnquoteNotAllowedOutsideQuote(_)) => {
                 Some(Cow::Borrowed("unquote() can only be used inside quote()."))
             }
+            InnerError::Runtime(RuntimeError::InvalidConvert(_, _)) => Some(Cow::Borrowed(
+                "Invalid conversion between types. Check the types of your values and the expected types.",
+            )),
             InnerError::Module(ModuleError::NotFound(name)) => Some(Cow::Owned(format!(
                 "Module '{name}' not found. Check the module name or path."
             ))),

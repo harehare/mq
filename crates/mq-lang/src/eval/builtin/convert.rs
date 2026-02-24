@@ -5,12 +5,6 @@ use base64::prelude::*;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use url::Url;
 
-#[derive(Debug, Clone, thiserror::Error)]
-pub(crate) enum ConvertError {
-    #[error("Invalid convert: {0}")]
-    Invalidconvert(String),
-}
-
 #[derive(Debug, Clone)]
 pub(crate) enum ConvertKind {
     Blockquote,
@@ -31,7 +25,7 @@ pub(crate) enum Convert {
 }
 
 impl TryFrom<&RuntimeValue> for Convert {
-    type Error = ConvertError;
+    type Error = Error;
 
     fn try_from(value: &RuntimeValue) -> Result<Self, Self::Error> {
         match value {
@@ -48,7 +42,7 @@ impl TryFrom<&RuntimeValue> for Convert {
                 "sh" => Ok(Convert::Sh),
                 "base64" => Ok(Convert::Base64),
                 "uri" => Ok(Convert::Uri),
-                _ => Err(ConvertError::Invalidconvert(symbol.to_string())),
+                _ => Err(Error::InvalidConvert(symbol.to_string())),
             },
             RuntimeValue::String(s) => match s.as_str() {
                 "#" => Ok(Convert::Markdown(ConvertKind::Heading(1))),
@@ -64,11 +58,11 @@ impl TryFrom<&RuntimeValue> for Convert {
                     if let Ok(url) = Url::parse(s) {
                         Ok(Convert::Markdown(ConvertKind::Link(url)))
                     } else {
-                        Err(ConvertError::Invalidconvert(s.to_string()))
+                        Err(Error::InvalidConvert(s.to_string()))
                     }
                 }
             },
-            _ => Err(ConvertError::Invalidconvert(format!("{:?}", value))),
+            _ => Err(Error::InvalidConvert(format!("{:?}", value))),
         }
     }
 }
