@@ -1,6 +1,6 @@
 <h1 align="center">mq-typechecker</h1>
 
-Type inference and checking for the mq.
+Type inference and checking for the mq language.
 
 ## Features
 
