@@ -2099,6 +2099,86 @@ fn engine() -> DefaultEngine {
 #[case::shift_right_string_amount_equal_to_length("\"abc\" | shift_right(3)",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::String("".to_string())].into()))]
+#[case::convert_string_to_h1_function("convert(\"Hello\", :h1)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 1,
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_h1_operator("\"Hello\" @ :h1",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 1,
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_h2_operator("\"Hello\" @ :h2",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 2,
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_h1_via_string_operator("\"Hello\" @ \"#\"",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 1,
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_h2_via_string_operator("\"Hello\" @ \"##\"",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 2,
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_base64_operator("\"text\" @ :base64",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("dGV4dA==".to_string())].into()))]
+#[case::convert_string_to_uri_operator("\"hello world\" @ :uri",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("hello%20world".to_string())].into()))]
+#[case::convert_string_to_urid_operator("\"hello%20world\" @ :urid",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("hello world".to_string())].into()))]
+#[case::convert_string_to_sh_operator("\"hello world\" @ :sh",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("'hello world'".to_string())].into()))]
+#[case::convert_string_to_blockquote_operator("\"Hello\" @ \">\"",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Blockquote(mq_markdown::Blockquote {
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_list_item_operator("\"Hello\" @ \"-\"",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List {
+        values: vec!["Hello".to_string().into()],
+        index: 0,
+        ordered: false,
+        level: 1,
+        checked: None,
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_strikethrough_operator("\"Hello\" @ \"~~\"",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Delete(mq_markdown::Delete {
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_strong_operator("\"Hello\" @ \"**\"",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Strong {
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_horizontal_rule_operator("\"Hello\" @ \"--\"",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
+        position: None,
+    }), None)].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

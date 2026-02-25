@@ -51,7 +51,8 @@ fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
     }
 
     // Highlight operators (after other highlighting to avoid conflicts)
-    let operators_pattern = r"(<=|>=|==|!=|=~|&&|[=|:;?!+\-*/%<>])";
+    let operators_pattern =
+        r"(\/\/=|<<|>>|\|\||\?\?|<=|>=|==|!=|=~|&&|\+=|-=|\*=|\/=|\|=|=|\||:|;|\?|!|\+|-|\*|\/|%|<|>|@)";
     if let Ok(re) = regex_lite::Regex::new(operators_pattern) {
         result = re
             .replace_all(&result, |caps: &regex_lite::Captures| {

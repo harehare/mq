@@ -33,6 +33,7 @@ syn match mqOperator "=="
 syn match mqOperator "!="
 syn match mqOperator "&&"
 syn match mqOperator "||"
+syn match mqOperator "??"
 syn match mqOperator "+="
 syn match mqOperator "-="
 syn match mqOperator "\*="
@@ -40,7 +41,9 @@ syn match mqOperator "\/="
 syn match mqOperator "\/\/="
 syn match mqOperator "\|="
 syn match mqOperator "=~"
-
+syn match mqOperator "@"
+syn match mqOperator "<<"
+syn match mqOperator ">>"
 
 " Numbers (including floats)
 syn match mqNumber "\v<\d+>"

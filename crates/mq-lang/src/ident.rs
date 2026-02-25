@@ -1,9 +1,9 @@
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, RwLock};
 
 use string_interner::{DefaultBackend, DefaultSymbol, StringInterner};
 
-static STRING_INTERNER: LazyLock<Mutex<StringInterner<DefaultBackend>>> =
-    LazyLock::new(|| Mutex::new(StringInterner::default()));
+static STRING_INTERNER: LazyLock<RwLock<StringInterner<DefaultBackend>>> =
+    LazyLock::new(|| RwLock::new(StringInterner::default()));
 
 /// An interned string identifier for efficient storage and comparison.
 ///
@@ -17,14 +17,14 @@ impl Ident {
     ///
     /// If the string already exists in the interner, returns the existing identifier.
     pub fn new(s: &str) -> Self {
-        Self(STRING_INTERNER.lock().unwrap().get_or_intern(s))
+        Self(STRING_INTERNER.write().unwrap().get_or_intern(s))
     }
 
     /// Resolves the identifier to its string representation.
     ///
     /// Returns a new `String` with the identifier's content.
     pub fn as_str(&self) -> String {
-        STRING_INTERNER.lock().unwrap().resolve(self.0).unwrap().to_string()
+        STRING_INTERNER.read().unwrap().resolve(self.0).unwrap().to_string()
     }
 
     /// Resolves the identifier and passes it to a callback function.
@@ -35,7 +35,7 @@ impl Ident {
     where
         F: FnOnce(&str) -> R,
     {
-        let interner = STRING_INTERNER.lock().unwrap();
+        let interner = STRING_INTERNER.read().unwrap();
         let resolved = interner.resolve(self.0).unwrap();
         f(resolved)
     }
@@ -89,7 +89,7 @@ impl<'de> serde::Deserialize<'de> for Ident {
 /// Returns all interned strings currently in the global string interner.
 pub fn all_symbols() -> Vec<String> {
     STRING_INTERNER
-        .lock()
+        .read()
         .unwrap()
         .iter()
         .map(|(_, s)| s.to_string())

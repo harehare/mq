@@ -49,6 +49,7 @@ pub struct Token {
 /// TokenKind variants are sorted alphabetically for maintainability.
 pub enum TokenKind {
     And,
+    Convert,
     Asterisk,
     BoolLiteral(bool),
     Break,
@@ -149,6 +150,7 @@ impl Display for TokenKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match &self {
             TokenKind::And => write!(f, "&&"),
+            TokenKind::Convert => write!(f, "@"),
             TokenKind::Or => write!(f, "||"),
             TokenKind::Not => write!(f, "!"),
             TokenKind::Asterisk => write!(f, "*"),

@@ -24,7 +24,7 @@ contexts:
   keywords:
     - match: '\b(def|do|let|if|elif|else|end|while|foreach|self|nodes|match|fn|break|continue|include|import|module|var|macro|quote|unquote|loop)\b'
       scope: keyword.control.mq
-    - match: '(=~|=|\||:|;|\?|!|\+|\-|\*|/|%|<|>|<=|>=|==|!=|&&)'
+    - match: '(<<|>>|<=|>=|==|!=|=~|\|\||&&|\?\?|=|<|>|\||:|;|\?|!|\+|\-|\*|/|%|@)'
       scope: keyword.operator.mq
     - match: '\b(true|false)\b'
       scope: constant.language.boolean.mq

@@ -268,6 +268,7 @@ define_token_parser!(pipe_equal, "|=", TokenKind::PipeEqual);
 define_token_parser!(tilde_equal, "=~", TokenKind::TildeEqual);
 define_token_parser!(left_shift, "<<", TokenKind::LeftShift);
 define_token_parser!(right_shift, ">>", TokenKind::RightShift);
+define_token_parser!(convert_op, "@", TokenKind::Convert);
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
@@ -305,6 +306,7 @@ fn assignment_op(input: Span) -> IResult<Span, Token> {
 
 fn binary_op(input: Span) -> IResult<Span, Token> {
     alt((
+        convert_op,
         assignment_op,
         eq_eq,
         ne_eq,
