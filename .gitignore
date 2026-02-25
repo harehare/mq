@@ -93,3 +93,5 @@ example.html
 .serena
 
 tsconfig.tsbuildinfo
+
+mutants.out
