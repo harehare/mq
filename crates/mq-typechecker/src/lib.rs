@@ -204,6 +204,23 @@ impl TypeChecker {
 
                 let all_vars = resolved_operands.iter().all(|ty| ty.is_var());
                 let all_concrete = resolved_operands.iter().all(|ty| !ty.is_var());
+                let has_union = resolved_operands.iter().any(|ty| ty.is_union());
+
+                // Check if any operand is a union type - this is an error
+                if has_union {
+                    let args_str = resolved_operands
+                        .iter()
+                        .map(|t| t.display_renumbered())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    ctx.add_error(TypeError::UnificationError {
+                        left: format!("{} with arguments ({})", d.op_name, args_str),
+                        right: "union types cannot be used with binary operators".to_string(),
+                        span: d.range.as_ref().map(unify::range_to_span),
+                        location: d.range.as_ref().map(|r| (r.start.line, r.start.column)),
+                    });
+                    continue;
+                }
 
                 // Skip resolution when all operands are still type variables
                 // and there are multiple overloads — we can't determine the correct one

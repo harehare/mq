@@ -94,7 +94,7 @@ fn test_conditionals() {
     assert!(
         check_types(
             r#"
-        if true:
+        if (true):
             42
         else:
             24
@@ -120,6 +120,44 @@ fn test_pattern_matching() {
         .is_empty()
     );
 }
+
+#[test]
+fn test_match_different_types_creates_union() {
+    let result = check_types(
+        r#"
+        match 42:
+            case 0: "zero"
+            case 1: 100
+            case _: true
+        ;
+    "#
+    );
+    assert!(
+        result.is_empty(),
+        "match with different types should create a union type: {:?}",
+        result
+    );
+}
+
+// TODO: Enable when match is properly implemented in HIR
+// #[test]
+// fn test_match_union_with_arithmetic() {
+//     let result = check_types(
+//         r#"
+//         let x = match 42:
+//             case 0: "zero"
+//             case 1: 100
+//             case _: 200
+//         ;
+//         | x + 1
+//     "#
+//     );
+//     assert!(
+//         !result.is_empty(),
+//         "match with union type should fail with arithmetic: {:?}",
+//         result
+//     );
+// }
 
 #[test]
 fn test_nested_functions() {
@@ -397,14 +435,118 @@ fn test_pipe_chain_in_function_body() {
     assert!(result.is_empty(), "Pipe chain in function body should succeed");
 }
 
-// Try/Catch with Different Types (allowed in dynamically typed mq)
+// Try/Catch with Different Types - Union Type Tests
 
-#[test]
-fn test_try_catch_type_mismatch() {
-    let result = check_types(r#"try: 42 catch: "string";"#);
+#[rstest]
+#[case::same_type_number(r#"try: 1 catch: 2;"#, true, "same number type should work")]
+#[case::same_type_string(r#"try: "a" catch: "b";"#, true, "same string type should work")]
+#[case::same_type_bool(r#"try: true catch: false;"#, true, "same bool type should work")]
+#[case::different_types_number_string(r#"try: 42 catch: "string";"#, true, "number|string union should be created")]
+#[case::different_types_bool_number(r#"try: true catch: 100;"#, true, "bool|number union should be created")]
+#[case::different_types_string_bool(r#"try: "text" catch: false;"#, true, "string|bool union should be created")]
+fn test_try_catch_type_combinations(
+    #[case] code: &str,
+    #[case] should_succeed: bool,
+    #[case] description: &str,
+) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: {:?}",
+        description,
+        result
+    );
+}
+
+#[rstest]
+#[case::union_with_add(r#"let x = try: 42 catch: "string"; | x + 1"#, "union type (number|string) should fail with +")]
+#[case::union_with_multiply(r#"let x = try: 100 catch: "error"; | x * 2"#, "union type (number|string) should fail with *")]
+#[case::union_with_subtract(r#"let x = try: 50 catch: "fail"; | x - 10"#, "union type (number|string) should fail with -")]
+#[case::bool_with_add(r#"let x = try: true catch: false; | x + 1"#, "bool type should fail with +")]
+#[case::bool_with_multiply(r#"let x = try: true catch: false; | x * 2"#, "bool type should fail with *")]
+fn test_try_catch_union_arithmetic_errors(
+    #[case] code: &str,
+    #[case] description: &str,
+) {
+    let result = check_types(code);
+    assert!(
+        !result.is_empty(),
+        "{}: should produce type error but got no errors",
+        description
+    );
+}
+
+#[rstest]
+#[case::same_type_add(r#"let x = try: 1 catch: 2; | x + 3"#, "same number type should allow +")]
+#[case::same_type_multiply(r#"let x = try: 10 catch: 20; | x * 2"#, "same number type should allow *")]
+#[case::same_type_subtract(r#"let x = try: 100 catch: 50; | x - 25"#, "same number type should allow -")]
+#[case::same_string_concat(r#"let x = try: "a" catch: "b"; | x + "c""#, "same string type should allow +")]
+fn test_try_catch_same_type_arithmetic_ok(
+    #[case] code: &str,
+    #[case] description: &str,
+) {
+    let result = check_types(code);
     assert!(
         result.is_empty(),
-        "try/catch with different types should be allowed in dynamically typed mq"
+        "{}: {:?}",
+        description,
+        result
+    );
+}
+
+// If/Else/Elif - Union Type Tests
+
+#[rstest]
+#[case::same_type_number(r#"if (true): 1 else: 2;"#, true, "same number type")]
+#[case::same_type_string(r#"if (true): "a" else: "b";"#, true, "same string type")]
+#[case::different_types(r#"if (true): 42 else: "string";"#, true, "different types create union")]
+#[case::elif_multiple_types(r#"if (true): 42 elif (false): "string" else: true;"#, true, "elif with multiple types")]
+fn test_if_else_type_combinations(
+    #[case] code: &str,
+    #[case] should_succeed: bool,
+    #[case] description: &str,
+) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: {:?}",
+        description,
+        result
+    );
+}
+
+#[rstest]
+#[case::union_with_add(r#"let x = if (true): 42 else: "string"; | x + 1"#, "union (number|string) should fail with +")]
+#[case::union_with_multiply(r#"let x = if (false): 100 else: "fail"; | x * 2"#, "union (number|string) should fail with *")]
+#[case::elif_union_arithmetic(r#"let x = if (true): 1 elif (false): "text" else: 2; | x + 1"#, "elif union should fail with +")]
+fn test_if_else_union_arithmetic_errors(
+    #[case] code: &str,
+    #[case] description: &str,
+) {
+    let result = check_types(code);
+    assert!(
+        !result.is_empty(),
+        "{}: should produce type error",
+        description
+    );
+}
+
+#[rstest]
+#[case::same_type_add(r#"let x = if (true): 1 else: 2; | x + 3"#, "same number type should allow +")]
+#[case::same_type_multiply(r#"let x = if (false): 10 else: 20; | x * 2"#, "same number type should allow *")]
+#[case::elif_same_type(r#"let x = if (true): 1 elif (false): 2 else: 3; | x + 4"#, "elif same number type should allow +")]
+fn test_if_else_same_type_arithmetic_ok(
+    #[case] code: &str,
+    #[case] description: &str,
+) {
+    let result = check_types(code);
+    assert!(
+        result.is_empty(),
+        "{}: {:?}",
+        description,
+        result
     );
 }
 
