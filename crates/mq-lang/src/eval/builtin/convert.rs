@@ -9,6 +9,7 @@ use url::Url;
 pub(crate) enum ConvertKind {
     Blockquote,
     Heading(u8),
+    HorizontalRule,
     Link(String),
     ListItem,
     Strong,
@@ -76,6 +77,7 @@ impl TryFrom<&RuntimeValue> for Convert {
                 "-" => Ok(Convert::Markdown(ConvertKind::ListItem)),
                 "~~" => Ok(Convert::Markdown(ConvertKind::Strikethrough)),
                 "**" => Ok(Convert::Markdown(ConvertKind::Strong)),
+                "--" => Ok(Convert::Markdown(ConvertKind::HorizontalRule)),
                 s if is_url(s) || is_file_path(s) => Ok(Convert::Markdown(ConvertKind::Link(s.to_string()))),
                 _ => Err(Error::InvalidConvert(format!("{:?}", value))),
             },
@@ -190,6 +192,10 @@ impl Convert {
                     values: vec![text.into()],
                     position: None,
                 }),
+                None,
+            ),
+            ConvertKind::HorizontalRule => RuntimeValue::Markdown(
+                mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
                 None,
             ),
         }
@@ -440,6 +446,7 @@ mod tests {
     #[case::list_item_string(RuntimeValue::String("-".to_string()), Convert::Markdown(ConvertKind::ListItem))]
     #[case::strikethrough_string(RuntimeValue::String("~~".to_string()), Convert::Markdown(ConvertKind::Strikethrough))]
     #[case::strong_string(RuntimeValue::String("**".to_string()), Convert::Markdown(ConvertKind::Strong))]
+    #[case::horizontal_rule_string(RuntimeValue::String("--".to_string()), Convert::Markdown(ConvertKind::HorizontalRule))]
     fn test_convert_convert_try_from_valid(#[case] input: RuntimeValue, #[case] expected: Convert) {
         let result = Convert::try_from(&input);
         assert!(result.is_ok());
