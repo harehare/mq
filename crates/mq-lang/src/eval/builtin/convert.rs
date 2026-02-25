@@ -40,7 +40,7 @@ fn is_file_path(s: &str) -> bool {
         || s.chars().take(3).collect::<String>().ends_with(":/")
 }
 
-#[cfg(unix)]
+#[cfg(not(windows))]
 fn is_file_path(s: &str) -> bool {
     s.starts_with("./") || s.starts_with("../") || s.starts_with("/")
 }
