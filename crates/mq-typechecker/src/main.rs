@@ -63,7 +63,6 @@ fn main() {
         hir.builtin.disabled = true;
     }
     hir.add_code(source_url, &code);
-    hir.resolve();
 
     // Debug: dump HIR structure
     if std::env::var("DUMP_HIR").is_ok() {
