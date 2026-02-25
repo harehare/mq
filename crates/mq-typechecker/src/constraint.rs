@@ -749,6 +749,9 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                         let resolved_left = ctx.resolve_type(&left_ty);
                         let resolved_right = ctx.resolve_type(&right_ty);
 
+                        // Check if any operand is a union type
+                        let has_union = resolved_left.is_union() || resolved_right.is_union();
+
                         // If any operand is still a type variable, defer overload resolution
                         // until after the first round of unification when types may be known
                         if resolved_left.is_var() || resolved_right.is_var() {
@@ -760,6 +763,22 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                                 operand_tys: vec![left_ty, right_ty],
                                 range,
                             });
+                        } else if has_union {
+                            // Union types cannot be used with binary operators
+                            // Report an error with a clear message
+                            ctx.add_error(crate::TypeError::UnificationError {
+                                left: format!(
+                                    "{} with arguments ({}, {})",
+                                    op_name,
+                                    resolved_left.display_renumbered(),
+                                    resolved_right.display_renumbered()
+                                ),
+                                right: "union types cannot be used with binary operators".to_string(),
+                                span: range.as_ref().map(range_to_span),
+                                location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                            });
+                            let ty_var = ctx.fresh_var();
+                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                         } else {
                             // Try to resolve the best matching overload
                             let arg_types = vec![resolved_left.clone(), resolved_right.clone()];
@@ -1080,8 +1099,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 // Subsequent children are then-branch and elif/else branches.
                 // mq is dynamically typed: branches may return different types
                 // (e.g., `if (...): true elif (...): false else: None`).
-                // Only unify branch types when all concrete types match;
-                // otherwise use a fresh type variable to avoid false positives.
+                // Use Union types when branches have different concrete types.
                 if children.len() > 1 {
                     let then_ty = ctx.get_or_create_symbol_type(children[1]);
                     let mut branch_tys = vec![then_ty.clone()];
@@ -1093,15 +1111,21 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                     // Check if branches have different concrete types
                     let resolved: Vec<Type> = branch_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
                     let concrete: Vec<&Type> = resolved.iter().filter(|ty| !ty.is_var()).collect();
-                    let is_heterogeneous = concrete.len() >= 2
-                        && concrete
+                    
+                    // Check if all concrete types are the same
+                    let all_same = if concrete.len() >= 2 {
+                        concrete
                             .windows(2)
-                            .any(|w| std::mem::discriminant(w[0]) != std::mem::discriminant(w[1]));
+                            .all(|w| std::mem::discriminant(w[0]) == std::mem::discriminant(w[1]))
+                    } else {
+                        true
+                    };
 
-                    if is_heterogeneous {
-                        // Different concrete types in branches — use fresh type variable
-                        let ty_var = ctx.fresh_var();
-                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                    if !all_same && concrete.len() >= 2 {
+                        // Different concrete types in branches — use Union type
+                        let unique_types: Vec<Type> = concrete.into_iter().cloned().collect();
+                        let union_ty = Type::union(unique_types);
+                        ctx.set_symbol_type(symbol_id, union_ty);
                     } else {
                         // Homogeneous or unresolved — unify all branch types
                         ctx.set_symbol_type(symbol_id, then_ty.clone());
@@ -1234,14 +1258,21 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                     // Check if arms have different concrete types (heterogeneous match)
                     let resolved: Vec<Type> = arm_body_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
                     let concrete: Vec<&Type> = resolved.iter().filter(|ty| !ty.is_var()).collect();
-                    let is_heterogeneous = concrete.len() >= 2
-                        && concrete
+                    
+                    // Check if all concrete types are the same
+                    let all_same = if concrete.len() >= 2 {
+                        concrete
                             .windows(2)
-                            .any(|w| std::mem::discriminant(w[0]) != std::mem::discriminant(w[1]));
+                            .all(|w| std::mem::discriminant(w[0]) == std::mem::discriminant(w[1]))
+                    } else {
+                        true
+                    };
 
-                    if is_heterogeneous {
-                        let ty_var = ctx.fresh_var();
-                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                    if !all_same && concrete.len() >= 2 {
+                        // Different concrete types in arms — use Union type
+                        let unique_types: Vec<Type> = concrete.into_iter().cloned().collect();
+                        let union_ty = Type::union(unique_types);
+                        ctx.set_symbol_type(symbol_id, union_ty);
                     } else {
                         let result_ty_var = ctx.fresh_var();
                         let result_ty = Type::Var(result_ty_var);
@@ -1286,17 +1317,19 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                     ctx.get_or_create_symbol_type(children[1])
                 };
 
-                // Only unify try/catch types if they're compatible
+                // Resolve the types to check if they're concrete
                 let resolved_try = ctx.resolve_type(&try_ty);
                 let resolved_catch = ctx.resolve_type(&catch_ty);
                 let both_concrete = !resolved_try.is_var() && !resolved_catch.is_var();
-                let different_types =
-                    both_concrete && std::mem::discriminant(&resolved_try) != std::mem::discriminant(&resolved_catch);
+                let same_discriminant =
+                    both_concrete && std::mem::discriminant(&resolved_try) == std::mem::discriminant(&resolved_catch);
 
-                if different_types {
-                    let ty_var = ctx.fresh_var();
-                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                if both_concrete && !same_discriminant {
+                    // Different concrete types: use Union type to represent both possibilities
+                    let union_ty = Type::union(vec![resolved_try, resolved_catch]);
+                    ctx.set_symbol_type(symbol_id, union_ty);
                 } else {
+                    // Same type or at least one is a type variable: unify them
                     ctx.add_constraint(Constraint::Equal(try_ty.clone(), catch_ty, range));
                     ctx.set_symbol_type(symbol_id, try_ty);
                 }

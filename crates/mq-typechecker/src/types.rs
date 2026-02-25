@@ -34,6 +34,9 @@ pub enum Type {
     Dict(Box<Type>, Box<Type>),
     /// Function type: arguments -> return type
     Function(Vec<Type>, Box<Type>),
+    /// Union type: represents a value that could be one of multiple types
+    /// Used for try/catch expressions with different branch types
+    Union(Vec<Type>),
     /// Type variable for inference
     Var(TypeVarId),
 }
@@ -54,9 +57,38 @@ impl Type {
         Type::Dict(Box::new(key), Box::new(value))
     }
 
+    /// Creates a new union type from two or more types
+    /// Automatically normalizes the union (removes duplicates, flattens nested unions)
+    pub fn union(types: Vec<Type>) -> Self {
+        let mut normalized = Vec::new();
+        for ty in types {
+            match ty {
+                // Flatten nested unions
+                Type::Union(inner) => normalized.extend(inner),
+                _ => normalized.push(ty),
+            }
+        }
+        
+        // Remove duplicates
+        normalized.sort_by(|a, b| format!("{:?}", a).cmp(&format!("{:?}", b)));
+        normalized.dedup();
+        
+        // If only one type remains, return it directly
+        if normalized.len() == 1 {
+            normalized.into_iter().next().unwrap()
+        } else {
+            Type::Union(normalized)
+        }
+    }
+
     /// Checks if this is a type variable
     pub fn is_var(&self) -> bool {
         matches!(self, Type::Var(_))
+    }
+
+    /// Checks if this is a union type
+    pub fn is_union(&self) -> bool {
+        matches!(self, Type::Union(_))
     }
 
     /// Gets the type variable ID if this is a type variable
@@ -77,6 +109,10 @@ impl Type {
                 let new_params = params.iter().map(|p| p.apply_subst(subst)).collect();
                 Type::Function(new_params, Box::new(ret.apply_subst(subst)))
             }
+            Type::Union(types) => {
+                let new_types = types.iter().map(|t| t.apply_subst(subst)).collect();
+                Type::union(new_types)
+            }
             _ => self.clone(),
         }
     }
@@ -96,6 +132,9 @@ impl Type {
                 vars.extend(ret.free_vars());
                 vars
             }
+            Type::Union(types) => {
+                types.iter().flat_map(|t| t.free_vars()).collect()
+            }
             _ => Vec::new(),
         }
     }
@@ -109,6 +148,10 @@ impl Type {
         match (self, other) {
             // Type variables always match
             (Type::Var(_), _) | (_, Type::Var(_)) => true,
+
+            // Union types match if any of their constituent types can match
+            (Type::Union(types), other) => types.iter().any(|t| t.can_match(other)),
+            (other, Type::Union(types)) => types.iter().any(|t| other.can_match(t)),
 
             // Concrete types must match exactly
             (Type::Int, Type::Int)
@@ -143,6 +186,7 @@ impl Type {
     ///
     /// Scoring:
     /// - Exact match: 100
+    /// - Union type: best match among variants (slightly penalized)
     /// - Type variable: 10
     /// - Structural match (array/dict/function): sum of component scores
     pub fn match_score(&self, other: &Type) -> Option<u32> {
@@ -160,6 +204,14 @@ impl Type {
             | (Type::Symbol, Type::Symbol)
             | (Type::None, Type::None)
             | (Type::Markdown, Type::Markdown) => Some(100),
+
+            // Union types: take the best match among all variants, but penalize
+            (Type::Union(types), other) => {
+                types.iter().filter_map(|t| t.match_score(other)).max().map(|s| s.saturating_sub(15))
+            }
+            (other, Type::Union(types)) => {
+                types.iter().filter_map(|t| other.match_score(t)).max().map(|s| s.saturating_sub(15))
+            }
 
             // Type variables get low score (prefer concrete types)
             (Type::Var(_), _) | (_, Type::Var(_)) => Some(10),
@@ -213,6 +265,14 @@ impl Type {
                     .join(", ");
                 format!("({}) -> {}", params_str, ret.display_resolved())
             }
+            Type::Union(types) => {
+                let types_str = types
+                    .iter()
+                    .map(|t| t.display_resolved())
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                format!("({})", types_str)
+            }
             Type::Var(id) => {
                 // Convert TypeVarId to a readable name like 'a, 'b, 'c, etc.
                 type_var_name(*id)
@@ -257,6 +317,14 @@ impl Type {
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("({}) -> {}", params_str, ret.fmt_renumbered(var_map, counter))
+            }
+            Type::Union(types) => {
+                let types_str = types
+                    .iter()
+                    .map(|t| t.fmt_renumbered(var_map, counter))
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                format!("({})", types_str)
             }
             Type::Var(id) => {
                 let index = *var_map.entry(*id).or_insert_with(|| {

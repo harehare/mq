@@ -116,6 +116,32 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
             unify(ctx, ret1, ret2, range);
         }
 
+        // Union types: a union can unify with a type if any of its members can unify with it
+        (Type::Union(types), other) | (other, Type::Union(types)) => {
+            // Check if the other type matches any member of the union
+            let matches_any = types.iter().any(|t| {
+                // Try to check if types can match without adding errors
+                match (t, other) {
+                    (t1, t2) if std::mem::discriminant(t1) == std::mem::discriminant(t2) => true,
+                    (Type::Var(_), _) | (_, Type::Var(_)) => true,
+                    _ => false,
+                }
+            });
+
+            if !matches_any {
+                // No member of the union can unify with the other type - report error
+                let resolved_t1 = ctx.resolve_type(t1);
+                let resolved_t2 = ctx.resolve_type(t2);
+                ctx.add_error(TypeError::Mismatch {
+                    expected: resolved_t1.display_renumbered(),
+                    found: resolved_t2.display_renumbered(),
+                    span: range.as_ref().map(range_to_span),
+                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                });
+            }
+            // If at least one member matches, allow it (union type semantics)
+        }
+
         // Mismatch
         _ => {
             // Resolve types for better error messages (use renumbered display for clean names)
@@ -140,6 +166,7 @@ fn occurs_check(var: TypeVarId, ty: &Type) -> bool {
         Type::Array(elem) => occurs_check(var, elem),
         Type::Dict(key, value) => occurs_check(var, key) || occurs_check(var, value),
         Type::Function(params, ret) => params.iter().any(|p| occurs_check(var, p)) || occurs_check(var, ret),
+        Type::Union(types) => types.iter().any(|t| occurs_check(var, t)),
         _ => false,
     }
 }
@@ -160,6 +187,10 @@ pub fn apply_substitution(ctx: &InferenceContext, ty: &Type) -> Type {
         Type::Function(params, ret) => {
             let new_params = params.iter().map(|p| apply_substitution(ctx, p)).collect();
             Type::Function(new_params, Box::new(apply_substitution(ctx, ret)))
+        }
+        Type::Union(types) => {
+            let new_types = types.iter().map(|t| apply_substitution(ctx, t)).collect();
+            Type::union(new_types)
         }
         _ => ty,
     }
