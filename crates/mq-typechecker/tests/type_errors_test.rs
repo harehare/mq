@@ -29,10 +29,12 @@ fn test_binary_op_type_mismatch() {
 
 #[test]
 fn test_if_else_type_mismatch() {
+    // mq is dynamically typed — if/else branches with different types are allowed
     let result = check_types(r#"if (true): 42 else: "string";"#);
     assert!(
-        !result.is_empty(),
-        "Expected type error for if/else branches with different types"
+        result.is_empty(),
+        "if/else branches with different types should be allowed in dynamically typed mq: {:?}",
+        result
     );
 }
 
@@ -77,12 +79,13 @@ fn test_match_pattern_type_mismatch() {
 
 #[test]
 fn test_match_arm_body_type_mismatch() {
-    // Match arms with different body types should produce a type error
+    // mq is dynamically typed — match arms with different body types are allowed
     let result = check_types(r#"match (1): | 1: "one" | 2: 222 end"#);
     println!("Match arm body type mismatch: {:?}", result);
     assert!(
-        !result.is_empty(),
-        "Expected type error for match arms with different body types"
+        result.is_empty(),
+        "Match arms with different body types should be allowed in dynamically typed mq: {:?}",
+        result
     );
 }
 
