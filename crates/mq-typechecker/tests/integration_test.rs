@@ -397,12 +397,15 @@ fn test_pipe_chain_in_function_body() {
     assert!(result.is_empty(), "Pipe chain in function body should succeed");
 }
 
-// Try/Catch Type Mismatch
+// Try/Catch with Different Types (allowed in dynamically typed mq)
 
 #[test]
 fn test_try_catch_type_mismatch() {
     let result = check_types(r#"try: 42 catch: "string";"#);
-    assert!(!result.is_empty(), "try/catch with different types should fail");
+    assert!(
+        result.is_empty(),
+        "try/catch with different types should be allowed in dynamically typed mq"
+    );
 }
 
 // Type Inference Verification
