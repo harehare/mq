@@ -314,8 +314,8 @@ fn resolve_branch_body_type(hir: &Hir, branch_id: SymbolId, ctx: &mut InferenceC
 /// Checks if a symbol is a foreach iterable reference.
 ///
 /// In the HIR, `foreach (var, iterable): body;` is represented as:
-/// - Parent has children: [Foreach, Variable, Ref(iterable)]
-/// - The iterable is a `Ref` sibling of `Foreach` under the same parent
+/// - Foreach has children: [Variable(item), Ref(iterable), body_expr...]
+/// - The iterable is a `Ref` direct child of `Foreach`
 ///
 /// These Refs should not receive piped input since they are iterable function
 /// references whose arguments are not represented in the HIR.
@@ -331,9 +331,10 @@ fn is_foreach_iterable_ref(hir: &Hir, symbol_id: SymbolId) -> bool {
         Some(id) => id,
         None => return false,
     };
-    // Check if any sibling under the same parent is a Foreach
-    hir.symbols()
-        .any(|(_, s)| s.parent == Some(parent_id) && matches!(s.kind, SymbolKind::Foreach))
+    // Check if the direct parent is a Foreach symbol
+    hir.symbol(parent_id)
+        .map(|s| matches!(s.kind, SymbolKind::Foreach))
+        .unwrap_or(false)
 }
 
 /// Checks if a symbol might receive piped input later (i.e., is inside a Block
@@ -1175,31 +1176,37 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             }
         }
 
-        SymbolKind::Foreach => {
-            // Foreach: iterable should be an array, loop variable gets element type
+        SymbolKind::Loop => {
+            // Infinite loop: result type is the body type (value at break or last iteration).
+            // Union types in the body are preserved, e.g. `loop: if (cond): 1 else: "s";;`
+            // produces a `number | string` result type.
             let children = get_children(hir, symbol_id);
-            let range = get_symbol_range(hir, symbol_id);
 
-            // Children layout: [variable, iterable, body...]
-            if children.len() >= 2 {
-                let elem_ty_var = ctx.fresh_var();
-                let elem_ty = Type::Var(elem_ty_var);
+            if !children.is_empty() {
+                let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
+                ctx.set_symbol_type(symbol_id, body_ty);
+            } else {
+                let ty_var = ctx.fresh_var();
+                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            }
+        }
 
-                // The iterable should be an array
-                let iterable_ty = ctx.get_or_create_symbol_type(children[1]);
-                ctx.add_constraint(Constraint::Equal(iterable_ty, Type::array(elem_ty.clone()), range));
+        SymbolKind::Foreach => {
+            // Foreach: iterates over an array/string and collects body results into an array.
+            // Children: [Variable(item), Ref(iterable), body_expr...]
+            // The body expression is the last child (highest SymbolId).
+            let children = get_children(hir, symbol_id);
 
-                // The loop variable gets the element type
-                let var_ty = ctx.get_or_create_symbol_type(children[0]);
-                ctx.add_constraint(Constraint::Equal(var_ty, elem_ty, range));
+            if !children.is_empty() {
+                let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
+                let resolved_body = ctx.resolve_type(&body_ty);
 
-                // The result type is an array of body values (foreach collects results)
-                if children.len() > 2 {
-                    let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
-                    ctx.set_symbol_type(symbol_id, Type::array(body_ty));
+                // Preserve union types: Array<Union([T1, T2])> correctly represents
+                // a foreach that may produce values of different types.
+                if !resolved_body.is_var() {
+                    ctx.set_symbol_type(symbol_id, Type::array(resolved_body));
                 } else {
-                    let ty_var = ctx.fresh_var();
-                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                    ctx.set_symbol_type(symbol_id, Type::array(body_ty));
                 }
             } else {
                 let ty_var = ctx.fresh_var();

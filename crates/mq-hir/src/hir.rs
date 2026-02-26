@@ -370,6 +370,9 @@ impl Hir {
             mq_lang::CstNodeKind::While => {
                 self.add_while_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Loop => {
+                self.add_loop_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Try => {
                 self.add_try_expr(node, source_id, scope_id, parent);
             }
@@ -756,6 +759,38 @@ impl Hir {
         }
     }
 
+    fn add_loop_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Loop,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Loop,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+            let loop_scope_id = self.add_scope(Scope::new(
+                SourceInfo::new(Some(source_id), Some(node.node_range())),
+                ScopeKind::Loop(symbol_id),
+                Some(scope_id),
+            ));
+
+            node.children_without_token().iter().for_each(|child| {
+                self.add_expr(child, source_id, loop_scope_id, Some(symbol_id));
+            });
+        }
+    }
+
     fn add_try_expr(
         &mut self,
         node: &mq_lang::Shared<mq_lang::CstNode>,
@@ -1099,7 +1134,7 @@ impl Hir {
                 source: SourceInfo::new(Some(source_id), Some(loop_val.range())),
                 scope: scope_id,
                 doc: node.comments(),
-                parent,
+                parent: Some(symbol_id),
             });
 
             self.add_symbol(Symbol {
@@ -1108,7 +1143,7 @@ impl Hir {
                 source: SourceInfo::new(Some(source_id), Some(arg.range())),
                 scope: scope_id,
                 doc: node.comments(),
-                parent,
+                parent: Some(symbol_id),
             });
 
             program.iter().for_each(|child| {

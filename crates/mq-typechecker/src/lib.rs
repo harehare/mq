@@ -484,7 +484,7 @@ impl TypeChecker {
         }
     }
 
-    /// Checks if a symbol is inside a control flow construct (If, Elif, Else, While,
+    /// Checks if a symbol is inside a control flow construct (If, Elif, Else, While, Loop,
     /// Match, MatchArm, Try, Catch, Foreach) between itself and the function definition.
     ///
     /// This is used to skip operator checking inside type-guarded branches, where runtime
@@ -513,6 +513,7 @@ impl TypeChecker {
                             | SymbolKind::Elif
                             | SymbolKind::Else
                             | SymbolKind::While
+                            | SymbolKind::Loop
                             | SymbolKind::Match
                             | SymbolKind::MatchArm
                             | SymbolKind::Try
