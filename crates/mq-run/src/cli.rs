@@ -604,6 +604,18 @@ impl Cli {
     ) -> miette::Result<()> {
         if let Some(file) = file {
             engine.define_string_value("__FILE__", file.to_string_lossy().as_ref());
+            engine.define_string_value(
+                "__FILE_NAME__",
+                file.file_name().unwrap_or_default().to_string_lossy().as_ref(),
+            );
+            engine.define_string_value(
+                "__FILE_NAME__",
+                file.file_name().unwrap_or_default().to_string_lossy().as_ref(),
+            );
+            engine.define_string_value(
+                "__FILE_STEM__",
+                file.file_stem().unwrap_or_default().to_string_lossy().as_ref(),
+            );
         }
 
         let input = match self.input.input_format.as_ref().unwrap_or_else(|| {
