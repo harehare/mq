@@ -200,6 +200,35 @@ impl TypeChecker {
                 let has_union = resolved_operands.iter().any(|ty| ty.is_union());
 
                 if has_union {
+                    // Try to find a polymorphic overload where every union-typed argument
+                    // is matched to a type-variable parameter (e.g. `to_number: (Var) -> Number`).
+                    // Such overloads accept any input and the generated constraint
+                    // (`Union == Var(fresh)`) unifies without error.
+                    // Binary operators like `+` only have concrete parameter overloads
+                    // (e.g. `(Number, Number) -> Number`), so they correctly fall through
+                    // to the error below.
+                    if let Some(resolved_ty) = ctx.resolve_overload(&d.op_name, &resolved_operands)
+                        && let types::Type::Function(param_tys, ret_ty) = resolved_ty
+                        && param_tys.len() == d.operand_tys.len()
+                    {
+                        let union_params_are_vars = resolved_operands
+                            .iter()
+                            .zip(param_tys.iter())
+                            .filter(|(arg, _)| arg.is_union())
+                            .all(|(_, param)| param.is_var());
+                        if union_params_are_vars {
+                            for (operand_ty, param_ty) in d.operand_tys.iter().zip(param_tys.iter()) {
+                                ctx.add_constraint(constraint::Constraint::Equal(
+                                    operand_ty.clone(),
+                                    param_ty.clone(),
+                                    d.range,
+                                ));
+                            }
+                            ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
+                            unify::solve_constraints(ctx);
+                            continue;
+                        }
+                    }
                     let args_str = resolved_operands
                         .iter()
                         .map(|t| t.display_renumbered())

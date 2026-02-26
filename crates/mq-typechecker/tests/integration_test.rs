@@ -614,6 +614,21 @@ fn test_foreach_union_arithmetic_errors(#[case] code: &str, #[case] description:
     true,
     "loop with different branch types creates union"
 )]
+#[case::break_different_types(
+    r#"loop: if (true): break: 42 else: break: "str";;"#,
+    true,
+    "loop with break of different types creates union"
+)]
+#[case::while_break_different_types(
+    r#"while (true): if (true): break: 42 else: break: "str";"#,
+    true,
+    "while with break of different types creates union"
+)]
+#[case::foreach_break_value(
+    r#"foreach(x, [1, 2, 3]): if (true): break: "early" else: x;"#,
+    true,
+    "foreach with break value produces union"
+)]
 fn test_loop_type_combinations(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(result.is_empty(), should_succeed, "{}: {:?}", description, result);
@@ -623,6 +638,22 @@ fn test_loop_type_combinations(#[case] code: &str, #[case] should_succeed: bool,
 #[case::union_with_add(
     r#"let x = loop: if (true): 1 else: "str";; | x + 1"#,
     "loop union (number|string) should fail with +"
+)]
+#[case::break_union_with_add(
+    r#"let x = loop: if (true): break: 42 else: break: "str";; | x + 1"#,
+    "loop with break union (number|string) should fail with +"
+)]
+#[case::while_break_union_with_add(
+    r#"let x = while (true): if (true): break: 42 else: break: "str"; | x + 1"#,
+    "while with break union (number|string) should fail with +"
+)]
+#[case::loop_if_only_break_with_add(
+    r#"let x = loop: if (true): break: 42;; | x + 1"#,
+    "loop with only if-branch break (no else) should produce union and fail with +"
+)]
+#[case::while_if_only_break_with_add(
+    r#"let x = while (true): if (true): break: 42; | x + 1"#,
+    "while with only if-branch break (no else) should produce union and fail with +"
 )]
 fn test_loop_union_arithmetic_errors(#[case] code: &str, #[case] description: &str) {
     let result = check_types(code);
@@ -636,7 +667,55 @@ fn test_loop_union_arithmetic_errors(#[case] code: &str, #[case] description: &s
 #[rstest]
 #[case::same_type_add(r#"let x = loop: break: 42;; | x + 1"#, "loop number should allow +")]
 #[case::while_same_type_add(r#"let x = while (true): 42; | x + 1"#, "while number should allow +")]
+#[case::loop_break_same_type(
+    r#"let x = loop: if (true): break: 1 else: break: 2;; | x + 1"#,
+    "loop with break of same type should allow +"
+)]
+#[case::to_number_on_union(
+    r#"let x = loop: if (true): break: 42;; | to_number(x) + 1"#,
+    "to_number on union type should allow + on the result"
+)]
+#[case::to_number_on_while_union(
+    r#"let x = while (true): if (true): break: 42; | to_number(x) + 1"#,
+    "to_number on while union type should allow + on the result"
+)]
 fn test_loop_same_type_arithmetic_ok(#[case] code: &str, #[case] description: &str) {
+    let result = check_types(code);
+    assert!(result.is_empty(), "{}: {:?}", description, result);
+}
+
+// Conversion functions on union types
+
+#[rstest]
+#[case::to_string_on_union(
+    r#"let x = loop: if (true): break: 42;; | to_string(x)"#,
+    "to_string on union type should return string"
+)]
+#[case::to_array_on_union(
+    r#"let x = loop: if (true): break: 42;; | to_array(x)"#,
+    "to_array on union type should return array"
+)]
+#[case::type_fn_on_union(
+    r#"let x = loop: if (true): break: 42;; | type(x)"#,
+    "type() on union type should return string"
+)]
+#[case::is_string_on_union(
+    r#"let x = loop: if (true): break: 42;; | is_string(x)"#,
+    "is_string on union type should return bool"
+)]
+#[case::is_number_on_union(
+    r#"let x = loop: if (true): break: 42;; | is_number(x)"#,
+    "is_number on union type should return bool"
+)]
+#[case::is_none_on_union(
+    r#"let x = loop: if (true): break: 42;; | is_none(x)"#,
+    "is_none on union type should return bool"
+)]
+#[case::to_number_on_break_union(
+    r#"let x = loop: if (true): break: 42 else: break: "str";; | to_number(x) + 1"#,
+    "to_number on (number|string) union should allow +"
+)]
+fn test_conversion_on_union(#[case] code: &str, #[case] description: &str) {
     let result = check_types(code);
     assert!(result.is_empty(), "{}: {:?}", description, result);
 }

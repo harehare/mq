@@ -400,10 +400,12 @@ impl Hir {
             mq_lang::CstNodeKind::Unquote => {
                 self.add_unquote_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Break => {
+                self.add_break_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Self_
             | mq_lang::CstNodeKind::Nodes
             | mq_lang::CstNodeKind::End
-            | mq_lang::CstNodeKind::Break
             | mq_lang::CstNodeKind::Continue => {
                 self.add_keyword(node, source_id, scope_id, parent);
             }
@@ -1590,6 +1592,33 @@ impl Hir {
             doc: node.comments(),
             parent,
         });
+    }
+
+    /// Adds a `break` expression to the HIR.
+    ///
+    /// Unlike bare keywords, `break` may carry a value (`break: expr`).
+    /// The value expression is added as a child of the break symbol so that
+    /// the type checker can infer the break's type and propagate it to the
+    /// enclosing loop as part of a union type.
+    fn add_break_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        let symbol_id = self.add_symbol(Symbol {
+            value: node.name(),
+            kind: SymbolKind::Keyword,
+            source: SourceInfo::new(Some(source_id), Some(node.range())),
+            scope: scope_id,
+            doc: node.comments(),
+            parent,
+        });
+        // Process break value expression (if present) as a child of this symbol.
+        for child in node.children_without_token() {
+            self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+        }
     }
 
     fn add_pattern_expr(

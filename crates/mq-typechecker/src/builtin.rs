@@ -559,7 +559,8 @@ fn register_dict(ctx: &mut InferenceContext) {
 
 /// Type conversion functions: to_number, to_string, to_array, type
 fn register_type_conversion(ctx: &mut InferenceContext) {
-    register_unary(ctx, "to_number", Type::String, Type::Number);
+    let a = ctx.fresh_var();
+    register_unary(ctx, "to_number", Type::Var(a), Type::Number);
 
     let a = ctx.fresh_var();
     register_unary(ctx, "to_string", Type::Var(a), Type::String);
