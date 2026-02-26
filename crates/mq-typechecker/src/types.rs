@@ -69,15 +69,38 @@ impl Type {
             }
         }
 
-        // Remove duplicates
-        normalized.sort_by(|a, b| format!("{:?}", a).cmp(&format!("{:?}", b)));
-        normalized.dedup();
+        // Deduplicate using a HashSet (avoids repeated allocations in a sort comparator)
+        let mut seen = rustc_hash::FxHashSet::default();
+        normalized.retain(|t| seen.insert(t.clone()));
+
+        // Sort once using a non-allocating discriminant key for stable display
+        normalized.sort_by_key(|t| t.discriminant());
 
         // If only one type remains, return it directly
         if normalized.len() == 1 {
             normalized.into_iter().next().unwrap()
         } else {
             Type::Union(normalized)
+        }
+    }
+
+    /// Returns a numeric discriminant for ordering purposes.
+    /// Used by `Type::union` to sort union members without allocating.
+    fn discriminant(&self) -> u8 {
+        match self {
+            Type::Int => 0,
+            Type::Float => 1,
+            Type::Number => 2,
+            Type::String => 3,
+            Type::Bool => 4,
+            Type::Symbol => 5,
+            Type::None => 6,
+            Type::Markdown => 7,
+            Type::Array(_) => 8,
+            Type::Dict(_, _) => 9,
+            Type::Function(_, _) => 10,
+            Type::Union(_) => 11,
+            Type::Var(_) => 12,
         }
     }
 
