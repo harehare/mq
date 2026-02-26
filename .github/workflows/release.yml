@@ -54,7 +54,7 @@ jobs:
           mv target/${{ matrix.target }}/release/mq-lsp${{ matrix.ext }} target/${{ matrix.target }}/release/mq-lsp-${{ matrix.asset_name}}${{ matrix.ext }}
           mv target/${{ matrix.target }}/release/mqcr${{ matrix.ext }} target/${{ matrix.target }}/release/mqcr-${{ matrix.asset_name}}${{ matrix.ext }}
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: mq-${{ matrix.asset_name }}
           path: |
@@ -97,7 +97,7 @@ jobs:
       - name: Build deb package
         run: cargo deb -p mq-run --no-build --target ${{ matrix.target }} --output target/${{ matrix.target }}/debian/mq-${{ matrix.target }}.deb
       - name: Upload deb artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: mq-${{ matrix.target }}-deb
           path: target/${{ matrix.target }}/debian/*.deb
@@ -136,7 +136,7 @@ jobs:
       - name: Build rpm package
         run: cargo generate-rpm -p crates/mq-run --target ${{ matrix.target }} -o target/${{ matrix.target }}/generate-rpm/mq-${{ matrix.target }}.rpm
       - name: Upload rpm artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: mq-${{ matrix.target }}-rpm
           path: target/${{ matrix.target }}/generate-rpm/*.rpm
