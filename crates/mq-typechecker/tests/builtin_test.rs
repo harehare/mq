@@ -1,4 +1,4 @@
-//! Tests for builtin function type checking using rstest parametered tests
+//! Tests for builtin function type checking using rstest parameterized tests
 
 use mq_hir::Hir;
 use mq_typechecker::{TypeChecker, TypeError};
