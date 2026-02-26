@@ -494,6 +494,133 @@ fn resolve_pattern_type(hir: &Hir, pattern_id: SymbolId, ctx: &mut InferenceCont
     Type::Var(ctx.fresh_var())
 }
 
+/// Collects the types of all `break: value` expressions that directly belong to
+/// the given loop symbol (i.e., not nested inside an inner while/loop/foreach).
+///
+/// Only `break: expr` (with a value) contributes to the union type; bare `break`
+/// without a value is ignored because it falls through to the loop's normal exit type.
+///
+/// When a `break: value` is found inside an `if` that has no explicit `else` branch,
+/// a fresh type variable is added to represent the implicit else (pass-through) path.
+/// This models the fact that when the condition is false the loop body returns the
+/// current piped value (of an unknown type), so the loop's exit type must be a union.
+fn collect_break_value_types(hir: &Hir, loop_symbol_id: SymbolId, ctx: &mut InferenceContext) -> Vec<Type> {
+    let mut types = Vec::new();
+    for child_id in get_children(hir, loop_symbol_id) {
+        collect_break_types_inner(hir, child_id, ctx, &mut types);
+    }
+    types
+}
+
+/// Recursive helper for `collect_break_value_types`.
+///
+/// Returns `true` if at least one `break: value` was found during the traversal
+/// of `symbol_id`'s subtree (used by the `If` arm to decide whether to add an
+/// implicit pass-through variable).
+fn collect_break_types_inner(
+    hir: &Hir,
+    symbol_id: SymbolId,
+    ctx: &mut InferenceContext,
+    result: &mut Vec<Type>,
+) -> bool {
+    let Some(symbol) = hir.symbol(symbol_id) else {
+        return false;
+    };
+    // Do not descend into nested loops; their breaks belong to them, not the outer loop.
+    if matches!(symbol.kind, SymbolKind::While | SymbolKind::Loop | SymbolKind::Foreach) {
+        return false;
+    }
+    if matches!(symbol.kind, SymbolKind::Keyword) && symbol.value.as_deref() == Some("break") {
+        // Only include `break: value` (has a value child), not bare `break`.
+        let children = get_children(hir, symbol_id);
+        if !children.is_empty() {
+            result.push(ctx.get_or_create_symbol_type(symbol_id));
+            return true;
+        }
+        return false; // bare break — no value, never recurse
+    }
+    if matches!(symbol.kind, SymbolKind::If) {
+        let children = get_children(hir, symbol_id);
+        // An `if` without an explicit `else` child implicitly passes the input through
+        // when the condition is false.  Record whether any break was found inside so we
+        // can add a fresh type variable for that path.
+        let has_explicit_else = children
+            .iter()
+            .any(|&id| hir.symbol(id).is_some_and(|s| matches!(s.kind, SymbolKind::Else)));
+
+        let mut found_break = false;
+        for &child_id in &children {
+            if collect_break_types_inner(hir, child_id, ctx, result) {
+                found_break = true;
+            }
+        }
+        // When there is no else and a break was found inside this if, the "condition false"
+        // path passes through the input with an unknown type.  Add a fresh variable to
+        // represent this so the loop type becomes a union.
+        if !has_explicit_else && found_break {
+            result.push(Type::Var(ctx.fresh_var()));
+        }
+        return found_break;
+    }
+    let mut found_break = false;
+    for child_id in get_children(hir, symbol_id) {
+        if collect_break_types_inner(hir, child_id, ctx, result) {
+            found_break = true;
+        }
+    }
+    found_break
+}
+
+/// Merges a base type with a list of `break` value types into a union when the
+/// concrete types differ, or leaves the base type unchanged when they agree.
+///
+/// When the concrete types are all the same but a type variable is also present
+/// (e.g., from an `if`-without-`else` implicit pass-through), the result is a
+/// union of the concrete type with the variable so downstream code can detect
+/// that the loop might also produce an unknown type.
+fn merge_loop_types(base_ty: Type, break_tys: Vec<Type>, ctx: &InferenceContext) -> Type {
+    if break_tys.is_empty() {
+        return base_ty;
+    }
+    let mut all_tys: Vec<Type> = Vec::with_capacity(1 + break_tys.len());
+    all_tys.push(base_ty);
+    all_tys.extend(break_tys);
+
+    let resolved: Vec<Type> = all_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
+    let concrete: Vec<&Type> = resolved.iter().filter(|ty| !ty.is_var()).collect();
+    let var_ty: Option<&Type> = resolved.iter().find(|ty| ty.is_var());
+
+    if concrete.len() >= 2 {
+        let all_same = concrete
+            .windows(2)
+            .all(|w| std::mem::discriminant(w[0]) == std::mem::discriminant(w[1]));
+        if !all_same {
+            // Different concrete types → Union (vars are not included to avoid overly
+            // broad types when the concrete information is already sufficient).
+            let unique: Vec<Type> = concrete.into_iter().cloned().collect();
+            return Type::union(unique);
+        }
+        // All same concrete type: include the Var if present so the loop type
+        // reflects the implicit else (pass-through) path.
+        if let Some(var) = var_ty {
+            return Type::union(vec![concrete[0].clone(), var.clone()]);
+        }
+        return concrete[0].clone();
+    }
+
+    // Exactly one concrete type with an implicit-else Var → Union(concrete, Var)
+    if concrete.len() == 1 {
+        if let Some(var) = var_ty {
+            return Type::union(vec![concrete[0].clone(), var.clone()]);
+        }
+        return concrete[0].clone();
+    }
+
+    // All unresolved type variables: return the base type unchanged and let
+    // unification constraints handle the rest.
+    all_tys.into_iter().next().unwrap()
+}
+
 /// Generates constraints for a single symbol
 fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind, ctx: &mut InferenceContext) {
     match kind {
@@ -1153,7 +1280,9 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
         }
 
         SymbolKind::While => {
-            // While loop: condition must be Bool, result type from body
+            // While loop: condition must be Bool, result type from body.
+            // `break: value` exits with the value's type; multiple break paths may
+            // create a union with the normal-exit (body) type.
             let children = get_children(hir, symbol_id);
             let range = get_symbol_range(hir, symbol_id);
 
@@ -1165,7 +1294,9 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 // Result type comes from the body (last child after condition)
                 if children.len() > 1 {
                     let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
-                    ctx.set_symbol_type(symbol_id, body_ty);
+                    let break_tys = collect_break_value_types(hir, symbol_id, ctx);
+                    let loop_ty = merge_loop_types(body_ty, break_tys, ctx);
+                    ctx.set_symbol_type(symbol_id, loop_ty);
                 } else {
                     let ty_var = ctx.fresh_var();
                     ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
@@ -1177,14 +1308,16 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
         }
 
         SymbolKind::Loop => {
-            // Infinite loop: result type is the body type (value at break or last iteration).
-            // Union types in the body are preserved, e.g. `loop: if (cond): 1 else: "s";;`
-            // produces a `number | string` result type.
+            // Infinite loop: result type is determined by `break: value` expressions
+            // and/or the last body expression if the loop falls through.
+            // Multiple break paths with different types create a union type.
             let children = get_children(hir, symbol_id);
 
             if !children.is_empty() {
                 let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
-                ctx.set_symbol_type(symbol_id, body_ty);
+                let break_tys = collect_break_value_types(hir, symbol_id, ctx);
+                let loop_ty = merge_loop_types(body_ty, break_tys, ctx);
+                ctx.set_symbol_type(symbol_id, loop_ty);
             } else {
                 let ty_var = ctx.fresh_var();
                 ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
@@ -1195,19 +1328,27 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             // Foreach: iterates over an array/string and collects body results into an array.
             // Children: [Variable(item), Ref(iterable), body_expr...]
             // The body expression is the last child (highest SymbolId).
+            //
+            // When `break: value` is used, foreach exits early returning the value directly
+            // (not wrapped in an array).  This creates a union with the normal Array<body>
+            // exit type.
             let children = get_children(hir, symbol_id);
 
             if !children.is_empty() {
                 let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
                 let resolved_body = ctx.resolve_type(&body_ty);
 
-                // Preserve union types: Array<Union([T1, T2])> correctly represents
-                // a foreach that may produce values of different types.
-                if !resolved_body.is_var() {
-                    ctx.set_symbol_type(symbol_id, Type::array(resolved_body));
+                // Normal exit type: Array<body_type>
+                let array_ty = if !resolved_body.is_var() {
+                    Type::array(resolved_body)
                 } else {
-                    ctx.set_symbol_type(symbol_id, Type::array(body_ty));
-                }
+                    Type::array(body_ty)
+                };
+
+                // Merge with break value types (each break: value returns that value directly)
+                let break_tys = collect_break_value_types(hir, symbol_id, ctx);
+                let loop_ty = merge_loop_types(array_ty, break_tys, ctx);
+                ctx.set_symbol_type(symbol_id, loop_ty);
             } else {
                 let ty_var = ctx.fresh_var();
                 ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
@@ -1418,7 +1559,26 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }
 
-        // Inert kinds: keywords, identifiers, arguments, imports, modules, etc.
+        // `break: value` carries the type of its value expression.
+        // Bare `break` (no value child) gets a fresh type variable.
+        SymbolKind::Keyword => {
+            let symbol = hir.symbol(symbol_id);
+            if symbol.is_some_and(|s| s.value.as_deref() == Some("break")) {
+                let children = get_children(hir, symbol_id);
+                if let Some(&value_child) = children.first() {
+                    let child_ty = ctx.get_or_create_symbol_type(value_child);
+                    ctx.set_symbol_type(symbol_id, child_ty);
+                } else {
+                    let ty_var = ctx.fresh_var();
+                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                }
+            } else {
+                let ty_var = ctx.fresh_var();
+                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            }
+        }
+
+        // Inert kinds: identifiers, arguments, imports, modules, etc.
         _ => {
             let ty_var = ctx.fresh_var();
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));

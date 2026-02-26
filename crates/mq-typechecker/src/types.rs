@@ -226,6 +226,12 @@ impl Type {
             | (Type::None, Type::None)
             | (Type::Markdown, Type::Markdown) => Some(100),
 
+            // Type variables get low score (prefer concrete types).
+            // This arm must come BEFORE the union arms so that a Var parameter
+            // (e.g. `to_number: (Var) -> Number`) scores 10 against a union arg
+            // rather than 0 (the union arm penalises by -15, giving 10-15=0).
+            (Type::Var(_), _) | (_, Type::Var(_)) => Some(10),
+
             // Union types: take the best match among all variants, but penalize
             (Type::Union(types), other) => types
                 .iter()
@@ -237,9 +243,6 @@ impl Type {
                 .filter_map(|t| other.match_score(t))
                 .max()
                 .map(|s| s.saturating_sub(15)),
-
-            // Type variables get low score (prefer concrete types)
-            (Type::Var(_), _) | (_, Type::Var(_)) => Some(10),
 
             // Arrays: structural match scores higher than bare type variable
             (Type::Array(elem1), Type::Array(elem2)) => elem1.match_score(elem2).map(|s| s + 20),
