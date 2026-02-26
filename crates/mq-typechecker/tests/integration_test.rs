@@ -572,3 +572,93 @@ fn test_type_unification() {
         println!("  {:?} :: {}", symbol_id, type_scheme);
     }
 }
+
+// Foreach Union Type Tests
+
+#[rstest]
+#[case::same_type_number(
+    r#"let x = foreach(item, [1, 2, 3]): item; | x + [1]"#,
+    true,
+    "same number type in foreach"
+)]
+#[case::different_types(
+    r#"foreach(item, [1, 2, 3]): if (true): item else: "str";;"#,
+    true,
+    "different types in foreach creates union"
+)]
+fn test_foreach_type_combinations(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types(code);
+    assert_eq!(result.is_empty(), should_succeed, "{}: {:?}", description, result);
+}
+
+#[rstest]
+#[case::union_with_add(
+    r#"let x = foreach(item, [1, 2, 3]): if (true): item else: "str";; | x + 1"#,
+    "foreach union (array<number|string>) should fail with +"
+)]
+fn test_foreach_union_arithmetic_errors(#[case] code: &str, #[case] description: &str) {
+    let result = check_types(code);
+    assert!(
+        !result.is_empty(),
+        "{}: should produce type error but got no errors",
+        description
+    );
+}
+
+// Loop Union Type Tests
+
+#[rstest]
+#[case::same_type_number(r#"loop: break: 42;;"#, true, "loop with number break")]
+#[case::different_types(
+    r#"loop: if (true): 1 else: "str";;"#,
+    true,
+    "loop with different branch types creates union"
+)]
+fn test_loop_type_combinations(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types(code);
+    assert_eq!(result.is_empty(), should_succeed, "{}: {:?}", description, result);
+}
+
+#[rstest]
+#[case::union_with_add(
+    r#"let x = loop: if (true): 1 else: "str";; | x + 1"#,
+    "loop union (number|string) should fail with +"
+)]
+fn test_loop_union_arithmetic_errors(#[case] code: &str, #[case] description: &str) {
+    let result = check_types(code);
+    assert!(
+        !result.is_empty(),
+        "{}: should produce type error but got no errors",
+        description
+    );
+}
+
+#[rstest]
+#[case::same_type_add(r#"let x = loop: break: 42;; | x + 1"#, "loop number should allow +")]
+#[case::while_same_type_add(r#"let x = while (true): 42; | x + 1"#, "while number should allow +")]
+fn test_loop_same_type_arithmetic_ok(#[case] code: &str, #[case] description: &str) {
+    let result = check_types(code);
+    assert!(result.is_empty(), "{}: {:?}", description, result);
+}
+
+// Match Union Type Tests (correct mq syntax)
+
+#[test]
+fn test_match_union_type_propagation() {
+    let result = check_types(r#"let x = match (42): | 0: "zero" | 1: 100 | _: 200 end | x + 1"#);
+    assert!(
+        !result.is_empty(),
+        "match with union type (string|number) should fail with +: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_match_same_type_arithmetic_ok() {
+    let result = check_types(r#"let x = match (42): | 0: 0 | 1: 100 | _: 200 end | x + 1"#);
+    assert!(
+        result.is_empty(),
+        "match with same number type should allow +: {:?}",
+        result
+    );
+}
