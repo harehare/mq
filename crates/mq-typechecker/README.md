@@ -1,17 +1,10 @@
 <h1 align="center">mq-typechecker</h1>
 
+> [!IMPORTANT]
+> This crate is currently **under active development**. The type inference and checking features are experimental, and the API or behavior may change without notice. Use in production environments is not recommended.
+
 Type inference and checking for the mq language.
 
-## Features
-
-- **Automatic Type Inference**: No type annotations required - types are inferred automatically
-- **Hindley-Milner Algorithm**: Robust and proven type inference algorithm with constraint-based unification
-- **HIR Integration**: Works seamlessly with mq's High-level Internal Representation
-- **Error Collection**: Reports multiple type errors in a single pass
-- **Detailed Error Messages**: Clear and actionable type error messages with source locations (line, column, span)
-- **Readable Type Names**: Type errors display resolved type names (e.g., "number", "string") instead of raw type variables
-- **Builtin Type Signatures**: Comprehensive type signatures for 100+ builtin functions and operators
-- **User-Defined Function Type Checking**: Detects argument type mismatches, arity errors, and return type propagation errors
 
 ## Usage
 
@@ -59,15 +52,34 @@ if errors.is_empty() {
 - `{K: V}`: Dictionary with keys of type K and values of type V
 - `(T1, T2, ..., Tn) -> R`: Function taking arguments T1..Tn and returning R
 
-### Type Inference
+### Union Types
 
-The type checker uses Hindley-Milner type inference, which means:
+When a control flow construct (such as `if`, `while`, `loop`, `foreach`, `match`, or `try/catch`) may produce values of different types depending on the branch taken, the type checker infers a **union type** — written as `T1 | T2 | ...`.
 
-1. **No annotations required**: Types are inferred from usage
-2. **Principal types**: Every expression has a most general type
-3. **Parametric polymorphism**: Functions can work with multiple types
+Union types propagate through variable bindings and pipe chains. Using a union-typed value in a context that requires a single concrete type (e.g., arithmetic) is a type error.
 
-Example:
+```mq
+// if/else with different branch types → number | string
+let x = if (cond): 42 else: "hello";;
+
+// foreach body may return different types → [number | string]
+let xs = foreach(item, arr): if (cond): item else: "default";;;
+
+// loop body with different branch types → number | string
+let y = loop: if (cond): 1 else: "done";;;
+
+// match arms with different types → number | string
+let z = match (val): | 0: "zero" | _: 1 end;
+
+// try/catch with different types → number | string
+let r = try: 42 catch: "error";;
+
+// Type error: union-typed variable used in arithmetic
+x + 1
+// Error: no matching overload for +(number | string, number)
+```
+
+### Example:
 
 ```mq
 def identity(x): x;

@@ -77,7 +77,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
 
     // Use a two-pass approach to ensure literals have concrete types before operators use them
 
-    // Pass 1: Assign types to literals, variables, and simple constructs
+    // Assign types to literals, variables, and simple constructs
     // This ensures base types are established first
     for (symbol_id, symbol) in hir.symbols() {
         // Skip builtin and module symbols to avoid type checking their implementations
@@ -102,7 +102,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
         }
     }
 
-    // Pass 2: Set up piped inputs before processing operators/calls
+    // Set up piped inputs before processing operators/calls
     // Root-level symbols (parent=None, not builtin/module) form an implicit pipe chain
     let root_symbols: Vec<SymbolId> = hir
         .symbols()
@@ -118,7 +118,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
         ctx.set_piped_input(root_symbols[i], prev_ty);
     }
 
-    // Pass 3: Process all other symbols (operators, calls, etc.) except Block
+    // Process all other symbols (operators, calls, etc.) except Block
     // These can now reference the concrete types from pass 1 and piped inputs from pass 2
     // Process in reverse order so children (higher IDs) are typed before parents (lower IDs)
     let pass3_symbols: Vec<(SymbolId, SymbolKind)> = hir
@@ -152,7 +152,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
         generate_symbol_constraints(hir, symbol_id, kind, ctx);
     }
 
-    // Pass 4: Process Block symbols and Function body pipe chains
+    // Process Block symbols and Function body pipe chains
     // Children are now typed, so we can thread output types through the chain
     for (symbol_id, symbol) in hir.symbols() {
         if hir.is_builtin_symbol(symbol) || is_module_symbol(hir, symbol, &module_source_ids) {
