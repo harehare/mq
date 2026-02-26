@@ -28,10 +28,6 @@ pub fn register_all(ctx: &mut InferenceContext) {
     register_file_io(ctx);
 }
 
-// =============================================================================
-// Helper functions
-// =============================================================================
-
 /// Registers multiple builtins with the same type signature.
 fn register_many(ctx: &mut InferenceContext, names: &[&str], params: Vec<Type>, ret: Type) {
     for name in names {
@@ -72,10 +68,6 @@ fn register_none_propagation_binary(ctx: &mut InferenceContext, names: &[&str]) 
         register_binary(ctx, name, Type::None, Type::None, Type::None);
     }
 }
-
-// =============================================================================
-// Category registration functions
-// =============================================================================
 
 /// Arithmetic operators: +, -, *, /, %, ^, add, sub, mul, div, mod, pow
 fn register_arithmetic(ctx: &mut InferenceContext) {

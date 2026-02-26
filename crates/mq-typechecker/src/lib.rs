@@ -53,7 +53,6 @@ pub enum TypeError {
         span: Option<miette::SourceSpan>,
         location: Option<(u32, usize)>,
     },
-
     #[error("Cannot unify types: {left} and {right}")]
     #[diagnostic(code(typechecker::unification_error))]
     #[allow(dead_code)]
@@ -64,7 +63,6 @@ pub enum TypeError {
         span: Option<miette::SourceSpan>,
         location: Option<(u32, usize)>,
     },
-
     #[error("Occurs check failed: type variable {var} occurs in {ty}")]
     #[diagnostic(code(typechecker::occurs_check))]
     #[allow(dead_code)]
@@ -75,7 +73,6 @@ pub enum TypeError {
         span: Option<miette::SourceSpan>,
         location: Option<(u32, usize)>,
     },
-
     #[error("Undefined symbol: {name}")]
     #[diagnostic(code(typechecker::undefined_symbol))]
     #[allow(dead_code)]
@@ -85,7 +82,6 @@ pub enum TypeError {
         span: Option<miette::SourceSpan>,
         location: Option<(u32, usize)>,
     },
-
     #[error("Wrong number of arguments: expected {expected}, found {found}")]
     #[diagnostic(code(typechecker::wrong_arity))]
     #[allow(dead_code)]
@@ -96,11 +92,9 @@ pub enum TypeError {
         span: Option<miette::SourceSpan>,
         location: Option<(u32, usize)>,
     },
-
     #[error("Type variable not found: {0}")]
     #[diagnostic(code(typechecker::type_var_not_found))]
     TypeVarNotFound(String),
-
     #[error("Internal error: {0}")]
     #[diagnostic(code(typechecker::internal_error))]
     Internal(String),
@@ -143,7 +137,6 @@ impl TypeChecker {
         // Create inference context
         let mut ctx = infer::InferenceContext::new();
 
-        // Generate builtin type signatures
         builtin::register_all(&mut ctx);
 
         // Generate constraints from HIR (collects errors internally)
@@ -206,7 +199,6 @@ impl TypeChecker {
                 let all_concrete = resolved_operands.iter().all(|ty| !ty.is_var());
                 let has_union = resolved_operands.iter().any(|ty| ty.is_union());
 
-                // Check if any operand is a union type - this is an error
                 if has_union {
                     let args_str = resolved_operands
                         .iter()
