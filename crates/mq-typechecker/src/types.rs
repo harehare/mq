@@ -68,11 +68,11 @@ impl Type {
                 _ => normalized.push(ty),
             }
         }
-        
+
         // Remove duplicates
         normalized.sort_by(|a, b| format!("{:?}", a).cmp(&format!("{:?}", b)));
         normalized.dedup();
-        
+
         // If only one type remains, return it directly
         if normalized.len() == 1 {
             normalized.into_iter().next().unwrap()
@@ -132,9 +132,7 @@ impl Type {
                 vars.extend(ret.free_vars());
                 vars
             }
-            Type::Union(types) => {
-                types.iter().flat_map(|t| t.free_vars()).collect()
-            }
+            Type::Union(types) => types.iter().flat_map(|t| t.free_vars()).collect(),
             _ => Vec::new(),
         }
     }
@@ -206,12 +204,16 @@ impl Type {
             | (Type::Markdown, Type::Markdown) => Some(100),
 
             // Union types: take the best match among all variants, but penalize
-            (Type::Union(types), other) => {
-                types.iter().filter_map(|t| t.match_score(other)).max().map(|s| s.saturating_sub(15))
-            }
-            (other, Type::Union(types)) => {
-                types.iter().filter_map(|t| other.match_score(t)).max().map(|s| s.saturating_sub(15))
-            }
+            (Type::Union(types), other) => types
+                .iter()
+                .filter_map(|t| t.match_score(other))
+                .max()
+                .map(|s| s.saturating_sub(15)),
+            (other, Type::Union(types)) => types
+                .iter()
+                .filter_map(|t| other.match_score(t))
+                .max()
+                .map(|s| s.saturating_sub(15)),
 
             // Type variables get low score (prefer concrete types)
             (Type::Var(_), _) | (_, Type::Var(_)) => Some(10),

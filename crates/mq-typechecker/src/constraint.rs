@@ -1111,7 +1111,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                     // Check if branches have different concrete types
                     let resolved: Vec<Type> = branch_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
                     let concrete: Vec<&Type> = resolved.iter().filter(|ty| !ty.is_var()).collect();
-                    
+
                     // Check if all concrete types are the same
                     let all_same = if concrete.len() >= 2 {
                         concrete
@@ -1258,7 +1258,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                     // Check if arms have different concrete types (heterogeneous match)
                     let resolved: Vec<Type> = arm_body_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
                     let concrete: Vec<&Type> = resolved.iter().filter(|ty| !ty.is_var()).collect();
-                    
+
                     // Check if all concrete types are the same
                     let all_same = if concrete.len() >= 2 {
                         concrete
