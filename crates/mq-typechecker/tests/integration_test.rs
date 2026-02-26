@@ -108,30 +108,13 @@ fn test_conditionals() {
 #[test]
 fn test_pattern_matching() {
     assert!(
-        check_types(
-            r#"
-        match 42:
-            case 0: "zero"
-            case 1: "one"
-            case _: "other"
-        ;
-    "#
-        )
-        .is_empty()
+        check_types(r#"match (42): | 0: "zero" | 1: "one" | _: "other" end"#).is_empty()
     );
 }
 
 #[test]
 fn test_match_different_types_creates_union() {
-    let result = check_types(
-        r#"
-        match 42:
-            case 0: "zero"
-            case 1: 100
-            case _: true
-        ;
-    "#,
-    );
+    let result = check_types(r#"match (42): | 0: "zero" | 1: 100 | _: true end"#);
     assert!(
         result.is_empty(),
         "match with different types should create a union type: {:?}",
@@ -143,14 +126,7 @@ fn test_match_different_types_creates_union() {
 // #[test]
 // fn test_match_union_with_arithmetic() {
 //     let result = check_types(
-//         r#"
-//         let x = match 42:
-//             case 0: "zero"
-//             case 1: 100
-//             case _: 200
-//         ;
-//         | x + 1
-//     "#
+//         r#"let x = match (42): | 0: "zero" | 1: 100 | _: 200 end | x + 1"#
 //     );
 //     assert!(
 //         !result.is_empty(),
@@ -272,14 +248,7 @@ fn test_nested_conditionals() {
 fn test_complex_patterns() {
     assert!(
         check_types(
-            r#"
-        match [1, 2, 3]:
-            case []: "empty"
-            case [x]: "single"
-            case [x, y]: "pair"
-            case _: "many"
-        ;
-    "#
+            r#"match ([1, 2, 3]): | []: "empty" | [x]: "single" | [x, y]: "pair" | _: "many" end"#
         )
         .is_empty()
     );
