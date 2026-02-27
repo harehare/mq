@@ -175,7 +175,7 @@ steps:
 Language bindings are available for the following programming languages:
 
 - [mq_elixir](https://github.com/harehare/mq_elixir)
-- [mq-python](https://github.com/harehare/mq/blob/main/crates/mq-python)
+- [mq-python](https://github.com/harehare/mq-python)
 - [mq-ruby](https://github.com/harehare/mq-ruby)
 
 ## Usage
@@ -198,8 +198,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -A, --aggregate
