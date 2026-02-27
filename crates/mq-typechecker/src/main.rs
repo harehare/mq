@@ -28,8 +28,6 @@ fn main() -> ExitCode {
     run().unwrap_or_else(|exit_code| exit_code)
 }
 
-/// Runs the type checker. Returns `Ok(ExitCode::SUCCESS)` on success,
-/// `Err(ExitCode::FAILURE)` on type errors or I/O errors.
 fn run() -> Result<ExitCode, ExitCode> {
     let cli = Cli::parse();
     let mut w = BufWriter::new(io::stderr());

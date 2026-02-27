@@ -149,15 +149,19 @@ fn test_special_number_functions(#[case] code: &str, #[case] should_succeed: boo
     );
 }
 
-// ============================================================================
-// STRING FUNCTIONS
-// ============================================================================
-
 #[rstest]
 #[case::downcase("downcase(\"HELLO\")", true)]
 #[case::upcase("upcase(\"hello\")", true)]
 #[case::trim("trim(\"  hello  \")", true)]
 #[case::downcase_number("downcase(42)", false)] // Should fail: wrong type
+#[case::rtrim("rtrim(\"  hello  \")", true)]
+#[case::rindex("rindex(\"hello world hello\", \"hello\")", true)]
+#[case::capture("capture(\"hello 42\", \"(?P<word>\\\\w+)\")", true)]
+#[case::is_regex_match("is_regex_match(\"hello123\", \"[0-9]+\")", true)]
+#[case::base64url("base64url(\"hello\")", true)]
+#[case::base64urld("base64urld(\"aGVsbG8=\")", true)]
+#[case::ltrim_number("ltrim(42)", false)]
+#[case::rtrim_number("rtrim(42)", false)]
 fn test_string_case_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(
@@ -409,8 +413,6 @@ fn test_pipe_type_propagation(#[case] code: &str, #[case] should_succeed: bool) 
 }
 
 // Type Error Cases
-
-// --- Arithmetic error cases ---
 #[rstest]
 #[case::add_number_string("1 + \"string\"", false)] // number + string is invalid
 #[case::add_bool_number("true + 1", false)] // bool + number is invalid
@@ -432,7 +434,6 @@ fn test_arithmetic_type_errors(#[case] code: &str, #[case] should_succeed: bool)
     );
 }
 
-// --- Comparison error cases ---
 #[rstest]
 #[case::lt_string_number("\"a\" < 1", false)] // mixed types
 #[case::gt_number_string("1 > \"a\"", false)] // mixed types
@@ -449,7 +450,6 @@ fn test_comparison_type_errors(#[case] code: &str, #[case] should_succeed: bool)
     );
 }
 
-// --- Logical error cases ---
 #[rstest]
 #[case::not_number("!42", false)] // number is not bool
 fn test_logical_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
@@ -463,7 +463,6 @@ fn test_logical_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
     );
 }
 
-// --- Function arity/type error cases ---
 #[rstest]
 #[case::abs_string("abs(\"not a number\")", false)] // wrong argument type
 #[case::downcase_number("downcase(42)", false)] // wrong argument type
@@ -484,7 +483,6 @@ fn test_function_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
     );
 }
 
-// --- Pipe type error cases ---
 #[rstest]
 #[case::number_to_upcase("42 | upcase", false)] // number piped to string function
 #[case::number_to_trim("42 | trim", false)] // number piped to string function
@@ -501,7 +499,6 @@ fn test_pipe_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
     );
 }
 
-// --- Piped function calls (pipe value as implicit first argument) ---
 #[rstest]
 #[case::piped_join("[\"a\", \"b\"] | join(\",\")", true)] // array piped as first arg to join
 #[case::piped_split("\"a,b,c\" | split(\",\")", true)] // string piped as first arg to split
@@ -515,6 +512,230 @@ fn test_pipe_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::piped_join_wrong_type("42 | join(\",\")", false)] // number piped to join (expects array)
 #[case::piped_split_wrong_type("42 | split(\",\")", false)] // number piped to split (expects string)
 fn test_piped_function_calls(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// Collection Functions
+
+#[rstest]
+#[case::first_array("first([1, 2, 3])", true)]
+#[case::last_array("last([1, 2, 3])", true)]
+#[case::first_string("first(\"hello\")", true)]
+#[case::last_string("last(\"hello\")", true)]
+#[case::contains_string("contains(\"hello world\", \"world\")", true)]
+#[case::contains_array("contains([1, 2, 3], 2)", true)]
+#[case::in_array("in([1, 2, 3], 1)", true)]
+fn test_collection_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// Higher-Order Collection Functions
+
+#[rstest]
+#[case::map_array("map([1, 2, 3], fn(x): x + 1;)", true)]
+#[case::filter_array("filter([1, 2, 3], fn(x): x > 1;)", true)]
+#[case::fold_array("fold([1, 2, 3], 0, fn(acc, x): acc + x;)", true)]
+#[case::sort_by_array("sort_by([1, 2, 3], fn(x): x;)", true)]
+#[case::flat_map_array("flat_map([1, 2, 3], fn(x): [x];)", true)]
+fn test_higher_order_collection_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// Type Check Functions
+
+#[rstest]
+#[case::is_none("is_none(42)", true)]
+#[case::is_array("is_array([1,2,3])", true)]
+#[case::is_dict("is_dict({\"a\": 1})", true)]
+#[case::is_string("is_string(\"hello\")", true)]
+#[case::is_number("is_number(42)", true)]
+#[case::is_bool("is_bool(true)", true)]
+#[case::is_empty_string("is_empty(\"\")", true)]
+#[case::is_empty_array("is_empty([])", true)]
+fn test_type_check_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// Utility Functions
+
+#[rstest]
+#[case::coalesce("coalesce(1, 2)", true)]
+#[case::error_func("error(\"message\")", true)]
+#[case::halt_func("halt(1)", true)]
+#[case::all_symbols("all_symbols()", true)]
+#[case::get_variable("get_variable(\"key\")", true)]
+#[case::set_variable("set_variable(\"key\", \"value\")", true)]
+#[case::intern("intern(\"symbol\")", true)]
+#[case::is_debug_mode("is_debug_mode()", true)]
+#[case::breakpoint("breakpoint()", true)]
+#[case::assert_func("assert(42, 42)", true)]
+#[case::negate_func("negate(5)", true)]
+#[case::pow_func("pow(2, 8)", true)]
+#[case::convert_at_operator("\"hello\" @ :text", true)]
+#[case::convert_func("convert(\"hello\", :text)", true)]
+fn test_utility_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// Numeric Bit-Shift Functions
+
+#[rstest]
+#[case::shift_left_numbers("shift_left(3, 1)", true)]
+#[case::shift_right_numbers("shift_right(8, 2)", true)]
+#[case::shift_left_wrong_second_arg("shift_left(\"hello\", \"str\")", false)]
+#[case::shift_right_wrong_second_arg("shift_right(\"hello\", \"str\")", false)]
+fn test_bitshift_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// Markdown Type Check Functions
+
+#[rstest]
+#[case::is_h("to_markdown(\"# hello\") | is_h", true)]
+#[case::is_p("to_markdown(\"hello\") | is_p", true)]
+#[case::is_code("to_markdown(\"hello\") | is_code", true)]
+#[case::is_code_block("to_markdown(\"hello\") | is_code_block", true)]
+#[case::is_code_inline("to_markdown(\"hello\") | is_code_inline", true)]
+#[case::is_em("to_markdown(\"hello\") | is_em", true)]
+#[case::is_strong("to_markdown(\"hello\") | is_strong", true)]
+#[case::is_link("to_markdown(\"hello\") | is_link", true)]
+#[case::is_image("to_markdown(\"hello\") | is_image", true)]
+#[case::is_list("to_markdown(\"hello\") | is_list", true)]
+#[case::is_list_item("to_markdown(\"hello\") | is_list_item", true)]
+#[case::is_table("to_markdown(\"hello\") | is_table", true)]
+#[case::is_table_row("to_markdown(\"hello\") | is_table_row", true)]
+#[case::is_table_cell("to_markdown(\"hello\") | is_table_cell", true)]
+#[case::is_blockquote("to_markdown(\"hello\") | is_blockquote", true)]
+#[case::is_hr("to_markdown(\"hello\") | is_hr", true)]
+#[case::is_html("to_markdown(\"hello\") | is_html", true)]
+#[case::is_text("to_markdown(\"hello\") | is_text", true)]
+#[case::is_softbreak("to_markdown(\"hello\") | is_softbreak", true)]
+#[case::is_hardbreak("to_markdown(\"hello\") | is_hardbreak", true)]
+#[case::is_task_list_item("to_markdown(\"hello\") | is_task_list_item", true)]
+#[case::is_footnote("to_markdown(\"hello\") | is_footnote", true)]
+#[case::is_footnote_ref("to_markdown(\"hello\") | is_footnote_ref", true)]
+#[case::is_strikethrough("to_markdown(\"hello\") | is_strikethrough", true)]
+#[case::is_math("to_markdown(\"hello\") | is_math", true)]
+#[case::is_math_inline("to_markdown(\"hello\") | is_math_inline", true)]
+#[case::is_toml("to_markdown(\"hello\") | is_toml", true)]
+#[case::is_yaml("to_markdown(\"hello\") | is_yaml", true)]
+#[case::is_h_level("to_markdown(\"# hello\") | is_h_level(1)", true)]
+#[case::is_h_level_wrong_type("is_h_level(42, \"str\")", false)]
+fn test_markdown_type_check_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// Markdown Conversion Functions
+
+#[rstest]
+#[case::to_markdown("to_markdown(\"hello\")", true)]
+#[case::to_text("to_markdown(\"hello\") | to_text", true)]
+#[case::to_html("to_markdown(\"hello\") | to_html", true)]
+#[case::to_markdown_string("to_markdown(\"hello\") | to_markdown_string", true)]
+#[case::to_code("to_markdown(\"hello\") | to_code(\"rust\")", true)]
+#[case::to_code_inline("to_markdown(\"hello\") | to_code_inline", true)]
+#[case::to_h("to_markdown(\"hello\") | to_h(1)", true)]
+#[case::to_hr("to_hr()", true)]
+#[case::to_image("to_image(\"alt\", \"url\", \"title\")", true)]
+#[case::to_link("to_link(\"text\", \"url\", \"title\")", true)]
+#[case::to_md_list("to_markdown(\"hello\") | to_md_list(1)", true)]
+#[case::to_md_name("to_markdown(\"hello\") | to_md_name", true)]
+#[case::to_md_table_cell("to_md_table_cell(\"hello\", 0, 0)", true)]
+#[case::to_md_table_row("to_markdown(\"hello\") | to_md_table_row", true)]
+#[case::to_md_text("to_markdown(\"hello\") | to_md_text", true)]
+#[case::to_math("to_markdown(\"hello\") | to_math", true)]
+#[case::to_math_inline("to_markdown(\"hello\") | to_math_inline", true)]
+#[case::to_mdx("to_mdx(\"hello\")", true)]
+#[case::to_strong("to_markdown(\"hello\") | to_strong", true)]
+#[case::to_em("to_markdown(\"hello\") | to_em", true)]
+fn test_markdown_conversion_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// Markdown Manipulation Functions
+
+#[rstest]
+#[case::attr("to_markdown(\"[link](url)\") | attr(\"href\")", true)]
+#[case::set_attr("to_markdown(\"[link](url)\") | set_attr(\"href\", \"new\")", true)]
+#[case::get_title("to_markdown(\"[link](url)\") | get_title", true)]
+#[case::get_url("to_markdown(\"[link](url)\") | get_url", true)]
+#[case::set_check("to_markdown(\"- [ ] task\") | set_check(true)", true)]
+#[case::set_list_ordered("to_markdown(\"- item\") | set_list_ordered(false)", true)]
+#[case::set_code_block_lang("to_markdown(\"```\\ncode\\n```\") | set_code_block_lang(\"rust\")", true)]
+#[case::set_ref("to_markdown(\"[link][ref]\") | set_ref(\"ref\")", true)]
+fn test_markdown_manipulation_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// Dict/Array Constructor Functions
+
+#[rstest]
+#[case::dict_nullary("dict()", true)]
+#[case::array_func("array(42)", true)]
+fn test_constructor_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),

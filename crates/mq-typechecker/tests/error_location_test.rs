@@ -45,12 +45,7 @@ fn test_binary_op_type_error_location() {
     let code = r#"1 + "hello""#;
     let errors = check_types(code);
 
-    println!("\n=== Binary Op Error Location ===");
     assert!(!errors.is_empty(), "Expected type error for number + string");
-    for e in &errors {
-        println!("Error: {}", e);
-        println!("Error details: {:?}", e);
-    }
 }
 
 #[test]
@@ -60,9 +55,8 @@ fn test_error_message_readability() {
     let errors = check_types(code);
 
     assert!(!errors.is_empty(), "Expected type error");
-    let error_msg = format!("{}", errors[0]);
-    println!("Error message: {}", error_msg);
 
+    let error_msg = format!("{}", errors[0]);
     // The error message should be informative
     assert!(
         error_msg.contains("mismatch") || error_msg.contains("type") || error_msg.contains("unify"),
@@ -77,10 +71,5 @@ fn test_multiple_errors_show_locations() {
     let code = r#"1 + "two""#;
     let errors = check_types(code);
 
-    println!("Found {} errors", errors.len());
-    for (i, e) in errors.iter().enumerate() {
-        println!("Error {}: {:?}", i + 1, e);
-        println!("Error {} display: {}", i + 1, e);
-    }
     assert!(!errors.is_empty(), "Expected at least one type error");
 }
