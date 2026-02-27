@@ -50,26 +50,6 @@ build-wasm:
 build-web: build-wasm
     npm run build
 
-# Build mq-python package for Python
-[working-directory: 'crates/mq-python']
-build-python:
-    rm ../../target/wheels/* || true
-    maturin build --release --target aarch64-unknown-linux-gnu --zig
-    maturin build --release --target x86_64-unknown-linux-gnu --zig
-    maturin build --release --target aarch64-apple-darwin --zig
-    maturin build --release --target x86_64-apple-darwin --zig
-    maturin build --release --target x86_64-pc-windows-gnu --zig --features pyo3/generate-import-lib
-
-# Publish test mq-python package for Python
-[working-directory: 'crates/mq-python']
-publish-python-test: build-python
-    twine upload --repository testpypi ../../target/wheels/*
-
-# Publish mq-python package for Python
-[working-directory: 'crates/mq-python']
-publish-python: build-python
-    twine upload --repository pypi ../../target/wheels/*
-
 # Run formatting
 fmt:
     cargo fmt --all -- --check
@@ -124,4 +104,3 @@ publish:
     cp -r crates/mq-run/assets crates/mq-markdown
     cp -r crates/mq-run/assets crates/mq-repl
     cargo publish --workspace
-
