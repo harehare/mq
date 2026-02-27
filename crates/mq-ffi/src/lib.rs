@@ -245,8 +245,14 @@ pub unsafe extern "C" fn mq_eval(
                 // More sophisticated type handling could be added later.
                 c_values.push(to_c_string(value.to_string()));
             }
-            let ptr = c_values.as_mut_ptr();
-            std::mem::forget(c_values); // Prevent Rust from freeing the Vec's memory
+
+            let ptr = if c_values.is_empty() {
+                ptr::null_mut()
+            } else {
+                let p = c_values.as_mut_ptr();
+                std::mem::forget(c_values); // Prevent Rust from freeing the Vec's memory
+                p
+            };
 
             MqResult {
                 values: ptr,
@@ -638,7 +644,7 @@ mod tests {
         let result = unsafe { mq_eval(engine, code, input, format) };
 
         assert!(result.error_msg.is_null());
-        assert!(!result.values.is_null());
+        assert!(result.values.is_null());
         assert_eq!(result.values_len, 0);
 
         mq_free_result(result);
