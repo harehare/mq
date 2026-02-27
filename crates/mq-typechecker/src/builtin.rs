@@ -421,7 +421,10 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::array(Type::Number),
     );
 
-    // repeat: (a, number) -> [a]
+    // repeat: (string, number) -> string (string repetition)
+    register_binary(ctx, "repeat", Type::String, Type::Number, Type::String);
+
+    // repeat: (a, number) -> [a] (general repetition)
     let a = ctx.fresh_var();
     register_binary(ctx, "repeat", Type::Var(a), Type::Number, Type::array(Type::Var(a)));
 
@@ -431,6 +434,16 @@ fn register_array(ctx: &mut InferenceContext) {
     // contains: ([a], a) -> bool
     let a = ctx.fresh_var();
     register_binary(ctx, "contains", Type::array(Type::Var(a)), Type::Var(a), Type::Bool);
+
+    // contains: ({k: v}, k) -> bool (dict key membership)
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "contains",
+        Type::dict(Type::Var(k), Type::Var(v)),
+        Type::Var(k),
+        Type::Bool,
+    );
 
     // None propagation for array functions
     register_none_propagation_unary(ctx, &["reverse", "sort", "uniq", "compact", "flatten", "len"]);
@@ -580,12 +593,15 @@ fn register_type_checks(ctx: &mut InferenceContext) {
         register_unary(ctx, name, Type::Var(a), Type::Bool);
     }
 
-    // is_empty: (string) -> bool, ([a]) -> bool, ({k: v}) -> bool
+    // is_empty: (string) -> bool, ([a]) -> bool, ({k: v}) -> bool, (a) -> bool
     register_unary(ctx, "is_empty", Type::String, Type::Bool);
     let a = ctx.fresh_var();
     register_unary(ctx, "is_empty", Type::array(Type::Var(a)), Type::Bool);
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
     register_unary(ctx, "is_empty", Type::dict(Type::Var(k), Type::Var(v)), Type::Bool);
+    // Generic fallback for dynamically typed values (e.g., via selectors/index access)
+    let a = ctx.fresh_var();
+    register_unary(ctx, "is_empty", Type::Var(a), Type::Bool);
 }
 
 /// Collection functions: first, last, map

@@ -1220,9 +1220,9 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             if !children.is_empty() {
                 let range = get_symbol_range(hir, symbol_id);
 
-                // First child is the condition
-                let cond_ty = ctx.get_or_create_symbol_type(children[0]);
-                ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range));
+                // First child is the condition — mq is dynamically typed, so any
+                // value can be used as a condition (truthy/falsy), not just Bool.
+                let _cond_ty = ctx.get_or_create_symbol_type(children[0]);
 
                 // Subsequent children are then-branch and elif/else branches.
                 // mq is dynamically typed: branches may return different types
@@ -1249,11 +1249,19 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                         true
                     };
 
-                    if !all_same && concrete.len() >= 2 {
+                    // Check if any branch is None — in mq, `if (...): value else: None`
+                    // should not unify `value` with None; instead treat as different types.
+                    let has_none_branch = resolved.iter().any(|t| matches!(t, Type::None));
+
+                    if (!all_same && concrete.len() >= 2) || (has_none_branch && resolved.len() >= 2) {
                         // Different concrete types in branches — use Union type
                         let unique_types: Vec<Type> = concrete.into_iter().cloned().collect();
-                        let union_ty = Type::union(unique_types);
-                        ctx.set_symbol_type(symbol_id, union_ty);
+                        if unique_types.is_empty() {
+                            ctx.set_symbol_type(symbol_id, then_ty.clone());
+                        } else {
+                            let union_ty = Type::union(unique_types);
+                            ctx.set_symbol_type(symbol_id, union_ty);
+                        }
                     } else {
                         // Homogeneous or unresolved — unify all branch types
                         ctx.set_symbol_type(symbol_id, then_ty.clone());

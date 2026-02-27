@@ -85,7 +85,7 @@ settings.local.json
 
 # claude
 CLAUDE.local.md
-.claude/worktrees
+.claude/worktrees/
 
 example.html
 
@@ -96,3 +96,4 @@ example.html
 tsconfig.tsbuildinfo
 
 mutants.out
+
