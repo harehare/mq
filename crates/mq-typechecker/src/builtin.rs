@@ -661,14 +661,14 @@ fn register_collection(ctx: &mut InferenceContext) {
         Type::array(Type::Var(a)),
     );
 
-    // Generic fallback: filter(a, (a) -> bool) -> [b]
-    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    // Generic fallback: filter(a, (a) -> bool) -> [a]
+    let a = ctx.fresh_var();
     register_binary(
         ctx,
         "filter",
         Type::Var(a),
         Type::function(vec![Type::Var(a)], Type::Bool),
-        Type::array(Type::Var(b)),
+        Type::array(Type::Var(a)),
     );
 
     // fold: ([a], b, (b, a) -> b) -> b
