@@ -1,6 +1,6 @@
 //! Constraint generation for type inference.
 
-use crate::infer::{DeferredOverload, DeferredUserCall, InferenceContext};
+use crate::infer::{DeferredOverload, DeferredParameterCall, DeferredUserCall, InferenceContext};
 use crate::types::Type;
 use crate::unify::range_to_span;
 use mq_hir::{Hir, SymbolId, SymbolKind};
@@ -18,6 +18,29 @@ impl fmt::Display for Constraint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Constraint::Equal(t1, t2, _) => write!(f, "{} ~ {}", t1, t2),
+        }
+    }
+}
+
+/// Walks the HIR parent chain from `symbol_id` and returns the nearest ancestor
+/// whose kind is `SymbolKind::Function(_)`, if any.
+fn find_enclosing_function(hir: &Hir, symbol_id: SymbolId) -> Option<SymbolId> {
+    let mut current = symbol_id;
+    let mut depth = 0;
+    const MAX_DEPTH: usize = 200;
+    loop {
+        depth += 1;
+        if depth > MAX_DEPTH {
+            return None;
+        }
+        match hir.symbol(current).and_then(|s| s.parent) {
+            Some(parent) => {
+                if hir.symbol(parent).map(|s| s.is_function()).unwrap_or(false) {
+                    return Some(parent);
+                }
+                current = parent;
+            }
+            None => return None,
         }
     }
 }
@@ -1089,20 +1112,43 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                                 // Track this call for post-unification resolution.
                                 // After unification, the original function's return type
                                 // will be concrete, allowing propagation to this call site.
+                                // arg_symbol_ids records the HIR symbol IDs of the arguments
+                                // so that lambda body operators can be checked later.
+                                let arg_symbol_ids = if param_tys.len() == children.len() {
+                                    children.clone()
+                                } else {
+                                    // piped input was prepended — include a placeholder
+                                    let mut ids = vec![symbol_id]; // placeholder for piped arg
+                                    ids.extend_from_slice(&children);
+                                    ids
+                                };
                                 ctx.add_deferred_user_call(DeferredUserCall {
                                     call_symbol_id: symbol_id,
                                     def_id,
                                     fresh_param_tys: param_tys.clone(),
                                     fresh_ret_ty: ret_ty.as_ref().clone(),
                                     arg_tys,
+                                    arg_symbol_ids,
                                     range,
                                 });
                             } else {
-                                // The definition exists but isn't a function type yet
+                                // The definition exists but isn't a function type yet.
+                                // If the definition is a function parameter (higher-order call),
+                                // record the inner call so that `check_user_call_body_operators`
+                                // can propagate the concrete element type to the lambda's body.
                                 let ret_ty = Type::Var(ctx.fresh_var());
                                 let expected_func_ty = Type::function(explicit_arg_tys.clone(), ret_ty.clone());
                                 ctx.add_constraint(Constraint::Equal(func_ty, expected_func_ty, range));
                                 ctx.set_symbol_type(symbol_id, ret_ty);
+                                if def_symbol.map(|s| s.is_parameter()).unwrap_or(false)
+                                    && let Some(outer_def_id) = find_enclosing_function(hir, symbol_id)
+                                {
+                                    ctx.add_deferred_parameter_call(DeferredParameterCall {
+                                        outer_def_id,
+                                        param_sym_id: def_id,
+                                        arg_tys: explicit_arg_tys.clone(),
+                                    });
+                                }
                             }
                         } else {
                             // Resolved to a builtin - handle via overload resolution
@@ -1343,6 +1389,43 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             let children = get_children(hir, symbol_id);
 
             if !children.is_empty() {
+                // Constrain the loop variable type to the element type of the iterable.
+                // This is needed for type checking operations on the loop variable,
+                // especially when lambdas are passed as higher-order function arguments.
+                if children.len() >= 2 {
+                    let item_id = children[0]; // Variable (loop item)
+                    let iterable_id = children[1]; // Ref or Call (iterable)
+                    let item_ty = ctx.get_or_create_symbol_type(item_id);
+                    let iterable_ty = ctx.get_or_create_symbol_type(iterable_id);
+                    let resolved_iterable = ctx.resolve_type(&iterable_ty);
+                    let range = get_symbol_range(hir, symbol_id);
+
+                    match &resolved_iterable {
+                        Type::Array(elem) => {
+                            // Iterable is a concrete array - directly constrain loop variable
+                            ctx.add_constraint(Constraint::Equal(item_ty, *elem.clone(), range));
+                        }
+                        Type::String => {
+                            // String iteration yields string characters
+                            ctx.add_constraint(Constraint::Equal(item_ty, Type::String, range));
+                        }
+                        Type::Var(_) => {
+                            // Unknown iterable type: create fresh element variable,
+                            // constrain iterable = Array(elem), and item = elem.
+                            // This propagates element types through polymorphic iteration
+                            // (e.g. when the iterable is a function parameter).
+                            let elem_var = ctx.fresh_var();
+                            let elem_ty = Type::Var(elem_var);
+                            ctx.add_constraint(Constraint::Equal(iterable_ty, Type::array(elem_ty.clone()), range));
+                            ctx.add_constraint(Constraint::Equal(item_ty, elem_ty, range));
+                        }
+                        _ => {
+                            // Other types (number, bool, etc.): skip constraint to avoid
+                            // false positives for runtime-dynamic iteration.
+                        }
+                    }
+                }
+
                 let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
                 let resolved_body = ctx.resolve_type(&body_ty);
 

@@ -205,6 +205,29 @@ fn test_higher_order_functions() {
     );
 }
 
+// Nested lambda type checking: higher-order functions passing lambdas with type errors
+#[rstest]
+#[case::foreach_lambda_type_error(
+    r#"def apply_to_all(v, f): foreach (x, v): f(x);; | apply_to_all([1, 2, 3], fn(x): x + true;)"#,
+    false,
+    "lambda passed to foreach-based HOF with invalid op should fail"
+)]
+#[case::foreach_lambda_valid(
+    r#"def apply_to_all(v, f): foreach (x, v): f(x);; | apply_to_all([1, 2, 3], fn(x): x + 1;)"#,
+    true,
+    "lambda passed to foreach-based HOF with valid op should succeed"
+)]
+fn test_nested_lambda_type_checking(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: errors={:?}",
+        description,
+        result
+    );
+}
+
 #[test]
 fn test_closure_capture() {
     assert!(

@@ -538,6 +538,11 @@ impl Substitution {
         self.map.get(&var)
     }
 
+    /// Returns true if the substitution has no bindings
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
     /// Composes two substitutions
     pub fn compose(&self, other: &Substitution) -> Substitution {
         let mut result = Substitution::empty();

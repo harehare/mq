@@ -24,6 +24,22 @@ pub struct DeferredOverload {
     pub range: Option<mq_lang::Range>,
 }
 
+/// A deferred inner call to a function parameter (higher-order function pattern).
+///
+/// When a parameter `f` (with type `Var(tv_f)`) is called inside a function body,
+/// e.g. `f(x)` inside `apply_to_all(v, f)`, we track the call so that
+/// `check_user_call_body_operators` can determine the concrete element type that
+/// the lambda argument receives at the outer call site.
+#[derive(Debug, Clone)]
+pub struct DeferredParameterCall {
+    /// The enclosing function definition symbol that contains this inner call
+    pub outer_def_id: SymbolId,
+    /// The parameter symbol being called (e.g., the `f` parameter symbol)
+    pub param_sym_id: SymbolId,
+    /// The argument types at this inner call site (e.g., `[type_of_x]`)
+    pub arg_tys: Vec<Type>,
+}
+
 /// A deferred user-defined function call for post-unification type checking.
 ///
 /// After unification, the original function's return type will be resolved from
@@ -40,6 +56,9 @@ pub struct DeferredUserCall {
     pub fresh_ret_ty: Type,
     /// The actual argument types at the call site
     pub arg_tys: Vec<Type>,
+    /// The HIR symbol IDs of each argument expression (used to identify lambda arguments
+    /// for checking their body operators against call-site concrete types).
+    pub arg_symbol_ids: Vec<SymbolId>,
     /// Source range for error reporting
     pub range: Option<mq_lang::Range>,
 }
@@ -64,6 +83,8 @@ pub struct InferenceContext {
     deferred_overloads: Vec<DeferredOverload>,
     /// Deferred user-defined function calls for post-unification type checking
     deferred_user_calls: Vec<DeferredUserCall>,
+    /// Deferred inner calls to function parameters for higher-order function checking
+    deferred_parameter_calls: Vec<DeferredParameterCall>,
 }
 
 impl InferenceContext {
@@ -79,6 +100,7 @@ impl InferenceContext {
             piped_inputs: FxHashMap::default(),
             deferred_overloads: Vec::new(),
             deferred_user_calls: Vec::new(),
+            deferred_parameter_calls: Vec::new(),
         }
     }
 
@@ -130,6 +152,16 @@ impl InferenceContext {
     /// Takes all deferred user calls (consumes them)
     pub fn take_deferred_user_calls(&mut self) -> Vec<DeferredUserCall> {
         std::mem::take(&mut self.deferred_user_calls)
+    }
+
+    /// Adds a deferred parameter call (inner call to a function parameter)
+    pub fn add_deferred_parameter_call(&mut self, call: DeferredParameterCall) {
+        self.deferred_parameter_calls.push(call);
+    }
+
+    /// Returns a reference to all deferred parameter calls
+    pub fn deferred_parameter_calls(&self) -> &[DeferredParameterCall] {
+        &self.deferred_parameter_calls
     }
 
     /// Resolves the best matching overload for a function call.

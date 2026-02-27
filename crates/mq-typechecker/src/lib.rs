@@ -247,11 +247,32 @@ impl TypeChecker {
                 // This is critical for function body operators where parameter type variables
                 // must remain unresolved so check_user_call_body_operators can substitute
                 // call-site argument types per call site.
+                //
+                // However, even with type variables we can detect definitive errors:
+                // if NO overload could possibly match given the concrete operands, the
+                // operation is invalid regardless of what the type variables resolve to.
+                // For example, `x + true` where x is a Var has no valid `+` overload
+                // (since no overload accepts Bool as an argument), so it is always wrong.
                 let any_var = resolved_operands.iter().any(|ty| ty.is_var());
                 if any_var {
                     let overload_count = ctx.get_builtin_overloads(&d.op_name).map(|o| o.len()).unwrap_or(0);
                     if overload_count > 1 {
-                        next_remaining.push(d.clone());
+                        if ctx.resolve_overload(&d.op_name, &resolved_operands).is_none() {
+                            // No overload can possibly match — report error immediately.
+                            let args_str = resolved_operands
+                                .iter()
+                                .map(|t| t.display_renumbered())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            ctx.add_error(TypeError::UnificationError {
+                                left: format!("{} with arguments ({})", d.op_name, args_str),
+                                right: "no matching overload".to_string(),
+                                span: d.range.as_ref().map(unify::range_to_span),
+                                location: d.range.as_ref().map(|r| (r.start.line, r.start.column)),
+                            });
+                        } else {
+                            next_remaining.push(d.clone());
+                        }
                         continue;
                     }
                 }
@@ -392,6 +413,12 @@ impl TypeChecker {
     /// Then checks each unresolved deferred overload that belongs to the function body
     /// by applying the substitution and verifying the operator has a matching overload.
     ///
+    /// Also checks operators inside lambda arguments passed to higher-order functions.
+    /// When a lambda is passed as a function argument and called inside the function body
+    /// (e.g. via `foreach`), the lambda's parameter type is resolved from the concrete
+    /// element type of the iterable, and any type-invalid operators inside the lambda
+    /// are reported.
+    ///
     /// Operators inside control flow constructs (If/Elif/Else/While/Match/Try/Catch)
     /// are skipped because they may be guarded by runtime type checks (e.g.,
     /// `if (is_dict(v)): keys(v)`) that narrow the type beyond what static analysis sees.
@@ -422,22 +449,12 @@ impl TypeChecker {
                 continue;
             }
 
-            // Build substitution: original param var → resolved arg type
+            // Build substitution: original param type variables → resolved arg types.
+            // Uses structural matching to handle cases like Array(Var(elem)) vs Array(Number),
+            // which arise when the function body constrains a parameter via foreach iteration.
             let mut subst = types::Substitution::empty();
             for (orig_param, arg_ty) in orig_params.iter().zip(resolved_args.iter()) {
-                if let types::Type::Var(var) = orig_param {
-                    let free = arg_ty.free_vars();
-                    if !free.contains(var) {
-                        subst.insert(*var, arg_ty.clone());
-                    } else if matches!(arg_ty, types::Type::Function(_, _)) {
-                        // Self-referential (e.g., function receives its own type via pipe).
-                        // Use a generic function type placeholder so operator checks can
-                        // detect mismatches (e.g., function_type + number → no overload).
-                        let p = types::Type::Var(ctx.fresh_var());
-                        let r = types::Type::Var(ctx.fresh_var());
-                        subst.insert(*var, types::Type::function(vec![p], r));
-                    }
-                }
+                Self::extract_structural_subst(orig_param, arg_ty, &mut subst, ctx);
             }
 
             // Check each unresolved overload that belongs to this function's body
@@ -484,7 +501,148 @@ impl TypeChecker {
                     });
                 }
             }
+
+            // Check operators inside lambda arguments via DeferredParameterCalls.
+            //
+            // When a lambda `fn(x): x + true;` is passed to a higher-order function
+            // (e.g. `apply_to_all([1,2,3], f)`), the lambda is called inside with
+            // each array element. The DeferredParameterCalls collected during constraint
+            // generation record the argument types of those inner calls (e.g. the foreach
+            // variable `x`). Resolving those arg types with the main substitution
+            // yields the concrete element type (e.g. `Number`), which becomes the
+            // lambda's parameter substitution for checking its body operators.
+            let deferred_param_calls = ctx.deferred_parameter_calls().to_vec();
+            // Collect outer function's parameter symbol IDs to match against inner calls
+            let outer_param_syms: Vec<SymbolId> = Self::get_function_params(hir, call.def_id);
+            for param_call in &deferred_param_calls {
+                if param_call.outer_def_id != call.def_id {
+                    continue;
+                }
+
+                // Map the called parameter to its index in the outer function's param list
+                let param_index = match outer_param_syms.iter().position(|&s| s == param_call.param_sym_id) {
+                    Some(i) => i,
+                    None => continue,
+                };
+
+                // The corresponding call-site argument must be a lambda (Function type)
+                let lambda_tps = match resolved_args.get(param_index) {
+                    Some(types::Type::Function(p, _)) => p.clone(),
+                    _ => continue,
+                };
+
+                if lambda_tps.is_empty() {
+                    continue;
+                }
+
+                // Build lambda_subst: lambda_param_i → concrete call arg type
+                // The concrete type comes from resolving the inner call's arg type
+                // (which is linked to the foreach variable) via the main substitution.
+                let mut lambda_subst = types::Substitution::empty();
+                for (inner_arg_ty, lambda_tp) in param_call.arg_tys.iter().zip(lambda_tps.iter()) {
+                    let concrete = ctx.resolve_type(inner_arg_ty).apply_subst(&subst);
+                    if let types::Type::Var(v) = lambda_tp
+                        && !concrete.is_var()
+                    {
+                        lambda_subst.insert(*v, concrete);
+                    }
+                }
+
+                if lambda_subst.is_empty() {
+                    continue;
+                }
+
+                // Get the lambda's HIR symbol ID to scope the operator search
+                let lambda_sym_id = match call.arg_symbol_ids.get(param_index) {
+                    Some(&id) => id,
+                    None => continue,
+                };
+
+                // Check deferred overloads inside the lambda body
+                for d in &unresolved_overloads {
+                    if !Self::is_symbol_inside_function(hir, d.symbol_id, lambda_sym_id) {
+                        continue;
+                    }
+
+                    let substituted_operands: Vec<types::Type> = d
+                        .operand_tys
+                        .iter()
+                        .map(|ty| ctx.resolve_type(ty).apply_subst(&lambda_subst))
+                        .collect();
+
+                    if substituted_operands.iter().any(|ty| ty.is_var()) {
+                        continue;
+                    }
+
+                    if ctx.resolve_overload(&d.op_name, &substituted_operands).is_none() {
+                        let args_str = substituted_operands
+                            .iter()
+                            .map(|t| t.display_renumbered())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        ctx.add_error(TypeError::UnificationError {
+                            left: format!("{} with arguments ({})", d.op_name, args_str),
+                            right: "no matching overload".to_string(),
+                            span: d.range.as_ref().map(unify::range_to_span),
+                            location: d.range.as_ref().map(|r| (r.start.line, r.start.column)),
+                        });
+                    }
+                }
+            }
         }
+    }
+
+    /// Extracts type-variable-to-concrete-type bindings from a structural match between
+    /// an original parameter type and a resolved argument type.
+    ///
+    /// This extends the simple `Var → arg` substitution to handle composite types produced
+    /// by the Foreach constraint, such as `Array(Var(elem))` appearing as a parameter type
+    /// when the function iterates over the parameter.  For example:
+    ///
+    /// - `Var(x)` vs `Array(Number)` → `x → Array(Number)`
+    /// - `Array(Var(elem))` vs `Array(Number)` → `elem → Number`
+    ///
+    /// Function types are intentionally NOT recursed into here because they represent
+    /// lambda arguments that are handled separately in the lambda-body checking phase.
+    fn extract_structural_subst(
+        orig: &types::Type,
+        arg: &types::Type,
+        subst: &mut types::Substitution,
+        ctx: &mut infer::InferenceContext,
+    ) {
+        match orig {
+            types::Type::Var(var) => {
+                let free = arg.free_vars();
+                if !free.contains(var) {
+                    subst.insert(*var, arg.clone());
+                } else if matches!(arg, types::Type::Function(_, _)) {
+                    // Self-referential function argument — use a generic placeholder.
+                    let p = types::Type::Var(ctx.fresh_var());
+                    let r = types::Type::Var(ctx.fresh_var());
+                    subst.insert(*var, types::Type::function(vec![p], r));
+                }
+            }
+            types::Type::Array(orig_elem) => {
+                if let types::Type::Array(arg_elem) = arg {
+                    Self::extract_structural_subst(orig_elem, arg_elem, subst, ctx);
+                }
+            }
+            // Function types are handled by the lambda-body checking phase — skip here.
+            _ => {}
+        }
+    }
+
+    /// Returns the HIR symbol IDs of all parameter symbols for a function definition.
+    fn get_function_params(hir: &Hir, func_def_id: SymbolId) -> Vec<SymbolId> {
+        hir.symbols()
+            .filter_map(|(id, sym)| {
+                if sym.parent == Some(func_def_id) && sym.is_parameter() {
+                    Some(id)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Checks if a symbol is inside a function body by walking the HIR parent chain.
