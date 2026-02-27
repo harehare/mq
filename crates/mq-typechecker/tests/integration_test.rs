@@ -107,9 +107,7 @@ fn test_conditionals() {
 
 #[test]
 fn test_pattern_matching() {
-    assert!(
-        check_types(r#"match (42): | 0: "zero" | 1: "one" | _: "other" end"#).is_empty()
-    );
+    assert!(check_types(r#"match (42): | 0: "zero" | 1: "one" | _: "other" end"#).is_empty());
 }
 
 #[test]
@@ -247,10 +245,7 @@ fn test_nested_conditionals() {
 #[test]
 fn test_complex_patterns() {
     assert!(
-        check_types(
-            r#"match ([1, 2, 3]): | []: "empty" | [x]: "single" | [x, y]: "pair" | _: "many" end"#
-        )
-        .is_empty()
+        check_types(r#"match ([1, 2, 3]): | []: "empty" | [x]: "single" | [x, y]: "pair" | _: "many" end"#).is_empty()
     );
 }
 
