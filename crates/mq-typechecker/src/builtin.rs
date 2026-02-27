@@ -737,18 +737,10 @@ fn register_io(ctx: &mut InferenceContext) {
     register_nullary(ctx, "input", Type::String);
 }
 
-/// Utility functions: coalesce, convert
+/// Utility functions: coalesce
 fn register_utility(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_binary(ctx, "coalesce", Type::Var(a), Type::Var(a), Type::Var(a));
-
-    // convert: (a, b) -> c  (the @ operator, e.g., "text" @ :html)
-    // Registered under both "convert" (for function call syntax) and "@" (for operator syntax)
-    // Return type is polymorphic because it depends on the runtime format symbol
-    for name in ["convert", "@"] {
-        let (a, b, c) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
-        register_binary(ctx, name, Type::Var(a), Type::Var(b), Type::Var(c));
-    }
 }
 
 /// Markdown-specific functions

@@ -358,6 +358,9 @@ fn test_macro_with_multiple_params() {
 #[case::string_plus_number(r#"def greet(): "hello"; | greet() + 1"#, true)]
 #[case::string_minus_number(r#"def greet(): "hello"; | greet() - 1"#, false)]
 #[case::recursive_factorial("def factorial(n): if (n == 0): 1 else: n * factorial(n - 1);;", true)]
+#[case::single_param_type_mismatch(r#"def a(v): v + 1; | a(true)"#, false)]
+#[case::single_param_correct_type(r#"def a(v): v + 1; | a(1)"#, true)]
+#[case::reversed_operand_mismatch(r#"def f(v): 1 + v; | f(true)"#, false)]
 fn test_user_function_type_checking(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(

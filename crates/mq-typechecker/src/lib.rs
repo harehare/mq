@@ -195,7 +195,6 @@ impl TypeChecker {
             for d in &remaining {
                 let resolved_operands: Vec<types::Type> = d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
 
-                let all_vars = resolved_operands.iter().all(|ty| ty.is_var());
                 let all_concrete = resolved_operands.iter().all(|ty| !ty.is_var());
                 let has_union = resolved_operands.iter().any(|ty| ty.is_union());
 
@@ -243,9 +242,13 @@ impl TypeChecker {
                     continue;
                 }
 
-                // Skip resolution when all operands are still type variables
-                // and there are multiple overloads — we can't determine the correct one
-                if all_vars {
+                // Skip resolution when any operand is still a type variable
+                // and there are multiple overloads — we can't determine the correct one.
+                // This is critical for function body operators where parameter type variables
+                // must remain unresolved so check_user_call_body_operators can substitute
+                // call-site argument types per call site.
+                let any_var = resolved_operands.iter().any(|ty| ty.is_var());
+                if any_var {
                     let overload_count = ctx.get_builtin_overloads(&d.op_name).map(|o| o.len()).unwrap_or(0);
                     if overload_count > 1 {
                         next_remaining.push(d.clone());
@@ -292,10 +295,10 @@ impl TypeChecker {
                     let resolved_operands: Vec<types::Type> =
                         d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
 
-                    // Don't resolve when all operands are still type variables
+                    // Don't resolve when any operand is still a type variable
                     // and there are multiple overloads — store back for user call body checking
-                    let all_vars_best = resolved_operands.iter().all(|ty| ty.is_var());
-                    if all_vars_best {
+                    let any_var_best = resolved_operands.iter().any(|ty| ty.is_var());
+                    if any_var_best {
                         let overload_count = ctx.get_builtin_overloads(&d.op_name).map(|o| o.len()).unwrap_or(0);
                         if overload_count > 1 {
                             ctx.add_deferred_overload(d.clone());
