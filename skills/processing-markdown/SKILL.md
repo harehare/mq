@@ -94,6 +94,30 @@ mq -A 'pluck(.code.value)' *.md         # Collect all code values
 mq -S 's"\n---\n"' 'identity()' *.md    # Merge files with separator
 ```
 
+## Important: HTML Input and Selectors
+
+When using `-I html`, mq first converts HTML to Markdown, then queries the resulting Markdown AST. **You must always use Markdown selectors, not HTML element names.**
+
+```bash
+# WRONG: HTML element selectors do NOT work
+curl -s https://example.com | mq -I html '.p | to_text()'        # Error: Unknown selector `.p`
+curl -s https://example.com | mq -I html '.a | to_text()'        # Error: Unknown selector `.a`
+curl -s https://example.com | mq -I html '.div | to_text()'      # Error: Unknown selector `.div`
+
+# CORRECT: Use Markdown selectors regardless of input format
+curl -s https://example.com | mq -I html '.text | to_text()'     # Extract text nodes
+curl -s https://example.com | mq -I html '.link | to_text()'     # Extract links (HTML <a> → .link)
+curl -s https://example.com | mq -I html '.h | to_text()'        # Extract headings (HTML <h1>-<h6> → .h)
+curl -s https://example.com | mq -I html '.code | to_text()'     # Extract code blocks (HTML <pre><code> → .code)
+curl -s https://example.com | mq -I html '.image'                # Extract images (HTML <img> → .image)
+curl -s https://example.com | mq -I html '.strong'               # Extract bold text (HTML <strong>/<b> → .strong)
+curl -s https://example.com | mq -I html '.emphasis'             # Extract italic text (HTML <em>/<i> → .emphasis)
+curl -s https://example.com | mq -I html '.list'                 # Extract list items (HTML <ul>/<ol>/<li> → .list)
+curl -s https://example.com | mq -I html '.blockquote'           # Extract blockquotes (HTML <blockquote> → .blockquote)
+```
+
+The `-I html` flag only changes the **input parser** — the query language and selectors remain the same as for Markdown input.
+
 ## CLI Options
 
 | Flag                           | Purpose                                                        |
