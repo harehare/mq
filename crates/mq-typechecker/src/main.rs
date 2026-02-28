@@ -81,7 +81,9 @@ fn run() -> Result<ExitCode, ExitCode> {
     }
 
     let mut checker = TypeChecker::new();
-    let errors = checker.check(&hir);
+    let mut errors = checker.check(&hir);
+
+    errors.sort_by_key(|a| a.location());
 
     for error in &errors {
         write_error(&mut w, error);

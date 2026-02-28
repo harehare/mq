@@ -305,6 +305,9 @@ fn test_dict_query_functions(#[case] code: &str, #[case] should_succeed: bool) {
 
 #[rstest]
 #[case::get("get({\"a\": 1}, \"a\")", true)]
+#[case::get_array("get([1, 2, 3], 0)", true)]
+#[case::get_generic_binary("let d = dict() | get(d, \"key\")", true)]
+#[case::get_generic_ternary("let d = dict() | get(d, \"key\")[\"name\"]", true)]
 #[case::set("set({\"a\": 1}, \"b\", 2)", true)]
 #[case::del("del({\"a\": 1, \"b\": 2}, \"a\")", true)]
 #[case::update("update({\"a\": 1}, {\"b\": 2})", true)]
@@ -531,7 +534,10 @@ fn test_piped_function_calls(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::last_string("last(\"hello\")", true)]
 #[case::contains_string("contains(\"hello world\", \"world\")", true)]
 #[case::contains_array("contains([1, 2, 3], 2)", true)]
+#[case::contains_dict("contains({\"a\": 1, \"b\": 2}, \"a\")", true)]
 #[case::in_array("in([1, 2, 3], 1)", true)]
+#[case::in_string("in(\"hello world\", \"world\")", true)]
+#[case::in_sub_array("in([1, 2, 3, 4], [2, 3])", true)]
 fn test_collection_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(
@@ -552,6 +558,24 @@ fn test_collection_functions(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::sort_by_array("sort_by([1, 2, 3], fn(x): x;)", true)]
 #[case::flat_map_array("flat_map([1, 2, 3], fn(x): [x];)", true)]
 fn test_higher_order_collection_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// None Propagation for Higher-Order Functions
+
+#[rstest]
+#[case::filter_none_identity("filter(None, fn(x): x;)", true)]
+#[case::filter_none_array_return("filter(None, fn(x): [x[0], x[1]];)", true)]
+#[case::flat_map_none("flat_map(None, fn(x): [x];)", true)]
+#[case::map_none_identity("map(None, fn(x): x;)", true)]
+fn test_none_propagation_higher_order(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),
@@ -596,7 +620,8 @@ fn test_type_check_functions(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::intern("intern(\"symbol\")", true)]
 #[case::is_debug_mode("is_debug_mode()", true)]
 #[case::breakpoint("breakpoint()", true)]
-#[case::assert_func("assert(42, 42)", true)]
+#[case::assert_func("assert(42)", true)]
+#[case::assert_func_bool("assert(true)", true)]
 #[case::negate_func("negate(5)", true)]
 #[case::pow_func("pow(2, 8)", true)]
 #[case::convert_at_operator("\"hello\" @ :text", true)]

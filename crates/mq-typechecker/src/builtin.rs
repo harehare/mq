@@ -566,6 +566,14 @@ fn register_dict(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_binary(ctx, "get", Type::array(Type::Var(a)), Type::Number, Type::Var(a));
 
+    // get: (a, b) -> c (generic fallback for dynamically typed access)
+    let (a, b, c) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
+    register_binary(ctx, "get", Type::Var(a), Type::Var(b), Type::Var(c));
+
+    // get: (a, b, c) -> d (chained access, e.g., get(dict, key1)[key2])
+    let (a, b, c, d) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
+    register_ternary(ctx, "get", Type::Var(a), Type::Var(b), Type::Var(c), Type::Var(d));
+
     // None propagation for dict functions
     register_none_propagation_unary(ctx, &["keys", "values", "entries"]);
 }
@@ -670,6 +678,16 @@ fn register_collection(ctx: &mut InferenceContext) {
         Type::function(vec![Type::Var(a)], Type::Bool),
         Type::array(Type::Var(a)),
     );
+    // None propagation: filter(none, (none) -> a) -> none
+    // The lambda return type is irrelevant for None propagation since it's never called
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "filter",
+        Type::None,
+        Type::function(vec![Type::None], Type::Var(a)),
+        Type::None,
+    );
 
     // fold: ([a], b, (b, a) -> b) -> b
     let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
@@ -702,9 +720,25 @@ fn register_collection(ctx: &mut InferenceContext) {
         Type::array(Type::Var(b)),
     );
 
+    register_binary(
+        ctx,
+        "flat_map",
+        Type::None,
+        Type::function(vec![Type::Var(a)], Type::array(Type::Var(b))),
+        Type::None,
+    );
+
     // in: ([a], a) -> bool
     let a = ctx.fresh_var();
     register_binary(ctx, "in", Type::array(Type::Var(a)), Type::Var(a), Type::Bool);
+    register_binary(ctx, "in", Type::String, Type::String, Type::Bool);
+    register_binary(
+        ctx,
+        "in",
+        Type::array(Type::Var(a)),
+        Type::array(Type::Var(a)),
+        Type::Bool,
+    );
 
     // None propagation
     register_none_propagation_unary(ctx, &["first", "last"]);
