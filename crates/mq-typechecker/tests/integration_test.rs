@@ -484,11 +484,7 @@ fn test_binary_op_type_errors(#[case] code: &str, #[case] should_succeed: bool, 
 #[case::gt_same_numbers("5 > 3", true, "number > number is valid")]
 #[case::lt_same_strings(r#""a" < "b""#, true, "string < string is valid")]
 #[case::lt_same_bools("true < false", true, "bool < bool is valid")]
-fn test_comparison_op_type_errors(
-    #[case] code: &str,
-    #[case] should_succeed: bool,
-    #[case] description: &str,
-) {
+fn test_comparison_op_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),
@@ -510,11 +506,7 @@ fn test_comparison_op_type_errors(
 #[case::eq_same_strings(r#""a" == "a""#, true, "string == string is valid")]
 #[case::eq_same_bools("true == false", true, "bool == bool is valid")]
 #[case::ne_same_numbers("1 != 2", true, "number != number is valid")]
-fn test_equality_op_type_errors(
-    #[case] code: &str,
-    #[case] should_succeed: bool,
-    #[case] description: &str,
-) {
+fn test_equality_op_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),
@@ -539,12 +531,12 @@ fn test_equality_op_type_errors(
 #[case::let_num_minus_num("let x = 10 | x - 3", true, "let number binding minus number is valid")]
 #[case::let_num_mul_num("let x = 3 | x * 4", true, "let number binding times number is valid")]
 #[case::let_string_add_string(r#"let x = "hello" | x + " world""#, true, "let string binding concat is valid")]
-#[case::let_string_add_num(r#"let x = "count: " | x + 42"#, true, "let string binding plus number coercion is valid")]
-fn test_let_binding_type_errors(
-    #[case] code: &str,
-    #[case] should_succeed: bool,
-    #[case] description: &str,
-) {
+#[case::let_string_add_num(
+    r#"let x = "count: " | x + 42"#,
+    true,
+    "let string binding plus number coercion is valid"
+)]
+fn test_let_binding_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),
@@ -559,21 +551,65 @@ fn test_let_binding_type_errors(
 // Lambda (fn) Type Errors
 
 #[rstest]
-#[case::lambda_body_sub_error(r#"let f = fn(x): x - "bad"; | f(1)"#, false, "lambda body: string constant in subtract")]
-#[case::lambda_body_mul_error(r#"let f = fn(x): x * "bad"; | f(1)"#, false, "lambda body: string constant in multiply")]
-#[case::lambda_body_div_error(r#"let f = fn(x): x / "bad"; | f(1)"#, false, "lambda body: string constant in divide")]
-#[case::lambda_body_bool_constant(r#"let f = fn(x): x - true; | f(1)"#, false, "lambda body: bool constant in subtract")]
-#[case::lambda_body_chained_error(r#"let f = fn(x): x - 1 - "str"; | f(1)"#, false, "lambda body: chained op with type error")]
-#[case::lambda_body_type_error(r#"let f = fn(x): x - "bad"; | f(1)"#, false, "lambda: body has type error")]
+#[case::lambda_body_sub_error(
+    r#"let f = fn(x): x - "bad"; | f(1)"#,
+    false,
+    "lambda body: string constant in subtract"
+)]
+#[case::lambda_body_mul_error(
+    r#"let f = fn(x): x * "bad"; | f(1)"#,
+    false,
+    "lambda body: string constant in multiply"
+)]
+#[case::lambda_body_div_error(
+    r#"let f = fn(x): x / "bad"; | f(1)"#,
+    false,
+    "lambda body: string constant in divide"
+)]
+#[case::lambda_body_bool_constant(
+    r#"let f = fn(x): x - true; | f(1)"#,
+    false,
+    "lambda body: bool constant in subtract"
+)]
+#[case::lambda_body_chained_error(
+    r#"let f = fn(x): x - 1 - "str"; | f(1)"#,
+    false,
+    "lambda body: chained op with type error"
+)]
+#[case::lambda_callsite_sub_str(
+    r#"let f = fn(x): x - 1; | f("str")"#,
+    false,
+    "lambda call-site: string arg passed to subtract lambda"
+)]
+#[case::lambda_callsite_mul_str(
+    r#"let f = fn(x): x * 2; | f("str")"#,
+    false,
+    "lambda call-site: string arg passed to multiply lambda"
+)]
+#[case::lambda_callsite_div_str(
+    r#"let f = fn(x): x / 2; | f("str")"#,
+    false,
+    "lambda call-site: string arg passed to divide lambda"
+)]
+#[case::lambda_callsite_add_bool(
+    r#"let f = fn(x): x + 1; | f(true)"#,
+    false,
+    "lambda call-site: bool arg passed to add lambda"
+)]
+#[case::lambda_callsite_sub_bool(
+    r#"let f = fn(x): x - 1; | f(true)"#,
+    false,
+    "lambda call-site: bool arg passed to subtract lambda"
+)]
 #[case::lambda_valid_num(r#"let f = fn(x): x + 1; | f(5)"#, true, "lambda: valid number arg")]
 #[case::lambda_valid_str(r#"let f = fn(x): x + " world"; | f("hello")"#, true, "lambda: valid string arg")]
 #[case::lambda_two_params_valid(r#"let f = fn(x, y): x + y; | f(1, 2)"#, true, "lambda: two number params valid")]
-#[case::lambda_two_params_sub_valid(r#"let f = fn(x, y): x - y; | f(10, 3)"#, true, "lambda: two number params sub valid")]
-fn test_lambda_type_errors(
-    #[case] code: &str,
-    #[case] should_succeed: bool,
-    #[case] description: &str,
-) {
+#[case::lambda_two_params_sub_valid(
+    r#"let f = fn(x, y): x - y; | f(10, 3)"#,
+    true,
+    "lambda: two number params sub valid"
+)]
+fn test_lambda_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),
@@ -594,11 +630,7 @@ fn test_lambda_type_errors(
 #[case::bool_condition("while (true): 1;", true, "bool condition should succeed")]
 #[case::bool_expr_condition("while (1 == 1): 1;", true, "bool expression condition should succeed")]
 #[case::bool_comparison_condition("while (1 < 2): 1;", true, "bool comparison condition should succeed")]
-fn test_while_condition_type_errors(
-    #[case] code: &str,
-    #[case] should_succeed: bool,
-    #[case] description: &str,
-) {
+fn test_while_condition_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),
@@ -616,15 +648,19 @@ fn test_while_condition_type_errors(
 #[case::string_vs_number_pattern(r#"match ("hello"): | 42: "matched" end"#, false, "string against number pattern")]
 #[case::bool_vs_number_pattern("match (true): | 1: \"matched\" end", false, "bool against number pattern")]
 #[case::number_vs_bool_pattern("match (1): | true: \"matched\" end", false, "number against bool pattern")]
-#[case::number_vs_number_pattern("match (1): | 1: \"one\" | 2: \"two\" end", true, "number against number pattern is valid")]
-#[case::string_vs_string_pattern(r#"match ("a"): | "a": "matched" | "b": "other" end"#, true, "string against string pattern is valid")]
+#[case::number_vs_number_pattern(
+    "match (1): | 1: \"one\" | 2: \"two\" end",
+    true,
+    "number against number pattern is valid"
+)]
+#[case::string_vs_string_pattern(
+    r#"match ("a"): | "a": "matched" | "b": "other" end"#,
+    true,
+    "string against string pattern is valid"
+)]
 #[case::wildcard_pattern("match (1): | _: \"any\" end", true, "wildcard pattern always valid")]
 #[case::variable_pattern("match (1): | x: x end", true, "variable pattern always valid")]
-fn test_match_pattern_type_errors(
-    #[case] code: &str,
-    #[case] should_succeed: bool,
-    #[case] description: &str,
-) {
+fn test_match_pattern_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),
@@ -644,11 +680,7 @@ fn test_match_pattern_type_errors(
 #[case::correct_one_param("def f(x): x + 1; | f(1)", true, "1 arg to 1-param function is valid")]
 #[case::correct_two_params("def f(x, y): x + y; | f(1, 2)", true, "2 args to 2-param function is valid")]
 #[case::correct_zero_params("def f(): 42; | f()", true, "0 args to 0-param function is valid")]
-fn test_function_arity_errors(
-    #[case] code: &str,
-    #[case] should_succeed: bool,
-    #[case] description: &str,
-) {
+fn test_function_arity_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),
@@ -666,13 +698,17 @@ fn test_function_arity_errors(
 #[case::chained_sub_then_invalid(r#"let x = 10 - 3 | x - "str""#, false, "chained: number sub then minus string")]
 #[case::chained_mul_then_invalid(r#"let x = 2 * 3 | x / "two""#, false, "chained: number mul then div string")]
 #[case::fn_return_bool_then_arith("def b(): true; | let x = b() | x - 1", false, "chained: bool return then subtract")]
-#[case::fn_return_num_then_valid("def n(): 42; | let x = n() | x + 1", true, "chained: number return then add is valid")]
-#[case::fn_return_str_then_valid(r#"def s(): "hi"; | let x = s() | x + " there""#, true, "chained: string return then concat is valid")]
-fn test_chained_expression_type_errors(
-    #[case] code: &str,
-    #[case] should_succeed: bool,
-    #[case] description: &str,
-) {
+#[case::fn_return_num_then_valid(
+    "def n(): 42; | let x = n() | x + 1",
+    true,
+    "chained: number return then add is valid"
+)]
+#[case::fn_return_str_then_valid(
+    r#"def s(): "hi"; | let x = s() | x + " there""#,
+    true,
+    "chained: string return then concat is valid"
+)]
+fn test_chained_expression_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),

@@ -158,9 +158,31 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
     // Categorize symbols in a single pass (replaces 5 separate iterations)
     let cats = categorize_symbols(hir);
 
-    // Pass 1: Assign types to literals, variables, and simple constructs
-    // This ensures base types are established first
-    for (symbol_id, kind) in &cats.pass1_symbols {
+    // Pass 1: Assign types to literals, variables, and simple constructs.
+    //
+    // Process in dependency order so that when a Variable generates its constraint
+    // `Equal(Var(tX), type_of_initializer)`, the initializer already has a concrete
+    // type rather than an orphan type variable.  The required order is:
+    //   1. Literals (no dependencies)
+    //   2. Parameters / PatternVariables (no dependencies)
+    //   3. Functions / Macros (depend on parameters via get_or_create)
+    //   4. Variables (depend on their initializer expression)
+    //
+    // Without this ordering, a `let f = fn(x): x - 1;` pattern breaks: the Variable
+    // for `f` is inserted before the lambda Function in the HIR, so processing in
+    // insertion order creates a stale orphan type variable for the lambda before its
+    // proper `Function(...)` type is established.  This severs the chain between the
+    // call-site argument type and the lambda's parameter type variable, preventing
+    // call-site type errors from being detected (e.g. `f("str")` not flagged as error).
+    let mut sorted_pass1 = cats.pass1_symbols.clone();
+    sorted_pass1.sort_by_key(|(_, kind)| match kind {
+        SymbolKind::Number | SymbolKind::String | SymbolKind::Boolean | SymbolKind::Symbol | SymbolKind::None => 0u8,
+        SymbolKind::Parameter | SymbolKind::PatternVariable => 1,
+        SymbolKind::Function(_) | SymbolKind::Macro(_) => 2,
+        SymbolKind::Variable => 3,
+        _ => 4,
+    });
+    for (symbol_id, kind) in &sorted_pass1 {
         generate_symbol_constraints(hir, *symbol_id, kind.clone(), ctx, &children_index);
     }
 
@@ -659,6 +681,19 @@ fn merge_loop_types(base_ty: Type, break_tys: Vec<Type>, ctx: &InferenceContext)
     all_tys.into_iter().next().unwrap()
 }
 
+/// Finds the lambda Function symbol that a Variable was initialized with, if any.
+///
+/// For `let f = fn(x): x - 1;`, the Variable `f` has a Function child (the lambda).
+/// Returns the SymbolId of that Function child, enabling call-site type checking
+/// for calls like `f("str")` that go through a variable holding a lambda.
+fn find_lambda_function_child(hir: &Hir, var_id: SymbolId, children_index: &ChildrenIndex) -> Option<SymbolId> {
+    get_children(children_index, var_id).iter().find_map(|&child_id| {
+        hir.symbol(child_id)
+            .filter(|s| matches!(s.kind, SymbolKind::Function(_)))
+            .map(|_| child_id)
+    })
+}
+
 /// Generates constraints for a single symbol
 fn generate_symbol_constraints(
     hir: &Hir,
@@ -1074,9 +1109,26 @@ fn generate_symbol_constraints(
                         let is_user_defined = def_symbol.map(|s| !hir.is_builtin_symbol(s)).unwrap_or(false);
 
                         if is_user_defined {
-                            let original_func_ty = ctx.get_or_create_symbol_type(def_id);
+                            // When `def_id` is a Variable holding a lambda (e.g. `let f = fn(x): x - 1;`),
+                            // the Variable's type is still an unresolved type variable at this point in
+                            // constraint generation (before unification). Instead, look up the lambda
+                            // Function child directly and use its already-established Function type.
+                            // This ensures a proper `DeferredUserCall` is created with the lambda's
+                            // SymbolId as `def_id`, enabling call-site argument type checking for lambdas.
+                            let (effective_def_id, original_func_ty) =
+                                if def_symbol.map(|s| s.is_variable()).unwrap_or(false) {
+                                    if let Some(lambda_id) = find_lambda_function_child(hir, def_id, children_index) {
+                                        let lambda_ty = ctx.get_or_create_symbol_type(lambda_id);
+                                        (lambda_id, lambda_ty)
+                                    } else {
+                                        (def_id, ctx.get_or_create_symbol_type(def_id))
+                                    }
+                                } else {
+                                    (def_id, ctx.get_or_create_symbol_type(def_id))
+                                };
                             // Instantiate fresh type variables so each call site is independent
                             let func_ty = ctx.instantiate_fresh(&original_func_ty);
+                            let def_id = effective_def_id;
 
                             if let Type::Function(param_tys, ret_ty) = &func_ty {
                                 // Try piped input if explicit args don't match arity

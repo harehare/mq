@@ -829,15 +829,15 @@ fn test_constructor_functions(#[case] code: &str, #[case] should_succeed: bool) 
 #[case::map_lambda_sub_error("map([1, 2, 3], fn(x): x - \"str\";)", false, "map lambda body type error")]
 #[case::map_lambda_bool_op("map([1, 2, 3], fn(x): x - true;)", false, "map lambda bool operand")]
 #[case::filter_lambda_sub_error("filter([1, 2, 3], fn(x): x - \"str\";)", false, "filter lambda body type error")]
-#[case::fold_lambda_type_error("fold([1, 2, 3], 0, fn(acc, x): acc - \"str\";)", false, "fold lambda body type error")]
+#[case::fold_lambda_type_error(
+    "fold([1, 2, 3], 0, fn(acc, x): acc - \"str\";)",
+    false,
+    "fold lambda body type error"
+)]
 #[case::map_lambda_valid("map([1, 2, 3], fn(x): x + 1;)", true, "map lambda valid")]
 #[case::filter_lambda_valid("filter([1, 2, 3], fn(x): x > 1;)", true, "filter lambda valid")]
 #[case::fold_lambda_valid("fold([1, 2, 3], 0, fn(acc, x): acc + x;)", true, "fold lambda valid")]
-fn test_higher_order_lambda_type_errors(
-    #[case] code: &str,
-    #[case] should_succeed: bool,
-    #[case] description: &str,
-) {
+fn test_higher_order_lambda_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),
@@ -858,11 +858,7 @@ fn test_higher_order_lambda_type_errors(
 #[case::shift_right_string_rhs("8 >> \"2\"", false, "shift right with string right operand")]
 #[case::shift_left_valid("3 << 1", true, "shift left with numbers is valid")]
 #[case::shift_right_valid("8 >> 2", true, "shift right with numbers is valid")]
-fn test_bitshift_op_type_errors(
-    #[case] code: &str,
-    #[case] should_succeed: bool,
-    #[case] description: &str,
-) {
+fn test_bitshift_op_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),
@@ -881,18 +877,30 @@ fn test_bitshift_op_type_errors(
 #[case::to_markdown_bool("to_markdown(true)", true, "to_markdown accepts any type")]
 #[case::to_h_wrong_level("to_markdown(\"hello\") | to_h(\"one\")", false, "to_h expects number level")]
 #[case::to_md_list_wrong_type("to_markdown(\"hello\") | to_md_list(\"x\")", false, "to_md_list expects number")]
-#[case::to_md_table_cell_wrong_col("to_md_table_cell(\"hello\", \"col\", 0)", false, "to_md_table_cell expects number col")]
-#[case::to_md_table_cell_wrong_row("to_md_table_cell(\"hello\", 0, \"row\")", false, "to_md_table_cell expects number row")]
+#[case::to_md_table_cell_wrong_col(
+    "to_md_table_cell(\"hello\", \"col\", 0)",
+    false,
+    "to_md_table_cell expects number col"
+)]
+#[case::to_md_table_cell_wrong_row(
+    "to_md_table_cell(\"hello\", 0, \"row\")",
+    false,
+    "to_md_table_cell expects number row"
+)]
 #[case::set_check_wrong_type("to_markdown(\"- [ ] task\") | set_check(42)", false, "set_check expects bool")]
-#[case::set_list_ordered_wrong_type("to_markdown(\"- item\") | set_list_ordered(42)", false, "set_list_ordered expects bool")]
-#[case::set_code_block_lang_wrong_type("to_markdown(\"hello\") | set_code_block_lang(42)", false, "set_code_block_lang expects string")]
+#[case::set_list_ordered_wrong_type(
+    "to_markdown(\"- item\") | set_list_ordered(42)",
+    false,
+    "set_list_ordered expects bool"
+)]
+#[case::set_code_block_lang_wrong_type(
+    "to_markdown(\"hello\") | set_code_block_lang(42)",
+    false,
+    "set_code_block_lang expects string"
+)]
 #[case::to_markdown_valid("to_markdown(\"# hello\")", true, "to_markdown with string is valid")]
 #[case::to_h_valid("to_markdown(\"hello\") | to_h(1)", true, "to_h with number is valid")]
-fn test_markdown_type_errors(
-    #[case] code: &str,
-    #[case] should_succeed: bool,
-    #[case] description: &str,
-) {
+fn test_markdown_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),
@@ -919,11 +927,7 @@ fn test_markdown_type_errors(
 #[case::string_to_sort("\"hello\" | sort", false, "string piped to sort")]
 #[case::string_to_uniq("\"hello\" | uniq", false, "string piped to uniq")]
 #[case::string_to_compact("\"hello\" | compact", false, "string piped to compact")]
-fn test_pipe_wrong_type_comprehensive(
-    #[case] code: &str,
-    #[case] should_succeed: bool,
-    #[case] description: &str,
-) {
+fn test_pipe_wrong_type_comprehensive(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),
