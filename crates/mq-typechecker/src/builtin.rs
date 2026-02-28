@@ -740,6 +740,10 @@ fn register_collection(ctx: &mut InferenceContext) {
         Type::Bool,
     );
 
+    // bsearch: ([a], a) -> number
+    let a = ctx.fresh_var();
+    register_binary(ctx, "bsearch", Type::array(Type::Var(a)), Type::Var(a), Type::Number);
+
     // None propagation
     register_none_propagation_unary(ctx, &["first", "last"]);
 }

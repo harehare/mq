@@ -426,6 +426,10 @@ fn test_pipe_type_propagation(#[case] code: &str, #[case] should_succeed: bool) 
 #[case::div_strings("\"a\" / \"b\"", false)] // strings cannot be divided
 #[case::mod_strings("\"a\" % \"b\"", false)] // strings cannot use modulo
 #[case::sub_bool_bool("true - false", false)] // booleans cannot be subtracted
+#[case::mul_bool_number("true * 2", false)] // bool * number is invalid
+#[case::div_bool_number("true / 2", false)] // bool / number is invalid
+#[case::mod_bool_number("true % 2", false)] // bool % number is invalid
+#[case::mod_number_string("10 % \"2\"", false)] // number % string is invalid
 fn test_arithmetic_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(
@@ -442,6 +446,10 @@ fn test_arithmetic_type_errors(#[case] code: &str, #[case] should_succeed: bool)
 #[case::gt_number_string("1 > \"a\"", false)] // mixed types
 #[case::lte_bool_number("true <= 1", false)] // mixed types
 #[case::gte_string_bool("\"a\" >= true", false)] // mixed types
+#[case::lt_number_bool("1 < true", false)] // mixed types
+#[case::gt_bool_string("true > \"x\"", false)] // mixed types
+#[case::lte_string_number("\"a\" <= 1", false)] // mixed types
+#[case::gte_number_bool("1 >= false", false)] // mixed types
 fn test_comparison_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(
@@ -455,6 +463,8 @@ fn test_comparison_type_errors(#[case] code: &str, #[case] should_succeed: bool)
 
 #[rstest]
 #[case::not_number("!42", false)] // number is not bool
+#[case::not_string("!\"hello\"", false)] // string is not bool
+#[case::not_array("![1, 2, 3]", false)] // array is not bool
 fn test_logical_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(
@@ -475,6 +485,33 @@ fn test_logical_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::split_numbers("split(1, 2)", false)] // wrong argument types
 #[case::join_numbers("join(1, 2)", false)] // wrong argument types
 #[case::starts_with_numbers("starts_with(1, 2)", false)] // wrong argument types
+#[case::round_string("round(\"hello\")", false)] // wrong argument type
+#[case::trunc_string("trunc(\"hello\")", false)] // wrong argument type
+#[case::abs_bool("abs(true)", false)] // wrong argument type
+#[case::floor_string("floor(\"hello\")", false)] // wrong argument type
+#[case::ceil_bool("ceil(false)", false)] // wrong argument type
+#[case::upcase_number("upcase(42)", false)] // wrong argument type
+#[case::trim_number("trim(42)", false)] // wrong argument type
+#[case::ltrim_bool("ltrim(true)", false)] // wrong argument type
+#[case::rtrim_bool("rtrim(true)", false)] // wrong argument type
+#[case::explode_number("explode(42)", false)] // expects string
+#[case::implode_string("implode(\"hello\")", false)] // expects array of numbers
+#[case::split_wrong_sep("split(\"hello\", 42)", false)] // separator must be string
+#[case::join_wrong_sep("join([\"a\", \"b\"], 42)", false)] // separator must be string
+#[case::replace_wrong_sep("replace(\"hello\", 42, \"r\")", false)] // wrong separator type
+#[case::gsub_wrong_first("gsub(42, \"l\", \"r\")", false)] // expects string first arg
+#[case::starts_with_num_sep("starts_with(\"hello\", 42)", false)] // expects string prefix
+#[case::ends_with_num_sep("ends_with(\"hello\", 42)", false)] // expects string suffix
+#[case::flatten_string("flatten(\"hello\")", false)] // expects array
+#[case::sort_string("sort(\"hello\")", false)] // expects array
+#[case::uniq_string("uniq(\"hello\")", false)] // expects array
+#[case::compact_string("compact(\"hello\")", false)] // expects array
+#[case::reverse_number("reverse(42)", false)] // expects array or string
+#[case::values_number("values(42)", false)] // expects dict
+#[case::values_string("values(\"hello\")", false)] // expects dict
+#[case::entries_string("entries(\"hello\")", false)] // expects dict
+#[case::range_string("range(\"a\", 5)", false)] // expects number
+#[case::repeat_bool("repeat(\"x\", true)", false)] // second arg must be number
 fn test_function_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(
@@ -491,6 +528,19 @@ fn test_function_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::number_to_trim("42 | trim", false)] // number piped to string function
 #[case::string_to_abs("\"hello\" | abs", false)] // string piped to number function
 #[case::string_to_ceil("\"hello\" | ceil", false)] // string piped to number function
+#[case::number_to_downcase("42 | downcase", false)] // number piped to string function
+#[case::bool_to_upcase("true | upcase", false)] // bool piped to string function
+#[case::bool_to_trim("true | trim", false)] // bool piped to string function
+#[case::bool_to_abs("true | abs", false)] // bool piped to number function
+#[case::string_to_floor("\"hello\" | floor", false)] // string piped to number function
+#[case::string_to_round("\"hello\" | round", false)] // string piped to number function
+#[case::string_to_trunc("\"hello\" | trunc", false)] // string piped to number function
+#[case::number_to_len("42 | len", false)] // number piped to len (expects array or string)
+#[case::bool_to_len("true | len", false)] // bool piped to len
+#[case::number_to_sort("42 | sort", false)] // number piped to sort (expects array)
+#[case::number_to_reverse("42 | reverse", false)] // number piped to reverse
+#[case::number_to_flatten("42 | flatten", false)] // number piped to flatten
+#[case::number_to_uniq("42 | uniq", false)] // number piped to uniq
 fn test_pipe_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(
@@ -538,6 +588,8 @@ fn test_piped_function_calls(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::in_array("in([1, 2, 3], 1)", true)]
 #[case::in_string("in(\"hello world\", \"world\")", true)]
 #[case::in_sub_array("in([1, 2, 3, 4], [2, 3])", true)]
+#[case::bsearch("bsearch([1, 2, 3, 4], 2)", true)]
+#[case::bsearch_error("bsearch([1, 2, 3, 4], \"2\")", false)]
 fn test_collection_functions(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(
@@ -766,6 +818,118 @@ fn test_constructor_functions(#[case] code: &str, #[case] should_succeed: bool) 
         result.is_empty(),
         should_succeed,
         "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// Higher-Order Function Lambda Type Errors
+
+#[rstest]
+#[case::map_lambda_sub_error("map([1, 2, 3], fn(x): x - \"str\";)", false, "map lambda body type error")]
+#[case::map_lambda_bool_op("map([1, 2, 3], fn(x): x - true;)", false, "map lambda bool operand")]
+#[case::filter_lambda_sub_error("filter([1, 2, 3], fn(x): x - \"str\";)", false, "filter lambda body type error")]
+#[case::fold_lambda_type_error("fold([1, 2, 3], 0, fn(acc, x): acc - \"str\";)", false, "fold lambda body type error")]
+#[case::map_lambda_valid("map([1, 2, 3], fn(x): x + 1;)", true, "map lambda valid")]
+#[case::filter_lambda_valid("filter([1, 2, 3], fn(x): x > 1;)", true, "filter lambda valid")]
+#[case::fold_lambda_valid("fold([1, 2, 3], 0, fn(acc, x): acc + x;)", true, "fold lambda valid")]
+fn test_higher_order_lambda_type_errors(
+    #[case] code: &str,
+    #[case] should_succeed: bool,
+    #[case] description: &str,
+) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: Code='{}' Result={:?}",
+        description,
+        code,
+        result
+    );
+}
+
+// Bit-Shift Operator Type Errors
+
+#[rstest]
+#[case::shift_left_bool_rhs("3 << true", false, "shift left with bool right operand")]
+#[case::shift_right_bool_rhs("8 >> true", false, "shift right with bool right operand")]
+#[case::shift_left_string_rhs("3 << \"1\"", false, "shift left with string right operand")]
+#[case::shift_right_string_rhs("8 >> \"2\"", false, "shift right with string right operand")]
+#[case::shift_left_valid("3 << 1", true, "shift left with numbers is valid")]
+#[case::shift_right_valid("8 >> 2", true, "shift right with numbers is valid")]
+fn test_bitshift_op_type_errors(
+    #[case] code: &str,
+    #[case] should_succeed: bool,
+    #[case] description: &str,
+) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: Code='{}' Result={:?}",
+        description,
+        code,
+        result
+    );
+}
+
+// Markdown Function Type Errors
+
+#[rstest]
+#[case::to_markdown_number("to_markdown(42)", true, "to_markdown accepts any type")]
+#[case::to_markdown_bool("to_markdown(true)", true, "to_markdown accepts any type")]
+#[case::to_h_wrong_level("to_markdown(\"hello\") | to_h(\"one\")", false, "to_h expects number level")]
+#[case::to_md_list_wrong_type("to_markdown(\"hello\") | to_md_list(\"x\")", false, "to_md_list expects number")]
+#[case::to_md_table_cell_wrong_col("to_md_table_cell(\"hello\", \"col\", 0)", false, "to_md_table_cell expects number col")]
+#[case::to_md_table_cell_wrong_row("to_md_table_cell(\"hello\", 0, \"row\")", false, "to_md_table_cell expects number row")]
+#[case::set_check_wrong_type("to_markdown(\"- [ ] task\") | set_check(42)", false, "set_check expects bool")]
+#[case::set_list_ordered_wrong_type("to_markdown(\"- item\") | set_list_ordered(42)", false, "set_list_ordered expects bool")]
+#[case::set_code_block_lang_wrong_type("to_markdown(\"hello\") | set_code_block_lang(42)", false, "set_code_block_lang expects string")]
+#[case::to_markdown_valid("to_markdown(\"# hello\")", true, "to_markdown with string is valid")]
+#[case::to_h_valid("to_markdown(\"hello\") | to_h(1)", true, "to_h with number is valid")]
+fn test_markdown_type_errors(
+    #[case] code: &str,
+    #[case] should_succeed: bool,
+    #[case] description: &str,
+) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: Code='{}' Result={:?}",
+        description,
+        code,
+        result
+    );
+}
+
+// Piped Wrong-Type Comprehensive Cases
+
+#[rstest]
+#[case::number_to_explode("42 | explode", false, "number piped to explode (expects string)")]
+#[case::number_to_downcase("42 | downcase", false, "number piped to downcase")]
+#[case::number_to_ltrim("42 | ltrim", false, "number piped to ltrim")]
+#[case::number_to_rtrim("42 | rtrim", false, "number piped to rtrim")]
+#[case::bool_to_floor("true | floor", false, "bool piped to floor")]
+#[case::bool_to_round("true | round", false, "bool piped to round")]
+#[case::bool_to_trunc("true | trunc", false, "bool piped to trunc")]
+#[case::bool_to_sort("true | sort", false, "bool piped to sort")]
+#[case::string_to_flatten("\"hello\" | flatten", false, "string piped to flatten")]
+#[case::string_to_sort("\"hello\" | sort", false, "string piped to sort")]
+#[case::string_to_uniq("\"hello\" | uniq", false, "string piped to uniq")]
+#[case::string_to_compact("\"hello\" | compact", false, "string piped to compact")]
+fn test_pipe_wrong_type_comprehensive(
+    #[case] code: &str,
+    #[case] should_succeed: bool,
+    #[case] description: &str,
+) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: Code='{}' Result={:?}",
+        description,
         code,
         result
     );
