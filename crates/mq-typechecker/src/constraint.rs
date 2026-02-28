@@ -77,6 +77,9 @@ struct SymbolCategories {
     pass1_symbols: Vec<(SymbolId, SymbolKind)>,
     /// Pass 2: root-level symbols (parent=None, non-builtin, non-module)
     root_symbols: Vec<SymbolId>,
+    /// Pass 2.5: Assign symbols (processed before other Pass 3 symbols
+    /// so that variable types are updated before Refs and Calls are resolved)
+    assign_symbols: Vec<(SymbolId, SymbolKind)>,
     /// Pass 3: operators, calls, and other symbols (will be reversed for processing)
     pass3_symbols: Vec<(SymbolId, SymbolKind)>,
     /// Pass 4: Block symbols
@@ -91,6 +94,7 @@ fn categorize_symbols(hir: &Hir) -> SymbolCategories {
         module_source_ids: FxHashSet::default(),
         pass1_symbols: Vec::new(),
         root_symbols: Vec::new(),
+        assign_symbols: Vec::new(),
         pass3_symbols: Vec::new(),
         pass4_blocks: Vec::new(),
         pass4_functions: Vec::new(),
@@ -134,6 +138,10 @@ fn categorize_symbols(hir: &Hir) -> SymbolCategories {
             // Pass 4: Block symbols
             SymbolKind::Block => {
                 cats.pass4_blocks.push(symbol_id);
+            }
+            // Pass 2.5: Assign symbols (before other Pass 3 symbols)
+            SymbolKind::Assign => {
+                cats.assign_symbols.push((symbol_id, symbol.kind.clone()));
             }
             // Pass 3: everything else (operators, calls, etc.)
             _ => {
@@ -193,6 +201,15 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
         ctx.set_piped_input(cats.root_symbols[i], prev_ty);
     }
 
+    // Pass 2.5: Process Assign symbols before other operators/calls.
+    // This ensures that variable types are updated by assignments before
+    // Refs and Calls in Pass 3 resolve against the (potentially stale) type.
+    // e.g., `var x = 10 | x = "hello" | upcase(x)` — the Assign updates
+    // x's type to String before upcase(x) resolves its argument type.
+    for (symbol_id, kind) in &cats.assign_symbols {
+        generate_symbol_constraints(hir, *symbol_id, kind.clone(), ctx, &children_index);
+    }
+
     // Pass 3: Process operators, calls, etc.
     // Process in reverse order so children (higher IDs) are typed before parents (lower IDs)
     for (symbol_id, kind) in cats.pass3_symbols.into_iter().rev() {
@@ -239,7 +256,10 @@ fn generate_block_constraints(
         // Re-process Call/Ref children that received piped input,
         // since they were already processed in Pass 3 before piped inputs were set
         if let Some(child_symbol) = hir.symbol(children[i])
-            && matches!(child_symbol.kind, SymbolKind::Call | SymbolKind::Ref)
+            && matches!(
+                child_symbol.kind,
+                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign
+            )
         {
             generate_symbol_constraints(hir, children[i], child_symbol.kind.clone(), ctx, children_index);
         }
@@ -290,7 +310,10 @@ fn generate_function_body_pipe_constraints(
 
         // Re-process Call/Ref children that received piped input
         if let Some(child_symbol) = hir.symbol(body_children[i])
-            && matches!(child_symbol.kind, SymbolKind::Call | SymbolKind::Ref)
+            && matches!(
+                child_symbol.kind,
+                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign
+            )
         {
             generate_symbol_constraints(hir, body_children[i], child_symbol.kind.clone(), ctx, children_index);
         }
@@ -1018,6 +1041,90 @@ fn generate_symbol_constraints(
                     }
                 } else {
                     // No operator name
+                    let ty_var = ctx.fresh_var();
+                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                }
+            }
+        }
+
+        // Assignments (e.g., `x = 10`, `x += 1`)
+        SymbolKind::Assign => {
+            if let Some(symbol) = hir.symbol(symbol_id) {
+                let children = get_children(children_index, symbol_id);
+                if children.len() >= 2 {
+                    let lhs_id = children[0]; // Ref to the variable
+                    let rhs_id = children[1]; // Value expression
+                    let rhs_ty = ctx.get_or_create_symbol_type(rhs_id);
+                    let range = get_symbol_range(hir, symbol_id);
+
+                    // Resolve the LHS Ref to find the original Variable
+                    if let Some(var_id) = hir.resolve_reference_symbol(lhs_id) {
+                        let op_name = symbol.value.as_deref().unwrap_or("=");
+
+                        if op_name == "=" {
+                            // Plain assignment: variable takes the RHS type.
+                            // Use set_symbol_type_no_bind to avoid cascading the old type
+                            // variable binding (which would conflict with the initializer
+                            // constraint, e.g., `var x = 10 | x = "hello"` would fail
+                            // because tv1→Number and tv1→String would conflict).
+                            let new_var_ty = ctx.fresh_var();
+                            ctx.set_symbol_type_no_bind(var_id, Type::Var(new_var_ty));
+                            ctx.add_constraint(Constraint::Equal(Type::Var(new_var_ty), rhs_ty.clone(), range));
+
+                            // No need to re-bind subsequent Refs — Assigns are processed
+                            // in Pass 2.5 (before Refs/Calls in Pass 3), so Refs will
+                            // pick up the updated variable type when they are processed.
+                        } else {
+                            // Compound assignment (+=, -=, etc.)
+                            let base_op = match op_name {
+                                "+=" => "+",
+                                "-=" => "-",
+                                "*=" => "*",
+                                "/=" => "/",
+                                "%=" => "%",
+                                "//=" => "//",
+                                _ => op_name,
+                            };
+                            let current_var_ty = ctx.get_or_create_symbol_type(var_id);
+                            let resolved_left = ctx.resolve_type(&current_var_ty);
+                            let resolved_right = ctx.resolve_type(&rhs_ty);
+
+                            if resolved_left.is_var() || resolved_right.is_var() {
+                                // Defer if types not yet known
+                                let ty_var = ctx.fresh_var();
+                                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                                ctx.add_deferred_overload(DeferredOverload {
+                                    symbol_id,
+                                    op_name: SmolStr::new(base_op),
+                                    operand_tys: vec![current_var_ty, rhs_ty],
+                                    range,
+                                });
+                            } else {
+                                let arg_types = vec![resolved_left.clone(), resolved_right.clone()];
+                                if let Some(resolved_ty) = ctx.resolve_overload(base_op, &arg_types)
+                                    && let Type::Function(param_tys, ret_ty) = resolved_ty
+                                    && param_tys.len() == 2
+                                {
+                                    ctx.add_constraint(Constraint::Equal(current_var_ty, param_tys[0].clone(), range));
+                                    ctx.add_constraint(Constraint::Equal(rhs_ty, param_tys[1].clone(), range));
+                                    // Update variable type to result
+                                    ctx.set_symbol_type(var_id, *ret_ty);
+                                } else if ctx.resolve_overload(base_op, &arg_types).is_none() {
+                                    ctx.report_no_matching_overload(base_op, &[resolved_left, resolved_right], range);
+                                }
+                            }
+                        }
+                    }
+
+                    // The Assign expression itself evaluates to the piped input
+                    // (consistent with runtime which returns the input value)
+                    if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
+                        ctx.set_symbol_type(symbol_id, piped_ty);
+                    } else {
+                        let ty_var = ctx.fresh_var();
+                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                    }
+                } else {
                     let ty_var = ctx.fresh_var();
                     ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                 }

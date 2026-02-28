@@ -1056,3 +1056,62 @@ fn test_match_same_type_arithmetic_ok() {
         result
     );
 }
+
+// --- Variable reassignment tests ---
+
+#[test]
+fn test_var_reassignment_same_type() {
+    let result = check_types("var x = 10 | x = 20");
+    assert!(
+        result.is_empty(),
+        "var reassignment with same type should succeed: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_var_reassignment_different_type() {
+    let result = check_types(r#"var x = 10 | x = "hello""#);
+    assert!(
+        result.is_empty(),
+        "var reassignment with different type should succeed: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_var_reassignment_used_after() {
+    let result = check_types(r#"var x = 10 | x = "hello" | upcase(x)"#);
+    assert!(
+        result.is_empty(),
+        "after reassigning var to string, upcase should work: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_var_compound_assignment() {
+    let result = check_types("var x = 10 | x += 5");
+    assert!(
+        result.is_empty(),
+        "compound assignment with same type should succeed: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_var_reassignment_type_error_after() {
+    // "test" + true passes the typechecker because there is a generic
+    // "string + any -> string" overload in the builtin registrations.
+    // This is a pre-existing limitation of the overload system, not
+    // specific to variable reassignment.
+    let baseline = check_types(r#""test" + true"#);
+    let result = check_types(r#"var v = 1 | v = "test" | v + true"#);
+    assert_eq!(
+        baseline.len(),
+        result.len(),
+        "var reassignment should behave same as direct usage: baseline={:?}, result={:?}",
+        baseline,
+        result
+    );
+}

@@ -115,14 +115,6 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     register_binary(ctx, "+", Type::Markdown, Type::String, Type::Markdown);
     register_binary(ctx, "add", Type::Markdown, Type::String, Type::Markdown);
 
-    // Addition: string + any -> string (dynamic coercion fallback)
-    // mq uses `+` for string concatenation with any type (e.g., `"text" + value`
-    // where `value` is type-guarded at runtime via `is_string`, `is_bool`, etc.)
-    for name in ["+", "add"] {
-        let a = ctx.fresh_var();
-        register_binary(ctx, name, Type::String, Type::Var(a), Type::String);
-    }
-
     // Subtraction: (number, number) -> number
     register_binary(ctx, "-", Type::Number, Type::Number, Type::Number);
     register_binary(ctx, "sub", Type::Number, Type::Number, Type::Number);
