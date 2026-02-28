@@ -618,3 +618,11 @@ def bsearch(arr, target):
     end
 end
 
+# Converts a string into a URL-friendly slug by lowercasing, replacing non-alphanumeric characters with hyphens, and trimming hyphens from the ends.
+def slugify(s, separator = "-"):
+  s
+  | downcase()
+  | gsub("[^a-z0-9]+", separator)
+  | gsub("^-+|-+$", "")
+end
+

@@ -600,6 +600,17 @@ def test_bsearch():
   | assert_eq(result4, 1)
 end
 
+def test_slugify():
+  let result1 = slugify("Hello World!")
+  | assert_eq(result1, "hello-world")
+
+  | let result2 = slugify("This is a test.")
+  | assert_eq(result2, "this-is-a-test")
+
+  | let result3 = slugify("Special characters: @#$%^&*()")
+  | assert_eq(result3, "special-characters")
+end
+
 | run_tests([
   # Type checking
   test_case("is_array", test_is_array),
@@ -616,6 +627,7 @@ end
   test_case("rtrimstr", test_rtrimstr),
   test_case("lpad", test_lpad),
   test_case("rpad", test_rpad),
+  test_case("slugify", test_slugify),
 
   # Collection operations
   test_case("is_empty", test_is_empty),
