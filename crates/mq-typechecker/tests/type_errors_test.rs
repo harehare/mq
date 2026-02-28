@@ -52,11 +52,14 @@ fn test_heterogeneous_array_allowed() {
 
 #[test]
 fn test_dict_heterogeneous_values_allowed() {
-    // mq dicts are like JSON objects - values can have different types
-    // So this should succeed (heterogeneous values are allowed)
+    // With row polymorphism, each field has its own type in a Record
+    // {"a": 1, "b": "string"} → Record({a: int, b: string}, RowEmpty)
     let result = check_types(r#"{"a": 1, "b": "string"}"#);
-    println!("Dict value type mismatch: {:?}", result);
-    assert!(result.is_empty(), "Dict with mixed value types should be allowed");
+    println!("Dict with heterogeneous values: {:?}", result);
+    assert!(
+        result.is_empty(),
+        "Dict with mixed value types should be allowed via row polymorphism"
+    );
 }
 
 #[test]

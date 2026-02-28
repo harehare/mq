@@ -2,6 +2,7 @@
 
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
+use std::collections::BTreeMap;
 use std::fmt;
 
 slotmap::new_key_type! {
@@ -37,6 +38,18 @@ pub enum Type {
     /// Union type: represents a value that could be one of multiple types
     /// Used for try/catch expressions with different branch types
     Union(Vec<Type>),
+    /// Record type with known fields and optional row extension (row polymorphism).
+    ///
+    /// The first element is a map of field names to their types.
+    /// The second element is the row tail: either `RowEmpty` (closed record)
+    /// or `Var(id)` (open record that may have additional fields).
+    ///
+    /// Examples:
+    /// - `{a: number, b: string}` → `Record({"a": Number, "b": String}, RowEmpty)`
+    /// - `{a: number | r}` → `Record({"a": Number}, Var(r))`
+    Record(BTreeMap<String, Type>, Box<Type>),
+    /// Empty row — marks a closed record with no additional fields
+    RowEmpty,
     /// Type variable for inference
     Var(TypeVarId),
 }
@@ -55,6 +68,11 @@ impl Type {
     /// Creates a new dict type
     pub fn dict(key: Type, value: Type) -> Self {
         Type::Dict(Box::new(key), Box::new(value))
+    }
+
+    /// Creates a new record type with known fields
+    pub fn record(fields: BTreeMap<String, Type>, rest: Type) -> Self {
+        Type::Record(fields, Box::new(rest))
     }
 
     /// Creates a new union type from two or more types
@@ -100,7 +118,9 @@ impl Type {
             Type::Dict(_, _) => 9,
             Type::Function(_, _) => 10,
             Type::Union(_) => 11,
-            Type::Var(_) => 12,
+            Type::Record(_, _) => 12,
+            Type::RowEmpty => 13,
+            Type::Var(_) => 14,
         }
     }
 
@@ -136,6 +156,10 @@ impl Type {
                 let new_types = types.iter().map(|t| t.apply_subst(subst)).collect();
                 Type::union(new_types)
             }
+            Type::Record(fields, rest) => {
+                let new_fields = fields.iter().map(|(k, v)| (k.clone(), v.apply_subst(subst))).collect();
+                Type::Record(new_fields, Box::new(rest.apply_subst(subst)))
+            }
             _ => self.clone(),
         }
     }
@@ -156,6 +180,11 @@ impl Type {
                 vars
             }
             Type::Union(types) => types.iter().flat_map(|t| t.free_vars()).collect(),
+            Type::Record(fields, rest) => {
+                let mut vars: Vec<TypeVarId> = fields.values().flat_map(|v| v.free_vars()).collect();
+                vars.extend(rest.free_vars());
+                vars
+            }
             _ => Vec::new(),
         }
     }
@@ -196,6 +225,25 @@ impl Type {
                     && params1.iter().zip(params2.iter()).all(|(p1, p2)| p1.can_match(p2))
                     && ret1.can_match(ret2)
             }
+
+            // Records match if common fields can match and rests can match
+            (Type::Record(f1, r1), Type::Record(f2, r2)) => {
+                // Common fields must match
+                for (k, v1) in f1 {
+                    if let Some(v2) = f2.get(k)
+                        && !v1.can_match(v2)
+                    {
+                        return false;
+                    }
+                }
+                r1.can_match(r2)
+            }
+
+            // Record can match Dict (compatibility)
+            (Type::Record(_, _), Type::Dict(_, _)) | (Type::Dict(_, _), Type::Record(_, _)) => true,
+
+            // RowEmpty matches RowEmpty
+            (Type::RowEmpty, Type::RowEmpty) => true,
 
             // Everything else doesn't match
             _ => false,
@@ -254,6 +302,26 @@ impl Type {
                 Some((key_score + val_score) / 2 + 20)
             }
 
+            // Records: structural match on fields
+            (Type::Record(f1, r1), Type::Record(f2, r2)) => {
+                let mut total = 0u32;
+                let mut count = 0u32;
+                for (k, v1) in f1 {
+                    if let Some(v2) = f2.get(k) {
+                        total += v1.match_score(v2)?;
+                        count += 1;
+                    }
+                }
+                let field_score = if count > 0 { total / count } else { 10 };
+                let rest_score = r1.match_score(r2).unwrap_or(10);
+                Some(field_score + rest_score + 20)
+            }
+
+            // Record ↔ Dict compatibility (lower score than direct Record match)
+            (Type::Record(_, _), Type::Dict(_, _)) | (Type::Dict(_, _), Type::Record(_, _)) => Some(15),
+
+            (Type::RowEmpty, Type::RowEmpty) => Some(100),
+
             // Functions: sum all parameter scores and return score
             (Type::Function(params1, ret1), Type::Function(params2, ret2)) => {
                 let param_score: u32 = params1
@@ -285,6 +353,24 @@ impl Type {
             Type::Markdown => "markdown".to_string(),
             Type::Array(elem) => format!("[{}]", elem.display_resolved()),
             Type::Dict(key, value) => format!("{{{}: {}}}", key.display_resolved(), value.display_resolved()),
+            Type::Record(fields, rest) => {
+                let fields_str = fields
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, v.display_resolved()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                match rest.as_ref() {
+                    Type::RowEmpty => format!("{{{}}}", fields_str),
+                    _ => {
+                        if fields_str.is_empty() {
+                            format!("{{| {}}}", rest.display_resolved())
+                        } else {
+                            format!("{{{} | {}}}", fields_str, rest.display_resolved())
+                        }
+                    }
+                }
+            }
+            Type::RowEmpty => "{}".to_string(),
             Type::Function(params, ret) => {
                 let params_str = params
                     .iter()
@@ -354,6 +440,25 @@ impl Type {
                     .join(" | ");
                 format!("({})", types_str)
             }
+            Type::Record(fields, rest) => {
+                let fields_str = fields
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, v.fmt_renumbered(var_map, counter)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                match rest.as_ref() {
+                    Type::RowEmpty => format!("{{{}}}", fields_str),
+                    _ => {
+                        let rest_str = rest.fmt_renumbered(var_map, counter);
+                        if fields_str.is_empty() {
+                            format!("{{| {}}}", rest_str)
+                        } else {
+                            format!("{{{} | {}}}", fields_str, rest_str)
+                        }
+                    }
+                }
+            }
+            Type::RowEmpty => "{}".to_string(),
             Type::Var(id) => {
                 let index = *var_map.entry(*id).or_insert_with(|| {
                     let i = *counter;

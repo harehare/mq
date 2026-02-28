@@ -1057,6 +1057,88 @@ fn test_match_same_type_arithmetic_ok() {
     );
 }
 
+// --- Record type (row polymorphism) tests ---
+
+#[test]
+fn test_record_heterogeneous_values() {
+    // Record type: each field has its own type
+    let result = check_types(r#"{"a": 1, "b": "hello", "c": true}"#);
+    assert!(
+        result.is_empty(),
+        "Record with different value types should succeed via row polymorphism: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_record_homogeneous_values() {
+    let result = check_types(r#"{"x": 1, "y": 2, "z": 3}"#);
+    assert!(
+        result.is_empty(),
+        "Record with same value types should succeed: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_record_nested() {
+    let result = check_types(r#"{"outer": {"inner": 42}}"#);
+    assert!(result.is_empty(), "Nested record should succeed: {:?}", result);
+}
+
+#[test]
+fn test_record_empty_dict() {
+    let result = check_types("{}");
+    assert!(
+        result.is_empty(),
+        "Empty dict (open record) should succeed: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_record_inferred_types() {
+    let hir = create_hir(r#"{"name": "Alice", "age": 30}"#);
+    let mut checker = TypeChecker::new();
+
+    let errors = checker.check(&hir);
+    assert!(errors.is_empty(), "Record should type-check: {:?}", errors);
+
+    // Verify the record type is inferred
+    let types = checker.symbol_types();
+    assert!(!types.is_empty(), "Should have inferred types");
+
+    println!("\n=== Record Inferred Types ===");
+    for (symbol_id, type_scheme) in types {
+        println!("  {:?} :: {}", symbol_id, type_scheme);
+    }
+}
+
+// --- Dict bracket access type resolution tests ---
+
+#[test]
+fn test_dict_bracket_access_type_error() {
+    // v[:key] returns int (value of "key" field), so int + true should fail
+    let result = check_types(r#"var v = {key: 1, value: "value"} | v[:key] + true"#);
+    println!("Dict bracket access type error: {:?}", result);
+    assert!(
+        !result.is_empty(),
+        "v[:key] + true should fail (int + bool): {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_dict_bracket_access_valid() {
+    // v[:key] returns int, so int + 1 should succeed
+    let result = check_types(r#"var v = {key: 1, value: "value"} | v[:key] + 1"#);
+    assert!(
+        result.is_empty(),
+        "v[:key] + 1 should succeed (int + int): {:?}",
+        result
+    );
+}
+
 // --- Variable reassignment tests ---
 
 #[test]

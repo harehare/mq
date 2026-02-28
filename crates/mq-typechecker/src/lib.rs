@@ -168,6 +168,14 @@ impl TypeChecker {
         // Solve constraints through unification (collects errors internally)
         unify::solve_constraints(&mut ctx);
 
+        // Resolve deferred record field accesses now that variable types are known.
+        // This binds bracket access return types (e.g., v[:key]) to specific field types
+        // from Record types, enabling type error detection for subsequent operations.
+        if Self::resolve_record_field_accesses(&mut ctx) {
+            // Re-run unification to propagate newly resolved record field types
+            unify::solve_constraints(&mut ctx);
+        }
+
         // Propagate return types from user-defined function calls.
         // After unification, the original function's return type may be concrete,
         // allowing us to connect it to the fresh return type at each call site.
@@ -192,6 +200,37 @@ impl TypeChecker {
         self.symbol_types = ctx.finalize();
 
         errors
+    }
+
+    /// Resolves deferred record field accesses after the first round of unification.
+    ///
+    /// For each deferred bracket access `v[:key]`, resolves the variable's type
+    /// (now concrete after unification) and, if it is a Record, looks up the field
+    /// type and binds the bracket access expression's type to that field type.
+    fn resolve_record_field_accesses(ctx: &mut infer::InferenceContext) -> bool {
+        let accesses = ctx.take_deferred_record_accesses();
+        if accesses.is_empty() {
+            return false;
+        }
+
+        let mut resolved_any = false;
+        for access in &accesses {
+            // Resolve the variable's type (should now be Record after unification)
+            let var_ty = match ctx.get_symbol_type(access.def_id).cloned() {
+                Some(ty) => ctx.resolve_type(&ty),
+                None => continue,
+            };
+
+            if let types::Type::Record(fields, _) = &var_ty
+                && let Some(field_ty) = fields.get(&access.field_name)
+            {
+                // Bind the bracket access expression's type to the field type
+                let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                ctx.add_constraint(constraint::Constraint::Equal(call_ty, field_ty.clone(), None));
+                resolved_any = true;
+            }
+        }
+        resolved_any
     }
 
     /// Resolves deferred overloads after the first round of unification.

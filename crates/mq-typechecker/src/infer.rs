@@ -63,6 +63,21 @@ pub struct DeferredUserCall {
     pub range: Option<mq_lang::Range>,
 }
 
+/// A deferred record field access for post-unification resolution.
+///
+/// When bracket access `v[:key]` is detected and the variable's type is not yet
+/// resolved to a Record during constraint generation, we defer the field type
+/// resolution until after unification.
+#[derive(Debug, Clone)]
+pub struct DeferredRecordAccess {
+    /// The call symbol ID (the bracket access expression)
+    pub call_symbol_id: SymbolId,
+    /// The variable definition symbol ID
+    pub def_id: SymbolId,
+    /// The field name being accessed
+    pub field_name: String,
+}
+
 /// Inference context maintains state during type inference
 pub struct InferenceContext {
     /// Type variable context for generating fresh variables
@@ -85,6 +100,8 @@ pub struct InferenceContext {
     deferred_user_calls: Vec<DeferredUserCall>,
     /// Deferred inner calls to function parameters for higher-order function checking
     deferred_parameter_calls: Vec<DeferredParameterCall>,
+    /// Deferred record field accesses for post-unification resolution
+    deferred_record_accesses: Vec<DeferredRecordAccess>,
 }
 
 impl InferenceContext {
@@ -101,6 +118,7 @@ impl InferenceContext {
             deferred_overloads: Vec::new(),
             deferred_user_calls: Vec::new(),
             deferred_parameter_calls: Vec::new(),
+            deferred_record_accesses: Vec::new(),
         }
     }
 
@@ -162,6 +180,16 @@ impl InferenceContext {
     /// Returns a reference to all deferred parameter calls
     pub fn deferred_parameter_calls(&self) -> &[DeferredParameterCall] {
         &self.deferred_parameter_calls
+    }
+
+    /// Adds a deferred record field access for post-unification resolution
+    pub fn add_deferred_record_access(&mut self, access: DeferredRecordAccess) {
+        self.deferred_record_accesses.push(access);
+    }
+
+    /// Takes all deferred record accesses (consumes them)
+    pub fn take_deferred_record_accesses(&mut self) -> Vec<DeferredRecordAccess> {
+        std::mem::take(&mut self.deferred_record_accesses)
     }
 
     /// Reports a "no matching overload" error with formatted argument types.
@@ -326,6 +354,10 @@ impl InferenceContext {
             Type::Function(params, ret) => {
                 let new_params = params.iter().map(|p| self.resolve_type(p)).collect();
                 Type::Function(new_params, Box::new(self.resolve_type(ret)))
+            }
+            Type::Record(fields, rest) => {
+                let new_fields = fields.iter().map(|(k, v)| (k.clone(), self.resolve_type(v))).collect();
+                Type::Record(new_fields, Box::new(self.resolve_type(rest)))
             }
             _ => ty,
         }
