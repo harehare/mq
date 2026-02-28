@@ -457,50 +457,19 @@ impl TypeChecker {
                 Self::extract_structural_subst(orig_param, arg_ty, &mut subst, ctx);
             }
 
-            // Check each unresolved overload that belongs to this function's body
-            for d in &unresolved_overloads {
-                if !Self::is_symbol_inside_function(hir, d.symbol_id, call.def_id) {
-                    continue;
-                }
+            // Check each unresolved overload that belongs to this function's body.
+            // Uses iterative resolution: when an inner operator resolves (e.g. x + 1 → Number),
+            // its result type is added to the substitution so outer operators that depend on it
+            // (e.g. (x + 1) + true) can also be checked.
+            let body_overloads: Vec<_> = unresolved_overloads
+                .iter()
+                .filter(|d| {
+                    Self::is_symbol_inside_function(hir, d.symbol_id, call.def_id)
+                        && !Self::is_inside_control_flow(hir, d.symbol_id, call.def_id)
+                })
+                .collect();
 
-                // Skip operators inside control flow constructs (If/Elif/Else/While/
-                // Match/Try/Catch). These branches often have runtime type guards
-                // (e.g., `if (is_dict(v)): keys(v)`) that narrow types beyond what
-                // static analysis can determine, causing false positives.
-                if Self::is_inside_control_flow(hir, d.symbol_id, call.def_id) {
-                    continue;
-                }
-
-                // Apply substitution to get concrete operand types
-                let substituted_operands: Vec<types::Type> = d
-                    .operand_tys
-                    .iter()
-                    .map(|ty| {
-                        let resolved = ctx.resolve_type(ty);
-                        resolved.apply_subst(&subst)
-                    })
-                    .collect();
-
-                // Skip if any operand is still a type variable after substitution
-                if substituted_operands.iter().any(|ty| ty.is_var()) {
-                    continue;
-                }
-
-                // Check if the operator has a matching overload with these types
-                if ctx.resolve_overload(&d.op_name, &substituted_operands).is_none() {
-                    let args_str = substituted_operands
-                        .iter()
-                        .map(|t| t.display_renumbered())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    ctx.add_error(TypeError::UnificationError {
-                        left: format!("{} with arguments ({})", d.op_name, args_str),
-                        right: "no matching overload".to_string(),
-                        span: call.range.as_ref().map(unify::range_to_span),
-                        location: call.range.as_ref().map(|r| (r.start.line, r.start.column)),
-                    });
-                }
-            }
+            Self::check_deferred_overloads_iteratively(&body_overloads, &mut subst, ctx, call.range);
 
             // Check operators inside lambda arguments via DeferredParameterCalls.
             //
@@ -558,36 +527,95 @@ impl TypeChecker {
                     None => continue,
                 };
 
-                // Check deferred overloads inside the lambda body
-                for d in &unresolved_overloads {
-                    if !Self::is_symbol_inside_function(hir, d.symbol_id, lambda_sym_id) {
-                        continue;
-                    }
+                // Check deferred overloads inside the lambda body.
+                // Uses iterative resolution for chained operators (e.g. x + 1 + true).
+                let lambda_overloads: Vec<_> = unresolved_overloads
+                    .iter()
+                    .filter(|d| Self::is_symbol_inside_function(hir, d.symbol_id, lambda_sym_id))
+                    .collect();
 
-                    let substituted_operands: Vec<types::Type> = d
-                        .operand_tys
-                        .iter()
-                        .map(|ty| ctx.resolve_type(ty).apply_subst(&lambda_subst))
-                        .collect();
+                Self::check_deferred_overloads_iteratively(&lambda_overloads, &mut lambda_subst, ctx, call.range);
+            }
+        }
+    }
 
-                    if substituted_operands.iter().any(|ty| ty.is_var()) {
-                        continue;
-                    }
+    /// Checks deferred overloads iteratively, resolving chained operators.
+    ///
+    /// When operators are chained (e.g. `x + 1 + true`), the inner operator's result
+    /// type variable is used as an operand of the outer operator. This method resolves
+    /// operators in multiple passes: when an inner operator resolves successfully, its
+    /// result type is added to the substitution so dependent outer operators can also
+    /// be checked in the next pass.
+    fn check_deferred_overloads_iteratively(
+        overloads: &[&infer::DeferredOverload],
+        subst: &mut types::Substitution,
+        ctx: &mut infer::InferenceContext,
+        error_range: Option<mq_lang::Range>,
+    ) {
+        let mut remaining_indices: Vec<usize> = (0..overloads.len()).collect();
+        let max_passes = overloads.len() + 1;
 
-                    if ctx.resolve_overload(&d.op_name, &substituted_operands).is_none() {
-                        let args_str = substituted_operands
-                            .iter()
-                            .map(|t| t.display_renumbered())
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        ctx.add_error(TypeError::UnificationError {
-                            left: format!("{} with arguments ({})", d.op_name, args_str),
-                            right: "no matching overload".to_string(),
-                            span: d.range.as_ref().map(unify::range_to_span),
-                            location: d.range.as_ref().map(|r| (r.start.line, r.start.column)),
-                        });
-                    }
+        for _ in 0..max_passes {
+            let mut made_progress = false;
+            let mut next_remaining = Vec::new();
+
+            for &idx in &remaining_indices {
+                let d = overloads[idx];
+
+                let substituted_operands: Vec<types::Type> = d
+                    .operand_tys
+                    .iter()
+                    .map(|ty| {
+                        let resolved = ctx.resolve_type(ty);
+                        resolved.apply_subst(subst)
+                    })
+                    .collect();
+
+                // Skip if any operand is still a type variable after substitution
+                if substituted_operands.iter().any(|ty| ty.is_var()) {
+                    next_remaining.push(idx);
+                    continue;
                 }
+
+                // Check if the operator has a matching overload with these types
+                if let Some(resolved_ty) = ctx.resolve_overload(&d.op_name, &substituted_operands) {
+                    // Resolved successfully — add the result type to the substitution
+                    // so that dependent outer operators can resolve in the next pass.
+                    if let types::Type::Function(_, ret_ty) = resolved_ty {
+                        if let Some(types::Type::Var(result_var)) = ctx.get_symbol_type(d.symbol_id).cloned() {
+                            subst.insert(result_var, *ret_ty);
+                        } else {
+                            // The symbol type may already be resolved via substitution chain;
+                            // try resolving it to find the underlying type variable.
+                            if let Some(sym_ty) = ctx.get_symbol_type(d.symbol_id).cloned() {
+                                let resolved_sym = sym_ty.apply_subst(subst);
+                                if let types::Type::Var(result_var) = resolved_sym {
+                                    subst.insert(result_var, *ret_ty);
+                                }
+                            }
+                        }
+                    }
+                    made_progress = true;
+                } else {
+                    // No matching overload — report error
+                    let args_str = substituted_operands
+                        .iter()
+                        .map(|t| t.display_renumbered())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    ctx.add_error(TypeError::UnificationError {
+                        left: format!("{} with arguments ({})", d.op_name, args_str),
+                        right: "no matching overload".to_string(),
+                        span: error_range.as_ref().map(unify::range_to_span),
+                        location: error_range.as_ref().map(|r| (r.start.line, r.start.column)),
+                    });
+                    made_progress = true;
+                }
+            }
+
+            remaining_indices = next_remaining;
+            if remaining_indices.is_empty() || !made_progress {
+                break;
             }
         }
     }

@@ -217,6 +217,21 @@ fn test_higher_order_functions() {
     true,
     "lambda passed to foreach-based HOF with valid op should succeed"
 )]
+#[case::foreach_lambda_chained_type_error(
+    r#"def apply_to_all(v, f): foreach (x, v): f(x);; | apply_to_all([1, 2, 3], fn(x): x + 1 + true;)"#,
+    false,
+    "lambda with chained binary op ending in type error should fail"
+)]
+#[case::foreach_lambda_chained_valid(
+    r#"def apply_to_all(v, f): foreach (x, v): f(x);; | apply_to_all([1, 2, 3], fn(x): x + 1 + 2;)"#,
+    true,
+    "lambda with chained valid binary ops should succeed"
+)]
+#[case::foreach_lambda_triple_chained_type_error(
+    r#"def apply_to_all(v, f): foreach (x, v): f(x);; | apply_to_all([1, 2, 3], fn(x): x + 1 + 2 + true;)"#,
+    false,
+    "lambda with triple chained binary op ending in type error should fail"
+)]
 fn test_nested_lambda_type_checking(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(
@@ -224,6 +239,26 @@ fn test_nested_lambda_type_checking(#[case] code: &str, #[case] should_succeed: 
         should_succeed,
         "{}: errors={:?}",
         description,
+        result
+    );
+}
+
+#[test]
+fn test_def_body_chained_binary_op_type_error() {
+    let result = check_types(r#"def f(x): x + 1 + true; | f(1)"#);
+    assert!(
+        !result.is_empty(),
+        "def body with chained binary op ending in type error should fail: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_def_body_chained_binary_op_valid() {
+    let result = check_types(r#"def f(x): x + 1 + 2; | f(1)"#);
+    assert!(
+        result.is_empty(),
+        "def body with valid chained binary ops should succeed: {:?}",
         result
     );
 }
