@@ -118,6 +118,9 @@ def csv_parse(input, has_header): _parse_csv_content(input, ",", has_header);
 # Parses TSV (Tab-Separated Values) content.
 def tsv_parse(input, has_header): _parse_csv_content(input, "\t", has_header);
 
+# Parses PSV (Pipe-Separated Values) content.
+def psv_parse(input, has_header): _parse_csv_content(input, "|", has_header);
+
 # Converts data to a CSV string with a specified delimiter.
 def csv_stringify(data, delimiter):
   let headers = if (is_array(data) && len(data) > 0 && is_dict(first(data))):
