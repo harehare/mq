@@ -258,7 +258,7 @@ fn generate_block_constraints(
         if let Some(child_symbol) = hir.symbol(children[i])
             && matches!(
                 child_symbol.kind,
-                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign
+                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector
             )
         {
             generate_symbol_constraints(hir, children[i], child_symbol.kind.clone(), ctx, children_index);
@@ -312,7 +312,7 @@ fn generate_function_body_pipe_constraints(
         if let Some(child_symbol) = hir.symbol(body_children[i])
             && matches!(
                 child_symbol.kind,
-                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign
+                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector
             )
         {
             generate_symbol_constraints(hir, body_children[i], child_symbol.kind.clone(), ctx, children_index);
@@ -1294,22 +1294,45 @@ fn generate_symbol_constraints(
                                     range,
                                 });
                             } else {
-                                // The definition exists but isn't a function type yet.
-                                // If the definition is a function parameter (higher-order call),
-                                // record the inner call so that `check_user_call_body_operators`
-                                // can propagate the concrete element type to the lambda's body.
-                                let ret_ty = Type::Var(ctx.fresh_var());
-                                let expected_func_ty = Type::function(explicit_arg_tys.clone(), ret_ty.clone());
-                                ctx.add_constraint(Constraint::Equal(func_ty, expected_func_ty, range));
-                                ctx.set_symbol_type(symbol_id, ret_ty);
-                                if def_symbol.map(|s| s.is_parameter()).unwrap_or(false)
-                                    && let Some(outer_def_id) = find_enclosing_function(hir, symbol_id)
-                                {
-                                    ctx.add_deferred_parameter_call(DeferredParameterCall {
-                                        outer_def_id,
-                                        param_sym_id: def_id,
-                                        arg_tys: explicit_arg_tys.clone(),
+                                // Check for potential Record field access via bracket notation
+                                // (e.g., v[:key]). Only trigger when the argument is a
+                                // Symbol/Selector (`:key` pattern), not a regular variable ref.
+                                let field_name = children.first().and_then(|&arg_id| {
+                                    let arg_symbol = hir.symbol(arg_id)?;
+                                    if matches!(arg_symbol.kind, SymbolKind::Symbol | SymbolKind::Selector) {
+                                        arg_symbol.value.as_ref().map(|v| v.to_string())
+                                    } else {
+                                        None
+                                    }
+                                });
+
+                                if let Some(name) = field_name {
+                                    // Defer field access resolution to post-unification
+                                    ctx.add_deferred_record_access(crate::infer::DeferredRecordAccess {
+                                        call_symbol_id: symbol_id,
+                                        def_id,
+                                        field_name: name,
                                     });
+                                    let ty_var = ctx.fresh_var();
+                                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                                } else {
+                                    // The definition exists but isn't a function type yet.
+                                    // If the definition is a function parameter (higher-order call),
+                                    // record the inner call so that `check_user_call_body_operators`
+                                    // can propagate the concrete element type to the lambda's body.
+                                    let ret_ty = Type::Var(ctx.fresh_var());
+                                    let expected_func_ty = Type::function(explicit_arg_tys.clone(), ret_ty.clone());
+                                    ctx.add_constraint(Constraint::Equal(func_ty, expected_func_ty, range));
+                                    ctx.set_symbol_type(symbol_id, ret_ty);
+                                    if def_symbol.map(|s| s.is_parameter()).unwrap_or(false)
+                                        && let Some(outer_def_id) = find_enclosing_function(hir, symbol_id)
+                                    {
+                                        ctx.add_deferred_parameter_call(DeferredParameterCall {
+                                            outer_def_id,
+                                            param_sym_id: def_id,
+                                            arg_tys: explicit_arg_tys.clone(),
+                                        });
+                                    }
                                 }
                             }
                         } else {
@@ -1390,35 +1413,71 @@ fn generate_symbol_constraints(
 
         SymbolKind::Dict => {
             // Dict structure in HIR: Dict -> key_symbol -> value_expr
-            // Direct children of Dict are the key symbols
-            // Note: mq dicts are like JSON objects - values can have different types
-            // So we only unify key types, not value types
+            // Direct children of Dict are the key symbols.
+            // When all keys are string literals, use Record type (row polymorphism)
+            // to track per-field value types.
             let key_symbols = get_children(children_index, symbol_id);
             if key_symbols.is_empty() {
-                let key_ty_var = ctx.fresh_var();
-                let val_ty_var = ctx.fresh_var();
-                let dict_ty = Type::dict(Type::Var(key_ty_var), Type::Var(val_ty_var));
-                ctx.set_symbol_type(symbol_id, dict_ty);
+                // Empty dict → open record with fresh row variable
+                let row_var = ctx.fresh_var();
+                let record_ty = Type::record(std::collections::BTreeMap::new(), Type::Var(row_var));
+                ctx.set_symbol_type(symbol_id, record_ty);
             } else {
-                let key_ty_var = ctx.fresh_var();
-                let val_ty_var = ctx.fresh_var();
-                let key_ty = Type::Var(key_ty_var);
-                let range = get_symbol_range(hir, symbol_id);
+                // Try to build a Record type from known keys (string literals or symbols)
+                let mut fields = std::collections::BTreeMap::new();
+                let mut all_string_keys = true;
 
                 for &key_id in key_symbols {
-                    // Key symbol type - all keys should be the same type
-                    let k_ty = ctx.get_or_create_symbol_type(key_id);
-                    ctx.add_constraint(Constraint::Equal(key_ty.clone(), k_ty, range));
+                    let symbol = hir.symbol(key_id);
+                    let key_name = symbol.and_then(|s| s.value.as_ref().map(|v| v.to_string()));
+                    let key_kind = symbol.map(|s| s.kind.clone());
 
-                    // Process value expressions (to assign types to them)
-                    let value_children = get_children(children_index, key_id);
-                    for &val_id in value_children {
-                        ctx.get_or_create_symbol_type(val_id);
+                    if let Some(name) = key_name {
+                        // Get value type from the key's children
+                        let value_children = get_children(children_index, key_id);
+                        let val_ty = if let Some(&val_id) = value_children.last() {
+                            ctx.get_or_create_symbol_type(val_id)
+                        } else {
+                            Type::Var(ctx.fresh_var())
+                        };
+                        // Assign appropriate type to the key symbol
+                        let key_ty = if key_kind == Some(SymbolKind::String) {
+                            Type::String
+                        } else {
+                            Type::Symbol
+                        };
+                        ctx.set_symbol_type(key_id, key_ty);
+                        fields.insert(name, val_ty);
+                    } else {
+                        all_string_keys = false;
+                        break;
                     }
                 }
 
-                let dict_ty = Type::dict(key_ty, Type::Var(val_ty_var));
-                ctx.set_symbol_type(symbol_id, dict_ty);
+                if all_string_keys {
+                    // Closed record: all field keys are statically known
+                    let record_ty = Type::record(fields, Type::RowEmpty);
+                    ctx.set_symbol_type(symbol_id, record_ty);
+                } else {
+                    // Fallback: dynamic keys → use Dict type
+                    let key_ty_var = ctx.fresh_var();
+                    let val_ty_var = ctx.fresh_var();
+                    let key_ty = Type::Var(key_ty_var);
+                    let range = get_symbol_range(hir, symbol_id);
+
+                    for &key_id in key_symbols {
+                        let k_ty = ctx.get_or_create_symbol_type(key_id);
+                        ctx.add_constraint(Constraint::Equal(key_ty.clone(), k_ty, range));
+
+                        let value_children = get_children(children_index, key_id);
+                        for &val_id in value_children {
+                            ctx.get_or_create_symbol_type(val_id);
+                        }
+                    }
+
+                    let dict_ty = Type::dict(key_ty, Type::Var(val_ty_var));
+                    ctx.set_symbol_type(symbol_id, dict_ty);
+                }
             }
         }
 
@@ -1806,8 +1865,40 @@ fn generate_symbol_constraints(
             }
         }
 
-        // Selector, QualifiedAccess, and other kinds that don't need deep type checking
-        SymbolKind::Selector | SymbolKind::QualifiedAccess => {
+        // Selector: resolve field type from Record if piped input is known
+        SymbolKind::Selector => {
+            if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
+                let resolved = ctx.resolve_type(&piped_ty);
+                let field_name = hir
+                    .symbol(symbol_id)
+                    .and_then(|s| s.value.as_ref())
+                    .map(|v| v.trim_start_matches('.').trim_start_matches("[:").trim_end_matches(']'));
+
+                if let Type::Record(ref fields, _) = resolved {
+                    if let Some(name) = field_name {
+                        if let Some(field_ty) = fields.get(name) {
+                            ctx.set_symbol_type(symbol_id, field_ty.clone());
+                        } else {
+                            // Field not found in closed record — use fresh var
+                            let ty_var = ctx.fresh_var();
+                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                        }
+                    } else {
+                        let ty_var = ctx.fresh_var();
+                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                    }
+                } else {
+                    let ty_var = ctx.fresh_var();
+                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                }
+            } else {
+                let ty_var = ctx.fresh_var();
+                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            }
+        }
+
+        // QualifiedAccess doesn't need deep type checking
+        SymbolKind::QualifiedAccess => {
             let ty_var = ctx.fresh_var();
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }

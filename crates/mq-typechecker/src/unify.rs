@@ -4,7 +4,7 @@ use crate::TypeError;
 use crate::constraint::Constraint;
 use crate::infer::InferenceContext;
 use crate::types::{Type, TypeVarId};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 /// Converts a Range to a simplified miette::SourceSpan for error reporting.
 /// Note: This creates an approximate span based on line/column information.
@@ -95,6 +95,46 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
             unify(ctx, v1, v2, range);
         }
 
+        // RowEmpty ↔ RowEmpty
+        (Type::RowEmpty, Type::RowEmpty) => {}
+
+        // RowEmpty ↔ Dict: a closed row is compatible with any Dict
+        // (all known fields were already matched in Record ↔ Dict)
+        (Type::RowEmpty, Type::Dict(_, _)) | (Type::Dict(_, _), Type::RowEmpty) => {}
+
+        // RowEmpty ↔ Record: closed row can absorb an empty record
+        (Type::RowEmpty, Type::Record(fields, rest)) | (Type::Record(fields, rest), Type::RowEmpty) => {
+            if fields.is_empty() {
+                unify(ctx, rest, &Type::RowEmpty, range);
+            } else {
+                let resolved_t1 = ctx.resolve_type(t1);
+                let resolved_t2 = ctx.resolve_type(t2);
+                ctx.add_error(TypeError::Mismatch {
+                    expected: resolved_t1.display_renumbered(),
+                    found: resolved_t2.display_renumbered(),
+                    span: range.as_ref().map(range_to_span),
+                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                });
+            }
+        }
+
+        // Record ↔ Record (row polymorphism)
+        (Type::Record(f1, r1), Type::Record(f2, r2)) => {
+            unify_records(ctx, f1, r1, f2, r2, range);
+        }
+
+        // Record ↔ Dict compatibility
+        (Type::Record(fields, rest), Type::Dict(k, v)) | (Type::Dict(k, v), Type::Record(fields, rest)) => {
+            // All record keys are strings → unify k with String
+            unify(ctx, k, &Type::String, range);
+            // All record field values must unify with the dict value type
+            for field_ty in fields.values() {
+                unify(ctx, field_ty, v, range);
+            }
+            // The rest of the row must also be compatible with the dict
+            unify(ctx, rest, &Type::Dict(k.clone(), v.clone()), range);
+        }
+
         // Functions
         (Type::Function(params1, ret1), Type::Function(params2, ret2)) => {
             if params1.len() != params2.len() {
@@ -157,6 +197,65 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
     }
 }
 
+/// Unifies two record types using row polymorphism.
+///
+/// Given `Record(f1, r1)` and `Record(f2, r2)`:
+/// 1. Common fields have their types unified
+/// 2. Fields only in f1 are pushed into r2 via a fresh row variable
+/// 3. Fields only in f2 are pushed into r1 via a fresh row variable
+/// 4. If no unique fields exist on either side, r1 and r2 are unified directly
+fn unify_records(
+    ctx: &mut InferenceContext,
+    f1: &BTreeMap<String, Type>,
+    r1: &Type,
+    f2: &BTreeMap<String, Type>,
+    r2: &Type,
+    range: Option<mq_lang::Range>,
+) {
+    // Unify common fields
+    for (k, v1) in f1 {
+        if let Some(v2) = f2.get(k) {
+            unify(ctx, v1, v2, range);
+        }
+    }
+
+    let only1: BTreeMap<String, Type> = f1
+        .iter()
+        .filter(|(k, _)| !f2.contains_key(k.as_str()))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    let only2: BTreeMap<String, Type> = f2
+        .iter()
+        .filter(|(k, _)| !f1.contains_key(k.as_str()))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+
+    match (only1.is_empty(), only2.is_empty()) {
+        (true, true) => {
+            // No unique fields — just unify the row tails
+            unify(ctx, r1, r2, range);
+        }
+        (false, true) => {
+            // f1 has extra fields; r2 must accommodate them
+            let fresh = ctx.fresh_var();
+            unify(ctx, r2, &Type::record(only1, Type::Var(fresh)), range);
+            unify(ctx, r1, &Type::Var(fresh), range);
+        }
+        (true, false) => {
+            // f2 has extra fields; r1 must accommodate them
+            let fresh = ctx.fresh_var();
+            unify(ctx, r1, &Type::record(only2, Type::Var(fresh)), range);
+            unify(ctx, r2, &Type::Var(fresh), range);
+        }
+        (false, false) => {
+            // Both sides have unique fields
+            let fresh = ctx.fresh_var();
+            unify(ctx, r1, &Type::record(only2, Type::Var(fresh)), range);
+            unify(ctx, r2, &Type::record(only1, Type::Var(fresh)), range);
+        }
+    }
+}
+
 /// Occurs check: ensures a type variable doesn't occur in a type
 ///
 /// This prevents infinite types like T = [T]
@@ -167,6 +266,7 @@ fn occurs_check(var: TypeVarId, ty: &Type) -> bool {
         Type::Dict(key, value) => occurs_check(var, key) || occurs_check(var, value),
         Type::Function(params, ret) => params.iter().any(|p| occurs_check(var, p)) || occurs_check(var, ret),
         Type::Union(types) => types.iter().any(|t| occurs_check(var, t)),
+        Type::Record(fields, rest) => fields.values().any(|v| occurs_check(var, v)) || occurs_check(var, rest),
         _ => false,
     }
 }
@@ -191,6 +291,13 @@ pub fn apply_substitution(ctx: &InferenceContext, ty: &Type) -> Type {
         Type::Union(types) => {
             let new_types = types.iter().map(|t| apply_substitution(ctx, t)).collect();
             Type::union(new_types)
+        }
+        Type::Record(fields, rest) => {
+            let new_fields = fields
+                .iter()
+                .map(|(k, v)| (k.clone(), apply_substitution(ctx, v)))
+                .collect();
+            Type::Record(new_fields, Box::new(apply_substitution(ctx, rest)))
         }
         _ => ty,
     }
@@ -237,6 +344,12 @@ fn collect_free_vars(ty: &Type, vars: &mut HashSet<TypeVarId>) {
                 collect_free_vars(param, vars);
             }
             collect_free_vars(ret, vars);
+        }
+        Type::Record(fields, rest) => {
+            for v in fields.values() {
+                collect_free_vars(v, vars);
+            }
+            collect_free_vars(rest, vars);
         }
         _ => {}
     }
