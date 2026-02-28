@@ -517,14 +517,14 @@ impl Default for TypeVarContext {
 /// Type substitution mapping type variables to types
 #[derive(Debug, Clone, Default)]
 pub struct Substitution {
-    map: std::collections::HashMap<TypeVarId, Type>,
+    map: FxHashMap<TypeVarId, Type>,
 }
 
 impl Substitution {
     /// Creates an empty substitution
     pub fn empty() -> Self {
         Self {
-            map: std::collections::HashMap::new(),
+            map: FxHashMap::default(),
         }
     }
 

@@ -4,6 +4,7 @@ use crate::infer::{DeferredOverload, DeferredParameterCall, DeferredUserCall, In
 use crate::types::Type;
 use crate::unify::range_to_span;
 use mq_hir::{Hir, SymbolId, SymbolKind};
+use rustc_hash::{FxHashMap, FxHashSet};
 use smol_str::SmolStr;
 use std::fmt;
 
@@ -25,37 +26,29 @@ impl fmt::Display for Constraint {
 /// Walks the HIR parent chain from `symbol_id` and returns the nearest ancestor
 /// whose kind is `SymbolKind::Function(_)`, if any.
 fn find_enclosing_function(hir: &Hir, symbol_id: SymbolId) -> Option<SymbolId> {
-    let mut current = symbol_id;
-    let mut depth = 0;
-    const MAX_DEPTH: usize = 200;
-    loop {
-        depth += 1;
-        if depth > MAX_DEPTH {
-            return None;
-        }
-        match hir.symbol(current).and_then(|s| s.parent) {
-            Some(parent) => {
-                if hir.symbol(parent).map(|s| s.is_function()).unwrap_or(false) {
-                    return Some(parent);
-                }
-                current = parent;
-            }
-            None => return None,
-        }
-    }
+    crate::walk_ancestors(hir, symbol_id).find_map(|(id, sym)| if sym.is_function() { Some(id) } else { None })
 }
 
-/// Helper function to get children of a symbol
-fn get_children(hir: &Hir, parent_id: SymbolId) -> Vec<SymbolId> {
-    hir.symbols()
-        .filter_map(|(id, symbol)| {
-            if symbol.parent == Some(parent_id) {
-                Some(id)
-            } else {
-                None
-            }
-        })
-        .collect()
+/// Pre-built index mapping each parent symbol to its children.
+///
+/// Built once at the start of constraint generation to avoid O(n) full HIR scans
+/// on every `get_children` call.
+type ChildrenIndex = FxHashMap<SymbolId, Vec<SymbolId>>;
+
+/// Builds the children index from all HIR symbols in a single pass.
+fn build_children_index(hir: &Hir) -> ChildrenIndex {
+    let mut index: ChildrenIndex = FxHashMap::default();
+    for (id, symbol) in hir.symbols() {
+        if let Some(parent) = symbol.parent {
+            index.entry(parent).or_default().push(id);
+        }
+    }
+    index
+}
+
+/// Helper function to get children of a symbol from the pre-built index.
+fn get_children(children_index: &ChildrenIndex, parent_id: SymbolId) -> &[SymbolId] {
+    children_index.get(&parent_id).map(|v| v.as_slice()).unwrap_or(&[])
 }
 
 /// Helper function to get the range of a symbol
@@ -67,48 +60,65 @@ fn get_symbol_range(hir: &Hir, symbol_id: SymbolId) -> Option<mq_lang::Range> {
 ///
 /// Symbols from included/imported modules are trusted library code and should
 /// not be type-checked, similar to builtin symbols.
-fn is_module_symbol(
-    _hir: &Hir,
-    symbol: &mq_hir::Symbol,
-    module_source_ids: &rustc_hash::FxHashSet<mq_hir::SourceId>,
-) -> bool {
+fn is_module_symbol(_hir: &Hir, symbol: &mq_hir::Symbol, module_source_ids: &FxHashSet<mq_hir::SourceId>) -> bool {
     symbol
         .source
         .source_id
         .is_some_and(|sid| module_source_ids.contains(&sid))
 }
 
-/// Collects all source IDs from include/import/module symbols.
-fn collect_module_source_ids(hir: &Hir) -> rustc_hash::FxHashSet<mq_hir::SourceId> {
-    let mut ids = rustc_hash::FxHashSet::default();
+/// Pre-categorized symbols for efficient multi-pass constraint generation.
+///
+/// Built in a single pass over all HIR symbols, replacing 5 separate iterations.
+struct SymbolCategories {
+    /// Source IDs from include/import/module symbols (for skipping module symbols)
+    module_source_ids: FxHashSet<mq_hir::SourceId>,
+    /// Pass 1: literals, variables, parameters, function/macro definitions
+    pass1_symbols: Vec<(SymbolId, SymbolKind)>,
+    /// Pass 2: root-level symbols (parent=None, non-builtin, non-module)
+    root_symbols: Vec<SymbolId>,
+    /// Pass 3: operators, calls, and other symbols (will be reversed for processing)
+    pass3_symbols: Vec<(SymbolId, SymbolKind)>,
+    /// Pass 4: Block symbols
+    pass4_blocks: Vec<SymbolId>,
+    /// Pass 4: Function/Macro symbols (for body pipe chains)
+    pass4_functions: Vec<SymbolId>,
+}
+
+/// Categorizes all HIR symbols into processing buckets in a single pass.
+fn categorize_symbols(hir: &Hir) -> SymbolCategories {
+    let mut cats = SymbolCategories {
+        module_source_ids: FxHashSet::default(),
+        pass1_symbols: Vec::new(),
+        root_symbols: Vec::new(),
+        pass3_symbols: Vec::new(),
+        pass4_blocks: Vec::new(),
+        pass4_functions: Vec::new(),
+    };
+
+    // First pass: collect module source IDs (needed to filter subsequent symbols)
     for (_, symbol) in hir.symbols() {
         match symbol.kind {
             SymbolKind::Include(source_id) | SymbolKind::Import(source_id) | SymbolKind::Module(source_id) => {
-                ids.insert(source_id);
+                cats.module_source_ids.insert(source_id);
             }
             _ => {}
         }
     }
-    ids
-}
 
-/// Generates type constraints from HIR
-pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
-    // Collect module source IDs to skip their symbols during type checking.
-    // Symbols from included/imported modules are trusted library code.
-    let module_source_ids = collect_module_source_ids(hir);
-
-    // Use a two-pass approach to ensure literals have concrete types before operators use them
-
-    // Assign types to literals, variables, and simple constructs
-    // This ensures base types are established first
+    // Second pass: categorize non-builtin, non-module symbols
     for (symbol_id, symbol) in hir.symbols() {
-        // Skip builtin and module symbols to avoid type checking their implementations
-        if hir.is_builtin_symbol(symbol) || is_module_symbol(hir, symbol, &module_source_ids) {
+        if hir.is_builtin_symbol(symbol) || is_module_symbol(hir, symbol, &cats.module_source_ids) {
             continue;
         }
 
-        match symbol.kind {
+        // Root symbols (pass 2)
+        if symbol.parent.is_none() {
+            cats.root_symbols.push(symbol_id);
+        }
+
+        match &symbol.kind {
+            // Pass 1: literals, variables, parameters, function/macro definitions
             SymbolKind::Number
             | SymbolKind::String
             | SymbolKind::Boolean
@@ -119,75 +129,61 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
             | SymbolKind::PatternVariable
             | SymbolKind::Function(_)
             | SymbolKind::Macro(_) => {
-                generate_symbol_constraints(hir, symbol_id, symbol.kind.clone(), ctx);
+                cats.pass1_symbols.push((symbol_id, symbol.kind.clone()));
             }
-            _ => {}
-        }
-    }
-
-    // Set up piped inputs before processing operators/calls
-    // Root-level symbols (parent=None, not builtin/module) form an implicit pipe chain
-    let root_symbols: Vec<SymbolId> = hir
-        .symbols()
-        .filter(|(_, symbol)| {
-            symbol.parent.is_none()
-                && !hir.is_builtin_symbol(symbol)
-                && !is_module_symbol(hir, symbol, &module_source_ids)
-        })
-        .map(|(id, _)| id)
-        .collect();
-    for i in 1..root_symbols.len() {
-        let prev_ty = ctx.get_or_create_symbol_type(root_symbols[i - 1]);
-        ctx.set_piped_input(root_symbols[i], prev_ty);
-    }
-
-    // Process all other symbols (operators, calls, etc.) except Block
-    // These can now reference the concrete types from pass 1 and piped inputs from pass 2
-    // Process in reverse order so children (higher IDs) are typed before parents (lower IDs)
-    let pass3_symbols: Vec<(SymbolId, SymbolKind)> = hir
-        .symbols()
-        .filter(|(_, symbol)| {
-            if hir.is_builtin_symbol(symbol) || is_module_symbol(hir, symbol, &module_source_ids) {
-                return false;
+            // Pass 4: Block symbols
+            SymbolKind::Block => {
+                cats.pass4_blocks.push(symbol_id);
             }
-            // Skip kinds already processed in pass 1
-            if matches!(
-                symbol.kind,
-                SymbolKind::Number
-                    | SymbolKind::String
-                    | SymbolKind::Boolean
-                    | SymbolKind::Symbol
-                    | SymbolKind::None
-                    | SymbolKind::Variable
-                    | SymbolKind::Parameter
-                    | SymbolKind::PatternVariable
-                    | SymbolKind::Function(_)
-                    | SymbolKind::Macro(_)
-                    | SymbolKind::Block
-            ) {
-                return false;
+            // Pass 3: everything else (operators, calls, etc.)
+            _ => {
+                cats.pass3_symbols.push((symbol_id, symbol.kind.clone()));
             }
-            true
-        })
-        .map(|(id, symbol)| (id, symbol.kind.clone()))
-        .collect();
-    for (symbol_id, kind) in pass3_symbols.into_iter().rev() {
-        generate_symbol_constraints(hir, symbol_id, kind, ctx);
-    }
+        }
 
-    // Process Block symbols and Function body pipe chains
-    // Children are now typed, so we can thread output types through the chain
-    for (symbol_id, symbol) in hir.symbols() {
-        if hir.is_builtin_symbol(symbol) || is_module_symbol(hir, symbol, &module_source_ids) {
-            continue;
-        }
-        if matches!(symbol.kind, SymbolKind::Block) {
-            generate_block_constraints(hir, symbol_id, ctx);
-        }
-        // Handle implicit pipe chains in Function/Macro bodies
+        // Pass 4: Function/Macro body pipe chains (also processed in pass 1)
         if matches!(symbol.kind, SymbolKind::Function(_) | SymbolKind::Macro(_)) {
-            generate_function_body_pipe_constraints(hir, symbol_id, ctx);
+            cats.pass4_functions.push(symbol_id);
         }
+    }
+
+    cats
+}
+
+/// Generates type constraints from HIR
+pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
+    // Build children index once to avoid O(n) scans in get_children()
+    let children_index = build_children_index(hir);
+
+    // Categorize symbols in a single pass (replaces 5 separate iterations)
+    let cats = categorize_symbols(hir);
+
+    // Pass 1: Assign types to literals, variables, and simple constructs
+    // This ensures base types are established first
+    for (symbol_id, kind) in &cats.pass1_symbols {
+        generate_symbol_constraints(hir, *symbol_id, kind.clone(), ctx, &children_index);
+    }
+
+    // Pass 2: Set up piped inputs for root-level symbols
+    // Root-level symbols (parent=None, not builtin/module) form an implicit pipe chain
+    for i in 1..cats.root_symbols.len() {
+        let prev_ty = ctx.get_or_create_symbol_type(cats.root_symbols[i - 1]);
+        ctx.set_piped_input(cats.root_symbols[i], prev_ty);
+    }
+
+    // Pass 3: Process operators, calls, etc.
+    // Process in reverse order so children (higher IDs) are typed before parents (lower IDs)
+    for (symbol_id, kind) in cats.pass3_symbols.into_iter().rev() {
+        generate_symbol_constraints(hir, symbol_id, kind, ctx, &children_index);
+    }
+
+    // Pass 4: Process Block symbols and Function body pipe chains
+    // Children are now typed, so we can thread output types through the chain
+    for symbol_id in &cats.pass4_blocks {
+        generate_block_constraints(hir, *symbol_id, ctx, &children_index);
+    }
+    for symbol_id in &cats.pass4_functions {
+        generate_function_body_pipe_constraints(hir, *symbol_id, ctx, &children_index);
     }
 }
 
@@ -197,8 +193,13 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
 /// Block symbols represent pipe chains; their children are the expressions in sequence.
 /// This function threads the output type of each child to the next child's piped input,
 /// and sets the Block's type to its last child's type.
-fn generate_block_constraints(hir: &Hir, symbol_id: SymbolId, ctx: &mut InferenceContext) {
-    let children = get_children(hir, symbol_id);
+fn generate_block_constraints(
+    hir: &Hir,
+    symbol_id: SymbolId,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) {
+    let children = get_children(children_index, symbol_id);
 
     if children.is_empty() {
         let ty_var = ctx.fresh_var();
@@ -218,13 +219,13 @@ fn generate_block_constraints(hir: &Hir, symbol_id: SymbolId, ctx: &mut Inferenc
         if let Some(child_symbol) = hir.symbol(children[i])
             && matches!(child_symbol.kind, SymbolKind::Call | SymbolKind::Ref)
         {
-            generate_symbol_constraints(hir, children[i], child_symbol.kind.clone(), ctx);
+            generate_symbol_constraints(hir, children[i], child_symbol.kind.clone(), ctx, children_index);
         }
     }
 
     // Propagate piped input through UnaryOp to inner Call/Ref children.
     // e.g., `x | !is_empty()` — piped input flows through `!` to `is_empty()`
-    propagate_piped_input_through_unary_ops(hir, &children, ctx);
+    propagate_piped_input_through_unary_ops(hir, children, ctx, children_index);
 
     // The Block's type is the last child's type
     let last_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
@@ -235,12 +236,18 @@ fn generate_block_constraints(hir: &Hir, symbol_id: SymbolId, ctx: &mut Inferenc
 ///
 /// When a function body has multiple non-parameter children (e.g., `def f(x): a | b`),
 /// the output of each expression flows into the next as piped input.
-fn generate_function_body_pipe_constraints(hir: &Hir, symbol_id: SymbolId, ctx: &mut InferenceContext) {
-    let children = get_children(hir, symbol_id);
+fn generate_function_body_pipe_constraints(
+    hir: &Hir,
+    symbol_id: SymbolId,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) {
+    let children = get_children(children_index, symbol_id);
 
     // Get non-parameter body children
     let body_children: Vec<SymbolId> = children
-        .into_iter()
+        .iter()
+        .copied()
         .filter(|&child_id| {
             hir.symbol(child_id)
                 .map(|s| !matches!(s.kind, SymbolKind::Parameter | SymbolKind::Keyword))
@@ -263,12 +270,12 @@ fn generate_function_body_pipe_constraints(hir: &Hir, symbol_id: SymbolId, ctx: 
         if let Some(child_symbol) = hir.symbol(body_children[i])
             && matches!(child_symbol.kind, SymbolKind::Call | SymbolKind::Ref)
         {
-            generate_symbol_constraints(hir, body_children[i], child_symbol.kind.clone(), ctx);
+            generate_symbol_constraints(hir, body_children[i], child_symbol.kind.clone(), ctx, children_index);
         }
     }
 
     // Propagate piped input through UnaryOp to inner Call/Ref children
-    propagate_piped_input_through_unary_ops(hir, &body_children, ctx);
+    propagate_piped_input_through_unary_ops(hir, &body_children, ctx, children_index);
 }
 
 /// Propagates piped input through UnaryOp nodes to their inner Call/Ref children.
@@ -276,19 +283,24 @@ fn generate_function_body_pipe_constraints(hir: &Hir, symbol_id: SymbolId, ctx: 
 /// When a pipe chain contains `x | !f()`, the piped value from `x` flows through
 /// the `!` (UnaryOp) to `f()` (Call). This function handles that propagation and
 /// re-processes the inner Call/Ref to pick up the piped input.
-fn propagate_piped_input_through_unary_ops(hir: &Hir, children: &[SymbolId], ctx: &mut InferenceContext) {
+fn propagate_piped_input_through_unary_ops(
+    hir: &Hir,
+    children: &[SymbolId],
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) {
     for &child_id in children.iter().skip(1) {
         if let Some(child_symbol) = hir.symbol(child_id)
             && matches!(child_symbol.kind, SymbolKind::UnaryOp)
             && let Some(piped_ty) = ctx.get_piped_input(child_id).cloned()
         {
-            let inner_children = get_children(hir, child_id);
-            for &inner_id in &inner_children {
+            let inner_children = get_children(children_index, child_id);
+            for &inner_id in inner_children {
                 if let Some(inner_sym) = hir.symbol(inner_id)
                     && matches!(inner_sym.kind, SymbolKind::Call | SymbolKind::Ref)
                 {
                     ctx.set_piped_input(inner_id, piped_ty.clone());
-                    generate_symbol_constraints(hir, inner_id, inner_sym.kind.clone(), ctx);
+                    generate_symbol_constraints(hir, inner_id, inner_sym.kind.clone(), ctx, children_index);
                 }
             }
         }
@@ -300,9 +312,14 @@ fn propagate_piped_input_through_unary_ops(hir: &Hir, children: &[SymbolId], ctx
 /// For Elif: children are [condition, body] — constrains condition to Bool, returns body type.
 /// For Else: children are [body] — returns body type.
 /// For other kinds: returns the symbol's type directly.
-fn resolve_branch_body_type(hir: &Hir, branch_id: SymbolId, ctx: &mut InferenceContext) -> Type {
+fn resolve_branch_body_type(
+    hir: &Hir,
+    branch_id: SymbolId,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) -> Type {
     if let Some(symbol) = hir.symbol(branch_id) {
-        let children = get_children(hir, branch_id);
+        let children = get_children(children_index, branch_id);
         match symbol.kind {
             SymbolKind::Elif => {
                 if children.len() >= 2 {
@@ -467,20 +484,7 @@ fn resolve_builtin_call(
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }
     } else if is_builtin && !defer_error {
-        ctx.add_error(crate::TypeError::UnificationError {
-            left: format!(
-                "{} with arguments ({})",
-                func_name,
-                resolved_arg_tys
-                    .iter()
-                    .map(|t| t.display_renumbered())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            right: "no matching overload".to_string(),
-            span: range.as_ref().map(range_to_span),
-            location: range.as_ref().map(|r| (r.start.line, r.start.column)),
-        });
+        ctx.report_no_matching_overload(func_name, &resolved_arg_tys, range);
         let ty_var = ctx.fresh_var();
         ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
     } else {
@@ -498,9 +502,14 @@ fn resolve_builtin_call(
 /// - Has a Symbol child → Symbol
 /// - Has a None child → None
 /// - Otherwise → fresh type variable (wildcard or variable pattern)
-fn resolve_pattern_type(hir: &Hir, pattern_id: SymbolId, ctx: &mut InferenceContext) -> Type {
-    let children = get_children(hir, pattern_id);
-    for &child_id in &children {
+fn resolve_pattern_type(
+    hir: &Hir,
+    pattern_id: SymbolId,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) -> Type {
+    let children = get_children(children_index, pattern_id);
+    for &child_id in children {
         if let Some(child_symbol) = hir.symbol(child_id) {
             match child_symbol.kind {
                 SymbolKind::Number => return Type::Number,
@@ -527,10 +536,15 @@ fn resolve_pattern_type(hir: &Hir, pattern_id: SymbolId, ctx: &mut InferenceCont
 /// a fresh type variable is added to represent the implicit else (pass-through) path.
 /// This models the fact that when the condition is false the loop body returns the
 /// current piped value (of an unknown type), so the loop's exit type must be a union.
-fn collect_break_value_types(hir: &Hir, loop_symbol_id: SymbolId, ctx: &mut InferenceContext) -> Vec<Type> {
+fn collect_break_value_types(
+    hir: &Hir,
+    loop_symbol_id: SymbolId,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) -> Vec<Type> {
     let mut types = Vec::new();
-    for child_id in get_children(hir, loop_symbol_id) {
-        collect_break_types_inner(hir, child_id, ctx, &mut types);
+    for &child_id in get_children(children_index, loop_symbol_id) {
+        collect_break_types_inner(hir, child_id, ctx, &mut types, children_index);
     }
     types
 }
@@ -545,6 +559,7 @@ fn collect_break_types_inner(
     symbol_id: SymbolId,
     ctx: &mut InferenceContext,
     result: &mut Vec<Type>,
+    children_index: &ChildrenIndex,
 ) -> bool {
     let Some(symbol) = hir.symbol(symbol_id) else {
         return false;
@@ -555,7 +570,7 @@ fn collect_break_types_inner(
     }
     if matches!(symbol.kind, SymbolKind::Keyword) && symbol.value.as_deref() == Some("break") {
         // Only include `break: value` (has a value child), not bare `break`.
-        let children = get_children(hir, symbol_id);
+        let children = get_children(children_index, symbol_id);
         if !children.is_empty() {
             result.push(ctx.get_or_create_symbol_type(symbol_id));
             return true;
@@ -563,7 +578,7 @@ fn collect_break_types_inner(
         return false; // bare break — no value, never recurse
     }
     if matches!(symbol.kind, SymbolKind::If) {
-        let children = get_children(hir, symbol_id);
+        let children = get_children(children_index, symbol_id);
         // An `if` without an explicit `else` child implicitly passes the input through
         // when the condition is false.  Record whether any break was found inside so we
         // can add a fresh type variable for that path.
@@ -572,8 +587,8 @@ fn collect_break_types_inner(
             .any(|&id| hir.symbol(id).is_some_and(|s| matches!(s.kind, SymbolKind::Else)));
 
         let mut found_break = false;
-        for &child_id in &children {
-            if collect_break_types_inner(hir, child_id, ctx, result) {
+        for &child_id in children {
+            if collect_break_types_inner(hir, child_id, ctx, result, children_index) {
                 found_break = true;
             }
         }
@@ -586,8 +601,8 @@ fn collect_break_types_inner(
         return found_break;
     }
     let mut found_break = false;
-    for child_id in get_children(hir, symbol_id) {
-        if collect_break_types_inner(hir, child_id, ctx, result) {
+    for &child_id in get_children(children_index, symbol_id) {
+        if collect_break_types_inner(hir, child_id, ctx, result, children_index) {
             found_break = true;
         }
     }
@@ -645,7 +660,13 @@ fn merge_loop_types(base_ty: Type, break_tys: Vec<Type>, ctx: &InferenceContext)
 }
 
 /// Generates constraints for a single symbol
-fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind, ctx: &mut InferenceContext) {
+fn generate_symbol_constraints(
+    hir: &Hir,
+    symbol_id: SymbolId,
+    kind: SymbolKind,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) {
     match kind {
         // Literals have concrete types
         SymbolKind::Number => {
@@ -681,7 +702,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
 
             // Connect variable type to its initializer expression (last child)
-            let children = get_children(hir, symbol_id);
+            let children = get_children(children_index, symbol_id);
             if let Some(&last_child) = children.last() {
                 let child_ty = ctx.get_or_create_symbol_type(last_child);
                 let range = get_symbol_range(hir, symbol_id);
@@ -702,7 +723,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             ctx.set_symbol_type(symbol_id, func_ty);
 
             // Bind parameter types to their parameter symbols
-            let children = get_children(hir, symbol_id);
+            let children = get_children(children_index, symbol_id);
             let param_children: Vec<SymbolId> = children
                 .iter()
                 .filter(|&&child_id| {
@@ -890,7 +911,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             if let Some(symbol) = hir.symbol(symbol_id) {
                 if let Some(op_name) = &symbol.value {
                     // Get left and right operands
-                    let children = get_children(hir, symbol_id);
+                    let children = get_children(children_index, symbol_id);
                     if children.len() >= 2 {
                         let left_ty = ctx.get_or_create_symbol_type(children[0]);
                         let right_ty = ctx.get_or_create_symbol_type(children[1]);
@@ -950,17 +971,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                                 }
                             } else {
                                 // No matching overload found - collect error
-                                ctx.add_error(crate::TypeError::UnificationError {
-                                    left: format!(
-                                        "{} with arguments ({}, {})",
-                                        op_name,
-                                        resolved_left.display_renumbered(),
-                                        resolved_right.display_renumbered()
-                                    ),
-                                    right: "no matching overload".to_string(),
-                                    span: range.as_ref().map(range_to_span),
-                                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
-                                });
+                                ctx.report_no_matching_overload(op_name, &[resolved_left, resolved_right], range);
                                 let ty_var = ctx.fresh_var();
                                 ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                             }
@@ -982,7 +993,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
         SymbolKind::UnaryOp => {
             if let Some(symbol) = hir.symbol(symbol_id) {
                 if let Some(op_name) = &symbol.value {
-                    let children = get_children(hir, symbol_id);
+                    let children = get_children(children_index, symbol_id);
                     if !children.is_empty() {
                         let operand_ty = ctx.get_or_create_symbol_type(children[0]);
                         let range = get_symbol_range(hir, symbol_id);
@@ -1018,16 +1029,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                                 }
                             } else {
                                 // No matching overload found - collect error
-                                ctx.add_error(crate::TypeError::UnificationError {
-                                    left: format!(
-                                        "{} with argument ({})",
-                                        op_name,
-                                        resolved_operand.display_renumbered()
-                                    ),
-                                    right: "no matching overload".to_string(),
-                                    span: range.as_ref().map(range_to_span),
-                                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
-                                });
+                                ctx.report_no_matching_overload(op_name, &[resolved_operand], range);
                                 let ty_var = ctx.fresh_var();
                                 ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                             }
@@ -1050,8 +1052,9 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 if let Some(func_name) = &call_symbol.value {
                     // All children are explicit arguments (filter out Keyword symbols
                     // which are syntax elements like `fn` in lambda expressions)
-                    let children: Vec<SymbolId> = get_children(hir, symbol_id)
-                        .into_iter()
+                    let children: Vec<SymbolId> = get_children(children_index, symbol_id)
+                        .iter()
+                        .copied()
                         .filter(|&child_id| {
                             hir.symbol(child_id)
                                 .map(|s| !matches!(s.kind, SymbolKind::Keyword))
@@ -1181,7 +1184,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             // mq is dynamically typed and allows heterogeneous arrays (e.g., [string, number]
             // used as tuples). When elements have different concrete types, we skip
             // unification to avoid cascading false-positive type errors.
-            let children = get_children(hir, symbol_id);
+            let children = get_children(children_index, symbol_id);
             if children.is_empty() {
                 // Empty array - element type is a fresh type variable
                 let elem_ty_var = ctx.fresh_var();
@@ -1231,7 +1234,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             // Direct children of Dict are the key symbols
             // Note: mq dicts are like JSON objects - values can have different types
             // So we only unify key types, not value types
-            let key_symbols = get_children(hir, symbol_id);
+            let key_symbols = get_children(children_index, symbol_id);
             if key_symbols.is_empty() {
                 let key_ty_var = ctx.fresh_var();
                 let val_ty_var = ctx.fresh_var();
@@ -1243,14 +1246,14 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 let key_ty = Type::Var(key_ty_var);
                 let range = get_symbol_range(hir, symbol_id);
 
-                for &key_id in &key_symbols {
+                for &key_id in key_symbols {
                     // Key symbol type - all keys should be the same type
                     let k_ty = ctx.get_or_create_symbol_type(key_id);
                     ctx.add_constraint(Constraint::Equal(key_ty.clone(), k_ty, range));
 
                     // Process value expressions (to assign types to them)
-                    let value_children = get_children(hir, key_id);
-                    for &val_id in &value_children {
+                    let value_children = get_children(children_index, key_id);
+                    for &val_id in value_children {
                         ctx.get_or_create_symbol_type(val_id);
                     }
                 }
@@ -1262,7 +1265,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
 
         // Control flow constructs
         SymbolKind::If => {
-            let children = get_children(hir, symbol_id);
+            let children = get_children(children_index, symbol_id);
             if !children.is_empty() {
                 let range = get_symbol_range(hir, symbol_id);
 
@@ -1278,7 +1281,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                     let then_ty = ctx.get_or_create_symbol_type(children[1]);
                     let mut branch_tys = vec![then_ty.clone()];
                     for &child_id in &children[2..] {
-                        let child_ty = resolve_branch_body_type(hir, child_id, ctx);
+                        let child_ty = resolve_branch_body_type(hir, child_id, ctx, children_index);
                         branch_tys.push(child_ty);
                     }
 
@@ -1337,7 +1340,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             // While loop: condition must be Bool, result type from body.
             // `break: value` exits with the value's type; multiple break paths may
             // create a union with the normal-exit (body) type.
-            let children = get_children(hir, symbol_id);
+            let children = get_children(children_index, symbol_id);
             let range = get_symbol_range(hir, symbol_id);
 
             if !children.is_empty() {
@@ -1348,7 +1351,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 // Result type comes from the body (last child after condition)
                 if children.len() > 1 {
                     let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
-                    let break_tys = collect_break_value_types(hir, symbol_id, ctx);
+                    let break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
                     let loop_ty = merge_loop_types(body_ty, break_tys, ctx);
                     ctx.set_symbol_type(symbol_id, loop_ty);
                 } else {
@@ -1365,11 +1368,11 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             // Infinite loop: result type is determined by `break: value` expressions
             // and/or the last body expression if the loop falls through.
             // Multiple break paths with different types create a union type.
-            let children = get_children(hir, symbol_id);
+            let children = get_children(children_index, symbol_id);
 
             if !children.is_empty() {
                 let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
-                let break_tys = collect_break_value_types(hir, symbol_id, ctx);
+                let break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
                 let loop_ty = merge_loop_types(body_ty, break_tys, ctx);
                 ctx.set_symbol_type(symbol_id, loop_ty);
             } else {
@@ -1386,7 +1389,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             // When `break: value` is used, foreach exits early returning the value directly
             // (not wrapped in an array).  This creates a union with the normal Array<body>
             // exit type.
-            let children = get_children(hir, symbol_id);
+            let children = get_children(children_index, symbol_id);
 
             if !children.is_empty() {
                 // Constrain the loop variable type to the element type of the iterable.
@@ -1437,7 +1440,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                 };
 
                 // Merge with break value types (each break: value returns that value directly)
-                let break_tys = collect_break_value_types(hir, symbol_id, ctx);
+                let break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
                 let loop_ty = merge_loop_types(array_ty, break_tys, ctx);
                 ctx.set_symbol_type(symbol_id, loop_ty);
             } else {
@@ -1456,7 +1459,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
         SymbolKind::Match => {
             // All match arms should have the same type
             // Pattern types should be compatible with the match expression type
-            let children = get_children(hir, symbol_id);
+            let children = get_children(children_index, symbol_id);
             let range = get_symbol_range(hir, symbol_id);
 
             if children.len() > 1 {
@@ -1468,15 +1471,15 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                     let mut arm_body_tys = Vec::new();
 
                     for &arm_id in &arm_children {
-                        let arm_children_inner = get_children(hir, arm_id);
+                        let arm_children_inner = get_children(children_index, arm_id);
 
                         // Separate pattern and body children
                         let mut body_ty = None;
-                        for &arm_child_id in &arm_children_inner {
+                        for &arm_child_id in arm_children_inner {
                             if let Some(arm_child_symbol) = hir.symbol(arm_child_id) {
                                 if matches!(arm_child_symbol.kind, SymbolKind::Pattern) {
                                     // Determine pattern type from its literal children
-                                    let pattern_ty = resolve_pattern_type(hir, arm_child_id, ctx);
+                                    let pattern_ty = resolve_pattern_type(hir, arm_child_id, ctx, children_index);
                                     ctx.add_constraint(Constraint::Equal(match_expr_ty.clone(), pattern_ty, range));
                                 } else {
                                     // Track the last non-Pattern child as the body
@@ -1532,7 +1535,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
 
         SymbolKind::Try => {
             // Try/Catch: try body and catch body may have different types in dynamically typed mq
-            let children = get_children(hir, symbol_id);
+            let children = get_children(children_index, symbol_id);
             let range = get_symbol_range(hir, symbol_id);
 
             if children.len() >= 2 {
@@ -1544,7 +1547,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                     && matches!(catch_symbol.kind, SymbolKind::Catch)
                 {
                     // Look into Catch's children to get the actual catch body type
-                    let catch_children = get_children(hir, children[1]);
+                    let catch_children = get_children(children_index, children[1]);
                     if let Some(&last_child) = catch_children.last() {
                         let body_ty = ctx.get_or_create_symbol_type(last_child);
                         ctx.set_symbol_type(children[1], body_ty.clone());
@@ -1589,7 +1592,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
             ctx.set_symbol_type(symbol_id, func_ty);
 
             // Bind parameter types to their parameter symbols
-            let children = get_children(hir, symbol_id);
+            let children = get_children(children_index, symbol_id);
             let param_children: Vec<SymbolId> = children
                 .iter()
                 .filter(|&&child_id| {
@@ -1624,7 +1627,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
 
         // Dynamic function calls
         SymbolKind::CallDynamic => {
-            let children = get_children(hir, symbol_id);
+            let children = get_children(children_index, symbol_id);
             if !children.is_empty() {
                 let callable_ty = ctx.get_or_create_symbol_type(children[0]);
                 let arg_tys: Vec<Type> = children[1..]
@@ -1655,7 +1658,7 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
         SymbolKind::Keyword => {
             let symbol = hir.symbol(symbol_id);
             if symbol.is_some_and(|s| s.value.as_deref() == Some("break")) {
-                let children = get_children(hir, symbol_id);
+                let children = get_children(children_index, symbol_id);
                 if let Some(&value_child) = children.first() {
                     let child_ty = ctx.get_or_create_symbol_type(value_child);
                     ctx.set_symbol_type(symbol_id, child_ty);

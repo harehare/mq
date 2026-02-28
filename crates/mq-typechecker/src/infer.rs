@@ -164,6 +164,21 @@ impl InferenceContext {
         &self.deferred_parameter_calls
     }
 
+    /// Reports a "no matching overload" error with formatted argument types.
+    pub fn report_no_matching_overload(&mut self, op_name: &str, arg_tys: &[Type], range: Option<mq_lang::Range>) {
+        let args_str = arg_tys
+            .iter()
+            .map(|t| t.display_renumbered())
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.add_error(crate::TypeError::UnificationError {
+            left: format!("{} with arguments ({})", op_name, args_str),
+            right: "no matching overload".to_string(),
+            span: range.as_ref().map(crate::unify::range_to_span),
+            location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+        });
+    }
+
     /// Resolves the best matching overload for a function call.
     ///
     /// Given a function name and argument types, finds the best matching overload

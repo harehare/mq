@@ -114,6 +114,29 @@ impl TypeError {
     }
 }
 
+/// Walks the HIR parent chain from `start`, yielding `(SymbolId, &Symbol)` pairs.
+///
+/// Begins with the parent of `start` and follows the chain upward.
+/// Includes a depth limit to prevent infinite loops on cyclic structures.
+pub(crate) fn walk_ancestors(
+    hir: &Hir,
+    start: mq_hir::SymbolId,
+) -> impl Iterator<Item = (mq_hir::SymbolId, &mq_hir::Symbol)> {
+    let mut current = hir.symbol(start).and_then(|s| s.parent);
+    let mut depth = 0usize;
+    std::iter::from_fn(move || {
+        let id = current?;
+        depth += 1;
+        if depth > 200 {
+            current = None;
+            return None;
+        }
+        let sym = hir.symbol(id)?;
+        current = sym.parent;
+        Some((id, sym))
+    })
+}
+
 /// Type checker for mq programs
 ///
 /// Provides type inference and checking capabilities based on HIR information.
@@ -183,16 +206,18 @@ impl TypeChecker {
             return;
         }
 
-        // Resolve deferred overloads in multiple passes.
+        // Resolve deferred overloads in multiple passes using index-based tracking
+        // to avoid cloning DeferredOverload structs.
         // Each pass resolves overloads that have at least one concrete operand.
         // Overloads with all-Var operands are deferred to subsequent passes,
         // as intermediate unification may resolve their types.
-        let mut remaining = deferred;
+        let mut remaining_indices: Vec<usize> = (0..deferred.len()).collect();
         let max_passes = 3;
         for _ in 0..max_passes {
             let mut next_remaining = Vec::new();
 
-            for d in &remaining {
+            for &idx in &remaining_indices {
+                let d = &deferred[idx];
                 let resolved_operands: Vec<types::Type> = d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
 
                 let all_concrete = resolved_operands.iter().all(|ty| !ty.is_var());
@@ -201,11 +226,6 @@ impl TypeChecker {
                 if has_union {
                     // Try to find a polymorphic overload where every union-typed argument
                     // is matched to a type-variable parameter (e.g. `to_number: (Var) -> Number`).
-                    // Such overloads accept any input and the generated constraint
-                    // (`Union == Var(fresh)`) unifies without error.
-                    // Binary operators like `+` only have concrete parameter overloads
-                    // (e.g. `(Number, Number) -> Number`), so they correctly fall through
-                    // to the error below.
                     if let Some(resolved_ty) = ctx.resolve_overload(&d.op_name, &resolved_operands)
                         && let types::Type::Function(param_tys, ret_ty) = resolved_ty
                         && param_tys.len() == d.operand_tys.len()
@@ -244,34 +264,14 @@ impl TypeChecker {
 
                 // Skip resolution when any operand is still a type variable
                 // and there are multiple overloads — we can't determine the correct one.
-                // This is critical for function body operators where parameter type variables
-                // must remain unresolved so check_user_call_body_operators can substitute
-                // call-site argument types per call site.
-                //
-                // However, even with type variables we can detect definitive errors:
-                // if NO overload could possibly match given the concrete operands, the
-                // operation is invalid regardless of what the type variables resolve to.
-                // For example, `x + true` where x is a Var has no valid `+` overload
-                // (since no overload accepts Bool as an argument), so it is always wrong.
                 let any_var = resolved_operands.iter().any(|ty| ty.is_var());
                 if any_var {
                     let overload_count = ctx.get_builtin_overloads(&d.op_name).map(|o| o.len()).unwrap_or(0);
                     if overload_count > 1 {
                         if ctx.resolve_overload(&d.op_name, &resolved_operands).is_none() {
-                            // No overload can possibly match — report error immediately.
-                            let args_str = resolved_operands
-                                .iter()
-                                .map(|t| t.display_renumbered())
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            ctx.add_error(TypeError::UnificationError {
-                                left: format!("{} with arguments ({})", d.op_name, args_str),
-                                right: "no matching overload".to_string(),
-                                span: d.range.as_ref().map(unify::range_to_span),
-                                location: d.range.as_ref().map(|r| (r.start.line, r.start.column)),
-                            });
+                            ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.range);
                         } else {
-                            next_remaining.push(d.clone());
+                            next_remaining.push(idx);
                         }
                         continue;
                     }
@@ -293,26 +293,17 @@ impl TypeChecker {
                         unify::solve_constraints(ctx);
                     }
                 } else if all_concrete {
-                    let args_str = resolved_operands
-                        .iter()
-                        .map(|t| t.display_renumbered())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    ctx.add_error(TypeError::UnificationError {
-                        left: format!("{} with arguments ({})", d.op_name, args_str),
-                        right: "no matching overload".to_string(),
-                        span: d.range.as_ref().map(unify::range_to_span),
-                        location: d.range.as_ref().map(|r| (r.start.line, r.start.column)),
-                    });
+                    ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.range);
                 } else {
                     // Some operands resolved but no match — defer to next pass
-                    next_remaining.push(d.clone());
+                    next_remaining.push(idx);
                 }
             }
 
-            if next_remaining.len() == remaining.len() {
+            if next_remaining.len() == remaining_indices.len() {
                 // No progress — resolve remaining with best-effort
-                for d in &next_remaining {
+                for &idx in &next_remaining {
+                    let d = &deferred[idx];
                     let resolved_operands: Vec<types::Type> =
                         d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
 
@@ -343,17 +334,7 @@ impl TypeChecker {
                     } else {
                         let all_concrete = resolved_operands.iter().all(|ty| !ty.is_var());
                         if all_concrete {
-                            let args_str = resolved_operands
-                                .iter()
-                                .map(|t| t.display_renumbered())
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            ctx.add_error(TypeError::UnificationError {
-                                left: format!("{} with arguments ({})", d.op_name, args_str),
-                                right: "no matching overload".to_string(),
-                                span: d.range.as_ref().map(unify::range_to_span),
-                                location: d.range.as_ref().map(|r| (r.start.line, r.start.column)),
-                            });
+                            ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.range);
                         } else {
                             // Still unresolved — store back for later processing
                             ctx.add_deferred_overload(d.clone());
@@ -363,8 +344,8 @@ impl TypeChecker {
                 break;
             }
 
-            remaining = next_remaining;
-            if remaining.is_empty() {
+            remaining_indices = next_remaining;
+            if remaining_indices.is_empty() {
                 break;
             }
         }
@@ -598,17 +579,7 @@ impl TypeChecker {
                     made_progress = true;
                 } else {
                     // No matching overload — report error
-                    let args_str = substituted_operands
-                        .iter()
-                        .map(|t| t.display_renumbered())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    ctx.add_error(TypeError::UnificationError {
-                        left: format!("{} with arguments ({})", d.op_name, args_str),
-                        right: "no matching overload".to_string(),
-                        span: error_range.as_ref().map(unify::range_to_span),
-                        location: error_range.as_ref().map(|r| (r.start.line, r.start.column)),
-                    });
+                    ctx.report_no_matching_overload(&d.op_name, &substituted_operands, error_range);
                     made_progress = true;
                 }
             }
@@ -676,22 +647,12 @@ impl TypeChecker {
     /// Checks if a symbol is inside a function body by walking the HIR parent chain.
     /// Includes a depth limit to prevent stack overflow on deeply nested or cyclic structures.
     fn is_symbol_inside_function(hir: &Hir, symbol_id: SymbolId, func_id: SymbolId) -> bool {
-        let mut current = symbol_id;
-        let mut depth = 0;
-        const MAX_DEPTH: usize = 200;
-        loop {
-            if current == func_id {
+        for (id, _) in walk_ancestors(hir, symbol_id) {
+            if id == func_id {
                 return true;
             }
-            depth += 1;
-            if depth > MAX_DEPTH {
-                return false;
-            }
-            match hir.symbol(current).and_then(|s| s.parent) {
-                Some(parent) => current = parent,
-                None => return false,
-            }
         }
+        false
     }
 
     /// Checks if a symbol is inside a control flow construct (If, Elif, Else, While, Loop,
@@ -701,42 +662,27 @@ impl TypeChecker {
     /// type checks narrow the type beyond what static analysis can determine.
     fn is_inside_control_flow(hir: &Hir, symbol_id: SymbolId, func_id: SymbolId) -> bool {
         use mq_hir::SymbolKind;
-        let mut current = symbol_id;
-        let mut depth = 0;
-        const MAX_DEPTH: usize = 200;
-        loop {
-            if current == func_id {
+        for (id, symbol) in walk_ancestors(hir, symbol_id) {
+            if id == func_id {
                 return false;
             }
-            depth += 1;
-            if depth > MAX_DEPTH {
-                return false;
-            }
-            match hir.symbol(current).and_then(|s| {
-                let kind = &s.kind;
-                s.parent.map(|p| (p, kind.clone()))
-            }) {
-                Some((parent, kind)) => {
-                    if matches!(
-                        kind,
-                        SymbolKind::If
-                            | SymbolKind::Elif
-                            | SymbolKind::Else
-                            | SymbolKind::While
-                            | SymbolKind::Loop
-                            | SymbolKind::Match
-                            | SymbolKind::MatchArm
-                            | SymbolKind::Try
-                            | SymbolKind::Catch
-                            | SymbolKind::Foreach
-                    ) {
-                        return true;
-                    }
-                    current = parent;
-                }
-                None => return false,
+            if matches!(
+                symbol.kind,
+                SymbolKind::If
+                    | SymbolKind::Elif
+                    | SymbolKind::Else
+                    | SymbolKind::While
+                    | SymbolKind::Loop
+                    | SymbolKind::Match
+                    | SymbolKind::MatchArm
+                    | SymbolKind::Try
+                    | SymbolKind::Catch
+                    | SymbolKind::Foreach
+            ) {
+                return true;
             }
         }
+        false
     }
 
     /// Gets the type of a symbol
