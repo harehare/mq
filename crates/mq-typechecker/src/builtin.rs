@@ -950,7 +950,7 @@ fn register_debug(ctx: &mut InferenceContext) {
     register_nullary(ctx, "breakpoint", Type::None);
 
     let a = ctx.fresh_var();
-    register_binary(ctx, "assert", Type::Var(a), Type::Var(a), Type::Var(a));
+    register_unary(ctx, "assert", Type::Var(a), Type::Var(a));
 }
 
 /// File I/O functions
