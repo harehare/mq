@@ -586,6 +586,31 @@ def test_rpad():
   | assert_eq(result3, "abc  ")
 end
 
+def test_bsearch():
+  let result1 = bsearch([1, 2, 3, 4, 5], 3)
+  | assert_eq(result1, 2)
+
+  | let result2 = bsearch([1, 2, 3, 4, 5], 6)
+  | assert_eq(result2, -1)
+
+  | let result3 = bsearch([10, 20, 30], 10)
+  | assert_eq(result3, 0)
+
+  | let result4 = bsearch(["a", "b", "c"], "b")
+  | assert_eq(result4, 1)
+end
+
+def test_slugify():
+  let result1 = slugify("Hello World!")
+  | assert_eq(result1, "hello-world")
+
+  | let result2 = slugify("This is a test.")
+  | assert_eq(result2, "this-is-a-test")
+
+  | let result3 = slugify("Special characters: @#$%^&*()")
+  | assert_eq(result3, "special-characters")
+end
+
 | run_tests([
   # Type checking
   test_case("is_array", test_is_array),
@@ -602,6 +627,7 @@ end
   test_case("rtrimstr", test_rtrimstr),
   test_case("lpad", test_lpad),
   test_case("rpad", test_rpad),
+  test_case("slugify", test_slugify),
 
   # Collection operations
   test_case("is_empty", test_is_empty),
@@ -624,6 +650,7 @@ end
   test_case("skip", test_skip),
   test_case("take", test_take),
   test_case("find_index", test_find_index),
+  test_case("bsearch", test_bsearch),
   test_case("skip_while", test_skip_while),
   test_case("take_while", test_take_while),
   test_case("group_by", test_group_by),

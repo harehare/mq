@@ -2,13 +2,13 @@ ignore:
   - "crates/mq-crawler"
   - "crates/mq-lang/src/error.rs"
   - "crates/mq-lsp/src/capabilities.rs"
-  - "crates/mq-python"
   - "crates/mq-repl/src/repl.rs"
   - "crates/mq-wasm"
   - "crates/mq-web-api"
   - "crates/mq-dap/src/server.rs"
   - "crates/mq-lang/src/eval/debugger.rs"
   - "crates/mq-run/src/debugger.rs"
+  - "editors/zed"
 coverage:
   status:
     project: true

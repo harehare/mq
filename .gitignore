@@ -85,6 +85,7 @@ settings.local.json
 
 # claude
 CLAUDE.local.md
+.claude/worktrees/
 
 example.html
 
@@ -93,3 +94,6 @@ example.html
 .serena
 
 tsconfig.tsbuildinfo
+
+mutants.out
+

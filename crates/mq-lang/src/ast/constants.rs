@@ -2,9 +2,12 @@ pub mod builtins {
     pub const ARRAY: &str = "array";
     pub const DICT: &str = "dict";
 
+    pub const CONVERT: &str = "convert";
     pub const GET: &str = "get";
     pub const SET: &str = "set";
     pub const SLICE: &str = "slice";
+    pub const SHIFT_LEFT: &str = "shift_left";
+    pub const SHIFT_RIGHT: &str = "shift_right";
     pub const ATTR: &str = "attr";
     pub const SET_ATTR: &str = "set_attr";
     pub const LEN: &str = "len";
@@ -22,6 +25,8 @@ pub mod builtins {
     pub const DIV: &str = "div";
     pub const MOD: &str = "mod";
     pub const FLOOR: &str = "floor";
+
+    pub const IS_REGEX_MATCH: &str = "is_regex_match";
 
     pub const NOT: &str = "not";
     pub const NEGATE: &str = "negate";

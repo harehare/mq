@@ -49,6 +49,7 @@ pub struct Token {
 /// TokenKind variants are sorted alphabetically for maintainability.
 pub enum TokenKind {
     And,
+    Convert,
     Asterisk,
     BoolLiteral(bool),
     Break,
@@ -81,6 +82,7 @@ pub enum TokenKind {
     LBrace,
     LBracket,
     Let,
+    LeftShift,
     Loop,
     Lt,
     Lte,
@@ -107,6 +109,7 @@ pub enum TokenKind {
     RBrace,
     DoubleDot,
     RBracket,
+    RightShift,
     RParen,
     Selector(SmolStr),
     Self_,
@@ -116,6 +119,7 @@ pub enum TokenKind {
     StringLiteral(String),
     StarEqual,
     Tab(usize),
+    TildeEqual,
     Try,
     Unquote,
     Whitespace(usize),
@@ -146,6 +150,7 @@ impl Display for TokenKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match &self {
             TokenKind::And => write!(f, "&&"),
+            TokenKind::Convert => write!(f, "@"),
             TokenKind::Or => write!(f, "||"),
             TokenKind::Not => write!(f, "!"),
             TokenKind::Asterisk => write!(f, "*"),
@@ -182,6 +187,7 @@ impl Display for TokenKind {
             TokenKind::Gte => write!(f, ">="),
             TokenKind::LBracket => write!(f, "["),
             TokenKind::LParen => write!(f, "("),
+            TokenKind::LeftShift => write!(f, "<<"),
             TokenKind::Let => write!(f, "let"),
             TokenKind::Loop => write!(f, "loop"),
             TokenKind::Macro => write!(f, "macro"),
@@ -205,6 +211,7 @@ impl Display for TokenKind {
             TokenKind::Quote => write!(f, "quote"),
             TokenKind::DoubleDot => write!(f, ".."),
             TokenKind::RBracket => write!(f, "]"),
+            TokenKind::RightShift => write!(f, ">>"),
             TokenKind::RBrace => write!(f, "}}"),
             TokenKind::RParen => write!(f, ")"),
             TokenKind::Selector(selector) => write!(f, "{}", selector),
@@ -213,6 +220,7 @@ impl Display for TokenKind {
             TokenKind::StringLiteral(s) => write!(f, "{}", s),
             TokenKind::StarEqual => write!(f, "*="),
             TokenKind::Tab(n) => write!(f, "{}", "\t".repeat(*n)),
+            TokenKind::TildeEqual => write!(f, "=~"),
             TokenKind::Try => write!(f, "try"),
             TokenKind::Unquote => write!(f, "unquote"),
             TokenKind::Catch => write!(f, "catch"),

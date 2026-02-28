@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-formatter"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.15"
+version = "0.5.17"
 
 [dependencies]
 mq-lang = {workspace = true, features = ["cst"]}

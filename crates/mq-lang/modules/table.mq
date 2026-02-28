@@ -1,5 +1,7 @@
 # This module is under development. APIs and behavior may change without notice.
 
+import "csv" |
+
 # Extract table structures from a list of markdown nodes.
 def tables(md_nodes):
   if (is_empty(md_nodes)):
@@ -46,6 +48,11 @@ def tables(md_nodes):
           end
       | tables
     end
+end
+
+# Set the alignment for a table.
+def set_align(table, align):
+  set(table, :align, set_attr(table[:align], "align", join(map(align, to_string), ",")))
 end
 
 # Add a new row to a table.
@@ -119,5 +126,12 @@ end
 # Convert a table structure back into a list of markdown nodes.
 def to_markdown(table)
   table[:header] + table[:align] + flatten(table[:rows])
+end
+
+# Convert a table structure into a CSV string with the specified delimiter.
+def to_csv(table, delimiter = ",")
+  let header = table[:header]
+  | let rows = table[:rows]
+  | csv::csv_stringify([header] + rows, delimiter)
 end
 

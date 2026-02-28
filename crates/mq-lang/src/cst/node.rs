@@ -126,6 +126,7 @@ pub enum NodeKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     And,
+    Convert,
     Assign,
     Coalesce,
     Division,
@@ -148,6 +149,9 @@ pub enum BinaryOp {
     Plus,
     PlusEqual,
     RangeOp,
+    RegexMatch,
+    LeftShift,
+    RightShift,
 }
 
 impl BinaryOp {

@@ -57,7 +57,7 @@ def is_empty(s):
 end
 
 # Tests if string matches a pattern
-def test(s, pattern): regex_match(s, pattern) | !is_empty();
+def test(s, pattern): is_regex_match(s, pattern);
 
 # Returns value if condition is true, None otherwise
 def select(v, f): if (f): v;
@@ -558,3 +558,71 @@ def debug(*args):
   else:
     stderr("DEBUG:\n" + do args | map(fn(arg): s" - ${arg}";) | join("\n");)
 end
+
+# Increases the depth (numeric level) of a markdown heading node by one,
+# effectively demoting the heading (e.g. h1 -> h2), up to a maximum of 6.
+def increase_header_depth(node):
+  shift_right(node, 1)
+end
+
+# Decreases the depth (numeric level) of a markdown heading node by one,
+# effectively promoting the heading (e.g. h2 -> h1), down to a minimum of 1.
+def decrease_header_depth(node):
+  shift_left(node, 1)
+end
+
+# Demotes a markdown heading by increasing its depth (numeric level) by one.
+# This is an alias for `increase_header_depth`.
+def demote_heading(node):
+  increase_header_depth(node)
+end
+
+# Promotes a markdown heading by decreasing its depth (numeric level) by one.
+# This is an alias for `decrease_header_depth`.
+def promote_heading(node):
+  decrease_header_depth(node)
+end
+
+# Deprecated: use `increase_header_depth` or `demote_heading` instead.
+# Kept for backward compatibility; behavior unchanged.
+def increase_header_level(node):
+  increase_header_depth(node)
+end
+
+# Deprecated: use `decrease_header_depth` or `promote_heading` instead.
+# Kept for backward compatibility; behavior unchanged.
+def decrease_header_level(node):
+  decrease_header_depth(node)
+end
+
+# Performs a binary search on a sorted array to find the index of the target value.
+def bsearch(arr, target):
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  else: do
+      let _bsearch_impl = fn(arr, target, low, high):
+              if (low > high):
+                -1
+              else:
+                do
+                  let mid = floor((low + high) / 2)
+                  | let mid_val = arr[mid]
+                  | if (mid_val == target):
+                      mid
+                    elif (mid_val < target):
+                      _bsearch_impl(arr, target, mid + 1, high)
+                    else:
+                      _bsearch_impl(arr, target, low, mid - 1);
+            end
+      | _bsearch_impl(arr, target, 0, len(arr) - 1)
+    end
+end
+
+# Converts a string into a URL-friendly slug by lowercasing, replacing non-alphanumeric characters with hyphens, and trimming hyphens from the ends.
+def slugify(s, separator = "-"):
+  s
+  | downcase()
+  | gsub("[^a-z0-9]+", separator)
+  | gsub("^-+|-+$", "")
+end
+

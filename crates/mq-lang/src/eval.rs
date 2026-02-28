@@ -647,7 +647,11 @@ impl<T: ModuleResolver> Evaluator<T> {
                                 self.call_fn(&fn_value, call_node, func_name.name, args, runtime_value, env)
                             }
                             Err(_) => {
-                                let token = get_token(Shared::clone(&self.token_arena), token_id);
+                                let token = func_name
+                                    .token
+                                    .as_ref()
+                                    .cloned()
+                                    .unwrap_or(get_token(Shared::clone(&self.token_arena), token_id));
                                 Err(RuntimeError::NotDefined((*token).clone(), func_name.name.to_string()).into())
                             }
                         }
@@ -666,8 +670,11 @@ impl<T: ModuleResolver> Evaluator<T> {
                 }
             }
             _ => {
-                let token = get_token(Shared::clone(&self.token_arena), token_id);
-                let last_module = module_path.last().map(|m| m.name.to_string()).unwrap_or_default();
+                let (token, last_module) = module_path
+                    .last()
+                    .map(|m| (m.token.clone(), m.name.to_string()))
+                    .unwrap_or_default();
+                let token = token.unwrap_or(get_token(Shared::clone(&self.token_arena), token_id));
                 Err(RuntimeError::NotDefined((*token).clone(), last_module).into())
             }
         }
@@ -2600,6 +2607,11 @@ mod tests {
             ast_call("to_string", SmallVec::new())
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)]))]
+    #[case::to_string_symbol(vec![RuntimeValue::Symbol("test".to_string().into())],
+       vec![
+            ast_call("to_string", SmallVec::new())
+       ],
+       Ok(vec![RuntimeValue::String("test".to_string())]))]
     #[case::split1(vec![RuntimeValue::String("test1,test2".to_string())],
        vec![
             ast_call("split", smallvec![
@@ -2783,6 +2795,38 @@ mod tests {
        ],
        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "base64d".to_string(),
+                                                    args: vec![1.to_string().into()]})))]
+    #[case::base64url_encode(
+        vec![RuntimeValue::String("hello".into())],
+        vec![
+            ast_call("base64url", smallvec![
+            ])
+        ],
+        Ok(vec![RuntimeValue::String("aGVsbG8".into())])
+    )]
+    #[case::base64url_decode(
+        vec![RuntimeValue::String("aGVsbG8".into())],
+        vec![
+            ast_call("base64urld", smallvec![
+            ])
+        ],
+        Ok(vec![RuntimeValue::String("hello".into())])
+    )]
+    #[case::base64url(vec![RuntimeValue::Number(1.into())],
+       vec![
+            ast_call("base64url", smallvec![
+            ])
+       ],
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "base64url".to_string(),
+                                                    args: vec![1.to_string().into()]})))]
+    #[case::base64urld(vec![RuntimeValue::Number(1.into())],
+       vec![
+            ast_call("base64urld", smallvec![
+            ])
+       ],
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "base64urld".to_string(),
                                                     args: vec![1.to_string().into()]})))]
     #[case::def(vec![RuntimeValue::String("test1,test2".to_string())],
        vec![
@@ -4827,80 +4871,6 @@ mod tests {
                     ast_call("to_markdown_string", SmallVec::new())
                 ],
                 Ok(vec![RuntimeValue::String("".to_string())]))]
-    #[case::increase_header_level_h1(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-                depth: 1,
-                values: vec!["Heading 1".to_string().into()],
-                position: None
-            }), None)],
-                vec![
-                    ast_call("increase_header_level", SmallVec::new())
-                ],
-                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-                    depth: 2,
-                    values: vec!["Heading 1".to_string().into()],
-                    position: None
-                }), None)]))]
-    #[case::increase_header_level_h6(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-                depth: 6,
-                values: vec!["Heading 6".to_string().into()],
-                position: None
-            }), None)],
-                vec![
-                    ast_call("increase_header_level", SmallVec::new())
-                ],
-                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-                    depth: 6,
-                    values: vec!["Heading 6".to_string().into()],
-                    position: None
-                }), None)]))]
-    #[case::increase_header_level_non_heading(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
-                value: "Not a heading".to_string(),
-                position: None
-            }), None)],
-                vec![
-                    ast_call("increase_header_level", SmallVec::new())
-                ],
-                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
-                    value: "Not a heading".to_string(),
-                    position: None
-                }), None)]))]
-    #[case::decrease_header_level_h2(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-                depth: 2,
-                values: vec!["Heading 2".to_string().into()],
-                position: None
-            }), None)],
-                vec![
-                    ast_call("decrease_header_level", SmallVec::new())
-                ],
-                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-                    depth: 1,
-                    values: vec!["Heading 2".to_string().into()],
-                    position: None
-                }), None)]))]
-    #[case::decrease_header_level_h1(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-                depth: 1,
-                values: vec!["Heading 1".to_string().into()],
-                position: None
-            }), None)],
-                vec![
-                    ast_call("decrease_header_level", SmallVec::new())
-                ],
-                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-                    depth: 1,
-                    values: vec!["Heading 1".to_string().into()],
-                    position: None
-                }), None)]))]
-    #[case::decrease_header_level_non_heading(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
-                value: "Not a heading".to_string(),
-                position: None
-            }), None)],
-            vec![
-                ast_call("decrease_header_level", SmallVec::new())
-            ],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
-                value: "Not a heading".to_string(),
-                position: None
-            }), None)]))]
     #[case::break_in_foreach(
        vec![RuntimeValue::Array(vec![
             RuntimeValue::Number(1.into()),

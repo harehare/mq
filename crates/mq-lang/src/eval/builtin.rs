@@ -1,14 +1,15 @@
+pub mod convert;
+
 use crate::arena::Arena;
 use crate::ast::{constants, node as ast};
 use crate::error::runtime::RuntimeError;
+use crate::eval::builtin::convert::Convert;
 use crate::eval::env::{self, Env};
 use crate::ident::all_symbols;
-use crate::number::{self, Number};
+use crate::number;
 use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
-use base64::prelude::*;
 use itertools::Itertools;
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use smol_str::SmolStr;
@@ -153,18 +154,25 @@ define_builtin!(
     FLATTEN,
     ParamNum::Fixed(1),
     |_, _, mut args, _| match args.as_mut_slice() {
-        [RuntimeValue::Array(arrays)] => Ok(flatten(std::mem::take(arrays)).into()),
+        [RuntimeValue::Array(arrays)] => Ok(convert::flatten(std::mem::take(arrays)).into()),
         [a] => Ok(std::mem::take(a)),
         _ => unreachable!(),
     }
 );
 
+define_builtin!(CONVERT, ParamNum::Fixed(2), |_, _, args, _| match args.as_slice() {
+    [input, convert_value] => {
+        Convert::try_from(convert_value).map(|convert| convert.convert(input))
+    }
+    _ => unreachable!(),
+});
+
 define_builtin!(
     FROM_DATE,
     ParamNum::Fixed(1),
     |ident, _, mut args, _| match args.as_mut_slice() {
-        [RuntimeValue::String(date_str)] => from_date(date_str),
-        [RuntimeValue::Markdown(node_value, _)] => from_date(node_value.value().as_str()),
+        [RuntimeValue::String(date_str)] => convert::from_date(date_str),
+        [RuntimeValue::Markdown(node_value, _)] => convert::from_date(node_value.value().as_str()),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
         _ => unreachable!(),
     }
@@ -175,7 +183,7 @@ define_builtin!(
     ParamNum::Fixed(2),
     |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Number(ms), RuntimeValue::String(format)] => {
-            to_date(*ms, Some(format.as_str()))
+            convert::to_date(*ms, Some(format.as_str()))
         }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -197,11 +205,11 @@ define_builtin!(NOW, ParamNum::None, |_, _, _, _| {
 
 define_builtin!(BASE64, ParamNum::Fixed(1), |ident, _, mut args, _| {
     match args.as_mut_slice() {
-        [RuntimeValue::String(s)] => base64(s),
+        [RuntimeValue::String(s)] => convert::base64(s),
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
             .map(|md| {
-                base64(md.value().as_str()).and_then(|b| match b {
+                convert::base64(md.value().as_str()).and_then(|b| match b {
                     RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
                     a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 })
@@ -216,11 +224,47 @@ define_builtin!(
     BASE64D,
     ParamNum::Fixed(1),
     |ident, _, mut args, _| match args.as_mut_slice() {
-        [RuntimeValue::String(s)] => base64d(s),
+        [RuntimeValue::String(s)] => convert::base64d(s),
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
             .map(|md| {
-                base64d(md.value().as_str()).and_then(|o| match o {
+                convert::base64d(md.value().as_str()).and_then(|o| match o {
+                    RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                    a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                })
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
+        _ => unreachable!(),
+    }
+);
+
+define_builtin!(BASE64URL, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::base64url(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| {
+                convert::base64url(md.value().as_str()).and_then(|b| match b {
+                    RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                    a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                })
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
+define_builtin!(
+    BASE64URLD,
+    ParamNum::Fixed(1),
+    |ident, _, mut args, _| match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::base64urld(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| {
+                convert::base64urld(md.value().as_str()).and_then(|o| match o {
                     RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
                     a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 })
@@ -279,84 +323,50 @@ define_builtin!(
     TO_HTML,
     ParamNum::Fixed(1),
     |ident, _, mut args, _| match args.as_mut_slice() {
-        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
-        [RuntimeValue::String(s)] => Ok(mq_markdown::to_html(s).into()),
-        [RuntimeValue::Symbol(s)] => Ok(mq_markdown::to_html(&s.as_str()).into()),
-        [RuntimeValue::Markdown(node_value, _)] => {
-            Ok(mq_markdown::to_html(node_value.to_string().as_str()).into())
-        }
-        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
+        [a] => convert::to_html(a).map_err(|_| Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!(),
     }
 );
 
 define_builtin!(TO_MARKDOWN_STRING, ParamNum::Fixed(1), |_, _, args, _| {
-    let args = flatten(args);
-
-    Ok(mq_markdown::Markdown::new(
-        args.iter()
-            .flat_map(|arg| match arg {
-                RuntimeValue::Markdown(node, _) => vec![node.clone()],
-                a => vec![a.to_string().into()],
-            })
-            .collect(),
-    )
-    .to_string()
-    .into())
+    convert::to_markdown_string(args)
 });
 
-define_builtin!(TO_STRING, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
-    [o] => Ok(o.to_string().into()),
-    _ => unreachable!(),
+define_builtin!(TO_STRING, ParamNum::Fixed(1), |_, _, args, _| match args.first() {
+    Some(value) => convert::to_string(value),
+    None => unreachable!(),
 });
 
-define_builtin!(TO_NUMBER, ParamNum::Fixed(1), |_, _, mut args, _| to_number(
+define_builtin!(TO_NUMBER, ParamNum::Fixed(1), |_, _, mut args, _| convert::to_number(
     &mut args[0]
 ));
 
-define_builtin!(
-    TO_ARRAY,
-    ParamNum::Fixed(1),
-    |_, _, mut args, _| match args.as_mut_slice() {
-        [RuntimeValue::Array(array)] => Ok(RuntimeValue::Array(std::mem::take(array))),
-        [RuntimeValue::String(s)] => Ok(RuntimeValue::Array(
-            s.chars().map(|c| RuntimeValue::String(c.to_string())).collect(),
-        )),
-        [RuntimeValue::None] => Ok(RuntimeValue::Array(Vec::new())),
-        [value] => Ok(RuntimeValue::Array(vec![std::mem::take(value)])),
-        _ => unreachable!(),
-    }
-);
+define_builtin!(TO_ARRAY, ParamNum::Fixed(1), |_, _, mut args, _| convert::to_array(
+    &mut args[0]
+));
 
 define_builtin!(
     URL_ENCODE,
     ParamNum::Fixed(1),
     |ident, _, mut args, _| match args.as_mut_slice() {
-        [RuntimeValue::String(s)] => url_encode(s),
+        [RuntimeValue::String(s)] => convert::url_encode(s),
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
             .map(|md| {
-                url_encode(md.value().as_str()).and_then(|o| match o {
+                convert::url_encode(md.value().as_str()).and_then(|o| match o {
                     RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
                     a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 })
             })
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-        [a] => url_encode(&a.to_string()),
+        [a] => convert::url_encode(&a.to_string()),
         _ => unreachable!(),
     }
 );
 
-define_builtin!(TO_TEXT, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
-    [RuntimeValue::None] => Ok(RuntimeValue::NONE),
-    [RuntimeValue::Markdown(node_value, _)] => Ok(node_value.value().into()),
-    [RuntimeValue::Array(array)] => Ok(array
-        .iter()
-        .map(|a| { if a.is_none() { "".to_string() } else { a.to_string() } })
-        .join(",")
-        .into()),
-    [value] => Ok(value.to_string().into()),
-    _ => unreachable!(),
+define_builtin!(TO_TEXT, ParamNum::Fixed(1), |_, _, args, _| match args.first() {
+    Some(value) => convert::to_text(value),
+    None => unreachable!(),
 });
 
 define_builtin!(ENDS_WITH, ParamNum::Fixed(2), |ident, _, mut args, env| {
@@ -411,6 +421,22 @@ define_builtin!(REGEX_MATCH, ParamNum::Fixed(2), |ident, _, mut args, _| {
             .map(|md| match_re(&md.value(), pattern))
             .unwrap_or_else(|| Ok(RuntimeValue::EMPTY_ARRAY)),
         [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::EMPTY_ARRAY),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!(),
+    }
+});
+
+define_builtin!(IS_REGEX_MATCH, ParamNum::Fixed(2), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s), RuntimeValue::String(pattern)] => is_match_re(s, pattern),
+        [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(pattern)] => node
+            .markdown_node()
+            .map(|md| is_match_re(&md.value(), pattern))
+            .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
+        [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
@@ -558,6 +584,36 @@ define_builtin!(
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
             .map(|md| Ok(node.update_markdown_value(md.to_string().trim())))
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
+        _ => unreachable!(),
+    }
+);
+
+define_builtin!(
+    LTRIM,
+    ParamNum::Fixed(1),
+    |ident, _, mut args, _| match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => Ok(s.trim_start().to_string().into()),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| Ok(node.update_markdown_value(md.to_string().trim_start())))
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
+        _ => unreachable!(),
+    }
+);
+
+define_builtin!(
+    RTRIM,
+    ParamNum::Fixed(1),
+    |ident, _, mut args, _| match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => Ok(s.trim_end().to_string().into()),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| Ok(node.update_markdown_value(md.to_string().trim_end())))
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
@@ -1243,7 +1299,7 @@ define_builtin!(ADD, ParamNum::Fixed(2), |ident, _, mut args, _| {
 define_builtin!(SUB, ParamNum::Fixed(2), |_, _, mut args, _| {
     match args.as_mut_slice() {
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 - *n2).into()),
-        [a, b] => match (to_number(a)?, to_number(b)?) {
+        [a, b] => match (convert::to_number(a)?, convert::to_number(b)?) {
             (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 - n2).into()),
             _ => Err(Error::InvalidTypes(
                 "Both operands could not be converted to numbers: {:?}, {:?}".to_string(),
@@ -1262,7 +1318,7 @@ define_builtin!(DIV, ParamNum::Fixed(2), |_, _, mut args, _| match args.as_mut_s
             Ok((*n1 / *n2).into())
         }
     }
-    [a, b] => match (to_number(a)?, to_number(b)?) {
+    [a, b] => match (convert::to_number(a)?, convert::to_number(b)?) {
         (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 / n2).into()),
         (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
         _ => Err(Error::InvalidTypes(
@@ -1287,7 +1343,7 @@ define_builtin!(MUL, ParamNum::Fixed(2), |_, _, mut args, _| match args.as_mut_s
                     let mut args = vec![v, RuntimeValue::Number(*n)];
                     match args.as_mut_slice() {
                         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
-                        [a, b] => match (to_number(a)?, to_number(b)?) {
+                        [a, b] => match (convert::to_number(a)?, convert::to_number(b)?) {
                             (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 * n2).into()),
                             (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
                             _ => Err(Error::InvalidTypes(
@@ -1312,7 +1368,7 @@ define_builtin!(MUL, ParamNum::Fixed(2), |_, _, mut args, _| match args.as_mut_s
             ))
         }
     }
-    [a, b] => match (to_number(a)?, to_number(b)?) {
+    [a, b] => match (convert::to_number(a)?, convert::to_number(b)?) {
         (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 * n2).into()),
         (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
         _ => Ok(RuntimeValue::Number(0.into())),
@@ -1322,7 +1378,7 @@ define_builtin!(MUL, ParamNum::Fixed(2), |_, _, mut args, _| match args.as_mut_s
 
 define_builtin!(MOD, ParamNum::Fixed(2), |_, _, mut args, _| match args.as_mut_slice() {
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 % *n2).into()),
-    [a, b] => match (to_number(a)?, to_number(b)?) {
+    [a, b] => match (convert::to_number(a)?, convert::to_number(b)?) {
         (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 % n2).into()),
         _ => Err(Error::InvalidTypes(
             "".to_string(),
@@ -1464,50 +1520,6 @@ define_builtin!(TO_H, ParamNum::Fixed(2), |_, _, args, _| match args.as_slice() 
     }
     _ => Ok(RuntimeValue::NONE),
 });
-
-define_builtin!(
-    INCREASE_HEADER_LEVEL,
-    ParamNum::Fixed(1),
-    |_, _, mut args, _| match args.as_mut_slice() {
-        [RuntimeValue::Markdown(node, selector)] => {
-            if let mq_markdown::Node::Heading(heading) = node {
-                if heading.depth < 6 {
-                    heading.depth += 1;
-                }
-                Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
-            } else {
-                Ok(RuntimeValue::Markdown(
-                    std::mem::replace(node, mq_markdown::Node::Empty),
-                    selector.take(),
-                ))
-            }
-        }
-        [a] => Ok(std::mem::take(a)),
-        _ => unreachable!(),
-    }
-);
-
-define_builtin!(
-    DECREASE_HEADER_LEVEL,
-    ParamNum::Fixed(1),
-    |_, _, mut args, _| match args.as_mut_slice() {
-        [RuntimeValue::Markdown(node, selector)] => {
-            if let mq_markdown::Node::Heading(heading) = node {
-                if heading.depth > 1 {
-                    heading.depth -= 1;
-                }
-                Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
-            } else {
-                Ok(RuntimeValue::Markdown(
-                    std::mem::replace(node, mq_markdown::Node::Empty),
-                    selector.take(),
-                ))
-            }
-        }
-        [a] => Ok(std::mem::take(a)),
-        _ => unreachable!(),
-    }
-);
 
 define_builtin!(TO_HR, ParamNum::Fixed(0), |_, _, _, _| {
     Ok(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }).into())
@@ -2285,6 +2297,90 @@ define_builtin!(_AST_TO_CODE, ParamNum::Fixed(1), |_, _, args, _| {
     }
 });
 
+define_builtin!(SHIFT_LEFT, ParamNum::Fixed(2), |_, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(v), RuntimeValue::Number(n)] => v
+            .to_int()
+            .checked_shl(n.value() as u32)
+            .map(|result| RuntimeValue::Number(result.into()))
+            .ok_or_else(|| Error::Runtime("Shift amount is too large".to_string())),
+        [RuntimeValue::String(v), RuntimeValue::Number(n)] => {
+            let shift_amount = n.to_int().max(0) as usize;
+            let shifted: String = v.chars().skip(shift_amount).collect();
+            Ok(RuntimeValue::String(shifted))
+        }
+        [RuntimeValue::Array(arr), v] => {
+            arr.push(std::mem::take(v));
+            Ok(RuntimeValue::Array(std::mem::take(arr)))
+        }
+        [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
+            if let mq_markdown::Node::Heading(heading) = node {
+                let shift_amount = n.to_int().max(0).min(u8::MAX as i64) as u8;
+
+                heading.depth = heading.depth.saturating_sub(shift_amount).max(1);
+                Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
+            } else {
+                Ok(RuntimeValue::Markdown(
+                    std::mem::replace(node, mq_markdown::Node::Empty),
+                    selector.take(),
+                ))
+            }
+        }
+        [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
+        [a, b] => Err(Error::InvalidTypes(
+            constants::builtins::SHIFT_LEFT.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!(),
+    }
+});
+
+define_builtin!(SHIFT_RIGHT, ParamNum::Fixed(2), |_, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(v), RuntimeValue::Number(n)] => v
+            .to_int()
+            .checked_shr(n.value() as u32)
+            .map(|result| RuntimeValue::Number(result.into()))
+            .ok_or_else(|| Error::Runtime("Shift amount is too large".to_string())),
+        [RuntimeValue::String(v), RuntimeValue::Number(n)] => {
+            let shift_amount = n.value() as usize;
+            let char_len = v.chars().count();
+            if shift_amount >= char_len {
+                Ok(RuntimeValue::String(String::new()))
+            } else {
+                let keep = char_len - shift_amount;
+                let result: String = v.chars().take(keep).collect();
+                Ok(RuntimeValue::String(result))
+            }
+        }
+        [v, RuntimeValue::Array(arr)] => {
+            arr.insert(0, std::mem::take(v));
+            Ok(RuntimeValue::Array(std::mem::take(arr)))
+        }
+        [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
+            if let mq_markdown::Node::Heading(heading) = node {
+                let shift_amount = n.to_int().max(0).min(u8::MAX as i64) as u8;
+
+                if heading.depth + shift_amount <= 6 {
+                    heading.depth += shift_amount;
+                }
+                Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
+            } else {
+                Ok(RuntimeValue::Markdown(
+                    std::mem::replace(node, mq_markdown::Node::Empty),
+                    selector.take(),
+                ))
+            }
+        }
+        [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
+        [a, b] => Err(Error::InvalidTypes(
+            constants::builtins::SHIFT_RIGHT.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!(),
+    }
+});
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2322,11 +2418,13 @@ const HASH_ARRAY: u64 = fnv1a_hash_64(constants::builtins::ARRAY);
 const HASH_ATTR: u64 = fnv1a_hash_64(constants::builtins::ATTR);
 const HASH_BASE64: u64 = fnv1a_hash_64("base64");
 const HASH_BASE64D: u64 = fnv1a_hash_64("base64d");
+const HASH_BASE64URL: u64 = fnv1a_hash_64("base64url");
+const HASH_BASE64URLD: u64 = fnv1a_hash_64("base64urld");
 const HASH_CAPTURE: u64 = fnv1a_hash_64("capture");
 const HASH_CEIL: u64 = fnv1a_hash_64("ceil");
 const HASH_COMPACT: u64 = fnv1a_hash_64("compact");
 const HASH_COALESCE: u64 = fnv1a_hash_64("coalesce");
-const HASH_DECREASE_HEADER_LEVEL: u64 = fnv1a_hash_64("decrease_header_level");
+const HASH_CONVERT: u64 = fnv1a_hash_64("convert");
 const HASH_DEL: u64 = fnv1a_hash_64("del");
 const HASH_DICT: u64 = fnv1a_hash_64(constants::builtins::DICT);
 const HASH_DIV: u64 = fnv1a_hash_64(constants::builtins::DIV);
@@ -2350,19 +2448,21 @@ const HASH_GET_VARIABLE: u64 = fnv1a_hash_64("get_variable");
 const HASH_GSUB: u64 = fnv1a_hash_64("gsub");
 const HASH_HALT: u64 = fnv1a_hash_64("halt");
 const HASH_IMPLODE: u64 = fnv1a_hash_64("implode");
-const HASH_INCREASE_HEADER_LEVEL: u64 = fnv1a_hash_64("increase_header_level");
 const HASH_INDEX: u64 = fnv1a_hash_64("index");
 const HASH_INSERT: u64 = fnv1a_hash_64("insert");
 const HASH_INFINITE: u64 = fnv1a_hash_64("infinite");
 const HASH_INPUT: u64 = fnv1a_hash_64("input");
 const HASH_IS_DEBUG_MODE: u64 = fnv1a_hash_64("is_debug_mode");
 const HASH_IS_NAN: u64 = fnv1a_hash_64("is_nan");
+const HASH_IS_REGEX_MATCH: u64 = fnv1a_hash_64("is_regex_match");
 const HASH_JOIN: u64 = fnv1a_hash_64("join");
 const HASH_KEYS: u64 = fnv1a_hash_64("keys");
 const HASH_LEN: u64 = fnv1a_hash_64("len");
 const HASH_LT: u64 = fnv1a_hash_64(constants::builtins::LT);
 const HASH_LTE: u64 = fnv1a_hash_64(constants::builtins::LTE);
+const HASH_LTRIM: u64 = fnv1a_hash_64("ltrim");
 const HASH_REGEX_MATCH: u64 = fnv1a_hash_64("regex_match");
+const HASH_RTRIM: u64 = fnv1a_hash_64("rtrim");
 const HASH_MAX: u64 = fnv1a_hash_64("max");
 const HASH_MIN: u64 = fnv1a_hash_64("min");
 const HASH_NAN: u64 = fnv1a_hash_64("nan");
@@ -2388,6 +2488,8 @@ const HASH_SET_CODE_BLOCK_LANG: u64 = fnv1a_hash_64("set_code_block_lang");
 const HASH_SET_LIST_ORDERED: u64 = fnv1a_hash_64("set_list_ordered");
 const HASH_SET_REF: u64 = fnv1a_hash_64("set_ref");
 const HASH_SET_VARIABLE: u64 = fnv1a_hash_64("set_variable");
+const HASH_SHIFT_LEFT: u64 = fnv1a_hash_64(constants::builtins::SHIFT_LEFT);
+const HASH_SHIFT_RIGHT: u64 = fnv1a_hash_64(constants::builtins::SHIFT_RIGHT);
 const HASH_SLICE: u64 = fnv1a_hash_64(constants::builtins::SLICE);
 const HASH_SORT: u64 = fnv1a_hash_64("sort");
 const HASH_SORT_BY_IMPL: u64 = fnv1a_hash_64("_sort_by_impl");
@@ -2449,11 +2551,13 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_ATTR => Some(&ATTR),
         HASH_BASE64 => Some(&BASE64),
         HASH_BASE64D => Some(&BASE64D),
+        HASH_BASE64URL => Some(&BASE64URL),
+        HASH_BASE64URLD => Some(&BASE64URLD),
         HASH_CAPTURE => Some(&CAPTURE),
         HASH_CEIL => Some(&CEIL),
         HASH_COMPACT => Some(&COMPACT),
         HASH_COALESCE => Some(&COALESCE),
-        HASH_DECREASE_HEADER_LEVEL => Some(&DECREASE_HEADER_LEVEL),
+        HASH_CONVERT => Some(&CONVERT),
         HASH_DEL => Some(&DEL),
         HASH_DICT => Some(&DICT),
         HASH_DIV => Some(&DIV),
@@ -2475,11 +2579,11 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_GSUB => Some(&GSUB),
         HASH_HALT => Some(&HALT),
         HASH_IMPLODE => Some(&IMPLODE),
-        HASH_INCREASE_HEADER_LEVEL => Some(&INCREASE_HEADER_LEVEL),
         HASH_INDEX => Some(&INDEX),
         HASH_INFINITE => Some(&INFINITE),
         HASH_IS_DEBUG_MODE => Some(&IS_DEBUG_MODE),
         HASH_IS_NAN => Some(&IS_NAN),
+        HASH_IS_REGEX_MATCH => Some(&IS_REGEX_MATCH),
         HASH_INSERT => Some(&INSERT),
         HASH_INPUT => Some(&INPUT),
         HASH_JOIN => Some(&JOIN),
@@ -2487,6 +2591,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_LEN => Some(&LEN),
         HASH_LT => Some(&LT),
         HASH_LTE => Some(&LTE),
+        HASH_LTRIM => Some(&LTRIM),
         HASH_REGEX_MATCH => Some(&REGEX_MATCH),
         HASH_MAX => Some(&MAX),
         HASH_MIN => Some(&MIN),
@@ -2506,6 +2611,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_REVERSE => Some(&REVERSE),
         HASH_RINDEX => Some(&RINDEX),
         HASH_ROUND => Some(&ROUND),
+        HASH_RTRIM => Some(&RTRIM),
         HASH_SET => Some(&SET),
         HASH_SET_ATTR => Some(&SET_ATTR),
         HASH_SET_CHECK => Some(&SET_CHECK),
@@ -2514,6 +2620,8 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_SET_REF => Some(&SET_REF),
         HASH_SET_VARIABLE => Some(&SET_VARIABLE),
         HASH_SLICE => Some(&SLICE),
+        HASH_SHIFT_LEFT => Some(&SHIFT_LEFT),
+        HASH_SHIFT_RIGHT => Some(&SHIFT_RIGHT),
         HASH_SORT => Some(&SORT),
         HASH_SORT_BY_IMPL => Some(&_SORT_BY_IMPL),
         HASH_SPLIT => Some(&SPLIT),
@@ -3048,6 +3156,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
+        SmolStr::new("base64url"),
+        BuiltinFunctionDoc {
+            description: "Encodes the given string to URL-safe base64.",
+            params: &["input"],
+        },
+    );
+    map.insert(
+        SmolStr::new("base64urld"),
+        BuiltinFunctionDoc {
+            description: "Decodes the given URL-safe base64 string.",
+            params: &["input"],
+        },
+    );
+    map.insert(
         SmolStr::new("min"),
         BuiltinFunctionDoc {
             description: "Returns the minimum of two values.",
@@ -3132,6 +3254,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
+        SmolStr::new("is_regex_match"),
+        BuiltinFunctionDoc {
+            description: "Checks if the given pattern matches the string.",
+            params: &["string", "pattern"],
+        },
+    );
+    map.insert(
         SmolStr::new("downcase"),
         BuiltinFunctionDoc {
             description: "Converts the given string to lowercase.",
@@ -3177,6 +3306,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         SmolStr::new("trim"),
         BuiltinFunctionDoc {
             description: "Trims whitespace from both ends of the given string.",
+            params: &["input"],
+        },
+    );
+    map.insert(
+        SmolStr::new("ltrim"),
+        BuiltinFunctionDoc {
+            description: "Trims whitespace from the left end of the given string.",
+            params: &["input"],
+        },
+    );
+    map.insert(
+        SmolStr::new("rtrim"),
+        BuiltinFunctionDoc {
+            description: "Trims whitespace from the right end of the given string.",
             params: &["input"],
         },
     );
@@ -3255,6 +3398,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Removes None values from the given array.",
             params: &["array"],
+        },
+    );
+    map.insert(
+        SmolStr::new("convert"),
+        BuiltinFunctionDoc {
+            description: "Converts the input value to the specified format. Supported formats: base64, html, text, uri, heading (#, ##, etc.), blockquote (>), list item (-), or link (URL).",
+            params: &["input", "format"],
         },
     );
     map.insert(
@@ -3630,20 +3780,6 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &["target", "index_or_key", "value"],
             },
         );
-    map.insert(
-        SmolStr::new("increase_header_level"),
-        BuiltinFunctionDoc {
-            description: "Increases the level of a markdown heading node by one, up to a maximum of 6.",
-            params: &["heading_node"],
-        },
-    );
-    map.insert(
-        SmolStr::new("decrease_header_level"),
-        BuiltinFunctionDoc {
-            description: "Decreases the level of a markdown heading node by one, down to a minimum of 1.",
-            params: &["heading_node"],
-        },
-    );
 
     #[cfg(feature = "file-io")]
     map.insert(
@@ -3744,6 +3880,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &["string", "pattern"],
         },
     );
+    map.insert(
+        SmolStr::new(constants::builtins::SHIFT_LEFT),
+        BuiltinFunctionDoc {
+            description: "Performs a left shift operation on the given value: for numbers, this is a bitwise left shift by the specified number of positions; for strings, this removes characters from the start; for Markdown headings, this increases the heading level accordingly.",
+            params: &["value", "shift_amount"],
+        },
+    );
+    map.insert(
+        SmolStr::new(constants::builtins::SHIFT_RIGHT),
+        BuiltinFunctionDoc {
+            description: "Performs a bitwise right shift on numbers, slices characters from the end of strings, and adjusts Markdown heading levels when applied to headings, using the given shift amount.",
+            params: &["value", "shift_amount"],
+        },
+    );
 
     map
 });
@@ -3774,6 +3924,8 @@ pub enum Error {
     AssignToImmutable(String),
     #[error("")]
     UndefinedVariable(String),
+    #[error("")]
+    InvalidConvert(String),
 }
 
 impl From<env::EnvError> for Error {
@@ -3831,6 +3983,9 @@ impl Error {
             }
             Error::UndefinedVariable(name) => {
                 RuntimeError::UndefinedVariable((*get_token(token_arena, node.token_id)).clone(), name.clone())
+            }
+            Error::InvalidConvert(format) => {
+                RuntimeError::InvalidConvert((*get_token(token_arena, node.token_id)).clone(), format.clone())
             }
         }
     }
@@ -3954,46 +4109,6 @@ fn eval_recursive_selector(node: &mq_markdown::Node) -> RuntimeValue {
     )
 }
 
-#[inline(always)]
-fn from_date(date_str: &str) -> Result<RuntimeValue, Error> {
-    match chrono::DateTime::parse_from_rfc3339(date_str) {
-        Ok(datetime) => Ok(RuntimeValue::Number(datetime.timestamp_millis().into())),
-        Err(e) => Err(Error::Runtime(format!("{}", e))),
-    }
-}
-
-#[inline(always)]
-fn to_date(ms: Number, format: Option<&str>) -> Result<RuntimeValue, Error> {
-    chrono::DateTime::from_timestamp((ms.value() as i64) / 1000, 0)
-        .map(|dt| {
-            format
-                .map(|f| dt.format(f).to_string())
-                .unwrap_or(dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-        })
-        .map(RuntimeValue::String)
-        .ok_or_else(|| Error::InvalidDateTimeFormat(format.unwrap_or("").to_string()))
-}
-
-#[inline(always)]
-fn base64(input: &str) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(BASE64_STANDARD.encode(input)))
-}
-
-#[inline(always)]
-fn base64d(input: &str) -> Result<RuntimeValue, Error> {
-    BASE64_STANDARD
-        .decode(input)
-        .map_err(Error::InvalidBase64String)
-        .map(|v| RuntimeValue::String(String::from_utf8_lossy(&v).to_string()))
-}
-
-#[inline(always)]
-fn url_encode(input: &str) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(
-        utf8_percent_encode(input, NON_ALPHANUMERIC).to_string(),
-    ))
-}
-
 fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
     let mut cache = REGEX_CACHE.lock().unwrap();
     if let Some(re) = cache.get(pattern) {
@@ -4009,6 +4124,18 @@ fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
             .map(|m| RuntimeValue::String(m.as_str().to_string()))
             .collect();
         Ok(RuntimeValue::Array(matches))
+    } else {
+        Err(Error::InvalidRegularExpression(pattern.to_string()))
+    }
+}
+
+fn is_match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
+    let mut cache = REGEX_CACHE.lock().unwrap();
+    if let Some(re) = cache.get(pattern) {
+        Ok(re.is_match(input).into())
+    } else if let Ok(re) = RegexBuilder::new(pattern).size_limit(1 << 20).build() {
+        cache.insert(pattern.to_string(), re.clone());
+        Ok(re.is_match(input).into())
     } else {
         Err(Error::InvalidRegularExpression(pattern.to_string()))
     }
@@ -4213,64 +4340,6 @@ fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>
     }
 
     Ok(result)
-}
-
-fn flatten(args: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
-    let mut result = Vec::new();
-    for arg in args {
-        match arg {
-            RuntimeValue::Array(arr) => result.extend(flatten(arr)),
-            other => result.push(other),
-        }
-    }
-    result
-}
-
-fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
-    match value {
-        node @ RuntimeValue::Markdown(_, _) => node
-            .markdown_node()
-            .map(|md| {
-                md.to_string()
-                    .parse::<f64>()
-                    .map(|n| RuntimeValue::Number(n.into()))
-                    .map_err(|e| Error::Runtime(format!("{}", e)))
-            })
-            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-        RuntimeValue::String(s) => s
-            .parse::<f64>()
-            .map(|n| RuntimeValue::Number(n.into()))
-            .map_err(|e| Error::Runtime(format!("{}", e))),
-        RuntimeValue::Array(array) => {
-            let result_value: Result<Vec<RuntimeValue>, Error> = std::mem::take(array)
-                .into_iter()
-                .map(|o| match o {
-                    node @ RuntimeValue::Markdown(_, _) => node
-                        .markdown_node()
-                        .map(|md| {
-                            md.to_string()
-                                .parse::<f64>()
-                                .map(|n| RuntimeValue::Number(n.into()))
-                                .map_err(|e| Error::Runtime(format!("{}", e)))
-                        })
-                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                    RuntimeValue::String(s) => s
-                        .parse::<f64>()
-                        .map(|n| RuntimeValue::Number(n.into()))
-                        .map_err(|e| Error::Runtime(format!("{}", e))),
-                    RuntimeValue::Boolean(b) => Ok(RuntimeValue::Number(if b { 1 } else { 0 }.into())),
-                    n @ RuntimeValue::Number(_) => Ok(n),
-                    _ => Ok(RuntimeValue::Number(0.into())),
-                })
-                .collect();
-
-            result_value.map(RuntimeValue::Array)
-        }
-        RuntimeValue::Boolean(true) => Ok(RuntimeValue::Number(1.into())),
-        RuntimeValue::Boolean(false) => Ok(RuntimeValue::Number(0.into())),
-        RuntimeValue::Number(n) => Ok(RuntimeValue::Number(*n)),
-        _ => Ok(RuntimeValue::Number(0.into())),
-    }
 }
 
 fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {

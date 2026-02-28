@@ -52,6 +52,7 @@ pub struct Symbol {
 pub enum SymbolKind {
     Argument,
     Array,
+    Assign,
     BinaryOp,
     Block,
     Boolean,

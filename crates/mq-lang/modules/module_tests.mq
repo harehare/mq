@@ -30,6 +30,28 @@ def test_csv_to_json_for_array():
   | assert_eq(result, "[[\"a\",\"b\",\"c\"],[\"1,2\",\"2,3\",\"3,4\"],[\"4\",\"5\",\"6\"],[\"multi\\nline\",\"7\",\"8\"],[\"9\",\"10\",\"quoted,comma\"],[\"\",\"11\",\"12\"],[\"13\",\"14\",\"15\"]]")
 end
 
+| let psv_input = "a|b|c\n\"1,2\"|\"2,3\"|\"3,4\"\n4|5|6\n\"multi\nline\"|7|8\n9|10|\"quoted,comma\"\n\"\"|11|12\n13|14|15\n" |
+
+def test_psv_parse_for_dict():
+  let result = csv::psv_parse(psv_input, true)
+  | assert_eq(len(result), 6)
+end
+
+def test_psv_to_json_for_dict():
+  let result = csv::csv_to_json(csv::psv_parse(psv_input, true))
+  | assert_eq(result, "[{\"a\":\"1,2\",\"b\":\"2,3\",\"c\":\"3,4\"},{\"a\":\"4\",\"b\":\"5\",\"c\":\"6\"},{\"a\":\"multi\\nline\",\"b\":\"7\",\"c\":\"8\"},{\"a\":\"9\",\"b\":\"10\",\"c\":\"quoted,comma\"},{\"a\":\"\",\"b\":\"11\",\"c\":\"12\"},{\"a\":\"13\",\"b\":\"14\",\"c\":\"15\"}]")
+end
+
+def test_psv_parse_for_array():
+  let result = csv::psv_parse(psv_input, false)
+  | assert_eq(len(result), 7)
+end
+
+def test_psv_to_json_for_array():
+  let result = csv::csv_to_json(csv::psv_parse(psv_input, false))
+  | assert_eq(result, "[[\"a\",\"b\",\"c\"],[\"1,2\",\"2,3\",\"3,4\"],[\"4\",\"5\",\"6\"],[\"multi\\nline\",\"7\",\"8\"],[\"9\",\"10\",\"quoted,comma\"],[\"\",\"11\",\"12\"],[\"13\",\"14\",\"15\"]]")
+end
+
 | let json_input = "{\"users\":[{\"id\":1,\"name\":\"Alice\",\"email\":\"alice@example.com\",\"roles\":[\"admin\",\"user\"]},{\"id\":2,\"name\":\"Bob\",\"email\":\"bob@example.com\",\"roles\":[\"user\"]},{\"id\":3,\"name\":\"Charlie\",\"email\":\"charlie@example.com\",\"roles\":[\"editor\",\"user\"]}],\"meta\":{\"count\":3,\"generated_at\":\"2024-06-01T12:00:00Z\"}}" |
 
 def test_json_parse():
@@ -261,6 +283,12 @@ def test_table_tables_empty():
   | assert_eq(result, [])
 end
 
+def test_table_set_align():
+  let t1 = do table::tables(table_nodes) | first();
+  | let t1 = table::set_align(t1, [:left, :center, :right])
+  | assert_eq(to_string(t1[:align]), "|:---|:---:|---:|")
+end
+
 def test_table_add_row():
   let t = first(table::tables(table_nodes))
   | let t = table::add_row(t, ["Charlie", "35", "Nagoya"])
@@ -327,6 +355,11 @@ end
   test_case("CSV to JSON for Dict", test_csv_to_json_for_dict),
   test_case("CSV Parse for Array", test_csv_parse_for_array),
   test_case("CSV to JSON for Array", test_csv_to_json_for_array),
+  # PSV
+  test_case("PSV Parse for Dict", test_psv_parse_for_dict),
+  test_case("PSV to JSON for Dict", test_psv_to_json_for_dict),
+  test_case("PSV Parse for Array", test_psv_parse_for_array),
+  test_case("PSV to JSON for Array", test_psv_to_json_for_array),
   # json
   test_case("JSON Parse", test_json_parse),
   test_case("JSON Stringify", test_json_stringify),
@@ -372,5 +405,6 @@ end
   test_case("Table Filter Rows", test_table_filter_rows),
   test_case("Table Filter Tables", test_table_filter_tables),
   test_case("Table Sort Rows", test_table_sort_rows),
+  test_case("Table Set Align", test_table_set_align),
 ])
 

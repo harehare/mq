@@ -261,6 +261,91 @@ end
     ],
   },
   {
+    name: "Section Operations",
+    examples: [
+      {
+        name: "Extract section by title",
+        code: `include "section" | nodes | section("Installation")`,
+        markdown: `# Introduction
+
+Welcome to the project.
+
+## Installation
+
+Run the following command:
+
+\`\`\`bash
+npm install mq
+\`\`\`
+
+## Usage
+
+Use the tool like this.
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Split by header level",
+        code: `include "section" | nodes | split(2) | titles()`,
+        markdown: `# Main Title
+
+## Section 1
+
+Content of section 1.
+
+## Section 2
+
+Content of section 2.
+
+## Section 3
+
+Content of section 3.
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Table of contents",
+        code: `include "section" | nodes | sections() | toc()`,
+        markdown: `# Introduction
+
+Some text.
+
+## Getting Started
+
+More text.
+
+### Prerequisites
+
+Details here.
+
+## Advanced Usage
+
+Advanced content.
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Filter sections with content",
+        code: `include "section" | nodes | sections() | filter(fn(s): has_content(s);) | titles()`,
+        markdown: `# Introduction
+
+Welcome to the project.
+
+## Empty Section
+
+## Usage
+
+Use the tool like this.
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+    ],
+  },
+  {
     name: "Custom Functions and Programming",
     examples: [
       {

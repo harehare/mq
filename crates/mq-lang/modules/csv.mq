@@ -30,7 +30,7 @@ def _parse_csv_line(line, delimiter):
           do
             var end_pos = pos
             | var current_input = line[end_pos]
-            | let result = while (end_pos < line_count && current_input != delimiter && current_input != "\n" && current_input != "\r"):
+            | let result = while (end_pos < line_count && (current_input != delimiter) && (current_input != "\n") && (current_input != "\r")):
                           end_pos += 1
                           | current_input = line[end_pos]
                           | end_pos
@@ -117,6 +117,9 @@ def csv_parse(input, has_header): _parse_csv_content(input, ",", has_header);
 
 # Parses TSV (Tab-Separated Values) content.
 def tsv_parse(input, has_header): _parse_csv_content(input, "\t", has_header);
+
+# Parses PSV (Pipe-Separated Values) content.
+def psv_parse(input, has_header): _parse_csv_content(input, "|", has_header);
 
 # Converts data to a CSV string with a specified delimiter.
 def csv_stringify(data, delimiter):

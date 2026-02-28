@@ -370,6 +370,9 @@ impl Hir {
             mq_lang::CstNodeKind::While => {
                 self.add_while_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Loop => {
+                self.add_loop_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Try => {
                 self.add_try_expr(node, source_id, scope_id, parent);
             }
@@ -397,15 +400,53 @@ impl Hir {
             mq_lang::CstNodeKind::Unquote => {
                 self.add_unquote_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Break => {
+                self.add_break_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Self_
             | mq_lang::CstNodeKind::Nodes
             | mq_lang::CstNodeKind::End
-            | mq_lang::CstNodeKind::Break
             | mq_lang::CstNodeKind::Continue => {
                 self.add_keyword(node, source_id, scope_id, parent);
             }
 
+            mq_lang::CstNodeKind::Assign => {
+                self.add_assign_expr(node, source_id, scope_id, parent);
+            }
+
             _ => {}
+        }
+    }
+
+    /// Lowers a `CstNodeKind::Assign` node into a `SymbolKind::Assign` symbol.
+    ///
+    /// Assignment nodes (e.g., `x = 10`, `x += 1`) have two children: the LHS
+    /// (target identifier) and the RHS (value expression). The operator token
+    /// name is stored as the symbol's value.
+    fn add_assign_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Assign,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Assign,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            for child in node.children_without_token() {
+                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+            }
         }
     }
 
@@ -756,6 +797,38 @@ impl Hir {
         }
     }
 
+    fn add_loop_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Loop,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Loop,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+            let loop_scope_id = self.add_scope(Scope::new(
+                SourceInfo::new(Some(source_id), Some(node.node_range())),
+                ScopeKind::Loop(symbol_id),
+                Some(scope_id),
+            ));
+
+            node.children_without_token().iter().for_each(|child| {
+                self.add_expr(child, source_id, loop_scope_id, Some(symbol_id));
+            });
+        }
+    }
+
     fn add_try_expr(
         &mut self,
         node: &mq_lang::Shared<mq_lang::CstNode>,
@@ -925,8 +998,8 @@ impl Hir {
                 self.add_expr(then_expr, source_id, if_scope, Some(symbol_id));
 
                 for child in rest {
-                    self.add_elif_expr(child, source_id, scope_id, parent);
-                    self.add_else_expr(child, source_id, scope_id, parent);
+                    self.add_elif_expr(child, source_id, scope_id, Some(symbol_id));
+                    self.add_else_expr(child, source_id, scope_id, Some(symbol_id));
                 }
             }
         }
@@ -1009,7 +1082,7 @@ impl Hir {
             ..
         } = &**node
         {
-            self.add_symbol(Symbol {
+            let symbol_id = self.add_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Call,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -1022,7 +1095,7 @@ impl Hir {
                 // Process all arguments recursively to handle complex expressions
                 // This ensures that identifiers inside bracket access (e.g., vars in vars["x"])
                 // are properly registered as Ref symbols that can be resolved
-                self.add_expr(child, source_id, scope_id, parent);
+                self.add_expr(child, source_id, scope_id, Some(symbol_id));
             });
         }
     }
@@ -1099,7 +1172,7 @@ impl Hir {
                 source: SourceInfo::new(Some(source_id), Some(loop_val.range())),
                 scope: scope_id,
                 doc: node.comments(),
-                parent,
+                parent: Some(symbol_id),
             });
 
             self.add_symbol(Symbol {
@@ -1108,7 +1181,7 @@ impl Hir {
                 source: SourceInfo::new(Some(source_id), Some(arg.range())),
                 scope: scope_id,
                 doc: node.comments(),
-                parent,
+                parent: Some(symbol_id),
             });
 
             program.iter().for_each(|child| {
@@ -1557,6 +1630,33 @@ impl Hir {
         });
     }
 
+    /// Adds a `break` expression to the HIR.
+    ///
+    /// Unlike bare keywords, `break` may carry a value (`break: expr`).
+    /// The value expression is added as a child of the break symbol so that
+    /// the type checker can infer the break's type and propagate it to the
+    /// enclosing loop as part of a union type.
+    fn add_break_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        let symbol_id = self.add_symbol(Symbol {
+            value: node.name(),
+            kind: SymbolKind::Keyword,
+            source: SourceInfo::new(Some(source_id), Some(node.range())),
+            scope: scope_id,
+            doc: node.comments(),
+            parent,
+        });
+        // Process break value expression (if present) as a child of this symbol.
+        for child in node.children_without_token() {
+            self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+        }
+    }
+
     fn add_pattern_expr(
         &mut self,
         node: &mq_lang::Shared<mq_lang::CstNode>,
@@ -1729,8 +1829,49 @@ impl Hir {
                         parent,
                     });
                 }
+                // Literal patterns: create a literal child symbol for type checking
+                mq_lang::TokenKind::StringLiteral(s) => {
+                    self.add_symbol(Symbol {
+                        value: Some(s.as_str().into()),
+                        kind: SymbolKind::String,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
+                mq_lang::TokenKind::NumberLiteral(n) => {
+                    self.add_symbol(Symbol {
+                        value: Some(n.to_string().into()),
+                        kind: SymbolKind::Number,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
+                mq_lang::TokenKind::BoolLiteral(b) => {
+                    self.add_symbol(Symbol {
+                        value: Some(b.to_string().into()),
+                        kind: SymbolKind::Boolean,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
+                mq_lang::TokenKind::None => {
+                    self.add_symbol(Symbol {
+                        value: Some("none".into()),
+                        kind: SymbolKind::None,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
                 _ => {
-                    // For other token types (literals, wildcards), no variable is introduced
+                    // For other token types (wildcards), no variable or literal is introduced
                 }
             }
         }
@@ -2448,6 +2589,38 @@ end"#;
             .symbols()
             .find(|(_, s)| s.kind == SymbolKind::Variable && s.value.as_deref() == Some("d"));
         assert!(var_symbol.is_some(), "Should have a Variable symbol for d");
+
+        assert!(hir.errors().is_empty(), "Should have no errors");
+    }
+
+    #[test]
+    fn test_assign_creates_symbol() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = "var x = 10 | x = 20";
+        hir.add_code(None, code);
+
+        let assign_symbol = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Assign && s.value.as_deref() == Some("="));
+        assert!(assign_symbol.is_some(), "Should have an Assign symbol for =");
+
+        assert!(hir.errors().is_empty(), "Should have no errors");
+    }
+
+    #[test]
+    fn test_compound_assign_creates_symbol() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = "var x = 10 | x += 1";
+        hir.add_code(None, code);
+
+        let assign_symbol = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Assign && s.value.as_deref() == Some("+="));
+        assert!(assign_symbol.is_some(), "Should have an Assign symbol for +=");
 
         assert!(hir.errors().is_empty(), "Should have no errors");
     }

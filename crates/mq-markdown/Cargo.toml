@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-markdown"
 readme = "../../README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.15"
+version = "0.5.17"
 
 [dependencies]
 ego-tree = {workspace = true, optional = true}

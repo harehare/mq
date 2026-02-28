@@ -278,6 +278,12 @@ fn engine() -> DefaultEngine {
 #[case::rtrimstr("rtrimstr(\"test\")",
       vec![RuntimeValue::String("Stringtest".to_string())],
       Ok(vec![RuntimeValue::String("String".to_string())].into()))]
+#[case::ltrim("ltrim()",
+      vec![RuntimeValue::String(" test ".to_string())],
+      Ok(vec![RuntimeValue::String("test ".to_string())].into()))]
+#[case::rtrim("rtrim()",
+      vec![RuntimeValue::String(" test ".to_string())],
+      Ok(vec![RuntimeValue::String(" test".to_string())].into()))]
 #[case::is_empty("is_empty(\"\")",
       vec![RuntimeValue::String("String".to_string())],
       Ok(vec![RuntimeValue::TRUE].into()))]
@@ -2000,6 +2006,179 @@ fn engine() -> DefaultEngine {
 #[case::variadic_fn_syntax("let g = fn(*args): args; | g(1, 2)",
     vec![RuntimeValue::Number(0.into())],
     Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())])].into()))]
+#[case::is_regex_match_match(r#"is_regex_match("test1", "[a-z0-9]+")"#,
+    vec![RuntimeValue::None],
+    Ok(vec![true.into()].into()))]
+#[case::is_regex_match_no_match(r#"is_regex_match("abc", "[0-9]+")"#,
+    vec![RuntimeValue::None],
+    Ok(vec![false.into()].into()))]
+#[case::is_regex_match_none_input(r#"is_regex_match(., "[a-z]+")"#,
+    vec![RuntimeValue::None],
+    Ok(vec![false.into()].into()))]
+#[case::is_regex_match_markdown(r#"is_regex_match(., "hello")"#,
+    vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello world".to_string(), position: None }), None)],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }), None)].into()))]
+#[case::regex_op(r#""test1" =~ "[a-z0-9]+""#,
+    vec![RuntimeValue::None],
+    Ok(vec![true.into()].into()))]
+#[case::regex_non_match(r#""abc" =~ "[0-9]+""#,
+    vec![RuntimeValue::None],
+    Ok(vec![false.into()].into()))]
+#[case::regex_complex_pattern(r#""abc123XYZ" =~ "[a-z]+[0-9]+[A-Z]+""#,
+    vec![RuntimeValue::None],
+    Ok(vec![true.into()].into()))]
+#[case::regex_none_input(r#". =~ "foo""#,
+    vec![RuntimeValue::None],
+    Ok(vec![false.into()].into()))]
+#[case::regex_markdown_match(r#". =~ "hello""#,
+    vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello world".to_string(), position: None }), None)],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }), None)].into()))]
+#[case::regex_markdown_non_match(r#". =~ "foo""#,
+    vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello world".to_string(), position: None }), None)],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "false".to_string() }), None)].into()))]
+#[case::regex_in_if(r#""test" | if (. =~ "test"): true else: false"#,
+    vec![RuntimeValue::None],
+    Ok(vec![true.into()].into()))]
+#[case::shift_left_number("shift_left(1, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()),)]
+#[case::shift_left_number_operator("1 << 2", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()),)]
+#[case::shift_right_number("shift_right(4, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()),)]
+#[case::shift_right_number_operator("4 >> 2", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()),)]
+#[case::shift_left_array_operator("[1] << 2", vec![RuntimeValue::None], Ok(vec![vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())].into()].into()),)]
+#[case::shift_right_array_operator("2 >> [1]", vec![RuntimeValue::None], Ok(vec![vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(1.into())].into()].into()),)]
+#[case::shift_right_header_level_h1("to_markdown(\"# Heading 1\") | first() | shift_right(1)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 2,
+        values: vec!["Heading 1".to_string().into()],
+        position: None
+    }), None)].into()))]
+#[case::shift_right_header_level_h1_operator("let md = do to_markdown(\"# Heading 1\") | first(); | md >> 1",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 2,
+        values: vec!["Heading 1".to_string().into()],
+        position: None
+    }), None)].into()))]
+#[case::shift_right_header_level_h6("to_markdown(\"###### Heading 6\") | first() | shift_right(1)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 6,
+        values: vec!["Heading 6".to_string().into()],
+        position: None
+    }), None)].into()))]
+#[case::shift_left_header_level_h2("to_markdown(\"## Heading 2\") | first() | shift_left(1)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 1,
+        values: vec!["Heading 2".to_string().into()],
+        position: None
+    }), None)].into()))]
+#[case::shift_left_header_level_h2_via_binding("let md = do to_markdown(\"## Heading 2\") | first(); | md << 1",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 1,
+        values: vec!["Heading 2".to_string().into()],
+        position: None
+    }), None)].into()))]
+#[case::shift_left_header_level_h1("to_markdown(\"# Heading 1\") | first() | shift_left(1)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 1,
+        values: vec!["Heading 1".to_string().into()],
+        position: None
+    }), None)].into()))]
+#[case::shift_left_string_basic("\"abcdef\" | shift_left(2)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("cdef".to_string())].into()))]
+#[case::shift_right_string_basic("\"abcdef\" | shift_right(2)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("abcd".to_string())].into()))]
+#[case::shift_left_string_amount_greater_than_length("\"abc\" | shift_left(10)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("".to_string())].into()))]
+#[case::shift_right_string_amount_equal_to_length("\"abc\" | shift_right(3)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("".to_string())].into()))]
+#[case::convert_string_to_h1_function("convert(\"Hello\", :h1)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 1,
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_h1_operator("\"Hello\" @ :h1",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 1,
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_h2_operator("\"Hello\" @ :h2",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 2,
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_h1_via_string_operator("\"Hello\" @ \"#\"",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 1,
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_h2_via_string_operator("\"Hello\" @ \"##\"",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 2,
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_base64_operator("\"text\" @ :base64",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("dGV4dA==".to_string())].into()))]
+#[case::convert_string_to_uri_operator("\"hello world\" @ :uri",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("hello%20world".to_string())].into()))]
+#[case::convert_string_to_urid_operator("\"hello%20world\" @ :urid",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("hello world".to_string())].into()))]
+#[case::convert_string_to_sh_operator("\"hello world\" @ :sh",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("'hello world'".to_string())].into()))]
+#[case::convert_string_to_blockquote_operator("\"Hello\" @ \">\"",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Blockquote(mq_markdown::Blockquote {
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_list_item_operator("\"Hello\" @ \"-\"",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List {
+        values: vec!["Hello".to_string().into()],
+        index: 0,
+        ordered: false,
+        level: 1,
+        checked: None,
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_strikethrough_operator("\"Hello\" @ \"~~\"",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Delete(mq_markdown::Delete {
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_strong_operator("\"Hello\" @ \"**\"",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Strong {
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::convert_string_to_horizontal_rule_operator("\"Hello\" @ \"--\"",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
+        position: None,
+    }), None)].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
@@ -2036,6 +2215,8 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::variadic_not_last_param("def f(*a, b): a", vec![RuntimeValue::Number(0.into())],)]
 #[case::multiple_variadic_params("def f(*a, *b): a", vec![RuntimeValue::Number(0.into())],)]
 #[case::macro_variadic_param("macro m(*args): args", vec![RuntimeValue::Number(0.into())],)]
+#[case::regex_invalid_pattern(r#""abc" =~ "[invalid""#, vec![RuntimeValue::None],)]
+#[case::is_regex_match_invalid_pattern(r#"is_regex_match("abc", "[invalid")"#, vec![RuntimeValue::None],)]
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
 }

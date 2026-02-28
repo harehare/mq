@@ -107,3 +107,6 @@ let d = {"x": 100, "y": 200}
 A module handling environment-specific functionality.
 
 - `__FILE__`: Contains the path to the file currently being processed.
+- `__FILE_NAME__`: Contains the name of the file currently being processed (without the path).
+- `__FILE_STEM__`: Contains the stem of the file currently being processed (filename without extension).
+

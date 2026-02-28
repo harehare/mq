@@ -1,7 +1,7 @@
 #!/bin/bash
 
-export MQ_PREV_VERSION="0.5.14"
-export MQ_VERSION="0.5.15"
+export MQ_PREV_VERSION="0.5.16"
+export MQ_VERSION="0.5.17"
 export README="../README.md"
 export INSTALL_DOC="../docs/books/src/start/install.md"
 
@@ -26,10 +26,6 @@ for dir in ../packages ../editors; do
     done
 done
 
-# Update pyproject.toml files
-tmpfile=$(mktemp)
-mq -I text --args version $MQ_VERSION 'import "bump_version" | bump_version::py_version()' "../crates/mq-python/pyproject.toml" > "$tmpfile" && mv "$tmpfile" "../crates/mq-python/pyproject.toml"
-
 # Update README.md with the new version
 mq -U --args VERSION $MQ_VERSION 'import "bump_version" | bump_version::code_block_version(VERSION)' $README > README.md.tmp \
   && mv README.md.tmp $README
@@ -37,4 +33,3 @@ mq -U --args VERSION $MQ_VERSION 'import "bump_version" | bump_version::code_blo
 # Update INSTALL_DOC.md with the new version
 mq -U --args VERSION $MQ_VERSION 'import "bump_version" | bump_version::code_block_version(VERSION)' $INSTALL_DOC > INSTALL_DOC.md.tmp \
   && mv INSTALL_DOC.md.tmp $INSTALL_DOC
-

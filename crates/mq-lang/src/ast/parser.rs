@@ -116,9 +116,15 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             | TokenKind::DoubleSlashEqual => 0,
             TokenKind::Or => 1,
             TokenKind::And => 2,
-            TokenKind::EqEq | TokenKind::NeEq | TokenKind::Gt | TokenKind::Gte | TokenKind::Lt | TokenKind::Lte => 3,
-            TokenKind::Plus | TokenKind::Minus => 4,
-            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent => 5,
+            TokenKind::EqEq
+            | TokenKind::NeEq
+            | TokenKind::Gt
+            | TokenKind::Gte
+            | TokenKind::Lt
+            | TokenKind::Lte
+            | TokenKind::TildeEqual => 3,
+            TokenKind::Plus | TokenKind::Minus | TokenKind::RightShift | TokenKind::LeftShift => 4,
+            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent | TokenKind::Convert => 5,
             TokenKind::DoubleDot | TokenKind::Coalesce => 6,
             _ => 0,
         }
@@ -139,6 +145,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Plus => constants::builtins::ADD,
             TokenKind::DoubleDot => constants::builtins::RANGE,
             TokenKind::Slash => constants::builtins::DIV,
+            TokenKind::TildeEqual => constants::builtins::IS_REGEX_MATCH,
+            TokenKind::LeftShift => constants::builtins::SHIFT_LEFT,
+            TokenKind::RightShift => constants::builtins::SHIFT_RIGHT,
+            TokenKind::Convert => constants::builtins::CONVERT,
             _ => unreachable!(),
         }
     }
@@ -310,7 +320,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     });
                     parser.create_assign(&lhs, floor_div_rhs, operator_token_id, operator_token)?
                 }
-
                 _ => Shared::new(Node {
                     token_id: operator_token_id,
                     expr: Shared::new(Expr::Call(
@@ -783,6 +792,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::PercentEqual
                 | TokenKind::DoubleSlashEqual
                 | TokenKind::StarEqual
+                | TokenKind::TildeEqual
+                | TokenKind::LeftShift
+                | TokenKind::RightShift
+                | TokenKind::Convert
         )
     }
 
@@ -827,6 +840,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | Some(TokenKind::StarEqual)
                 | Some(TokenKind::DoubleSlashEqual)
                 | Some(TokenKind::PercentEqual)
+                | Some(TokenKind::TildeEqual)
+                | Some(TokenKind::LeftShift)
+                | Some(TokenKind::RightShift)
+                | Some(TokenKind::Convert)
                 | None
         )
     }
@@ -5053,6 +5070,38 @@ mod tests {
             vec![
                 token(TokenKind::NumberLiteral(5.into())),
                 token(TokenKind::Asterisk),
+                token(TokenKind::Eof)
+            ],
+            Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::convert_simple(
+            vec![
+                token(TokenKind::Ident(SmolStr::new("a"))),
+                token(TokenKind::Convert),
+                token(TokenKind::Ident(SmolStr::new("b"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 1.into(),
+                    expr: Shared::new(Expr::Call(
+                        IdentWithToken::new_with_token(constants::builtins::CONVERT, Some(Shared::new(token(TokenKind::Convert)))),
+                        smallvec![
+                            Shared::new(Node {
+                                token_id: 0.into(),
+                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                            }),
+                            Shared::new(Node {
+                                token_id: 2.into(),
+                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                            }),
+                        ],
+                    )),
+                })
+            ]))]
+    #[case::convert_error_missing_rhs(
+            vec![
+                token(TokenKind::Ident(SmolStr::new("a"))),
+                token(TokenKind::Convert),
                 token(TokenKind::Eof)
             ],
             Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
