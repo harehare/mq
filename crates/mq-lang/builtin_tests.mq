@@ -586,7 +586,7 @@ def test_rpad():
   | assert_eq(result3, "abc  ")
 end
 
-def test_bserch():
+def test_bsearch():
   let result1 = bsearch([1, 2, 3, 4, 5], 3)
   | assert_eq(result1, 2)
 
@@ -638,6 +638,7 @@ end
   test_case("skip", test_skip),
   test_case("take", test_take),
   test_case("find_index", test_find_index),
+  test_case("bsearch", test_bsearch),
   test_case("skip_while", test_skip_while),
   test_case("take_while", test_take_while),
   test_case("group_by", test_group_by),
