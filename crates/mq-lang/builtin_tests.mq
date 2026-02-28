@@ -586,6 +586,20 @@ def test_rpad():
   | assert_eq(result3, "abc  ")
 end
 
+def test_bserch():
+  let result1 = bsearch([1, 2, 3, 4, 5], 3)
+  | assert_eq(result1, 2)
+
+  | let result2 = bsearch([1, 2, 3, 4, 5], 6)
+  | assert_eq(result2, -1)
+
+  | let result3 = bsearch([10, 20, 30], 10)
+  | assert_eq(result3, 0)
+
+  | let result4 = bsearch(["a", "b", "c"], "b")
+  | assert_eq(result4, 1)
+end
+
 | run_tests([
   # Type checking
   test_case("is_array", test_is_array),

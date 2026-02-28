@@ -594,3 +594,27 @@ end
 def decrease_header_level(node):
   decrease_header_depth(node)
 end
+
+# Performs a binary search on a sorted array to find the index of the target value.
+def bsearch(arr, target):
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  else: do
+      let _bsearch_impl = fn(arr, target, low, high):
+              if (low > high):
+                -1
+              else:
+                do
+                  let mid = floor((low + high) / 2)
+                  | let mid_val = arr[mid]
+                  | if (mid_val == target):
+                      mid
+                    elif (mid_val < target):
+                      _bsearch_impl(arr, target, mid + 1, high)
+                    else:
+                      _bsearch_impl(arr, target, low, mid - 1);
+            end
+      | _bsearch_impl(arr, target, 0, len(arr) - 1)
+    end
+end
+
