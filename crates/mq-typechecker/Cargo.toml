@@ -10,7 +10,7 @@ publish = false
 name = "mq-typechecker"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.16"
+version = "0.5.17"
 
 [features]
 cli = ["dep:clap", "dep:colored", "dep:url"]

@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-lsp"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.16"
+version = "0.5.17"
 
 [dependencies]
 bimap = {workspace = true}
