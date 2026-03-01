@@ -86,7 +86,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 mq_hir::SymbolKind::Number => token_type(ls_types::SemanticTokenType::NUMBER),
                 mq_hir::SymbolKind::Parameter => token_type(ls_types::SemanticTokenType::PARAMETER),
                 mq_hir::SymbolKind::Ref => token_type(ls_types::SemanticTokenType::VARIABLE),
-                mq_hir::SymbolKind::Selector => token_type(ls_types::SemanticTokenType::METHOD),
+                mq_hir::SymbolKind::Selector(_) => token_type(ls_types::SemanticTokenType::METHOD),
                 mq_hir::SymbolKind::String => token_type(ls_types::SemanticTokenType::STRING),
                 mq_hir::SymbolKind::Variable
                 | mq_hir::SymbolKind::Symbol

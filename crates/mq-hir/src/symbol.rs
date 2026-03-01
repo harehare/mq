@@ -77,7 +77,7 @@ pub enum SymbolKind {
     Pattern,
     PatternVariable,
     Ref,
-    Selector,
+    Selector(mq_lang::Selector),
     String,
     Symbol,
     UnaryOp,

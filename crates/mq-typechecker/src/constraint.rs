@@ -1,6 +1,9 @@
 //! Constraint generation for type inference.
 
-use crate::infer::{DeferredOverload, DeferredParameterCall, DeferredUserCall, InferenceContext};
+use crate::infer::{
+    DeferredOverload, DeferredParameterCall, DeferredUserCall, InferenceContext, NarrowingEntry, TypeNarrowing,
+};
+use crate::narrowing::analyze_condition;
 use crate::types::Type;
 use crate::unify::range_to_span;
 use mq_hir::{Hir, SymbolId, SymbolKind};
@@ -33,10 +36,10 @@ fn find_enclosing_function(hir: &Hir, symbol_id: SymbolId) -> Option<SymbolId> {
 ///
 /// Built once at the start of constraint generation to avoid O(n) full HIR scans
 /// on every `get_children` call.
-type ChildrenIndex = FxHashMap<SymbolId, Vec<SymbolId>>;
+pub(crate) type ChildrenIndex = FxHashMap<SymbolId, Vec<SymbolId>>;
 
 /// Builds the children index from all HIR symbols in a single pass.
-fn build_children_index(hir: &Hir) -> ChildrenIndex {
+pub(crate) fn build_children_index(hir: &Hir) -> ChildrenIndex {
     let mut index: ChildrenIndex = FxHashMap::default();
     for (id, symbol) in hir.symbols() {
         if let Some(parent) = symbol.parent {
@@ -47,7 +50,7 @@ fn build_children_index(hir: &Hir) -> ChildrenIndex {
 }
 
 /// Helper function to get children of a symbol from the pre-built index.
-fn get_children(children_index: &ChildrenIndex, parent_id: SymbolId) -> &[SymbolId] {
+pub(crate) fn get_children(children_index: &ChildrenIndex, parent_id: SymbolId) -> &[SymbolId] {
     children_index.get(&parent_id).map(|v| v.as_slice()).unwrap_or(&[])
 }
 
@@ -258,7 +261,7 @@ fn generate_block_constraints(
         if let Some(child_symbol) = hir.symbol(children[i])
             && matches!(
                 child_symbol.kind,
-                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector
+                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_)
             )
         {
             generate_symbol_constraints(hir, children[i], child_symbol.kind.clone(), ctx, children_index);
@@ -312,7 +315,7 @@ fn generate_function_body_pipe_constraints(
         if let Some(child_symbol) = hir.symbol(body_children[i])
             && matches!(
                 child_symbol.kind,
-                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector
+                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_)
             )
         {
             generate_symbol_constraints(hir, body_children[i], child_symbol.kind.clone(), ctx, children_index);
@@ -702,6 +705,23 @@ fn merge_loop_types(base_ty: Type, break_tys: Vec<Type>, ctx: &InferenceContext)
     // All unresolved type variables: return the base type unchanged and let
     // unification constraints handle the rest.
     all_tys.into_iter().next().unwrap()
+}
+
+/// Returns the sibling symbol IDs that come after `while_id` in its parent's child list.
+///
+/// These are the symbols that execute after the while loop exits (i.e., when the loop
+/// condition becomes false), allowing post-loop type narrowing.
+fn get_post_loop_siblings(hir: &Hir, while_id: SymbolId, children_index: &ChildrenIndex) -> Vec<SymbolId> {
+    let parent_id = match hir.symbol(while_id).and_then(|s| s.parent) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+    let siblings = get_children(children_index, parent_id);
+    let pos = match siblings.iter().position(|&id| id == while_id) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+    siblings[pos + 1..].to_vec()
 }
 
 /// Finds the lambda Function symbol that a Variable was initialized with, if any.
@@ -1299,7 +1319,7 @@ fn generate_symbol_constraints(
                                 // Symbol/Selector (`:key` pattern), not a regular variable ref.
                                 let field_name = children.first().and_then(|&arg_id| {
                                     let arg_symbol = hir.symbol(arg_id)?;
-                                    if matches!(arg_symbol.kind, SymbolKind::Symbol | SymbolKind::Selector) {
+                                    if matches!(arg_symbol.kind, SymbolKind::Symbol | SymbolKind::Selector(_)) {
                                         arg_symbol.value.as_ref().map(|v| v.to_string())
                                     } else {
                                         None
@@ -1492,6 +1512,18 @@ fn generate_symbol_constraints(
                 // value can be used as a condition (truthy/falsy), not just Bool.
                 let _cond_ty = ctx.get_or_create_symbol_type(children[0]);
 
+                // Analyze condition for type narrowing (e.g., is_string(x))
+                let cond_narrowings = analyze_condition(hir, children[0], children_index, ctx);
+                if !cond_narrowings.is_empty() && children.len() > 1 {
+                    let else_branch_ids: Vec<SymbolId> = children[2..].to_vec();
+                    ctx.add_type_narrowing(TypeNarrowing {
+                        then_narrowings: cond_narrowings.then_narrowings,
+                        else_narrowings: cond_narrowings.else_narrowings,
+                        then_branch_id: children[1],
+                        else_branch_ids,
+                    });
+                }
+
                 // Subsequent children are then-branch and elif/else branches.
                 // mq is dynamically typed: branches may return different types
                 // (e.g., `if (...): true elif (...): false else: None`).
@@ -1566,6 +1598,39 @@ fn generate_symbol_constraints(
                 // First child is the condition
                 let cond_ty = ctx.get_or_create_symbol_type(children[0]);
                 ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range));
+
+                // Analyze condition for type narrowing: narrowings apply inside the loop body
+                // (then-branch) and to code after the loop (else-branch, when condition is false).
+                if children.len() > 1 {
+                    let cond_narrowings = analyze_condition(hir, children[0], children_index, ctx);
+                    if !cond_narrowings.is_empty() {
+                        // Loop body is the last child; all body children receive then-narrowings.
+                        let body_children: Vec<SymbolId> = children[1..].to_vec();
+                        for &body_id in &body_children {
+                            ctx.add_type_narrowing(TypeNarrowing {
+                                then_narrowings: cond_narrowings.then_narrowings.clone(),
+                                else_narrowings: Vec::new(),
+                                then_branch_id: body_id,
+                                else_branch_ids: Vec::new(),
+                            });
+                        }
+
+                        // Post-loop narrowing: when the while condition becomes false,
+                        // apply else_narrowings to siblings that follow the While node
+                        // in its parent scope.
+                        if !cond_narrowings.else_narrowings.is_empty() {
+                            let post_loop_siblings = get_post_loop_siblings(hir, symbol_id, children_index);
+                            if !post_loop_siblings.is_empty() {
+                                ctx.add_type_narrowing(TypeNarrowing {
+                                    then_narrowings: Vec::new(),
+                                    else_narrowings: cond_narrowings.else_narrowings,
+                                    then_branch_id: symbol_id, // unused (then_narrowings empty)
+                                    else_branch_ids: post_loop_siblings,
+                                });
+                            }
+                        }
+                    }
+                }
 
                 // Result type comes from the body (last child after condition)
                 if children.len() > 1 {
@@ -1682,9 +1747,16 @@ fn generate_symbol_constraints(
             let range = get_symbol_range(hir, symbol_id);
 
             if children.len() > 1 {
-                // First child is the match expression, rest are arms
+                // First child is the match expression, rest are arms.
                 let match_expr_ty = ctx.get_or_create_symbol_type(children[0]);
                 let arm_children: Vec<_> = children[1..].to_vec();
+
+                // If the match expression is a direct variable reference, we can narrow
+                // its type inside each arm body to match the arm's pattern type.
+                let match_var_def_id = hir
+                    .symbol(children[0])
+                    .filter(|s| matches!(s.kind, SymbolKind::Ref))
+                    .and_then(|_| hir.resolve_reference_symbol(children[0]));
 
                 if !arm_children.is_empty() {
                     let mut arm_body_tys = Vec::new();
@@ -1692,19 +1764,44 @@ fn generate_symbol_constraints(
                     for &arm_id in &arm_children {
                         let arm_children_inner = get_children(children_index, arm_id);
 
-                        // Separate pattern and body children
+                        // Separate pattern and body children, tracking both IDs and types.
                         let mut body_ty = None;
+                        let mut body_id = None;
+                        let mut arm_pattern_ty = None;
                         for &arm_child_id in arm_children_inner {
                             if let Some(arm_child_symbol) = hir.symbol(arm_child_id) {
                                 if matches!(arm_child_symbol.kind, SymbolKind::Pattern) {
                                     // Determine pattern type from its literal children
                                     let pattern_ty = resolve_pattern_type(hir, arm_child_id, ctx, children_index);
-                                    ctx.add_constraint(Constraint::Equal(match_expr_ty.clone(), pattern_ty, range));
+                                    ctx.add_constraint(Constraint::Equal(
+                                        match_expr_ty.clone(),
+                                        pattern_ty.clone(),
+                                        range,
+                                    ));
+                                    // Keep the pattern type if it is concrete (not a wildcard Var)
+                                    if !pattern_ty.is_var() {
+                                        arm_pattern_ty = Some(pattern_ty);
+                                    }
                                 } else {
                                     // Track the last non-Pattern child as the body
                                     body_ty = Some(ctx.get_or_create_symbol_type(arm_child_id));
+                                    body_id = Some(arm_child_id);
                                 }
                             }
+                        }
+
+                        // Narrow the matched variable to the concrete pattern type inside the arm body.
+                        if let (Some(def_id), Some(pat_ty), Some(bid)) = (match_var_def_id, arm_pattern_ty, body_id) {
+                            ctx.add_type_narrowing(TypeNarrowing {
+                                then_narrowings: vec![NarrowingEntry {
+                                    def_id,
+                                    narrowed_type: pat_ty,
+                                    is_complement: false,
+                                }],
+                                else_narrowings: Vec::new(),
+                                then_branch_id: bid,
+                                else_branch_ids: Vec::new(),
+                            });
                         }
 
                         if let Some(body_ty) = body_ty {
@@ -1867,7 +1964,7 @@ fn generate_symbol_constraints(
         }
 
         // Selector: resolve field type from Record if piped input is known
-        SymbolKind::Selector => {
+        SymbolKind::Selector(_) => {
             if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
                 let resolved = ctx.resolve_type(&piped_ty);
                 let field_name = hir

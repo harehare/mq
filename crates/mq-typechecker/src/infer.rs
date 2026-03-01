@@ -97,6 +97,39 @@ pub struct DeferredSelectorAccess {
     pub range: Option<mq_lang::Range>,
 }
 
+/// A single variable type narrowing entry.
+///
+/// Represents a narrowing of a variable's type within a specific branch,
+/// e.g., `is_string(x)` narrows `x` to `String` in the then-branch.
+#[derive(Debug, Clone)]
+pub struct NarrowingEntry {
+    /// The variable definition symbol ID being narrowed
+    pub def_id: SymbolId,
+    /// The predicate type (e.g., Number for is_number)
+    pub narrowed_type: Type,
+    /// If true, narrow AWAY from the type (subtract from union).
+    /// If false, narrow TO the type directly.
+    pub is_complement: bool,
+}
+
+/// Collected type narrowing information for an if/elif expression.
+///
+/// When a type predicate like `is_string(x)` is used as a condition in an if
+/// expression, the then-branch can narrow `x` to `String` and the else-branch
+/// can narrow `x` to the complement (e.g., `Number` if `x: String | Number`).
+/// Supports compound conditions with `&&`, `||`, and `!`.
+#[derive(Debug, Clone)]
+pub struct TypeNarrowing {
+    /// Narrowings to apply in the then-branch (condition is true)
+    pub then_narrowings: Vec<NarrowingEntry>,
+    /// Narrowings to apply in the else/elif branches (condition is false)
+    pub else_narrowings: Vec<NarrowingEntry>,
+    /// The then-branch symbol ID
+    pub then_branch_id: SymbolId,
+    /// The else/elif branch symbol IDs where complement narrowings apply
+    pub else_branch_ids: Vec<SymbolId>,
+}
+
 /// Inference context maintains state during type inference
 pub struct InferenceContext {
     /// Type variable context for generating fresh variables
@@ -123,6 +156,8 @@ pub struct InferenceContext {
     deferred_record_accesses: Vec<DeferredRecordAccess>,
     /// Deferred selector field accesses for post-unification resolution
     deferred_selector_accesses: Vec<DeferredSelectorAccess>,
+    /// Type narrowings collected from type predicate conditions in if/elif expressions
+    type_narrowings: Vec<TypeNarrowing>,
 }
 
 impl InferenceContext {
@@ -141,6 +176,7 @@ impl InferenceContext {
             deferred_parameter_calls: Vec::new(),
             deferred_record_accesses: Vec::new(),
             deferred_selector_accesses: Vec::new(),
+            type_narrowings: Vec::new(),
         }
     }
 
@@ -222,6 +258,16 @@ impl InferenceContext {
     /// Takes all deferred selector accesses (consumes them)
     pub fn take_deferred_selector_accesses(&mut self) -> Vec<DeferredSelectorAccess> {
         std::mem::take(&mut self.deferred_selector_accesses)
+    }
+
+    /// Adds a type narrowing collected from a type predicate condition
+    pub fn add_type_narrowing(&mut self, narrowing: TypeNarrowing) {
+        self.type_narrowings.push(narrowing);
+    }
+
+    /// Takes all collected type narrowings (consumes them)
+    pub fn take_type_narrowings(&mut self) -> Vec<TypeNarrowing> {
+        std::mem::take(&mut self.type_narrowings)
     }
 
     /// Reports a "no matching overload" error with formatted argument types.

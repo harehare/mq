@@ -27,6 +27,7 @@
 pub mod builtin;
 pub mod constraint;
 pub mod infer;
+pub mod narrowing;
 pub mod types;
 pub mod unify;
 
@@ -178,6 +179,10 @@ impl TypeChecker {
 
         // Solve constraints through unification (collects errors internally)
         unify::solve_constraints(&mut ctx);
+
+        // Apply type narrowings from type predicate conditions (e.g., is_string(x))
+        // in if/elif branches. This overrides Ref types within narrowed branches.
+        narrowing::resolve_type_narrowings(hir, &mut ctx);
 
         // Resolve deferred record field accesses now that variable types are known.
         // This binds bracket access return types (e.g., v[:key]) to specific field types
