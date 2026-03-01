@@ -190,21 +190,30 @@ fn test_narrowing_equality_then_branch() {
 fn test_narrowing_neq_none_removes_none() {
     // x != none removes None from union in the then-branch
     let result = check_types(r#"def f(x): if (x != none): len(x) else: 0;"#);
-    assert!(result.is_empty(), "x != none should narrow away None in then-branch: {result:?}");
+    assert!(
+        result.is_empty(),
+        "x != none should narrow away None in then-branch: {result:?}"
+    );
 }
 
 #[test]
 fn test_narrowing_type_call_string() {
     // type(x) == "string" narrows x to String
     let result = check_types(r#"def f(x): if (type(x) == "string"): upcase(x) else: 0;"#);
-    assert!(result.is_empty(), "type(x) == 'string' should narrow x to String: {result:?}");
+    assert!(
+        result.is_empty(),
+        "type(x) == 'string' should narrow x to String: {result:?}"
+    );
 }
 
 #[test]
 fn test_narrowing_type_call_number() {
     // type(x) == "number" narrows x to Number
     let result = check_types(r#"def f(x): if (type(x) == "number"): x + 1 else: 0;"#);
-    assert!(result.is_empty(), "type(x) == 'number' should narrow x to Number: {result:?}");
+    assert!(
+        result.is_empty(),
+        "type(x) == 'number' should narrow x to Number: {result:?}"
+    );
 }
 
 #[test]
@@ -231,7 +240,10 @@ fn test_narrowing_match_arm_number_pattern() {
 fn test_narrowing_match_arm_none_pattern() {
     // match with none pattern narrows to None in that arm
     let result = check_types(r#"def f(x): match (x): | none: 0 | _: 1 end"#);
-    assert!(result.is_empty(), "Match arm with none pattern should succeed: {result:?}");
+    assert!(
+        result.is_empty(),
+        "Match arm with none pattern should succeed: {result:?}"
+    );
 }
 
 #[test]

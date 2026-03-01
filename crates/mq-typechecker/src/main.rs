@@ -18,6 +18,10 @@ struct Cli {
     /// Display inferred types for all symbols
     #[arg(long)]
     show_types: bool,
+
+    /// Disable automatic builtin preloading (use when checking builtin.mq itself)
+    #[arg(long)]
+    no_builtins: bool,
 }
 
 fn main() -> ExitCode {
@@ -40,7 +44,7 @@ fn run() -> io::Result<()> {
         let mut code = String::new();
         io::stdin().read_to_string(&mut code)?;
         let source_url = Url::parse("file:///stdin").ok();
-        let had_errors = check_file(&mut w, &code, source_url, cli.show_types, None)?;
+        let had_errors = check_file(&mut w, &code, source_url, cli.show_types, None, cli.no_builtins)?;
         if had_errors {
             return Err(io::Error::other("type check failed"));
         }
@@ -69,7 +73,14 @@ fn run() -> io::Result<()> {
             writeln!(w, "---")?;
         }
 
-        let had_errors = check_file(&mut w, &code, source_url, cli.show_types, label.as_deref())?;
+        let had_errors = check_file(
+            &mut w,
+            &code,
+            source_url,
+            cli.show_types,
+            label.as_deref(),
+            cli.no_builtins,
+        )?;
         if had_errors {
             total_errors += 1;
         }
@@ -91,8 +102,14 @@ fn check_file(
     source_url: Option<Url>,
     show_types: bool,
     label: Option<&str>,
+    no_builtins: bool,
 ) -> io::Result<bool> {
     let mut hir = Hir::default();
+
+    if no_builtins {
+        hir.builtin.disabled = true;
+    }
+
     hir.add_code(source_url, code);
 
     if let Some(lbl) = label {

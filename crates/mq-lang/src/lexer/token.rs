@@ -3,7 +3,7 @@ use std::fmt::{self, Display, Formatter};
 use itertools::Itertools;
 use smol_str::SmolStr;
 
-use crate::{module::ModuleId, number::Number, range::Range, ArenaId};
+use crate::{ArenaId, module::ModuleId, number::Number, range::Range};
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 
