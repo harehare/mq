@@ -97,6 +97,23 @@ pub struct DeferredSelectorAccess {
     pub range: Option<mq_lang::Range>,
 }
 
+/// A deferred tuple index access for post-unification resolution.
+///
+/// When `v[0]` is encountered on a variable that may be a Tuple type,
+/// we defer the index type resolution until after unification, when
+/// the variable's Tuple type is fully resolved.
+#[derive(Debug, Clone)]
+pub struct DeferredTupleAccess {
+    /// The call symbol ID (the bracket access expression)
+    pub call_symbol_id: SymbolId,
+    /// The variable definition symbol ID
+    pub def_id: SymbolId,
+    /// The literal index value (None if dynamic index)
+    pub index: Option<usize>,
+    /// Source range for error reporting
+    pub range: Option<mq_lang::Range>,
+}
+
 /// A single variable type narrowing entry.
 ///
 /// Represents a narrowing of a variable's type within a specific branch,
@@ -156,20 +173,24 @@ pub struct InferenceContext {
     deferred_record_accesses: Vec<DeferredRecordAccess>,
     /// Deferred selector field accesses for post-unification resolution
     deferred_selector_accesses: Vec<DeferredSelectorAccess>,
+    /// Deferred tuple index accesses for post-unification resolution
+    deferred_tuple_accesses: Vec<DeferredTupleAccess>,
     /// Type narrowings collected from type predicate conditions in if/elif expressions
     type_narrowings: Vec<TypeNarrowing>,
     /// When true, heterogeneous arrays produce a type error
     strict_array: bool,
+    /// When true, heterogeneous array literals are typed as tuples with per-element types
+    tuple: bool,
 }
 
 impl InferenceContext {
     /// Creates a new inference context with default options
     pub fn new() -> Self {
-        Self::with_options(false)
+        Self::with_options(false, false)
     }
 
-    /// Creates a new inference context with the given strict array option
-    pub fn with_options(strict_array: bool) -> Self {
+    /// Creates a new inference context with the given options
+    pub fn with_options(strict_array: bool, tuple: bool) -> Self {
         Self {
             var_ctx: TypeVarContext::new(),
             symbol_types: FxHashMap::default(),
@@ -183,14 +204,21 @@ impl InferenceContext {
             deferred_parameter_calls: Vec::new(),
             deferred_record_accesses: Vec::new(),
             deferred_selector_accesses: Vec::new(),
+            deferred_tuple_accesses: Vec::new(),
             type_narrowings: Vec::new(),
             strict_array,
+            tuple,
         }
     }
 
     /// Returns whether strict array mode is enabled
     pub fn strict_array(&self) -> bool {
         self.strict_array
+    }
+
+    /// Returns whether tuple mode is enabled
+    pub fn tuple(&self) -> bool {
+        self.tuple
     }
 
     /// Registers a builtin function or operator type
@@ -271,6 +299,16 @@ impl InferenceContext {
     /// Takes all deferred selector accesses (consumes them)
     pub fn take_deferred_selector_accesses(&mut self) -> Vec<DeferredSelectorAccess> {
         std::mem::take(&mut self.deferred_selector_accesses)
+    }
+
+    /// Adds a deferred tuple index access for post-unification resolution
+    pub fn add_deferred_tuple_access(&mut self, access: DeferredTupleAccess) {
+        self.deferred_tuple_accesses.push(access);
+    }
+
+    /// Takes all deferred tuple accesses (consumes them)
+    pub fn take_deferred_tuple_accesses(&mut self) -> Vec<DeferredTupleAccess> {
+        std::mem::take(&mut self.deferred_tuple_accesses)
     }
 
     /// Adds a type narrowing collected from a type predicate condition

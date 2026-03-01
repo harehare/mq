@@ -26,6 +26,18 @@ struct Cli {
     /// Enforce homogeneous arrays (reject mixed-type arrays like [1, "hello"])
     #[arg(long)]
     strict_array: bool,
+
+    /// Enable tuple typing for heterogeneous arrays (e.g., [1, "hello"] → (number, string))
+    #[arg(long)]
+    tuple: bool,
+}
+
+/// Options for a single file check
+struct CheckOptions<'a> {
+    show_types: bool,
+    label: Option<&'a str>,
+    no_builtins: bool,
+    type_checker_options: TypeCheckerOptions,
 }
 
 fn main() -> ExitCode {
@@ -42,21 +54,23 @@ fn run() -> io::Result<()> {
     let cli = Cli::parse();
     let mut w = BufWriter::new(io::stderr());
     let multi = cli.files.len() > 1;
+    let tc_options = TypeCheckerOptions {
+        strict_array: cli.strict_array,
+        tuple: cli.tuple,
+    };
 
     if cli.files.is_empty() {
         // Read from stdin
         let mut code = String::new();
         io::stdin().read_to_string(&mut code)?;
         let source_url = Url::parse("file:///stdin").ok();
-        let had_errors = check_file(
-            &mut w,
-            &code,
-            source_url,
-            cli.show_types,
-            None,
-            cli.no_builtins,
-            cli.strict_array,
-        )?;
+        let opts = CheckOptions {
+            show_types: cli.show_types,
+            label: None,
+            no_builtins: cli.no_builtins,
+            type_checker_options: tc_options,
+        };
+        let had_errors = check_file(&mut w, &code, source_url, &opts)?;
         if had_errors {
             return Err(io::Error::other("type check failed"));
         }
@@ -85,15 +99,13 @@ fn run() -> io::Result<()> {
             writeln!(w, "---")?;
         }
 
-        let had_errors = check_file(
-            &mut w,
-            &code,
-            source_url,
-            cli.show_types,
-            label.as_deref(),
-            cli.no_builtins,
-            cli.strict_array,
-        )?;
+        let opts = CheckOptions {
+            show_types: cli.show_types,
+            label: label.as_deref(),
+            no_builtins: cli.no_builtins,
+            type_checker_options: tc_options.clone(),
+        };
+        let had_errors = check_file(&mut w, &code, source_url, &opts)?;
         if had_errors {
             total_errors += 1;
         }
@@ -109,24 +121,16 @@ fn run() -> io::Result<()> {
 }
 
 /// Runs syntax and type checks on a single source, returns `true` if any errors were found.
-fn check_file(
-    w: &mut impl Write,
-    code: &str,
-    source_url: Option<Url>,
-    show_types: bool,
-    label: Option<&str>,
-    no_builtins: bool,
-    strict_array: bool,
-) -> io::Result<bool> {
+fn check_file(w: &mut impl Write, code: &str, source_url: Option<Url>, opts: &CheckOptions<'_>) -> io::Result<bool> {
     let mut hir = Hir::default();
 
-    if no_builtins {
+    if opts.no_builtins {
         hir.builtin.disabled = true;
     }
 
     hir.add_code(source_url, code);
 
-    if let Some(lbl) = label {
+    if let Some(lbl) = opts.label {
         writeln!(w, "{} {}", "──".dimmed(), lbl.bold())?;
     }
 
@@ -135,7 +139,7 @@ fn check_file(
         return Ok(true);
     }
 
-    check_type(w, &hir, show_types, strict_array)
+    check_type(w, &hir, opts.show_types, &opts.type_checker_options)
 }
 
 /// Checks HIR for syntax errors/warnings and writes them in a unified format.
@@ -198,8 +202,13 @@ fn check_syntax(w: &mut impl Write, hir: &mq_hir::Hir) -> io::Result<bool> {
 
 /// Runs type inference and writes errors in a unified format.
 /// Returns `true` if any type errors were found.
-fn check_type(w: &mut impl Write, hir: &mq_hir::Hir, show_types: bool, strict_array: bool) -> io::Result<bool> {
-    let mut checker = TypeChecker::with_options(TypeCheckerOptions { strict_array });
+fn check_type(
+    w: &mut impl Write,
+    hir: &mq_hir::Hir,
+    show_types: bool,
+    options: &TypeCheckerOptions,
+) -> io::Result<bool> {
+    let mut checker = TypeChecker::with_options(options.clone());
     let mut errors = checker.check(hir);
 
     errors.sort_by_key(|a| a.location());

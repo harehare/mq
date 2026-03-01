@@ -89,6 +89,31 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
         // Arrays
         (Type::Array(elem1), Type::Array(elem2)) => unify(ctx, elem1, elem2, range),
 
+        // Tuples: same-length tuples unify element-wise
+        (Type::Tuple(elems1), Type::Tuple(elems2)) => {
+            if elems1.len() != elems2.len() {
+                let resolved_t1 = ctx.resolve_type(t1);
+                let resolved_t2 = ctx.resolve_type(t2);
+                ctx.add_error(TypeError::Mismatch {
+                    expected: resolved_t1.display_renumbered(),
+                    found: resolved_t2.display_renumbered(),
+                    span: range.as_ref().map(range_to_span),
+                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                });
+                return;
+            }
+            for (e1, e2) in elems1.iter().zip(elems2.iter()) {
+                unify(ctx, e1, e2, range);
+            }
+        }
+
+        // Tuple ↔ Array: unify each tuple element with the array element type
+        (Type::Tuple(elems), Type::Array(elem)) | (Type::Array(elem), Type::Tuple(elems)) => {
+            for e in elems {
+                unify(ctx, e, elem, range);
+            }
+        }
+
         // Dictionaries
         (Type::Dict(k1, v1), Type::Dict(k2, v2)) => {
             unify(ctx, k1, k2, range);
@@ -263,6 +288,7 @@ fn occurs_check(var: TypeVarId, ty: &Type) -> bool {
     match ty {
         Type::Var(v) => var == *v,
         Type::Array(elem) => occurs_check(var, elem),
+        Type::Tuple(elems) => elems.iter().any(|e| occurs_check(var, e)),
         Type::Dict(key, value) => occurs_check(var, key) || occurs_check(var, value),
         Type::Function(params, ret) => params.iter().any(|p| occurs_check(var, p)) || occurs_check(var, ret),
         Type::Union(types) => types.iter().any(|t| occurs_check(var, t)),
@@ -280,6 +306,7 @@ pub fn apply_substitution(ctx: &InferenceContext, ty: &Type) -> Type {
     match &ty {
         Type::Var(_) => ty,
         Type::Array(elem) => Type::Array(Box::new(apply_substitution(ctx, elem))),
+        Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| apply_substitution(ctx, e)).collect()),
         Type::Dict(key, value) => Type::Dict(
             Box::new(apply_substitution(ctx, key)),
             Box::new(apply_substitution(ctx, value)),
@@ -335,6 +362,11 @@ fn collect_free_vars(ty: &Type, vars: &mut HashSet<TypeVarId>) {
             vars.insert(*var);
         }
         Type::Array(elem) => collect_free_vars(elem, vars),
+        Type::Tuple(elems) => {
+            for e in elems {
+                collect_free_vars(e, vars);
+            }
+        }
         Type::Dict(key, value) => {
             collect_free_vars(key, vars);
             collect_free_vars(value, vars);

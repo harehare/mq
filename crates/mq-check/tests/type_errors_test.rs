@@ -361,7 +361,20 @@ fn test_narrowing_selector_various_structural() {
 /// Helper function to run type checker with strict array mode enabled
 fn check_types_strict_array(code: &str) -> Vec<TypeError> {
     let hir = create_hir(code);
-    let mut checker = TypeChecker::with_options(TypeCheckerOptions { strict_array: true });
+    let mut checker = TypeChecker::with_options(TypeCheckerOptions {
+        strict_array: true,
+        tuple: false,
+    });
+    checker.check(&hir)
+}
+
+/// Helper function to run type checker with tuple mode enabled
+fn check_types_tuple(code: &str) -> Vec<TypeError> {
+    let hir = create_hir(code);
+    let mut checker = TypeChecker::with_options(TypeCheckerOptions {
+        strict_array: false,
+        tuple: true,
+    });
     checker.check(&hir)
 }
 
@@ -448,5 +461,73 @@ fn test_array_element_access_valid() {
     assert!(
         result.is_empty(),
         "v[0] + 1 where v is [Number] should succeed: {result:?}"
+    );
+}
+
+// ============================================================================
+// Tuple Mode Tests
+// ============================================================================
+
+#[test]
+fn test_tuple_literal_index_number_element() {
+    // In tuple mode, [1, "hello"] is Tuple(Number, String)
+    // v[0] should be Number, so v[0] + 1 should be valid
+    let result = check_types_tuple(r#"let v = [1, "hello"] | v[0] + 1"#);
+    assert!(
+        result.is_empty(),
+        "v[0] + 1 on tuple (number, string) should succeed: {result:?}"
+    );
+}
+
+#[test]
+fn test_tuple_literal_index_string_element() {
+    // v[1] should be String, so v[1] - 1 should be a type error
+    // (subtraction is not defined for strings)
+    let result = check_types_tuple(r#"let v = [1, "hello"] | v[1] - 1"#);
+    assert!(
+        !result.is_empty(),
+        "v[1] - 1 on tuple (number, string) should fail: {result:?}"
+    );
+}
+
+#[test]
+fn test_tuple_literal_index_number_valid_arithmetic() {
+    // v[0] should be Number, so v[0] - 1 should be valid
+    let result = check_types_tuple(r#"let v = [1, "hello"] | v[0] - 1"#);
+    assert!(
+        result.is_empty(),
+        "v[0] - 1 on tuple (number, string) should succeed: {result:?}"
+    );
+}
+
+#[test]
+fn test_tuple_homogeneous_stays_array() {
+    // Homogeneous arrays should still be typed as Array, not Tuple
+    let result = check_types_tuple("let v = [1, 2, 3] | v[0] + 1");
+    assert!(
+        result.is_empty(),
+        "Homogeneous array in tuple mode should stay as Array: {result:?}"
+    );
+}
+
+#[test]
+fn test_tuple_default_mode_no_tuple_typing() {
+    // Without tuple mode, heterogeneous arrays don't have per-element types
+    // so this should not produce an error (fresh type var for element)
+    let result = check_types(r#"let v = [1, "hello"] | v[0] + 1"#);
+    assert!(
+        result.is_empty(),
+        "Default mode should not track per-element types: {result:?}"
+    );
+}
+
+#[test]
+fn test_tuple_three_elements() {
+    // [1, "hello", true] → Tuple(Number, String, Bool)
+    // v[0] + 1 should be valid (Number + Number)
+    let result = check_types_tuple(r#"let v = [1, "hello", true] | v[0] + 1"#);
+    assert!(
+        result.is_empty(),
+        "v[0] + 1 on 3-element tuple should succeed: {result:?}"
     );
 }
