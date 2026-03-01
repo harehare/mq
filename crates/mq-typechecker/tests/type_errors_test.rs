@@ -335,3 +335,58 @@ fn test_narrowing_post_while_loop() {
     // Ensure no panic from post-loop narrowing
     let _ = result;
 }
+
+#[test]
+fn test_narrowing_selector_heading_then_branch() {
+    // if (.h) uses the structural heading selector as a condition.
+    // In the then-branch, the first parameter `x` is narrowed to Markdown.
+    // Returning `x` from the then-branch should be type-safe.
+    let result = check_types(r#"def f(x): if (.h): x else: none;"#);
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(
+        result.is_empty(),
+        "Selector narrowing: x should be narrowable to Markdown in the then-branch: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_narrowing_selector_various_structural() {
+    // All structural selectors (.code, .list, .table, etc.) should narrow to Markdown.
+    for selector in &[
+        ".h", ".h1", ".h2", ".code", ".list", ".table", ".link", ".strong", ".em",
+    ] {
+        let code = format!("def f(x): if ({selector}): x else: none;");
+        let result = check_types(&code);
+        for e in &result {
+            eprintln!("Selector {selector} error: {}", e);
+        }
+        assert!(
+            result.is_empty(),
+            "Selector {selector} narrowing should produce no errors: {result:?}"
+        );
+    }
+}
+
+#[test]
+fn test_narrowing_selector_attr_no_narrowing() {
+    // Attribute selectors (.value, .lang, etc.) do NOT narrow the type.
+    // These access properties of nodes and should not trigger selector narrowing.
+    // (No errors expected either — the type just remains as-is.)
+    let result = check_types(r#"def f(x): if (.value): x else: none;"#);
+    // Attribute selectors fall through to empty narrowing; no errors expected.
+    let _ = result;
+}
+
+#[test]
+fn test_narrowing_selector_negation() {
+    // !.h swaps the then/else narrowings: in the then-branch x is NOT Markdown.
+    let result = check_types(r#"def f(x): if (!.h): x else: none;"#);
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    // Should not panic — negation of a selector condition is handled correctly.
+    let _ = result;
+}

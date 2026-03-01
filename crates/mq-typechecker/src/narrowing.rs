@@ -23,6 +23,7 @@
 //! - Negation: `!is_string(x)` → swaps then/else
 //! - AND: `is_string(x) && is_bool(y)` → both in then-branch
 //! - OR (same variable): `is_string(x) || is_number(x)` → then: String|Number
+//! - Structural selector: `if (.h): ...` → first function parameter narrowed to Markdown
 
 use crate::constraint::{ChildrenIndex, get_children};
 use crate::infer::{InferenceContext, NarrowingEntry};
@@ -53,6 +54,35 @@ impl ConditionNarrowings {
             else_narrowings: Vec::new(),
         }
     }
+}
+
+/// Finds the symbol ID of the first parameter of the innermost enclosing function or macro.
+///
+/// When a structural selector (e.g., `.h`) is used directly as an if condition, it
+/// operates on the function's implicit piped input — the first argument. This helper
+/// walks up the ancestor chain to find that parameter, enabling selector-based narrowing.
+fn find_enclosing_function_first_param(
+    hir: &Hir,
+    start_id: SymbolId,
+    children_index: &ChildrenIndex,
+) -> Option<SymbolId> {
+    for (func_id, func_sym) in walk_ancestors(hir, start_id) {
+        if !matches!(func_sym.kind, SymbolKind::Function(_) | SymbolKind::Macro(_)) {
+            continue;
+        }
+        // Found the innermost enclosing function — return its first parameter.
+        for &child_id in get_children(children_index, func_id) {
+            if hir
+                .symbol(child_id)
+                .is_some_and(|s| matches!(s.kind, SymbolKind::Parameter))
+            {
+                return Some(child_id);
+            }
+        }
+        // Function found but has no parameters — can't narrow via implicit input.
+        return None;
+    }
+    None
 }
 
 /// Analyzes a single type predicate call (e.g., `is_string(x)`) and returns
@@ -238,6 +268,7 @@ pub(crate) fn analyze_literal_equality(hir: &Hir, lhs: SymbolId, rhs: SymbolId) 
 /// - Negation: `!is_string(x)` → swaps then/else narrowings
 /// - Logical AND: `is_string(x) && is_number(y)` → both in then-branch, complement in else
 /// - Logical OR (same variable): `is_string(x) || is_number(x)` → then: String|Number
+/// - Structural selector: `if (.h): ...` → first function parameter narrowed to Markdown
 pub(crate) fn analyze_condition(
     hir: &Hir,
     cond_id: SymbolId,
@@ -274,8 +305,6 @@ pub(crate) fn analyze_condition(
                 ConditionNarrowings::empty()
             }
         }
-
-        // Negation: !expr → swap then/else
         SymbolKind::UnaryOp if symbol.value.as_deref() == Some("!") => {
             let children = get_children(children_index, cond_id);
             if children.is_empty() {
@@ -286,8 +315,6 @@ pub(crate) fn analyze_condition(
             std::mem::swap(&mut inner.then_narrowings, &mut inner.else_narrowings);
             inner
         }
-
-        // Equality / inequality: x == literal, literal == x, type(x) == "typename"
         SymbolKind::BinaryOp if matches!(symbol.value.as_deref(), Some("==") | Some("!=")) => {
             let children = get_children(children_index, cond_id);
             if children.len() < 2 {
@@ -323,8 +350,6 @@ pub(crate) fn analyze_condition(
                 ConditionNarrowings::empty()
             }
         }
-
-        // Logical AND / OR
         SymbolKind::BinaryOp
             if matches!(
                 symbol.value.as_deref(),
@@ -384,6 +409,24 @@ pub(crate) fn analyze_condition(
                     then_narrowings,
                     else_narrowings,
                 }
+            }
+        }
+        SymbolKind::Selector => {
+            if let Some(def_id) = find_enclosing_function_first_param(hir, cond_id, children_index) {
+                ConditionNarrowings {
+                    then_narrowings: vec![NarrowingEntry {
+                        def_id,
+                        narrowed_type: Type::Markdown,
+                        is_complement: false,
+                    }],
+                    else_narrowings: vec![NarrowingEntry {
+                        def_id,
+                        narrowed_type: Type::Markdown,
+                        is_complement: true,
+                    }],
+                }
+            } else {
+                ConditionNarrowings::empty()
             }
         }
 
