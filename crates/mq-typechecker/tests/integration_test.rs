@@ -1146,7 +1146,9 @@ fn test_selector_undefined_field_on_closed_record() {
     // Accessing a non-existent field via bracket notation on a closed record should produce an error
     let result = check_types(r#"var v = {"a": 1, "b": 2} | v[:c]"#);
     assert!(
-        result.iter().any(|e| matches!(e, TypeError::UndefinedField { field, .. } if field == "c")),
+        result
+            .iter()
+            .any(|e| matches!(e, TypeError::UndefinedField { field, .. } if field == "c")),
         "Accessing undefined field :c on closed record should produce UndefinedField error: {:?}",
         result
     );
@@ -1168,7 +1170,9 @@ fn test_bracket_access_undefined_field_on_closed_record() {
     // Accessing a non-existent field via bracket notation should produce an error
     let result = check_types(r#"var v = {"key": 1, "value": "hello"} | v[:missing]"#);
     assert!(
-        result.iter().any(|e| matches!(e, TypeError::UndefinedField { field, .. } if field == "missing")),
+        result
+            .iter()
+            .any(|e| matches!(e, TypeError::UndefinedField { field, .. } if field == "missing")),
         "Bracket access to undefined field :missing on closed record should produce UndefinedField error: {:?}",
         result
     );
