@@ -1,6 +1,8 @@
 //! Constraint generation for type inference.
 
-use crate::infer::{DeferredOverload, DeferredParameterCall, DeferredUserCall, InferenceContext};
+use crate::infer::{
+    DeferredOverload, DeferredParameterCall, DeferredUserCall, InferenceContext, NarrowingEntry, TypeNarrowing,
+};
 use crate::types::Type;
 use crate::unify::range_to_span;
 use mq_hir::{Hir, SymbolId, SymbolKind};
@@ -393,6 +395,191 @@ fn resolve_branch_body_type(
         }
     } else {
         ctx.get_or_create_symbol_type(branch_id)
+    }
+}
+
+/// Narrowings extracted from a condition expression.
+///
+/// Contains separate narrowing lists for the then-branch (condition is true)
+/// and else-branch (condition is false).
+struct ConditionNarrowings {
+    then_narrowings: Vec<NarrowingEntry>,
+    else_narrowings: Vec<NarrowingEntry>,
+}
+
+impl ConditionNarrowings {
+    fn is_empty(&self) -> bool {
+        self.then_narrowings.is_empty() && self.else_narrowings.is_empty()
+    }
+}
+
+/// Analyzes a single type predicate call (e.g., `is_string(x)`) and returns
+/// the variable definition ID and the narrowed type if the pattern matches.
+fn analyze_type_predicate_call(
+    hir: &Hir,
+    call_id: SymbolId,
+    children_index: &ChildrenIndex,
+    ctx: &mut InferenceContext,
+) -> Option<(SymbolId, Type)> {
+    let symbol = hir.symbol(call_id)?;
+    if !matches!(symbol.kind, SymbolKind::Call) {
+        return None;
+    }
+    let name = symbol.value.as_ref()?;
+
+    let narrowed_type = match name.as_str() {
+        "is_string" => Type::String,
+        "is_number" => Type::Number,
+        "is_bool" => Type::Bool,
+        "is_none" => Type::None,
+        "is_array" => {
+            let elem = ctx.fresh_var();
+            Type::array(Type::Var(elem))
+        }
+        "is_dict" => {
+            let k = ctx.fresh_var();
+            let v = ctx.fresh_var();
+            Type::dict(Type::Var(k), Type::Var(v))
+        }
+        _ => return None,
+    };
+
+    // The argument must be a single variable reference
+    let children: Vec<SymbolId> = get_children(children_index, call_id)
+        .iter()
+        .copied()
+        .filter(|&child_id| {
+            hir.symbol(child_id)
+                .map(|s| !matches!(s.kind, SymbolKind::Keyword))
+                .unwrap_or(true)
+        })
+        .collect();
+
+    if children.len() != 1 {
+        return None;
+    }
+
+    let arg_id = children[0];
+    let arg_symbol = hir.symbol(arg_id)?;
+    if !matches!(arg_symbol.kind, SymbolKind::Ref) {
+        return None;
+    }
+
+    let def_id = hir.resolve_reference_symbol(arg_id)?;
+    Some((def_id, narrowed_type))
+}
+
+/// Recursively analyzes a condition expression to extract type narrowing information.
+///
+/// Supports:
+/// - Simple type predicate calls: `is_string(x)` → narrows x to String
+/// - Negation: `!is_string(x)` → swaps then/else narrowings
+/// - Logical AND: `is_string(x) && is_number(y)` → both in then, none in else
+/// - Logical OR: `is_string(x) || is_number(x)` → none in then, both in else
+fn analyze_condition(
+    hir: &Hir,
+    cond_id: SymbolId,
+    children_index: &ChildrenIndex,
+    ctx: &mut InferenceContext,
+) -> ConditionNarrowings {
+    let symbol = match hir.symbol(cond_id) {
+        Some(s) => s,
+        None => {
+            return ConditionNarrowings {
+                then_narrowings: Vec::new(),
+                else_narrowings: Vec::new(),
+            };
+        }
+    };
+
+    match &symbol.kind {
+        // Simple type predicate call: is_string(x)
+        SymbolKind::Call => {
+            if let Some((def_id, narrowed_type)) = analyze_type_predicate_call(hir, cond_id, children_index, ctx) {
+                // Store the predicate type for both branches.
+                // then-branch narrows TO the type (is_complement=false),
+                // else-branch narrows AWAY from it (is_complement=true).
+                // The complement is computed in resolve_type_narrowings (post-unification)
+                // when the variable's union type is fully resolved.
+                ConditionNarrowings {
+                    then_narrowings: vec![NarrowingEntry {
+                        def_id,
+                        narrowed_type: narrowed_type.clone(),
+                        is_complement: false,
+                    }],
+                    else_narrowings: vec![NarrowingEntry {
+                        def_id,
+                        narrowed_type,
+                        is_complement: true,
+                    }],
+                }
+            } else {
+                ConditionNarrowings {
+                    then_narrowings: Vec::new(),
+                    else_narrowings: Vec::new(),
+                }
+            }
+        }
+
+        // Negation: !expr → swap then/else
+        SymbolKind::UnaryOp if symbol.value.as_deref() == Some("!") => {
+            let children = get_children(children_index, cond_id);
+            if children.is_empty() {
+                return ConditionNarrowings {
+                    then_narrowings: Vec::new(),
+                    else_narrowings: Vec::new(),
+                };
+            }
+            let mut inner = analyze_condition(hir, children[0], children_index, ctx);
+            // Swap then and else
+            std::mem::swap(&mut inner.then_narrowings, &mut inner.else_narrowings);
+            inner
+        }
+
+        // Logical AND: a && b → then: both narrowings, else: empty
+        // Logical OR: a || b → then: empty, else: both narrowings
+        SymbolKind::BinaryOp
+            if matches!(
+                symbol.value.as_deref(),
+                Some("&&") | Some("and") | Some("||") | Some("or")
+            ) =>
+        {
+            let children = get_children(children_index, cond_id);
+            if children.len() < 2 {
+                return ConditionNarrowings {
+                    then_narrowings: Vec::new(),
+                    else_narrowings: Vec::new(),
+                };
+            }
+
+            let left = analyze_condition(hir, children[0], children_index, ctx);
+            let right = analyze_condition(hir, children[1], children_index, ctx);
+
+            let is_and = matches!(symbol.value.as_deref(), Some("&&") | Some("and"));
+
+            if is_and {
+                // AND: both narrowings apply in then-branch, neither in else
+                let mut then_narrowings = left.then_narrowings;
+                then_narrowings.extend(right.then_narrowings);
+                ConditionNarrowings {
+                    then_narrowings,
+                    else_narrowings: Vec::new(),
+                }
+            } else {
+                // OR: neither narrowing applies in then, both complements in else
+                let mut else_narrowings = left.else_narrowings;
+                else_narrowings.extend(right.else_narrowings);
+                ConditionNarrowings {
+                    then_narrowings: Vec::new(),
+                    else_narrowings,
+                }
+            }
+        }
+
+        _ => ConditionNarrowings {
+            then_narrowings: Vec::new(),
+            else_narrowings: Vec::new(),
+        },
     }
 }
 
@@ -1491,6 +1678,18 @@ fn generate_symbol_constraints(
                 // First child is the condition — mq is dynamically typed, so any
                 // value can be used as a condition (truthy/falsy), not just Bool.
                 let _cond_ty = ctx.get_or_create_symbol_type(children[0]);
+
+                // Analyze condition for type narrowing (e.g., is_string(x))
+                let cond_narrowings = analyze_condition(hir, children[0], children_index, ctx);
+                if !cond_narrowings.is_empty() && children.len() > 1 {
+                    let else_branch_ids: Vec<SymbolId> = children[2..].to_vec();
+                    ctx.add_type_narrowing(TypeNarrowing {
+                        then_narrowings: cond_narrowings.then_narrowings,
+                        else_narrowings: cond_narrowings.else_narrowings,
+                        then_branch_id: children[1],
+                        else_branch_ids,
+                    });
+                }
 
                 // Subsequent children are then-branch and elif/else branches.
                 // mq is dynamically typed: branches may return different types

@@ -1243,3 +1243,136 @@ fn test_var_reassignment_type_error_after() {
         result
     );
 }
+
+// --- Type Narrowing Tests ---
+
+#[rstest]
+#[case::is_string_narrows_then_branch(
+    r#"def f(x):
+        if (is_string(x)):
+            upcase(x)
+        else:
+            x
+        ;
+    ;
+    | f("hello")"#,
+    true,
+    "is_string narrowing should allow upcase in then-branch"
+)]
+#[case::is_number_narrows_then_branch(
+    r#"def f(x):
+        if (is_number(x)):
+            x + 1
+        else:
+            x
+        ;
+    ;
+    | f(42)"#,
+    true,
+    "is_number narrowing should allow arithmetic in then-branch"
+)]
+#[case::is_bool_narrows_then_branch(
+    r#"def f(x):
+        if (is_bool(x)):
+            x && true
+        else:
+            x
+        ;
+    ;
+    | f(true)"#,
+    true,
+    "is_bool narrowing should allow logical ops in then-branch"
+)]
+#[case::is_none_narrows_then_branch(
+    r#"def f(x):
+        if (is_none(x)):
+            none
+        else:
+            x
+        ;
+    ;
+    | f(none)"#,
+    true,
+    "is_none narrowing should work in then-branch"
+)]
+#[case::negated_is_string_narrows_else(
+    r#"def f(x):
+        if (!is_string(x)):
+            x
+        else:
+            upcase(x)
+        ;
+    ;
+    | f("hello")"#,
+    true,
+    "!is_string should narrow to String in else-branch"
+)]
+#[case::and_compound_condition(
+    r#"def f(x, y):
+        if (is_string(x) && is_number(y)):
+            upcase(x)
+        else:
+            x
+        ;
+    ;
+    | f("hello", 42)"#,
+    true,
+    "&& should narrow both variables in then-branch"
+)]
+#[case::non_union_type_is_noop(
+    r#"let x = 42 | if (is_number(x)): x + 1 else: x;"#,
+    true,
+    "narrowing on non-union type should be a no-op"
+)]
+#[case::union_narrowed_in_then_branch(
+    r#"let x = if (true): 42 else: "string"; |
+    if (is_number(x)):
+        x + 1
+    else:
+        x
+    ;"#,
+    true,
+    "union type narrowed to number allows arithmetic in then-branch"
+)]
+#[case::union_narrowed_in_else_branch(
+    r#"let x = if (true): 42 else: "string"; |
+    if (is_number(x)):
+        x
+    else:
+        upcase(x)
+    ;"#,
+    true,
+    "union type narrowed to string in else-branch allows upcase"
+)]
+#[case::union_negated_narrowing(
+    r#"let x = if (true): 42 else: "string"; |
+    if (!is_number(x)):
+        upcase(x)
+    else:
+        x + 1
+    ;"#,
+    true,
+    "negated narrowing: !is_number narrows to string in then, number in else"
+)]
+#[case::union_and_compound_narrowing(
+    r#"let x = if (true): 42 else: "string"; |
+    let y = if (true): 10 else: "other"; |
+    if (is_number(x) && is_number(y)):
+        x + y
+    else:
+        0
+    ;"#,
+    true,
+    "&& compound: both narrowed to number in then-branch allows addition"
+)]
+fn test_type_narrowing(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: Code='{}' Errors={:?}",
+        description,
+        code,
+        result
+    );
+}

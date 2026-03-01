@@ -102,6 +102,28 @@ impl Type {
         }
     }
 
+    /// Removes a type from a union by discriminant, returning the remaining type.
+    ///
+    /// If this is not a union, returns self unchanged.
+    /// If only one type remains after subtraction, returns it directly (unwrapped).
+    pub fn subtract(&self, exclude: &Type) -> Type {
+        match self {
+            Type::Union(members) => {
+                let remaining: Vec<Type> = members
+                    .iter()
+                    .filter(|t| std::mem::discriminant(*t) != std::mem::discriminant(exclude))
+                    .cloned()
+                    .collect();
+                if remaining.is_empty() {
+                    self.clone()
+                } else {
+                    Type::union(remaining)
+                }
+            }
+            _ => self.clone(),
+        }
+    }
+
     /// Returns a numeric discriminant for ordering purposes.
     /// Used by `Type::union` to sort union members without allocating.
     fn discriminant(&self) -> u8 {

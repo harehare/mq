@@ -179,6 +179,10 @@ impl TypeChecker {
         // Solve constraints through unification (collects errors internally)
         unify::solve_constraints(&mut ctx);
 
+        // Apply type narrowings from type predicate conditions (e.g., is_string(x))
+        // in if/elif branches. This overrides Ref types within narrowed branches.
+        Self::resolve_type_narrowings(hir, &mut ctx);
+
         // Resolve deferred record field accesses now that variable types are known.
         // This binds bracket access return types (e.g., v[:key]) to specific field types
         // from Record types, enabling type error detection for subsequent operations.
@@ -214,6 +218,94 @@ impl TypeChecker {
         self.symbol_types = ctx.finalize();
 
         errors
+    }
+
+    /// Resolves type narrowings from type predicate conditions in if/elif expressions.
+    ///
+    /// After unification, this pass overrides the types of variable references (Ref symbols)
+    /// within narrowed branches. For example, if `is_string(x)` is the condition of an if,
+    /// all references to `x` in the then-branch are narrowed to `String`, and references
+    /// in the else-branch are narrowed to the complement type.
+    fn resolve_type_narrowings(hir: &Hir, ctx: &mut infer::InferenceContext) {
+        let narrowings = ctx.take_type_narrowings();
+        if narrowings.is_empty() {
+            return;
+        }
+
+        for narrowing in &narrowings {
+            // Apply then-branch narrowings
+            for entry in &narrowing.then_narrowings {
+                if let Some(effective_ty) = Self::compute_narrowed_type(ctx, entry) {
+                    Self::apply_narrowing_to_branch(hir, ctx, entry.def_id, &effective_ty, narrowing.then_branch_id);
+                }
+            }
+
+            // Apply else-branch narrowings
+            for entry in &narrowing.else_narrowings {
+                if let Some(effective_ty) = Self::compute_narrowed_type(ctx, entry) {
+                    for &else_branch_id in &narrowing.else_branch_ids {
+                        Self::apply_narrowing_to_branch(hir, ctx, entry.def_id, &effective_ty, else_branch_id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Computes the effective narrowed type for a NarrowingEntry.
+    ///
+    /// Returns `None` if the variable's type is not a union (narrowing is a no-op).
+    /// If `is_complement` is true, subtracts the predicate type from the union.
+    /// If `is_complement` is false, uses the predicate type directly.
+    fn compute_narrowed_type(ctx: &infer::InferenceContext, entry: &infer::NarrowingEntry) -> Option<types::Type> {
+        let var_ty = ctx.get_symbol_type(entry.def_id)?;
+        let var_ty = ctx.resolve_type(var_ty);
+
+        if !var_ty.is_union() {
+            return None;
+        }
+
+        if entry.is_complement {
+            Some(var_ty.subtract(&entry.narrowed_type))
+        } else {
+            Some(entry.narrowed_type.clone())
+        }
+    }
+
+    /// Applies a type narrowing to all Ref symbols within a branch that reference
+    /// the given variable definition.
+    fn apply_narrowing_to_branch(
+        hir: &Hir,
+        ctx: &mut infer::InferenceContext,
+        def_id: SymbolId,
+        narrowed_type: &types::Type,
+        branch_id: SymbolId,
+    ) {
+        for (ref_id, ref_sym) in hir.symbols() {
+            if !matches!(ref_sym.kind, mq_hir::SymbolKind::Ref) {
+                continue;
+            }
+            if hir.resolve_reference_symbol(ref_id) != Some(def_id) {
+                continue;
+            }
+            // Check if this Ref is inside the target branch
+            if !Self::is_symbol_inside_branch(hir, ref_id, branch_id) {
+                continue;
+            }
+            // Use set_symbol_type (not _no_bind) to also update the substitution
+            // chain for this Ref's type variable. This ensures deferred overload
+            // resolution sees the narrowed type instead of the original union.
+            ctx.set_symbol_type(ref_id, narrowed_type.clone());
+        }
+    }
+
+    /// Checks if a symbol is a descendant of the given branch symbol in the HIR tree.
+    fn is_symbol_inside_branch(hir: &Hir, symbol_id: SymbolId, branch_id: SymbolId) -> bool {
+        for (id, _) in walk_ancestors(hir, symbol_id) {
+            if id == branch_id {
+                return true;
+            }
+        }
+        false
     }
 
     /// Resolves deferred record field accesses after the first round of unification.
