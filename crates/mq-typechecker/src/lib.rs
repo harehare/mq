@@ -27,6 +27,7 @@
 pub mod builtin;
 pub mod constraint;
 pub mod infer;
+pub mod narrowing;
 pub mod types;
 pub mod unify;
 
@@ -181,7 +182,7 @@ impl TypeChecker {
 
         // Apply type narrowings from type predicate conditions (e.g., is_string(x))
         // in if/elif branches. This overrides Ref types within narrowed branches.
-        Self::resolve_type_narrowings(hir, &mut ctx);
+        narrowing::resolve_type_narrowings(hir, &mut ctx);
 
         // Resolve deferred record field accesses now that variable types are known.
         // This binds bracket access return types (e.g., v[:key]) to specific field types
@@ -218,128 +219,6 @@ impl TypeChecker {
         self.symbol_types = ctx.finalize();
 
         errors
-    }
-
-    /// Resolves type narrowings from type predicate conditions in if/elif/while expressions.
-    ///
-    /// After unification, this pass overrides the types of variable references (Ref symbols)
-    /// within narrowed branches. For example, if `is_string(x)` is the condition of an if,
-    /// all references to `x` in the then-branch are narrowed to `String`, and references
-    /// in the else-branch are narrowed to the complement type.
-    ///
-    /// Builds a def→refs index in a single HIR pass to avoid O(n) full scans per narrowing.
-    fn resolve_type_narrowings(hir: &Hir, ctx: &mut infer::InferenceContext) {
-        let narrowings = ctx.take_type_narrowings();
-        if narrowings.is_empty() {
-            return;
-        }
-
-        // Build def→refs index: for each variable definition, collect all Ref symbols
-        // that point to it. This avoids an O(n) HIR scan per narrowing entry.
-        let mut def_to_refs: FxHashMap<SymbolId, Vec<SymbolId>> = FxHashMap::default();
-        for (ref_id, ref_sym) in hir.symbols() {
-            if !matches!(ref_sym.kind, mq_hir::SymbolKind::Ref) {
-                continue;
-            }
-            if let Some(def_id) = hir.resolve_reference_symbol(ref_id) {
-                def_to_refs.entry(def_id).or_default().push(ref_id);
-            }
-        }
-
-        for narrowing in &narrowings {
-            // Apply then-branch narrowings
-            for entry in &narrowing.then_narrowings {
-                if let Some(effective_ty) = Self::compute_narrowed_type(ctx, entry) {
-                    Self::apply_narrowing_to_branch(
-                        hir,
-                        ctx,
-                        entry.def_id,
-                        &effective_ty,
-                        narrowing.then_branch_id,
-                        &def_to_refs,
-                    );
-                }
-            }
-
-            // Apply else-branch narrowings
-            for entry in &narrowing.else_narrowings {
-                if let Some(effective_ty) = Self::compute_narrowed_type(ctx, entry) {
-                    for &else_branch_id in &narrowing.else_branch_ids {
-                        Self::apply_narrowing_to_branch(
-                            hir,
-                            ctx,
-                            entry.def_id,
-                            &effective_ty,
-                            else_branch_id,
-                            &def_to_refs,
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    /// Computes the effective narrowed type for a NarrowingEntry.
-    ///
-    /// - For union types: then-branch returns the predicate type directly; else-branch
-    ///   subtracts the predicate type from the union.
-    /// - For non-union types: then-branch returns the predicate type directly (useful when
-    ///   the variable has an unresolved type variable or a non-union concrete type); else-branch
-    ///   returns `None` (no useful narrowing — keep the original type).
-    fn compute_narrowed_type(ctx: &infer::InferenceContext, entry: &infer::NarrowingEntry) -> Option<types::Type> {
-        let var_ty = ctx.get_symbol_type(entry.def_id)?;
-        let var_ty = ctx.resolve_type(var_ty);
-
-        if var_ty.is_union() {
-            if entry.is_complement {
-                Some(var_ty.subtract(&entry.narrowed_type))
-            } else {
-                Some(entry.narrowed_type.clone())
-            }
-        } else {
-            // For non-union types, only apply then-branch narrowing (narrow TO the type).
-            // Else-branch complement on a non-union is a no-op (nothing to subtract).
-            if entry.is_complement {
-                None
-            } else {
-                Some(entry.narrowed_type.clone())
-            }
-        }
-    }
-
-    /// Applies a type narrowing to all Ref symbols within a branch that reference
-    /// the given variable definition, using the pre-built def→refs index.
-    fn apply_narrowing_to_branch(
-        hir: &Hir,
-        ctx: &mut infer::InferenceContext,
-        def_id: SymbolId,
-        narrowed_type: &types::Type,
-        branch_id: SymbolId,
-        def_to_refs: &FxHashMap<SymbolId, Vec<SymbolId>>,
-    ) {
-        let Some(refs) = def_to_refs.get(&def_id) else {
-            return;
-        };
-        for &ref_id in refs {
-            // Check if this Ref is inside the target branch
-            if !Self::is_symbol_inside_branch(hir, ref_id, branch_id) {
-                continue;
-            }
-            // Use set_symbol_type (not _no_bind) to also update the substitution
-            // chain for this Ref's type variable. This ensures deferred overload
-            // resolution sees the narrowed type instead of the original union.
-            ctx.set_symbol_type(ref_id, narrowed_type.clone());
-        }
-    }
-
-    /// Checks if a symbol is a descendant of the given branch symbol in the HIR tree.
-    fn is_symbol_inside_branch(hir: &Hir, symbol_id: SymbolId, branch_id: SymbolId) -> bool {
-        for (id, _) in walk_ancestors(hir, symbol_id) {
-            if id == branch_id {
-                return true;
-            }
-        }
-        false
     }
 
     /// Resolves deferred record field accesses after the first round of unification.

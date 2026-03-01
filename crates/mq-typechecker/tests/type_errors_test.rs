@@ -293,3 +293,45 @@ fn test_inspect_type_variables() {
         }
     }
 }
+
+#[test]
+fn test_narrowing_or_then_branch_same_variable() {
+    // is_string(x) || is_number(x) → then-branch: x: String|Number
+    // Returning x in the then-branch is always safe regardless of which arm fires.
+    let result = check_types(r#"def f(x): if (is_string(x) || is_number(x)): x else: none;"#);
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(
+        result.is_empty(),
+        "OR narrowing: x is String|Number in then-branch, returning x should succeed"
+    );
+}
+
+#[test]
+fn test_narrowing_or_then_branch_different_variables() {
+    // is_string(x) || is_bool(y) — different variables, no then-branch narrowing (conservative)
+    let result = check_types(r#"def f(x, y): if (is_string(x) || is_bool(y)): x else: none;"#);
+    // No then-branch narrowing; just ensure no panic
+    let _ = result;
+}
+
+#[test]
+fn test_narrowing_or_else_branch_complement() {
+    // is_string(x) || is_number(x) — else-branch: x is neither String nor Number
+    // Just ensure no panic on complement narrowing.
+    let result = check_types(r#"def f(x): if (is_string(x) || is_number(x)): x else: x;"#);
+    let _ = result;
+}
+
+#[test]
+fn test_narrowing_post_while_loop() {
+    // After `while (is_string(x))`, the loop exits when condition is false.
+    // Post-loop narrowing applies else_narrowings to subsequent code (x has String subtracted).
+    let result = check_types(r#"def f(x): while (is_string(x)): x; x"#);
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    // Ensure no panic from post-loop narrowing
+    let _ = result;
+}
