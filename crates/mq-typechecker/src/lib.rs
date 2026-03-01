@@ -220,23 +220,44 @@ impl TypeChecker {
         errors
     }
 
-    /// Resolves type narrowings from type predicate conditions in if/elif expressions.
+    /// Resolves type narrowings from type predicate conditions in if/elif/while expressions.
     ///
     /// After unification, this pass overrides the types of variable references (Ref symbols)
     /// within narrowed branches. For example, if `is_string(x)` is the condition of an if,
     /// all references to `x` in the then-branch are narrowed to `String`, and references
     /// in the else-branch are narrowed to the complement type.
+    ///
+    /// Builds a def→refs index in a single HIR pass to avoid O(n) full scans per narrowing.
     fn resolve_type_narrowings(hir: &Hir, ctx: &mut infer::InferenceContext) {
         let narrowings = ctx.take_type_narrowings();
         if narrowings.is_empty() {
             return;
         }
 
+        // Build def→refs index: for each variable definition, collect all Ref symbols
+        // that point to it. This avoids an O(n) HIR scan per narrowing entry.
+        let mut def_to_refs: FxHashMap<SymbolId, Vec<SymbolId>> = FxHashMap::default();
+        for (ref_id, ref_sym) in hir.symbols() {
+            if !matches!(ref_sym.kind, mq_hir::SymbolKind::Ref) {
+                continue;
+            }
+            if let Some(def_id) = hir.resolve_reference_symbol(ref_id) {
+                def_to_refs.entry(def_id).or_default().push(ref_id);
+            }
+        }
+
         for narrowing in &narrowings {
             // Apply then-branch narrowings
             for entry in &narrowing.then_narrowings {
                 if let Some(effective_ty) = Self::compute_narrowed_type(ctx, entry) {
-                    Self::apply_narrowing_to_branch(hir, ctx, entry.def_id, &effective_ty, narrowing.then_branch_id);
+                    Self::apply_narrowing_to_branch(
+                        hir,
+                        ctx,
+                        entry.def_id,
+                        &effective_ty,
+                        narrowing.then_branch_id,
+                        &def_to_refs,
+                    );
                 }
             }
 
@@ -244,7 +265,14 @@ impl TypeChecker {
             for entry in &narrowing.else_narrowings {
                 if let Some(effective_ty) = Self::compute_narrowed_type(ctx, entry) {
                     for &else_branch_id in &narrowing.else_branch_ids {
-                        Self::apply_narrowing_to_branch(hir, ctx, entry.def_id, &effective_ty, else_branch_id);
+                        Self::apply_narrowing_to_branch(
+                            hir,
+                            ctx,
+                            entry.def_id,
+                            &effective_ty,
+                            else_branch_id,
+                            &def_to_refs,
+                        );
                     }
                 }
             }
@@ -253,40 +281,46 @@ impl TypeChecker {
 
     /// Computes the effective narrowed type for a NarrowingEntry.
     ///
-    /// Returns `None` if the variable's type is not a union (narrowing is a no-op).
-    /// If `is_complement` is true, subtracts the predicate type from the union.
-    /// If `is_complement` is false, uses the predicate type directly.
+    /// - For union types: then-branch returns the predicate type directly; else-branch
+    ///   subtracts the predicate type from the union.
+    /// - For non-union types: then-branch returns the predicate type directly (useful when
+    ///   the variable has an unresolved type variable or a non-union concrete type); else-branch
+    ///   returns `None` (no useful narrowing — keep the original type).
     fn compute_narrowed_type(ctx: &infer::InferenceContext, entry: &infer::NarrowingEntry) -> Option<types::Type> {
         let var_ty = ctx.get_symbol_type(entry.def_id)?;
         let var_ty = ctx.resolve_type(var_ty);
 
-        if !var_ty.is_union() {
-            return None;
-        }
-
-        if entry.is_complement {
-            Some(var_ty.subtract(&entry.narrowed_type))
+        if var_ty.is_union() {
+            if entry.is_complement {
+                Some(var_ty.subtract(&entry.narrowed_type))
+            } else {
+                Some(entry.narrowed_type.clone())
+            }
         } else {
-            Some(entry.narrowed_type.clone())
+            // For non-union types, only apply then-branch narrowing (narrow TO the type).
+            // Else-branch complement on a non-union is a no-op (nothing to subtract).
+            if entry.is_complement {
+                None
+            } else {
+                Some(entry.narrowed_type.clone())
+            }
         }
     }
 
     /// Applies a type narrowing to all Ref symbols within a branch that reference
-    /// the given variable definition.
+    /// the given variable definition, using the pre-built def→refs index.
     fn apply_narrowing_to_branch(
         hir: &Hir,
         ctx: &mut infer::InferenceContext,
         def_id: SymbolId,
         narrowed_type: &types::Type,
         branch_id: SymbolId,
+        def_to_refs: &FxHashMap<SymbolId, Vec<SymbolId>>,
     ) {
-        for (ref_id, ref_sym) in hir.symbols() {
-            if !matches!(ref_sym.kind, mq_hir::SymbolKind::Ref) {
-                continue;
-            }
-            if hir.resolve_reference_symbol(ref_id) != Some(def_id) {
-                continue;
-            }
+        let Some(refs) = def_to_refs.get(&def_id) else {
+            return;
+        };
+        for &ref_id in refs {
             // Check if this Ref is inside the target branch
             if !Self::is_symbol_inside_branch(hir, ref_id, branch_id) {
                 continue;

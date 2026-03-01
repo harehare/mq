@@ -174,7 +174,87 @@ fn test_success_macro_definition() {
     assert!(result.is_empty(), "Macro definition should succeed");
 }
 
-// Demonstration: How to use the typechecker programmatically
+// --- Type Narrowing Tests ---
+
+#[test]
+fn test_narrowing_equality_then_branch() {
+    // x == "foo" narrows x to String in then-branch; len() accepts String/Array
+    let result = check_types(r#"def f(x): if (x == "hello"): len(x) else: 0;"#);
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(
+        result.is_empty(),
+        "Equality narrowing should allow len(x) in then-branch"
+    );
+}
+
+#[test]
+fn test_narrowing_neq_none_removes_none() {
+    // x != none removes None from union in the then-branch
+    let result = check_types(r#"def f(x): if (x != none): len(x) else: 0;"#);
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(result.is_empty(), "x != none should narrow away None in then-branch");
+}
+
+#[test]
+fn test_narrowing_type_call_string() {
+    // type(x) == "string" narrows x to String
+    let result = check_types(r#"def f(x): if (type(x) == "string"): upcase(x) else: 0;"#);
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(result.is_empty(), "type(x) == 'string' should narrow x to String");
+}
+
+#[test]
+fn test_narrowing_type_call_number() {
+    // type(x) == "number" narrows x to Number
+    let result = check_types(r#"def f(x): if (type(x) == "number"): x + 1 else: 0;"#);
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(result.is_empty(), "type(x) == 'number' should narrow x to Number");
+}
+
+#[test]
+fn test_narrowing_match_arm_string_pattern() {
+    // match with a String pattern should narrow the matched variable to String inside the arm body
+    let result = check_types(r#"def f(x): match (x): | "hello": upcase(x) | _: x end"#);
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(
+        result.is_empty(),
+        "Match arm with string pattern should narrow variable to String"
+    );
+}
+
+#[test]
+fn test_narrowing_match_arm_number_pattern() {
+    // match with a Number pattern should narrow to Number inside the arm body
+    let result = check_types(r#"def f(x): match (x): | 42: x + 1 | _: 0 end"#);
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(
+        result.is_empty(),
+        "Match arm with number pattern should narrow variable to Number"
+    );
+}
+
+#[test]
+fn test_narrowing_match_arm_none_pattern() {
+    // match with none pattern narrows to None in that arm
+    let result = check_types(r#"def f(x): match (x): | none: 0 | _: 1 end"#);
+    for e in &result {
+        eprintln!("Error: {}", e);
+    }
+    assert!(result.is_empty(), "Match arm with none pattern should succeed");
+}
+
 #[test]
 fn test_inspect_inferred_types() {
     let code = "def add(a, b): a + b;";

@@ -408,13 +408,32 @@ struct ConditionNarrowings {
 }
 
 impl ConditionNarrowings {
+    /// Returns `true` if there are no narrowings in either branch.
     fn is_empty(&self) -> bool {
         self.then_narrowings.is_empty() && self.else_narrowings.is_empty()
+    }
+
+    /// Returns an empty `ConditionNarrowings` with no narrowings in either branch.
+    fn empty() -> Self {
+        Self {
+            then_narrowings: Vec::new(),
+            else_narrowings: Vec::new(),
+        }
     }
 }
 
 /// Analyzes a single type predicate call (e.g., `is_string(x)`) and returns
 /// the variable definition ID and the narrowed type if the pattern matches.
+///
+/// Recognized predicates and their narrowed types:
+/// - `is_string(x)` → `String`
+/// - `is_number(x)` → `Number`
+/// - `is_bool(x)` → `Bool`
+/// - `is_none(x)` → `None`
+/// - `is_symbol(x)` → `Symbol`
+/// - `is_array(x)` → `Array('a)`
+/// - `is_dict(x)` → `Dict('k, 'v)`
+/// - `is_markdown(x)`, `is_h(x)`, `is_p(x)`, … → `Markdown`
 fn analyze_type_predicate_call(
     hir: &Hir,
     call_id: SymbolId,
@@ -432,6 +451,7 @@ fn analyze_type_predicate_call(
         "is_number" => Type::Number,
         "is_bool" => Type::Bool,
         "is_none" => Type::None,
+        "is_symbol" => Type::Symbol,
         "is_array" => {
             let elem = ctx.fresh_var();
             Type::array(Type::Var(elem))
@@ -441,6 +461,12 @@ fn analyze_type_predicate_call(
             let v = ctx.fresh_var();
             Type::dict(Type::Var(k), Type::Var(v))
         }
+        // All Markdown structural predicates narrow to Markdown
+        "is_markdown" | "is_h" | "is_h1" | "is_h2" | "is_h3" | "is_h4" | "is_h5" | "is_h6" | "is_p" | "is_code"
+        | "is_code_inline" | "is_code_block" | "is_em" | "is_strong" | "is_link" | "is_image" | "is_list"
+        | "is_list_item" | "is_table" | "is_table_row" | "is_table_cell" | "is_blockquote" | "is_hr" | "is_html"
+        | "is_text" | "is_softbreak" | "is_hardbreak" | "is_task_list_item" | "is_footnote" | "is_footnote_ref"
+        | "is_strikethrough" | "is_math" | "is_math_inline" | "is_toml" | "is_yaml" => Type::Markdown,
         _ => return None,
     };
 
@@ -469,13 +495,116 @@ fn analyze_type_predicate_call(
     Some((def_id, narrowed_type))
 }
 
+/// Maps the runtime type-name string (returned by the `type()` builtin) to its `Type`.
+///
+/// Used for narrowing `type(x) == "string"` conditions.
+fn type_name_to_type(name: &str, ctx: &mut InferenceContext) -> Option<Type> {
+    match name {
+        "string" => Some(Type::String),
+        "number" => Some(Type::Number),
+        "bool" => Some(Type::Bool),
+        "none" => Some(Type::None),
+        "symbol" => Some(Type::Symbol),
+        "markdown" => Some(Type::Markdown),
+        "array" => {
+            let elem = ctx.fresh_var();
+            Some(Type::array(Type::Var(elem)))
+        }
+        "dict" => {
+            let k = ctx.fresh_var();
+            let v = ctx.fresh_var();
+            Some(Type::dict(Type::Var(k), Type::Var(v)))
+        }
+        _ => None,
+    }
+}
+
+/// Returns the narrowed `Type` if `lit_id` is a literal symbol whose kind
+/// maps unambiguously to a single `Type` (String, Number, Bool, Symbol, None).
+fn literal_symbol_type(hir: &Hir, lit_id: SymbolId) -> Option<Type> {
+    match hir.symbol(lit_id)?.kind {
+        SymbolKind::String => Some(Type::String),
+        SymbolKind::Number => Some(Type::Number),
+        SymbolKind::Boolean => Some(Type::Bool),
+        SymbolKind::Symbol => Some(Type::Symbol),
+        SymbolKind::None => Some(Type::None),
+        _ => None,
+    }
+}
+
+/// Tries to extract `(def_id, narrowed_type)` from `type(x) == "typename"`.
+///
+/// `call_id` must be the `Call("type", x)` symbol and `lit_id` must be the
+/// String literal `"typename"`.  Returns `None` if the pattern doesn't match.
+fn analyze_type_call_equality(
+    hir: &Hir,
+    call_id: SymbolId,
+    lit_id: SymbolId,
+    children_index: &ChildrenIndex,
+    ctx: &mut InferenceContext,
+) -> Option<(SymbolId, Type)> {
+    let call_sym = hir.symbol(call_id)?;
+    if !matches!(call_sym.kind, SymbolKind::Call) {
+        return None;
+    }
+    if call_sym.value.as_deref() != Some("type") {
+        return None;
+    }
+
+    // The argument to type() must be a single Ref (variable reference)
+    let call_args: Vec<SymbolId> = get_children(children_index, call_id)
+        .iter()
+        .copied()
+        .filter(|&c| {
+            hir.symbol(c)
+                .map(|s| !matches!(s.kind, SymbolKind::Keyword))
+                .unwrap_or(true)
+        })
+        .collect();
+    if call_args.len() != 1 {
+        return None;
+    }
+    let arg_id = call_args[0];
+    if !matches!(hir.symbol(arg_id)?.kind, SymbolKind::Ref) {
+        return None;
+    }
+
+    // The other side must be a String literal naming the type
+    let lit_sym = hir.symbol(lit_id)?;
+    if !matches!(lit_sym.kind, SymbolKind::String) {
+        return None;
+    }
+    let type_name = lit_sym.value.as_deref()?;
+    let narrowed_type = type_name_to_type(type_name, ctx)?;
+    let def_id = hir.resolve_reference_symbol(arg_id)?;
+    Some((def_id, narrowed_type))
+}
+
+/// Tries to extract `(def_id, narrowed_type)` from `x == literal` or `literal == x`.
+fn analyze_literal_equality(hir: &Hir, lhs: SymbolId, rhs: SymbolId) -> Option<(SymbolId, Type)> {
+    // Try (Ref, Literal) then (Literal, Ref)
+    let (var_id, lit_id) =
+        if matches!(hir.symbol(lhs)?.kind, SymbolKind::Ref) && literal_symbol_type(hir, rhs).is_some() {
+            (lhs, rhs)
+        } else if matches!(hir.symbol(rhs)?.kind, SymbolKind::Ref) && literal_symbol_type(hir, lhs).is_some() {
+            (rhs, lhs)
+        } else {
+            return None;
+        };
+    let def_id = hir.resolve_reference_symbol(var_id)?;
+    let narrowed_type = literal_symbol_type(hir, lit_id)?;
+    Some((def_id, narrowed_type))
+}
+
 /// Recursively analyzes a condition expression to extract type narrowing information.
 ///
 /// Supports:
-/// - Simple type predicate calls: `is_string(x)` → narrows x to String
+/// - Type predicate calls: `is_string(x)` → narrows x to String in then-branch
+/// - Equality with literals: `x == "foo"` → narrows x to String; `x != none` → removes None
+/// - `type(x) == "typename"`: `type(x) == "string"` → narrows x to String
 /// - Negation: `!is_string(x)` → swaps then/else narrowings
-/// - Logical AND: `is_string(x) && is_number(y)` → both in then, none in else
-/// - Logical OR: `is_string(x) || is_number(x)` → none in then, both in else
+/// - Logical AND: `is_string(x) && is_number(y)` → both in then-branch, complement in else
+/// - Logical OR: `is_string(x) || is_number(x)` → neither in then-branch, complements in else
 fn analyze_condition(
     hir: &Hir,
     cond_id: SymbolId,
@@ -484,12 +613,7 @@ fn analyze_condition(
 ) -> ConditionNarrowings {
     let symbol = match hir.symbol(cond_id) {
         Some(s) => s,
-        None => {
-            return ConditionNarrowings {
-                then_narrowings: Vec::new(),
-                else_narrowings: Vec::new(),
-            };
-        }
+        None => return ConditionNarrowings::empty(),
     };
 
     match &symbol.kind {
@@ -514,10 +638,7 @@ fn analyze_condition(
                     }],
                 }
             } else {
-                ConditionNarrowings {
-                    then_narrowings: Vec::new(),
-                    else_narrowings: Vec::new(),
-                }
+                ConditionNarrowings::empty()
             }
         }
 
@@ -525,10 +646,7 @@ fn analyze_condition(
         SymbolKind::UnaryOp if symbol.value.as_deref() == Some("!") => {
             let children = get_children(children_index, cond_id);
             if children.is_empty() {
-                return ConditionNarrowings {
-                    then_narrowings: Vec::new(),
-                    else_narrowings: Vec::new(),
-                };
+                return ConditionNarrowings::empty();
             }
             let mut inner = analyze_condition(hir, children[0], children_index, ctx);
             // Swap then and else
@@ -536,8 +654,45 @@ fn analyze_condition(
             inner
         }
 
-        // Logical AND: a && b → then: both narrowings, else: empty
-        // Logical OR: a || b → then: empty, else: both narrowings
+        // Equality / inequality: x == literal, literal == x, type(x) == "typename"
+        SymbolKind::BinaryOp if matches!(symbol.value.as_deref(), Some("==") | Some("!=")) => {
+            let children = get_children(children_index, cond_id);
+            if children.len() < 2 {
+                return ConditionNarrowings::empty();
+            }
+            let is_neq = symbol.value.as_deref() == Some("!=");
+
+            // Try (in order):
+            //   1. type(x) == "typename"  (either argument order)
+            //   2. x == literal           (either argument order)
+            let narrowing = analyze_type_call_equality(hir, children[0], children[1], children_index, ctx)
+                .or_else(|| analyze_type_call_equality(hir, children[1], children[0], children_index, ctx))
+                .or_else(|| analyze_literal_equality(hir, children[0], children[1]))
+                .or_else(|| analyze_literal_equality(hir, children[1], children[0]));
+
+            if let Some((def_id, narrowed_type)) = narrowing {
+                // == : then-branch narrows TO the type, else-branch narrows AWAY
+                // != : then-branch narrows AWAY, else-branch narrows TO
+                let (then_complement, else_complement) = if is_neq { (true, false) } else { (false, true) };
+                ConditionNarrowings {
+                    then_narrowings: vec![NarrowingEntry {
+                        def_id,
+                        narrowed_type: narrowed_type.clone(),
+                        is_complement: then_complement,
+                    }],
+                    else_narrowings: vec![NarrowingEntry {
+                        def_id,
+                        narrowed_type,
+                        is_complement: else_complement,
+                    }],
+                }
+            } else {
+                ConditionNarrowings::empty()
+            }
+        }
+
+        // Logical AND: a && b → then: both narrowings, else: complement of each
+        // Logical OR: a || b → then: neither narrowing, else: complement of each
         SymbolKind::BinaryOp
             if matches!(
                 symbol.value.as_deref(),
@@ -546,10 +701,7 @@ fn analyze_condition(
         {
             let children = get_children(children_index, cond_id);
             if children.len() < 2 {
-                return ConditionNarrowings {
-                    then_narrowings: Vec::new(),
-                    else_narrowings: Vec::new(),
-                };
+                return ConditionNarrowings::empty();
             }
 
             let left = analyze_condition(hir, children[0], children_index, ctx);
@@ -558,15 +710,17 @@ fn analyze_condition(
             let is_and = matches!(symbol.value.as_deref(), Some("&&") | Some("and"));
 
             if is_and {
-                // AND: both narrowings apply in then-branch, neither in else
+                // AND: both narrowings apply in then-branch; complement of each in else-branch
                 let mut then_narrowings = left.then_narrowings;
                 then_narrowings.extend(right.then_narrowings);
+                let mut else_narrowings = left.else_narrowings;
+                else_narrowings.extend(right.else_narrowings);
                 ConditionNarrowings {
                     then_narrowings,
-                    else_narrowings: Vec::new(),
+                    else_narrowings,
                 }
             } else {
-                // OR: neither narrowing applies in then, both complements in else
+                // OR: neither narrowing applies in then; complements of both in else
                 let mut else_narrowings = left.else_narrowings;
                 else_narrowings.extend(right.else_narrowings);
                 ConditionNarrowings {
@@ -576,10 +730,7 @@ fn analyze_condition(
             }
         }
 
-        _ => ConditionNarrowings {
-            then_narrowings: Vec::new(),
-            else_narrowings: Vec::new(),
-        },
+        _ => ConditionNarrowings::empty(),
     }
 }
 
@@ -1766,6 +1917,23 @@ fn generate_symbol_constraints(
                 let cond_ty = ctx.get_or_create_symbol_type(children[0]);
                 ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range));
 
+                // Analyze condition for type narrowing: narrowings apply inside the loop body.
+                if children.len() > 1 {
+                    let cond_narrowings = analyze_condition(hir, children[0], children_index, ctx);
+                    if !cond_narrowings.is_empty() {
+                        // Loop body is the last child; all body children receive then-narrowings.
+                        let body_children: Vec<SymbolId> = children[1..].to_vec();
+                        for &body_id in &body_children {
+                            ctx.add_type_narrowing(TypeNarrowing {
+                                then_narrowings: cond_narrowings.then_narrowings.clone(),
+                                else_narrowings: Vec::new(),
+                                then_branch_id: body_id,
+                                else_branch_ids: Vec::new(),
+                            });
+                        }
+                    }
+                }
+
                 // Result type comes from the body (last child after condition)
                 if children.len() > 1 {
                     let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
@@ -1881,9 +2049,16 @@ fn generate_symbol_constraints(
             let range = get_symbol_range(hir, symbol_id);
 
             if children.len() > 1 {
-                // First child is the match expression, rest are arms
+                // First child is the match expression, rest are arms.
                 let match_expr_ty = ctx.get_or_create_symbol_type(children[0]);
                 let arm_children: Vec<_> = children[1..].to_vec();
+
+                // If the match expression is a direct variable reference, we can narrow
+                // its type inside each arm body to match the arm's pattern type.
+                let match_var_def_id = hir
+                    .symbol(children[0])
+                    .filter(|s| matches!(s.kind, SymbolKind::Ref))
+                    .and_then(|_| hir.resolve_reference_symbol(children[0]));
 
                 if !arm_children.is_empty() {
                     let mut arm_body_tys = Vec::new();
@@ -1891,19 +2066,44 @@ fn generate_symbol_constraints(
                     for &arm_id in &arm_children {
                         let arm_children_inner = get_children(children_index, arm_id);
 
-                        // Separate pattern and body children
+                        // Separate pattern and body children, tracking both IDs and types.
                         let mut body_ty = None;
+                        let mut body_id = None;
+                        let mut arm_pattern_ty = None;
                         for &arm_child_id in arm_children_inner {
                             if let Some(arm_child_symbol) = hir.symbol(arm_child_id) {
                                 if matches!(arm_child_symbol.kind, SymbolKind::Pattern) {
                                     // Determine pattern type from its literal children
                                     let pattern_ty = resolve_pattern_type(hir, arm_child_id, ctx, children_index);
-                                    ctx.add_constraint(Constraint::Equal(match_expr_ty.clone(), pattern_ty, range));
+                                    ctx.add_constraint(Constraint::Equal(
+                                        match_expr_ty.clone(),
+                                        pattern_ty.clone(),
+                                        range,
+                                    ));
+                                    // Keep the pattern type if it is concrete (not a wildcard Var)
+                                    if !pattern_ty.is_var() {
+                                        arm_pattern_ty = Some(pattern_ty);
+                                    }
                                 } else {
                                     // Track the last non-Pattern child as the body
                                     body_ty = Some(ctx.get_or_create_symbol_type(arm_child_id));
+                                    body_id = Some(arm_child_id);
                                 }
                             }
+                        }
+
+                        // Narrow the matched variable to the concrete pattern type inside the arm body.
+                        if let (Some(def_id), Some(pat_ty), Some(bid)) = (match_var_def_id, arm_pattern_ty, body_id) {
+                            ctx.add_type_narrowing(TypeNarrowing {
+                                then_narrowings: vec![NarrowingEntry {
+                                    def_id,
+                                    narrowed_type: pat_ty,
+                                    is_complement: false,
+                                }],
+                                else_narrowings: Vec::new(),
+                                then_branch_id: bid,
+                                else_branch_ids: Vec::new(),
+                            });
                         }
 
                         if let Some(body_ty) = body_ty {
