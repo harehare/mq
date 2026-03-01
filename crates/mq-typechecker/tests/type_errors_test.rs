@@ -3,8 +3,8 @@
 //! This test file demonstrates which type errors are currently detected
 //! and which ones are not yet implemented.
 
+use mq_check::{TypeChecker, TypeCheckerOptions, TypeError};
 use mq_hir::Hir;
-use mq_typechecker::{TypeChecker, TypeError};
 
 fn create_hir(code: &str) -> Hir {
     let mut hir = Hir::default();
@@ -352,4 +352,101 @@ fn test_narrowing_selector_various_structural() {
             "Selector {selector} narrowing should produce no errors: {result:?}"
         );
     }
+}
+
+// ============================================================================
+// Strict Array Mode Tests
+// ============================================================================
+
+/// Helper function to run type checker with strict array mode enabled
+fn check_types_strict_array(code: &str) -> Vec<TypeError> {
+    let hir = create_hir(code);
+    let mut checker = TypeChecker::with_options(TypeCheckerOptions { strict_array: true });
+    checker.check(&hir)
+}
+
+#[test]
+fn test_strict_array_heterogeneous_error() {
+    // With strict_array enabled, mixed-type arrays should produce an error
+    let result = check_types_strict_array(r#"[1, "hello"]"#);
+    assert!(
+        !result.is_empty(),
+        "Expected HeterogeneousArray error for [1, \"hello\"] in strict mode"
+    );
+    assert!(
+        result.iter().any(|e| matches!(e, TypeError::HeterogeneousArray { .. })),
+        "Expected HeterogeneousArray variant, got: {result:?}"
+    );
+}
+
+#[test]
+fn test_strict_array_heterogeneous_three_types() {
+    // Multiple different types should also produce an error
+    let result = check_types_strict_array(r#"[1, "hello", true]"#);
+    assert!(
+        result.iter().any(|e| matches!(e, TypeError::HeterogeneousArray { .. })),
+        "Expected HeterogeneousArray error for three mixed types: {result:?}"
+    );
+}
+
+#[test]
+fn test_strict_array_homogeneous_ok() {
+    // Homogeneous arrays should still pass in strict mode
+    let result = check_types_strict_array("[1, 2, 3]");
+    assert!(
+        result.is_empty(),
+        "Homogeneous number array should pass in strict mode: {result:?}"
+    );
+}
+
+#[test]
+fn test_strict_array_homogeneous_strings_ok() {
+    // Homogeneous string arrays should pass in strict mode
+    let result = check_types_strict_array(r#"["a", "b", "c"]"#);
+    assert!(
+        result.is_empty(),
+        "Homogeneous string array should pass in strict mode: {result:?}"
+    );
+}
+
+#[test]
+fn test_strict_array_empty_ok() {
+    // Empty arrays should always pass
+    let result = check_types_strict_array("[]");
+    assert!(result.is_empty(), "Empty array should pass in strict mode: {result:?}");
+}
+
+#[test]
+fn test_default_mode_heterogeneous_allowed() {
+    // Without strict_array, heterogeneous arrays should still be allowed
+    let result = check_types(r#"[1, "hello", true]"#);
+    assert!(
+        result.is_empty(),
+        "Heterogeneous arrays should be allowed in default mode: {result:?}"
+    );
+}
+
+// ============================================================================
+// Array Element Access Type Propagation Tests
+// ============================================================================
+
+#[test]
+fn test_array_element_access_type_error() {
+    // v[0] on a number array should propagate the element type (Number),
+    // so v[0] + true should be a type error
+    let result = check_types("let v = [1, 1, 3] | v[0] + true");
+    assert!(
+        !result.is_empty(),
+        "Expected type error for v[0] + true where v is [Number]: {result:?}"
+    );
+}
+
+#[test]
+fn test_array_element_access_valid() {
+    // v[0] on a number array should return Number, so v[0] + 1 should be valid
+    let result = check_types("let v = [1, 2, 3] | v[0] + 1");
+    assert!(
+        result.is_empty(),
+        "v[0] + 1 where v is [Number] should succeed: {result:?}"
+    );
 }

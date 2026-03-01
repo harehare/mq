@@ -4,8 +4,8 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use colored::Colorize;
+use mq_check::{TypeChecker, TypeCheckerOptions, TypeError};
 use mq_hir::Hir;
-use mq_typechecker::{TypeChecker, TypeError};
 use url::Url;
 
 /// Type checker for mq programs
@@ -22,6 +22,10 @@ struct Cli {
     /// Disable automatic builtin preloading (use when checking builtin.mq itself)
     #[arg(long)]
     no_builtins: bool,
+
+    /// Enforce homogeneous arrays (reject mixed-type arrays like [1, "hello"])
+    #[arg(long)]
+    strict_array: bool,
 }
 
 fn main() -> ExitCode {
@@ -44,7 +48,15 @@ fn run() -> io::Result<()> {
         let mut code = String::new();
         io::stdin().read_to_string(&mut code)?;
         let source_url = Url::parse("file:///stdin").ok();
-        let had_errors = check_file(&mut w, &code, source_url, cli.show_types, None, cli.no_builtins)?;
+        let had_errors = check_file(
+            &mut w,
+            &code,
+            source_url,
+            cli.show_types,
+            None,
+            cli.no_builtins,
+            cli.strict_array,
+        )?;
         if had_errors {
             return Err(io::Error::other("type check failed"));
         }
@@ -80,6 +92,7 @@ fn run() -> io::Result<()> {
             cli.show_types,
             label.as_deref(),
             cli.no_builtins,
+            cli.strict_array,
         )?;
         if had_errors {
             total_errors += 1;
@@ -103,6 +116,7 @@ fn check_file(
     show_types: bool,
     label: Option<&str>,
     no_builtins: bool,
+    strict_array: bool,
 ) -> io::Result<bool> {
     let mut hir = Hir::default();
 
@@ -121,7 +135,7 @@ fn check_file(
         return Ok(true);
     }
 
-    check_type(w, &hir, show_types)
+    check_type(w, &hir, show_types, strict_array)
 }
 
 /// Checks HIR for syntax errors/warnings and writes them in a unified format.
@@ -184,8 +198,8 @@ fn check_syntax(w: &mut impl Write, hir: &mq_hir::Hir) -> io::Result<bool> {
 
 /// Runs type inference and writes errors in a unified format.
 /// Returns `true` if any type errors were found.
-fn check_type(w: &mut impl Write, hir: &mq_hir::Hir, show_types: bool) -> io::Result<bool> {
-    let mut checker = TypeChecker::new();
+fn check_type(w: &mut impl Write, hir: &mq_hir::Hir, show_types: bool, strict_array: bool) -> io::Result<bool> {
+    let mut checker = TypeChecker::with_options(TypeCheckerOptions { strict_array });
     let mut errors = checker.check(hir);
 
     errors.sort_by_key(|a| a.location());
@@ -281,6 +295,14 @@ fn write_error(w: &mut impl Write, error: &TypeError) -> io::Result<()> {
             "undefined field:".bright_red().bold(),
             field.bright_magenta(),
             record_ty.bright_cyan(),
+        ),
+        TypeError::HeterogeneousArray { types, .. } => writeln!(
+            w,
+            "  {} {} {} [{}]",
+            loc_str,
+            sep,
+            "heterogeneous array:".bright_red().bold(),
+            types.bright_yellow(),
         ),
         TypeError::TypeVarNotFound(name) => writeln!(
             w,

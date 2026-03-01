@@ -2613,6 +2613,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-check"
+version = "0.5.17"
+dependencies = [
+ "clap",
+ "colored 3.1.1",
+ "itertools 0.14.0",
+ "miette",
+ "mq-hir",
+ "mq-lang",
+ "rstest",
+ "rustc-hash 2.1.1",
+ "slotmap",
+ "smol_str",
+ "thiserror 2.0.18",
+ "url",
+]
+
+[[package]]
 name = "mq-crawler"
 version = "0.5.17"
 dependencies = [
@@ -2807,24 +2825,6 @@ dependencies = [
  "strum",
  "url",
  "which 8.0.0",
-]
-
-[[package]]
-name = "mq-typechecker"
-version = "0.5.17"
-dependencies = [
- "clap",
- "colored 3.1.1",
- "itertools 0.14.0",
- "miette",
- "mq-hir",
- "mq-lang",
- "rstest",
- "rustc-hash 2.1.1",
- "slotmap",
- "smol_str",
- "thiserror 2.0.18",
- "url",
 ]
 
 [[package]]

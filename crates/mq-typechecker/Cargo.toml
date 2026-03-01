@@ -6,8 +6,8 @@ edition = "2024"
 homepage = "https://mqlang.org/"
 keywords = ["markdown", "jq", "query"]
 license = "MIT"
+name = "mq-check"
 publish = false
-name = "mq-typechecker"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
 version = "0.5.17"
@@ -16,7 +16,7 @@ version = "0.5.17"
 cli = ["dep:clap", "dep:colored", "dep:url"]
 
 [[bin]]
-name = "mq-typecheck"
+name = "mq-check"
 path = "src/main.rs"
 required-features = ["cli"]
 
