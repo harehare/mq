@@ -1312,6 +1312,7 @@ fn generate_symbol_constraints(
                                         call_symbol_id: symbol_id,
                                         def_id,
                                         field_name: name,
+                                        range: get_symbol_range(hir, symbol_id),
                                     });
                                     let ty_var = ctx.fresh_var();
                                     ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
@@ -1874,12 +1875,23 @@ fn generate_symbol_constraints(
                     .and_then(|s| s.value.as_ref())
                     .map(|v| v.trim_start_matches('.').trim_start_matches("[:").trim_end_matches(']'));
 
-                if let Type::Record(ref fields, _) = resolved {
+                if let Type::Record(ref fields, ref rest) = resolved {
                     if let Some(name) = field_name {
                         if let Some(field_ty) = fields.get(name) {
                             ctx.set_symbol_type(symbol_id, field_ty.clone());
+                        } else if matches!(**rest, Type::RowEmpty) {
+                            // Field not found in closed record — report error
+                            let range = get_symbol_range(hir, symbol_id);
+                            ctx.add_error(crate::TypeError::UndefinedField {
+                                field: name.to_string(),
+                                record_ty: resolved.display_renumbered(),
+                                span: range.as_ref().map(range_to_span),
+                                location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                            });
+                            let ty_var = ctx.fresh_var();
+                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                         } else {
-                            // Field not found in closed record — use fresh var
+                            // Open record — field may exist in the row extension
                             let ty_var = ctx.fresh_var();
                             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                         }
@@ -1888,6 +1900,15 @@ fn generate_symbol_constraints(
                         ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                     }
                 } else {
+                    // Piped type not yet resolved — defer check to post-unification
+                    if let Some(name) = field_name {
+                        ctx.add_deferred_selector_access(crate::infer::DeferredSelectorAccess {
+                            symbol_id,
+                            piped_ty: piped_ty.clone(),
+                            field_name: name.to_string(),
+                            range: get_symbol_range(hir, symbol_id),
+                        });
+                    }
                     let ty_var = ctx.fresh_var();
                     ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                 }

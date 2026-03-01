@@ -92,6 +92,16 @@ pub enum TypeError {
         span: Option<miette::SourceSpan>,
         location: Option<(u32, usize)>,
     },
+    #[error("Undefined field `{field}` in record type {record_ty}")]
+    #[diagnostic(code(typechecker::undefined_field))]
+    #[allow(dead_code)]
+    UndefinedField {
+        field: String,
+        record_ty: String,
+        #[label("field not found")]
+        span: Option<miette::SourceSpan>,
+        location: Option<(u32, usize)>,
+    },
     #[error("Type variable not found: {0}")]
     #[diagnostic(code(typechecker::type_var_not_found))]
     TypeVarNotFound(String),
@@ -108,7 +118,8 @@ impl TypeError {
             | TypeError::UnificationError { location, .. }
             | TypeError::OccursCheck { location, .. }
             | TypeError::UndefinedSymbol { location, .. }
-            | TypeError::WrongArity { location, .. } => *location,
+            | TypeError::WrongArity { location, .. }
+            | TypeError::UndefinedField { location, .. } => *location,
             _ => None,
         }
     }
@@ -176,6 +187,9 @@ impl TypeChecker {
             unify::solve_constraints(&mut ctx);
         }
 
+        // Resolve deferred selector field accesses (.field on records)
+        Self::resolve_selector_field_accesses(&mut ctx);
+
         // Propagate return types from user-defined function calls.
         // After unification, the original function's return type may be concrete,
         // allowing us to connect it to the fresh return type at each call site.
@@ -221,16 +235,55 @@ impl TypeChecker {
                 None => continue,
             };
 
-            if let types::Type::Record(fields, _) = &var_ty
-                && let Some(field_ty) = fields.get(&access.field_name)
-            {
-                // Bind the bracket access expression's type to the field type
-                let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
-                ctx.add_constraint(constraint::Constraint::Equal(call_ty, field_ty.clone(), None));
-                resolved_any = true;
+            if let types::Type::Record(fields, rest) = &var_ty {
+                if let Some(field_ty) = fields.get(&access.field_name) {
+                    // Bind the bracket access expression's type to the field type
+                    let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                    ctx.add_constraint(constraint::Constraint::Equal(call_ty, field_ty.clone(), None));
+                    resolved_any = true;
+                } else if matches!(rest.as_ref(), types::Type::RowEmpty) {
+                    // Field not found in closed record — report error
+                    ctx.add_error(TypeError::UndefinedField {
+                        field: access.field_name.clone(),
+                        record_ty: var_ty.display_renumbered(),
+                        span: access.range.as_ref().map(unify::range_to_span),
+                        location: access.range.as_ref().map(|r| (r.start.line, r.start.column)),
+                    });
+                }
             }
         }
         resolved_any
+    }
+
+    /// Resolves deferred selector field accesses after unification.
+    ///
+    /// For each deferred selector access `.field`, resolves the piped input type
+    /// (now concrete after unification) and checks if the field exists in the record.
+    fn resolve_selector_field_accesses(ctx: &mut infer::InferenceContext) {
+        let accesses = ctx.take_deferred_selector_accesses();
+        if accesses.is_empty() {
+            return;
+        }
+
+        for access in &accesses {
+            let resolved = ctx.resolve_type(&access.piped_ty);
+
+            if let types::Type::Record(fields, rest) = &resolved {
+                if let Some(field_ty) = fields.get(&access.field_name) {
+                    // Bind the selector's type to the field type
+                    let sel_ty = ctx.get_or_create_symbol_type(access.symbol_id);
+                    ctx.add_constraint(constraint::Constraint::Equal(sel_ty, field_ty.clone(), None));
+                } else if matches!(rest.as_ref(), types::Type::RowEmpty) {
+                    // Field not found in closed record — report error
+                    ctx.add_error(TypeError::UndefinedField {
+                        field: access.field_name.clone(),
+                        record_ty: resolved.display_renumbered(),
+                        span: access.range.as_ref().map(unify::range_to_span),
+                        location: access.range.as_ref().map(|r| (r.start.line, r.start.column)),
+                    });
+                }
+            }
+        }
     }
 
     /// Resolves deferred overloads after the first round of unification.
