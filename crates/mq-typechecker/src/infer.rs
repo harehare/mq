@@ -158,11 +158,18 @@ pub struct InferenceContext {
     deferred_selector_accesses: Vec<DeferredSelectorAccess>,
     /// Type narrowings collected from type predicate conditions in if/elif expressions
     type_narrowings: Vec<TypeNarrowing>,
+    /// When true, heterogeneous arrays produce a type error
+    strict_array: bool,
 }
 
 impl InferenceContext {
-    /// Creates a new inference context
+    /// Creates a new inference context with default options
     pub fn new() -> Self {
+        Self::with_options(false)
+    }
+
+    /// Creates a new inference context with the given strict array option
+    pub fn with_options(strict_array: bool) -> Self {
         Self {
             var_ctx: TypeVarContext::new(),
             symbol_types: FxHashMap::default(),
@@ -177,7 +184,13 @@ impl InferenceContext {
             deferred_record_accesses: Vec::new(),
             deferred_selector_accesses: Vec::new(),
             type_narrowings: Vec::new(),
+            strict_array,
         }
+    }
+
+    /// Returns whether strict array mode is enabled
+    pub fn strict_array(&self) -> bool {
+        self.strict_array
     }
 
     /// Registers a builtin function or operator type

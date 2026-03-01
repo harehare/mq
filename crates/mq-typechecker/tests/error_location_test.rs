@@ -3,8 +3,8 @@
 //! This test file verifies that type errors include proper location information
 //! (line and column numbers) when they are reported.
 
+use mq_check::{TypeChecker, TypeError};
 use mq_hir::Hir;
-use mq_typechecker::{TypeChecker, TypeError};
 
 fn create_hir(code: &str) -> Hir {
     let mut hir = Hir::default();

@@ -1,10 +1,9 @@
-<h1 align="center">mq-typechecker</h1>
+<h1 align="center">mq-check</h1>
 
 > [!IMPORTANT]
 > This crate is currently **under active development**. The type inference and checking features are experimental, and the API or behavior may change without notice. Use in production environments is not recommended.
 
 Type inference and checking for the mq language.
-
 
 ## Usage
 
@@ -12,7 +11,7 @@ Type inference and checking for the mq language.
 
 ```rust
 use mq_hir::Hir;
-use mq_typechecker::TypeChecker;
+use mq_check::TypeChecker;
 
 // Build HIR from mq code
 let mut hir = Hir::default();
@@ -112,7 +111,7 @@ just test
 ### Building
 
 ```bash
-cargo build -p mq-typechecker
+cargo build -p mq-check
 ```
 
 ## License

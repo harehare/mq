@@ -1,7 +1,7 @@
 //! Integration tests for the type checker
 
+use mq_check::{TypeChecker, TypeError};
 use mq_hir::Hir;
-use mq_typechecker::{TypeChecker, TypeError};
 use rstest::rstest;
 
 /// Helper function to create HIR from code

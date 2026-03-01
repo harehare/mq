@@ -103,6 +103,15 @@ pub enum TypeError {
         span: Option<miette::SourceSpan>,
         location: Option<(u32, usize)>,
     },
+    #[error("Heterogeneous array: elements have mixed types [{types}]")]
+    #[diagnostic(code(typechecker::heterogeneous_array))]
+    #[allow(dead_code)]
+    HeterogeneousArray {
+        types: String,
+        #[label("mixed types in array")]
+        span: Option<miette::SourceSpan>,
+        location: Option<(u32, usize)>,
+    },
     #[error("Type variable not found: {0}")]
     #[diagnostic(code(typechecker::type_var_not_found))]
     TypeVarNotFound(String),
@@ -120,7 +129,8 @@ impl TypeError {
             | TypeError::OccursCheck { location, .. }
             | TypeError::UndefinedSymbol { location, .. }
             | TypeError::WrongArity { location, .. }
-            | TypeError::UndefinedField { location, .. } => *location,
+            | TypeError::UndefinedField { location, .. }
+            | TypeError::HeterogeneousArray { location, .. } => *location,
             _ => None,
         }
     }
@@ -149,19 +159,38 @@ pub(crate) fn walk_ancestors(
     })
 }
 
+/// Options for configuring the type checker behavior
+#[derive(Debug, Clone, Default)]
+pub struct TypeCheckerOptions {
+    /// When true, arrays must contain elements of a single type.
+    /// Heterogeneous arrays like `[1, "hello"]` will produce a type error.
+    pub strict_array: bool,
+}
+
 /// Type checker for mq programs
 ///
 /// Provides type inference and checking capabilities based on HIR information.
 pub struct TypeChecker {
     /// Symbol type mappings
     symbol_types: FxHashMap<SymbolId, TypeScheme>,
+    /// Type checker options
+    options: TypeCheckerOptions,
 }
 
 impl TypeChecker {
-    /// Creates a new type checker
+    /// Creates a new type checker with default options
     pub fn new() -> Self {
         Self {
             symbol_types: FxHashMap::default(),
+            options: TypeCheckerOptions::default(),
+        }
+    }
+
+    /// Creates a new type checker with the given options
+    pub fn with_options(options: TypeCheckerOptions) -> Self {
+        Self {
+            symbol_types: FxHashMap::default(),
+            options,
         }
     }
 
@@ -169,8 +198,8 @@ impl TypeChecker {
     ///
     /// Returns a list of type errors found. An empty list means no errors.
     pub fn check(&mut self, hir: &Hir) -> Vec<TypeError> {
-        // Create inference context
-        let mut ctx = infer::InferenceContext::new();
+        // Create inference context with options
+        let mut ctx = infer::InferenceContext::with_options(self.options.strict_array);
 
         builtin::register_all(&mut ctx);
 

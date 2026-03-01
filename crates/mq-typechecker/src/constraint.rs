@@ -1,5 +1,6 @@
 //! Constraint generation for type inference.
 
+use crate::TypeError;
 use crate::infer::{
     DeferredOverload, DeferredParameterCall, DeferredUserCall, InferenceContext, NarrowingEntry, TypeNarrowing,
 };
@@ -1341,18 +1342,39 @@ fn generate_symbol_constraints(
                                     // If the definition is a function parameter (higher-order call),
                                     // record the inner call so that `check_user_call_body_operators`
                                     // can propagate the concrete element type to the lambda's body.
-                                    let ret_ty = Type::Var(ctx.fresh_var());
-                                    let expected_func_ty = Type::function(explicit_arg_tys.clone(), ret_ty.clone());
-                                    ctx.add_constraint(Constraint::Equal(func_ty, expected_func_ty, range));
-                                    ctx.set_symbol_type(symbol_id, ret_ty);
-                                    if def_symbol.map(|s| s.is_parameter()).unwrap_or(false)
-                                        && let Some(outer_def_id) = find_enclosing_function(hir, symbol_id)
-                                    {
-                                        ctx.add_deferred_parameter_call(DeferredParameterCall {
-                                            outer_def_id,
-                                            param_sym_id: def_id,
-                                            arg_tys: explicit_arg_tys.clone(),
-                                        });
+                                    if def_symbol.map(|s| s.is_parameter()).unwrap_or(false) {
+                                        let ret_ty = Type::Var(ctx.fresh_var());
+                                        let expected_func_ty = Type::function(explicit_arg_tys.clone(), ret_ty.clone());
+                                        ctx.add_constraint(Constraint::Equal(func_ty, expected_func_ty, range));
+                                        ctx.set_symbol_type(symbol_id, ret_ty);
+                                        if let Some(outer_def_id) = find_enclosing_function(hir, symbol_id) {
+                                            ctx.add_deferred_parameter_call(DeferredParameterCall {
+                                                outer_def_id,
+                                                param_sym_id: def_id,
+                                                arg_tys: explicit_arg_tys.clone(),
+                                            });
+                                        }
+                                    } else {
+                                        // Non-function variable with bracket access (e.g., v[0]).
+                                        // Add structural constraint: var_type = Array(elem_type)
+                                        // so that element type propagates through unification.
+                                        // This avoids deferred overload resolution issues where
+                                        // the `get` builtin return type Var doesn't get bound.
+                                        let elem_var = ctx.fresh_var();
+                                        let elem_ty = Type::Var(elem_var);
+                                        ctx.add_constraint(Constraint::Equal(
+                                            original_func_ty.clone(),
+                                            Type::array(elem_ty.clone()),
+                                            range,
+                                        ));
+                                        if let Some(index_ty) = explicit_arg_tys.first() {
+                                            ctx.add_constraint(Constraint::Equal(
+                                                index_ty.clone(),
+                                                Type::Number,
+                                                range,
+                                            ));
+                                        }
+                                        ctx.set_symbol_type(symbol_id, elem_ty);
                                     }
                                 }
                             }
@@ -1411,6 +1433,20 @@ fn generate_symbol_constraints(
                         .any(|w| std::mem::discriminant(w[0]) != std::mem::discriminant(w[1]));
 
                 if is_heterogeneous || concrete_tys.len() != elem_tys.len() {
+                    // In strict array mode, report heterogeneous arrays as errors
+                    if is_heterogeneous && ctx.strict_array() {
+                        let range = get_symbol_range(hir, symbol_id);
+                        let types_str = concrete_tys
+                            .iter()
+                            .map(|ty| ty.display_renumbered())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        ctx.add_error(TypeError::HeterogeneousArray {
+                            types: types_str,
+                            span: range.as_ref().map(range_to_span),
+                            location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                        });
+                    }
                     // Heterogeneous or partially-unresolved array (used as tuple) —
                     // use fresh type variable to avoid corrupting type inference
                     // for downstream code. When some elements are still type variables,
