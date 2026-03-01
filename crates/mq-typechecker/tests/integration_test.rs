@@ -1139,6 +1139,56 @@ fn test_dict_bracket_access_valid() {
     );
 }
 
+// --- Undefined field access tests ---
+
+#[test]
+fn test_selector_undefined_field_on_closed_record() {
+    // Accessing a non-existent field via bracket notation on a closed record should produce an error
+    let result = check_types(r#"var v = {"a": 1, "b": 2} | v[:c]"#);
+    assert!(
+        result
+            .iter()
+            .any(|e| matches!(e, TypeError::UndefinedField { field, .. } if field == "c")),
+        "Accessing undefined field :c on closed record should produce UndefinedField error: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_selector_defined_field_on_closed_record() {
+    // Accessing an existing field via bracket notation on a closed record should succeed
+    let result = check_types(r#"var v = {"a": 1, "b": 2} | v[:a]"#);
+    assert!(
+        result.is_empty(),
+        "Bracket access to defined field :a on closed record should succeed: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_bracket_access_undefined_field_on_closed_record() {
+    // Accessing a non-existent field via bracket notation should produce an error
+    let result = check_types(r#"var v = {"key": 1, "value": "hello"} | v[:missing]"#);
+    assert!(
+        result
+            .iter()
+            .any(|e| matches!(e, TypeError::UndefinedField { field, .. } if field == "missing")),
+        "Bracket access to undefined field :missing on closed record should produce UndefinedField error: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_bracket_access_defined_field_on_closed_record() {
+    // Accessing an existing field via bracket notation should succeed
+    let result = check_types(r#"var v = {"key": 1, "value": "hello"} | v[:key]"#);
+    assert!(
+        result.is_empty(),
+        "Bracket access to defined field :key on closed record should succeed: {:?}",
+        result
+    );
+}
+
 // --- Variable reassignment tests ---
 
 #[test]

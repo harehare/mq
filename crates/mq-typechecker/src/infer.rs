@@ -76,6 +76,25 @@ pub struct DeferredRecordAccess {
     pub def_id: SymbolId,
     /// The field name being accessed
     pub field_name: String,
+    /// Source range for error reporting
+    pub range: Option<mq_lang::Range>,
+}
+
+/// A deferred selector field access for post-unification resolution.
+///
+/// When `.field` selector is encountered and the piped input type is not yet
+/// resolved to a Record, we defer the field existence check until after
+/// unification.
+#[derive(Debug, Clone)]
+pub struct DeferredSelectorAccess {
+    /// The selector symbol ID
+    pub symbol_id: SymbolId,
+    /// The piped input type (may be a type variable before unification)
+    pub piped_ty: Type,
+    /// The field name being accessed
+    pub field_name: String,
+    /// Source range for error reporting
+    pub range: Option<mq_lang::Range>,
 }
 
 /// Inference context maintains state during type inference
@@ -102,6 +121,8 @@ pub struct InferenceContext {
     deferred_parameter_calls: Vec<DeferredParameterCall>,
     /// Deferred record field accesses for post-unification resolution
     deferred_record_accesses: Vec<DeferredRecordAccess>,
+    /// Deferred selector field accesses for post-unification resolution
+    deferred_selector_accesses: Vec<DeferredSelectorAccess>,
 }
 
 impl InferenceContext {
@@ -119,6 +140,7 @@ impl InferenceContext {
             deferred_user_calls: Vec::new(),
             deferred_parameter_calls: Vec::new(),
             deferred_record_accesses: Vec::new(),
+            deferred_selector_accesses: Vec::new(),
         }
     }
 
@@ -190,6 +212,16 @@ impl InferenceContext {
     /// Takes all deferred record accesses (consumes them)
     pub fn take_deferred_record_accesses(&mut self) -> Vec<DeferredRecordAccess> {
         std::mem::take(&mut self.deferred_record_accesses)
+    }
+
+    /// Adds a deferred selector field access for post-unification resolution
+    pub fn add_deferred_selector_access(&mut self, access: DeferredSelectorAccess) {
+        self.deferred_selector_accesses.push(access);
+    }
+
+    /// Takes all deferred selector accesses (consumes them)
+    pub fn take_deferred_selector_accesses(&mut self) -> Vec<DeferredSelectorAccess> {
+        std::mem::take(&mut self.deferred_selector_accesses)
     }
 
     /// Reports a "no matching overload" error with formatted argument types.
