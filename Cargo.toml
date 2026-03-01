@@ -14,7 +14,7 @@ members = [
   "crates/mq-dap",
   "crates/mq-crawler",
   "editors/zed",
-  "crates/mq-typechecker",
+  "crates/mq-check",
 ]
 resolver = "3"
 

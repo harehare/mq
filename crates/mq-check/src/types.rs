@@ -31,6 +31,11 @@ pub enum Type {
     Markdown,
     /// Array type with element type
     Array(Box<Type>),
+    /// Tuple type with known element types (e.g., `(number, string)`)
+    ///
+    /// Used when `--tuple` mode is enabled to track per-element types
+    /// for small heterogeneous arrays like `[1, "hello"]`.
+    Tuple(Vec<Type>),
     /// Dictionary type with key and value types
     Dict(Box<Type>, Box<Type>),
     /// Function type: arguments -> return type
@@ -63,6 +68,11 @@ impl Type {
     /// Creates a new array type
     pub fn array(elem: Type) -> Self {
         Type::Array(Box::new(elem))
+    }
+
+    /// Creates a new tuple type with known element types
+    pub fn tuple(elems: Vec<Type>) -> Self {
+        Type::Tuple(elems)
     }
 
     /// Creates a new dict type
@@ -137,12 +147,13 @@ impl Type {
             Type::None => 6,
             Type::Markdown => 7,
             Type::Array(_) => 8,
-            Type::Dict(_, _) => 9,
-            Type::Function(_, _) => 10,
-            Type::Union(_) => 11,
-            Type::Record(_, _) => 12,
-            Type::RowEmpty => 13,
-            Type::Var(_) => 14,
+            Type::Tuple(_) => 9,
+            Type::Dict(_, _) => 10,
+            Type::Function(_, _) => 11,
+            Type::Union(_) => 12,
+            Type::Record(_, _) => 13,
+            Type::RowEmpty => 14,
+            Type::Var(_) => 15,
         }
     }
 
@@ -169,6 +180,7 @@ impl Type {
         match self {
             Type::Var(id) => subst.lookup(*id).map_or_else(|| self.clone(), |t| t.apply_subst(subst)),
             Type::Array(elem) => Type::Array(Box::new(elem.apply_subst(subst))),
+            Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| e.apply_subst(subst)).collect()),
             Type::Dict(key, value) => Type::Dict(Box::new(key.apply_subst(subst)), Box::new(value.apply_subst(subst))),
             Type::Function(params, ret) => {
                 let new_params = params.iter().map(|p| p.apply_subst(subst)).collect();
@@ -191,6 +203,7 @@ impl Type {
         match self {
             Type::Var(id) => vec![*id],
             Type::Array(elem) => elem.free_vars(),
+            Type::Tuple(elems) => elems.iter().flat_map(|e| e.free_vars()).collect(),
             Type::Dict(key, value) => {
                 let mut vars = key.free_vars();
                 vars.extend(value.free_vars());
@@ -237,6 +250,14 @@ impl Type {
 
             // Arrays match if their element types can match
             (Type::Array(elem1), Type::Array(elem2)) => elem1.can_match(elem2),
+
+            // Tuples match if they have the same length and all elements can match
+            (Type::Tuple(elems1), Type::Tuple(elems2)) => {
+                elems1.len() == elems2.len() && elems1.iter().zip(elems2.iter()).all(|(e1, e2)| e1.can_match(e2))
+            }
+
+            // Tuple can match Array (compatibility)
+            (Type::Tuple(_), Type::Array(_)) | (Type::Array(_), Type::Tuple(_)) => true,
 
             // Dicts match if both key and value types can match
             (Type::Dict(k1, v1), Type::Dict(k2, v2)) => k1.can_match(k2) && v1.can_match(v2),
@@ -317,6 +338,19 @@ impl Type {
             // Arrays: structural match scores higher than bare type variable
             (Type::Array(elem1), Type::Array(elem2)) => elem1.match_score(elem2).map(|s| s + 20),
 
+            // Tuples: structural match on all elements
+            (Type::Tuple(elems1), Type::Tuple(elems2)) if elems1.len() == elems2.len() => {
+                let total: u32 = elems1
+                    .iter()
+                    .zip(elems2.iter())
+                    .map(|(e1, e2)| e1.match_score(e2).unwrap_or(0))
+                    .sum();
+                Some(total / elems1.len() as u32 + 20)
+            }
+
+            // Tuple ↔ Array compatibility (lower score than direct Tuple match)
+            (Type::Tuple(_), Type::Array(_)) | (Type::Array(_), Type::Tuple(_)) => Some(15),
+
             // Dicts: structural match scores higher than bare type variable
             (Type::Dict(k1, v1), Type::Dict(k2, v2)) => {
                 let key_score = k1.match_score(k2)?;
@@ -374,6 +408,14 @@ impl Type {
             Type::None => "none".to_string(),
             Type::Markdown => "markdown".to_string(),
             Type::Array(elem) => format!("[{}]", elem.display_resolved()),
+            Type::Tuple(elems) => {
+                let elems_str = elems
+                    .iter()
+                    .map(|e| e.display_resolved())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("({})", elems_str)
+            }
             Type::Dict(key, value) => format!("{{{}: {}}}", key.display_resolved(), value.display_resolved()),
             Type::Record(fields, rest) => {
                 let fields_str = fields
@@ -439,6 +481,14 @@ impl Type {
             Type::None => "none".to_string(),
             Type::Markdown => "markdown".to_string(),
             Type::Array(elem) => format!("[{}]", elem.fmt_renumbered(var_map, counter)),
+            Type::Tuple(elems) => {
+                let elems_str = elems
+                    .iter()
+                    .map(|e| e.fmt_renumbered(var_map, counter))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("({})", elems_str)
+            }
             Type::Dict(key, value) => {
                 format!(
                     "{{{}: {}}}",

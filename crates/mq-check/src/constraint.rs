@@ -1354,6 +1354,35 @@ fn generate_symbol_constraints(
                                                 arg_tys: explicit_arg_tys.clone(),
                                             });
                                         }
+                                    } else if ctx.tuple() {
+                                        // Tuple mode: defer index access resolution until after
+                                        // unification, when we know if the variable is a Tuple.
+                                        let literal_index = children.first().and_then(|&arg_id| {
+                                            let arg_sym = hir.symbol(arg_id)?;
+                                            if matches!(arg_sym.kind, SymbolKind::Number) {
+                                                arg_sym.value.as_ref()?.parse::<usize>().ok()
+                                            } else {
+                                                None
+                                            }
+                                        });
+
+                                        if let Some(index_ty) = explicit_arg_tys.first() {
+                                            ctx.add_constraint(Constraint::Equal(
+                                                index_ty.clone(),
+                                                Type::Number,
+                                                range,
+                                            ));
+                                        }
+
+                                        let ty_var = ctx.fresh_var();
+                                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+
+                                        ctx.add_deferred_tuple_access(crate::infer::DeferredTupleAccess {
+                                            call_symbol_id: symbol_id,
+                                            def_id,
+                                            index: literal_index,
+                                            range: get_symbol_range(hir, symbol_id),
+                                        });
                                     } else {
                                         // Non-function variable with bracket access (e.g., v[0]).
                                         // Add structural constraint: var_type = Array(elem_type)
@@ -1447,13 +1476,20 @@ fn generate_symbol_constraints(
                             location: range.as_ref().map(|r| (r.start.line, r.start.column)),
                         });
                     }
-                    // Heterogeneous or partially-unresolved array (used as tuple) —
-                    // use fresh type variable to avoid corrupting type inference
-                    // for downstream code. When some elements are still type variables,
-                    // we cannot know if they will resolve to compatible types.
-                    let elem_ty_var = ctx.fresh_var();
-                    let array_ty = Type::array(Type::Var(elem_ty_var));
-                    ctx.set_symbol_type(symbol_id, array_ty);
+
+                    if is_heterogeneous && ctx.tuple() {
+                        // Tuple mode: preserve per-element types for heterogeneous arrays
+                        let tuple_ty = Type::tuple(elem_tys);
+                        ctx.set_symbol_type(symbol_id, tuple_ty);
+                    } else {
+                        // Heterogeneous or partially-unresolved array (used as tuple) —
+                        // use fresh type variable to avoid corrupting type inference
+                        // for downstream code. When some elements are still type variables,
+                        // we cannot know if they will resolve to compatible types.
+                        let elem_ty_var = ctx.fresh_var();
+                        let array_ty = Type::array(Type::Var(elem_ty_var));
+                        ctx.set_symbol_type(symbol_id, array_ty);
+                    }
                 } else {
                     // Homogeneous or unresolved — unify all element types
                     let elem_ty = elem_tys[0].clone();

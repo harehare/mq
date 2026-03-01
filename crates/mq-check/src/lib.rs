@@ -165,6 +165,9 @@ pub struct TypeCheckerOptions {
     /// When true, arrays must contain elements of a single type.
     /// Heterogeneous arrays like `[1, "hello"]` will produce a type error.
     pub strict_array: bool,
+    /// When true, heterogeneous array literals are typed as tuples with per-element types.
+    /// For example, `[1, "hello"]` gets type `(number, string)` and `v[0]` returns `number`.
+    pub tuple: bool,
 }
 
 /// Type checker for mq programs
@@ -199,7 +202,7 @@ impl TypeChecker {
     /// Returns a list of type errors found. An empty list means no errors.
     pub fn check(&mut self, hir: &Hir) -> Vec<TypeError> {
         // Create inference context with options
-        let mut ctx = infer::InferenceContext::with_options(self.options.strict_array);
+        let mut ctx = infer::InferenceContext::with_options(self.options.strict_array, self.options.tuple);
 
         builtin::register_all(&mut ctx);
 
@@ -212,6 +215,11 @@ impl TypeChecker {
         // Apply type narrowings from type predicate conditions (e.g., is_string(x))
         // in if/elif branches. This overrides Ref types within narrowed branches.
         narrowing::resolve_type_narrowings(hir, &mut ctx);
+
+        // Resolve deferred tuple index accesses now that variable types are known.
+        if Self::resolve_deferred_tuple_accesses(&mut ctx) {
+            unify::solve_constraints(&mut ctx);
+        }
 
         // Resolve deferred record field accesses now that variable types are known.
         // This binds bracket access return types (e.g., v[:key]) to specific field types
@@ -318,6 +326,68 @@ impl TypeChecker {
                 }
             }
         }
+    }
+
+    /// Resolves deferred tuple index accesses after the first round of unification.
+    ///
+    /// For each deferred tuple access `v[i]`, resolves the variable's type.
+    /// If it is a Tuple type:
+    ///   - Literal index: binds the access to the specific element type
+    ///   - Dynamic index: binds the access to the Union of all element types
+    ///
+    /// If it is an Array type, binds like normal array element access.
+    fn resolve_deferred_tuple_accesses(ctx: &mut infer::InferenceContext) -> bool {
+        let accesses = ctx.take_deferred_tuple_accesses();
+        if accesses.is_empty() {
+            return false;
+        }
+
+        let mut resolved_any = false;
+        for access in &accesses {
+            let var_ty = match ctx.get_symbol_type(access.def_id).cloned() {
+                Some(ty) => ctx.resolve_type(&ty),
+                None => continue,
+            };
+
+            match &var_ty {
+                types::Type::Tuple(elems) => {
+                    let result_ty = if let Some(idx) = access.index {
+                        if idx < elems.len() {
+                            elems[idx].clone()
+                        } else {
+                            // Out of bounds — use fresh type variable
+                            types::Type::Var(ctx.fresh_var())
+                        }
+                    } else {
+                        // Dynamic index — return Union of all element types
+                        types::Type::union(elems.clone())
+                    };
+                    let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                    ctx.add_constraint(constraint::Constraint::Equal(call_ty, result_ty, None));
+                    resolved_any = true;
+                }
+                types::Type::Array(elem) => {
+                    // Normal array — bind to element type
+                    let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                    ctx.add_constraint(constraint::Constraint::Equal(call_ty, *elem.clone(), None));
+                    resolved_any = true;
+                }
+                _ => {
+                    // Type not yet resolved or not an array/tuple — add array constraint as fallback
+                    let elem_var = ctx.fresh_var();
+                    let elem_ty = types::Type::Var(elem_var);
+                    ctx.add_constraint(constraint::Constraint::Equal(
+                        var_ty.clone(),
+                        types::Type::array(elem_ty.clone()),
+                        access.range,
+                    ));
+                    let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                    ctx.add_constraint(constraint::Constraint::Equal(call_ty, elem_ty, None));
+                    resolved_any = true;
+                }
+            }
+        }
+        resolved_any
     }
 
     /// Resolves deferred overloads after the first round of unification.
