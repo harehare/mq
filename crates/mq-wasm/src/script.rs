@@ -487,7 +487,7 @@ pub async fn defined_values(code: &str, module: Option<String>) -> Result<JsValu
                     value_type: DefinedValueType::Function,
                 }),
                 mq_hir::Symbol {
-                    kind: mq_hir::SymbolKind::Selector,
+                    kind: mq_hir::SymbolKind::Selector(_),
                     value: Some(value),
                     doc,
                     ..

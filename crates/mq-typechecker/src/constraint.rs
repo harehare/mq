@@ -261,7 +261,7 @@ fn generate_block_constraints(
         if let Some(child_symbol) = hir.symbol(children[i])
             && matches!(
                 child_symbol.kind,
-                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector
+                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_)
             )
         {
             generate_symbol_constraints(hir, children[i], child_symbol.kind.clone(), ctx, children_index);
@@ -315,7 +315,7 @@ fn generate_function_body_pipe_constraints(
         if let Some(child_symbol) = hir.symbol(body_children[i])
             && matches!(
                 child_symbol.kind,
-                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector
+                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_)
             )
         {
             generate_symbol_constraints(hir, body_children[i], child_symbol.kind.clone(), ctx, children_index);
@@ -1319,7 +1319,7 @@ fn generate_symbol_constraints(
                                 // Symbol/Selector (`:key` pattern), not a regular variable ref.
                                 let field_name = children.first().and_then(|&arg_id| {
                                     let arg_symbol = hir.symbol(arg_id)?;
-                                    if matches!(arg_symbol.kind, SymbolKind::Symbol | SymbolKind::Selector) {
+                                    if matches!(arg_symbol.kind, SymbolKind::Symbol | SymbolKind::Selector(_)) {
                                         arg_symbol.value.as_ref().map(|v| v.to_string())
                                     } else {
                                         None
@@ -1964,7 +1964,7 @@ fn generate_symbol_constraints(
         }
 
         // Selector: resolve field type from Record if piped input is known
-        SymbolKind::Selector => {
+        SymbolKind::Selector(_) => {
             if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
                 let resolved = ctx.resolve_type(&piped_ty);
                 let field_name = hir

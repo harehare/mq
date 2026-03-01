@@ -227,17 +227,19 @@ impl Hir {
 
         let selector_keys: Vec<_> = self.builtin.selectors.keys().cloned().collect();
         for name in selector_keys {
-            self.add_symbol(Symbol {
-                value: Some(name.clone()),
-                kind: SymbolKind::Selector,
-                source: SourceInfo::new(Some(self.builtin.source_id), None),
-                scope: self.builtin.scope_id,
-                doc: vec![(
-                    mq_lang::Range::default(),
-                    mq_lang::BUILTIN_SELECTOR_DOC[&name].description.to_string(),
-                )],
-                parent: None,
-            });
+            if let Ok(selector) = mq_lang::Selector::try_from(&mq_lang::Token::new(TokenKind::Selector(name.clone()))) {
+                self.add_symbol(Symbol {
+                    value: Some(name.clone()),
+                    kind: SymbolKind::Selector(selector),
+                    source: SourceInfo::new(Some(self.builtin.source_id), None),
+                    scope: self.builtin.scope_id,
+                    doc: vec![(
+                        mq_lang::Range::default(),
+                        mq_lang::BUILTIN_SELECTOR_DOC[&name].description.to_string(),
+                    )],
+                    parent: None,
+                });
+            }
         }
 
         self.builtin.loaded = true;
@@ -951,10 +953,12 @@ impl Hir {
             kind: mq_lang::CstNodeKind::Selector,
             ..
         } = &**node
+            && let Some(token) = &node.token
+            && let Ok(selector) = mq_lang::Selector::try_from(&**token)
         {
             let symbol_id = self.symbols.insert(Symbol {
                 value: node.name(),
-                kind: SymbolKind::Selector,
+                kind: SymbolKind::Selector(selector),
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
                 doc: node.comments(),
@@ -1919,8 +1923,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::elif_("if (true): 1 elif (false): 2 else: 3;", "elif", SymbolKind::Elif)]
     #[case::else_("if (true): 1 else: 2;", "else", SymbolKind::Else)]
     #[case::literal("42", "42", SymbolKind::Number)]
-    #[case::selector(".h", ".h", SymbolKind::Selector)]
-    #[case::selector(".code.lang", ".code", SymbolKind::Selector)]
+    #[case::selector(".h", ".h", SymbolKind::Selector(mq_lang::Selector::Heading(None)))]
+    #[case::selector(".code.lang", ".code", SymbolKind::Selector(mq_lang::Selector::Code))]
     #[case::interpolated_string("s\"hello ${world}\"", "world", SymbolKind::Variable)]
     #[case::include("include \"foo\"", "foo", SymbolKind::Include(SourceId::default()))]
     #[case::fn_expr("fn(): 42", "fn", SymbolKind::Keyword)]

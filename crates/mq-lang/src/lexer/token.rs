@@ -3,9 +3,7 @@ use std::fmt::{self, Display, Formatter};
 use itertools::Itertools;
 use smol_str::SmolStr;
 
-#[cfg(feature = "ast-json")]
-use crate::ArenaId;
-use crate::{module::ModuleId, number::Number, range::Range};
+use crate::{module::ModuleId, number::Number, range::Range, ArenaId};
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 
@@ -25,7 +23,6 @@ impl Display for StringSegment {
     }
 }
 
-#[cfg(feature = "ast-json")]
 fn default_module_id() -> ModuleId {
     ArenaId::new(0)
 }
@@ -129,6 +126,14 @@ pub enum TokenKind {
 }
 
 impl Token {
+    pub fn new(kind: TokenKind) -> Self {
+        Self {
+            kind,
+            range: Range::default(),
+            module_id: default_module_id(),
+        }
+    }
+
     #[inline(always)]
     pub fn is_eof(&self) -> bool {
         matches!(self.kind, TokenKind::Eof)
@@ -232,6 +237,7 @@ impl Display for TokenKind {
         }
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

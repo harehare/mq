@@ -411,7 +411,7 @@ pub(crate) fn analyze_condition(
                 }
             }
         }
-        SymbolKind::Selector => {
+        SymbolKind::Selector(selector) if !selector.is_attribute_selector() => {
             if let Some(def_id) = find_enclosing_function_first_param(hir, cond_id, children_index) {
                 ConditionNarrowings {
                     then_narrowings: vec![NarrowingEntry {

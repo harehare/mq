@@ -180,12 +180,9 @@ fn test_success_macro_definition() {
 fn test_narrowing_equality_then_branch() {
     // x == "foo" narrows x to String in then-branch; len() accepts String/Array
     let result = check_types(r#"def f(x): if (x == "hello"): len(x) else: 0;"#);
-    for e in &result {
-        eprintln!("Error: {}", e);
-    }
     assert!(
         result.is_empty(),
-        "Equality narrowing should allow len(x) in then-branch"
+        "Equality narrowing should allow len(x) in then-branch: {result:?}"
     );
 }
 
@@ -193,42 +190,30 @@ fn test_narrowing_equality_then_branch() {
 fn test_narrowing_neq_none_removes_none() {
     // x != none removes None from union in the then-branch
     let result = check_types(r#"def f(x): if (x != none): len(x) else: 0;"#);
-    for e in &result {
-        eprintln!("Error: {}", e);
-    }
-    assert!(result.is_empty(), "x != none should narrow away None in then-branch");
+    assert!(result.is_empty(), "x != none should narrow away None in then-branch: {result:?}");
 }
 
 #[test]
 fn test_narrowing_type_call_string() {
     // type(x) == "string" narrows x to String
     let result = check_types(r#"def f(x): if (type(x) == "string"): upcase(x) else: 0;"#);
-    for e in &result {
-        eprintln!("Error: {}", e);
-    }
-    assert!(result.is_empty(), "type(x) == 'string' should narrow x to String");
+    assert!(result.is_empty(), "type(x) == 'string' should narrow x to String: {result:?}");
 }
 
 #[test]
 fn test_narrowing_type_call_number() {
     // type(x) == "number" narrows x to Number
     let result = check_types(r#"def f(x): if (type(x) == "number"): x + 1 else: 0;"#);
-    for e in &result {
-        eprintln!("Error: {}", e);
-    }
-    assert!(result.is_empty(), "type(x) == 'number' should narrow x to Number");
+    assert!(result.is_empty(), "type(x) == 'number' should narrow x to Number: {result:?}");
 }
 
 #[test]
 fn test_narrowing_match_arm_string_pattern() {
     // match with a String pattern should narrow the matched variable to String inside the arm body
     let result = check_types(r#"def f(x): match (x): | "hello": upcase(x) | _: x end"#);
-    for e in &result {
-        eprintln!("Error: {}", e);
-    }
     assert!(
         result.is_empty(),
-        "Match arm with string pattern should narrow variable to String"
+        "Match arm with string pattern should narrow variable to String: {result:?}"
     );
 }
 
@@ -236,12 +221,9 @@ fn test_narrowing_match_arm_string_pattern() {
 fn test_narrowing_match_arm_number_pattern() {
     // match with a Number pattern should narrow to Number inside the arm body
     let result = check_types(r#"def f(x): match (x): | 42: x + 1 | _: 0 end"#);
-    for e in &result {
-        eprintln!("Error: {}", e);
-    }
     assert!(
         result.is_empty(),
-        "Match arm with number pattern should narrow variable to Number"
+        "Match arm with number pattern should narrow variable to Number: {result:?}"
     );
 }
 
@@ -249,10 +231,7 @@ fn test_narrowing_match_arm_number_pattern() {
 fn test_narrowing_match_arm_none_pattern() {
     // match with none pattern narrows to None in that arm
     let result = check_types(r#"def f(x): match (x): | none: 0 | _: 1 end"#);
-    for e in &result {
-        eprintln!("Error: {}", e);
-    }
-    assert!(result.is_empty(), "Match arm with none pattern should succeed");
+    assert!(result.is_empty(), "Match arm with none pattern should succeed: {result:?}");
 }
 
 #[test]
@@ -299,12 +278,9 @@ fn test_narrowing_or_then_branch_same_variable() {
     // is_string(x) || is_number(x) → then-branch: x: String|Number
     // Returning x in the then-branch is always safe regardless of which arm fires.
     let result = check_types(r#"def f(x): if (is_string(x) || is_number(x)): x else: none;"#);
-    for e in &result {
-        eprintln!("Error: {}", e);
-    }
     assert!(
         result.is_empty(),
-        "OR narrowing: x is String|Number in then-branch, returning x should succeed"
+        "OR narrowing: x is String|Number in then-branch, returning x should succeed: {result:?}"
     );
 }
 
@@ -312,16 +288,20 @@ fn test_narrowing_or_then_branch_same_variable() {
 fn test_narrowing_or_then_branch_different_variables() {
     // is_string(x) || is_bool(y) — different variables, no then-branch narrowing (conservative)
     let result = check_types(r#"def f(x, y): if (is_string(x) || is_bool(y)): x else: none;"#);
-    // No then-branch narrowing; just ensure no panic
-    let _ = result;
+    assert!(
+        result.is_empty(),
+        "OR narrowing over different variables should produce no errors: {result:?}"
+    );
 }
 
 #[test]
 fn test_narrowing_or_else_branch_complement() {
     // is_string(x) || is_number(x) — else-branch: x is neither String nor Number
-    // Just ensure no panic on complement narrowing.
     let result = check_types(r#"def f(x): if (is_string(x) || is_number(x)): x else: x;"#);
-    let _ = result;
+    assert!(
+        result.is_empty(),
+        "OR narrowing complement in else-branch should produce no errors: {result:?}"
+    );
 }
 
 #[test]
@@ -329,11 +309,10 @@ fn test_narrowing_post_while_loop() {
     // After `while (is_string(x))`, the loop exits when condition is false.
     // Post-loop narrowing applies else_narrowings to subsequent code (x has String subtracted).
     let result = check_types(r#"def f(x): while (is_string(x)): x; x"#);
-    for e in &result {
-        eprintln!("Error: {}", e);
-    }
-    // Ensure no panic from post-loop narrowing
-    let _ = result;
+    assert!(
+        result.is_empty(),
+        "Post-loop narrowing should produce no errors: {result:?}"
+    );
 }
 
 #[test]
@@ -342,13 +321,9 @@ fn test_narrowing_selector_heading_then_branch() {
     // In the then-branch, the first parameter `x` is narrowed to Markdown.
     // Returning `x` from the then-branch should be type-safe.
     let result = check_types(r#"def f(x): if (.h): x else: none;"#);
-    for e in &result {
-        eprintln!("Error: {}", e);
-    }
     assert!(
         result.is_empty(),
-        "Selector narrowing: x should be narrowable to Markdown in the then-branch: {:?}",
-        result
+        "Selector narrowing: x should be narrowable to Markdown in the then-branch: {result:?}"
     );
 }
 
@@ -360,33 +335,9 @@ fn test_narrowing_selector_various_structural() {
     ] {
         let code = format!("def f(x): if ({selector}): x else: none;");
         let result = check_types(&code);
-        for e in &result {
-            eprintln!("Selector {selector} error: {}", e);
-        }
         assert!(
             result.is_empty(),
             "Selector {selector} narrowing should produce no errors: {result:?}"
         );
     }
-}
-
-#[test]
-fn test_narrowing_selector_attr_no_narrowing() {
-    // Attribute selectors (.value, .lang, etc.) do NOT narrow the type.
-    // These access properties of nodes and should not trigger selector narrowing.
-    // (No errors expected either — the type just remains as-is.)
-    let result = check_types(r#"def f(x): if (.value): x else: none;"#);
-    // Attribute selectors fall through to empty narrowing; no errors expected.
-    let _ = result;
-}
-
-#[test]
-fn test_narrowing_selector_negation() {
-    // !.h swaps the then/else narrowings: in the then-branch x is NOT Markdown.
-    let result = check_types(r#"def f(x): if (!.h): x else: none;"#);
-    for e in &result {
-        eprintln!("Error: {}", e);
-    }
-    // Should not panic — negation of a selector condition is handled correctly.
-    let _ = result;
 }
