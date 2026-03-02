@@ -1380,3 +1380,45 @@ fn test_type_narrowing(#[case] code: &str, #[case] should_succeed: bool, #[case]
         result
     );
 }
+
+#[test]
+fn test_piped_builtin_call_in_argument_position() {
+    // Builtin calls with no explicit args used as arguments to higher-order functions
+    // should not error — the parent function will pipe each element at runtime.
+    assert!(
+        check_types("[[1,2],[3,4]] | map(first())").is_empty(),
+        "map(first()) should not error"
+    );
+    assert!(
+        check_types("[[1,2],[3,4]] | map(last())").is_empty(),
+        "map(last()) should not error"
+    );
+}
+
+#[rstest]
+#[case(r#""hello" | self | upcase()"#, "self should preserve string type for upcase", true)]
+#[case("[1,2,3] | self | first()", "self should preserve array type for first()", true)]
+#[case(
+    r#""hello" | self | sort"#,
+    "string piped through self then sort (array-only) should error",
+    false
+)]
+#[case(
+    r#""hello" | self | sort()"#,
+    "string piped through self then sort (array-only) should error",
+    false
+)]
+#[case(
+    "42 | self | sort()",
+    "number piped through self then sort (array-only) should error",
+    false
+)]
+#[case(
+    r#""hello" | upcase | sort"#,
+    "string piped through string op then sort (array-only) should error",
+    false
+)]
+fn test_self_keyword_preserves_piped_type(#[case] code: &str, #[case] description: &str, #[case] should_succeed: bool) {
+    // `self` should unify with the piped input type
+    assert_eq!(check_types(code).is_empty(), should_succeed, "{}", description);
+}
