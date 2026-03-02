@@ -1380,3 +1380,30 @@ fn test_type_narrowing(#[case] code: &str, #[case] should_succeed: bool, #[case]
         result
     );
 }
+
+#[test]
+fn test_piped_builtin_call_in_argument_position() {
+    // Builtin calls with no explicit args used as arguments to higher-order functions
+    // should not error — the parent function will pipe each element at runtime.
+    assert!(
+        check_types("[[1,2],[3,4]] | map(first())").is_empty(),
+        "map(first()) should not error"
+    );
+    assert!(
+        check_types("[[1,2],[3,4]] | map(last())").is_empty(),
+        "map(last()) should not error"
+    );
+}
+
+#[test]
+fn test_self_keyword_preserves_piped_type() {
+    // `self` should unify with the piped input type
+    assert!(
+        check_types(r#""hello" | self | upcase"#).is_empty(),
+        "self should preserve string type for upcase"
+    );
+    assert!(
+        check_types("[1,2,3] | self | first()").is_empty(),
+        "self should preserve array type for first()"
+    );
+}

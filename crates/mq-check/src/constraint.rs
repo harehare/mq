@@ -442,7 +442,7 @@ fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool {
     };
     if matches!(
         parent.kind,
-        SymbolKind::Block | SymbolKind::Function(_) | SymbolKind::Macro(_)
+        SymbolKind::Block | SymbolKind::Function(_) | SymbolKind::Macro(_) | SymbolKind::Call
     ) {
         return true;
     }
@@ -2102,6 +2102,14 @@ fn generate_symbol_constraints(
                 if let Some(&value_child) = children.first() {
                     let child_ty = ctx.get_or_create_symbol_type(value_child);
                     ctx.set_symbol_type(symbol_id, child_ty);
+                } else {
+                    let ty_var = ctx.fresh_var();
+                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                }
+            } else if symbol.is_some_and(|s| s.value.as_deref() == Some("self")) {
+                // `self` refers to the piped input value
+                if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
+                    ctx.set_symbol_type(symbol_id, piped_ty);
                 } else {
                     let ty_var = ctx.fresh_var();
                     ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
