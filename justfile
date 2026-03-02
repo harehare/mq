@@ -26,12 +26,14 @@ build:
     cargo build --release -p mq-run --bin mq
     cargo build --release -p mq-run --bin mq-dbg --features="debugger"
     cargo build --release -p mq-lsp -p mq-crawler
+    cargo build --release -p mq-check --features="cli"
 
 # Build for a specific target architecture
 build-target target:
     cargo build --release --target {{target}} -p mq-run --bin mq
     cargo build --release --target {{target}} -p mq-run --bin mq-dbg --features="debugger"
     cargo build --release --target {{target}} -p mq-lsp -p mq-crawler
+    cargo build --release --target {{target}} -p mq-check --features="cli"
 
 # Build benchmarks with codspeed
 [working-directory: 'crates/mq-lang']
