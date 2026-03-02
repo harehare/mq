@@ -27,6 +27,7 @@ struct Backend {
     source_map: RwLock<BiMap<String, mq_hir::SourceId>>,
     error_map: DashMap<String, Vec<(std::string::String, mq_lang::Range)>>,
     text_map: DashMap<String, Arc<String>>,
+    config: LspConfig,
 }
 
 impl LanguageServer for Backend {
@@ -335,7 +336,6 @@ impl Backend {
 
         // Get errors for this specific file
         let file_errors = self.error_map.get(&uri_string);
-
         let mut diagnostics = Vec::new();
 
         // Add parsing errors if they exist
@@ -355,6 +355,31 @@ impl Backend {
                     message.to_string(),
                 )
             }));
+
+            if errors.is_empty() && self.config.enable_type_checking {
+                let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options);
+                let type_errors = checker.check(&self.hir.read().unwrap());
+
+                diagnostics.extend(type_errors.iter().filter_map(|type_error| {
+                    type_error.location().map(|location| {
+                        let mut diagnostic = ls_types::Diagnostic::new_simple(
+                            ls_types::Range::new(
+                                ls_types::Position {
+                                    line: location.0,
+                                    character: location.1 as u32,
+                                },
+                                ls_types::Position {
+                                    line: location.0,
+                                    character: location.1 as u32,
+                                },
+                            ),
+                            type_error.to_string(),
+                        );
+                        diagnostic.severity = Some(ls_types::DiagnosticSeverity::ERROR);
+                        diagnostic
+                    })
+                }));
+            }
         }
 
         {
@@ -452,6 +477,8 @@ impl Backend {
 #[derive(Debug, Clone, Default)]
 pub struct LspConfig {
     module_paths: Vec<PathBuf>,
+    enable_type_checking: bool,
+    type_checker_options: mq_check::TypeCheckerOptions,
 }
 
 impl LspConfig {
@@ -463,8 +490,16 @@ impl LspConfig {
     ///   to the LSP server. These paths are used to initialize the language server's environment,
     ///   allowing it to provide features such as code completion, diagnostics, and navigation
     ///   based on the specified modules.
-    pub fn new(module_paths: Vec<PathBuf>) -> Self {
-        Self { module_paths }
+    pub fn new(
+        module_paths: Vec<PathBuf>,
+        enable_type_checking: bool,
+        type_checker_options: mq_check::TypeCheckerOptions,
+    ) -> Self {
+        Self {
+            module_paths,
+            enable_type_checking,
+            type_checker_options,
+        }
     }
 }
 
@@ -473,10 +508,11 @@ pub async fn start(config: LspConfig) {
     let stdout = tokio::io::stdout();
     let (service, socket) = LspService::new(|client| Backend {
         client,
-        hir: Arc::new(RwLock::new(mq_hir::Hir::new(config.module_paths))),
+        hir: Arc::new(RwLock::new(mq_hir::Hir::new(config.module_paths.clone()))),
         source_map: RwLock::new(BiMap::new()),
         error_map: DashMap::new(),
         text_map: DashMap::new(),
+        config,
     });
 
     Server::new(stdin, stdout, socket).serve(service).await;
@@ -496,6 +532,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -534,6 +571,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -570,6 +608,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -598,6 +637,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -625,6 +665,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -651,6 +692,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -709,6 +751,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -745,6 +788,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -787,6 +831,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -830,6 +875,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -875,6 +921,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -912,6 +959,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -938,6 +986,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -973,6 +1022,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -997,6 +1047,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -1032,6 +1083,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -1074,6 +1126,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
 
         let backend = service.inner();
@@ -1116,6 +1169,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
         let backend = service.inner();
         backend.text_map.insert(uri.to_string(), text.to_string().into());
@@ -1155,6 +1209,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
         let backend = service.inner();
         backend.text_map.insert(uri.to_string(), text.to_string().into());
@@ -1193,6 +1248,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            config: LspConfig::default(),
         });
         let backend = service.inner();
         backend.text_map.insert(uri.to_string(), text.to_string().into());
@@ -1225,5 +1281,225 @@ mod tests {
 
         let result = backend.range_formatting(params).await.unwrap();
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_lsp_config_new() {
+        let config = LspConfig::new(
+            vec![],
+            true,
+            mq_check::TypeCheckerOptions {
+                strict_array: true,
+                tuple: false,
+            },
+        );
+        assert!(config.enable_type_checking);
+        assert!(config.type_checker_options.strict_array);
+        assert!(!config.type_checker_options.tuple);
+    }
+
+    #[tokio::test]
+    async fn test_lsp_config_default() {
+        let config = LspConfig::default();
+        assert!(!config.enable_type_checking);
+        assert!(!config.type_checker_options.strict_array);
+        assert!(!config.type_checker_options.tuple);
+    }
+
+    #[tokio::test]
+    async fn test_diagnostics_with_type_checking_disabled() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::new(vec![], false, mq_check::TypeCheckerOptions::default()),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        // Code that would cause a type error (number + string)
+        let code = r#"1 + "string""#;
+        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+
+        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
+
+        // No type errors should be emitted since type checking is disabled
+        // (diagnostics() calls publish_diagnostics internally, we just verify it doesn't panic)
+        backend.diagnostics(uri, None).await;
+    }
+
+    #[tokio::test]
+    async fn test_diagnostics_with_type_checking_enabled_no_errors() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions::default()),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        // Valid code with no type errors
+        let code = "def add(x, y): x + y;\n| add(1, 2)";
+        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+
+        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
+
+        assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
+
+        // Should complete without panic
+        backend.diagnostics(uri, None).await;
+    }
+
+    #[tokio::test]
+    async fn test_diagnostics_with_type_checking_enabled_type_error() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions::default()),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        // Code with type error: function arity mismatch
+        let code = "def add(x, y): x + y;\n| add(1)";
+        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+
+        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
+
+        // Parse errors should be empty so type checking runs
+        assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
+
+        // Verify that the type checker itself detects the error
+        let mut checker = mq_check::TypeChecker::with_options(mq_check::TypeCheckerOptions::default());
+        let type_errors = checker.check(&backend.hir.read().unwrap());
+        assert!(!type_errors.is_empty(), "Expected type errors for arity mismatch");
+
+        // diagnostics() should publish diagnostics including the type error
+        backend.diagnostics(uri, None).await;
+    }
+
+    #[tokio::test]
+    async fn test_diagnostics_type_checking_skipped_when_parse_errors_exist() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions::default()),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        // Manually insert a parse error so type checking is skipped
+        let text = "def add(x, y): x + y;\n| add(1)";
+        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend.error_map.insert(
+            uri.to_string(),
+            vec![(
+                "Syntax error".to_string(),
+                mq_lang::Range {
+                    start: mq_lang::Position { line: 1, column: 1 },
+                    end: mq_lang::Position { line: 1, column: 5 },
+                },
+            )],
+        );
+
+        // Parse errors are present, so type checking should be skipped
+        assert!(!backend.error_map.get(&uri.to_string()).unwrap().is_empty());
+
+        // Should complete without panic; type checking branch is not entered
+        backend.diagnostics(uri, None).await;
+    }
+
+    #[tokio::test]
+    async fn test_diagnostics_with_strict_array_option() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::new(
+                vec![],
+                true,
+                mq_check::TypeCheckerOptions {
+                    strict_array: true,
+                    tuple: false,
+                },
+            ),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        // Homogeneous array — valid even with strict_array
+        let code = "[1, 2, 3]";
+        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+
+        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
+
+        assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
+
+        backend.diagnostics(uri, None).await;
+    }
+
+    #[tokio::test]
+    async fn test_diagnostics_with_tuple_option() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::new(
+                vec![],
+                true,
+                mq_check::TypeCheckerOptions {
+                    strict_array: false,
+                    tuple: true,
+                },
+            ),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        // Heterogeneous array typed as tuple — valid with tuple mode
+        let code = r#"[1, "hello", true]"#;
+        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+
+        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
+
+        assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
+
+        backend.diagnostics(uri, None).await;
     }
 }

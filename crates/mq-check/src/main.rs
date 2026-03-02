@@ -103,7 +103,7 @@ fn run() -> io::Result<()> {
             show_types: cli.show_types,
             label: label.as_deref(),
             no_builtins: cli.no_builtins,
-            type_checker_options: tc_options.clone(),
+            type_checker_options: tc_options,
         };
         let had_errors = check_file(&mut w, &code, source_url, &opts)?;
         if had_errors {
@@ -208,7 +208,7 @@ fn check_type(
     show_types: bool,
     options: &TypeCheckerOptions,
 ) -> io::Result<bool> {
-    let mut checker = TypeChecker::with_options(options.clone());
+    let mut checker = TypeChecker::with_options(*options);
     let mut errors = checker.check(hir);
 
     errors.sort_by_key(|a| a.location());

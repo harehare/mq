@@ -160,7 +160,7 @@ pub(crate) fn walk_ancestors(
 }
 
 /// Options for configuring the type checker behavior
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct TypeCheckerOptions {
     /// When true, arrays must contain elements of a single type.
     /// Heterogeneous arrays like `[1, "hello"]` will produce a type error.

@@ -2753,6 +2753,7 @@ dependencies = [
  "dashmap",
  "itertools 0.14.0",
  "miette",
+ "mq-check",
  "mq-formatter",
  "mq-hir",
  "mq-lang",

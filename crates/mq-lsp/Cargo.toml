@@ -21,6 +21,7 @@ mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
 mq-lang = {workspace = true, features = ["ast-json", "sync", "file-io"]}
 mq-markdown = {workspace = true}
+mq-check= {workspace = true}
 serde_json = {workspace = true}
 tokio = {workspace = true, features = ["macros", "io-std", "rt-multi-thread"]}
 tokio-macros = {workspace = true}
