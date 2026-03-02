@@ -1406,4 +1406,26 @@ fn test_self_keyword_preserves_piped_type() {
         check_types("[1,2,3] | self | first()").is_empty(),
         "self should preserve array type for first()"
     );
+
+    // Negative cases: if `self` correctly propagates the piped type, then
+    // applying an incompatible builtin afterwards must produce a type error.
+
+    // Piping a string through `self` then `sort` (array-only) should error.
+    assert!(
+        !check_types(r#""hello" | self | sort"#).is_empty(),
+        "string piped through self then sort (array-only) should error"
+    );
+
+    // Piping a number through `self` then `sort` (array-only) should error.
+    assert!(
+        !check_types("42 | self | sort").is_empty(),
+        "number piped through self then sort (array-only) should error"
+    );
+
+    // Piping a string through `upcase` (string->string) then `sort` (array-only) should error,
+    // confirming the type is propagated through the chain, not just reset by `self`.
+    assert!(
+        !check_types(r#""hello" | upcase | sort"#).is_empty(),
+        "string piped through string op then sort (array-only) should error"
+    );
 }
