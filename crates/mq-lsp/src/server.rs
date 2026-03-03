@@ -520,7 +520,6 @@ pub async fn start(config: LspConfig) {
 
 #[cfg(test)]
 mod tests {
-    use mq_check::TypeEnv;
     use tower_lsp_server::ls_types::{self, TextDocumentIdentifier};
 
     use super::*;
