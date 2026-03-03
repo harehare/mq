@@ -7,6 +7,7 @@ use dashmap::DashMap;
 use tower_lsp_server::ls_types::DocumentRangeFormattingParams;
 use url::Url;
 
+use crate::error::LspError;
 use crate::{
     capabilities, completions, document_symbol, execute_command, goto_definition, hover, references, semantic_tokens,
 };
@@ -25,7 +26,7 @@ struct Backend {
     client: Client,
     hir: Arc<RwLock<mq_hir::Hir>>,
     source_map: RwLock<BiMap<String, mq_hir::SourceId>>,
-    error_map: DashMap<String, Vec<(std::string::String, mq_lang::Range)>>,
+    error_map: DashMap<String, Vec<LspError>>,
     text_map: DashMap<String, Arc<String>>,
     config: LspConfig,
 }
@@ -230,7 +231,7 @@ impl LanguageServer for Backend {
         params: DocumentRangeFormattingParams,
     ) -> jsonrpc::Result<Option<Vec<ls_types::TextEdit>>> {
         if let Some(errors) = self.error_map.get(&params.text_document.uri.to_string())
-            && !errors.is_empty()
+            && !(*errors).is_empty()
         {
             return Ok(None);
         }
@@ -326,9 +327,21 @@ impl Backend {
         let (source_id, _) = self.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         let uri_string = uri.to_string();
+        let mut errors = errors
+            .error_ranges(&text)
+            .into_iter()
+            .map(|(message, range)| LspError::SyntaxError((message, range)))
+            .collect::<Vec<_>>();
+
+        if errors.is_empty() && self.config.enable_type_checking {
+            let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options);
+            let type_errors = checker.check(&self.hir.read().unwrap());
+            errors.extend(type_errors.into_iter().map(LspError::TypeError));
+        }
+
         self.source_map.write().unwrap().insert(uri_string.clone(), source_id);
         self.text_map.insert(uri_string.clone(), text.to_string().into());
-        self.error_map.insert(uri_string, errors.error_ranges(&text));
+        self.error_map.insert(uri_string, errors);
     }
 
     async fn diagnostics(&self, uri: Url, version: Option<i32>) {
@@ -340,46 +353,8 @@ impl Backend {
 
         // Add parsing errors if they exist
         if let Some(errors) = file_errors {
-            diagnostics.extend(errors.iter().map(|(message, item)| {
-                ls_types::Diagnostic::new_simple(
-                    ls_types::Range::new(
-                        ls_types::Position {
-                            line: item.start.line - 1,
-                            character: (item.start.column - 1) as u32,
-                        },
-                        ls_types::Position {
-                            line: item.end.line - 1,
-                            character: (item.end.column - 1) as u32,
-                        },
-                    ),
-                    message.to_string(),
-                )
-            }));
-
-            if errors.is_empty() && self.config.enable_type_checking {
-                let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options);
-                let type_errors = checker.check(&self.hir.read().unwrap());
-
-                diagnostics.extend(type_errors.iter().filter_map(|type_error| {
-                    type_error.location().map(|location| {
-                        let mut diagnostic = ls_types::Diagnostic::new_simple(
-                            ls_types::Range::new(
-                                ls_types::Position {
-                                    line: location.0,
-                                    character: location.1 as u32,
-                                },
-                                ls_types::Position {
-                                    line: location.0,
-                                    character: location.1 as u32,
-                                },
-                            ),
-                            type_error.to_string(),
-                        );
-                        diagnostic.severity = Some(ls_types::DiagnosticSeverity::ERROR);
-                        diagnostic
-                    })
-                }));
-            }
+            let errors: Vec<ls_types::Diagnostic> = (*errors).iter().map(Into::into).collect::<Vec<_>>();
+            diagnostics.extend(errors);
         }
 
         {
@@ -580,7 +555,14 @@ mod tests {
 
         let (_, errors) = mq_lang::parse_recovery(text);
         backend.text_map.insert(uri.to_string(), text.to_string().into());
-        backend.error_map.insert(uri.to_string(), errors.error_ranges(text));
+        backend.error_map.insert(
+            uri.to_string(),
+            errors
+                .error_ranges(text)
+                .into_iter()
+                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .collect(),
+        );
 
         let result = backend
             .formatting(ls_types::DocumentFormattingParams {
@@ -931,7 +913,14 @@ mod tests {
         let text = "def main(): invalid_syntax";
         let (_, errors) = mq_lang::parse_recovery(text);
         backend.text_map.insert(uri.to_string(), text.to_string().into());
-        backend.error_map.insert(uri.to_string(), errors.error_ranges(text));
+        backend.error_map.insert(
+            uri.to_string(),
+            errors
+                .error_ranges(text)
+                .into_iter()
+                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .collect(),
+        );
 
         backend
             .source_map
@@ -1032,7 +1021,14 @@ mod tests {
         let text = "def main() 1;"; // Missing colon
         let (_, errors) = mq_lang::parse_recovery(text);
         backend.text_map.insert(uri.to_string(), text.to_string().into());
-        backend.error_map.insert(uri.to_string(), errors.error_ranges(text));
+        backend.error_map.insert(
+            uri.to_string(),
+            errors
+                .error_ranges(text)
+                .into_iter()
+                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .collect(),
+        );
 
         // We can't directly test client.publish_diagnostics was called with correct diagnostics,
         // but we can verify the code doesn't panic
@@ -1060,7 +1056,14 @@ mod tests {
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
         backend.text_map.insert(uri.to_string(), code.to_string().into());
-        backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
+        backend.error_map.insert(
+            uri.to_string(),
+            errors
+                .error_ranges(code)
+                .into_iter()
+                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .collect(),
+        );
 
         // Check unused functions are detected
         {
@@ -1094,13 +1097,13 @@ mod tests {
         backend.text_map.insert(uri.to_string(), text.to_string().into());
         backend.error_map.insert(
             uri.to_string(),
-            vec![(
+            vec![LspError::SyntaxError((
                 "Syntax error".to_string(),
                 mq_lang::Range {
                     start: mq_lang::Position { line: 1, column: 10 },
                     end: mq_lang::Position { line: 1, column: 11 },
                 },
-            )],
+            ))],
         );
 
         let result = backend
@@ -1139,7 +1142,14 @@ mod tests {
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
         backend.text_map.insert(uri.to_string(), code.to_string().into());
-        backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
+        backend.error_map.insert(
+            uri.to_string(),
+            errors
+                .error_ranges(code)
+                .into_iter()
+                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .collect(),
+        );
 
         // Check unreachable code warnings are detected
         {
@@ -1254,13 +1264,13 @@ mod tests {
         backend.text_map.insert(uri.to_string(), text.to_string().into());
         backend.error_map.insert(
             uri.to_string(),
-            vec![(
+            vec![LspError::SyntaxError((
                 "Syntax error".to_string(),
                 mq_lang::Range {
                     start: mq_lang::Position { line: 0, column: 0 },
                     end: mq_lang::Position { line: 0, column: 10 },
                 },
-            )],
+            ))],
         );
 
         let params = DocumentRangeFormattingParams {
@@ -1327,7 +1337,14 @@ mod tests {
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
         backend.text_map.insert(uri.to_string(), code.to_string().into());
-        backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
+        backend.error_map.insert(
+            uri.to_string(),
+            errors
+                .error_ranges(code)
+                .into_iter()
+                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .collect(),
+        );
 
         // No type errors should be emitted since type checking is disabled
         // (diagnostics() calls publish_diagnostics internally, we just verify it doesn't panic)
@@ -1355,7 +1372,14 @@ mod tests {
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
         backend.text_map.insert(uri.to_string(), code.to_string().into());
-        backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
+        backend.error_map.insert(
+            uri.to_string(),
+            errors
+                .error_ranges(code)
+                .into_iter()
+                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .collect(),
+        );
 
         assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
 
@@ -1384,7 +1408,14 @@ mod tests {
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
         backend.text_map.insert(uri.to_string(), code.to_string().into());
-        backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
+        backend.error_map.insert(
+            uri.to_string(),
+            errors
+                .error_ranges(code)
+                .into_iter()
+                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .collect(),
+        );
 
         // Parse errors should be empty so type checking runs
         assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
@@ -1417,13 +1448,13 @@ mod tests {
         backend.text_map.insert(uri.to_string(), text.to_string().into());
         backend.error_map.insert(
             uri.to_string(),
-            vec![(
+            vec![LspError::SyntaxError((
                 "Syntax error".to_string(),
                 mq_lang::Range {
                     start: mq_lang::Position { line: 1, column: 1 },
                     end: mq_lang::Position { line: 1, column: 5 },
                 },
-            )],
+            ))],
         );
 
         // Parse errors are present, so type checking should be skipped
@@ -1461,7 +1492,14 @@ mod tests {
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
         backend.text_map.insert(uri.to_string(), code.to_string().into());
-        backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
+        backend.error_map.insert(
+            uri.to_string(),
+            errors
+                .error_ranges(code)
+                .into_iter()
+                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .collect(),
+        );
 
         assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
 
@@ -1496,7 +1534,14 @@ mod tests {
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
         backend.text_map.insert(uri.to_string(), code.to_string().into());
-        backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
+        backend.error_map.insert(
+            uri.to_string(),
+            errors
+                .error_ranges(code)
+                .into_iter()
+                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .collect(),
+        );
 
         assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
 

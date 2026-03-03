@@ -41,7 +41,7 @@ use types::TypeScheme;
 pub type Result<T> = std::result::Result<T, TypeError>;
 
 /// Type checking errors
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Error, Clone, Diagnostic)]
 #[allow(unused_assignments)]
 pub enum TypeError {
     #[error("Type mismatch: expected {expected}, found {found}")]
