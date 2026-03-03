@@ -926,7 +926,7 @@ impl TypeChecker {
         &self.symbol_types
     }
 
-    /// Gets all symbol types
+    /// Gets the type scheme for a specific symbol.
     pub fn symbol_type(&self, symbol_id: SymbolId) -> Option<&TypeScheme> {
         self.symbol_types.get(&symbol_id)
     }
