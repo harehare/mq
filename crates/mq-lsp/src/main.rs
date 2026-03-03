@@ -32,7 +32,7 @@ struct Cli {
 #[derive(Clone, Debug, clap::Args, Default)]
 struct TypeCheckArgs {
     /// Enable type checking for mq queries
-    #[arg(short = 'T', long = "enable-type-checking", default_value_t = false)]
+    #[arg(short = 'T', long, default_value_t = false)]
     enable_type_checking: bool,
 
     /// Strict array type checking: if enabled, arrays must have consistent types for all elements

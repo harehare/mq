@@ -28,12 +28,12 @@ impl From<&LspError> for ls_types::Diagnostic {
                 Some((line, column)) => ls_types::Diagnostic::new_simple(
                     ls_types::Range::new(
                         ls_types::Position {
-                            line,
-                            character: column as u32,
+                            line: line - 1,
+                            character: (column as u32) - 1,
                         },
                         ls_types::Position {
-                            line,
-                            character: column as u32,
+                            line: line - 1,
+                            character: (column as u32) - 1,
                         },
                     ),
                     type_error.to_string(),

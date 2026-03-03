@@ -513,8 +513,7 @@ const executeCommand = async (
     }
   } catch (error) {
     await vscode.window.showErrorMessage(
-      `Failed to run text: ${
-        error instanceof Error ? error.message : "Unknown error"
+      `Failed to run text: ${error instanceof Error ? error.message : "Unknown error"
       }`,
     );
   }
@@ -562,6 +561,7 @@ const startLspServer = async () => {
     args: [
       ...multiWorkspaceArgs,
       ...[
+        enableTypeCheck ? "--enable-type-checking" : "",
         enableTypeCheck && strictArray ? "--strict-array" : "",
         enableTypeCheck && tuple ? "--tuple" : "",
       ].filter((v) => v !== ""),
@@ -620,12 +620,10 @@ const installServers = async (
     return false;
   }
 
-  const installLspCommand = `cargo install --git https://github.com/harehare/mq.git mq-lsp ${
-    force ? " --force" : ""
-  }`;
-  const installDapCommand = `cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger" ${
-    force ? " --force" : ""
-  }`;
+  const installLspCommand = `cargo install --git https://github.com/harehare/mq.git mq-lsp ${force ? " --force" : ""
+    }`;
+  const installDapCommand = `cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger" ${force ? " --force" : ""
+    }`;
 
   const installTask = new vscode.Task(
     { type: "cargo", task: "install-lsp-server" },
@@ -656,8 +654,7 @@ const installServers = async (
     });
   } catch (error) {
     vscode.window.showErrorMessage(
-      `Installation task failed: ${
-        error instanceof Error ? error.message : "Unknown error"
+      `Installation task failed: ${error instanceof Error ? error.message : "Unknown error"
       }`,
     );
     return false;
