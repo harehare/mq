@@ -4,7 +4,8 @@
 //!
 //! - **Initialization**: Handles the initialization of the LSP server and sets up the server capabilities.
 //! - **Diagnostics**: Publishes diagnostics information to the client.
-//! - **Hover**: Provides hover information for symbols.
+//! - **Hover**: Provides hover information for symbols, including type information when type checking is enabled.
+//! - **Inlay Hints**: Shows inferred type annotations inline in the editor when type checking is enabled.
 //! - **Completion**: Offers code completion suggestions.
 //! - **Go To Definition**: Allows navigation to the definition of symbols.
 //! - **References**: Finds all references to a symbol.
@@ -22,6 +23,7 @@ pub mod error;
 pub mod execute_command;
 pub mod goto_definition;
 pub mod hover;
+pub mod inlay_hints;
 pub mod references;
 pub mod semantic_tokens;
 pub mod server;

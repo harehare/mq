@@ -40,6 +40,41 @@ use types::TypeScheme;
 /// Result type for type checking operations
 pub type Result<T> = std::result::Result<T, TypeError>;
 
+/// Type environment mapping symbol IDs to their inferred type schemes
+#[derive(Debug, Clone, Default)]
+pub struct TypeEnv(FxHashMap<SymbolId, TypeScheme>);
+
+impl TypeEnv {
+    pub fn insert(&mut self, symbol_id: SymbolId, scheme: TypeScheme) {
+        self.0.insert(symbol_id, scheme);
+    }
+
+    pub fn get(&self, symbol_id: &SymbolId) -> Option<&TypeScheme> {
+        self.0.get(symbol_id)
+    }
+
+    pub fn get_all(&self) -> &FxHashMap<SymbolId, TypeScheme> {
+        &self.0
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl<'a> IntoIterator for &'a TypeEnv {
+    type Item = (&'a SymbolId, &'a TypeScheme);
+    type IntoIter = std::collections::hash_map::Iter<'a, SymbolId, TypeScheme>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 /// Type checking errors
 #[derive(Debug, Error, Clone, Diagnostic)]
 #[allow(unused_assignments)]
@@ -175,7 +210,7 @@ pub struct TypeCheckerOptions {
 /// Provides type inference and checking capabilities based on HIR information.
 pub struct TypeChecker {
     /// Symbol type mappings
-    symbol_types: FxHashMap<SymbolId, TypeScheme>,
+    symbol_types: TypeEnv,
     /// Type checker options
     options: TypeCheckerOptions,
 }
@@ -184,7 +219,7 @@ impl TypeChecker {
     /// Creates a new type checker with default options
     pub fn new() -> Self {
         Self {
-            symbol_types: FxHashMap::default(),
+            symbol_types: TypeEnv::default(),
             options: TypeCheckerOptions::default(),
         }
     }
@@ -192,7 +227,7 @@ impl TypeChecker {
     /// Creates a new type checker with the given options
     pub fn with_options(options: TypeCheckerOptions) -> Self {
         Self {
-            symbol_types: FxHashMap::default(),
+            symbol_types: TypeEnv::default(),
             options,
         }
     }
@@ -887,8 +922,13 @@ impl TypeChecker {
     }
 
     /// Gets all symbol types
-    pub fn symbol_types(&self) -> &FxHashMap<SymbolId, TypeScheme> {
+    pub fn symbol_types(&self) -> &TypeEnv {
         &self.symbol_types
+    }
+
+    /// Gets all symbol types
+    pub fn symbol_type(&self, symbol_id: SymbolId) -> Option<&TypeScheme> {
+        self.symbol_types.get(&symbol_id)
     }
 }
 
