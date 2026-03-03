@@ -1451,29 +1451,23 @@ mod tests {
 
         // Code with type error: function arity mismatch
         let code = "def add(x, y): x + y;\n| add(1)";
-        let (nodes, errors) = mq_lang::parse_recovery(code);
-        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
-        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
-        backend.error_map.insert(
-            uri.to_string(),
-            errors
-                .error_ranges(code)
-                .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
-                .collect(),
+        // Exercise the full diagnostics pipeline: on_change should parse, type check,
+        // and populate error_map with type errors when there are no parse errors.
+        backend.on_change(uri.clone(), code.to_string().into()).await;
+
+        let errors = backend
+            .error_map
+            .get(&uri.to_string())
+            .expect("expected diagnostics entry for URI");
+
+        // Ensure that a type error is surfaced through the diagnostics pipeline.
+        assert!(
+            errors.iter().any(|e| matches!(e, LspError::TypeError(_))),
+            "expected at least one type error diagnostic for arity mismatch"
         );
 
-        // Parse errors should be empty so type checking runs
-        assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
-
-        // Verify that the type checker itself detects the error
-        let mut checker = mq_check::TypeChecker::with_options(mq_check::TypeCheckerOptions::default());
-        let type_errors = checker.check(&backend.hir.read().unwrap());
-        assert!(!type_errors.is_empty(), "Expected type errors for arity mismatch");
-
-        // diagnostics() should publish diagnostics including the type error
+        // Also run diagnostics publishing to ensure the diagnostics path executes.
         backend.diagnostics(uri, None).await;
     }
 
