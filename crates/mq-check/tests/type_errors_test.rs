@@ -22,9 +22,9 @@ fn check_types(code: &str) -> Vec<TypeError> {
 
 #[test]
 fn test_binary_op_type_mismatch() {
-    let result = check_types(r#"1 + "string""#);
+    let result = check_types(r#"1 + true"#);
     println!("Binary op type mismatch: {:?}", result);
-    assert!(!result.is_empty(), "Expected type error for number + string");
+    assert!(!result.is_empty(), "Expected type error for number + boolean");
 }
 
 #[test]

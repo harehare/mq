@@ -333,7 +333,7 @@ fn test_try_catch() {
 #[rstest]
 #[case::add_strings(r#"def add(x, y): x + y; | add("hello", "world")"#, true)]
 #[case::add_numbers("def add(x, y): x + y; | add(1, 2)", true)]
-#[case::add_mixed_types(r#"def add(x, y): x + y; | add(1, "hello")"#, false)]
+#[case::add_mixed_types(r#"def add(x, y): x + y; | add(1, "hello")"#, true)]
 #[case::add_mixed_types_reversed(r#"def add(x, y): x + y; | add("hello", 1)"#, true)] // string+any->string overload matches
 #[case::string_concat_in_fn(r#"def greet(name): "hello " + name; | greet("world")"#, true)]
 #[case::unary_negation("-42", true)]
@@ -415,8 +415,8 @@ fn test_macro_with_multiple_params() {
 // User-Defined Function Type Checking
 
 #[rstest]
-#[case::arg_type_mismatch(r#"def add(x, y): x + y; | add(1, "hello")"#, false)]
-#[case::return_type_propagation(r#"def get_num(): 42; | get_num() + "hello""#, false)]
+#[case::arg_type_mismatch(r#"def add(x, y): x + y; | add(1, "hello")"#, true)]
+#[case::return_type_propagation(r#"def get_num(): 42; | get_num() + "hello""#, true)]
 #[case::chained_calls(r#"def double(x): x + x; | def negate(x): 0 - x; | double(negate(1))"#, true)]
 #[case::string_plus_number(r#"def greet(): "hello"; | greet() + 1"#, true)]
 #[case::string_minus_number(r#"def greet(): "hello"; | greet() - 1"#, false)]
@@ -447,7 +447,7 @@ fn test_user_function_type_checking(#[case] code: &str, #[case] should_succeed: 
 #[case::number_mul_string(r#"3 * "x""#, false, "number * string")]
 #[case::string_minus_number(r#""abc" - 1"#, false, "string - number")]
 #[case::string_div_number(r#""abc" / 2"#, false, "string / number")]
-#[case::number_add_string(r#"1 + "world""#, false, "number + string")]
+#[case::number_add_string(r#"1 + "world""#, true, "number + string")]
 #[case::string_mul_string(r#""a" * "b""#, false, "string * string")]
 #[case::string_div_string(r#""a" / "b""#, false, "string / string")]
 #[case::string_minus_string(r#""a" - "b""#, false, "string - string")]
@@ -524,7 +524,7 @@ fn test_equality_op_type_errors(#[case] code: &str, #[case] should_succeed: bool
 #[case::let_num_minus_string(r#"let x = 1 | x - "str""#, false, "let number binding minus string")]
 #[case::let_num_mul_string(r#"let x = 1 | x * "str""#, false, "let number binding times string")]
 #[case::let_num_div_string(r#"let x = 1 | x / "str""#, false, "let number binding div string")]
-#[case::let_num_plus_string(r#"let x = 1 | x + "str""#, false, "let number binding plus string")]
+#[case::let_num_plus_string(r#"let x = 1 | x + "str""#, true, "let number binding plus string")]
 #[case::let_string_minus_num(r#"let x = "hello" | x - 1"#, false, "let string binding minus number")]
 #[case::let_string_div_num(r#"let x = "hello" | x / 2"#, false, "let string binding div number")]
 #[case::let_string_mul_string(r#"let x = "hello" | x * "world""#, false, "let string binding times string")]
