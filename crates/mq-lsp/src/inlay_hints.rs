@@ -15,7 +15,7 @@ pub fn response(
     range: Range,
 ) -> Option<Vec<InlayHint>> {
     let type_env = type_env?;
-    let source = hir.write().unwrap().source_by_url(&url)?;
+    let source = hir.read().unwrap().source_by_url(&url)?;
 
     let hints: Vec<InlayHint> = hir
         .read()
