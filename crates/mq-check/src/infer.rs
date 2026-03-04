@@ -1,8 +1,8 @@
 //! Type inference context and engine.
 
-use crate::TypeError;
 use crate::constraint::Constraint;
 use crate::types::{Substitution, Type, TypeScheme, TypeVarContext, TypeVarId};
+use crate::{TypeEnv, TypeError};
 use mq_hir::SymbolId;
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
@@ -511,8 +511,8 @@ impl InferenceContext {
     }
 
     /// Finalizes inference and returns symbol type schemes
-    pub fn finalize(self) -> FxHashMap<SymbolId, TypeScheme> {
-        let mut result = FxHashMap::default();
+    pub fn finalize(self) -> TypeEnv {
+        let mut result = TypeEnv::default();
 
         for (symbol, ty) in &self.symbol_types {
             let resolved = self.resolve_type(ty);

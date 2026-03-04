@@ -90,12 +90,12 @@ async function selectMarkdownFile(): Promise<{
   inputFormat: InputFormat;
 } | null> {
   const mdFiles = await vscode.workspace.findFiles(
-    "**/*.{md,mdx,html,csv,tsv,txt}"
+    "**/*.{md,mdx,html,csv,tsv,txt}",
   );
 
   if (mdFiles.length === 0) {
     vscode.window.showInformationMessage(
-      "No .md, .mdx, .html, .csv, .tsv, or .txt files found in workspace"
+      "No .md, .mdx, .html, .csv, .tsv, or .txt files found in workspace",
     );
     return null;
   }
@@ -131,14 +131,14 @@ function registerNewCommand(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("mq.new", async () => {
       const config = vscode.workspace.getConfiguration("mq");
       const showExamplesInNewFile = config.get<boolean>(
-        "showExamplesInNewFile"
+        "showExamplesInNewFile",
       );
       const document = await vscode.workspace.openTextDocument({
         language: "mq",
         content: showExamplesInNewFile ? EXAMPLES : "",
       });
       await vscode.window.showTextDocument(document);
-    })
+    }),
   );
 }
 
@@ -148,7 +148,7 @@ function registerLspCommands(context: vscode.ExtensionContext) {
       await stopLspServer();
       await installServers(context, true);
       await startLspServer();
-    })
+    }),
   );
 
   context.subscriptions.push(
@@ -159,20 +159,20 @@ function registerLspCommands(context: vscode.ExtensionContext) {
       }
       await stopLspServer();
       await startLspServer();
-    })
+    }),
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand("mq.stopLSPServer", async () => {
       await stopLspServer();
-    })
+    }),
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand("mq.restartLSPServer", async () => {
       await stopLspServer();
       await startLspServer();
-    })
+    }),
   );
 
   context.subscriptions.push(
@@ -180,7 +180,7 @@ function registerLspCommands(context: vscode.ExtensionContext) {
       if (statusBarManager) {
         await statusBarManager.showStatusMenu();
       }
-    })
+    }),
   );
 
   context.subscriptions.push(
@@ -188,14 +188,14 @@ function registerLspCommands(context: vscode.ExtensionContext) {
       if (client) {
         client.outputChannel?.show();
       }
-    })
+    }),
   );
 }
 
 function registerDebugCommands(context: vscode.ExtensionContext) {
   const provider = new MqDebugConfigurationProvider(context);
   context.subscriptions.push(
-    vscode.debug.registerDebugConfigurationProvider("mq", provider)
+    vscode.debug.registerDebugConfigurationProvider("mq", provider),
   );
 
   context.subscriptions.push(
@@ -231,10 +231,10 @@ function registerDebugCommands(context: vscode.ExtensionContext) {
       const success = await vscode.debug.startDebugging(undefined, config);
       if (!success) {
         vscode.window.showErrorMessage(
-          "Failed to start debugging. Please ensure mq-dbg is installed and the configuration is correct."
+          "Failed to start debugging. Please ensure mq-dbg is installed and the configuration is correct.",
         );
       }
-    })
+    }),
   );
 }
 
@@ -255,9 +255,9 @@ function registerMqExecutionCommands(context: vscode.ExtensionContext) {
         "mq/run",
         command,
         selectedFile.document.getText(),
-        selectedFile.inputFormat
+        selectedFile.inputFormat,
       );
-    })
+    }),
   );
 
   context.subscriptions.push(
@@ -284,9 +284,9 @@ function registerMqExecutionCommands(context: vscode.ExtensionContext) {
         "mq/run",
         query,
         editor.document.getText(),
-        inputFormat
+        inputFormat,
       );
-    })
+    }),
   );
 
   context.subscriptions.push(
@@ -313,7 +313,7 @@ function registerMqExecutionCommands(context: vscode.ExtensionContext) {
       }
 
       const document = await vscode.workspace.openTextDocument(
-        selectedItem.uri
+        selectedItem.uri,
       );
       const extension = editor.document.uri.fsPath.split(".").pop() || "";
       const inputFormat = getInputFormatFromExtension(extension);
@@ -322,9 +322,9 @@ function registerMqExecutionCommands(context: vscode.ExtensionContext) {
         "mq/run",
         document.getText(),
         editor.document.getText(),
-        inputFormat
+        inputFormat,
       );
-    })
+    }),
   );
 
   context.subscriptions.push(
@@ -340,10 +340,10 @@ function registerMqExecutionCommands(context: vscode.ExtensionContext) {
           "mq/run",
           query,
           selectedFile.document.getText(),
-          selectedFile.inputFormat
+          selectedFile.inputFormat,
         );
-      }
-    )
+      },
+    ),
   );
 
   // Initialize Code Lens provider
@@ -355,7 +355,7 @@ function registerMqExecutionCommands(context: vscode.ExtensionContext) {
       if (event.affectsConfiguration("mq.enableCodeLens")) {
         updateCodeLensProvider(context);
       }
-    })
+    }),
   );
 }
 
@@ -373,7 +373,7 @@ function updateCodeLensProvider(context: vscode.ExtensionContext) {
   if (enableCodeLens) {
     codeLensProvider = vscode.languages.registerCodeLensProvider(
       { language: "mq" },
-      new MqCodeLensProvider()
+      new MqCodeLensProvider(),
     );
     context.subscriptions.push(codeLensProvider);
   }
@@ -392,7 +392,7 @@ async function initializeLspServer(context: vscode.ExtensionContext) {
       const selected = await vscode.window.showInformationMessage(
         "Install mq?",
         "Yes",
-        "No"
+        "No",
       );
 
       if (selected === "Yes") {
@@ -409,7 +409,7 @@ async function initializeLspServer(context: vscode.ExtensionContext) {
         const selected = await vscode.window.showInformationMessage(
           `mq has been updated. Would you like to install the latest version?`,
           "Yes",
-          "No"
+          "No",
         );
 
         if (selected === "Yes") {
@@ -433,7 +433,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       statusBarManager?.updateVisibility(editor);
-    })
+    }),
   );
 
   // Set initial visibility
@@ -475,7 +475,7 @@ const executeCommand = async (
   command: (typeof COMMANDS)[number],
   script: string,
   input: string,
-  inputFormat: InputFormat
+  inputFormat: InputFormat,
 ) => {
   if (!client) {
     vscode.window.showErrorMessage("LSP server is not running");
@@ -491,7 +491,7 @@ const executeCommand = async (
     if (result) {
       const outputChannel = vscode.window.createOutputChannel(
         "mq LSP Output",
-        "markdown"
+        "markdown",
       );
       outputChannel.clear();
       outputChannel.appendLine(result);
@@ -500,7 +500,7 @@ const executeCommand = async (
       const copyAction = "Copy result to clipboard";
       const selection = await vscode.window.showInformationMessage(
         "mq executed.",
-        copyAction
+        copyAction,
       );
 
       if (selection === copyAction) {
@@ -517,7 +517,7 @@ const executeCommand = async (
   } catch (error) {
     await vscode.window.showErrorMessage(
       `Failed to run text: ${error instanceof Error ? error.message : "Unknown error"
-      }`
+      }`,
     );
   }
 };
@@ -528,11 +528,11 @@ const startLspServer = async () => {
   }
 
   let lspPath: string | null;
+  const config = vscode.workspace.getConfiguration("mq");
 
   if (process.env._MQ_DEBUG_BIN) {
     lspPath = process.env._MQ_DEBUG_BIN;
   } else {
-    const config = vscode.workspace.getConfiguration("mq");
     const configLspPath = config.get<string>("lspPath");
 
     if (configLspPath) {
@@ -548,6 +548,9 @@ const startLspServer = async () => {
     }
   }
 
+  const enableTypeCheck = config.get<boolean>("enableTypeCheck");
+  const strictArray = config.get<boolean>("strictArray");
+  const tuple = config.get<boolean>("tuple");
   const workspaceFolders = vscode.workspace.workspaceFolders;
   const workspacePaths =
     workspaceFolders && workspaceFolders.length > 0
@@ -558,7 +561,14 @@ const startLspServer = async () => {
 
   const run: lc.Executable = {
     command: lspPath,
-    args: multiWorkspaceArgs,
+    args: [
+      ...multiWorkspaceArgs,
+      ...[
+        enableTypeCheck ? "--enable-type-checking" : "",
+        enableTypeCheck && strictArray ? "--strict-array" : "",
+        enableTypeCheck && tuple ? "--tuple" : "",
+      ].filter((v) => v !== ""),
+    ],
     options: {},
   };
 
@@ -580,7 +590,7 @@ const startLspServer = async () => {
     "mq",
     "mq Language Server",
     serverOptions,
-    clientOptions
+    clientOptions,
   );
 
   // Update status bar when client state changes
@@ -604,7 +614,7 @@ const stopLspServer = async () => {
 
 const installServers = async (
   context: vscode.ExtensionContext,
-  force: boolean
+  force: boolean,
 ) => {
   const cargoPath = await which("cargo", { nothrow: true });
 
@@ -624,8 +634,8 @@ const installServers = async (
     "Install LSP Server",
     "mq-lsp",
     new vscode.ShellExecution(
-      [installLspCommand, installDapCommand].join(" && ")
-    )
+      [installLspCommand, installDapCommand].join(" && "),
+    ),
   );
 
   try {
@@ -633,7 +643,7 @@ const installServers = async (
     const execution = await vscode.tasks.executeTask(installTask);
     await context.globalState.update(
       MQ_VERSION_KEY,
-      context.extension.packageJSON.version
+      context.extension.packageJSON.version,
     );
 
     // Track completion of both tasks
@@ -648,7 +658,7 @@ const installServers = async (
   } catch (error) {
     vscode.window.showErrorMessage(
       `Installation task failed: ${error instanceof Error ? error.message : "Unknown error"
-      }`
+      }`,
     );
     return false;
   }
