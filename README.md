@@ -329,6 +329,9 @@ mq 'select(.h1 || .h2)' example.html
 
 # Extract specific cell from a Markdown table
 mq '.[1][2] | to_text()' data.md
+
+# Extract frontmatter metadata from markdown files:
+import "yaml" | if (.yaml): yaml::yaml_parse() | get(:title)
 ```
 
 ### Using with markitdown

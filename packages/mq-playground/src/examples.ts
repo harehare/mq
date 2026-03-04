@@ -258,6 +258,23 @@ end
         isUpdate: false,
         format: "markdown",
       },
+      {
+        name: "Extract frontmatter data",
+        code: `import "yaml" | if (.yaml): yaml::yaml_parse() | get(:title)`,
+        markdown: `---
+title: "Sample Document"
+author: "John Doe"
+date: "2024-01-01"
+---
+
+# Sample Document
+
+This is a sample document with frontmatter.
+
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
     ],
   },
   {

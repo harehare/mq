@@ -39,6 +39,9 @@ def snake_to_camel(x):
 
 # CSV parse
 include "csv" | csv_parse("a,b,c\n1,2,3\n4,5,6", true) | csv_to_markdown_table()
+
+# Extract Front Matter
+import "yaml" | if (.yaml): yaml::yaml_parse() | get(:title)
 `;
 
 let client: lc.LanguageClient | null = null;
