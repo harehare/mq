@@ -1039,7 +1039,7 @@ mod tests {
     #[case::add_strings("\"hello\" + \"world\"")]
     #[case::add_string_number("\"value: \" + 42")] // String + number coercion
     #[case::add_arrays("[1, 2] + [3, 4]")] // Array concatenation
-    #[case::add_mixed("1 + \"world\"")] // Should fail: type mismatch
+    #[case::add_mixed("1 + \"world\"")] // Number + string coercion
     #[case::sub("10 - 5")]
     #[case::mul("3 * 4")]
     #[case::mul_array_repeat("[1, 2] * 3")] // Array repetition
