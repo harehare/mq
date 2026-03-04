@@ -1035,6 +1035,21 @@ fn test_conversion_on_union(#[case] code: &str, #[case] description: &str) {
     assert!(result.is_empty(), "{}: {:?}", description, result);
 }
 
+// Union with consistent return type across all concrete members
+// This exercises the `union_members_consistent_return` path where the matched
+// overload has a concrete (non-Var) parameter but all union members yield the same return type.
+// `try:...catch:` is used to construct a union type (string|[number]) at the type level.
+
+#[rstest]
+#[case::len_on_string_or_array(
+    r#"let x = try: "hello" catch: [1,2,3]; | len(x)"#,
+    "union (string|[number]) with len should work since both members return number"
+)]
+fn test_union_consistent_return_type_ok(#[case] code: &str, #[case] description: &str) {
+    let result = check_types(code);
+    assert!(result.is_empty(), "{}: {:?}", description, result);
+}
+
 // Match Union Type Tests (correct mq syntax)
 
 #[test]
