@@ -3,8 +3,12 @@ name: benchmarks
 on:
   push:
     branches: ["main"]
+    paths:
+      - 'crates/mq-lang/**'
   pull_request:
     branches: ["main"]
+    paths:
+      - 'crates/mq-lang/**'
 
 concurrency:
   group: "benchmarks"
@@ -14,24 +18,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    if: github.actor != 'dependabot[bot]' && contains(github.event.commits.*.message, '[skip ci]') == false
-    outputs:
-      lang: ${{ steps.filter.outputs.lang }}
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            lang:
-              - 'crates/mq-lang/**'
-
   benchmarks:
     needs: changes
     runs-on: ubuntu-latest
-    if: ${{ needs.changes.outputs.lang == 'true' }}
+    if: github.actor != 'dependabot[bot]' && contains(github.event.commits.*.message, '[skip ci]') == false
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
