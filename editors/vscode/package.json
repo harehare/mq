@@ -137,7 +137,7 @@
           "title": "Enable type check",
           "type": "boolean",
           "default": false,
-          "description": "Enable or disable type checking for mq queries. ",
+          "description": "Enable or disable type checking for mq queries.",
           "category": "Type"
         },
         "mq.strictArray": {
