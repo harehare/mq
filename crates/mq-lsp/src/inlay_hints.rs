@@ -46,23 +46,8 @@ pub fn response(
             let type_label = format!(": {}", type_scheme.ty);
 
             match &symbol.kind {
-                mq_hir::SymbolKind::Variable => {
+                mq_hir::SymbolKind::Variable | mq_hir::SymbolKind::Call | mq_hir::SymbolKind::Ref => {
                     // Place hint after the variable name (end of the symbol)
-                    let hint_col = (text_range.end.column as u32).saturating_sub(1);
-                    let hint_line = text_range.end.line.saturating_sub(1);
-                    Some(InlayHint {
-                        position: Position::new(hint_line, hint_col),
-                        label: InlayHintLabel::String(type_label),
-                        kind: Some(InlayHintKind::TYPE),
-                        text_edits: None,
-                        tooltip: None,
-                        padding_left: Some(false),
-                        padding_right: Some(true),
-                        data: None,
-                    })
-                }
-                mq_hir::SymbolKind::Function(_) | mq_hir::SymbolKind::Macro(_) => {
-                    // Place hint after the function name showing the return type
                     let hint_col = (text_range.end.column as u32).saturating_sub(1);
                     let hint_line = text_range.end.line.saturating_sub(1);
                     Some(InlayHint {

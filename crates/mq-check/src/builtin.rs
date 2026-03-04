@@ -79,12 +79,12 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     register_binary(ctx, "+", Type::String, Type::String, Type::String);
     register_binary(ctx, "add", Type::String, Type::String, Type::String);
 
-    // Addition: string + number -> string (coercion)
-    register_binary(ctx, "+", Type::String, Type::Number, Type::String);
-    register_binary(ctx, "add", Type::String, Type::Number, Type::String);
-
-    // Addition: [a] + [a] -> [a] (array concatenation)
     for name in ["+", "add"] {
+        // Addition: string + number -> string (coercion)
+        register_binary(ctx, name, Type::String, Type::Number, Type::String);
+        register_binary(ctx, name, Type::Number, Type::String, Type::String);
+
+        // Addition: [a] + [a] -> [a] (array concatenation)
         let a = ctx.fresh_var();
         register_binary(
             ctx,
