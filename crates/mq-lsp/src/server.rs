@@ -73,6 +73,7 @@ impl LanguageServer for Backend {
         // Remove error information for the closed file
         self.error_map.remove(&uri_string);
         self.text_map.remove(&uri_string);
+        self.type_env_map.remove(&uri_string);
 
         // Remove from source map
         self.source_map.write().unwrap().remove_by_left(&uri_string);
