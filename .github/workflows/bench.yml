@@ -19,9 +19,8 @@ env:
 
 jobs:
   benchmarks:
-    needs: changes
     runs-on: ubuntu-latest
-    if: github.actor != 'dependabot[bot]' && contains(github.event.commits.*.message, '[skip ci]') == false
+    if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
