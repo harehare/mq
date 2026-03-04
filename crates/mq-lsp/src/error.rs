@@ -45,7 +45,7 @@ impl From<&LspError> for ls_types::Diagnostic {
                 None => ls_types::Diagnostic::new_simple(
                     ls_types::Range::new(
                         ls_types::Position { line: 0, character: 0 },
-                        ls_types::Position { line: 0, character: 0 },
+                        ls_types::Position { line: 0, character: 1 },
                     ),
                     type_error.to_string(),
                 ),
