@@ -1454,7 +1454,7 @@ mod tests {
 
         // Exercise the full diagnostics pipeline: on_change should parse, type check,
         // and populate error_map with type errors when there are no parse errors.
-        backend.on_change(uri.clone(), code.to_string().into()).await;
+        backend.on_change(uri.clone(), code.to_string()).await;
 
         let errors = backend
             .error_map
