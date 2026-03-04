@@ -466,7 +466,43 @@ impl TypeChecker {
                             .zip(param_tys.iter())
                             .filter(|(arg, _)| arg.is_union())
                             .all(|(_, param)| param.is_var());
-                        if union_params_are_vars {
+
+                        let all_union_members_same_return = {
+                            let mut unique_ret: Option<types::Type> = None;
+                            let mut all_match = true;
+                            'outer: for (i, arg_ty) in resolved_operands.iter().enumerate() {
+                                if let types::Type::Union(members) = arg_ty {
+                                    // Reject unions containing unresolved type variables
+                                    if members.iter().any(|m| m.is_var()) {
+                                        all_match = false;
+                                        break 'outer;
+                                    }
+                                    for member in members {
+                                        let mut test_args = resolved_operands.clone();
+                                        test_args[i] = member.clone();
+                                        if let Some(types::Type::Function(_, member_ret)) =
+                                            ctx.resolve_overload(&d.op_name, &test_args)
+                                        {
+                                            let resolved_ret = ctx.resolve_type(&member_ret);
+                                            match &unique_ret {
+                                                None => unique_ret = Some(resolved_ret),
+                                                Some(prev) if prev == &resolved_ret => {}
+                                                _ => {
+                                                    all_match = false;
+                                                    break 'outer;
+                                                }
+                                            }
+                                        } else {
+                                            all_match = false;
+                                            break 'outer;
+                                        }
+                                    }
+                                }
+                            }
+                            all_match && unique_ret.is_some()
+                        };
+
+                        if union_params_are_vars || all_union_members_same_return {
                             for (operand_ty, param_ty) in d.operand_tys.iter().zip(param_tys.iter()) {
                                 ctx.add_constraint(constraint::Constraint::Equal(
                                     operand_ty.clone(),
