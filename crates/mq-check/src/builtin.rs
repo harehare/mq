@@ -1545,6 +1545,7 @@ mod tests {
     #[case::piped_index("\"hello\" | index(\"ll\")", true)]
     #[case::piped_replace("\"hello\" | replace(\"l\", \"r\")", true)]
     #[case::piped_gsub("\"hello\" | gsub(\"l\", \"r\")", true)]
+    #[case::piped_gsub_variable_arg("def slugify(s, separator = \"-\"): s | gsub(\"[^a-z0-9]+\", separator) end", true)] // regression: default param used in gsub should not produce false error
     #[case::piped_slice("[1, 2, 3, 4] | slice(1, 3)", true)]
     #[case::piped_repeat("\"x\" | repeat(3)", true)]
     #[case::piped_join_wrong_type("42 | join(\",\")", false)] // number piped to join (expects array)
