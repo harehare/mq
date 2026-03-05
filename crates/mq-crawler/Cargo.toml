@@ -32,7 +32,7 @@ url = {workspace = true}
 
 [[bin]]
 doc = false
-name = "mqcr"
+name = "mq-crawl"
 path = "src/main.rs"
 
 [dev-dependencies]
