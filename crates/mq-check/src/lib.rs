@@ -425,6 +425,46 @@ impl TypeChecker {
         resolved_any
     }
 
+    /// Checks whether all concrete members of every union-typed argument resolve
+    /// to the same return type when applied to the given operator.
+    ///
+    /// Returns `true` if every union member produces an identical return type,
+    /// indicating the operation is safe regardless of which branch was taken.
+    /// Returns `false` if any member fails to match an overload, any member
+    /// returns a different type, or any union contains unresolved type variables.
+    fn union_members_consistent_return(
+        ctx: &mut infer::InferenceContext,
+        op_name: &str,
+        resolved_operands: &[types::Type],
+    ) -> bool {
+        let mut unique_ret: Option<types::Type> = None;
+        for (i, arg_ty) in resolved_operands.iter().enumerate() {
+            let types::Type::Union(members) = arg_ty else {
+                continue;
+            };
+
+            for member in members {
+                // Reject unions containing unresolved type variables
+                if member.is_var() {
+                    return false;
+                }
+
+                let mut test_args = resolved_operands.to_vec();
+                test_args[i] = member.clone();
+                let Some(types::Type::Function(_, member_ret)) = ctx.resolve_overload(op_name, &test_args) else {
+                    return false;
+                };
+                let resolved_ret = ctx.resolve_type(&member_ret);
+                match &unique_ret {
+                    None => unique_ret = Some(resolved_ret),
+                    Some(prev) if prev == &resolved_ret => {}
+                    _ => return false,
+                }
+            }
+        }
+        unique_ret.is_some()
+    }
+
     /// Resolves deferred overloads after the first round of unification.
     ///
     /// Binary/unary operators whose operands were type variables during constraint
@@ -466,7 +506,10 @@ impl TypeChecker {
                             .zip(param_tys.iter())
                             .filter(|(arg, _)| arg.is_union())
                             .all(|(_, param)| param.is_var());
-                        if union_params_are_vars {
+
+                        if union_params_are_vars
+                            || Self::union_members_consistent_return(ctx, &d.op_name, &resolved_operands)
+                        {
                             for (operand_ty, param_ty) in d.operand_tys.iter().zip(param_tys.iter()) {
                                 ctx.add_constraint(constraint::Constraint::Equal(
                                     operand_ty.clone(),
