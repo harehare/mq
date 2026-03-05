@@ -163,8 +163,9 @@ pub struct InferenceContext {
     errors: Vec<TypeError>,
     /// Piped input types for symbols in a pipe chain
     piped_inputs: FxHashMap<SymbolId, Type>,
-    /// Deferred overload resolutions for operators with unresolved type variable operands
-    deferred_overloads: Vec<DeferredOverload>,
+    /// Deferred overload resolutions for operators with unresolved type variable operands,
+    /// keyed by `SymbolId` so that insert/replace is O(1).
+    deferred_overloads: FxHashMap<SymbolId, DeferredOverload>,
     /// Deferred user-defined function calls for post-unification type checking
     deferred_user_calls: Vec<DeferredUserCall>,
     /// Deferred inner calls to function parameters for higher-order function checking
@@ -199,7 +200,7 @@ impl InferenceContext {
             builtins: FxHashMap::default(),
             errors: Vec::new(),
             piped_inputs: FxHashMap::default(),
-            deferred_overloads: Vec::new(),
+            deferred_overloads: FxHashMap::default(),
             deferred_user_calls: Vec::new(),
             deferred_parameter_calls: Vec::new(),
             deferred_record_accesses: Vec::new(),
@@ -258,21 +259,15 @@ impl InferenceContext {
     /// one. This keeps the deferred operand types in sync when a node is re-processed
     /// after its operand types or argument list have changed (for example, due to
     /// additional inference or piped input being attached).
+    ///
+    /// The map-backed storage makes both insert and replace O(1).
     pub fn add_deferred_overload(&mut self, deferred: DeferredOverload) {
-        if let Some(existing) = self
-            .deferred_overloads
-            .iter_mut()
-            .find(|d| d.symbol_id == deferred.symbol_id)
-        {
-            *existing = deferred;
-        } else {
-            self.deferred_overloads.push(deferred);
-        }
+        self.deferred_overloads.insert(deferred.symbol_id, deferred);
     }
 
     /// Takes all deferred overloads (consumes them)
     pub fn take_deferred_overloads(&mut self) -> Vec<DeferredOverload> {
-        std::mem::take(&mut self.deferred_overloads)
+        self.deferred_overloads.drain().map(|(_, v)| v).collect()
     }
 
     /// Adds a deferred user-defined function call
