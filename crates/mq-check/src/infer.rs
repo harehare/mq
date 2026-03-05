@@ -258,7 +258,11 @@ impl InferenceContext {
     /// prevents stale 2-arg entries from causing false type errors when the same Call
     /// node is re-processed in Pass 4 with a prepended piped argument.
     pub fn add_deferred_overload(&mut self, deferred: DeferredOverload) {
-        if let Some(existing) = self.deferred_overloads.iter_mut().find(|d| d.symbol_id == deferred.symbol_id) {
+        if let Some(existing) = self
+            .deferred_overloads
+            .iter_mut()
+            .find(|d| d.symbol_id == deferred.symbol_id)
+        {
             *existing = deferred;
         } else {
             self.deferred_overloads.push(deferred);
