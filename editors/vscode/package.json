@@ -133,26 +133,23 @@
           "default": true,
           "description": "Enable or disable Code Lens for mq queries"
         },
-        "mq.enableTypeCheck": {
+        "mq.typeCheck.enableTypeCheck": {
           "title": "Enable type check",
           "type": "boolean",
           "default": false,
-          "description": "Enable or disable type checking for mq queries.",
-          "category": "Type"
+          "description": "Enable or disable type checking for mq queries."
         },
-        "mq.strictArray": {
+        "mq.typeCheck.strictArray": {
           "title": "Enable strict array mode",
           "type": "boolean",
           "default": false,
-          "description": "Enable or disable strict array mode. When enabled, arrays must contain elements of a single type.",
-          "category": "Type"
+          "description": "Enable or disable strict array mode. When enabled, arrays must contain elements of a single type."
         },
-        "mq.tuple": {
+        "mq.typeCheck.tuple": {
           "title": "Enable tuple mode",
           "type": "boolean",
           "default": false,
-          "description": "Enable or disable tuple mode. When enabled, heterogeneous array literals are typed as tuples with per-element types.",
-          "category": "Type"
+          "description": "Enable or disable tuple mode. When enabled, heterogeneous array literals are typed as tuples with per-element types."
         }
       }
     },
