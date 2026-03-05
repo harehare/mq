@@ -253,10 +253,11 @@ impl InferenceContext {
 
     /// Adds a deferred overload resolution.
     ///
-    /// If a deferred overload for the same symbol already exists (e.g., from an earlier
-    /// pass before piped input was set), it is replaced with the updated entry. This
-    /// prevents stale 2-arg entries from causing false type errors when the same Call
-    /// node is re-processed in Pass 4 with a prepended piped argument.
+    /// For a given `symbol_id` there should be at most one deferred overload entry.
+    /// If an entry for the same symbol already exists, it is replaced with the new
+    /// one. This keeps the deferred operand types in sync when a node is re-processed
+    /// after its operand types or argument list have changed (for example, due to
+    /// additional inference or piped input being attached).
     pub fn add_deferred_overload(&mut self, deferred: DeferredOverload) {
         if let Some(existing) = self
             .deferred_overloads
