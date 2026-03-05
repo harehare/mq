@@ -442,11 +442,13 @@ impl TypeChecker {
             let types::Type::Union(members) = arg_ty else {
                 continue;
             };
-            // Reject unions containing unresolved type variables
-            if members.iter().any(|m| m.is_var()) {
-                return false;
-            }
+
             for member in members {
+                // Reject unions containing unresolved type variables
+                if member.is_var() {
+                    return false;
+                }
+
                 let mut test_args = resolved_operands.to_vec();
                 test_args[i] = member.clone();
                 let Some(types::Type::Function(_, member_ret)) = ctx.resolve_overload(op_name, &test_args) else {
