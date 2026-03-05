@@ -432,8 +432,12 @@ impl TypeChecker {
     /// indicating the operation is safe regardless of which branch was taken.
     /// Returns `false` if any member fails to match an overload, any member
     /// returns a different type, or any union contains unresolved type variables.
+    ///
+    /// This function uses [`InferenceContext::find_best_overload_return`] instead of
+    /// [`InferenceContext::resolve_overload`] to avoid allocating unnecessary fresh type
+    /// variables for each union member being tested.
     fn union_members_consistent_return(
-        ctx: &mut infer::InferenceContext,
+        ctx: &infer::InferenceContext,
         op_name: &str,
         resolved_operands: &[types::Type],
     ) -> bool {
@@ -449,7 +453,7 @@ impl TypeChecker {
             for member in members {
                 let mut test_args = resolved_operands.to_vec();
                 test_args[i] = member.clone();
-                let Some(types::Type::Function(_, member_ret)) = ctx.resolve_overload(op_name, &test_args) else {
+                let Some(member_ret) = ctx.find_best_overload_return(op_name, &test_args) else {
                     return false;
                 };
                 let resolved_ret = ctx.resolve_type(&member_ret);

@@ -336,6 +336,60 @@ impl InferenceContext {
         });
     }
 
+    /// Finds the best matching overload and returns its raw return type without instantiating
+    /// fresh type variables.
+    ///
+    /// Unlike [`resolve_overload`], this method is read-only and does not mutate the context.
+    /// It is intended for consistency checks (e.g., verifying that all union members yield the
+    /// same return type) where fresh variable allocation is unnecessary and wasteful.
+    ///
+    /// Returns `Some(ret_ty)` if a matching overload is found, or `None` otherwise.
+    pub fn find_best_overload_return(&self, name: &str, arg_types: &[Type]) -> Option<Type> {
+        let overloads = self.get_builtin_overloads(name)?;
+
+        let mut best_match: Option<(&Type, u32)> = None;
+
+        for overload in overloads {
+            if let Type::Function(params, _ret) = overload {
+                if params.len() != arg_types.len() {
+                    continue;
+                }
+
+                let mut total_score = 0u32;
+                let mut all_match = true;
+
+                for (param_ty, arg_ty) in params.iter().zip(arg_types.iter()) {
+                    if let Some(score) = param_ty.match_score(arg_ty) {
+                        total_score += score;
+                    } else {
+                        all_match = false;
+                        break;
+                    }
+                }
+
+                if all_match {
+                    match best_match {
+                        None => {
+                            best_match = Some((overload, total_score));
+                        }
+                        Some((_, best_score)) if total_score > best_score => {
+                            best_match = Some((overload, total_score));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        best_match.map(|(ty, _)| {
+            if let Type::Function(_, ret) = ty {
+                (**ret).clone()
+            } else {
+                unreachable!("overload candidates are always Function types")
+            }
+        })
+    }
+
     /// Resolves the best matching overload for a function call.
     ///
     /// Given a function name and argument types, finds the best matching overload
