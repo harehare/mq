@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn test_incremental_no_change() {
-        let source = "upcase | downcase";
+        let source = "upcase() | downcase()";
         let mut parser = IncrementalParser::new(source);
         let (nodes_before, _) = parser.result();
         let count_before = nodes_before.len();
@@ -242,21 +242,21 @@ mod tests {
 
     #[test]
     fn test_incremental_append() {
-        let source = "upcase";
+        let source = "upcase()";
         let mut parser = IncrementalParser::new(source);
 
-        let (nodes, errors) = parser.update("upcase | downcase");
+        let (nodes, errors) = parser.update("upcase() | downcase()");
         assert!(!errors.has_errors());
         assert!(!nodes.is_empty());
     }
 
     #[test]
     fn test_apply_edit() {
-        let source = "upcase | downcase";
+        let source = "upcase() | downcase()";
         let mut parser = IncrementalParser::new(source);
 
         // Replace "downcase" with "ltrim"
-        let edit = TextEdit::new(9, 17, "ltrim");
+        let edit = TextEdit::new(11, 19, "ltrim");
         let (nodes, errors) = parser.apply_edit(&edit);
         assert!(!errors.has_errors());
         assert!(!nodes.is_empty());
@@ -265,13 +265,13 @@ mod tests {
 
     #[test]
     fn test_incremental_def_change() {
-        let source = "def foo(): \"hello\" end\n| upcase";
+        let source = "def foo(): \"hello\" end\n| upcase()";
         let mut parser = IncrementalParser::new(source);
         let (_, errors) = parser.result();
         assert!(!errors.has_errors());
 
         // Change the def body
-        let (_, errors) = parser.update("def foo(): \"world\" end\n| upcase");
+        let (_, errors) = parser.update("def foo(): \"world\" end\n| upcase()");
         assert!(!errors.has_errors());
     }
 }
