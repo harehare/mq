@@ -460,27 +460,27 @@ pub async fn diagnostics(code: &str, enable_type_check: Option<bool>) -> JsValue
         })
         .collect::<Vec<_>>();
 
-    if enable_type_check.unwrap_or(false) {
-        let mut hir = mq_hir::Hir::default();
-        hir.add_code(None, code);
+    if enable_type_check.unwrap_or(false) && errors.is_empty() {
+    let mut hir = mq_hir::Hir::default();
+    hir.add_code(None, code);
 
-        let mut checker = mq_check::TypeChecker::default();
-        let type_errors = checker.check(&hir);
+    let mut checker = mq_check::TypeChecker::default();
+    let type_errors = checker.check(&hir);
 
-        for error in type_errors {
-            if let Some((line, column)) = error.location() {
-                let line0 = line.saturating_sub(1);
-                let char_start = column as u32;
+    for error in type_errors {
+        if let Some((line, column)) = error.location() {
+            let line0 = line.saturating_sub(1);
+            let char_start = column as u32;
 
-                errors.push(Diagnostic {
-                    start_line: line0,
-                    start_column: char_start,
-                    end_line: line0,
-                    end_column: char_start.saturating_add(1),
-                    message: error.to_string(),
-                });
-            }
+            errors.push(Diagnostic {
+                start_line: line0,
+                start_column: char_start,
+                end_line: line0,
+                end_column: char_start.saturating_add(1),
+                message: error.to_string(),
+            });
         }
+    }
     }
 
     serde_wasm_bindgen::to_value(&errors).unwrap()
