@@ -35,7 +35,7 @@ regex-lite = {workspace = true, optional = true}
 rustyline = {workspace = true, optional = true, default-features = false, features = ["custom-bindings", "with-file-history"]}
 strum = {workspace = true, features = ["derive"], optional = true}
 url = {workspace = true}
-which = "8.0.0"
+which = "8.0.1"
 
 [dev-dependencies]
 assert_cmd = {workspace = true}
