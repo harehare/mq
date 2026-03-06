@@ -526,7 +526,7 @@ pub async fn inlay_hints(code: &str) -> JsValue {
         })
         .collect();
 
-    serde_wasm_bindgen::to_value(&hints).unwrap_or(JsValue::NULL)
+    serde_wasm_bindgen::to_value(&hints).unwrap_or_else(|_| JsValue::from(js_sys::Array::new()))
 }
 
 #[wasm_bindgen(js_name=definedValues, skip_typescript)]
