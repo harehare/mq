@@ -260,7 +260,7 @@ mod tests {
         let (nodes, errors) = parser.apply_edit(&edit);
         assert!(!errors.has_errors());
         assert!(!nodes.is_empty());
-        assert_eq!(parser.source(), "upcase | ltrim");
+        assert_eq!(parser.source(), "upcase() | ltrim()");
     }
 
     #[test]
