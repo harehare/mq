@@ -25,7 +25,7 @@
 //! - OR (same variable): `is_string(x) || is_number(x)` → then: String|Number
 //! - Structural selector: `if (.h): ...` → first function parameter narrowed to Markdown
 
-use crate::constraint::{ChildrenIndex, get_children};
+use crate::constraint::{ChildrenIndex, get_children, get_non_keyword_children};
 use crate::infer::{InferenceContext, NarrowingEntry};
 use crate::types::Type;
 use crate::walk_ancestors;
@@ -134,15 +134,7 @@ pub(crate) fn analyze_type_predicate_call(
     };
 
     // The argument must be a single variable reference
-    let children: Vec<SymbolId> = get_children(children_index, call_id)
-        .iter()
-        .copied()
-        .filter(|&child_id| {
-            hir.symbol(child_id)
-                .map(|s| !matches!(s.kind, SymbolKind::Keyword))
-                .unwrap_or(true)
-        })
-        .collect();
+    let children = get_non_keyword_children(hir, call_id, children_index);
 
     if children.len() != 1 {
         return None;
@@ -215,15 +207,7 @@ pub(crate) fn analyze_type_call_equality(
     }
 
     // The argument to type() must be a single Ref (variable reference)
-    let call_args: Vec<SymbolId> = get_children(children_index, call_id)
-        .iter()
-        .copied()
-        .filter(|&c| {
-            hir.symbol(c)
-                .map(|s| !matches!(s.kind, SymbolKind::Keyword))
-                .unwrap_or(true)
-        })
-        .collect();
+    let call_args = get_non_keyword_children(hir, call_id, children_index);
     if call_args.len() != 1 {
         return None;
     }

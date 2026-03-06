@@ -88,7 +88,7 @@ impl Type {
     /// Creates a new union type from two or more types
     /// Automatically normalizes the union (removes duplicates, flattens nested unions)
     pub fn union(types: Vec<Type>) -> Self {
-        let mut normalized = Vec::new();
+        let mut normalized = Vec::with_capacity(types.len());
         for ty in types {
             match ty {
                 // Flatten nested unions
@@ -177,6 +177,9 @@ impl Type {
 
     /// Substitutes type variables according to the given substitution
     pub fn apply_subst(&self, subst: &Substitution) -> Type {
+        if subst.is_empty() {
+            return self.clone();
+        }
         match self {
             Type::Var(id) => subst.lookup(*id).map_or_else(|| self.clone(), |t| t.apply_subst(subst)),
             Type::Array(elem) => Type::Array(Box::new(elem.apply_subst(subst))),
@@ -564,6 +567,17 @@ pub fn format_var_name(index: usize) -> String {
     } else {
         format!("'{}{}", letter, suffix)
     }
+}
+
+/// Formats a list of types as a comma-separated string using renumbered display.
+///
+/// Convenience helper used in error messages and overload reporting.
+pub(crate) fn format_type_list(types: &[Type]) -> String {
+    types
+        .iter()
+        .map(|t| t.display_renumbered())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 impl fmt::Display for Type {

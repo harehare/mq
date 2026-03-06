@@ -92,14 +92,7 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
         // Tuples: same-length tuples unify element-wise
         (Type::Tuple(elems1), Type::Tuple(elems2)) => {
             if elems1.len() != elems2.len() {
-                let resolved_t1 = ctx.resolve_type(t1);
-                let resolved_t2 = ctx.resolve_type(t2);
-                ctx.add_error(TypeError::Mismatch {
-                    expected: resolved_t1.display_renumbered(),
-                    found: resolved_t2.display_renumbered(),
-                    span: range.as_ref().map(range_to_span),
-                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
-                });
+                ctx.report_mismatch(t1, t2, range);
                 return;
             }
             for (e1, e2) in elems1.iter().zip(elems2.iter()) {
@@ -132,14 +125,7 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
             if fields.is_empty() {
                 unify(ctx, rest, &Type::RowEmpty, range);
             } else {
-                let resolved_t1 = ctx.resolve_type(t1);
-                let resolved_t2 = ctx.resolve_type(t2);
-                ctx.add_error(TypeError::Mismatch {
-                    expected: resolved_t1.display_renumbered(),
-                    found: resolved_t2.display_renumbered(),
-                    span: range.as_ref().map(range_to_span),
-                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
-                });
+                ctx.report_mismatch(t1, t2, range);
             }
         }
 
@@ -195,29 +181,14 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
 
             if !matches_any {
                 // No member of the union can unify with the other type - report error
-                let resolved_t1 = ctx.resolve_type(t1);
-                let resolved_t2 = ctx.resolve_type(t2);
-                ctx.add_error(TypeError::Mismatch {
-                    expected: resolved_t1.display_renumbered(),
-                    found: resolved_t2.display_renumbered(),
-                    span: range.as_ref().map(range_to_span),
-                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
-                });
+                ctx.report_mismatch(t1, t2, range);
             }
             // If at least one member matches, allow it (union type semantics)
         }
 
         // Mismatch
         _ => {
-            // Resolve types for better error messages (use renumbered display for clean names)
-            let resolved_t1 = ctx.resolve_type(t1);
-            let resolved_t2 = ctx.resolve_type(t2);
-            ctx.add_error(TypeError::Mismatch {
-                expected: resolved_t1.display_renumbered(),
-                found: resolved_t2.display_renumbered(),
-                span: range.as_ref().map(range_to_span),
-                location: range.as_ref().map(|r| (r.start.line, r.start.column)),
-            });
+            ctx.report_mismatch(t1, t2, range);
         }
     }
 }

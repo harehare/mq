@@ -1,12 +1,12 @@
 //! Constraint generation for type inference.
 
-use crate::TypeError;
 use crate::infer::{
     DeferredOverload, DeferredParameterCall, DeferredUserCall, InferenceContext, NarrowingEntry, TypeNarrowing,
 };
 use crate::narrowing::analyze_condition;
 use crate::types::Type;
 use crate::unify::range_to_span;
+use crate::{TypeError, infer, walk_ancestors};
 use mq_hir::{Hir, SymbolId, SymbolKind};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smol_str::SmolStr;
@@ -30,7 +30,7 @@ impl fmt::Display for Constraint {
 /// Walks the HIR parent chain from `symbol_id` and returns the nearest ancestor
 /// whose kind is `SymbolKind::Function(_)`, if any.
 fn find_enclosing_function(hir: &Hir, symbol_id: SymbolId) -> Option<SymbolId> {
-    crate::walk_ancestors(hir, symbol_id).find_map(|(id, sym)| if sym.is_function() { Some(id) } else { None })
+    walk_ancestors(hir, symbol_id).find_map(|(id, sym)| if sym.is_function() { Some(id) } else { None })
 }
 
 /// Pre-built index mapping each parent symbol to its children.
@@ -53,6 +53,27 @@ pub(crate) fn build_children_index(hir: &Hir) -> ChildrenIndex {
 /// Helper function to get children of a symbol from the pre-built index.
 pub(crate) fn get_children(children_index: &ChildrenIndex, parent_id: SymbolId) -> &[SymbolId] {
     children_index.get(&parent_id).map(|v| v.as_slice()).unwrap_or(&[])
+}
+
+/// Returns the non-keyword children of a symbol.
+///
+/// Keyword symbols (e.g. `fn` in lambda expressions) are syntax elements that
+/// should not be treated as arguments or operands. This helper filters them out
+/// and is used wherever argument lists are extracted from Call symbols.
+pub(crate) fn get_non_keyword_children(
+    hir: &Hir,
+    symbol_id: SymbolId,
+    children_index: &ChildrenIndex,
+) -> Vec<SymbolId> {
+    get_children(children_index, symbol_id)
+        .iter()
+        .copied()
+        .filter(|&child_id| {
+            hir.symbol(child_id)
+                .map(|s| !matches!(s.kind, SymbolKind::Keyword))
+                .unwrap_or(true)
+        })
+        .collect()
 }
 
 /// Helper function to get the range of a symbol
@@ -914,7 +935,7 @@ fn generate_symbol_constraints(
                                 }
                             } else {
                                 let range = get_symbol_range(hir, symbol_id);
-                                ctx.add_error(crate::TypeError::Mismatch {
+                                ctx.add_error(TypeError::Mismatch {
                                     expected: format!("argument matching {} overloads", name),
                                     found: arg_tys[0].display_renumbered(),
                                     span: range.as_ref().map(range_to_span),
@@ -1017,7 +1038,7 @@ fn generate_symbol_constraints(
                         } else if has_union {
                             // Union types cannot be used with binary operators
                             // Report an error with a clear message
-                            ctx.add_error(crate::TypeError::UnificationError {
+                            ctx.add_error(TypeError::UnificationError {
                                 left: format!(
                                     "{} with arguments ({}, {})",
                                     op_name,
@@ -1215,15 +1236,7 @@ fn generate_symbol_constraints(
                 if let Some(func_name) = &call_symbol.value {
                     // All children are explicit arguments (filter out Keyword symbols
                     // which are syntax elements like `fn` in lambda expressions)
-                    let children: Vec<SymbolId> = get_children(children_index, symbol_id)
-                        .iter()
-                        .copied()
-                        .filter(|&child_id| {
-                            hir.symbol(child_id)
-                                .map(|s| !matches!(s.kind, SymbolKind::Keyword))
-                                .unwrap_or(true)
-                        })
-                        .collect();
+                    let children = get_non_keyword_children(hir, symbol_id, children_index);
                     let explicit_arg_tys: Vec<Type> = children
                         .iter()
                         .map(|&arg_id| ctx.get_or_create_symbol_type(arg_id))
@@ -1277,7 +1290,7 @@ fn generate_symbol_constraints(
                                     // If arity doesn't match and the call might receive piped input later
                                     // (inside a Block), defer the error until Pass 4 re-processing
                                     if !might_receive_piped_input(hir, symbol_id) {
-                                        ctx.add_error(crate::TypeError::WrongArity {
+                                        ctx.add_error(TypeError::WrongArity {
                                             expected: param_tys.len(),
                                             found: arg_tys.len(),
                                             span: range.as_ref().map(range_to_span),
@@ -1329,7 +1342,7 @@ fn generate_symbol_constraints(
 
                                 if let Some(name) = field_name {
                                     // Defer field access resolution to post-unification
-                                    ctx.add_deferred_record_access(crate::infer::DeferredRecordAccess {
+                                    ctx.add_deferred_record_access(infer::DeferredRecordAccess {
                                         call_symbol_id: symbol_id,
                                         def_id,
                                         field_name: name,
@@ -1377,7 +1390,7 @@ fn generate_symbol_constraints(
                                         let ty_var = ctx.fresh_var();
                                         ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
 
-                                        ctx.add_deferred_tuple_access(crate::infer::DeferredTupleAccess {
+                                        ctx.add_deferred_tuple_access(infer::DeferredTupleAccess {
                                             call_symbol_id: symbol_id,
                                             def_id,
                                             index: literal_index,
@@ -2051,7 +2064,7 @@ fn generate_symbol_constraints(
                         } else if matches!(**rest, Type::RowEmpty) {
                             // Field not found in closed record — report error
                             let range = get_symbol_range(hir, symbol_id);
-                            ctx.add_error(crate::TypeError::UndefinedField {
+                            ctx.add_error(TypeError::UndefinedField {
                                 field: name.to_string(),
                                 record_ty: resolved.display_renumbered(),
                                 span: range.as_ref().map(range_to_span),
@@ -2071,7 +2084,7 @@ fn generate_symbol_constraints(
                 } else {
                     // Piped type not yet resolved — defer check to post-unification
                     if let Some(name) = field_name {
-                        ctx.add_deferred_selector_access(crate::infer::DeferredSelectorAccess {
+                        ctx.add_deferred_selector_access(infer::DeferredSelectorAccess {
                             symbol_id,
                             piped_ty: piped_ty.clone(),
                             field_name: name.to_string(),
