@@ -390,8 +390,6 @@ impl InferenceContext {
                 }
 
                 if all_match {
-                    // Update best match if this is better
-                    let is_perfect = total_score == 100 * params.len() as u32;
                     match &best_match {
                         None => {
                             best_match = Some((overload.clone(), total_score));
@@ -400,10 +398,6 @@ impl InferenceContext {
                             best_match = Some((overload.clone(), total_score));
                         }
                         _ => {}
-                    }
-                    // Early exit on perfect match (no other overload can score higher)
-                    if is_perfect {
-                        break;
                     }
                 }
             }
