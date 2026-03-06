@@ -1,8 +1,8 @@
 //! Type inference context and engine.
 
 use crate::constraint::Constraint;
-use crate::types::{Substitution, Type, TypeScheme, TypeVarContext, TypeVarId};
-use crate::{TypeEnv, TypeError};
+use crate::types::{Substitution, Type, TypeScheme, TypeVarContext, TypeVarId, format_type_list};
+use crate::{TypeEnv, TypeError, unify};
 use mq_hir::SymbolId;
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
@@ -330,17 +330,29 @@ impl InferenceContext {
         std::mem::take(&mut self.type_narrowings)
     }
 
+    /// Reports a type mismatch error between two types.
+    ///
+    /// Resolves both types before formatting them, and constructs the error with
+    /// source location info from `range`. Use this instead of hand-rolling
+    /// `resolve_type` + `display_renumbered` + `add_error(TypeError::Mismatch {...})`.
+    pub fn report_mismatch(&mut self, t1: &Type, t2: &Type, range: Option<mq_lang::Range>) {
+        let resolved_t1 = self.resolve_type(t1);
+        let resolved_t2 = self.resolve_type(t2);
+        self.add_error(TypeError::Mismatch {
+            expected: resolved_t1.display_renumbered(),
+            found: resolved_t2.display_renumbered(),
+            span: range.as_ref().map(unify::range_to_span),
+            location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+        });
+    }
+
     /// Reports a "no matching overload" error with formatted argument types.
     pub fn report_no_matching_overload(&mut self, op_name: &str, arg_tys: &[Type], range: Option<mq_lang::Range>) {
-        let args_str = arg_tys
-            .iter()
-            .map(|t| t.display_renumbered())
-            .collect::<Vec<_>>()
-            .join(", ");
-        self.add_error(crate::TypeError::UnificationError {
+        let args_str = format_type_list(arg_tys);
+        self.add_error(TypeError::UnificationError {
             left: format!("{} with arguments ({})", op_name, args_str),
             right: "no matching overload".to_string(),
-            span: range.as_ref().map(crate::unify::range_to_span),
+            span: range.as_ref().map(unify::range_to_span),
             location: range.as_ref().map(|r| (r.start.line, r.start.column)),
         });
     }
@@ -379,6 +391,7 @@ impl InferenceContext {
 
                 if all_match {
                     // Update best match if this is better
+                    let is_perfect = total_score == 100 * params.len() as u32;
                     match &best_match {
                         None => {
                             best_match = Some((overload.clone(), total_score));
@@ -387,6 +400,10 @@ impl InferenceContext {
                             best_match = Some((overload.clone(), total_score));
                         }
                         _ => {}
+                    }
+                    // Early exit on perfect match (no other overload can score higher)
+                    if is_perfect {
+                        break;
                     }
                 }
             }
