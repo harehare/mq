@@ -22,6 +22,7 @@ itertools = {workspace = true}
 js-sys = {workspace = true}
 mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
+mq-check = {workspace = true}
 mq-lang = {workspace = true, features = ["ast-json"]}
 mq-markdown = {workspace = true}
 opfs = {workspace = true}
