@@ -572,7 +572,7 @@ pub fn format_var_name(index: usize) -> String {
 /// Formats a list of types as a comma-separated string using renumbered display.
 ///
 /// Convenience helper used in error messages and overload reporting.
-pub fn format_type_list(types: &[Type]) -> String {
+pub(crate) fn format_type_list(types: &[Type]) -> String {
     types
         .iter()
         .map(|t| t.display_renumbered())
