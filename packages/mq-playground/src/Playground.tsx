@@ -27,6 +27,7 @@ type SharedData = {
 const CODE_KEY = "mq-playground.code";
 const MARKDOWN_KEY = "mq-playground.markdown";
 const IS_UPDATE_KEY = "mq-playground.is_update";
+const ENABLE_TYPE_CHECK_KEY = "mq-playground.enable_type_check";
 const INPUT_FORMAT_KEY = "mq-playground.input_format";
 const SELECTED_FILE_KEY = "mq-playground.selected_file";
 const CURRENT_FILE_PATH_KEY = "mq-playground.current_file_path";
@@ -43,6 +44,9 @@ export const Playground = () => {
   );
   const [isUpdate, setIsUpdate] = useState(
     localStorage.getItem(IS_UPDATE_KEY) === "true",
+  );
+  const [enableTypeCheck, setEnableTypeCheck] = useState(
+    localStorage.getItem(ENABLE_TYPE_CHECK_KEY) === "true",
   );
   const [executionTime, setExecutionTime] = useState<number | null>(null);
   const [isEmbed, setIsEmbed] = useState(false);
@@ -115,6 +119,12 @@ export const Playground = () => {
     return localStorage.getItem(ACTIVE_TAB_ID_KEY);
   });
   const hasInitialized = useRef(false);
+  const enableTypeCheckRef = useRef(enableTypeCheck);
+
+  // Keep enableTypeCheckRef in sync with state
+  useEffect(() => {
+    enableTypeCheckRef.current = enableTypeCheck;
+  }, [enableTypeCheck]);
 
   // Persist tabs to localStorage whenever they change
   useEffect(() => {
@@ -896,7 +906,10 @@ export const Playground = () => {
             return;
           }
 
-          const errors = await mq.diagnostics(model.getValue());
+          const errors = await mq.diagnostics(
+            model.getValue(),
+            enableTypeCheckRef.current,
+          );
           monaco.editor.setModelMarkers(
             model,
             "mq",
@@ -1130,6 +1143,27 @@ export const Playground = () => {
         return { suggestions: [...suggestions, ...snippets] };
       },
     });
+
+    monaco.languages.registerInlayHintsProvider("mq", {
+      provideInlayHints: async (model: editor.ITextModel) => {
+        if (!enableTypeCheckRef.current) {
+          return { hints: [], dispose: () => {} };
+        }
+        const hints = await mq.inlayHints(model.getValue());
+        return {
+          hints: hints.map((hint: mq.InlayHint) => ({
+            position: {
+              lineNumber: hint.line,
+              column: hint.column,
+            },
+            label: hint.label,
+            kind: monaco.languages.InlayHintKind.Type,
+          })),
+          dispose: () => {},
+        };
+      },
+    });
+
     monaco.languages.register({ id: "mq" });
     monaco.languages.setMonarchTokensProvider("mq", {
       tokenizer: {
@@ -1215,6 +1249,7 @@ export const Playground = () => {
         localStorage.setItem(CODE_KEY, code || "");
         localStorage.setItem(MARKDOWN_KEY, markdown || "");
         localStorage.setItem(IS_UPDATE_KEY, String(isUpdate));
+        localStorage.setItem(ENABLE_TYPE_CHECK_KEY, String(enableTypeCheck));
         localStorage.setItem(INPUT_FORMAT_KEY, inputFormat || "markdown");
       }
     };
@@ -1223,7 +1258,7 @@ export const Playground = () => {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [code, markdown, isUpdate, inputFormat]);
+  }, [code, markdown, isUpdate, enableTypeCheck, inputFormat]);
 
   return (
     <div className="playground-container">
@@ -1520,6 +1555,20 @@ export const Playground = () => {
                           }}
                         />
                         <div>Update Markdown</div>
+                      </label>
+                    </div>
+                    <div>
+                      <label className="label">
+                        <input
+                          type="checkbox"
+                          checked={enableTypeCheck}
+                          onChange={(e) => setEnableTypeCheck(e.target.checked)}
+                          style={{
+                            marginRight: "5px",
+                            cursor: "pointer",
+                          }}
+                        />
+                        <div>Type Check</div>
                       </label>
                     </div>
                   </>
