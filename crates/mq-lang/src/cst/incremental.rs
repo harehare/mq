@@ -36,12 +36,12 @@ impl TextEdit {
 /// ```
 /// use mq_lang::IncrementalParser;
 ///
-/// let mut parser = IncrementalParser::new("upcase | downcase");
+/// let mut parser = IncrementalParser::new("upcase() | downcase()");
 /// let (nodes, errors) = parser.result();
 /// // ... use nodes ...
 ///
 /// // Apply a text edit
-/// parser.update("upcase | ltrim");
+/// parser.update("upcase() | ltrim()");
 /// let (nodes, errors) = parser.result();
 /// ```
 pub struct IncrementalParser {
