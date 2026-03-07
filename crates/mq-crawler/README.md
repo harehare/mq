@@ -30,7 +30,7 @@ Make web scraping and content extraction effortless with intelligent Markdown co
 ### Homebrew
 
 ```sh
-brew install harehare/tap/mqcr
+brew install harehare/tap/mq-crawl
 ```
 
 ### Cargo
@@ -53,72 +53,72 @@ cargo build --release -p mq-crawler
 
 ```bash
 # Crawl a website and output to stdout
-mqcr https://example.com
+mq-crawl https://example.com
 
 # Save crawled content to directory
-mqcr -o ./output https://example.com
+mq-crawl -o ./output https://example.com
 
 # Crawl with custom delay (default: 0.5 seconds)
-mqcr -d 2.0 https://example.com
+mq-crawl -d 2.0 https://example.com
 
 # Limit crawl depth
-mqcr --depth 2 https://example.com
+mq-crawl --depth 2 https://example.com
 ```
 
 ### Processing with mq Queries
 
 ```bash
 # Extract only headings from crawled pages
-mqcr -m '.h | select(contains("News"))' https://example.com
+mq-crawl -m '.h | select(contains("News"))' https://example.com
 
 # Extract all code blocks
-mqcr -m '.code' https://developer.example.com
+mq-crawl -m '.code' https://developer.example.com
 
 # Extract and transform links
-mqcr -m '.link | to_text()' https://example.com
+mq-crawl -m '.link | to_text()' https://example.com
 ```
 
 ### Parallel Crawling
 
 ```bash
 # Crawl with 3 concurrent workers
-mqcr -c 3 https://example.com
+mq-crawl -c 3 https://example.com
 
 # High-speed crawling with 10 workers
-mqcr -c 10 -d 0.1 https://example.com
+mq-crawl -c 10 -d 0.1 https://example.com
 ```
 
 ### Custom Robots.txt
 
 ```bash
 # Use custom robots.txt file
-mqcr --robots-path ./custom-robots.txt https://example.com
+mq-crawl --robots-path ./custom-robots.txt https://example.com
 ```
 
 ### HTML to Markdown Options
 
 ```bash
 # Extract scripts as code blocks
-mqcr --extract-scripts-as-code-blocks https://example.com
+mq-crawl --extract-scripts-as-code-blocks https://example.com
 
 # Generate YAML front matter with metadata
-mqcr --generate-front-matter https://example.com
+mq-crawl --generate-front-matter https://example.com
 
 # Use page title as H1 heading
-mqcr --use-title-as-h1 https://example.com
+mq-crawl --use-title-as-h1 https://example.com
 
 # Combine multiple options
-mqcr --generate-front-matter --use-title-as-h1 -o ./docs https://example.com
+mq-crawl --generate-front-matter --use-title-as-h1 -o ./docs https://example.com
 ```
 
 ### Output Formats
 
 ```bash
 # Output as JSON
-mqcr --format json https://example.com
+mq-crawl --format json https://example.com
 
 # Output as text (default)
-mqcr --format text https://example.com
+mq-crawl --format text https://example.com
 ```
 
 ### Browser-Based Crawling
@@ -130,10 +130,10 @@ For JavaScript-heavy sites, use WebDriver (requires Selenium):
 # docker run -d -p 4444:4444 selenium/standalone-chrome
 
 # Crawl with WebDriver
-mqcr -U http://localhost:4444 https://spa-example.com
+mq-crawl -U http://localhost:4444 https://spa-example.com
 
 # Custom timeouts
-mqcr -U http://localhost:4444 \
+mq-crawl -U http://localhost:4444 \
   --page-load-timeout 60 \
   --script-timeout 30 \
   --implicit-timeout 10 \
@@ -145,7 +145,7 @@ mqcr -U http://localhost:4444 \
 ```sh
 A simple web crawler that fetches HTML, converts it to Markdown, and optionally processes it with an mq query
 
-Usage: mqcr [OPTIONS] <URL>
+Usage: mq-crawl [OPTIONS] <URL>
 
 Arguments:
   <URL>  The initial URL to start crawling from

@@ -188,7 +188,7 @@ install_mqcr() {
     local os="$2"
     local arch="$3"
     local download_url
-    local binary_name="mqcr"
+    local binary_name="mq-crawl"
     local ext=""
     local target=""
 
@@ -240,19 +240,6 @@ install_mqcr() {
     chmod +x "$MQ_BIN_DIR/$binary_name"
 
     log "mq-crawler installed successfully to $MQ_BIN_DIR/$binary_name"
-
-    # Create symlink mq-crawl -> mqcr
-    local symlink_name="mq-crawl"
-    if [[ "$os" == "windows" ]]; then
-        symlink_name="mq-crawl.exe"
-    fi
-
-    if [[ -L "$MQ_BIN_DIR/$symlink_name" ]]; then
-        rm "$MQ_BIN_DIR/$symlink_name"
-    fi
-
-    ln -s "$MQ_BIN_DIR/$binary_name" "$MQ_BIN_DIR/$symlink_name"
-    log "Created symlink $symlink_name -> $binary_name"
 }
 
 # Add mq to PATH by updating shell profile
