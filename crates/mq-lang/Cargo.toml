@@ -22,6 +22,7 @@ nom = {workspace = true}
 nom_locate = {workspace = true}
 percent-encoding = {workspace = true}
 regex-lite = {workspace = true}
+ropey = {workspace = true}
 rustc-hash = {workspace = true}
 serde = {workspace = true, features = ["derive", "rc"], optional = true}
 serde_json = {workspace = true, optional = true}

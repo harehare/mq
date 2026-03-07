@@ -69,6 +69,7 @@ rayon = "1.11.0"
 regex-lite = "0.1.9"
 reqwest = {version = "0.12", default-features = false}
 robots_txt = "0.7"
+ropey = "1.6"
 rstest = "0.26.1"
 rustc-hash = "2.1.1"
 rustyline = {version = "17.0.2", default-features = false}
