@@ -28,7 +28,7 @@ pub struct TextEdit {
 }
 
 impl TextEdit {
-    /// Creates a new `CharTextEdit` with character offsets.
+    /// Creates a new `TextEdit` with character offsets.
     pub fn new(start: usize, end: usize, new_text: impl Into<String>) -> Self {
         Self {
             start,
@@ -242,7 +242,7 @@ impl IncrementalParser {
         (&self.nodes, &self.errors)
     }
 
-    /// Applies a **character-offset** [`CharTextEdit`] to the source and updates
+    /// Applies a **character-offset** [`TextEdit`] to the source and updates
     /// the parse.
     ///
     /// Character offsets count Unicode scalar values (Rust `char`s), so this
