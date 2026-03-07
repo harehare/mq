@@ -2,6 +2,7 @@ import init, {
   Options,
   Diagnostic,
   DefinedValue,
+  InlayHint,
   ConversionOptions,
 } from "./mq_wasm";
 
@@ -10,14 +11,18 @@ interface WasmModule {
   run: (code: string, content: string, options: Options) => Promise<string>;
   toAst: (code: string) => Promise<string>;
   format: (code: string) => Promise<string>;
-  diagnostics: (code: string) => Promise<readonly Diagnostic[]>;
+  diagnostics: (
+    code: string,
+    enableTypeCheck?: boolean,
+  ) => Promise<readonly Diagnostic[]>;
+  inlayHints: (code: string) => Promise<readonly InlayHint[]>;
   definedValues: (
     code: string,
-    module?: string
+    module?: string,
   ) => Promise<readonly DefinedValue[]>;
   htmlToMarkdown(
     html_input: string,
-    options?: ConversionOptions
+    options?: ConversionOptions,
   ): Promise<string>;
   toHtml(markdown_input: string): Promise<string>;
 }
@@ -39,6 +44,7 @@ async function initWasm(): Promise<WasmModule> {
         toAst: wasmImport.toAst,
         format: wasmImport.format,
         diagnostics: wasmImport.diagnostics,
+        inlayHints: wasmImport.inlayHints,
         definedValues: wasmImport.definedValues,
         htmlToMarkdown: wasmImport.htmlToMarkdown,
         toHtml: wasmImport.toHtml,
@@ -57,7 +63,7 @@ async function initWasm(): Promise<WasmModule> {
 export async function run(
   code: string,
   content: string,
-  options: Partial<Options> = {}
+  options: Partial<Options> = {},
 ): Promise<string> {
   const wasm = await initWasm();
   return await wasm.run(code, content, {
@@ -90,10 +96,21 @@ export async function format(code: string): Promise<string> {
  * Get diagnostics for mq code
  */
 export async function diagnostics(
-  code: string
+  code: string,
+  enableTypeCheck?: boolean,
 ): Promise<ReadonlyArray<Diagnostic>> {
   const wasm = await initWasm();
-  return await wasm.diagnostics(code);
+  return await wasm.diagnostics(code, enableTypeCheck);
+}
+
+/**
+ * Get inlay type hints for mq code
+ */
+export async function inlayHints(
+  code: string,
+): Promise<ReadonlyArray<InlayHint>> {
+  const wasm = await initWasm();
+  return await wasm.inlayHints(code);
 }
 
 /**
@@ -101,7 +118,7 @@ export async function diagnostics(
  */
 export async function definedValues(
   code: string,
-  module?: string
+  module?: string,
 ): Promise<ReadonlyArray<DefinedValue>> {
   const wasm = await initWasm();
   return await wasm.definedValues(code, module);
@@ -112,7 +129,7 @@ export async function definedValues(
  */
 export async function htmlToMarkdown(
   html: string,
-  options?: ConversionOptions
+  options?: ConversionOptions,
 ): Promise<string> {
   const wasm = await initWasm();
   return await wasm.htmlToMarkdown(html, options);
