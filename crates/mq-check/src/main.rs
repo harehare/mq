@@ -109,6 +109,10 @@ fn run() -> io::Result<()> {
         if had_errors {
             total_errors += 1;
         }
+
+        if multi {
+            writeln!(w)?;
+        }
     }
 
     if total_errors > 0 {
