@@ -37,9 +37,6 @@ function M.start()
     if config.get("strict_array") then
       table.insert(type_check_args, "--strict-array")
     end
-    if config.get("tuple") then
-      table.insert(type_check_args, "--tuple")
-    end
   end
 
   local args = vim.list_extend(vim.deepcopy(config.get("lsp_args")), multi_workspace_args)

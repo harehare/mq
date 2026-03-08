@@ -355,27 +355,19 @@ fn test_narrowing_selector_various_structural() {
     }
 }
 
-// ============================================================================
 // Strict Array Mode Tests
-// ============================================================================
 
 /// Helper function to run type checker with strict array mode enabled
 fn check_types_strict_array(code: &str) -> Vec<TypeError> {
     let hir = create_hir(code);
-    let mut checker = TypeChecker::with_options(TypeCheckerOptions {
-        strict_array: true,
-        tuple: false,
-    });
+    let mut checker = TypeChecker::with_options(TypeCheckerOptions { strict_array: true });
     checker.check(&hir)
 }
 
 /// Helper function to run type checker with tuple mode enabled
 fn check_types_tuple(code: &str) -> Vec<TypeError> {
     let hir = create_hir(code);
-    let mut checker = TypeChecker::with_options(TypeCheckerOptions {
-        strict_array: false,
-        tuple: true,
-    });
+    let mut checker = TypeChecker::with_options(TypeCheckerOptions { strict_array: false });
     checker.check(&hir)
 }
 
@@ -440,9 +432,7 @@ fn test_default_mode_heterogeneous_allowed() {
     );
 }
 
-// ============================================================================
 // Array Element Access Type Propagation Tests
-// ============================================================================
 
 #[test]
 fn test_array_element_access_type_error() {

@@ -98,7 +98,7 @@ impl MqExtension {
 
     /// Build type-checking CLI args from LSP initialization options.
     ///
-    /// Reads `enableTypeCheck`, `strictArray`, and `tuple` from `initialization_options`
+    /// Reads `enableTypeCheck`, `strictArray` from `initialization_options`
     /// and converts them to `mq-lsp` CLI flags.
     fn type_check_args_from_settings(worktree: &zed::Worktree) -> Vec<String> {
         let Ok(lsp_settings) = LspSettings::for_worktree("mq-lsp", worktree) else {
@@ -121,10 +121,6 @@ impl MqExtension {
 
         if init_opts.get("strictArray").and_then(|v| v.as_bool()).unwrap_or(false) {
             args.push("--strict-array".to_string());
-        }
-
-        if init_opts.get("tuple").and_then(|v| v.as_bool()).unwrap_or(false) {
-            args.push("--tuple".to_string());
         }
 
         args

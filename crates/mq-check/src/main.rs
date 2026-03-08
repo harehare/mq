@@ -26,10 +26,6 @@ struct Cli {
     /// Enforce homogeneous arrays (reject mixed-type arrays like [1, "hello"])
     #[arg(long)]
     strict_array: bool,
-
-    /// Enable tuple typing for heterogeneous arrays (e.g., [1, "hello"] → (number, string))
-    #[arg(long)]
-    tuple: bool,
 }
 
 /// Options for a single file check
@@ -56,7 +52,6 @@ fn run() -> io::Result<()> {
     let multi = cli.files.len() > 1;
     let tc_options = TypeCheckerOptions {
         strict_array: cli.strict_array,
-        tuple: cli.tuple,
     };
 
     if cli.files.is_empty() {

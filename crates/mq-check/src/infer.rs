@@ -180,18 +180,16 @@ pub struct InferenceContext {
     type_narrowings: Vec<TypeNarrowing>,
     /// When true, heterogeneous arrays produce a type error
     strict_array: bool,
-    /// When true, heterogeneous array literals are typed as tuples with per-element types
-    tuple: bool,
 }
 
 impl InferenceContext {
     /// Creates a new inference context with default options
     pub fn new() -> Self {
-        Self::with_options(false, false)
+        Self::with_options(false)
     }
 
     /// Creates a new inference context with the given options
-    pub fn with_options(strict_array: bool, tuple: bool) -> Self {
+    pub fn with_options(strict_array: bool) -> Self {
         Self {
             var_ctx: TypeVarContext::new(),
             symbol_types: FxHashMap::default(),
@@ -208,18 +206,12 @@ impl InferenceContext {
             deferred_tuple_accesses: Vec::new(),
             type_narrowings: Vec::new(),
             strict_array,
-            tuple,
         }
     }
 
     /// Returns whether strict array mode is enabled
     pub fn strict_array(&self) -> bool {
         self.strict_array
-    }
-
-    /// Returns whether tuple mode is enabled
-    pub fn tuple(&self) -> bool {
-        self.tuple
     }
 
     /// Registers a builtin function or operator type

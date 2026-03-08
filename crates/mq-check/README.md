@@ -48,7 +48,7 @@ if errors.is_empty() {
 ### Composite Types
 
 - `[T]`: Array of elements of type T
-- `(T1, T2, ..., Tn)`: Tuple with known per-element types (enabled with `--tuple`)
+- `(T1, T2, ..., Tn)`: Tuple with known per-element types
 - `{K: V}`: Dictionary with keys of type K and values of type V
 - `(T1, T2, ..., Tn) -> R`: Function taking arguments T1..Tn and returning R
 
@@ -110,7 +110,6 @@ When used as a command-line tool (`mq-typecheck`), the following options are ava
 | `--show-types`   | Display inferred types for all user-defined symbols                |
 | `--no-builtins`  | Disable automatic builtin preloading                               |
 | `--strict-array` | Reject heterogeneous arrays (e.g., `[1, "hello"]` is a type error) |
-| `--tuple`        | Type heterogeneous array literals as tuples with per-element types |
 
 ### `--strict-array`
 
@@ -120,30 +119,6 @@ Enforces that all elements in an array literal share the same type.
 echo '[1, "hello"]' | mq-check --strict-array
 # Error: heterogeneous array: [number, string]
 ```
-
-### `--tuple`
-
-Types heterogeneous array literals as **tuple types** instead of generic arrays.
-This enables precise per-element type tracking: `v[0]` returns the type of the
-first element, `v[1]` returns the type of the second, and so on.
-
-```bash
-echo 'let v = [1, "hello"] | v[0] + 1' | mq-check --tuple
-# ✓ No type errors found.  (v[0] is number)
-
-echo 'let v = [1, "hello"] | v[1] - 1' | mq-check --tuple
-# Error: type mismatch: expected number, found string  (v[1] is string)
-```
-
-When the index is a variable (dynamic), the element type becomes the union of all
-element types:
-
-```mq
-let v = [1, "hello"]
-// v[i]  →  number | string
-```
-
-Homogeneous arrays are unaffected — `[1, 2, 3]` remains `[number]` even in tuple mode.
 
 ## Development
 

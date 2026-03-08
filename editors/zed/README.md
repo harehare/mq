@@ -48,8 +48,7 @@ Enable type checking by adding the following to your Zed `settings.json` (`cmd-,
     "mq-lsp": {
       "initialization_options": {
         "enableTypeCheck": true,
-        "strictArray": false,
-        "tuple": false
+        "strictArray": false
       }
     }
   }
@@ -60,7 +59,6 @@ Enable type checking by adding the following to your Zed `settings.json` (`cmd-,
 |---|---|---|
 | `enableTypeCheck` | `false` | Enable type checking; passes `--enable-type-checking` to `mq-lsp` |
 | `strictArray` | `false` | Arrays must contain elements of a single type (requires `enableTypeCheck`) |
-| `tuple` | `false` | Heterogeneous array literals are typed as tuples (requires `enableTypeCheck`) |
 
 ### Inlay Hints
 

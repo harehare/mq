@@ -200,9 +200,6 @@ pub struct TypeCheckerOptions {
     /// When true, arrays must contain elements of a single type.
     /// Heterogeneous arrays like `[1, "hello"]` will produce a type error.
     pub strict_array: bool,
-    /// When true, heterogeneous array literals are typed as tuples with per-element types.
-    /// For example, `[1, "hello"]` gets type `(number, string)` and `v[0]` returns `number`.
-    pub tuple: bool,
 }
 
 /// Type checker for mq programs
@@ -237,7 +234,7 @@ impl TypeChecker {
     /// Returns a list of type errors found. An empty list means no errors.
     pub fn check(&mut self, hir: &Hir) -> Vec<TypeError> {
         // Create inference context with options
-        let mut ctx = infer::InferenceContext::with_options(self.options.strict_array, self.options.tuple);
+        let mut ctx = infer::InferenceContext::with_options(self.options.strict_array);
 
         builtin::register_all(&mut ctx);
 

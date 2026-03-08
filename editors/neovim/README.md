@@ -100,9 +100,6 @@ require("mq").setup({
   -- Enable strict array mode (passes --strict-array to mq-lsp, requires enable_type_check)
   strict_array = false,
 
-  -- Enable tuple mode (passes --tuple to mq-lsp, requires enable_type_check)
-  tuple = false,
-
   -- Enable LSP inlay hints (requires Neovim 0.10+)
   enable_inlay_hints = true,
 
@@ -130,7 +127,6 @@ Enable type checking to get real-time type errors and richer hover type informat
 require("mq").setup({
   enable_type_check = true,   -- Enable type checking
   strict_array = true,        -- Arrays must contain elements of a single type
-  tuple = true,               -- Heterogeneous array literals are typed as tuples
 })
 ```
 
