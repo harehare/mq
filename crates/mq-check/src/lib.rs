@@ -493,7 +493,7 @@ impl TypeChecker {
     ///
     /// None members that follow the standard none-propagation pattern (`f(None) -> None`)
     /// are skipped when determining consistency, since they are an expected dynamic
-    /// behaviour in mq (e.g. `len(None)` returns None while `len(Array) → Number`).
+    /// behavior in mq (e.g. `len(None)` returns None while `len(Array) → Number`).
     fn union_members_consistent_return(
         ctx: &mut infer::InferenceContext,
         op_name: &str,
