@@ -5,6 +5,7 @@
 
 use mq_check::{TypeChecker, TypeCheckerOptions, TypeError};
 use mq_hir::Hir;
+use rstest::rstest;
 
 fn create_hir(code: &str) -> Hir {
     let mut hir = Hir::default();
@@ -530,4 +531,54 @@ fn test_tuple_three_elements() {
         result.is_empty(),
         "v[0] + 1 on 3-element tuple should succeed: {result:?}"
     );
+}
+
+// ============================================================================
+// Union(Array(T), None) Index Access Tests
+//
+// These tests exercise the `Union` branch in `resolve_deferred_tuple_accesses`
+// which handles index access on variables whose type is `Union(Array(T), None)`
+// (e.g., produced by `try: [...] catch: none`).
+// ============================================================================
+
+#[rstest]
+#[case::array_number_none_valid(
+    "let v = try: [1, 2, 3] catch: none; | v[0] + 1",
+    true,
+    "v[0] + 1 on Union(Array(Number), None) should succeed"
+)]
+#[case::array_number_none_type_error(
+    "let v = try: [1, 2, 3] catch: none; | v[0] + true",
+    false,
+    "v[0] + true on Union(Array(Number), None) should produce a type error"
+)]
+#[case::array_string_none_valid(
+    r#"let v = try: ["a", "b"] catch: none; | upcase(v[0])"#,
+    true,
+    "upcase(v[0]) on Union(Array(String), None) should succeed"
+)]
+#[case::two_arrays_union_element_type_error(
+    r#"let v = try: [1, 2] catch: ["a", "b"]; | v[0] + 1"#,
+    false,
+    "v[0] + 1 on Union(Array(Number), Array(String)) should produce a type error"
+)]
+fn test_union_array_index_access(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types(code);
+    assert_eq!(result.is_empty(), should_succeed, "{}: {result:?}", description);
+}
+
+#[rstest]
+#[case::tuple_number_string_none_index0_valid(
+    r#"let v = try: [1, "hello"] catch: none; | v[0] + 1"#,
+    true,
+    "v[0] + 1 on Union(Tuple(Number, String), None) should succeed"
+)]
+#[case::tuple_number_string_none_index1_type_error(
+    r#"let v = try: [1, "hello"] catch: none; | v[1] - 1"#,
+    false,
+    "v[1] - 1 on Union(Tuple(Number, String), None) should produce a type error"
+)]
+fn test_union_tuple_index_access(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types_tuple(code);
+    assert_eq!(result.is_empty(), should_succeed, "{}: {result:?}", description);
 }
