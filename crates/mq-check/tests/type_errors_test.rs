@@ -531,3 +531,78 @@ fn test_tuple_three_elements() {
         "v[0] + 1 on 3-element tuple should succeed: {result:?}"
     );
 }
+
+// ============================================================================
+// Union(Array(T), None) Index Access Tests
+//
+// These tests exercise the `Union` branch in `resolve_deferred_tuple_accesses`
+// which handles index access on variables whose type is `Union(Array(T), None)`
+// (e.g., produced by `try: [...] catch: none`).
+// ============================================================================
+
+#[test]
+fn test_union_array_none_index_access_valid() {
+    // v has type Union(Array(Number), None); v[0] should resolve to Number,
+    // so v[0] + 1 (Number + Number) must succeed.
+    let result = check_types("let v = try: [1, 2, 3] catch: none; | v[0] + 1");
+    assert!(
+        result.is_empty(),
+        "v[0] + 1 on Union(Array(Number), None) should succeed: {result:?}"
+    );
+}
+
+#[test]
+fn test_union_array_none_index_access_type_error() {
+    // v has type Union(Array(Number), None); v[0] is Number,
+    // so v[0] + true (Number + Bool) must be a type error.
+    let result = check_types("let v = try: [1, 2, 3] catch: none; | v[0] + true");
+    assert!(
+        !result.is_empty(),
+        "v[0] + true on Union(Array(Number), None) should produce a type error: {result:?}"
+    );
+}
+
+#[test]
+fn test_union_array_string_none_index_access_valid() {
+    // v has type Union(Array(String), None); v[0] should resolve to String,
+    // so upcase(v[0]) must succeed.
+    let result = check_types(r#"let v = try: ["a", "b"] catch: none; | upcase(v[0])"#);
+    assert!(
+        result.is_empty(),
+        "upcase(v[0]) on Union(Array(String), None) should succeed: {result:?}"
+    );
+}
+
+#[test]
+fn test_union_tuple_none_index_access_valid() {
+    // With tuple mode enabled: v has type Union(Tuple(Number, String), None);
+    // v[0] should resolve to Number, so v[0] + 1 must succeed.
+    let result = check_types_tuple(r#"let v = try: [1, "hello"] catch: none; | v[0] + 1"#);
+    assert!(
+        result.is_empty(),
+        "v[0] + 1 on Union(Tuple(Number, String), None) should succeed: {result:?}"
+    );
+}
+
+#[test]
+fn test_union_tuple_none_index_access_type_error() {
+    // With tuple mode: v is Union(Tuple(Number, String), None); v[1] is String,
+    // so v[1] - 1 (String - Number) must be a type error.
+    let result = check_types_tuple(r#"let v = try: [1, "hello"] catch: none; | v[1] - 1"#);
+    assert!(
+        !result.is_empty(),
+        "v[1] - 1 on Union(Tuple(Number, String), None) should produce a type error: {result:?}"
+    );
+}
+
+#[test]
+fn test_union_two_arrays_index_access_type_error() {
+    // v has type Union(Array(Number), Array(String)); the element type
+    // is Union(Number, String).  Arithmetic on the result should fail.
+    let result = check_types(r#"let v = try: [1, 2] catch: ["a", "b"]; | v[0] + 1"#);
+    // Union(Number, String) + Number has no matching overload → type error
+    assert!(
+        !result.is_empty(),
+        "v[0] + 1 on Union(Array(Number), Array(String)) should produce a type error: {result:?}"
+    );
+}
