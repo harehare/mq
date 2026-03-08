@@ -508,6 +508,8 @@ impl InferenceContext {
                 let new_fields = fields.iter().map(|(k, v)| (k.clone(), self.resolve_type(v))).collect();
                 Type::Record(new_fields, Box::new(self.resolve_type(rest)))
             }
+            Type::Union(members) => Type::union(members.iter().map(|m| self.resolve_type(m)).collect()),
+            Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| self.resolve_type(e)).collect()),
             _ => ty,
         }
     }

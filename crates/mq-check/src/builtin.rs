@@ -218,12 +218,32 @@ fn register_logical(ctx: &mut InferenceContext) {
         }
     }
 
-    // Unary logical: bool -> bool
+    // Unary logical: a -> bool
+    // `!` uses the same truthy/falsy semantics as `not` in mq,
+    // accepting Bool, String, Number, Array, and Dict operands.
     register_unary(ctx, "!", Type::Bool, Type::Bool);
+    register_unary(ctx, "!", Type::String, Type::Bool);
+    register_unary(ctx, "!", Type::Number, Type::Bool);
     register_unary(ctx, "not", Type::Bool, Type::Bool);
+    register_unary(ctx, "not", Type::String, Type::Bool);
+    register_unary(ctx, "not", Type::Number, Type::Bool);
+
+    let a = ctx.fresh_var();
+    register_unary(ctx, "!", Type::array(Type::Var(a)), Type::Bool);
+
+    let a = ctx.fresh_var();
+    register_unary(ctx, "not", Type::array(Type::Var(a)), Type::Bool);
+
+    let k = ctx.fresh_var();
+    let v = ctx.fresh_var();
+    register_unary(ctx, "!", Type::dict(Type::Var(k), Type::Var(v)), Type::Bool);
+
+    let k = ctx.fresh_var();
+    let v = ctx.fresh_var();
+    register_unary(ctx, "not", Type::dict(Type::Var(k), Type::Var(v)), Type::Bool);
 
     // Unary minus: number -> number
-    register_unary(ctx, "unary-", Type::Number, Type::Number);
+    register_unary(ctx, "-", Type::Number, Type::Number);
     register_unary(ctx, "negate", Type::Number, Type::Number);
 }
 
@@ -1447,9 +1467,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case::not_number("!42", false)] // number is not bool
-    #[case::not_string("!\"hello\"", false)] // string is not bool
-    #[case::not_array("![1, 2, 3]", false)] // array is not bool
+    #[case::not_number("!42", true)] // number is truthy/falsy → bool
+    #[case::not_string("!\"hello\"", true)] // string is truthy/falsy → bool
+    #[case::not_array("![1, 2, 3]", true)] // array is truthy/falsy → bool
     fn test_logical_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(

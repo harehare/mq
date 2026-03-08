@@ -279,6 +279,15 @@ impl TypeChecker {
         // Unresolved overloads are stored back for later processing.
         Self::resolve_deferred_overloads(&mut ctx);
 
+        // Re-run deferred tuple accesses after overload resolution, because some variable
+        // types (e.g., the return type of `first(xs)`) may only be resolved after
+        // `resolve_deferred_overloads` runs. This ensures that index accesses on variables
+        // with union types containing unresolved vars (e.g., `Union(None, Var)`) are
+        // retried with the now-concrete member types.
+        if Self::resolve_deferred_tuple_accesses(&mut ctx) {
+            unify::solve_constraints(&mut ctx);
+        }
+
         // Check operators inside user-defined function bodies against call-site types.
         // Uses local substitution (original params → call-site args) without modifying
         // global state, so multiple call sites don't interfere.
@@ -371,6 +380,10 @@ impl TypeChecker {
     ///   - Dynamic index: binds the access to the Union of all element types
     ///
     /// If it is an Array type, binds like normal array element access.
+    ///
+    /// Accesses on Union types with unresolved Var members are re-queued for a
+    /// later pass, allowing `resolve_deferred_overloads` to first resolve the
+    /// function calls that produce those Var types.
     fn resolve_deferred_tuple_accesses(ctx: &mut infer::InferenceContext) -> bool {
         let accesses = ctx.take_deferred_tuple_accesses();
         if accesses.is_empty() {
@@ -407,8 +420,53 @@ impl TypeChecker {
                     ctx.add_constraint(constraint::Constraint::Equal(call_ty, *elem.clone(), None));
                     resolved_any = true;
                 }
+                types::Type::Union(members) => {
+                    // Union type (e.g., `Union(Array(String), None)`) — extract element types
+                    // from Array/Tuple members and use them as the index access result.
+                    // If any union member is still an unresolved Var, re-queue this access
+                    // for the next pass (after `resolve_deferred_overloads` has run).
+                    let has_var_member = members.iter().any(|m| m.is_var());
+                    if has_var_member {
+                        ctx.add_deferred_tuple_access(access.clone());
+                        continue;
+                    }
+
+                    let mut elem_types = Vec::new();
+                    for member in members {
+                        match member {
+                            types::Type::Array(elem) => elem_types.push(*elem.clone()),
+                            types::Type::Tuple(elems) => {
+                                if let Some(idx) = access.index {
+                                    if idx < elems.len() {
+                                        elem_types.push(elems[idx].clone());
+                                    }
+                                } else {
+                                    elem_types.extend(elems.iter().cloned());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    if !elem_types.is_empty() {
+                        let result_ty = if elem_types.len() == 1 {
+                            elem_types.remove(0)
+                        } else {
+                            types::Type::union(elem_types)
+                        };
+                        let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                        ctx.add_constraint(constraint::Constraint::Equal(call_ty, result_ty, None));
+                        resolved_any = true;
+                    }
+                }
+                types::Type::Var(_) => {
+                    // Type variable not yet resolved — re-queue for next pass.
+                    // Do NOT add an Array constraint here: if the variable later resolves
+                    // to a Tuple or other type, the premature Array constraint would
+                    // conflict and produce spurious "infinite type" or mismatch errors.
+                    ctx.add_deferred_tuple_access(access.clone());
+                }
                 _ => {
-                    // Type not yet resolved or not an array/tuple — add array constraint as fallback
+                    // Known non-array/tuple/union type — add array constraint as fallback
                     let elem_var = ctx.fresh_var();
                     let elem_ty = types::Type::Var(elem_var);
                     ctx.add_constraint(constraint::Constraint::Equal(
@@ -425,18 +483,22 @@ impl TypeChecker {
         resolved_any
     }
 
-    /// Checks whether all concrete members of every union-typed argument resolve
-    /// to the same return type when applied to the given operator.
+    /// Checks whether all non-None-propagating members of every union-typed argument
+    /// resolve to the same return type when applied to the given operator.
     ///
-    /// Returns `true` if every union member produces an identical return type,
-    /// indicating the operation is safe regardless of which branch was taken.
-    /// Returns `false` if any member fails to match an overload, any member
-    /// returns a different type, or any union contains unresolved type variables.
+    /// Returns `Some(return_type)` if every non-None member produces an identical return
+    /// type, indicating the operation is safe for the non-None cases. Returns `None` if
+    /// any member fails to match an overload, any member returns a different type, or
+    /// any union contains unresolved type variables.
+    ///
+    /// None members that follow the standard none-propagation pattern (`f(None) -> None`)
+    /// are skipped when determining consistency, since they are an expected dynamic
+    /// behaviour in mq (e.g. `len(None)` returns None while `len(Array) → Number`).
     fn union_members_consistent_return(
         ctx: &mut infer::InferenceContext,
         op_name: &str,
         resolved_operands: &[types::Type],
-    ) -> bool {
+    ) -> Option<types::Type> {
         let mut unique_ret: Option<types::Type> = None;
         for (i, arg_ty) in resolved_operands.iter().enumerate() {
             let types::Type::Union(members) = arg_ty else {
@@ -446,23 +508,31 @@ impl TypeChecker {
             for member in members {
                 // Reject unions containing unresolved type variables
                 if member.is_var() {
-                    return false;
+                    return None;
                 }
 
                 let mut test_args = resolved_operands.to_vec();
                 test_args[i] = member.clone();
                 let Some(types::Type::Function(_, member_ret)) = ctx.resolve_overload(op_name, &test_args) else {
-                    return false;
+                    return None;
                 };
                 let resolved_ret = ctx.resolve_type(&member_ret);
+
+                // Skip None-propagation overloads: a None input producing a None output
+                // is the standard mq "propagate None" pattern and does not affect the
+                // consistency of the return type for non-None inputs.
+                if matches!(member, types::Type::None) && matches!(resolved_ret, types::Type::None) {
+                    continue;
+                }
+
                 match &unique_ret {
                     None => unique_ret = Some(resolved_ret),
                     Some(prev) if prev == &resolved_ret => {}
-                    _ => return false,
+                    _ => return None,
                 }
             }
         }
-        unique_ret.is_some()
+        unique_ret
     }
 
     /// Resolves deferred overloads after the first round of unification.
@@ -495,6 +565,20 @@ impl TypeChecker {
                 let has_union = resolved_operands.iter().any(|ty| ty.is_union());
 
                 if has_union {
+                    // If any union member contains an unresolved type variable, defer
+                    // to a later pass after the variable resolves.
+                    let union_has_var = resolved_operands.iter().any(|ty| {
+                        if let types::Type::Union(members) = ty {
+                            members.iter().any(|m| m.is_var())
+                        } else {
+                            false
+                        }
+                    });
+                    if union_has_var {
+                        next_remaining.push(idx);
+                        continue;
+                    }
+
                     // Try to find a polymorphic overload where every union-typed argument
                     // is matched to a type-variable parameter (e.g. `to_number: (Var) -> Number`).
                     if let Some(resolved_ty) = ctx.resolve_overload(&d.op_name, &resolved_operands)
@@ -507,9 +591,7 @@ impl TypeChecker {
                             .filter(|(arg, _)| arg.is_union())
                             .all(|(_, param)| param.is_var());
 
-                        if union_params_are_vars
-                            || Self::union_members_consistent_return(ctx, &d.op_name, &resolved_operands)
-                        {
+                        if union_params_are_vars {
                             for (operand_ty, param_ty) in d.operand_tys.iter().zip(param_tys.iter()) {
                                 ctx.add_constraint(constraint::Constraint::Equal(
                                     operand_ty.clone(),
@@ -521,6 +603,18 @@ impl TypeChecker {
                             unify::solve_constraints(ctx);
                             continue;
                         }
+                    }
+
+                    // Check whether all non-None-propagating members return the same type.
+                    // This handles patterns like `len(Union(Array(String), None))` where
+                    // None-propagation (None → None) should be ignored when determining
+                    // the consistent return type.
+                    if let Some(consistent_ret) =
+                        Self::union_members_consistent_return(ctx, &d.op_name, &resolved_operands)
+                    {
+                        ctx.set_symbol_type_no_bind(d.symbol_id, consistent_ret);
+                        unify::solve_constraints(ctx);
+                        continue;
                     }
                     let args_str = resolved_operands
                         .iter()

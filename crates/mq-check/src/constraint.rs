@@ -663,10 +663,10 @@ fn collect_break_types_inner(
             }
         }
         // When there is no else and a break was found inside this if, the "condition false"
-        // path passes through the input with an unknown type.  Add a fresh variable to
-        // represent this so the loop type becomes a union.
+        // path returns None (no else in mq returns None).  Add None to the break type
+        // list so the loop type becomes Union(break_value_type, None).
         if !has_explicit_else && found_break {
-            result.push(Type::Var(ctx.fresh_var()));
+            result.push(Type::None);
         }
         return found_break;
     }
@@ -1036,21 +1036,16 @@ fn generate_symbol_constraints(
                                 range,
                             });
                         } else if has_union {
-                            // Union types cannot be used with binary operators
-                            // Report an error with a clear message
-                            ctx.add_error(TypeError::UnificationError {
-                                left: format!(
-                                    "{} with arguments ({}, {})",
-                                    op_name,
-                                    resolved_left.display_renumbered(),
-                                    resolved_right.display_renumbered()
-                                ),
-                                right: "union types cannot be used with binary operators".to_string(),
-                                span: range.as_ref().map(range_to_span),
-                                location: range.as_ref().map(|r| (r.start.line, r.start.column)),
-                            });
+                            // Defer — Union operands are resolved in `resolve_deferred_overloads`
+                            // where `union_members_consistent_return` can check all members.
                             let ty_var = ctx.fresh_var();
                             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                            ctx.add_deferred_overload(DeferredOverload {
+                                symbol_id,
+                                op_name: SmolStr::new(op_name.as_str()),
+                                operand_tys: vec![left_ty, right_ty],
+                                range,
+                            });
                         } else {
                             // Try to resolve the best matching overload
                             let arg_types = vec![resolved_left.clone(), resolved_right.clone()];
@@ -1367,9 +1362,15 @@ fn generate_symbol_constraints(
                                                 arg_tys: explicit_arg_tys.clone(),
                                             });
                                         }
-                                    } else if ctx.tuple() {
-                                        // Tuple mode: defer index access resolution until after
-                                        // unification, when we know if the variable is a Tuple.
+                                    } else {
+                                        // Non-function variable with bracket access (e.g., v[0]).
+                                        // Always defer index access resolution to post-unification.
+                                        // This handles both Array and Tuple types correctly:
+                                        // - For Tuple (heterogeneous arrays), per-element types are preserved
+                                        // - For Array, element type is used as before
+                                        // - For unresolved vars, the fallback adds an Array structural constraint
+                                        // This avoids false positives where different elements of a heterogeneous
+                                        // array share the same type variable and get incorrectly unified.
                                         let literal_index = children.first().and_then(|&arg_id| {
                                             let arg_sym = hir.symbol(arg_id)?;
                                             if matches!(arg_sym.kind, SymbolKind::Number) {
@@ -1396,27 +1397,6 @@ fn generate_symbol_constraints(
                                             index: literal_index,
                                             range: get_symbol_range(hir, symbol_id),
                                         });
-                                    } else {
-                                        // Non-function variable with bracket access (e.g., v[0]).
-                                        // Add structural constraint: var_type = Array(elem_type)
-                                        // so that element type propagates through unification.
-                                        // This avoids deferred overload resolution issues where
-                                        // the `get` builtin return type Var doesn't get bound.
-                                        let elem_var = ctx.fresh_var();
-                                        let elem_ty = Type::Var(elem_var);
-                                        ctx.add_constraint(Constraint::Equal(
-                                            original_func_ty.clone(),
-                                            Type::array(elem_ty.clone()),
-                                            range,
-                                        ));
-                                        if let Some(index_ty) = explicit_arg_tys.first() {
-                                            ctx.add_constraint(Constraint::Equal(
-                                                index_ty.clone(),
-                                                Type::Number,
-                                                range,
-                                            ));
-                                        }
-                                        ctx.set_symbol_type(symbol_id, elem_ty);
                                     }
                                 }
                             }
@@ -1490,19 +1470,14 @@ fn generate_symbol_constraints(
                         });
                     }
 
-                    if is_heterogeneous && ctx.tuple() {
-                        // Tuple mode: preserve per-element types for heterogeneous arrays
-                        let tuple_ty = Type::tuple(elem_tys);
-                        ctx.set_symbol_type(symbol_id, tuple_ty);
-                    } else {
-                        // Heterogeneous or partially-unresolved array (used as tuple) —
-                        // use fresh type variable to avoid corrupting type inference
-                        // for downstream code. When some elements are still type variables,
-                        // we cannot know if they will resolve to compatible types.
-                        let elem_ty_var = ctx.fresh_var();
-                        let array_ty = Type::array(Type::Var(elem_ty_var));
-                        ctx.set_symbol_type(symbol_id, array_ty);
-                    }
+                    // Always use Tuple to preserve per-element type information.
+                    // When elements have different concrete types (heterogeneous) or some
+                    // elements are still type variables (partially-resolved), a single
+                    // shared element type variable would be incorrectly unified with
+                    // incompatible types (e.g., both String from result[0] and Bool from
+                    // result[1] if the same Var is used for all elements).
+                    let tuple_ty = Type::tuple(elem_tys);
+                    ctx.set_symbol_type(symbol_id, tuple_ty);
                 } else {
                     // Homogeneous or unresolved — unify all element types
                     let elem_ty = elem_tys[0].clone();
@@ -1639,14 +1614,13 @@ fn generate_symbol_constraints(
                     let has_none_branch = resolved.iter().any(|t| matches!(t, Type::None));
 
                     if (!all_same && concrete.len() >= 2) || (has_none_branch && resolved.len() >= 2) {
-                        // Different concrete types in branches — use Union type
-                        let unique_types: Vec<Type> = concrete.into_iter().cloned().collect();
-                        if unique_types.is_empty() {
-                            ctx.set_symbol_type(symbol_id, then_ty.clone());
-                        } else {
-                            let union_ty = Type::union(unique_types);
-                            ctx.set_symbol_type(symbol_id, union_ty);
-                        }
+                        // Different concrete types across branches — use Union type.
+                        // Include ALL resolved branch types (vars and concrete) so that
+                        // branches whose types are not yet fully resolved can still be
+                        // tracked and resolved later (e.g., `if (...): items else: None`
+                        // where `items` is still a Var at constraint-generation time).
+                        let union_ty = Type::union(resolved.clone());
+                        ctx.set_symbol_type(symbol_id, union_ty);
                     } else {
                         // Homogeneous or unresolved — unify all branch types
                         ctx.set_symbol_type(symbol_id, then_ty.clone());

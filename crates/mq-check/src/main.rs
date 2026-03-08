@@ -109,8 +109,6 @@ fn run() -> io::Result<()> {
         if had_errors {
             total_errors += 1;
         }
-
-        writeln!(w)?;
     }
 
     if total_errors > 0 {
