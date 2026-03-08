@@ -407,6 +407,16 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::array(Type::Var(a)),
     );
 
+    // slice: ([a], number) -> [a]  (open-ended slice, e.g. arr[1:])
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "slice",
+        Type::array(Type::Var(a)),
+        Type::Number,
+        Type::array(Type::Var(a)),
+    );
+
     // insert: ([a], number, a) -> [a]
     let a = ctx.fresh_var();
     register_ternary(
@@ -443,6 +453,9 @@ fn register_array(ctx: &mut InferenceContext) {
     // slice: (string, number, number) -> string
     register_ternary(ctx, "slice", Type::String, Type::Number, Type::Number, Type::String);
 
+    // slice: (string, number) -> string  (open-ended slice, e.g. s[1:])
+    register_binary(ctx, "slice", Type::String, Type::Number, Type::String);
+
     // contains: ([a], a) -> bool
     let a = ctx.fresh_var();
     register_binary(ctx, "contains", Type::array(Type::Var(a)), Type::Var(a), Type::Bool);
@@ -461,6 +474,8 @@ fn register_array(ctx: &mut InferenceContext) {
     register_none_propagation_unary(ctx, &["reverse", "sort", "uniq", "compact", "flatten", "len"]);
     // slice: (none, number, number) -> none
     register_ternary(ctx, "slice", Type::None, Type::Number, Type::Number, Type::None);
+    // slice: (none, number) -> none  (open-ended slice)
+    register_binary(ctx, "slice", Type::None, Type::Number, Type::None);
 }
 
 /// Dictionary functions: keys, values, entries, get, set, del, update, dict

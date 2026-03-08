@@ -1328,7 +1328,10 @@ fn generate_symbol_constraints(
                                 // Symbol/Selector (`:key` pattern), not a regular variable ref.
                                 let field_name = children.first().and_then(|&arg_id| {
                                     let arg_symbol = hir.symbol(arg_id)?;
-                                    if matches!(arg_symbol.kind, SymbolKind::Symbol | SymbolKind::Selector(_)) {
+                                    if matches!(
+                                        arg_symbol.kind,
+                                        SymbolKind::Symbol | SymbolKind::Selector(_) | SymbolKind::String
+                                    ) {
                                         arg_symbol.value.as_ref().map(|v| v.to_string())
                                     } else {
                                         None
