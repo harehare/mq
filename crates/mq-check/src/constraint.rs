@@ -1015,8 +1015,18 @@ fn generate_symbol_constraints(
                     }
                 }
 
-                // Normal reference resolution
-                let ref_ty = ctx.get_or_create_symbol_type(symbol_id);
+                // Collect any child Selector symbols for variable attribute access,
+                // e.g. `md.depth` where `md` is an Ident with a Selector child.
+                let child_selectors: Vec<SymbolId> = get_children(children_index, symbol_id)
+                    .iter()
+                    .copied()
+                    .filter(|&child_id| {
+                        hir.symbol(child_id)
+                            .map(|s| matches!(s.kind, SymbolKind::Selector(_)))
+                            .unwrap_or(false)
+                    })
+                    .collect();
+
                 let def_ty = ctx.get_or_create_symbol_type(def_id);
                 // Instantiate fresh type variables for function references to enable
                 // polymorphic use at different call/reference sites
@@ -1026,7 +1036,42 @@ fn generate_symbol_constraints(
                     def_ty
                 };
                 let range = get_symbol_range(hir, symbol_id);
-                ctx.add_constraint(Constraint::Equal(ref_ty, def_ty, range));
+
+                if child_selectors.is_empty() {
+                    // Normal reference resolution: the Ref's stored type = def type
+                    let ref_ty = ctx.get_or_create_symbol_type(symbol_id);
+                    ctx.add_constraint(Constraint::Equal(ref_ty, def_ty, range));
+                } else {
+                    // Variable attribute access (e.g. `md.depth`):
+                    // Use a fresh lookup_var for the def-type equality so it doesn't
+                    // conflict with the symbol's stored type, which will be overwritten
+                    // with the child selector's output type (e.g. Number for `.depth`).
+                    // This prevents a spurious "Number = Markdown" unification error on
+                    // the second pass when `get_or_create_symbol_type(symbol_id)` would
+                    // return the already-overwritten Number type.
+                    let lookup_var = Type::Var(ctx.fresh_var());
+                    ctx.add_constraint(Constraint::Equal(lookup_var.clone(), def_ty, range));
+
+                    ctx.set_piped_input(child_selectors[0], lookup_var);
+                    for i in 0..child_selectors.len() {
+                        if let Some(child_sym) = hir.symbol(child_selectors[i]) {
+                            generate_symbol_constraints(
+                                hir,
+                                child_selectors[i],
+                                child_sym.kind.clone(),
+                                ctx,
+                                children_index,
+                            );
+                        }
+                        if i + 1 < child_selectors.len() {
+                            let next_ty = ctx.get_or_create_symbol_type(child_selectors[i]);
+                            ctx.set_piped_input(child_selectors[i + 1], next_ty);
+                        }
+                    }
+                    // The Ref's final type is the last child selector's output type.
+                    let last_ty = ctx.get_or_create_symbol_type(*child_selectors.last().unwrap());
+                    ctx.set_symbol_type(symbol_id, last_ty);
+                }
             } else {
                 // No HIR resolution — try builtin registry by name as fallback
                 if let Some(symbol) = hir.symbol(symbol_id)
@@ -2159,11 +2204,19 @@ fn generate_symbol_constraints(
                     }
                 } else {
                     // Piped type not yet resolved — defer to post-unification.
+                    // Include the attr_kind so that if the piped type resolves to Markdown,
+                    // the correct attribute type can be returned (e.g., `md.depth` → number).
                     if let Some(name) = field_name {
+                        let attr_kind = if let mq_lang::Selector::Attr(ak) = selector {
+                            Some(ak.clone())
+                        } else {
+                            None
+                        };
                         ctx.add_deferred_selector_access(infer::DeferredSelectorAccess {
                             symbol_id,
                             piped_ty: piped_ty.clone(),
                             field_name: name.to_string(),
+                            attr_kind,
                             range: get_symbol_range(hir, symbol_id),
                         });
                     }

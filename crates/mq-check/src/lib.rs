@@ -340,8 +340,9 @@ impl TypeChecker {
 
     /// Resolves deferred selector field accesses after unification.
     ///
-    /// For each deferred selector access `.field`, resolves the piped input type
-    /// (now concrete after unification) and checks if the field exists in the record.
+    /// For each deferred selector access, resolves the piped input type (now concrete
+    /// after unification) and either returns the attribute type (for Markdown piped input)
+    /// or checks that the field exists in the record.
     fn resolve_selector_field_accesses(ctx: &mut infer::InferenceContext) {
         let accesses = ctx.take_deferred_selector_accesses();
         if accesses.is_empty() {
@@ -351,13 +352,22 @@ impl TypeChecker {
         for access in &accesses {
             let resolved = ctx.resolve_type(&access.piped_ty);
 
-            if let types::Type::Record(fields, rest) = &resolved {
+            if let types::Type::Markdown = resolved {
+                // Piped input resolved to a Markdown node (e.g. `let md = .h | md.depth`).
+                // Attr selectors return their concrete type; non-Attr selectors return Markdown.
+                if let Some(ref attr_kind) = access.attr_kind {
+                    let attr_ty = constraint::attr_kind_to_type(attr_kind);
+                    let sel_ty = ctx.get_or_create_symbol_type(access.symbol_id);
+                    ctx.add_constraint(constraint::Constraint::Equal(sel_ty, attr_ty, None));
+                } else {
+                    let sel_ty = ctx.get_or_create_symbol_type(access.symbol_id);
+                    ctx.add_constraint(constraint::Constraint::Equal(sel_ty, types::Type::Markdown, None));
+                }
+            } else if let types::Type::Record(fields, rest) = &resolved {
                 if let Some(field_ty) = fields.get(&access.field_name) {
-                    // Bind the selector's type to the field type
                     let sel_ty = ctx.get_or_create_symbol_type(access.symbol_id);
                     ctx.add_constraint(constraint::Constraint::Equal(sel_ty, field_ty.clone(), None));
                 } else if matches!(rest.as_ref(), types::Type::RowEmpty) {
-                    // Field not found in closed record — report error
                     ctx.add_error(TypeError::UndefinedField {
                         field: access.field_name.clone(),
                         record_ty: resolved.display_renumbered(),

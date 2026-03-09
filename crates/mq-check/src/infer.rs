@@ -93,6 +93,9 @@ pub struct DeferredSelectorAccess {
     pub piped_ty: Type,
     /// The field name being accessed
     pub field_name: String,
+    /// The attribute kind, if this is a `Selector::Attr` selector on a Markdown node.
+    /// Used after unification when the piped type resolves to `Type::Markdown`.
+    pub attr_kind: Option<mq_lang::AttrKind>,
     /// Source range for error reporting
     pub range: Option<mq_lang::Range>,
 }
