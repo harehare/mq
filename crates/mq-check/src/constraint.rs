@@ -1383,7 +1383,15 @@ fn generate_symbol_constraints(
                                             }
                                         });
 
-                                        if let Some(index_ty) = explicit_arg_tys.first() {
+                                        // Only constrain the index to Number when it is a literal
+                                        // numeric index (e.g. v[0]). For variable indices
+                                        // (e.g. a String key used for Dict access), skip this
+                                        // constraint — the correct element type is resolved via
+                                        // resolve_deferred_tuple_accesses once the container's
+                                        // type is known.
+                                        if literal_index.is_some()
+                                            && let Some(index_ty) = explicit_arg_tys.first()
+                                        {
                                             ctx.add_constraint(Constraint::Equal(
                                                 index_ty.clone(),
                                                 Type::Number,
@@ -1457,7 +1465,13 @@ fn generate_symbol_constraints(
                         .windows(2)
                         .any(|w| std::mem::discriminant(w[0]) != std::mem::discriminant(w[1]));
 
-                if is_heterogeneous || concrete_tys.len() != elem_tys.len() {
+                // Use Tuple only when there are multiple elements with mixed resolved/unresolved
+                // types, or when the elements are heterogeneous. A single-element array [x] where
+                // x is still a type variable should be Array(Var), not Tuple(Var), so that array
+                // operations like `[x] + [y]` and `arr + [x]` resolve correctly via Array overloads.
+                let needs_tuple = is_heterogeneous || (elem_tys.len() >= 2 && concrete_tys.len() != elem_tys.len());
+
+                if needs_tuple {
                     // In strict array mode, report heterogeneous arrays as errors
                     if is_heterogeneous && ctx.strict_array() {
                         let range = get_symbol_range(hir, symbol_id);
@@ -1603,11 +1617,13 @@ fn generate_symbol_constraints(
                     let resolved: Vec<Type> = branch_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
                     let concrete: Vec<&Type> = resolved.iter().filter(|ty| !ty.is_var()).collect();
 
-                    // Check if all concrete types are the same
+                    // Check if all concrete types are structurally compatible.
+                    // Use `can_branch_unify_with` for strict structural comparison:
+                    // Var vs concrete → incompatible, preventing false unification of
+                    // branches like Tuple([None,Var]) vs Tuple([Var,Var]) where the Var
+                    // might later resolve to an incompatible concrete type (e.g. Number).
                     let all_same = if concrete.len() >= 2 {
-                        concrete
-                            .windows(2)
-                            .all(|w| std::mem::discriminant(w[0]) == std::mem::discriminant(w[1]))
+                        concrete.windows(2).all(|w| w[0].can_branch_unify_with(w[1]))
                     } else {
                         true
                     };
@@ -1616,7 +1632,24 @@ fn generate_symbol_constraints(
                     // should not unify `value` with None; instead treat as different types.
                     let has_none_branch = resolved.iter().any(|t| matches!(t, Type::None));
 
-                    if (!all_same && concrete.len() >= 2) || (has_none_branch && resolved.len() >= 2) {
+                    // Detect patterns like `if (is_array(x)): x else: [x]` where one branch
+                    // is Var(a) and another contains Var(a).  Trying to unify these directly
+                    // would trigger an "infinite type" occurs-check error.  Instead, form a
+                    // Union so both branches coexist without being forcibly equated.
+                    let would_cause_infinite_type = resolved.iter().any(|ty| {
+                        if let Type::Var(v) = ty {
+                            resolved
+                                .iter()
+                                .any(|other| !matches!(other, Type::Var(_)) && other.free_vars().contains(v))
+                        } else {
+                            false
+                        }
+                    });
+
+                    if would_cause_infinite_type
+                        || (!all_same && concrete.len() >= 2)
+                        || (has_none_branch && resolved.len() >= 2)
+                    {
                         // Different concrete types across branches — use Union type.
                         // Include ALL resolved branch types (vars and concrete) so that
                         // branches whose types are not yet fully resolved can still be

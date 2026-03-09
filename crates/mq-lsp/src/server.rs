@@ -204,6 +204,9 @@ impl LanguageServer for Backend {
             .error_map
             .get(&params.text_document.uri.to_string())
             .unwrap()
+            .iter()
+            .filter(|e| matches!(e, LspError::SyntaxError(_)))
+            .collect::<Vec<_>>()
             .is_empty()
         {
             return Ok(None);

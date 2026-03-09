@@ -191,6 +191,16 @@ fn register_comparison(ctx: &mut InferenceContext) {
         let a = ctx.fresh_var();
         register_binary(ctx, name, Type::Var(a), Type::Var(a), Type::Bool);
     }
+
+    // Equality: (None, a) -> bool and (a, None) -> bool
+    // In mq, comparing None with any type is valid and returns bool
+    // (e.g. `len(possibly_none) == 0` where len returns None for None inputs).
+    for name in ["==", "!=", "eq", "ne"] {
+        let a = ctx.fresh_var();
+        register_binary(ctx, name, Type::None, Type::Var(a), Type::Bool);
+        let a = ctx.fresh_var();
+        register_binary(ctx, name, Type::Var(a), Type::None, Type::Bool);
+    }
 }
 
 /// Logical operators: &&, ||, !, and, or, not, unary-, negate
@@ -531,6 +541,17 @@ fn register_dict(ctx: &mut InferenceContext) {
         Type::Var(k),
         Type::Var(v),
         Type::dict(Type::Var(k), Type::Var(v)),
+    );
+
+    // set: ([a], number, a) -> [a]  (array index assignment)
+    let a = ctx.fresh_var();
+    register_ternary(
+        ctx,
+        "set",
+        Type::array(Type::Var(a)),
+        Type::Number,
+        Type::Var(a),
+        Type::array(Type::Var(a)),
     );
 
     // del: ({k: v}, k) -> {k: v}

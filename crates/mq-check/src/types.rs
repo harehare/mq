@@ -162,6 +162,11 @@ impl Type {
         matches!(self, Type::Var(_))
     }
 
+    /// Checks if this type contains no free type variables (is fully concrete)
+    pub fn is_concrete(&self) -> bool {
+        self.free_vars().is_empty()
+    }
+
     /// Checks if this is a union type
     pub fn is_union(&self) -> bool {
         matches!(self, Type::Union(_))
@@ -292,6 +297,70 @@ impl Type {
             (Type::RowEmpty, Type::RowEmpty) => true,
 
             // Everything else doesn't match
+            _ => false,
+        }
+    }
+
+    /// Strict branch compatibility check for if-expression unification decisions.
+    ///
+    /// Unlike `can_match`, this treats an unresolved type variable (`Var`) as incompatible
+    /// with any known concrete type. This is used when deciding whether if-expression
+    /// branches should be unified or placed in a Union type: if one branch has `None` in
+    /// a tuple element position and another has `Var` (which might resolve to `Number`),
+    /// we conservatively choose Union to avoid a spurious unification error later.
+    ///
+    /// - `Var(a)` vs `Var(b)` → `true` (both unknown; let unification decide)
+    /// - `Var(a)` vs `concrete` → `false` (Var might not match the concrete type)
+    /// - `concrete` vs `Var(a)` → `false` (symmetric)
+    /// - All other cases mirror `can_match`
+    pub fn can_branch_unify_with(&self, other: &Type) -> bool {
+        match (self, other) {
+            // Two type variables are compatible (unification will sort them out)
+            (Type::Var(_), Type::Var(_)) => true,
+
+            // Var vs concrete — unknown; do NOT assume compatible
+            (Type::Var(_), _) | (_, Type::Var(_)) => false,
+
+            // Union types: strict — any member must strictly match
+            (Type::Union(types), other) => types.iter().any(|t| t.can_branch_unify_with(other)),
+            (other, Type::Union(types)) => types.iter().any(|t| other.can_branch_unify_with(t)),
+
+            // Concrete types must match exactly
+            (Type::Int, Type::Int)
+            | (Type::Float, Type::Float)
+            | (Type::Number, Type::Number)
+            | (Type::String, Type::String)
+            | (Type::Bool, Type::Bool)
+            | (Type::Symbol, Type::Symbol)
+            | (Type::None, Type::None)
+            | (Type::Markdown, Type::Markdown) => true,
+
+            // Arrays: recurse strictly
+            (Type::Array(elem1), Type::Array(elem2)) => elem1.can_branch_unify_with(elem2),
+
+            // Tuples: same length and all elements strictly match
+            (Type::Tuple(elems1), Type::Tuple(elems2)) => {
+                elems1.len() == elems2.len()
+                    && elems1
+                        .iter()
+                        .zip(elems2.iter())
+                        .all(|(e1, e2)| e1.can_branch_unify_with(e2))
+            }
+
+            // Dicts: recurse strictly
+            (Type::Dict(k1, v1), Type::Dict(k2, v2)) => k1.can_branch_unify_with(k2) && v1.can_branch_unify_with(v2),
+
+            // Functions: same arity and all param/ret types strictly match
+            (Type::Function(params1, ret1), Type::Function(params2, ret2)) => {
+                params1.len() == params2.len()
+                    && params1
+                        .iter()
+                        .zip(params2.iter())
+                        .all(|(p1, p2)| p1.can_branch_unify_with(p2))
+                    && ret1.can_branch_unify_with(ret2)
+            }
+
+            // Everything else is incompatible
             _ => false,
         }
     }

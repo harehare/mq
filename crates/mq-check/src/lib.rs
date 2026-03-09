@@ -455,6 +455,19 @@ impl TypeChecker {
                         resolved_any = true;
                     }
                 }
+                types::Type::Dict(_, value) => {
+                    // Dict bracket access: result type is the dict's value type.
+                    // e.g. `d[key]` where d: Dict(String, V) → V
+                    let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                    ctx.add_constraint(constraint::Constraint::Equal(call_ty, *value.clone(), None));
+                    resolved_any = true;
+                }
+                types::Type::String => {
+                    // String bracket access: `s[n]` or `s[n:m]` returns a String (character/slice).
+                    let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                    ctx.add_constraint(constraint::Constraint::Equal(call_ty, types::Type::String, None));
+                    resolved_any = true;
+                }
                 types::Type::Var(_) => {
                     // Type variable not yet resolved — re-queue for next pass.
                     // Do NOT add an Array constraint here: if the variable later resolves
@@ -558,7 +571,7 @@ impl TypeChecker {
                 let d = &deferred[idx];
                 let resolved_operands: Vec<types::Type> = d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
 
-                let all_concrete = resolved_operands.iter().all(|ty| !ty.is_var());
+                let all_concrete = resolved_operands.iter().all(|ty| ty.is_concrete());
                 let has_union = resolved_operands.iter().any(|ty| ty.is_union());
 
                 if has_union {
@@ -627,7 +640,7 @@ impl TypeChecker {
                     continue;
                 }
 
-                // Skip resolution when any operand is still a type variable
+                // Skip resolution when any operand is a bare type variable (unknown type)
                 // and there are multiple overloads — we can't determine the correct one.
                 let any_var = resolved_operands.iter().any(|ty| ty.is_var());
                 if any_var {
@@ -672,9 +685,9 @@ impl TypeChecker {
                     let resolved_operands: Vec<types::Type> =
                         d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
 
-                    // Don't resolve when any operand is still a type variable
+                    // Don't resolve when any operand still contains a free type variable
                     // and there are multiple overloads — store back for user call body checking
-                    let any_var_best = resolved_operands.iter().any(|ty| ty.is_var());
+                    let any_var_best = resolved_operands.iter().any(|ty| !ty.is_concrete());
                     if any_var_best {
                         let overload_count = ctx.get_builtin_overloads(&d.op_name).map(|o| o.len()).unwrap_or(0);
                         if overload_count > 1 {
@@ -697,7 +710,7 @@ impl TypeChecker {
                             ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
                         }
                     } else {
-                        let all_concrete = resolved_operands.iter().all(|ty| !ty.is_var());
+                        let all_concrete = resolved_operands.iter().all(|ty| ty.is_concrete());
                         if all_concrete {
                             ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.range);
                         } else {
@@ -917,7 +930,7 @@ impl TypeChecker {
                     })
                     .collect();
 
-                // Skip if any operand is still a type variable after substitution
+                // Skip if any operand is still a bare type variable after substitution
                 if substituted_operands.iter().any(|ty| ty.is_var()) {
                     next_remaining.push(idx);
                     continue;

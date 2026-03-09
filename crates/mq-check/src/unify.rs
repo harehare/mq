@@ -68,17 +68,16 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
                 }
             };
 
-            // Occurs check: ensure var doesn't occur in ty
-            if occurs_check(var, ty) {
-                // Resolve types for better error messages
-                let var_ty = ctx.resolve_type(&Type::Var(var));
-                let resolved_ty = ctx.resolve_type(ty);
-                ctx.add_error(TypeError::OccursCheck {
-                    var: var_ty.display_renumbered(),
-                    ty: resolved_ty.display_renumbered(),
-                    span: range.as_ref().map(range_to_span),
-                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
-                });
+            // Transitive occurs check: ensure var doesn't occur in ty even through
+            // substitution chains, preventing cyclic bindings like
+            // Var(a)→Union(Var(b),T) + Var(b)→Union(Var(a),T).
+            let mut oc_visited = HashSet::new();
+            if occurs_check_transitive(ctx, var, ty, &mut oc_visited) {
+                // Binding would create an infinite type (e.g. Var(a) = Tuple(Var(a))).
+                // This arises from valid dynamic patterns like `if (is_array(x)): x else: [x]`
+                // where type-narrowing hasn't yet constrained the then-branch to Array.
+                // Skip the binding silently — the variable remains free/polymorphic, which is
+                // acceptable for mq's dynamic type system.
                 return;
             }
 
@@ -252,9 +251,10 @@ fn unify_records(
     }
 }
 
-/// Occurs check: ensures a type variable doesn't occur in a type
+/// Occurs check: ensures a type variable doesn't occur directly in a type.
 ///
-/// This prevents infinite types like T = [T]
+/// This prevents infinite types like T = [T].
+#[cfg_attr(not(test), allow(dead_code))]
 fn occurs_check(var: TypeVarId, ty: &Type) -> bool {
     match ty {
         Type::Var(v) => var == *v,
@@ -268,36 +268,105 @@ fn occurs_check(var: TypeVarId, ty: &Type) -> bool {
     }
 }
 
+/// Transitive occurs check that follows the substitution map.
+///
+/// Prevents cycles like `Var(a) → Union(Var(b), String)` + `Var(b) →
+/// Union(Var(a), String)` from being created in the substitution map.
+/// Uses a visited set to handle mutual references without looping.
+fn occurs_check_transitive(
+    ctx: &InferenceContext,
+    var: TypeVarId,
+    ty: &Type,
+    visited: &mut HashSet<TypeVarId>,
+) -> bool {
+    match ty {
+        Type::Var(v) => {
+            if *v == var {
+                return true;
+            }
+            if !visited.insert(*v) {
+                return false; // Already explored this path
+            }
+            if let Some(bound) = ctx.get_type_var(*v) {
+                occurs_check_transitive(ctx, var, &bound, visited)
+            } else {
+                false
+            }
+        }
+        Type::Array(elem) => occurs_check_transitive(ctx, var, elem, visited),
+        Type::Tuple(elems) => elems.iter().any(|e| occurs_check_transitive(ctx, var, e, visited)),
+        Type::Dict(key, value) => {
+            occurs_check_transitive(ctx, var, key, visited) || occurs_check_transitive(ctx, var, value, visited)
+        }
+        Type::Function(params, ret) => {
+            params.iter().any(|p| occurs_check_transitive(ctx, var, p, visited))
+                || occurs_check_transitive(ctx, var, ret, visited)
+        }
+        Type::Union(types) => types.iter().any(|t| occurs_check_transitive(ctx, var, t, visited)),
+        Type::Record(fields, rest) => {
+            fields.values().any(|v| occurs_check_transitive(ctx, var, v, visited))
+                || occurs_check_transitive(ctx, var, rest, visited)
+        }
+        _ => false,
+    }
+}
+
 /// Applies substitutions to resolve all type variables.
 ///
-/// Type variable chains are followed iteratively to avoid stack overflow.
+/// Uses a visited set to detect and break cycles in the substitution map,
+/// preventing stack overflow from mutually recursive type variable bindings.
 pub fn apply_substitution(ctx: &InferenceContext, ty: &Type) -> Type {
-    // Follow type variable chains iteratively
-    let ty = resolve_var_chain(ctx, ty);
-    match &ty {
-        Type::Var(_) => ty,
-        Type::Array(elem) => Type::Array(Box::new(apply_substitution(ctx, elem))),
-        Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| apply_substitution(ctx, e)).collect()),
+    let mut visited = HashSet::new();
+    apply_substitution_inner(ctx, ty, &mut visited)
+}
+
+fn apply_substitution_inner(ctx: &InferenceContext, ty: &Type, visited: &mut HashSet<TypeVarId>) -> Type {
+    match ty {
+        Type::Var(var) => {
+            if !visited.insert(*var) {
+                return ty.clone(); // Cycle detected — return var unresolved
+            }
+            let result = if let Some(bound) = ctx.get_type_var(*var) {
+                apply_substitution_inner(ctx, &bound, visited)
+            } else {
+                ty.clone()
+            };
+            visited.remove(var);
+            result
+        }
+        Type::Array(elem) => Type::Array(Box::new(apply_substitution_inner(ctx, elem, visited))),
+        Type::Tuple(elems) => Type::Tuple(
+            elems
+                .iter()
+                .map(|e| apply_substitution_inner(ctx, e, visited))
+                .collect(),
+        ),
         Type::Dict(key, value) => Type::Dict(
-            Box::new(apply_substitution(ctx, key)),
-            Box::new(apply_substitution(ctx, value)),
+            Box::new(apply_substitution_inner(ctx, key, visited)),
+            Box::new(apply_substitution_inner(ctx, value, visited)),
         ),
         Type::Function(params, ret) => {
-            let new_params = params.iter().map(|p| apply_substitution(ctx, p)).collect();
-            Type::Function(new_params, Box::new(apply_substitution(ctx, ret)))
+            let new_params = params
+                .iter()
+                .map(|p| apply_substitution_inner(ctx, p, visited))
+                .collect();
+            Type::Function(new_params, Box::new(apply_substitution_inner(ctx, ret, visited)))
         }
         Type::Union(types) => {
-            let new_types = types.iter().map(|t| apply_substitution(ctx, t)).collect();
+            let new_types = types
+                .iter()
+                .map(|t| apply_substitution_inner(ctx, t, visited))
+                .collect();
             Type::union(new_types)
         }
         Type::Record(fields, rest) => {
             let new_fields = fields
                 .iter()
-                .map(|(k, v)| (k.clone(), apply_substitution(ctx, v)))
+                .map(|(k, v)| (k.clone(), apply_substitution_inner(ctx, v, visited)))
                 .collect();
-            Type::Record(new_fields, Box::new(apply_substitution(ctx, rest)))
+            Type::Record(new_fields, Box::new(apply_substitution_inner(ctx, rest, visited)))
         }
-        _ => ty,
+        _ => ty.clone(),
     }
 }
 
