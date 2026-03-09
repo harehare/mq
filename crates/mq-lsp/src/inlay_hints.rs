@@ -43,10 +43,15 @@ pub fn response(
             }
 
             let type_scheme = type_env.get(&symbol_id)?;
-            let type_label = format!(": {}", type_scheme.ty);
 
             match &symbol.kind {
-                mq_hir::SymbolKind::Variable | mq_hir::SymbolKind::Call | mq_hir::SymbolKind::Ref => {
+                mq_hir::SymbolKind::Parameter
+                | mq_hir::SymbolKind::Variable
+                | mq_hir::SymbolKind::Call
+                | mq_hir::SymbolKind::Ref
+                    if type_scheme.ty.is_concrete() =>
+                {
+                    let type_label = format!(": {}", type_scheme.ty);
                     // Place hint after the variable name (end of the symbol)
                     let hint_col = (text_range.end.column as u32).saturating_sub(1);
                     let hint_line = text_range.end.line.saturating_sub(1);
