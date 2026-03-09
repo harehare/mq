@@ -66,7 +66,12 @@ def _toon_stringify_dict(data, level, delim):
       let k = e[0] | let v = e[1]
       | let ks = if (is_regex_match(k, "^[A-Za-z_][A-Za-z0-9_.]*$")): k else: "\"" + _toon_escape_string(k) + "\""
       | if (_toon_is_primitive(v)): ks + ": " + _toon_stringify_primitive(v, delim)
-        else: ks + ":\n" + next_ind + _toon_stringify_recursive(v, level + 1, delim);)
+        else:
+          do
+            let value = _toon_stringify_recursive(v, level + 1, delim)
+            | if (starts_with(value, "[")): ks + ind + value else: ks + ":\n" + next_ind + value
+          end
+    end)
   | join(lines, "\n" + ind)
 end
 
@@ -199,8 +204,12 @@ end
 
 def _toon_parse_inline_array(line, start_b, end_b):
   let cp = index(line, ":") | let key = trim(slice(line, 0, start_b)) | let bc = slice(line, start_b + 1, end_b)
-  | let values = split(trim(slice(line, cp + 1, len(line))), ",")
-  | [{key: key, length: bc, values: map(values, _toon_parse_primitive)}]
+  | let delim =
+    if (contains(bc, "|")): "|"
+    elif (contains(bc, "\t")): "\t"
+    else: ","
+  | let values = split(trim(slice(line, cp + 1, len(line))), delim)
+  | [{key: key, length: bc, values: take(map(values, _toon_parse_primitive), to_number(bc))}]
 end
 
 def _toon_parse_expanded(lines, start_i, count, target_indent, delim):
@@ -290,3 +299,4 @@ def toon_parse(input):
   | let res = _toon_parse_recursive(lines, 0, 0, ",")
   | res[0]
 end
+
