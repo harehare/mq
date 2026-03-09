@@ -134,7 +134,7 @@
           "description": "Enable or disable Code Lens for mq queries"
         },
         "mq.typeCheck.enableTypeCheck": {
-          "title": "Enable type check",
+          "title": "Enable type check (β)",
           "type": "boolean",
           "default": false,
           "description": "Enable or disable type checking for mq queries."
@@ -144,12 +144,6 @@
           "type": "boolean",
           "default": false,
           "description": "Enable or disable strict array mode. When enabled, arrays must contain elements of a single type."
-        },
-        "mq.typeCheck.tuple": {
-          "title": "Enable tuple mode",
-          "type": "boolean",
-          "default": false,
-          "description": "Enable or disable tuple mode. When enabled, heterogeneous array literals are typed as tuples with per-element types."
         }
       }
     },

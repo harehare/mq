@@ -204,6 +204,9 @@ impl LanguageServer for Backend {
             .error_map
             .get(&params.text_document.uri.to_string())
             .unwrap()
+            .iter()
+            .filter(|e| matches!(e, LspError::SyntaxError(_)))
+            .collect::<Vec<_>>()
             .is_empty()
         {
             return Ok(None);
@@ -1341,17 +1344,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_lsp_config_new() {
-        let config = LspConfig::new(
-            vec![],
-            true,
-            mq_check::TypeCheckerOptions {
-                strict_array: true,
-                tuple: false,
-            },
-        );
+        let config = LspConfig::new(vec![], true, mq_check::TypeCheckerOptions { strict_array: true });
         assert!(config.enable_type_checking);
         assert!(config.type_checker_options.strict_array);
-        assert!(!config.type_checker_options.tuple);
     }
 
     #[tokio::test]
@@ -1359,7 +1354,6 @@ mod tests {
         let config = LspConfig::default();
         assert!(!config.enable_type_checking);
         assert!(!config.type_checker_options.strict_array);
-        assert!(!config.type_checker_options.tuple);
     }
 
     #[tokio::test]
@@ -1517,14 +1511,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
-            config: LspConfig::new(
-                vec![],
-                true,
-                mq_check::TypeCheckerOptions {
-                    strict_array: true,
-                    tuple: false,
-                },
-            ),
+            config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions { strict_array: true }),
         });
 
         let backend = service.inner();
@@ -1560,14 +1547,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
-            config: LspConfig::new(
-                vec![],
-                true,
-                mq_check::TypeCheckerOptions {
-                    strict_array: false,
-                    tuple: true,
-                },
-            ),
+            config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions { strict_array: false }),
         });
 
         let backend = service.inner();

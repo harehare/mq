@@ -93,6 +93,9 @@ pub struct DeferredSelectorAccess {
     pub piped_ty: Type,
     /// The field name being accessed
     pub field_name: String,
+    /// The attribute kind, if this is a `Selector::Attr` selector on a Markdown node.
+    /// Used after unification when the piped type resolves to `Type::Markdown`.
+    pub attr_kind: Option<mq_lang::AttrKind>,
     /// Source range for error reporting
     pub range: Option<mq_lang::Range>,
 }
@@ -180,18 +183,16 @@ pub struct InferenceContext {
     type_narrowings: Vec<TypeNarrowing>,
     /// When true, heterogeneous arrays produce a type error
     strict_array: bool,
-    /// When true, heterogeneous array literals are typed as tuples with per-element types
-    tuple: bool,
 }
 
 impl InferenceContext {
     /// Creates a new inference context with default options
     pub fn new() -> Self {
-        Self::with_options(false, false)
+        Self::with_options(false)
     }
 
     /// Creates a new inference context with the given options
-    pub fn with_options(strict_array: bool, tuple: bool) -> Self {
+    pub fn with_options(strict_array: bool) -> Self {
         Self {
             var_ctx: TypeVarContext::new(),
             symbol_types: FxHashMap::default(),
@@ -208,18 +209,12 @@ impl InferenceContext {
             deferred_tuple_accesses: Vec::new(),
             type_narrowings: Vec::new(),
             strict_array,
-            tuple,
         }
     }
 
     /// Returns whether strict array mode is enabled
     pub fn strict_array(&self) -> bool {
         self.strict_array
-    }
-
-    /// Returns whether tuple mode is enabled
-    pub fn tuple(&self) -> bool {
-        self.tuple
     }
 
     /// Registers a builtin function or operator type
@@ -491,42 +486,50 @@ impl InferenceContext {
 
     /// Resolves a type by following type variable bindings.
     ///
-    /// Type variable chains (var1 → var2 → ... → concrete) are followed iteratively
-    /// to avoid stack overflow on long chains.
+    /// Uses a visited set to detect and break cycles in the substitution map.
+    /// Cycles can form with mutually recursive functions (e.g. `Var(a) →
+    /// Union(Var(b), String)` and `Var(b) → Union(Var(a), String)`), which
+    /// would otherwise cause infinite recursion.
     pub fn resolve_type(&self, ty: &Type) -> Type {
-        // Follow type variable chains iteratively
-        let ty = self.resolve_var_chain(ty);
-        match &ty {
-            Type::Var(_) => ty,
-            Type::Array(elem) => Type::Array(Box::new(self.resolve_type(elem))),
-            Type::Dict(key, value) => Type::Dict(Box::new(self.resolve_type(key)), Box::new(self.resolve_type(value))),
-            Type::Function(params, ret) => {
-                let new_params = params.iter().map(|p| self.resolve_type(p)).collect();
-                Type::Function(new_params, Box::new(self.resolve_type(ret)))
-            }
-            Type::Record(fields, rest) => {
-                let new_fields = fields.iter().map(|(k, v)| (k.clone(), self.resolve_type(v))).collect();
-                Type::Record(new_fields, Box::new(self.resolve_type(rest)))
-            }
-            _ => ty,
-        }
+        let mut visited = rustc_hash::FxHashSet::default();
+        self.resolve_type_inner(ty, &mut visited)
     }
 
-    /// Follows a type variable substitution chain iteratively until reaching
-    /// a non-variable type or an unbound variable.
-    fn resolve_var_chain(&self, ty: &Type) -> Type {
-        let mut current = ty.clone();
-        loop {
-            match &current {
-                Type::Var(var) => {
-                    if let Some(bound) = self.substitutions.get(var) {
-                        current = bound.clone();
-                    } else {
-                        return current;
-                    }
+    fn resolve_type_inner(&self, ty: &Type, visited: &mut rustc_hash::FxHashSet<TypeVarId>) -> Type {
+        match ty {
+            Type::Var(var) => {
+                if !visited.insert(*var) {
+                    // Cycle detected — return the var unresolved to break infinite recursion
+                    return ty.clone();
                 }
-                _ => return current,
+                if let Some(bound) = self.substitutions.get(var) {
+                    let result = self.resolve_type_inner(bound, visited);
+                    visited.remove(var); // Allow the same var in sibling branches
+                    result
+                } else {
+                    visited.remove(var);
+                    ty.clone()
+                }
             }
+            Type::Array(elem) => Type::Array(Box::new(self.resolve_type_inner(elem, visited))),
+            Type::Dict(key, value) => Type::Dict(
+                Box::new(self.resolve_type_inner(key, visited)),
+                Box::new(self.resolve_type_inner(value, visited)),
+            ),
+            Type::Function(params, ret) => {
+                let new_params = params.iter().map(|p| self.resolve_type_inner(p, visited)).collect();
+                Type::Function(new_params, Box::new(self.resolve_type_inner(ret, visited)))
+            }
+            Type::Record(fields, rest) => {
+                let new_fields = fields
+                    .iter()
+                    .map(|(k, v)| (k.clone(), self.resolve_type_inner(v, visited)))
+                    .collect();
+                Type::Record(new_fields, Box::new(self.resolve_type_inner(rest, visited)))
+            }
+            Type::Union(members) => Type::union(members.iter().map(|m| self.resolve_type_inner(m, visited)).collect()),
+            Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| self.resolve_type_inner(e, visited)).collect()),
+            _ => ty.clone(),
         }
     }
 

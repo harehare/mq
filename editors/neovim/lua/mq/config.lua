@@ -37,8 +37,6 @@ M.defaults = {
   enable_type_check = false,
   -- Enable strict array mode (passes --strict-array to mq-lsp, requires enable_type_check)
   strict_array = false,
-  -- Enable tuple mode (passes --tuple to mq-lsp, requires enable_type_check)
-  tuple = false,
   -- Enable LSP inlay hints (requires Neovim 0.10+)
   enable_inlay_hints = true,
   -- LSP server configuration

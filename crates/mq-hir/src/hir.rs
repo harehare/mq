@@ -931,7 +931,7 @@ impl Hir {
             ..
         } = &**node
         {
-            self.symbols.insert(Symbol {
+            let symbol_id = self.symbols.insert(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Ref,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -939,6 +939,13 @@ impl Hir {
                 doc: node.comments(),
                 parent,
             });
+
+            // Process Selector children, e.g. `md.depth` is an Ident(md) with a Selector(.depth) child.
+            for child in node.children_without_token() {
+                if matches!(child.kind, mq_lang::CstNodeKind::Selector) {
+                    self.add_selector_expr(&child, source_id, scope_id, Some(symbol_id));
+                }
+            }
         }
     }
 

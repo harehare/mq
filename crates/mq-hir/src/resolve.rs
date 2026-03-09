@@ -120,28 +120,55 @@ impl Hir {
         ref_name: &SmolStr,
         ref_symbol_id: SymbolId,
     ) -> Option<(SymbolId, Symbol)> {
-        // Find all matching symbols in current scope with priority order
+        // Get the Ref's source position for ordering checks.
+        let ref_start_line = self
+            .symbols
+            .get(ref_symbol_id)
+            .and_then(|s| s.source.text_range)
+            .map(|r| r.start.line);
+
+        // Find all matching symbols in current scope with priority order.
         let mut candidates = Vec::new();
 
         for (symbol_id, symbol) in &self.symbols {
-            if symbol_id != ref_symbol_id
-                && symbol.scope == scope_id
-                && symbol.value.as_ref() == Some(ref_name)
-                && (symbol.is_function()
-                    || symbol.is_parameter()
-                    || symbol.is_variable()
-                    || symbol.is_argument()
-                    || symbol.is_pattern_variable()
-                    || symbol.is_macro()
-                    || symbol.is_ident())
-            {
-                let priority = self.get_symbol_priority_for_scope(&symbol.kind);
-                candidates.push((priority, symbol_id, symbol.clone()));
+            if symbol_id == ref_symbol_id || symbol.scope != scope_id || symbol.value.as_ref() != Some(ref_name) {
+                continue;
             }
+
+            if !(symbol.is_function()
+                || symbol.is_parameter()
+                || symbol.is_variable()
+                || symbol.is_argument()
+                || symbol.is_pattern_variable()
+                || symbol.is_macro()
+                || symbol.is_ident())
+            {
+                continue;
+            }
+
+            // Variable (`let`) bindings must be declared before the use site.
+            // Functions and macros allow forward references.
+            if symbol.is_variable()
+                && let (Some(ref_line), Some(def_range)) = (ref_start_line, symbol.source.text_range)
+                && def_range.start.line > ref_line
+            {
+                continue;
+            }
+
+            let priority = self.get_symbol_priority_for_scope(&symbol.kind);
+            candidates.push((priority, symbol_id, symbol.clone()));
         }
 
-        // Sort by priority (lower number = higher priority)
-        candidates.sort_by_key(|(priority, _, _)| *priority);
+        // Sort by priority (lower number = higher priority).
+        // For same-priority variables, prefer the one closest (highest line) before the ref.
+        candidates.sort_by(|(p1, _, s1), (p2, _, s2)| {
+            p1.cmp(p2).then_with(|| {
+                let line1 = s1.source.text_range.map(|r| r.start.line).unwrap_or(0);
+                let line2 = s2.source.text_range.map(|r| r.start.line).unwrap_or(0);
+                // Prefer the definition closest to (but before) the Ref — i.e., higher line number first.
+                line2.cmp(&line1)
+            })
+        });
 
         if let Some((_, symbol_id, symbol)) = candidates.first() {
             Some((*symbol_id, symbol.clone()))

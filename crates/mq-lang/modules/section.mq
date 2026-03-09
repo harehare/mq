@@ -164,7 +164,7 @@ def toc(sections):
               if (_is_section(section)):
                 do
                   let lvl = level(section)
-                  | let indent = join(map(range(lvl - 1), fn(_): "  ";), "")
+                  | let indent = join(map(range(0, lvl - 1), fn(_): "  ";), "")
                   | let title_text = title(section)
                   | indent + "- " + title_text
                 end

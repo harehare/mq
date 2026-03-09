@@ -550,7 +550,6 @@ const startLspServer = async () => {
 
   const enableTypeCheck = config.get<boolean>("typeCheck.enableTypeCheck");
   const strictArray = config.get<boolean>("typeCheck.strictArray");
-  const tuple = config.get<boolean>("typeCheck.tuple");
   const workspaceFolders = vscode.workspace.workspaceFolders;
   const workspacePaths =
     workspaceFolders && workspaceFolders.length > 0
@@ -566,7 +565,6 @@ const startLspServer = async () => {
       ...[
         enableTypeCheck ? "--enable-type-checking" : "",
         enableTypeCheck && strictArray ? "--strict-array" : "",
-        enableTypeCheck && tuple ? "--tuple" : "",
       ].filter((v) => v !== ""),
     ],
     options: {},

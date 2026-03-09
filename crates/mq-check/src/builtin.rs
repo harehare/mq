@@ -191,6 +191,16 @@ fn register_comparison(ctx: &mut InferenceContext) {
         let a = ctx.fresh_var();
         register_binary(ctx, name, Type::Var(a), Type::Var(a), Type::Bool);
     }
+
+    // Equality: (None, a) -> bool and (a, None) -> bool
+    // In mq, comparing None with any type is valid and returns bool
+    // (e.g. `len(possibly_none) == 0` where len returns None for None inputs).
+    for name in ["==", "!=", "eq", "ne"] {
+        let a = ctx.fresh_var();
+        register_binary(ctx, name, Type::None, Type::Var(a), Type::Bool);
+        let a = ctx.fresh_var();
+        register_binary(ctx, name, Type::Var(a), Type::None, Type::Bool);
+    }
 }
 
 /// Logical operators: &&, ||, !, and, or, not, unary-, negate
@@ -218,12 +228,32 @@ fn register_logical(ctx: &mut InferenceContext) {
         }
     }
 
-    // Unary logical: bool -> bool
+    // Unary logical: a -> bool
+    // `!` uses the same truthy/falsy semantics as `not` in mq,
+    // accepting Bool, String, Number, Array, and Dict operands.
     register_unary(ctx, "!", Type::Bool, Type::Bool);
+    register_unary(ctx, "!", Type::String, Type::Bool);
+    register_unary(ctx, "!", Type::Number, Type::Bool);
     register_unary(ctx, "not", Type::Bool, Type::Bool);
+    register_unary(ctx, "not", Type::String, Type::Bool);
+    register_unary(ctx, "not", Type::Number, Type::Bool);
+
+    let a = ctx.fresh_var();
+    register_unary(ctx, "!", Type::array(Type::Var(a)), Type::Bool);
+
+    let a = ctx.fresh_var();
+    register_unary(ctx, "not", Type::array(Type::Var(a)), Type::Bool);
+
+    let k = ctx.fresh_var();
+    let v = ctx.fresh_var();
+    register_unary(ctx, "!", Type::dict(Type::Var(k), Type::Var(v)), Type::Bool);
+
+    let k = ctx.fresh_var();
+    let v = ctx.fresh_var();
+    register_unary(ctx, "not", Type::dict(Type::Var(k), Type::Var(v)), Type::Bool);
 
     // Unary minus: number -> number
-    register_unary(ctx, "unary-", Type::Number, Type::Number);
+    register_unary(ctx, "-", Type::Number, Type::Number);
     register_unary(ctx, "negate", Type::Number, Type::Number);
 }
 
@@ -387,6 +417,16 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::array(Type::Var(a)),
     );
 
+    // slice: ([a], number) -> [a]  (open-ended slice, e.g. arr[1:])
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "slice",
+        Type::array(Type::Var(a)),
+        Type::Number,
+        Type::array(Type::Var(a)),
+    );
+
     // insert: ([a], number, a) -> [a]
     let a = ctx.fresh_var();
     register_ternary(
@@ -423,6 +463,9 @@ fn register_array(ctx: &mut InferenceContext) {
     // slice: (string, number, number) -> string
     register_ternary(ctx, "slice", Type::String, Type::Number, Type::Number, Type::String);
 
+    // slice: (string, number) -> string  (open-ended slice, e.g. s[1:])
+    register_binary(ctx, "slice", Type::String, Type::Number, Type::String);
+
     // contains: ([a], a) -> bool
     let a = ctx.fresh_var();
     register_binary(ctx, "contains", Type::array(Type::Var(a)), Type::Var(a), Type::Bool);
@@ -441,6 +484,8 @@ fn register_array(ctx: &mut InferenceContext) {
     register_none_propagation_unary(ctx, &["reverse", "sort", "uniq", "compact", "flatten", "len"]);
     // slice: (none, number, number) -> none
     register_ternary(ctx, "slice", Type::None, Type::Number, Type::Number, Type::None);
+    // slice: (none, number) -> none  (open-ended slice)
+    register_binary(ctx, "slice", Type::None, Type::Number, Type::None);
 }
 
 /// Dictionary functions: keys, values, entries, get, set, del, update, dict
@@ -496,6 +541,17 @@ fn register_dict(ctx: &mut InferenceContext) {
         Type::Var(k),
         Type::Var(v),
         Type::dict(Type::Var(k), Type::Var(v)),
+    );
+
+    // set: ([a], number, a) -> [a]  (array index assignment)
+    let a = ctx.fresh_var();
+    register_ternary(
+        ctx,
+        "set",
+        Type::array(Type::Var(a)),
+        Type::Number,
+        Type::Var(a),
+        Type::array(Type::Var(a)),
     );
 
     // del: ({k: v}, k) -> {k: v}
@@ -1447,9 +1503,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case::not_number("!42", false)] // number is not bool
-    #[case::not_string("!\"hello\"", false)] // string is not bool
-    #[case::not_array("![1, 2, 3]", false)] // array is not bool
+    #[case::not_number("!42", true)] // number is truthy/falsy → bool
+    #[case::not_string("!\"hello\"", true)] // string is truthy/falsy → bool
+    #[case::not_array("![1, 2, 3]", true)] // array is truthy/falsy → bool
     fn test_logical_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
