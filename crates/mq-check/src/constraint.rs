@@ -447,6 +447,32 @@ fn is_foreach_iterable_ref(hir: &Hir, symbol_id: SymbolId) -> bool {
         .unwrap_or(false)
 }
 
+/// Maps a Markdown node attribute kind to its concrete return type.
+///
+/// - String attributes: value, lang, meta, fence, url, alt, title, ident, label, align, name
+/// - Number attributes: depth, level, index, column, row
+/// - Bool attributes: ordered, checked
+/// - Markdown array attributes: values, children
+pub(crate) fn attr_kind_to_type(attr_kind: &mq_lang::AttrKind) -> Type {
+    use mq_lang::AttrKind;
+    match attr_kind {
+        AttrKind::Value
+        | AttrKind::Lang
+        | AttrKind::Meta
+        | AttrKind::Fence
+        | AttrKind::Url
+        | AttrKind::Alt
+        | AttrKind::Title
+        | AttrKind::Ident
+        | AttrKind::Label
+        | AttrKind::Align
+        | AttrKind::Name => Type::String,
+        AttrKind::Depth | AttrKind::Level | AttrKind::Index | AttrKind::Column | AttrKind::Row => Type::Number,
+        AttrKind::Ordered | AttrKind::Checked => Type::Bool,
+        AttrKind::Values | AttrKind::Children => Type::array(Type::Markdown),
+    }
+}
+
 /// Checks if a symbol might receive piped input later (i.e., is inside a Block
 /// or a Function/Macro body with multiple expressions).
 ///
@@ -478,6 +504,30 @@ fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool {
         );
     }
     false
+}
+
+/// Checks if a symbol is nested inside a `quote do...end` or `unquote(...)` block.
+///
+/// Code inside `quote do...end` is template/meta-code that generates AST at runtime
+/// rather than being directly executed. Type errors inside such blocks should be
+/// suppressed because `unquote(expr)` splices in expressions from macro parameters
+/// whose types are only known at the macro call site.
+fn is_inside_quote_block(hir: &Hir, symbol_id: SymbolId) -> bool {
+    let mut current_id = symbol_id;
+    loop {
+        let parent_id = match hir.symbol(current_id).and_then(|s| s.parent) {
+            Some(id) => id,
+            None => return false,
+        };
+        if let Some(parent) = hir.symbol(parent_id) {
+            // Quote and unquote keywords have value = None; other keywords (break, self)
+            // have named values and are not quote blocks.
+            if matches!(parent.kind, SymbolKind::Keyword) && parent.value.is_none() {
+                return true;
+            }
+        }
+        current_id = parent_id;
+    }
 }
 
 /// Builds the argument type list for a piped builtin function call.
@@ -1416,14 +1466,16 @@ fn generate_symbol_constraints(
                             // If there's piped input, prepend it as the implicit first argument
                             let arg_tys = build_piped_call_args(ctx, symbol_id, &explicit_arg_tys, func_name);
                             // Defer error if call might receive piped input later (inside a Block)
-                            let defer = might_receive_piped_input(hir, symbol_id);
+                            // or if it is inside a quote block (template code not directly executed).
+                            let defer =
+                                might_receive_piped_input(hir, symbol_id) || is_inside_quote_block(hir, symbol_id);
                             resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
                         }
                     } else {
                         // No HIR resolution - try builtin overload resolution
                         // If there's piped input, prepend it as the implicit first argument
                         let arg_tys = build_piped_call_args(ctx, symbol_id, &explicit_arg_tys, func_name);
-                        let defer = might_receive_piped_input(hir, symbol_id);
+                        let defer = might_receive_piped_input(hir, symbol_id) || is_inside_quote_block(hir, symbol_id);
                         resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
                     }
                 } else {
@@ -2058,21 +2110,36 @@ fn generate_symbol_constraints(
             }
         }
 
-        // Selector: resolve field type from Record if piped input is known
-        SymbolKind::Selector(_) => {
-            if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
+        // Selector: resolve the type for chained selectors like `.h1.value` or `.h1.depth`.
+        //
+        // In the HIR, `.h1.value` is represented as Selector(.h1) with a child Selector(.value).
+        // The parent selector's output type (always `Type::Markdown` for non-Attr selectors)
+        // is propagated as piped input to each child selector in the chain.
+        //
+        // Attr selectors (`Selector::Attr`) return the concrete attribute type via `attr_kind_to_type`.
+        // Non-Attr selectors (`.h1`, `.code`, etc.) always return `Type::Markdown`.
+        SymbolKind::Selector(ref selector) => {
+            // Compute this selector's own output type based on the incoming piped input.
+            let own_type = if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
                 let resolved = ctx.resolve_type(&piped_ty);
                 let field_name = hir
                     .symbol(symbol_id)
                     .and_then(|s| s.value.as_ref())
                     .map(|v| v.trim_start_matches('.').trim_start_matches("[:").trim_end_matches(']'));
 
-                if let Type::Record(ref fields, ref rest) = resolved {
+                if let Type::Markdown = resolved {
+                    // Piped input is a Markdown node (from a parent selector in a chain).
+                    // Attr selectors return their specific type; non-Attr still return Markdown.
+                    if let mq_lang::Selector::Attr(attr_kind) = selector {
+                        attr_kind_to_type(attr_kind)
+                    } else {
+                        Type::Markdown
+                    }
+                } else if let Type::Record(ref fields, ref rest) = resolved {
                     if let Some(name) = field_name {
                         if let Some(field_ty) = fields.get(name) {
-                            ctx.set_symbol_type(symbol_id, field_ty.clone());
+                            field_ty.clone()
                         } else if matches!(**rest, Type::RowEmpty) {
-                            // Field not found in closed record — report error
                             let range = get_symbol_range(hir, symbol_id);
                             ctx.add_error(TypeError::UndefinedField {
                                 field: name.to_string(),
@@ -2081,18 +2148,17 @@ fn generate_symbol_constraints(
                                 location: range.as_ref().map(|r| (r.start.line, r.start.column)),
                             });
                             let ty_var = ctx.fresh_var();
-                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                            Type::Var(ty_var)
                         } else {
-                            // Open record — field may exist in the row extension
                             let ty_var = ctx.fresh_var();
-                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                            Type::Var(ty_var)
                         }
                     } else {
                         let ty_var = ctx.fresh_var();
-                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                        Type::Var(ty_var)
                     }
                 } else {
-                    // Piped type not yet resolved — defer check to post-unification
+                    // Piped type not yet resolved — defer to post-unification.
                     if let Some(name) = field_name {
                         ctx.add_deferred_selector_access(infer::DeferredSelectorAccess {
                             symbol_id,
@@ -2102,11 +2168,54 @@ fn generate_symbol_constraints(
                         });
                     }
                     let ty_var = ctx.fresh_var();
-                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                    Type::Var(ty_var)
                 }
             } else {
-                let ty_var = ctx.fresh_var();
-                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                // No piped input: non-Attr selectors (`.h1`, `.code`, etc.) always produce
+                // a Markdown node. Attr selectors (`.value`, `.depth`, etc.) as the root of
+                // a chain return their concrete type.
+                if let mq_lang::Selector::Attr(attr_kind) = selector {
+                    attr_kind_to_type(attr_kind)
+                } else {
+                    Type::Markdown
+                }
+            };
+
+            // Propagate own_type as piped input to child selectors (for chains like `.h1.value`).
+            // The parent selector's final type is the last child selector's output type.
+            let child_selectors: Vec<SymbolId> = get_children(children_index, symbol_id)
+                .iter()
+                .copied()
+                .filter(|&child_id| {
+                    hir.symbol(child_id)
+                        .map(|s| matches!(s.kind, SymbolKind::Selector(_)))
+                        .unwrap_or(false)
+                })
+                .collect();
+
+            if child_selectors.is_empty() {
+                ctx.set_symbol_type(symbol_id, own_type);
+            } else {
+                // Thread the output type through the chain of child selectors.
+                ctx.set_piped_input(child_selectors[0], own_type);
+                for i in 0..child_selectors.len() {
+                    if let Some(child_sym) = hir.symbol(child_selectors[i]) {
+                        generate_symbol_constraints(
+                            hir,
+                            child_selectors[i],
+                            child_sym.kind.clone(),
+                            ctx,
+                            children_index,
+                        );
+                    }
+                    if i + 1 < child_selectors.len() {
+                        let next_ty = ctx.get_or_create_symbol_type(child_selectors[i]);
+                        ctx.set_piped_input(child_selectors[i + 1], next_ty);
+                    }
+                }
+                // The parent's type is the last child's type.
+                let last_ty = ctx.get_or_create_symbol_type(*child_selectors.last().unwrap());
+                ctx.set_symbol_type(symbol_id, last_ty);
             }
         }
 
