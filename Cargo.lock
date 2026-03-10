@@ -2804,7 +2804,6 @@ dependencies = [
  "colored 3.1.1",
  "dirs 6.0.0",
  "glob",
- "itertools 0.14.0",
  "miette",
  "mimalloc",
  "mq-dap",

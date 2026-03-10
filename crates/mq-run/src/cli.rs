@@ -28,7 +28,7 @@ use which::which;
     ## To format mq file:\n\
     mq fmt --check file.mq")]
 #[command(
-    about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax. \nhttps://mqlang.org",
+    about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
     long_about = None
 )]
 pub struct Cli {
