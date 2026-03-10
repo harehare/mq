@@ -1,7 +1,6 @@
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use glob::glob;
-use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::DefaultEngine;
@@ -29,7 +28,7 @@ use which::which;
     ## To format mq file:\n\
     mq fmt --check file.mq")]
 #[command(
-    about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
+    about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax. \nhttps://mqlang.org",
     long_about = None
 )]
 pub struct Cli {
@@ -142,34 +141,6 @@ struct InputArgs {
     /// Enable streaming mode for processing large files line by line
     #[arg(long, default_value_t = false)]
     stream: bool,
-
-    /// Include the built-in JSON module
-    #[arg(long = "json", default_value_t = false)]
-    include_json: bool,
-
-    /// Include the built-in CSV module
-    #[arg(long = "csv", default_value_t = false)]
-    include_csv: bool,
-
-    /// Include the built-in Fuzzy module
-    #[arg(long = "fuzzy", default_value_t = false)]
-    include_fuzzy: bool,
-
-    /// Include the built-in YAML module
-    #[arg(long = "yaml", default_value_t = false)]
-    include_yaml: bool,
-
-    /// Include the built-in TOML module
-    #[arg(long = "toml", default_value_t = false)]
-    include_toml: bool,
-
-    /// Include the built-in XML module
-    #[arg(long = "xml", default_value_t = false)]
-    include_xml: bool,
-
-    /// Include the built-in test module
-    #[arg(long = "test", default_value_t = false)]
-    include_test: bool,
 }
 
 #[derive(Clone, Debug, clap::Args, Default)]
@@ -569,29 +540,7 @@ impl Cli {
             None => return Err(miette!("Query is required")),
         };
 
-        let includes = [
-            ("csv", self.input.include_csv),
-            ("fuzzy", self.input.include_fuzzy),
-            ("json", self.input.include_json),
-            ("toml", self.input.include_toml),
-            ("yaml", self.input.include_yaml),
-            ("xml", self.input.include_xml),
-            ("test", self.input.include_test),
-        ]
-        .iter()
-        .filter(|(_, enabled)| *enabled)
-        .map(|(name, _)| format!(r#"include "{}""#, name))
-        .join(" | ");
-
         let aggregate = self.input.aggregate.then_some(r#"nodes | import "section""#);
-
-        let query = match (includes.is_empty(), query.is_empty()) {
-            (true, false) => query,
-            (false, true) => includes,
-            (false, false) => format!("{} | {}", includes, query),
-            (true, true) => String::new(),
-        };
-
         Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
     }
 
@@ -1676,196 +1625,6 @@ mod tests {
         };
 
         assert!(cli.run().is_ok());
-    }
-
-    #[test]
-    fn test_include_csv_module() {
-        let (_, temp_file) = create_file("test_csv.csv", "a,b\n1,2\n3,4");
-        let (_, output_file) = create_file("test_csv_output.txt", "");
-        let temp_file_clone = temp_file.clone();
-        let output_file_clone = output_file.clone();
-
-        defer! {
-            if temp_file_clone.exists() {
-                std::fs::remove_file(&temp_file_clone).ok();
-            }
-            if output_file_clone.exists() {
-                std::fs::remove_file(&output_file_clone).ok();
-            }
-        }
-
-        let cli = Cli {
-            input: InputArgs {
-                include_csv: true,
-                input_format: Some(InputFormat::Raw),
-                ..Default::default()
-            },
-            output: OutputArgs {
-                output_file: Some(output_file.clone()),
-                output_format: OutputFormat::Text,
-                ..Default::default()
-            },
-            commands: None,
-            query: Some("csv_parse(true) | len()".to_string()),
-            files: Some(vec![temp_file]),
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_ok());
-        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
-        assert!(!output_content.is_empty(), "CSV output should not be empty");
-    }
-
-    #[test]
-    fn test_include_json_module() {
-        let (_, temp_file) = create_file("test_json_module.json", r#"{"key": "value", "num": 42}"#);
-        let (_, output_file) = create_file("test_json_module_output.txt", "");
-        let temp_file_clone = temp_file.clone();
-        let output_file_clone = output_file.clone();
-
-        defer! {
-            if temp_file_clone.exists() {
-                std::fs::remove_file(&temp_file_clone).ok();
-            }
-            if output_file_clone.exists() {
-                std::fs::remove_file(&output_file_clone).ok();
-            }
-        }
-
-        let cli = Cli {
-            input: InputArgs {
-                include_json: true,
-                input_format: Some(InputFormat::Raw),
-                ..Default::default()
-            },
-            output: OutputArgs {
-                output_file: Some(output_file.clone()),
-                output_format: OutputFormat::Text,
-                ..Default::default()
-            },
-            commands: None,
-            query: Some("json_parse()".to_string()),
-            files: Some(vec![temp_file]),
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_ok());
-        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
-        assert!(!output_content.is_empty(), "JSON output should not be empty");
-    }
-
-    #[test]
-    fn test_include_yaml_module() {
-        let (_, temp_file) = create_file("test_yaml.yaml", "key: value\nnum: 42");
-        let (_, output_file) = create_file("test_yaml_output.txt", "");
-        let temp_file_clone = temp_file.clone();
-        let output_file_clone = output_file.clone();
-
-        defer! {
-            if temp_file_clone.exists() {
-                std::fs::remove_file(&temp_file_clone).ok();
-            }
-            if output_file_clone.exists() {
-                std::fs::remove_file(&output_file_clone).ok();
-            }
-        }
-
-        let cli = Cli {
-            input: InputArgs {
-                include_yaml: true,
-                input_format: Some(InputFormat::Raw),
-                ..Default::default()
-            },
-            output: OutputArgs {
-                output_file: Some(output_file.clone()),
-                output_format: OutputFormat::Text,
-                ..Default::default()
-            },
-            commands: None,
-            query: Some("yaml_parse()".to_string()),
-            files: Some(vec![temp_file]),
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_ok());
-        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
-        assert!(!output_content.is_empty(), "YAML output should not be empty");
-    }
-
-    #[test]
-    fn test_include_toml_module() {
-        let (_, temp_file) = create_file("test_toml.toml", "key = \"value\"\nnum = 42");
-        let (_, output_file) = create_file("test_toml_output.txt", "");
-        let temp_file_clone = temp_file.clone();
-        let output_file_clone = output_file.clone();
-
-        defer! {
-            if temp_file_clone.exists() {
-                std::fs::remove_file(&temp_file_clone).ok();
-            }
-            if output_file_clone.exists() {
-                std::fs::remove_file(&output_file_clone).ok();
-            }
-        }
-
-        let cli = Cli {
-            input: InputArgs {
-                include_toml: true,
-                input_format: Some(InputFormat::Raw),
-                ..Default::default()
-            },
-            output: OutputArgs {
-                output_file: Some(output_file.clone()),
-                output_format: OutputFormat::Text,
-                ..Default::default()
-            },
-            commands: None,
-            query: Some("toml_parse()".to_string()),
-            files: Some(vec![temp_file]),
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_ok());
-        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
-        assert!(!output_content.is_empty(), "TOML output should not be empty");
-    }
-
-    #[test]
-    fn test_include_xml_module() {
-        let (_, temp_file) = create_file("test_xml.xml", "<root><key>value</key><num>42</num></root>");
-        let (_, output_file) = create_file("test_xml_output.txt", "");
-        let temp_file_clone = temp_file.clone();
-        let output_file_clone = output_file.clone();
-
-        defer! {
-            if temp_file_clone.exists() {
-                std::fs::remove_file(&temp_file_clone).ok();
-            }
-            if output_file_clone.exists() {
-                std::fs::remove_file(&output_file_clone).ok();
-            }
-        }
-
-        let cli = Cli {
-            input: InputArgs {
-                include_xml: true,
-                input_format: Some(InputFormat::Raw),
-                ..Default::default()
-            },
-            output: OutputArgs {
-                output_file: Some(output_file.clone()),
-                output_format: OutputFormat::Text,
-                ..Default::default()
-            },
-            commands: None,
-            query: Some("xml_parse()".to_string()),
-            files: Some(vec![temp_file]),
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_ok());
-        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
-        assert!(!output_content.is_empty(), "XML output should not be empty");
     }
 
     #[test]
