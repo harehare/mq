@@ -1160,7 +1160,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
         let def_token_id = self.token_arena.alloc(Shared::clone(def_token));
-        let params = if self.is_next_token(|token| matches!(token, TokenKind::Colon)) {
+        let params = if self.is_next_token(|token| matches!(token, TokenKind::Colon | TokenKind::Do)) {
             SmallVec::new()
         } else {
             self.parse_params()?
