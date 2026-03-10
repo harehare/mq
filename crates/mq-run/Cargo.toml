@@ -22,7 +22,6 @@ clap = {workspace = true, features = ["derive"]}
 colored = {workspace = true}
 dirs = {workspace = true}
 glob = "0.3.3"
-itertools = {workspace = true}
 miette = {workspace = true, features = ["fancy"]}
 mimalloc = {workspace = true, features = ["v3"], optional = true}
 mq-dap = {workspace = true, optional = true}
