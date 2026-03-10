@@ -1160,7 +1160,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
         let def_token_id = self.token_arena.alloc(Shared::clone(def_token));
-        let params = self.parse_params()?;
+        let params = if self.is_next_token(|token| matches!(token, TokenKind::Colon)) {
+            SmallVec::new()
+        } else {
+            self.parse_params()?
+        };
 
         self.consume_colon_or_do();
 
@@ -6768,6 +6772,27 @@ mod tests {
             token(TokenKind::RParen),
         ],
         Err(SyntaxError::MultipleVariadicParameters(Token{range: Range::default(), kind: TokenKind::Asterisk, module_id: 1.into()})))]
+    #[case::def_without_params(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(SmolStr::new("f"))),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("args"))),
+            token(TokenKind::SemiColon)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Def(
+                        IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
+                        smallvec![],
+                        vec![Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args")))))))),
+                        })],
+                )),
+            }),
+        ]))]
     #[case::macro_variadic_param(
         vec![
             token(TokenKind::Macro),
