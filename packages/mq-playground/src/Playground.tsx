@@ -1568,7 +1568,7 @@ export const Playground = () => {
                             cursor: "pointer",
                           }}
                         />
-                        <div>Type Check</div>
+                        <div>Type Check (β)</div>
                       </label>
                     </div>
                   </>
