@@ -553,38 +553,23 @@ mod tests {
         let mut ctx = InferenceContext::new();
 
         // Identical records
-        let r1 = Type::record(
-            [("a".to_string(), Type::Number)].into_iter().collect(),
-            Type::RowEmpty,
-        );
-        let r2 = Type::record(
-            [("a".to_string(), Type::Number)].into_iter().collect(),
-            Type::RowEmpty,
-        );
+        let r1 = Type::record([("a".to_string(), Type::Number)].into_iter().collect(), Type::RowEmpty);
+        let r2 = Type::record([("a".to_string(), Type::Number)].into_iter().collect(), Type::RowEmpty);
         unify(&mut ctx, &r1, &r2, None);
         assert!(ctx.take_errors().is_empty());
 
         // Field type mismatch
-        let r3 = Type::record(
-            [("a".to_string(), Type::String)].into_iter().collect(),
-            Type::RowEmpty,
-        );
+        let r3 = Type::record([("a".to_string(), Type::String)].into_iter().collect(), Type::RowEmpty);
         unify(&mut ctx, &r1, &r3, None);
         assert!(!ctx.take_errors().is_empty());
 
         // Row polymorphism: open record
         let var = ctx.fresh_var();
-        let r_open = Type::record(
-            [("a".to_string(), Type::Number)].into_iter().collect(),
-            Type::Var(var),
-        );
+        let r_open = Type::record([("a".to_string(), Type::Number)].into_iter().collect(), Type::Var(var));
         let r_closed = Type::record(
-            [
-                ("a".to_string(), Type::Number),
-                ("b".to_string(), Type::String),
-            ]
-            .into_iter()
-            .collect(),
+            [("a".to_string(), Type::Number), ("b".to_string(), Type::String)]
+                .into_iter()
+                .collect(),
             Type::RowEmpty,
         );
         unify(&mut ctx, &r_open, &r_closed, None);
@@ -604,10 +589,7 @@ mod tests {
     #[test]
     fn test_unify_record_dict() {
         let mut ctx = InferenceContext::new();
-        let record = Type::record(
-            [("a".to_string(), Type::Number)].into_iter().collect(),
-            Type::RowEmpty,
-        );
+        let record = Type::record([("a".to_string(), Type::Number)].into_iter().collect(), Type::RowEmpty);
         let dict = Type::dict(Type::String, Type::Number);
 
         unify(&mut ctx, &record, &dict, None);
@@ -758,10 +740,7 @@ mod tests {
         assert!(ctx.take_errors().is_empty());
 
         // RowEmpty <-> Non-empty Record (should fail)
-        let record = Type::record(
-            [("a".to_string(), Type::Number)].into_iter().collect(),
-            Type::RowEmpty,
-        );
+        let record = Type::record([("a".to_string(), Type::Number)].into_iter().collect(), Type::RowEmpty);
         unify(&mut ctx, &Type::RowEmpty, &record, None);
         assert!(!ctx.take_errors().is_empty());
     }
