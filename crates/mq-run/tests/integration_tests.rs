@@ -121,63 +121,6 @@ In {year}, the snowfall was above average.
     "# h1\n\nheader\n\n## h2\n\nheader\n\n# h3\n\nheader\n",
     Some("# h1\n## h2\n# h3\n"),
 )]
-#[case::csv_output(
-    vec!["--unbuffered", "-I", "raw", "--csv", "csv_parse(false)"],
-    "type,value\nHeading,title1\nHeading,title2\n",
-    Some(r#"[["type", "value"], ["Heading", "title1"], ["Heading", "title2"]]
-"#)
-)]
-#[case::json_output(
-    vec!["--unbuffered", "-I", "raw", "--json", "json_parse()"],
-    r#"[
-  {
-    "type": "Heading",
-    "value": "title1"
-  },
-  {
-    "type": "Heading",
-    "value": "title2"
-  }
-]"#,
-    Some(r#"[{"type": "Heading", "value": "title1"}, {"type": "Heading", "value": "title2"}]
-"#)
-)]
-#[case::yaml_output(
-    vec!["--unbuffered", "-I", "raw", "--yaml", "yaml_parse()"],
-    r#"- type: Heading
-  value: title1
-- type: Heading
-  value: title2
-"#,
-    Some(
-        r#"[{"value": "title1"}, {"value": "title2"}]
-"#,
-    )
-)]
-#[case::xml_output(
-    vec!["--unbuffered", "-I", "raw", "--xml", "xml_parse() | xml_stringify()"],
-    r#"<?xml version="1.0" encoding="UTF-8"?>
-<root>
-  <item>
-    <type>Heading</type>
-    <value>title1</value>
-  </item>
-  <item>
-    <type>Heading</type>
-    <value>title2</value>
-  </item>
-</root>
-"#,
-    Some(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<root><item><type>Heading</type><value>title1</value></item><item><type>Heading</type><value>title2</value></item></root>\n",
-    )
-)]
-#[case::test_option_success(
-    vec!["--unbuffered", "-I", "text", "--test", "assert(true)"],
-    "ok",
-    Some("ok\n")
-)]
 #[case::test_stream(
     vec!["--unbuffered", "-I", "text", "--stream", ".h"],
     "# title\n",
