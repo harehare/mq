@@ -6793,6 +6793,27 @@ mod tests {
                 )),
             }),
         ]))]
+    #[case::def_without_params_with_do(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(SmolStr::new("f"))),
+            token(TokenKind::Do),
+            token(TokenKind::Ident(SmolStr::new("args"))),
+            token(TokenKind::SemiColon)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Def(
+                        IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
+                        smallvec![],
+                        vec![Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args")))))))),
+                        })],
+                )),
+            }),
+        ]))]
     #[case::macro_variadic_param(
         vec![
             token(TokenKind::Macro),
