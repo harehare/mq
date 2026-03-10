@@ -484,4 +484,264 @@ mod tests {
         // T = number should pass occurs check
         assert!(!occurs_check(var, &Type::Number));
     }
+
+    #[test]
+    fn test_range_to_span() {
+        let range = mq_lang::Range {
+            start: mq_lang::Position { line: 1, column: 1 },
+            end: mq_lang::Position { line: 1, column: 11 },
+        };
+        let span = range_to_span(&range);
+        assert_eq!(span.offset(), 0);
+        assert_eq!(span.len(), 10);
+
+        let range2 = mq_lang::Range {
+            start: mq_lang::Position { line: 2, column: 5 },
+            end: mq_lang::Position { line: 2, column: 10 },
+        };
+        let span2 = range_to_span(&range2);
+        assert_eq!(span2.offset(), 80 + 4);
+        assert_eq!(span2.len(), 5);
+    }
+
+    #[test]
+    fn test_unify_tuples() {
+        let mut ctx = InferenceContext::new();
+        let t1 = Type::tuple(vec![Type::Number, Type::String]);
+        let t2 = Type::tuple(vec![Type::Number, Type::String]);
+        unify(&mut ctx, &t1, &t2, None);
+        assert!(ctx.take_errors().is_empty());
+
+        let t3 = Type::tuple(vec![Type::Number]);
+        unify(&mut ctx, &t1, &t3, None);
+        assert!(!ctx.take_errors().is_empty());
+
+        let t4 = Type::tuple(vec![Type::String, Type::Number]);
+        unify(&mut ctx, &t1, &t4, None);
+        assert!(!ctx.take_errors().is_empty());
+    }
+
+    #[test]
+    fn test_unify_tuple_array() {
+        let mut ctx = InferenceContext::new();
+        let tuple = Type::tuple(vec![Type::Number, Type::Number]);
+        let array = Type::array(Type::Number);
+
+        unify(&mut ctx, &tuple, &array, None);
+        assert!(ctx.take_errors().is_empty());
+
+        let tuple2 = Type::tuple(vec![Type::Number, Type::String]);
+        unify(&mut ctx, &tuple2, &array, None);
+        assert!(!ctx.take_errors().is_empty());
+    }
+
+    #[test]
+    fn test_unify_dicts() {
+        let mut ctx = InferenceContext::new();
+        let d1 = Type::dict(Type::String, Type::Number);
+        let d2 = Type::dict(Type::String, Type::Number);
+        unify(&mut ctx, &d1, &d2, None);
+        assert!(ctx.take_errors().is_empty());
+
+        let d3 = Type::dict(Type::Number, Type::Number);
+        unify(&mut ctx, &d1, &d3, None);
+        assert!(!ctx.take_errors().is_empty());
+    }
+
+    #[test]
+    fn test_unify_records() {
+        let mut ctx = InferenceContext::new();
+
+        // Identical records
+        let r1 = Type::record([("a".to_string(), Type::Number)].into_iter().collect(), Type::RowEmpty);
+        let r2 = Type::record([("a".to_string(), Type::Number)].into_iter().collect(), Type::RowEmpty);
+        unify(&mut ctx, &r1, &r2, None);
+        assert!(ctx.take_errors().is_empty());
+
+        // Field type mismatch
+        let r3 = Type::record([("a".to_string(), Type::String)].into_iter().collect(), Type::RowEmpty);
+        unify(&mut ctx, &r1, &r3, None);
+        assert!(!ctx.take_errors().is_empty());
+
+        // Row polymorphism: open record
+        let var = ctx.fresh_var();
+        let r_open = Type::record([("a".to_string(), Type::Number)].into_iter().collect(), Type::Var(var));
+        let r_closed = Type::record(
+            [("a".to_string(), Type::Number), ("b".to_string(), Type::String)]
+                .into_iter()
+                .collect(),
+            Type::RowEmpty,
+        );
+        unify(&mut ctx, &r_open, &r_closed, None);
+        assert!(ctx.take_errors().is_empty());
+
+        // Check if var was bound to {b: String}
+        let resolved_var = ctx.resolve_type(&Type::Var(var));
+        match resolved_var {
+            Type::Record(fields, rest) => {
+                assert_eq!(fields.get("b"), Some(&Type::String));
+                assert_eq!(*rest, Type::RowEmpty);
+            }
+            _ => panic!("Expected record type, found {:?}", resolved_var),
+        }
+    }
+
+    #[test]
+    fn test_unify_record_dict() {
+        let mut ctx = InferenceContext::new();
+        let record = Type::record([("a".to_string(), Type::Number)].into_iter().collect(), Type::RowEmpty);
+        let dict = Type::dict(Type::String, Type::Number);
+
+        unify(&mut ctx, &record, &dict, None);
+        assert!(ctx.take_errors().is_empty());
+
+        let dict2 = Type::dict(Type::String, Type::String);
+        unify(&mut ctx, &record, &dict2, None);
+        assert!(!ctx.take_errors().is_empty());
+    }
+
+    #[test]
+    fn test_unify_unions() {
+        let mut ctx = InferenceContext::new();
+        let union = Type::union(vec![Type::Number, Type::String]);
+
+        // Unify union with one of its members
+        unify(&mut ctx, &union, &Type::Number, None);
+        assert!(ctx.take_errors().is_empty());
+
+        unify(&mut ctx, &Type::String, &union, None);
+        assert!(ctx.take_errors().is_empty());
+
+        // Unify union with incompatible type
+        unify(&mut ctx, &union, &Type::Bool, None);
+        assert!(!ctx.take_errors().is_empty());
+
+        // Unify union with another union
+        let union2 = Type::union(vec![Type::String, Type::Bool]);
+        unify(&mut ctx, &union, &union2, None);
+        // This currently fails in the implementation because it only checks discriminant equality
+        // and doesn't handle Union vs Union recursively.
+        // Actually, the implementation says:
+        // (Type::Union(types), other) | (other, Type::Union(types)) => { ... }
+        // If 'other' is also a Union, it compares discriminant of members of 'types' with Union discriminant.
+        assert!(!ctx.take_errors().is_empty());
+    }
+
+    #[test]
+    fn test_unify_functions() {
+        let mut ctx = InferenceContext::new();
+        let f1 = Type::function(vec![Type::Number], Type::String);
+        let f2 = Type::function(vec![Type::Number], Type::String);
+        unify(&mut ctx, &f1, &f2, None);
+        assert!(ctx.take_errors().is_empty());
+
+        // Arity mismatch
+        let f3 = Type::function(vec![Type::Number, Type::Number], Type::String);
+        unify(&mut ctx, &f1, &f3, None);
+        assert!(!ctx.take_errors().is_empty());
+
+        // Param mismatch
+        let f4 = Type::function(vec![Type::String], Type::String);
+        unify(&mut ctx, &f1, &f4, None);
+        assert!(!ctx.take_errors().is_empty());
+
+        // Return mismatch
+        let f5 = Type::function(vec![Type::Number], Type::Number);
+        unify(&mut ctx, &f1, &f5, None);
+        assert!(!ctx.take_errors().is_empty());
+    }
+
+    #[test]
+    fn test_occurs_check_transitive() {
+        let mut ctx = InferenceContext::new();
+        let v1 = ctx.fresh_var();
+        let v2 = ctx.fresh_var();
+
+        // v1 -> v2
+        ctx.bind_type_var(v1, Type::Var(v2));
+
+        let mut visited = HashSet::new();
+        // v2 occurs in v1? Yes, because v1 -> v2
+        assert!(occurs_check_transitive(&ctx, v2, &Type::Var(v1), &mut visited));
+
+        // Cycle: v1 -> v2, v2 -> v1
+        ctx.bind_type_var(v2, Type::Var(v1));
+        let mut visited = HashSet::new();
+        // Should not stack overflow
+        assert!(occurs_check_transitive(&ctx, v1, &Type::Var(v1), &mut visited));
+    }
+
+    #[test]
+    fn test_apply_substitution() {
+        let mut ctx = InferenceContext::new();
+        let v1 = ctx.fresh_var();
+        let v2 = ctx.fresh_var();
+
+        ctx.bind_type_var(v1, Type::array(Type::Var(v2)));
+        ctx.bind_type_var(v2, Type::Number);
+
+        let t = Type::Var(v1);
+        let applied = apply_substitution(&ctx, &t);
+        assert_eq!(applied, Type::array(Type::Number));
+
+        // Cycle
+        let v3 = ctx.fresh_var();
+        let v4 = ctx.fresh_var();
+        ctx.bind_type_var(v3, Type::Var(v4));
+        ctx.bind_type_var(v4, Type::Var(v3));
+        let applied_cycle = apply_substitution(&ctx, &Type::Var(v3));
+        assert!(matches!(applied_cycle, Type::Var(_)));
+    }
+
+    #[test]
+    fn test_free_vars() {
+        let mut ctx = InferenceContext::new();
+        let v1 = ctx.fresh_var();
+        let v2 = ctx.fresh_var();
+
+        let t = Type::tuple(vec![Type::Var(v1), Type::array(Type::Var(v2))]);
+        let vars = free_vars(&ctx, &t);
+        assert_eq!(vars.len(), 2);
+        assert!(vars.contains(&v1));
+        assert!(vars.contains(&v2));
+
+        ctx.bind_type_var(v1, Type::Number);
+        let vars2 = free_vars(&ctx, &t);
+        assert_eq!(vars2.len(), 1);
+        assert!(vars2.contains(&v2));
+    }
+
+    #[test]
+    fn test_solve_constraints() {
+        let mut ctx = InferenceContext::new();
+        let v1 = ctx.fresh_var();
+        ctx.add_constraint(Constraint::Equal(Type::Var(v1), Type::Number, None));
+
+        solve_constraints(&mut ctx);
+        assert_eq!(ctx.resolve_type(&Type::Var(v1)), Type::Number);
+    }
+
+    #[test]
+    fn test_unify_row_empty() {
+        let mut ctx = InferenceContext::new();
+
+        // RowEmpty <-> RowEmpty
+        unify(&mut ctx, &Type::RowEmpty, &Type::RowEmpty, None);
+        assert!(ctx.take_errors().is_empty());
+
+        // RowEmpty <-> Dict
+        let dict = Type::dict(Type::String, Type::Number);
+        unify(&mut ctx, &Type::RowEmpty, &dict, None);
+        assert!(ctx.take_errors().is_empty());
+
+        // RowEmpty <-> Empty Record
+        let empty_record = Type::record(BTreeMap::new(), Type::RowEmpty);
+        unify(&mut ctx, &Type::RowEmpty, &empty_record, None);
+        assert!(ctx.take_errors().is_empty());
+
+        // RowEmpty <-> Non-empty Record (should fail)
+        let record = Type::record([("a".to_string(), Type::Number)].into_iter().collect(), Type::RowEmpty);
+        unify(&mut ctx, &Type::RowEmpty, &record, None);
+        assert!(!ctx.take_errors().is_empty());
+    }
 }
