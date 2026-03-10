@@ -768,7 +768,7 @@ impl<'a> Parser<'a> {
 
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Ident(_)), NodeKind::Ident)?);
 
-        if !self.try_next_token(|kind| matches!(kind, TokenKind::Colon)) {
+        if !self.try_next_token(|kind| matches!(kind, TokenKind::Colon | TokenKind::Do)) {
             let mut params = self.parse_params()?;
             children.append(&mut params);
         }
