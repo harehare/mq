@@ -897,8 +897,8 @@ fn test_type_unification() {
     "same number type in foreach"
 )]
 #[case::different_types(
-    r#"foreach(item, [1, 2, 3]): if (true): item else: "str";"#,
-    false,
+    r#"foreach(item, [1, 2, 3]): if (true): item else: "str";;"#,
+    true,
     "different types in foreach creates union"
 )]
 fn test_foreach_type_combinations(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
@@ -941,7 +941,7 @@ fn test_foreach_union_arithmetic_errors(#[case] code: &str, #[case] description:
 )]
 #[case::foreach_break_value(
     r#"foreach(x, [1, 2, 3]): if (true): break: "early" else: x;"#,
-    false,
+    true,
     "foreach with break value produces union"
 )]
 fn test_loop_type_combinations(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {

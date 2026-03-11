@@ -514,7 +514,7 @@ pub async fn inlay_hints(code: &str) -> JsValue {
             let range = symbol.source.text_range.as_ref()?;
             let type_scheme = symbol_types.get(&symbol_id)?;
 
-            if !type_scheme.ty.is_concrete() {
+            if type_scheme.ty.is_var() {
                 return None;
             }
 

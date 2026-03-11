@@ -1186,7 +1186,14 @@ impl Hir {
                 parent: Some(symbol_id),
             });
 
-            self.add_expr(arg, source_id, scope_id, Some(symbol_id));
+            self.add_symbol(Symbol {
+                value: arg.name(),
+                kind: SymbolKind::Ref,
+                source: SourceInfo::new(Some(source_id), Some(arg.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent: Some(symbol_id),
+            });
 
             program.iter().for_each(|child| {
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
