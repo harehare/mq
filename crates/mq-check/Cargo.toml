@@ -10,7 +10,7 @@ name = "mq-check"
 publish = false
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.17"
+version = "0.5.18"
 
 [features]
 cli = ["dep:clap", "dep:colored", "dep:url"]
