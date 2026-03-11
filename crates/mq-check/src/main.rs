@@ -356,3 +356,36 @@ fn write_inferred_types(w: &mut impl Write, checker: &TypeChecker, hir: &Hir) ->
 
     writeln!(w)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(vec!["mq-check", "test.mq"], vec!["test.mq"], false, false)]
+    #[case(vec!["mq-check", "test.mq", "--strict-array"], vec!["test.mq"], true, false)]
+    #[case(vec!["mq-check", "--show-types"], vec![], false, true)]
+    #[case(vec!["mq-check", "--no-builtins"], vec![], false, false)]
+    fn test_cli_parsing(
+        #[case] args: Vec<&str>,
+        #[case] expected_files: Vec<&str>,
+        #[case] expected_strict: bool,
+        #[case] expected_show_types: bool,
+    ) {
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert_eq!(
+            cli.files,
+            expected_files.into_iter().map(PathBuf::from).collect::<Vec<_>>()
+        );
+        assert_eq!(cli.strict_array, expected_strict);
+        assert_eq!(cli.show_types, expected_show_types);
+    }
+
+    #[test]
+    fn test_cli_no_builtins() {
+        let cli = Cli::try_parse_from(["mq-check", "--no-builtins"]).unwrap();
+        assert!(cli.no_builtins);
+    }
+}

@@ -1098,10 +1098,65 @@ impl Default for TypeChecker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mq_hir::SymbolKind;
+    use rstest::rstest;
 
     #[test]
     fn test_typechecker_creation() {
         let checker = TypeChecker::new();
         assert_eq!(checker.symbol_types.len(), 0);
+    }
+
+    #[test]
+    fn test_type_env() {
+        let mut env = TypeEnv::default();
+        assert!(env.is_empty());
+        assert_eq!(env.len(), 0);
+
+        let mut hir = Hir::default();
+        let (source_id, _) = hir.add_code(None, "42");
+        let (symbol_id, _) = hir.symbols_for_source(source_id).next().unwrap();
+
+        let scheme = TypeScheme::mono(types::Type::Number);
+        env.insert(symbol_id, scheme.clone());
+
+        assert!(!env.is_empty());
+        assert_eq!(env.len(), 1);
+        assert_eq!(env.get(&symbol_id), Some(&scheme));
+        assert!(env.get_all().contains_key(&symbol_id));
+
+        for (&id, s) in &env {
+            assert_eq!(id, symbol_id);
+            assert_eq!(s, &scheme);
+        }
+    }
+
+    #[rstest]
+    #[case(TypeError::Mismatch { expected: "n".into(), found: "s".into(), span: None, location: Some((1, 5)) }, Some((1, 5)))]
+    #[case(TypeError::UnificationError { left: "l".into(), right: "r".into(), span: None, location: Some((2, 10)) }, Some((2, 10)))]
+    #[case(TypeError::TypeVarNotFound("a".into()), None)]
+    fn test_type_error_location(#[case] err: TypeError, #[case] expected: Option<(u32, usize)>) {
+        assert_eq!(err.location(), expected);
+    }
+
+    #[test]
+    fn test_walk_ancestors() {
+        let mut hir = Hir::default();
+        // Use a nested structure: function -> body (block) -> expression
+        let code = "def f(x): x + 1;";
+        hir.add_code(None, code);
+
+        // Find the '1' literal
+        let (num_id, _) = hir
+            .symbols()
+            .find(|(_, s)| matches!(s.kind, SymbolKind::Number))
+            .unwrap();
+
+        let ancestors: Vec<_> = walk_ancestors(&hir, num_id).collect();
+        assert!(!ancestors.is_empty());
+
+        // The number '1' should be a child of the binary op '+', which is a child of the function
+        let has_function = ancestors.iter().any(|(_, s)| matches!(s.kind, SymbolKind::Function(_)));
+        assert!(has_function);
     }
 }

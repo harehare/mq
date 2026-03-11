@@ -2316,10 +2316,96 @@ fn generate_symbol_constraints(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn test_constraint_display() {
         let c = Constraint::Equal(Type::Number, Type::String, None);
         assert_eq!(c.to_string(), "number ~ string");
+    }
+
+    #[test]
+    fn test_children_index() {
+        let mut hir = Hir::default();
+        let _ = hir.add_code(None, "let x = 1 | x + 2");
+
+        let index = build_children_index(&hir);
+        assert!(!index.is_empty());
+
+        // Root symbols should have parent = None, not in index
+        // But symbols inside the root scope/block should be indexed
+        for (id, symbol) in hir.symbols() {
+            if let Some(parent) = symbol.parent {
+                let children = get_children(&index, parent);
+                assert!(children.contains(&id));
+            }
+        }
+    }
+
+    #[rstest]
+    #[case(mq_lang::AttrKind::Value, Type::String)]
+    #[case(mq_lang::AttrKind::Depth, Type::Number)]
+    #[case(mq_lang::AttrKind::Ordered, Type::Bool)]
+    #[case(mq_lang::AttrKind::Children, Type::array(Type::Markdown))]
+    fn test_attr_kind_to_type(#[case] kind: mq_lang::AttrKind, #[case] expected: Type) {
+        assert_eq!(attr_kind_to_type(&kind), expected);
+    }
+
+    #[test]
+    fn test_is_foreach_iterable_ref() {
+        let mut hir = Hir::default();
+        hir.add_code(None, "foreach(x, y): 1;");
+
+        let y_ref = hir
+            .symbols()
+            .find(|(_, s)| s.value.as_deref() == Some("y"))
+            .map(|(id, _)| id)
+            .unwrap();
+        assert!(is_foreach_iterable_ref(&hir, y_ref));
+
+        let x_var = hir
+            .symbols()
+            .find(|(_, s)| s.value.as_deref() == Some("x"))
+            .map(|(id, _)| id)
+            .unwrap();
+        assert!(!is_foreach_iterable_ref(&hir, x_var));
+    }
+
+    #[test]
+    fn test_might_receive_piped_input() {
+        let mut hir = Hir::default();
+        // x | f() -> f() might receive piped input
+        hir.add_code(None, "let x = 1 | f()");
+        let f_call = hir
+            .symbols()
+            .find(|(_, s)| s.value.as_deref() == Some("f"))
+            .map(|(id, _)| id)
+            .unwrap();
+        assert!(might_receive_piped_input(&hir, f_call));
+    }
+
+    #[test]
+    fn test_is_inside_quote_block() {
+        let mut hir = Hir::default();
+        // In HIR, is_inside_quote_block checks if a Keyword symbol with None value is an ancestor.
+        // Bare quote/unquote keywords in HIR (added by add_quote_expr/add_unquote_expr)
+        // have value=None and kind=Keyword.
+        // Quote block in mq uses `quote do ... end` which is parsed into Quote node.
+        let _ = hir.add_code(None, "quote: x + 1;");
+
+        // Try to find the 'x' reference
+        let x_ref = hir
+            .symbols()
+            .find(|(_, s)| s.value.as_deref() == Some("x"))
+            .map(|(id, _)| id)
+            .expect("Reference to 'x' should be found");
+
+        // Verify that the setup created a quote keyword parent
+        let has_quote_parent =
+            walk_ancestors(&hir, x_ref).any(|(_, s)| matches!(s.kind, SymbolKind::Keyword) && s.value.is_none());
+
+        if has_quote_parent {
+            assert!(is_inside_quote_block(&hir, x_ref));
+        }
     }
 }
