@@ -2356,10 +2356,18 @@ mod tests {
         let mut hir = Hir::default();
         hir.add_code(None, "foreach(x, y): 1;");
 
-        let y_ref = hir.symbols().find(|(_, s)| s.value.as_deref() == Some("y")).map(|(id, _)| id).unwrap();
+        let y_ref = hir
+            .symbols()
+            .find(|(_, s)| s.value.as_deref() == Some("y"))
+            .map(|(id, _)| id)
+            .unwrap();
         assert!(is_foreach_iterable_ref(&hir, y_ref));
 
-        let x_var = hir.symbols().find(|(_, s)| s.value.as_deref() == Some("x")).map(|(id, _)| id).unwrap();
+        let x_var = hir
+            .symbols()
+            .find(|(_, s)| s.value.as_deref() == Some("x"))
+            .map(|(id, _)| id)
+            .unwrap();
         assert!(!is_foreach_iterable_ref(&hir, x_var));
     }
 
@@ -2368,7 +2376,11 @@ mod tests {
         let mut hir = Hir::default();
         // x | f() -> f() might receive piped input
         hir.add_code(None, "let x = 1 | f()");
-        let f_call = hir.symbols().find(|(_, s)| s.value.as_deref() == Some("f")).map(|(id, _)| id).unwrap();
+        let f_call = hir
+            .symbols()
+            .find(|(_, s)| s.value.as_deref() == Some("f"))
+            .map(|(id, _)| id)
+            .unwrap();
         assert!(might_receive_piped_input(&hir, f_call));
     }
 
@@ -2389,8 +2401,8 @@ mod tests {
             .expect("Reference to 'x' should be found");
 
         // Verify that the setup created a quote keyword parent
-        let has_quote_parent = walk_ancestors(&hir, x_ref)
-            .any(|(_, s)| matches!(s.kind, SymbolKind::Keyword) && s.value.is_none());
+        let has_quote_parent =
+            walk_ancestors(&hir, x_ref).any(|(_, s)| matches!(s.kind, SymbolKind::Keyword) && s.value.is_none());
 
         if has_quote_parent {
             assert!(is_inside_quote_block(&hir, x_ref));
