@@ -377,6 +377,7 @@ The following external tools are available to extend mq's functionality:
 
 - [mq-check](https://github.com/harehare/mq/tree/main/crates/mq-check/README.md) - A syntax and semantic checker for mq files.
 - [mq-conv](https://github.com/harehare/mq-conv) - A CLI tool for converting various file formats to Markdown.
+- [mq-crawler](https://github.com/harehare/mq/tree/main/crates/mq-crawler) - A web crawler that extracts structured data from websites and outputs it in Markdown format.
 - [mq-docs](https://github.com/harehare/mq-docs) - A documentation generator for mq functions, macros, and selectors.
 - [mq-edit](https://github.com/harehare/mq-edit) - A terminal-based Markdown and code editor with WYSIWYG rendering and LSP support.
 - [mq-lsp](https://github.com/harehare/mq/tree/main/crates/mq-lsp/README.md) - Language Server Protocol (LSP) implementation for mq query files, providing IDE features like completion, hover, and diagnostics.
