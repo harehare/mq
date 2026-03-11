@@ -826,6 +826,7 @@ impl Substitution {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn test_type_display() {
@@ -922,5 +923,90 @@ mod tests {
 
         // Incompatible types return None
         assert_eq!(Type::Number.match_score(&Type::String), None);
+    }
+
+    #[rstest]
+    #[case(vec![Type::Number, Type::Number], Type::Number)]
+    #[case(vec![Type::Number, Type::String], Type::union(vec![Type::Number, Type::String]))]
+    #[case(vec![Type::union(vec![Type::Number, Type::String]), Type::Bool], Type::union(vec![Type::Number, Type::String, Type::Bool]))]
+    #[case(vec![Type::Number, Type::String, Type::Number], Type::union(vec![Type::Number, Type::String]))]
+    fn test_type_union(#[case] types: Vec<Type>, #[case] expected: Type) {
+        assert_eq!(Type::union(types), expected);
+    }
+
+    #[rstest]
+    #[case(Type::union(vec![Type::Number, Type::String]), &Type::Number, Type::String)]
+    #[case(Type::union(vec![Type::Number, Type::String, Type::Bool]), &Type::String, Type::union(vec![Type::Number, Type::Bool]))]
+    #[case(Type::Number, &Type::Number, Type::Number)]
+    fn test_type_subtract(#[case] ty: Type, #[case] exclude: &Type, #[case] expected: Type) {
+        assert_eq!(ty.subtract(exclude), expected);
+    }
+
+    #[rstest]
+    #[case(Type::Number, Type::Number, true)]
+    #[case(Type::Number, Type::String, false)]
+    #[case(Type::array(Type::Number), Type::array(Type::Number), true)]
+    #[case(Type::array(Type::Number), Type::array(Type::String), false)]
+    #[case(Type::tuple(vec![Type::Number]), Type::array(Type::Number), true)]
+    #[case(Type::record(BTreeMap::from([("a".to_string(), Type::Number)]), Type::RowEmpty), Type::dict(Type::String, Type::Number), true)]
+    fn test_can_match_complex(#[case] t1: Type, #[case] t2: Type, #[case] expected: bool) {
+        assert_eq!(t1.can_match(&t2), expected);
+    }
+
+    #[rstest]
+    #[case(Type::Number, Type::Number, true)]
+    #[case(Type::Number, Type::String, false)]
+    fn test_can_branch_unify_with(#[case] t1: Type, #[case] t2: Type, #[case] expected: bool) {
+        assert_eq!(t1.can_branch_unify_with(&t2), expected);
+    }
+
+    #[test]
+    fn test_can_branch_unify_with_vars() {
+        let mut ctx = TypeVarContext::new();
+        let v1 = ctx.fresh();
+        let v2 = ctx.fresh();
+        assert!(Type::Var(v1).can_branch_unify_with(&Type::Var(v2)));
+        assert!(!Type::Var(v1).can_branch_unify_with(&Type::Number));
+    }
+
+    #[test]
+    fn test_substitution_compose() {
+        let mut ctx = TypeVarContext::new();
+        let v1 = ctx.fresh();
+        let v2 = ctx.fresh();
+
+        let mut s1 = Substitution::empty();
+        s1.insert(v1, Type::Var(v2));
+
+        let mut s2 = Substitution::empty();
+        s2.insert(v2, Type::Number);
+
+        let s3 = s1.compose(&s2);
+        assert_eq!(s3.lookup(v1), Some(&Type::Number));
+        assert_eq!(s3.lookup(v2), Some(&Type::Number));
+    }
+
+    #[test]
+    fn test_type_scheme_generalize() {
+        let mut ctx = TypeVarContext::new();
+        let v1 = ctx.fresh();
+        let v2 = ctx.fresh();
+
+        let ty = Type::function(vec![Type::Var(v1)], Type::Var(v2));
+        let env_vars = vec![v1];
+
+        let scheme = TypeScheme::generalize(ty, &env_vars);
+        assert_eq!(scheme.quantified, vec![v2]);
+    }
+
+    #[test]
+    fn test_display_renumbered() {
+        let mut ctx = TypeVarContext::new();
+        let v1 = ctx.fresh();
+        let v2 = ctx.fresh();
+        let ty = Type::function(vec![Type::Var(v1)], Type::Var(v2));
+
+        // Renumbered should always start from 'a
+        assert_eq!(ty.display_renumbered(), "('a) -> 'b");
     }
 }
