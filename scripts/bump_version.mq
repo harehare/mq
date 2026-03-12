@@ -30,6 +30,7 @@ def crates_version():
   | replace(s"path = \"crates/mq-lsp\", version = \"${prev_version}\"", s"path = \"crates/mq-lsp\", version = \"${version}\"")
   | replace(s"path = \"crates/mq-repl\", version = \"${prev_version}\"", s"path = \"crates/mq-repl\", version = \"${version}\"")
   | replace(s"path = \"crates/mq-dap\", version = \"${prev_version}\"", s"path = \"crates/mq-dap\", version = \"${version}\"")
+  | replace(s"path = \"crates/mq-check\", version = \"${prev_version}\"", s"path = \"crates/mq-check\", version = \"${version}\"")
 end
 
 def code_block_version(version):
