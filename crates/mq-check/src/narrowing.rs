@@ -433,11 +433,32 @@ pub(crate) fn resolve_type_narrowings(hir: &Hir, ctx: &mut InferenceContext) {
         return;
     }
 
+    // Build a set of Ref symbol IDs that have at least one Selector child
+    // (e.g., `node.row` where `.row` is a Selector child of the `node` Ref).
+    // Narrowing must not be applied to these: the Ref's stored type is the selector
+    // *output* type (e.g., Number for `.row`), not the variable type. Overriding it
+    // with the narrowed variable type (e.g., Markdown) would corrupt selector output
+    // types and produce spurious type mismatches downstream.
+    let mut refs_with_selector_child: rustc_hash::FxHashSet<SymbolId> = rustc_hash::FxHashSet::default();
+    for (_, sym) in hir.symbols() {
+        if let Some(parent_id) = sym.parent
+            && matches!(sym.kind, mq_hir::SymbolKind::Selector(_))
+        {
+            refs_with_selector_child.insert(parent_id);
+        }
+    }
+
     // Build def→refs index: for each variable definition, collect all Ref symbols
     // that point to it. This avoids an O(n) HIR scan per narrowing entry.
     let mut def_to_refs: FxHashMap<SymbolId, Vec<SymbolId>> = FxHashMap::default();
     for (ref_id, ref_sym) in hir.symbols() {
         if !matches!(ref_sym.kind, mq_hir::SymbolKind::Ref) {
+            continue;
+        }
+        // Skip Refs that have Selector children (e.g., `node.row`): their stored
+        // type is the selector output, not the variable type, so narrowing them
+        // would corrupt the selector output.
+        if refs_with_selector_child.contains(&ref_id) {
             continue;
         }
         if let Some(def_id) = hir.resolve_reference_symbol(ref_id) {
