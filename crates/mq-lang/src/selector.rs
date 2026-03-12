@@ -11,6 +11,44 @@ use crate::{Token, TokenKind};
 #[error("Unknown selector `{0}`")]
 pub struct UnknownSelector(pub Token);
 
+/// Parses a bracket-based selector string like `.[n]` (List) or `.[n][m]` (Table).
+///
+/// Returns `Some(Selector)` if the string matches, `None` otherwise.
+fn parse_bracket_selector(s: &str) -> Option<Selector> {
+    let inner = s.strip_prefix(".[")?;
+    let (first, rest) = inner.split_once(']')?;
+
+    if !first.is_empty() && !first.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let first_idx: Option<usize> = if first.is_empty() {
+        None
+    } else {
+        Some(first.parse().ok()?)
+    };
+
+    if rest.is_empty() {
+        // ".[n]" → List
+        return Some(Selector::List(first_idx, None));
+    }
+
+    let inner2 = rest.strip_prefix('[')?;
+    let (second, tail) = inner2.split_once(']')?;
+    if !tail.is_empty() {
+        return None;
+    }
+    if !second.is_empty() && !second.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let second_idx: Option<usize> = if second.is_empty() {
+        None
+    } else {
+        Some(second.parse().ok()?)
+    };
+    // ".[n][m]" → Table
+    Some(Selector::Table(first_idx, second_idx))
+}
+
 impl UnknownSelector {
     /// Creates a new `UnknownSelector` error with the given token.
     pub fn new(token: Token) -> Self {
@@ -188,7 +226,7 @@ impl TryFrom<&Token> for Selector {
         if let TokenKind::Selector(s) = &token.kind {
             match s.as_str() {
                 // Heading selectors
-                ".h" => Ok(Selector::Heading(None)),
+                ".h" | ".heading" => Ok(Selector::Heading(None)),
                 ".h1" => Ok(Selector::Heading(Some(1))),
                 ".h2" => Ok(Selector::Heading(Some(2))),
                 ".h3" => Ok(Selector::Heading(Some(3))),
@@ -251,7 +289,7 @@ impl TryFrom<&Token> for Selector {
                 ".link_ref" => Ok(Selector::LinkRef),
 
                 // List
-                ".list" => Ok(Selector::List(None, None)),
+                ".[]" | ".list" => Ok(Selector::List(None, None)),
 
                 // TOML
                 ".toml" => Ok(Selector::Toml),
@@ -278,7 +316,7 @@ impl TryFrom<&Token> for Selector {
                 ".text" => Ok(Selector::Text),
 
                 // Table
-                ".table" => Ok(Selector::Table(None, None)),
+                ".[][]" | ".table" => Ok(Selector::Table(None, None)),
 
                 // Table Align
                 ".table_align" => Ok(Selector::TableAlign),
@@ -324,7 +362,7 @@ impl TryFrom<&Token> for Selector {
                 // Attribute selectors - MDX
                 ".name" => Ok(Selector::Attr(AttrKind::Name)),
 
-                _ => Err(UnknownSelector(token.clone())),
+                _ => parse_bracket_selector(s).ok_or_else(|| UnknownSelector(token.clone())),
             }
         } else {
             Err(UnknownSelector(token.clone()))
@@ -346,8 +384,9 @@ impl Display for Selector {
             Selector::Blockquote => write!(f, ".blockquote"),
             Selector::Footnote => write!(f, ".footnote"),
             Selector::List(None, None) => write!(f, ".list"),
-            Selector::List(Some(idx), None) => write!(f, ".list({})", idx),
-            Selector::List(idx, ordered) => write!(f, ".list({:?}, {:?})", idx, ordered),
+            Selector::List(Some(idx), None) => write!(f, ".[{}]", idx),
+            Selector::List(Some(idx), _) => write!(f, ".[{}]", idx),
+            Selector::List(None, _) => write!(f, ".[]"),
             Selector::Toml => write!(f, ".toml"),
             Selector::Yaml => write!(f, ".yaml"),
             Selector::Break => write!(f, ".break"),
@@ -366,7 +405,7 @@ impl Display for Selector {
             Selector::Code => write!(f, ".code"),
             Selector::Math => write!(f, ".math"),
             Selector::Table(None, None) => write!(f, ".table"),
-            Selector::Table(Some(row), None) => write!(f, ".[{}]", row),
+            Selector::Table(Some(row), None) => write!(f, ".[{}][]", row),
             Selector::Table(Some(row), Some(col)) => write!(f, ".[{}][{}]", row, col),
             Selector::Table(None, Some(col)) => write!(f, ".[][{}]", col),
             Selector::TableAlign => write!(f, ".table_align"),
@@ -457,6 +496,8 @@ mod tests {
     #[case::link_ref(".link_ref", Selector::LinkRef, ".link_ref")]
     // List
     #[case::list(".list", Selector::List(None, None), ".list")]
+    #[case::list_bracket(".[]", Selector::List(None, None), ".list")]
+    #[case::list_with_index(".[1]", Selector::List(Some(1), None), ".[1]")]
     // TOML
     #[case::toml(".toml", Selector::Toml, ".toml")]
     // Strong
@@ -475,6 +516,10 @@ mod tests {
     #[case::text(".text", Selector::Text, ".text")]
     // Table
     #[case::table(".table", Selector::Table(None, None), ".table")]
+    #[case::table_bracket(".[][]", Selector::Table(None, None), ".table")]
+    #[case::table_row_any(".[1][]", Selector::Table(Some(1), None), ".[1][]")]
+    #[case::table_row_col(".[1][2]", Selector::Table(Some(1), Some(2)), ".[1][2]")]
+    #[case::table_any_col(".[][2]", Selector::Table(None, Some(2)), ".[][2]")]
     // Table Align
     #[case::table_align(".table_align", Selector::TableAlign, ".table_align")]
     // Recursive
