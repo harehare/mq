@@ -1220,7 +1220,6 @@ impl Node {
                 .iter()
                 .map(|value| value.render_with_theme(options, theme))
                 .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
                 .join("\n"),
             Self::Empty => String::new(),
         }
