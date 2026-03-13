@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 
 use bimap::BiMap;
 use dashmap::DashMap;
+use rustc_hash::FxHashSet;
 use tower_lsp_server::ls_types::DocumentRangeFormattingParams;
 use url::Url;
 
@@ -360,11 +361,40 @@ impl Backend {
             .collect::<Vec<_>>();
 
         if errors.is_empty() && self.config.enable_type_checking {
+            let hir_guard = self.hir.read().unwrap();
             let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options);
-            let type_errors = checker.check(&self.hir.read().unwrap());
+            let type_errors = checker.check(&hir_guard);
+
+            // Build a set of (line, column) start positions from the current source's symbols
+            // so that type errors originating from other sources (e.g., pre-loaded modules)
+            // are not incorrectly attributed to this file.
+            let source_locations: FxHashSet<(u32, usize)> = hir_guard
+                .symbols()
+                .filter_map(|(_, symbol)| {
+                    if symbol.source.source_id == Some(source_id) {
+                        symbol
+                            .source
+                            .text_range
+                            .as_ref()
+                            .map(|r| (r.start.line, r.start.column))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
             self.type_env_map
                 .insert(uri_string.clone(), checker.symbol_types().clone());
-            errors.extend(type_errors.into_iter().map(LspError::TypeError));
+            errors.extend(
+                type_errors
+                    .into_iter()
+                    .filter(|e| {
+                        e.location()
+                            .map(|(line, col)| source_locations.contains(&(line, col)))
+                            .unwrap_or(false)
+                    })
+                    .map(LspError::TypeError),
+            );
         }
 
         self.source_map.write().unwrap().insert(uri_string.clone(), source_id);

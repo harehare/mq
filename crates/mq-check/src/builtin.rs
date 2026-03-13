@@ -442,7 +442,8 @@ fn register_array(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_unary(ctx, "array", Type::Var(a), Type::array(Type::Var(a)));
 
-    // range: (number, number) -> [number], (number, number, number) -> [number]
+    // range: (number) -> [number], (number, number) -> [number], (number, number, number) -> [number]
+    register_unary(ctx, "range", Type::Number, Type::array(Type::Number));
     register_binary(ctx, "range", Type::Number, Type::Number, Type::array(Type::Number));
     register_ternary(
         ctx,
