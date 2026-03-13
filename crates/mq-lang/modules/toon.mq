@@ -9,6 +9,15 @@ def _toon_escape_string(s):
   replace(s, "\\", "\\\\") | replace("\"", "\\\"") | replace("\n", "\\n") | replace("\r", "\\r") | replace("\t", "\\t")
 end
 
+def _toon_unescape_string(s):
+  # Reverse of _toon_escape_string: unescape common sequences in quoted strings.
+  replace(s, "\\n", "\n")
+  | replace("\\r", "\r")
+  | replace("\\t", "\t")
+  | replace("\\\"", "\"")
+  | replace("\\\\", "\\")
+end
+
 def _toon_needs_quote(v, delim):
   let s = to_string(v)
   | if (s == ""): true
@@ -278,7 +287,11 @@ def _toon_parse_recursive(lines, start_i, target_indent, active_delim):
                                 end
                               else:
                                 do
-                                  let cp = index(line, ":") | let key = trim(slice(line, 0, cp)) | let vs = trim(slice(line, cp + 1, len(line)))
+                                  let cp = index(line, ":") | let raw_key = trim(slice(line, 0, cp)) | let vs = trim(slice(line, cp + 1, len(line)))
+                                  | let key = if (starts_with(raw_key, "\"") && ends_with(raw_key, "\"")):
+                                                _toon_unescape_string(slice(raw_key, 1, len(raw_key) - 1))
+                                              else:
+                                                raw_key
                                   | let rt = if (is_none(result)): {} else: result
                                   | if (!is_empty(vs)): [set(rt, key, _toon_parse_primitive(vs)), i + 1]
                                     else:
