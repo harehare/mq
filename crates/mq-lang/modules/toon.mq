@@ -140,6 +140,7 @@ def _toon_stringify_recursive(data, level, delim):
   else: to_string(data)
 end
 
+# To convert a data structure into a TOON string
 def toon_stringify(data): _toon_stringify_recursive(data, 0, ",");
 
 # --- Parse ---
@@ -147,7 +148,7 @@ def toon_stringify(data): _toon_stringify_recursive(data, 0, ",");
 def _toon_parse_primitive(s):
   let ss = trim(s)
   | if (starts_with(ss, "\"") && ends_with(ss, "\"")):
-      replace(replace(replace(replace(replace(slice(ss, 1, -1), "\\\"", "\""), "\\n", "\n"), "\\r", "\r"), "\\t", "\t"), "\\\\", "\\")
+      _toon_escape_string(slice(ss, 1, -1))
     elif (ss == "true"): true
     elif (ss == "false"): false
     elif (ss == "null"): None
@@ -294,9 +295,9 @@ def _toon_parse_recursive(lines, start_i, target_indent, active_delim):
   | if (is_none(loop_res)): [result, i] else: loop_res
 end
 
+# To parse a TOON string into a data structure
 def toon_parse(input):
   let lines = split(to_string(input), "\n")
   | let res = _toon_parse_recursive(lines, 0, 0, ",")
   | res[0]
 end
-
