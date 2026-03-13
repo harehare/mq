@@ -1,0 +1,316 @@
+# TOON implementation in mq
+
+def _toon_is_numeric_like(s):
+  let ss = to_string(s)
+  | is_regex_match(ss, "^-?[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?$") || is_regex_match(ss, "^0[0-9]+$")
+end
+
+def _toon_escape_string(s):
+  replace(s, "\\", "\\\\") | replace("\"", "\\\"") | replace("\n", "\\n") | replace("\r", "\\r") | replace("\t", "\\t")
+end
+
+def _toon_unescape_string(s):
+  # Reverse of _toon_escape_string: unescape common sequences in quoted strings.
+  replace(s, "\\n", "\n")
+  | replace("\\r", "\r")
+  | replace("\\t", "\t")
+  | replace("\\\"", "\"")
+  | replace("\\\\", "\\")
+end
+
+def _toon_needs_quote(v, delim):
+  let s = to_string(v)
+  | if (s == ""): true
+    elif (starts_with(s, " ") || ends_with(s, " ")): true
+    elif (s == "true" || s == "false" || s == "null"): true
+    elif (_toon_is_numeric_like(s)): true
+    elif (contains(s, ":") || contains(s, "\"") || contains(s, "\\")): true
+    elif (contains(s, "[") || contains(s, "]") || contains(s, "{") || contains(s, "}")): true
+    elif (contains(s, "\n") || contains(s, "\r") || contains(s, "\t")): true
+    elif (contains(s, delim)): true
+    elif (starts_with(s, "-")): true
+    else: false
+end
+
+def _toon_stringify_primitive(v, delim):
+  if (is_string(v)):
+    if (_toon_needs_quote(v, delim)): "\"" + _toon_escape_string(v) + "\""
+    else: v
+  elif (is_number(v)):
+    do
+      let s = to_string(v)
+      | if (s == "-0"): "0" else: s
+    end
+  elif (is_bool(v)): if (v): "true" else: "false"
+  elif (is_none(v)): "null"
+  else: to_string(v)
+end
+
+def _toon_is_primitive(v):
+  is_string(v) || is_number(v) || is_bool(v) || is_none(v)
+end
+
+def _toon_merge_dicts(d1, d2):
+  if (is_none(d1)): d2
+  elif (is_none(d2)): d1
+  else: fold(entries(d2), d1, fn(acc, e): set(acc, e[0], e[1]);)
+end
+
+def _toon_indent(n): repeat("  ", n);
+
+def _toon_get_indent(line):
+  var idx = 0 | let l = len(line)
+  | let res = while (idx < l && line[idx] == " "):
+      idx += 1 | idx
+    end
+  | if (is_none(res)): 0 else: floor(res / 2)
+end
+
+# --- Stringify ---
+
+def _toon_stringify_dict(data, level, delim):
+  let ind = _toon_indent(level)
+  | let next_ind = _toon_indent(level + 1)
+  | let lines = map(entries(data), fn(e):
+      let k = e[0] | let v = e[1]
+      | let ks = if (is_regex_match(k, "^[A-Za-z_][A-Za-z0-9_.]*$")): k else: "\"" + _toon_escape_string(k) + "\""
+      | if (_toon_is_primitive(v)): ks + ": " + _toon_stringify_primitive(v, delim)
+        else:
+          do
+            let value = _toon_stringify_recursive(v, level + 1, delim)
+            | if (starts_with(value, "[")): ks + ind + value else: ks + ":\n" + next_ind + value
+          end
+    end)
+  | join(lines, "\n" + ind)
+end
+
+def _toon_stringify_tabular(data, level, delim):
+  let next_ind = _toon_indent(level + 1)
+  | let fk = keys(first(data))
+  | let header = "[" + to_string(len(data)) + "]{" + join(fk, delim) + "}:"
+  | let rows = map(data, fn(item):
+      join(map(fk, fn(k): _toon_stringify_primitive(item[k], delim);), delim);)
+  | header + "\n" + next_ind + join(rows, "\n" + next_ind)
+end
+
+def _toon_stringify_expanded_item(v, level, delim):
+  if (is_dict(v) && !is_empty(v)):
+    do
+      let ks = keys(v) | let fk = ks[0] | let fv = v[fk]
+      | let fks = if (is_regex_match(fk, "^[A-Za-z_][A-Za-z0-9_.]*$")): fk else: "\"" + _toon_escape_string(fk) + "\""
+      | let start = if (_toon_is_primitive(fv)): "- " + fks + ": " + _toon_stringify_primitive(fv, delim)
+            else: "- " + fks + ":\n" + _toon_indent(level + 2) + _toon_stringify_recursive(fv, level + 2, delim)
+      | let other_ks = slice(ks, 1, len(ks))
+      | if (is_empty(other_ks)): start
+        else:
+          do
+            let sub_ind = _toon_indent(level + 2)
+            | let lines = map(other_ks, fn(k):
+                          let ks_sub = if (is_regex_match(k, "^[A-Za-z_][A-Za-z0-9_.]*$")): k else: "\"" + _toon_escape_string(k) + "\""
+                          | let val = v[k]
+                          | if (_toon_is_primitive(val)): ks_sub + ": " + _toon_stringify_primitive(val, delim)
+                            else: ks_sub + ":\n" + _toon_indent(level + 3) + _toon_stringify_recursive(val, level + 3, delim)
+                        end)
+            | start + "\n" + sub_ind + join(lines, "\n" + sub_ind)
+          end
+    end
+  else: "- " + _toon_stringify_recursive(v, level + 1, delim)
+end
+
+def _toon_stringify_array(data, level, delim):
+  if (all(data, _toon_is_primitive)):
+    do
+      let vals = map(data, fn(v): _toon_stringify_primitive(v, delim);)
+      | "[" + to_string(len(data)) + "]: " + join(vals, delim)
+    end
+  else:
+    do
+      let fk = if (is_dict(first(data))): keys(first(data)) else: []
+      | let is_tabular = if (is_empty(fk)): false
+            else: all(data, fn(item):
+              let ks = keys(item)
+              | len(ks) == len(fk) && all(ks, fn(k): contains(fk, k);) && all(values(item), _toon_is_primitive);)
+      | if (is_tabular): _toon_stringify_tabular(data, level, delim)
+        else:
+          do
+            let nind = _toon_indent(level + 1)
+            | let items = map(data, fn(v): _toon_stringify_expanded_item(v, level, delim);)
+            | "[" + to_string(len(data)) + "]:\n" + nind + join(items, "\n" + nind)
+          end
+    end
+end
+
+def _toon_stringify_recursive(data, level, delim):
+  if (_toon_is_primitive(data)): _toon_stringify_primitive(data, delim)
+  elif (is_dict(data)):
+    if (is_empty(data)): "{}" else: _toon_stringify_dict(data, level, delim)
+  elif (is_array(data)):
+    if (is_empty(data)): "[0]:" else: _toon_stringify_array(data, level, delim)
+  else: to_string(data)
+end
+
+# To convert a data structure into a TOON string
+def toon_stringify(data): _toon_stringify_recursive(data, 0, ",");
+
+# --- Parse ---
+
+def _toon_parse_primitive(s):
+  let ss = trim(s)
+  | if (starts_with(ss, "\"") && ends_with(ss, "\"")):
+      _toon_escape_string(slice(ss, 1, -1))
+    elif (ss == "true"): true
+    elif (ss == "false"): false
+    elif (ss == "null"): None
+    elif (_toon_is_numeric_like(ss)): to_number(ss)
+    else: ss
+end
+
+def _toon_parse_header(line):
+  let t = trim(line)
+  | if (!ends_with(t, ":")): None
+    else:
+      do
+        let l = slice(t, 0, -1) | let s = index(l, "[") | let e = index(l, "]")
+        | if (s == -1 || e == -1 || s > e): None
+          else:
+            do
+              let key = trim(slice(l, 0, s)) | let bc = slice(l, s + 1, e)
+              | let colon = index(line, ":")
+              | var ls = "" | var dc = ","
+              | if (ends_with(bc, "|")): do ls = slice(bc, 0, -1) | dc = "|" end
+                elif (ends_with(bc, "\t")): do ls = slice(bc, 0, -1) | dc = "\t" end
+                else: ls = bc
+              | let length = to_number(ls)
+              | let ab = trim(slice(l, e + 1, len(l)))
+              | if (starts_with(ab, "{") && ends_with(ab, "}")):
+                  {"key": key, "len": length, "delim": dc, "fields": map(split(slice(ab, 1, -1), dc), trim), "has_f": true}
+                else: {"key": key, "len": length, "delim": dc, "fields": [], "has_f": false}
+            end
+      end
+end
+
+def _toon_parse_tabular(lines, start_i, count, target_indent, fields, delim):
+  var i = start_i | var val = [] | let total = len(lines)
+  | let loop_res = while (len(val) < count && i < total):
+      let line = lines[i]
+      | if (is_empty(trim(line))): i += 1
+        else:
+          do
+            if (_toon_get_indent(line) <= target_indent): break
+            else:
+              do
+                let row = map(split(line, delim), _toon_parse_primitive)
+                | var obj = {} | var f_idx = 0
+                | while (f_idx < len(fields) && f_idx < len(row)):
+                    obj = set(obj, fields[f_idx], row[f_idx]) | f_idx += 1
+                  end
+                | val += [obj] | i += 1
+              end
+          end
+      | [val, i]
+    end
+  | if (is_none(loop_res)): [val, i] else: loop_res
+end
+
+def _toon_parse_inline_array(line, start_b, end_b):
+  let cp = index(line, ":") | let key = trim(slice(line, 0, start_b)) | let bc = slice(line, start_b + 1, end_b)
+  | let delim =
+    if (contains(bc, "|")): "|"
+    elif (contains(bc, "\t")): "\t"
+    else: ","
+  | let values = split(trim(slice(line, cp + 1, len(line))), delim)
+  | [{key: key, length: bc, values: take(map(values, _toon_parse_primitive), to_number(bc))}]
+end
+
+def _toon_parse_expanded(lines, start_i, count, target_indent, delim):
+  var i = start_i | var val = [] | let total = len(lines)
+  | let loop_res = while (len(val) < count && i < total):
+      let line = lines[i]
+      | if (is_empty(trim(line))): i += 1
+        else:
+          do
+            let ind = _toon_get_indent(line)
+            | if (ind <= target_indent): break
+              else:
+                do
+                  let t = trim(line)
+                  | if (starts_with(t, "- ")):
+                      do
+                        let c = slice(t, 2, len(t))
+                        | if (contains(c, ":")):
+                            do
+                              let r1 = _toon_parse_recursive([c], 0, 0, delim)
+                              | let r2 = _toon_parse_recursive(lines, i + 1, ind + 1, delim)
+                              | val += [_toon_merge_dicts(r1[0], r2[0])] | i = r2[1]
+                            end
+                          else: do val += [_toon_parse_primitive(c)] | i += 1 end
+                      end
+                    else: i += 1
+                end
+          end
+      | [val, i]
+    end
+  | if (is_none(loop_res)): [val, i] else: loop_res
+end
+
+def _toon_parse_recursive(lines, start_i, target_indent, active_delim):
+  var i = start_i | var result = None | let total = len(lines)
+  | let loop_res = while (i < total):
+      let line = lines[i] | let ind = _toon_get_indent(line)
+      | if (ind < target_indent): break
+      | if (is_empty(trim(line))): do i += 1 | [result, i] end
+        else:
+          do
+            let h = _toon_parse_header(line)
+            | let step = if (!is_none(h)):
+                          do
+                            let k = h["key"] | let lv = h["len"] | let d = h["delim"]
+                            | let vi = if (h["has_f"]): _toon_parse_tabular(lines, i + 1, lv, target_indent, h["fields"], d)
+                                                        else:
+                                                          do
+                                                            let ci = index(line, ":") | let af = trim(slice(line, ci + 1, len(line)))
+                                                            | if (!is_empty(af)): [map(split(af, d), _toon_parse_primitive), i + 1]
+                                                              else: _toon_parse_expanded(lines, i + 1, lv, target_indent, d)
+                                                          end
+                            | let rt = if (is_none(result)): {} else: result
+                            | [if (k == ""): vi[0] else: set(rt, k, vi[0]), vi[1]]
+                          end
+                        elif (contains(line, ":")):
+                          do
+                            let sb = index(line, "[")
+                            | let eb = index(line, "]")
+                            | if (sb != -1 && eb != -1 && sb < eb):
+                                do
+                                  let arr = _toon_parse_inline_array(line, sb, eb)
+                                  | let rt = if (is_none(result)): {} else: result
+                                  | [set(rt, arr[0]["key"], arr[0]["values"]), i + 1]
+                                end
+                              else:
+                                do
+                                  let cp = index(line, ":") | let raw_key = trim(slice(line, 0, cp)) | let vs = trim(slice(line, cp + 1, len(line)))
+                                  | let key = if (starts_with(raw_key, "\"") && ends_with(raw_key, "\"")):
+                                                _toon_unescape_string(slice(raw_key, 1, len(raw_key) - 1))
+                                              else:
+                                                raw_key
+                                  | let rt = if (is_none(result)): {} else: result
+                                  | if (!is_empty(vs)): [set(rt, key, _toon_parse_primitive(vs)), i + 1]
+                                    else:
+                                      do
+                                        let nest = _toon_parse_recursive(lines, i + 1, ind + 1, active_delim)
+                                        | [set(rt, key, nest[0]), nest[1]]
+                                      end
+                                end
+                          end
+                        else: [if (target_indent == 0 && total == 1): _toon_parse_primitive(line) else: result, i + 1]
+            | result = step[0] | i = step[1] | [result, i]
+          end
+    end
+  | if (is_none(loop_res)): [result, i] else: loop_res
+end
+
+# To parse a TOON string into a data structure
+def toon_parse(input):
+  let lines = split(to_string(input), "\n")
+  | let res = _toon_parse_recursive(lines, 0, 0, ",")
+  | res[0]
+end
