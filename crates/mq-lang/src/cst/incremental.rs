@@ -70,6 +70,7 @@ impl TextEdit {
 /// parser2.apply_edit(&edit2).unwrap();
 /// assert_eq!(parser2.source(), "\"世界\" | upcase()");
 /// ```
+#[derive(Debug)]
 pub struct IncrementalParser {
     source: Rope,
     tokens: Vec<Shared<Token>>,
