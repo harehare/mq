@@ -365,18 +365,28 @@ impl Backend {
             let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options);
             let type_errors = checker.check(&hir_guard);
 
-            // Filter type errors so that only those originating from the current source
-            // (as identified by `source_id`) are attributed to this file. This avoids
-            // accidentally attaching errors from other sources that may share the same
-            // (line, column) coordinates.
+            // Build a set of (line, column) start positions from the current source's symbols
+            // so that type errors originating from other sources (e.g., pre-loaded modules)
+            // are not incorrectly attributed to this file.
+            let source_locations: FxHashSet<(u32, usize)> = hir_guard
+                .symbols_for_source(source_id)
+                .filter_map(|(_, symbol)| {
+                    symbol
+                        .source
+                        .text_range
+                        .as_ref()
+                        .map(|r| (r.start.line, r.start.column))
+                })
+                .collect();
+
             self.type_env_map
                 .insert(uri_string.clone(), checker.symbol_types().clone());
             errors.extend(
                 type_errors
                     .into_iter()
                     .filter(|e| {
-                        e.source_id()
-                            .map(|id| id == source_id)
+                        e.location()
+                            .map(|(line, col)| source_locations.contains(&(line, col)))
                             .unwrap_or(false)
                     })
                     .map(LspError::TypeError),
