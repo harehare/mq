@@ -369,17 +369,13 @@ impl Backend {
             // so that type errors originating from other sources (e.g., pre-loaded modules)
             // are not incorrectly attributed to this file.
             let source_locations: FxHashSet<(u32, usize)> = hir_guard
-                .symbols()
+                .symbols_for_source(source_id)
                 .filter_map(|(_, symbol)| {
-                    if symbol.source.source_id == Some(source_id) {
-                        symbol
-                            .source
-                            .text_range
-                            .as_ref()
-                            .map(|r| (r.start.line, r.start.column))
-                    } else {
-                        None
-                    }
+                    symbol
+                        .source
+                        .text_range
+                        .as_ref()
+                        .map(|r| (r.start.line, r.start.column))
                 })
                 .collect();
 
