@@ -9,7 +9,9 @@ mq is a jq-like command-line tool for Markdown processing. It allows you to easi
 - Syntax highlighting for `.mq` files using Tree-sitter grammar
 - Language Server Protocol (LSP) support via `mq-lsp`
 - Auto-completion and diagnostics
-- Code navigation and hover information
+- Code navigation and hover information with type display
+- Inlay hints for inline type annotations
+- Type checking support (configurable via settings)
 
 ## Installation
 
@@ -35,6 +37,56 @@ Create or open a `.mq` file to activate the extension. The language server will 
 ## Configuration
 
 The extension will automatically detect and use `mq-lsp` if it's in your PATH. Otherwise, it will download the appropriate binary for your platform from the [mq GitHub releases](https://github.com/harehare/mq/releases).
+
+### Type Checking
+
+Enable type checking by adding the following to your Zed `settings.json` (`cmd-,`):
+
+```json
+{
+  "lsp": {
+    "mq-lsp": {
+      "initialization_options": {
+        "enableTypeCheck": true,
+        "strictArray": false
+      }
+    }
+  }
+}
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `enableTypeCheck` | `false` | Enable type checking; passes `--enable-type-checking` to `mq-lsp` |
+| `strictArray` | `false` | Arrays must contain elements of a single type (requires `enableTypeCheck`) |
+
+### Inlay Hints
+
+Inlay hints show inferred types inline in the editor. Enable them in your Zed `settings.json`:
+
+```json
+{
+  "inlay_hints": {
+    "enabled": true
+  }
+}
+```
+
+### Custom Binary Path
+
+To use a specific `mq-lsp` binary, configure it in your Zed `settings.json`:
+
+```json
+{
+  "lsp": {
+    "mq-lsp": {
+      "binary": {
+        "path": "/path/to/mq-lsp"
+      }
+    }
+  }
+}
+```
 
 ## Contributing
 

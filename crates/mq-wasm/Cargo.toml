@@ -10,7 +10,7 @@ name = "mq-wasm"
 publish = false
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.17"
+version = "0.5.19"
 
 [lib]
 crate-type = ["cdylib"]
@@ -22,6 +22,7 @@ itertools = {workspace = true}
 js-sys = {workspace = true}
 mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
+mq-check = {workspace = true}
 mq-lang = {workspace = true, features = ["ast-json"]}
 mq-markdown = {workspace = true}
 opfs = {workspace = true}

@@ -2,6 +2,7 @@
 
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
+use std::collections::BTreeMap;
 use std::fmt;
 
 slotmap::new_key_type! {
@@ -30,6 +31,11 @@ pub enum Type {
     Markdown,
     /// Array type with element type
     Array(Box<Type>),
+    /// Tuple type with known element types (e.g., `(number, string)`)
+    ///
+    /// Used when `--tuple` mode is enabled to track per-element types
+    /// for small heterogeneous arrays like `[1, "hello"]`.
+    Tuple(Vec<Type>),
     /// Dictionary type with key and value types
     Dict(Box<Type>, Box<Type>),
     /// Function type: arguments -> return type
@@ -37,6 +43,18 @@ pub enum Type {
     /// Union type: represents a value that could be one of multiple types
     /// Used for try/catch expressions with different branch types
     Union(Vec<Type>),
+    /// Record type with known fields and optional row extension (row polymorphism).
+    ///
+    /// The first element is a map of field names to their types.
+    /// The second element is the row tail: either `RowEmpty` (closed record)
+    /// or `Var(id)` (open record that may have additional fields).
+    ///
+    /// Examples:
+    /// - `{a: number, b: string}` → `Record({"a": Number, "b": String}, RowEmpty)`
+    /// - `{a: number | r}` → `Record({"a": Number}, Var(r))`
+    Record(BTreeMap<String, Type>, Box<Type>),
+    /// Empty row — marks a closed record with no additional fields
+    RowEmpty,
     /// Type variable for inference
     Var(TypeVarId),
 }
@@ -52,15 +70,25 @@ impl Type {
         Type::Array(Box::new(elem))
     }
 
+    /// Creates a new tuple type with known element types
+    pub fn tuple(elems: Vec<Type>) -> Self {
+        Type::Tuple(elems)
+    }
+
     /// Creates a new dict type
     pub fn dict(key: Type, value: Type) -> Self {
         Type::Dict(Box::new(key), Box::new(value))
     }
 
+    /// Creates a new record type with known fields
+    pub fn record(fields: BTreeMap<String, Type>, rest: Type) -> Self {
+        Type::Record(fields, Box::new(rest))
+    }
+
     /// Creates a new union type from two or more types
     /// Automatically normalizes the union (removes duplicates, flattens nested unions)
     pub fn union(types: Vec<Type>) -> Self {
-        let mut normalized = Vec::new();
+        let mut normalized = Vec::with_capacity(types.len());
         for ty in types {
             match ty {
                 // Flatten nested unions
@@ -84,6 +112,28 @@ impl Type {
         }
     }
 
+    /// Removes a type from a union by discriminant, returning the remaining type.
+    ///
+    /// If this is not a union, returns self unchanged.
+    /// If only one type remains after subtraction, returns it directly (unwrapped).
+    pub fn subtract(&self, exclude: &Type) -> Type {
+        match self {
+            Type::Union(members) => {
+                let remaining: Vec<Type> = members
+                    .iter()
+                    .filter(|t| std::mem::discriminant(*t) != std::mem::discriminant(exclude))
+                    .cloned()
+                    .collect();
+                if remaining.is_empty() {
+                    self.clone()
+                } else {
+                    Type::union(remaining)
+                }
+            }
+            _ => self.clone(),
+        }
+    }
+
     /// Returns a numeric discriminant for ordering purposes.
     /// Used by `Type::union` to sort union members without allocating.
     fn discriminant(&self) -> u8 {
@@ -97,16 +147,24 @@ impl Type {
             Type::None => 6,
             Type::Markdown => 7,
             Type::Array(_) => 8,
-            Type::Dict(_, _) => 9,
-            Type::Function(_, _) => 10,
-            Type::Union(_) => 11,
-            Type::Var(_) => 12,
+            Type::Tuple(_) => 9,
+            Type::Dict(_, _) => 10,
+            Type::Function(_, _) => 11,
+            Type::Union(_) => 12,
+            Type::Record(_, _) => 13,
+            Type::RowEmpty => 14,
+            Type::Var(_) => 15,
         }
     }
 
     /// Checks if this is a type variable
     pub fn is_var(&self) -> bool {
         matches!(self, Type::Var(_))
+    }
+
+    /// Checks if this type contains no free type variables (is fully concrete)
+    pub fn is_concrete(&self) -> bool {
+        self.free_vars().is_empty()
     }
 
     /// Checks if this is a union type
@@ -124,9 +182,13 @@ impl Type {
 
     /// Substitutes type variables according to the given substitution
     pub fn apply_subst(&self, subst: &Substitution) -> Type {
+        if subst.is_empty() {
+            return self.clone();
+        }
         match self {
             Type::Var(id) => subst.lookup(*id).map_or_else(|| self.clone(), |t| t.apply_subst(subst)),
             Type::Array(elem) => Type::Array(Box::new(elem.apply_subst(subst))),
+            Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| e.apply_subst(subst)).collect()),
             Type::Dict(key, value) => Type::Dict(Box::new(key.apply_subst(subst)), Box::new(value.apply_subst(subst))),
             Type::Function(params, ret) => {
                 let new_params = params.iter().map(|p| p.apply_subst(subst)).collect();
@@ -135,6 +197,10 @@ impl Type {
             Type::Union(types) => {
                 let new_types = types.iter().map(|t| t.apply_subst(subst)).collect();
                 Type::union(new_types)
+            }
+            Type::Record(fields, rest) => {
+                let new_fields = fields.iter().map(|(k, v)| (k.clone(), v.apply_subst(subst))).collect();
+                Type::Record(new_fields, Box::new(rest.apply_subst(subst)))
             }
             _ => self.clone(),
         }
@@ -145,6 +211,7 @@ impl Type {
         match self {
             Type::Var(id) => vec![*id],
             Type::Array(elem) => elem.free_vars(),
+            Type::Tuple(elems) => elems.iter().flat_map(|e| e.free_vars()).collect(),
             Type::Dict(key, value) => {
                 let mut vars = key.free_vars();
                 vars.extend(value.free_vars());
@@ -156,6 +223,11 @@ impl Type {
                 vars
             }
             Type::Union(types) => types.iter().flat_map(|t| t.free_vars()).collect(),
+            Type::Record(fields, rest) => {
+                let mut vars: Vec<TypeVarId> = fields.values().flat_map(|v| v.free_vars()).collect();
+                vars.extend(rest.free_vars());
+                vars
+            }
             _ => Vec::new(),
         }
     }
@@ -187,6 +259,14 @@ impl Type {
             // Arrays match if their element types can match
             (Type::Array(elem1), Type::Array(elem2)) => elem1.can_match(elem2),
 
+            // Tuples match if they have the same length and all elements can match
+            (Type::Tuple(elems1), Type::Tuple(elems2)) => {
+                elems1.len() == elems2.len() && elems1.iter().zip(elems2.iter()).all(|(e1, e2)| e1.can_match(e2))
+            }
+
+            // Tuple can match Array (compatibility)
+            (Type::Tuple(_), Type::Array(_)) | (Type::Array(_), Type::Tuple(_)) => true,
+
             // Dicts match if both key and value types can match
             (Type::Dict(k1, v1), Type::Dict(k2, v2)) => k1.can_match(k2) && v1.can_match(v2),
 
@@ -197,7 +277,90 @@ impl Type {
                     && ret1.can_match(ret2)
             }
 
+            // Records match if common fields can match and rests can match
+            (Type::Record(f1, r1), Type::Record(f2, r2)) => {
+                // Common fields must match
+                for (k, v1) in f1 {
+                    if let Some(v2) = f2.get(k)
+                        && !v1.can_match(v2)
+                    {
+                        return false;
+                    }
+                }
+                r1.can_match(r2)
+            }
+
+            // Record can match Dict (compatibility)
+            (Type::Record(_, _), Type::Dict(_, _)) | (Type::Dict(_, _), Type::Record(_, _)) => true,
+
+            // RowEmpty matches RowEmpty
+            (Type::RowEmpty, Type::RowEmpty) => true,
+
             // Everything else doesn't match
+            _ => false,
+        }
+    }
+
+    /// Strict branch compatibility check for if-expression unification decisions.
+    ///
+    /// Unlike `can_match`, this treats an unresolved type variable (`Var`) as incompatible
+    /// with any known concrete type. This is used when deciding whether if-expression
+    /// branches should be unified or placed in a Union type: if one branch has `None` in
+    /// a tuple element position and another has `Var` (which might resolve to `Number`),
+    /// we conservatively choose Union to avoid a spurious unification error later.
+    ///
+    /// - `Var(a)` vs `Var(b)` → `true` (both unknown; let unification decide)
+    /// - `Var(a)` vs `concrete` → `false` (Var might not match the concrete type)
+    /// - `concrete` vs `Var(a)` → `false` (symmetric)
+    /// - All other cases mirror `can_match`
+    pub fn can_branch_unify_with(&self, other: &Type) -> bool {
+        match (self, other) {
+            // Two type variables are compatible (unification will sort them out)
+            (Type::Var(_), Type::Var(_)) => true,
+
+            // Var vs concrete — unknown; do NOT assume compatible
+            (Type::Var(_), _) | (_, Type::Var(_)) => false,
+
+            // Union types: strict — any member must strictly match
+            (Type::Union(types), other) => types.iter().any(|t| t.can_branch_unify_with(other)),
+            (other, Type::Union(types)) => types.iter().any(|t| other.can_branch_unify_with(t)),
+
+            // Concrete types must match exactly
+            (Type::Int, Type::Int)
+            | (Type::Float, Type::Float)
+            | (Type::Number, Type::Number)
+            | (Type::String, Type::String)
+            | (Type::Bool, Type::Bool)
+            | (Type::Symbol, Type::Symbol)
+            | (Type::None, Type::None)
+            | (Type::Markdown, Type::Markdown) => true,
+
+            // Arrays: recurse strictly
+            (Type::Array(elem1), Type::Array(elem2)) => elem1.can_branch_unify_with(elem2),
+
+            // Tuples: same length and all elements strictly match
+            (Type::Tuple(elems1), Type::Tuple(elems2)) => {
+                elems1.len() == elems2.len()
+                    && elems1
+                        .iter()
+                        .zip(elems2.iter())
+                        .all(|(e1, e2)| e1.can_branch_unify_with(e2))
+            }
+
+            // Dicts: recurse strictly
+            (Type::Dict(k1, v1), Type::Dict(k2, v2)) => k1.can_branch_unify_with(k2) && v1.can_branch_unify_with(v2),
+
+            // Functions: same arity and all param/ret types strictly match
+            (Type::Function(params1, ret1), Type::Function(params2, ret2)) => {
+                params1.len() == params2.len()
+                    && params1
+                        .iter()
+                        .zip(params2.iter())
+                        .all(|(p1, p2)| p1.can_branch_unify_with(p2))
+                    && ret1.can_branch_unify_with(ret2)
+            }
+
+            // Everything else is incompatible
             _ => false,
         }
     }
@@ -247,12 +410,45 @@ impl Type {
             // Arrays: structural match scores higher than bare type variable
             (Type::Array(elem1), Type::Array(elem2)) => elem1.match_score(elem2).map(|s| s + 20),
 
+            // Tuples: structural match on all elements
+            (Type::Tuple(elems1), Type::Tuple(elems2)) if elems1.len() == elems2.len() => {
+                let total: u32 = elems1
+                    .iter()
+                    .zip(elems2.iter())
+                    .map(|(e1, e2)| e1.match_score(e2).unwrap_or(0))
+                    .sum();
+                Some(total / elems1.len() as u32 + 20)
+            }
+
+            // Tuple ↔ Array compatibility (lower score than direct Tuple match)
+            (Type::Tuple(_), Type::Array(_)) | (Type::Array(_), Type::Tuple(_)) => Some(15),
+
             // Dicts: structural match scores higher than bare type variable
             (Type::Dict(k1, v1), Type::Dict(k2, v2)) => {
                 let key_score = k1.match_score(k2)?;
                 let val_score = v1.match_score(v2)?;
                 Some((key_score + val_score) / 2 + 20)
             }
+
+            // Records: structural match on fields
+            (Type::Record(f1, r1), Type::Record(f2, r2)) => {
+                let mut total = 0u32;
+                let mut count = 0u32;
+                for (k, v1) in f1 {
+                    if let Some(v2) = f2.get(k) {
+                        total += v1.match_score(v2)?;
+                        count += 1;
+                    }
+                }
+                let field_score = if count > 0 { total / count } else { 10 };
+                let rest_score = r1.match_score(r2).unwrap_or(10);
+                Some(field_score + rest_score + 20)
+            }
+
+            // Record ↔ Dict compatibility (lower score than direct Record match)
+            (Type::Record(_, _), Type::Dict(_, _)) | (Type::Dict(_, _), Type::Record(_, _)) => Some(15),
+
+            (Type::RowEmpty, Type::RowEmpty) => Some(100),
 
             // Functions: sum all parameter scores and return score
             (Type::Function(params1, ret1), Type::Function(params2, ret2)) => {
@@ -284,7 +480,33 @@ impl Type {
             Type::None => "none".to_string(),
             Type::Markdown => "markdown".to_string(),
             Type::Array(elem) => format!("[{}]", elem.display_resolved()),
+            Type::Tuple(elems) => {
+                let elems_str = elems
+                    .iter()
+                    .map(|e| e.display_resolved())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("({})", elems_str)
+            }
             Type::Dict(key, value) => format!("{{{}: {}}}", key.display_resolved(), value.display_resolved()),
+            Type::Record(fields, rest) => {
+                let fields_str = fields
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, v.display_resolved()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                match rest.as_ref() {
+                    Type::RowEmpty => format!("{{{}}}", fields_str),
+                    _ => {
+                        if fields_str.is_empty() {
+                            format!("{{| {}}}", rest.display_resolved())
+                        } else {
+                            format!("{{{} | {}}}", fields_str, rest.display_resolved())
+                        }
+                    }
+                }
+            }
+            Type::RowEmpty => "{}".to_string(),
             Type::Function(params, ret) => {
                 let params_str = params
                     .iter()
@@ -331,6 +553,14 @@ impl Type {
             Type::None => "none".to_string(),
             Type::Markdown => "markdown".to_string(),
             Type::Array(elem) => format!("[{}]", elem.fmt_renumbered(var_map, counter)),
+            Type::Tuple(elems) => {
+                let elems_str = elems
+                    .iter()
+                    .map(|e| e.fmt_renumbered(var_map, counter))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("({})", elems_str)
+            }
             Type::Dict(key, value) => {
                 format!(
                     "{{{}: {}}}",
@@ -354,6 +584,25 @@ impl Type {
                     .join(" | ");
                 format!("({})", types_str)
             }
+            Type::Record(fields, rest) => {
+                let fields_str = fields
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, v.fmt_renumbered(var_map, counter)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                match rest.as_ref() {
+                    Type::RowEmpty => format!("{{{}}}", fields_str),
+                    _ => {
+                        let rest_str = rest.fmt_renumbered(var_map, counter);
+                        if fields_str.is_empty() {
+                            format!("{{| {}}}", rest_str)
+                        } else {
+                            format!("{{{} | {}}}", fields_str, rest_str)
+                        }
+                    }
+                }
+            }
+            Type::RowEmpty => "{}".to_string(),
             Type::Var(id) => {
                 let index = *var_map.entry(*id).or_insert_with(|| {
                     let i = *counter;
@@ -387,6 +636,17 @@ pub fn format_var_name(index: usize) -> String {
     } else {
         format!("'{}{}", letter, suffix)
     }
+}
+
+/// Formats a list of types as a comma-separated string using renumbered display.
+///
+/// Convenience helper used in error messages and overload reporting.
+pub(crate) fn format_type_list(types: &[Type]) -> String {
+    types
+        .iter()
+        .map(|t| t.display_renumbered())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 impl fmt::Display for Type {
@@ -566,6 +826,7 @@ impl Substitution {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn test_type_display() {
@@ -662,5 +923,90 @@ mod tests {
 
         // Incompatible types return None
         assert_eq!(Type::Number.match_score(&Type::String), None);
+    }
+
+    #[rstest]
+    #[case(vec![Type::Number, Type::Number], Type::Number)]
+    #[case(vec![Type::Number, Type::String], Type::union(vec![Type::Number, Type::String]))]
+    #[case(vec![Type::union(vec![Type::Number, Type::String]), Type::Bool], Type::union(vec![Type::Number, Type::String, Type::Bool]))]
+    #[case(vec![Type::Number, Type::String, Type::Number], Type::union(vec![Type::Number, Type::String]))]
+    fn test_type_union(#[case] types: Vec<Type>, #[case] expected: Type) {
+        assert_eq!(Type::union(types), expected);
+    }
+
+    #[rstest]
+    #[case(Type::union(vec![Type::Number, Type::String]), &Type::Number, Type::String)]
+    #[case(Type::union(vec![Type::Number, Type::String, Type::Bool]), &Type::String, Type::union(vec![Type::Number, Type::Bool]))]
+    #[case(Type::Number, &Type::Number, Type::Number)]
+    fn test_type_subtract(#[case] ty: Type, #[case] exclude: &Type, #[case] expected: Type) {
+        assert_eq!(ty.subtract(exclude), expected);
+    }
+
+    #[rstest]
+    #[case(Type::Number, Type::Number, true)]
+    #[case(Type::Number, Type::String, false)]
+    #[case(Type::array(Type::Number), Type::array(Type::Number), true)]
+    #[case(Type::array(Type::Number), Type::array(Type::String), false)]
+    #[case(Type::tuple(vec![Type::Number]), Type::array(Type::Number), true)]
+    #[case(Type::record(BTreeMap::from([("a".to_string(), Type::Number)]), Type::RowEmpty), Type::dict(Type::String, Type::Number), true)]
+    fn test_can_match_complex(#[case] t1: Type, #[case] t2: Type, #[case] expected: bool) {
+        assert_eq!(t1.can_match(&t2), expected);
+    }
+
+    #[rstest]
+    #[case(Type::Number, Type::Number, true)]
+    #[case(Type::Number, Type::String, false)]
+    fn test_can_branch_unify_with(#[case] t1: Type, #[case] t2: Type, #[case] expected: bool) {
+        assert_eq!(t1.can_branch_unify_with(&t2), expected);
+    }
+
+    #[test]
+    fn test_can_branch_unify_with_vars() {
+        let mut ctx = TypeVarContext::new();
+        let v1 = ctx.fresh();
+        let v2 = ctx.fresh();
+        assert!(Type::Var(v1).can_branch_unify_with(&Type::Var(v2)));
+        assert!(!Type::Var(v1).can_branch_unify_with(&Type::Number));
+    }
+
+    #[test]
+    fn test_substitution_compose() {
+        let mut ctx = TypeVarContext::new();
+        let v1 = ctx.fresh();
+        let v2 = ctx.fresh();
+
+        let mut s1 = Substitution::empty();
+        s1.insert(v1, Type::Var(v2));
+
+        let mut s2 = Substitution::empty();
+        s2.insert(v2, Type::Number);
+
+        let s3 = s1.compose(&s2);
+        assert_eq!(s3.lookup(v1), Some(&Type::Number));
+        assert_eq!(s3.lookup(v2), Some(&Type::Number));
+    }
+
+    #[test]
+    fn test_type_scheme_generalize() {
+        let mut ctx = TypeVarContext::new();
+        let v1 = ctx.fresh();
+        let v2 = ctx.fresh();
+
+        let ty = Type::function(vec![Type::Var(v1)], Type::Var(v2));
+        let env_vars = vec![v1];
+
+        let scheme = TypeScheme::generalize(ty, &env_vars);
+        assert_eq!(scheme.quantified, vec![v2]);
+    }
+
+    #[test]
+    fn test_display_renumbered() {
+        let mut ctx = TypeVarContext::new();
+        let v1 = ctx.fresh();
+        let v2 = ctx.fresh();
+        let ty = Type::function(vec![Type::Var(v1)], Type::Var(v2));
+
+        // Renumbered should always start from 'a
+        assert_eq!(ty.display_renumbered(), "('a) -> 'b");
     }
 }

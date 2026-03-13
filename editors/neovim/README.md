@@ -94,6 +94,15 @@ require("mq").setup({
   -- Automatically start LSP server
   auto_start_lsp = true,
 
+  -- Enable type checking (passes --enable-type-checking to mq-lsp)
+  enable_type_check = false,
+
+  -- Enable strict array mode (passes --strict-array to mq-lsp, requires enable_type_check)
+  strict_array = false,
+
+  -- Enable LSP inlay hints (requires Neovim 0.10+)
+  enable_inlay_hints = true,
+
   -- LSP server configuration
   lsp = {
     -- Custom on_attach function
@@ -108,6 +117,35 @@ require("mq").setup({
     settings = {},
   },
 })
+```
+
+### Type Checking
+
+Enable type checking to get real-time type errors and richer hover type information:
+
+```lua
+require("mq").setup({
+  enable_type_check = true,   -- Enable type checking
+  strict_array = true,        -- Arrays must contain elements of a single type
+})
+```
+
+### Inlay Hints
+
+Inlay hints show inferred types inline in the editor. They are enabled by default on Neovim 0.10+.
+To disable them:
+
+```lua
+require("mq").setup({
+  enable_inlay_hints = false,
+})
+```
+
+You can also toggle inlay hints at runtime:
+
+```lua
+vim.lsp.inlay_hint.enable(false)  -- disable
+vim.lsp.inlay_hint.enable(true)   -- enable
 ```
 
 ## Commands
@@ -188,9 +226,10 @@ When the LSP server is running, you get:
   - Builtin selectors and functions
   - Module-qualified completions (e.g., `module::function`)
 - 🔍 **Diagnostics** - Real-time error checking
-- 📖 **Hover Documentation** - View function documentation
+- 📖 **Hover Documentation** - View function documentation and inferred types (enhanced when `enable_type_check = true`)
 - 🎯 **Go to Definition** - Jump to function definitions
 - 🔧 **Code Actions** - Quick fixes and refactoring
+- 💡 **Inlay Hints** - Inline type annotations (Neovim 0.10+, enabled by default)
 
 Use Neovim's built-in LSP commands:
 

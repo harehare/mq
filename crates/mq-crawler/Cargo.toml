@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-crawler"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.17"
+version = "0.5.19"
 
 [dependencies]
 clap = {workspace = true, features = ["derive"]}
@@ -32,7 +32,7 @@ url = {workspace = true}
 
 [[bin]]
 doc = false
-name = "mqcr"
+name = "mq-crawl"
 path = "src/main.rs"
 
 [dev-dependencies]

@@ -72,13 +72,13 @@ The installer will:
 # Install from crates.io
 cargo install mq-run
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.17
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.19
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 # Install using binstall
-cargo binstall mq-run@0.5.17
+cargo binstall mq-run@0.5.19
 ```
 
 ### Binaries
@@ -87,13 +87,13 @@ You can download pre-built binaries from the [GitHub releases page](https://gith
 
 ```sh
 # macOS (Apple Silicon)
-curl -L https://github.com/harehare/mq/releases/download/v0.5.17/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.5.19/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux x86_64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.17/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.5.19/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux arm64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.17/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.5.19/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.17/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
+Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.19/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
 ```
 
 ### Homebrew
@@ -106,7 +106,7 @@ brew install mq
 ### Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.5.17
+$ docker run --rm ghcr.io/harehare/mq:0.5.19
 ```
 
 ### mq-lsp (Language Server)
@@ -125,11 +125,11 @@ curl -sSL https://mqlang.org/install_lsp.sh | bash
 # Install from crates.io
 cargo install mq-lsp
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-lsp --tag v0.5.17
+cargo install --git https://github.com/harehare/mq.git mq-lsp --tag v0.5.19
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-lsp
 # Install using binstall
-cargo binstall mq-lsp@0.5.17
+cargo binstall mq-lsp@0.5.19
 ```
 
 #### Binaries
@@ -138,13 +138,13 @@ You can download pre-built binaries from the [GitHub releases page](https://gith
 
 ```sh
 # macOS (Apple Silicon)
-curl -L https://github.com/harehare/mq/releases/download/v0.5.17/mq-lsp-aarch64-apple-darwin -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
+curl -L https://github.com/harehare/mq/releases/download/v0.5.19/mq-lsp-aarch64-apple-darwin -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
 # Linux x86_64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.17/mq-lsp-x86_64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
+curl -L https://github.com/harehare/mq/releases/download/v0.5.19/mq-lsp-x86_64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
 # Linux arm64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.17/mq-lsp-aarch64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
+curl -L https://github.com/harehare/mq/releases/download/v0.5.19/mq-lsp-aarch64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
 # Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.17/mq-lsp-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq-lsp.exe"
+Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.19/mq-lsp-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq-lsp.exe"
 ```
 
 ### Visual Studio Code Extension
@@ -165,7 +165,7 @@ You can use mq in your GitHub Actions workflows with the [Setup mq](https://gith
 
 ```yaml
 steps:
-  - uses: actions/checkout@v5
+  - uses: actions/checkout@v6
   - uses: harehare/setup-mq@v1
   - run: mq '.code' README.md
 ```
@@ -177,6 +177,8 @@ Language bindings are available for the following programming languages:
 - [mq_elixir](https://github.com/harehare/mq_elixir)
 - [mq-python](https://github.com/harehare/mq-python)
 - [mq-ruby](https://github.com/harehare/mq-ruby)
+- [mq-java](https://github.com/harehare/mq-java)
+- [mq-go](https://github.com/harehare/mq-go)
 
 ## Usage
 
@@ -218,20 +220,6 @@ Options:
           Sets file contents that can be referenced at runtime
       --stream
           Enable streaming mode for processing large files line by line
-      --json
-          Include the built-in JSON module
-      --csv
-          Include the built-in CSV module
-      --fuzzy
-          Include the built-in Fuzzy module
-      --yaml
-          Include the built-in YAML module
-      --toml
-          Include the built-in TOML module
-      --xml
-          Include the built-in XML module
-      --test
-          Include the built-in test module
   -F, --output-format <OUTPUT_FORMAT>
           Set output format [default: markdown] [possible values: markdown, html, text, json, none]
   -U, --update
@@ -329,6 +317,9 @@ mq 'select(.h1 || .h2)' example.html
 
 # Extract specific cell from a Markdown table
 mq '.[1][2] | to_text()' data.md
+
+# Extract frontmatter metadata from markdown files:
+import "yaml" | if (.yaml): yaml::yaml_parse() | get(:title)
 ```
 
 ### Using with markitdown
@@ -345,35 +336,18 @@ markitdown test.xlsx | mq '.[][]'
 ## External Subcommands
 
 You can extend `mq` with custom subcommands by placing executable files starting with `mq-` in `~/.mq/bin/` or anywhere in your `PATH`.
-
-```sh
-# Create a custom subcommand
-cat > ~/.mq/bin/mq-hello << 'EOF'
-#!/bin/bash
-echo "Hello from mq-hello!"
-echo "Arguments: $@"
-EOF
-chmod +x ~/.mq/bin/mq-hello
-
-# Use the custom subcommand
-mq hello world
-# Output: Hello from mq-hello!
-#         Arguments: world
-
-# List all available subcommands
-mq --list
-```
-
 This makes it easy to add your own tools and workflows to `mq` without modifying the core binary.
 
 ### External Tools
 
 The following external tools are available to extend mq's functionality:
 
-- [mq-check](https://github.com/harehare/mq-check) - A syntax and semantic checker for mq files.
+- [mq-check](https://github.com/harehare/mq/blob/main/crates/mq-check/README.md) - A syntax and semantic checker for mq files.
 - [mq-conv](https://github.com/harehare/mq-conv) - A CLI tool for converting various file formats to Markdown.
+- [mq-crawler](https://github.com/harehare/mq/blob/main/crates/mq-crawler/README.md) - A web crawler that extracts structured data from websites and outputs it in Markdown format.
 - [mq-docs](https://github.com/harehare/mq-docs) - A documentation generator for mq functions, macros, and selectors.
 - [mq-edit](https://github.com/harehare/mq-edit) - A terminal-based Markdown and code editor with WYSIWYG rendering and LSP support.
+- [mq-lsp](https://github.com/harehare/mq/tree/main/crates/mq-lsp/README.md) - Language Server Protocol (LSP) implementation for mq query files, providing IDE features like completion, hover, and diagnostics.
 - [mq-mcp](https://github.com/harehare/mq-mcp) - Model Context Protocol (MCP) server implementation for AI assistants
 - [mq-task](https://github.com/harehare/mq-task) - Task runner using mq for Markdown-based task definitions
 - [mq-tui](https://github.com/harehare/mq-tui) - Terminal User Interface (TUI) for interactive mq query

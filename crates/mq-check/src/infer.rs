@@ -1,8 +1,8 @@
 //! Type inference context and engine.
 
-use crate::TypeError;
 use crate::constraint::Constraint;
-use crate::types::{Substitution, Type, TypeScheme, TypeVarContext, TypeVarId};
+use crate::types::{Substitution, Type, TypeScheme, TypeVarContext, TypeVarId, format_type_list};
+use crate::{TypeEnv, TypeError, unify};
 use mq_hir::SymbolId;
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
@@ -63,6 +63,93 @@ pub struct DeferredUserCall {
     pub range: Option<mq_lang::Range>,
 }
 
+/// A deferred record field access for post-unification resolution.
+///
+/// When bracket access `v[:key]` is detected and the variable's type is not yet
+/// resolved to a Record during constraint generation, we defer the field type
+/// resolution until after unification.
+#[derive(Debug, Clone)]
+pub struct DeferredRecordAccess {
+    /// The call symbol ID (the bracket access expression)
+    pub call_symbol_id: SymbolId,
+    /// The variable definition symbol ID
+    pub def_id: SymbolId,
+    /// The field name being accessed
+    pub field_name: String,
+    /// Source range for error reporting
+    pub range: Option<mq_lang::Range>,
+}
+
+/// A deferred selector field access for post-unification resolution.
+///
+/// When `.field` selector is encountered and the piped input type is not yet
+/// resolved to a Record, we defer the field existence check until after
+/// unification.
+#[derive(Debug, Clone)]
+pub struct DeferredSelectorAccess {
+    /// The selector symbol ID
+    pub symbol_id: SymbolId,
+    /// The piped input type (may be a type variable before unification)
+    pub piped_ty: Type,
+    /// The field name being accessed
+    pub field_name: String,
+    /// The attribute kind, if this is a `Selector::Attr` selector on a Markdown node.
+    /// Used after unification when the piped type resolves to `Type::Markdown`.
+    pub attr_kind: Option<mq_lang::AttrKind>,
+    /// Source range for error reporting
+    pub range: Option<mq_lang::Range>,
+}
+
+/// A deferred tuple index access for post-unification resolution.
+///
+/// When `v[0]` is encountered on a variable that may be a Tuple type,
+/// we defer the index type resolution until after unification, when
+/// the variable's Tuple type is fully resolved.
+#[derive(Debug, Clone)]
+pub struct DeferredTupleAccess {
+    /// The call symbol ID (the bracket access expression)
+    pub call_symbol_id: SymbolId,
+    /// The variable definition symbol ID
+    pub def_id: SymbolId,
+    /// The literal index value (None if dynamic index)
+    pub index: Option<usize>,
+    /// Source range for error reporting
+    pub range: Option<mq_lang::Range>,
+}
+
+/// A single variable type narrowing entry.
+///
+/// Represents a narrowing of a variable's type within a specific branch,
+/// e.g., `is_string(x)` narrows `x` to `String` in the then-branch.
+#[derive(Debug, Clone)]
+pub struct NarrowingEntry {
+    /// The variable definition symbol ID being narrowed
+    pub def_id: SymbolId,
+    /// The predicate type (e.g., Number for is_number)
+    pub narrowed_type: Type,
+    /// If true, narrow AWAY from the type (subtract from union).
+    /// If false, narrow TO the type directly.
+    pub is_complement: bool,
+}
+
+/// Collected type narrowing information for an if/elif expression.
+///
+/// When a type predicate like `is_string(x)` is used as a condition in an if
+/// expression, the then-branch can narrow `x` to `String` and the else-branch
+/// can narrow `x` to the complement (e.g., `Number` if `x: String | Number`).
+/// Supports compound conditions with `&&`, `||`, and `!`.
+#[derive(Debug, Clone)]
+pub struct TypeNarrowing {
+    /// Narrowings to apply in the then-branch (condition is true)
+    pub then_narrowings: Vec<NarrowingEntry>,
+    /// Narrowings to apply in the else/elif branches (condition is false)
+    pub else_narrowings: Vec<NarrowingEntry>,
+    /// The then-branch symbol ID
+    pub then_branch_id: SymbolId,
+    /// The else/elif branch symbol IDs where complement narrowings apply
+    pub else_branch_ids: Vec<SymbolId>,
+}
+
 /// Inference context maintains state during type inference
 pub struct InferenceContext {
     /// Type variable context for generating fresh variables
@@ -79,17 +166,33 @@ pub struct InferenceContext {
     errors: Vec<TypeError>,
     /// Piped input types for symbols in a pipe chain
     piped_inputs: FxHashMap<SymbolId, Type>,
-    /// Deferred overload resolutions for operators with unresolved type variable operands
-    deferred_overloads: Vec<DeferredOverload>,
+    /// Deferred overload resolutions for operators with unresolved type variable operands,
+    /// keyed by `SymbolId` so that insert/replace is O(1).
+    deferred_overloads: FxHashMap<SymbolId, DeferredOverload>,
     /// Deferred user-defined function calls for post-unification type checking
     deferred_user_calls: Vec<DeferredUserCall>,
     /// Deferred inner calls to function parameters for higher-order function checking
     deferred_parameter_calls: Vec<DeferredParameterCall>,
+    /// Deferred record field accesses for post-unification resolution
+    deferred_record_accesses: Vec<DeferredRecordAccess>,
+    /// Deferred selector field accesses for post-unification resolution
+    deferred_selector_accesses: Vec<DeferredSelectorAccess>,
+    /// Deferred tuple index accesses for post-unification resolution
+    deferred_tuple_accesses: Vec<DeferredTupleAccess>,
+    /// Type narrowings collected from type predicate conditions in if/elif expressions
+    type_narrowings: Vec<TypeNarrowing>,
+    /// When true, heterogeneous arrays produce a type error
+    strict_array: bool,
 }
 
 impl InferenceContext {
-    /// Creates a new inference context
+    /// Creates a new inference context with default options
     pub fn new() -> Self {
+        Self::with_options(false)
+    }
+
+    /// Creates a new inference context with the given options
+    pub fn with_options(strict_array: bool) -> Self {
         Self {
             var_ctx: TypeVarContext::new(),
             symbol_types: FxHashMap::default(),
@@ -98,10 +201,20 @@ impl InferenceContext {
             builtins: FxHashMap::default(),
             errors: Vec::new(),
             piped_inputs: FxHashMap::default(),
-            deferred_overloads: Vec::new(),
+            deferred_overloads: FxHashMap::default(),
             deferred_user_calls: Vec::new(),
             deferred_parameter_calls: Vec::new(),
+            deferred_record_accesses: Vec::new(),
+            deferred_selector_accesses: Vec::new(),
+            deferred_tuple_accesses: Vec::new(),
+            type_narrowings: Vec::new(),
+            strict_array,
         }
+    }
+
+    /// Returns whether strict array mode is enabled
+    pub fn strict_array(&self) -> bool {
+        self.strict_array
     }
 
     /// Registers a builtin function or operator type
@@ -134,14 +247,22 @@ impl InferenceContext {
         self.piped_inputs.get(&symbol)
     }
 
-    /// Adds a deferred overload resolution
+    /// Adds a deferred overload resolution.
+    ///
+    /// For a given `symbol_id` there should be at most one deferred overload entry.
+    /// If an entry for the same symbol already exists, it is replaced with the new
+    /// one. This keeps the deferred operand types in sync when a node is re-processed
+    /// after its operand types or argument list have changed (for example, due to
+    /// additional inference or piped input being attached).
+    ///
+    /// The map-backed storage makes both insert and replace O(1).
     pub fn add_deferred_overload(&mut self, deferred: DeferredOverload) {
-        self.deferred_overloads.push(deferred);
+        self.deferred_overloads.insert(deferred.symbol_id, deferred);
     }
 
     /// Takes all deferred overloads (consumes them)
     pub fn take_deferred_overloads(&mut self) -> Vec<DeferredOverload> {
-        std::mem::take(&mut self.deferred_overloads)
+        self.deferred_overloads.drain().map(|(_, v)| v).collect()
     }
 
     /// Adds a deferred user-defined function call
@@ -164,17 +285,69 @@ impl InferenceContext {
         &self.deferred_parameter_calls
     }
 
+    /// Adds a deferred record field access for post-unification resolution
+    pub fn add_deferred_record_access(&mut self, access: DeferredRecordAccess) {
+        self.deferred_record_accesses.push(access);
+    }
+
+    /// Takes all deferred record accesses (consumes them)
+    pub fn take_deferred_record_accesses(&mut self) -> Vec<DeferredRecordAccess> {
+        std::mem::take(&mut self.deferred_record_accesses)
+    }
+
+    /// Adds a deferred selector field access for post-unification resolution
+    pub fn add_deferred_selector_access(&mut self, access: DeferredSelectorAccess) {
+        self.deferred_selector_accesses.push(access);
+    }
+
+    /// Takes all deferred selector accesses (consumes them)
+    pub fn take_deferred_selector_accesses(&mut self) -> Vec<DeferredSelectorAccess> {
+        std::mem::take(&mut self.deferred_selector_accesses)
+    }
+
+    /// Adds a deferred tuple index access for post-unification resolution
+    pub fn add_deferred_tuple_access(&mut self, access: DeferredTupleAccess) {
+        self.deferred_tuple_accesses.push(access);
+    }
+
+    /// Takes all deferred tuple accesses (consumes them)
+    pub fn take_deferred_tuple_accesses(&mut self) -> Vec<DeferredTupleAccess> {
+        std::mem::take(&mut self.deferred_tuple_accesses)
+    }
+
+    /// Adds a type narrowing collected from a type predicate condition
+    pub fn add_type_narrowing(&mut self, narrowing: TypeNarrowing) {
+        self.type_narrowings.push(narrowing);
+    }
+
+    /// Takes all collected type narrowings (consumes them)
+    pub fn take_type_narrowings(&mut self) -> Vec<TypeNarrowing> {
+        std::mem::take(&mut self.type_narrowings)
+    }
+
+    /// Reports a type mismatch error between two types.
+    ///
+    /// Resolves both types before formatting them, and constructs the error with
+    /// source location info from `range`. Use this instead of hand-rolling
+    /// `resolve_type` + `display_renumbered` + `add_error(TypeError::Mismatch {...})`.
+    pub fn report_mismatch(&mut self, t1: &Type, t2: &Type, range: Option<mq_lang::Range>) {
+        let resolved_t1 = self.resolve_type(t1);
+        let resolved_t2 = self.resolve_type(t2);
+        self.add_error(TypeError::Mismatch {
+            expected: resolved_t1.display_renumbered(),
+            found: resolved_t2.display_renumbered(),
+            span: range.as_ref().map(unify::range_to_span),
+            location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+        });
+    }
+
     /// Reports a "no matching overload" error with formatted argument types.
     pub fn report_no_matching_overload(&mut self, op_name: &str, arg_tys: &[Type], range: Option<mq_lang::Range>) {
-        let args_str = arg_tys
-            .iter()
-            .map(|t| t.display_renumbered())
-            .collect::<Vec<_>>()
-            .join(", ");
-        self.add_error(crate::TypeError::UnificationError {
+        let args_str = format_type_list(arg_tys);
+        self.add_error(TypeError::UnificationError {
             left: format!("{} with arguments ({})", op_name, args_str),
             right: "no matching overload".to_string(),
-            span: range.as_ref().map(crate::unify::range_to_span),
+            span: range.as_ref().map(unify::range_to_span),
             location: range.as_ref().map(|r| (r.start.line, r.start.column)),
         });
     }
@@ -212,7 +385,6 @@ impl InferenceContext {
                 }
 
                 if all_match {
-                    // Update best match if this is better
                     match &best_match {
                         None => {
                             best_match = Some((overload.clone(), total_score));
@@ -314,44 +486,56 @@ impl InferenceContext {
 
     /// Resolves a type by following type variable bindings.
     ///
-    /// Type variable chains (var1 → var2 → ... → concrete) are followed iteratively
-    /// to avoid stack overflow on long chains.
+    /// Uses a visited set to detect and break cycles in the substitution map.
+    /// Cycles can form with mutually recursive functions (e.g. `Var(a) →
+    /// Union(Var(b), String)` and `Var(b) → Union(Var(a), String)`), which
+    /// would otherwise cause infinite recursion.
     pub fn resolve_type(&self, ty: &Type) -> Type {
-        // Follow type variable chains iteratively
-        let ty = self.resolve_var_chain(ty);
-        match &ty {
-            Type::Var(_) => ty,
-            Type::Array(elem) => Type::Array(Box::new(self.resolve_type(elem))),
-            Type::Dict(key, value) => Type::Dict(Box::new(self.resolve_type(key)), Box::new(self.resolve_type(value))),
-            Type::Function(params, ret) => {
-                let new_params = params.iter().map(|p| self.resolve_type(p)).collect();
-                Type::Function(new_params, Box::new(self.resolve_type(ret)))
-            }
-            _ => ty,
-        }
+        let mut visited = rustc_hash::FxHashSet::default();
+        self.resolve_type_inner(ty, &mut visited)
     }
 
-    /// Follows a type variable substitution chain iteratively until reaching
-    /// a non-variable type or an unbound variable.
-    fn resolve_var_chain(&self, ty: &Type) -> Type {
-        let mut current = ty.clone();
-        loop {
-            match &current {
-                Type::Var(var) => {
-                    if let Some(bound) = self.substitutions.get(var) {
-                        current = bound.clone();
-                    } else {
-                        return current;
-                    }
+    fn resolve_type_inner(&self, ty: &Type, visited: &mut rustc_hash::FxHashSet<TypeVarId>) -> Type {
+        match ty {
+            Type::Var(var) => {
+                if !visited.insert(*var) {
+                    // Cycle detected — return the var unresolved to break infinite recursion
+                    return ty.clone();
                 }
-                _ => return current,
+                if let Some(bound) = self.substitutions.get(var) {
+                    let result = self.resolve_type_inner(bound, visited);
+                    visited.remove(var); // Allow the same var in sibling branches
+                    result
+                } else {
+                    visited.remove(var);
+                    ty.clone()
+                }
             }
+            Type::Array(elem) => Type::Array(Box::new(self.resolve_type_inner(elem, visited))),
+            Type::Dict(key, value) => Type::Dict(
+                Box::new(self.resolve_type_inner(key, visited)),
+                Box::new(self.resolve_type_inner(value, visited)),
+            ),
+            Type::Function(params, ret) => {
+                let new_params = params.iter().map(|p| self.resolve_type_inner(p, visited)).collect();
+                Type::Function(new_params, Box::new(self.resolve_type_inner(ret, visited)))
+            }
+            Type::Record(fields, rest) => {
+                let new_fields = fields
+                    .iter()
+                    .map(|(k, v)| (k.clone(), self.resolve_type_inner(v, visited)))
+                    .collect();
+                Type::Record(new_fields, Box::new(self.resolve_type_inner(rest, visited)))
+            }
+            Type::Union(members) => Type::union(members.iter().map(|m| self.resolve_type_inner(m, visited)).collect()),
+            Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| self.resolve_type_inner(e, visited)).collect()),
+            _ => ty.clone(),
         }
     }
 
     /// Finalizes inference and returns symbol type schemes
-    pub fn finalize(self) -> FxHashMap<SymbolId, TypeScheme> {
-        let mut result = FxHashMap::default();
+    pub fn finalize(self) -> TypeEnv {
+        let mut result = TypeEnv::default();
 
         for (symbol, ty) in &self.symbol_types {
             let resolved = self.resolve_type(ty);

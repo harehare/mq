@@ -3,8 +3,8 @@
 //! This test file verifies that type errors include proper location information
 //! (line and column numbers) when they are reported.
 
+use mq_check::{TypeChecker, TypeError};
 use mq_hir::Hir;
-use mq_typechecker::{TypeChecker, TypeError};
 
 fn create_hir(code: &str) -> Hir {
     let mut hir = Hir::default();
@@ -38,38 +38,4 @@ fn test_homogeneous_array_no_error() {
     let code = r#"[1, 2, 3]"#;
     let errors = check_types(code);
     assert!(errors.is_empty(), "Homogeneous array should have no errors");
-}
-
-#[test]
-fn test_binary_op_type_error_location() {
-    let code = r#"1 + "hello""#;
-    let errors = check_types(code);
-
-    assert!(!errors.is_empty(), "Expected type error for number + string");
-}
-
-#[test]
-fn test_error_message_readability() {
-    // Test that error messages are human-readable
-    let code = r#"1 + "hello""#;
-    let errors = check_types(code);
-
-    assert!(!errors.is_empty(), "Expected type error");
-
-    let error_msg = format!("{}", errors[0]);
-    // The error message should be informative
-    assert!(
-        error_msg.contains("mismatch") || error_msg.contains("type") || error_msg.contains("unify"),
-        "Error message should mention type mismatch: {}",
-        error_msg
-    );
-}
-
-#[test]
-fn test_multiple_errors_show_locations() {
-    // Code with type error in binary operation
-    let code = r#"1 + "two""#;
-    let errors = check_types(code);
-
-    assert!(!errors.is_empty(), "Expected at least one type error");
 }

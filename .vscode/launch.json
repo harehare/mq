@@ -14,14 +14,14 @@
       ],
       "outFiles": ["${workspaceFolder}/editors/vscode/dist/**/*.js"],
       "env": {
-        "_MQ_DEBUG_BIN": "${workspaceFolder}/target/debug/mq"
+        "_MQ_DEBUG_BIN": "${workspaceFolder}/target/debug/mq-lsp"
       }
     },
     {
       "type": "lldb",
       "request": "launch",
       "name": "Rust Debug Launch",
-      "program": "${workspaceRoot}/target/debug/${workspaceRootFolderName}",
+      "program": "${workspaceRoot}/target/debug/mq-lsp",
       "args": [".h", "${workspaceRoot}/README.md"],
       "cwd": "${workspaceRoot}/target/debug/",
       "sourceLanguages": ["rust"]

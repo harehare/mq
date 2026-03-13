@@ -24,6 +24,12 @@ export interface Diagnostic {
   message: string,
 }
 
+export interface InlayHint {
+  line: number,
+  column: number,
+  label: string,
+}
+
 export interface Options {
     isUpdate: boolean,
     inputFormat: 'markdown' | 'text' | 'mdx' | 'html' | 'null' | 'raw' | null,
@@ -33,7 +39,8 @@ export interface Options {
 }
 
 export function definedValues(code: string, module?: string): Promise<ReadonlyArray<DefinedValue>>;
-export function diagnostics(code: string): Promise<ReadonlyArray<Diagnostic>>;
+export function diagnostics(code: string, enableTypeCheck?: boolean): Promise<ReadonlyArray<Diagnostic>>;
+export function inlayHints(code: string): Promise<ReadonlyArray<InlayHint>>;
 export function run(code: string, content: string, options: Options): Promise<string>;
 "#;
 
@@ -62,6 +69,14 @@ pub struct Diagnostic {
     end_line: u32,
     end_column: u32,
     message: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InlayHint {
+    line: u32,
+    column: u32,
+    label: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -431,9 +446,9 @@ pub async fn to_html(markdown_input: &str) -> String {
 }
 
 #[wasm_bindgen(js_name=diagnostics, skip_typescript)]
-pub async fn diagnostics(code: &str) -> JsValue {
+pub async fn diagnostics(code: &str, enable_type_check: Option<bool>) -> JsValue {
     let (_, errors) = mq_lang::parse_recovery(code);
-    let errors = errors
+    let mut errors = errors
         .error_ranges(code)
         .iter()
         .map(|(message, range)| Diagnostic {
@@ -445,7 +460,73 @@ pub async fn diagnostics(code: &str) -> JsValue {
         })
         .collect::<Vec<_>>();
 
+    if enable_type_check.unwrap_or(false) && errors.is_empty() {
+        let mut hir = mq_hir::Hir::default();
+        hir.add_code(None, code);
+
+        let mut checker = mq_check::TypeChecker::default();
+        let type_errors = checker.check(&hir);
+
+        for error in type_errors {
+            if let Some((line, column)) = error.location() {
+                let line0 = line.saturating_sub(1);
+                let char_start = column as u32;
+
+                errors.push(Diagnostic {
+                    start_line: line0,
+                    start_column: char_start,
+                    end_line: line0,
+                    end_column: char_start.saturating_add(1),
+                    message: error.to_string(),
+                });
+            }
+        }
+    }
+
     serde_wasm_bindgen::to_value(&errors).unwrap()
+}
+
+#[wasm_bindgen(js_name=inlayHints, skip_typescript)]
+pub async fn inlay_hints(code: &str) -> JsValue {
+    let mut hir = mq_hir::Hir::default();
+    hir.add_code(None, code);
+
+    let mut checker = mq_check::TypeChecker::default();
+    let _ = checker.check(&hir);
+
+    let symbol_types = checker.symbol_types();
+
+    let hints: Vec<InlayHint> = hir
+        .symbols()
+        .filter_map(|(symbol_id, symbol)| {
+            if hir.is_builtin_symbol(symbol) {
+                return None;
+            }
+
+            let show = matches!(
+                symbol.kind,
+                mq_hir::SymbolKind::Variable | mq_hir::SymbolKind::Function(_)
+            );
+            if !show {
+                return None;
+            }
+
+            let range = symbol.source.text_range.as_ref()?;
+            let type_scheme = symbol_types.get(&symbol_id)?;
+
+            if !type_scheme.ty.is_concrete() {
+                return None;
+            }
+
+            Some(InlayHint {
+                line: range.end.line,
+                column: range.end.column as u32,
+                label: format!(": {}", type_scheme),
+            })
+        })
+        .collect();
+
+    serde_wasm_bindgen::to_value(&hints).unwrap_or_else(|_| JsValue::from(js_sys::Array::new()))
 }
 
 #[wasm_bindgen(js_name=definedValues, skip_typescript)]
@@ -487,7 +568,7 @@ pub async fn defined_values(code: &str, module: Option<String>) -> Result<JsValu
                     value_type: DefinedValueType::Function,
                 }),
                 mq_hir::Symbol {
-                    kind: mq_hir::SymbolKind::Selector,
+                    kind: mq_hir::SymbolKind::Selector(_),
                     value: Some(value),
                     doc,
                     ..

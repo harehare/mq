@@ -14,6 +14,68 @@ use crate::{
     symbol::{ParamInfo, Symbol, SymbolId, SymbolKind},
 };
 
+/// Constructs a [`mq_lang::Selector`] from a CST selector node.
+///
+/// For bracket-based selectors (e.g., `.[n]`, `.[n][m]`), the CST node has
+/// `token = Selector(".")` with bracket tokens and optional number literals as
+/// children. This function inspects all children to determine bracket count and
+/// indices, then returns the appropriate `List` or `Table` selector variant.
+///
+/// For all other selectors the token value is passed directly to
+/// [`mq_lang::Selector::try_from`].
+fn selector_from_cst_node(node: &mq_lang::CstNode) -> Option<mq_lang::Selector> {
+    let token = node.token.as_ref()?;
+
+    if !matches!(&token.kind, TokenKind::Selector(s) if s == ".") {
+        return mq_lang::Selector::try_from(&**token).ok();
+    }
+
+    // Bracket-based selector: walk all children to count bracket pairs and
+    // collect the optional number literal inside each pair.
+    let mut bracket_pairs: u32 = 0;
+    let mut indices: Vec<Option<usize>> = Vec::with_capacity(2);
+    let mut in_bracket = false;
+    let mut bracket_has_number = false;
+
+    for child in &node.children {
+        let Some(tok) = child.token.as_ref() else {
+            continue;
+        };
+        match &tok.kind {
+            TokenKind::LBracket => {
+                in_bracket = true;
+                bracket_has_number = false;
+                bracket_pairs += 1;
+            }
+            TokenKind::RBracket => {
+                if in_bracket && !bracket_has_number {
+                    indices.push(None);
+                }
+                in_bracket = false;
+            }
+            TokenKind::NumberLiteral(n) if in_bracket => {
+                let idx = if n.is_int() && n.value() >= 0.0 {
+                    Some(n.to_int() as usize)
+                } else {
+                    None
+                };
+                indices.push(idx);
+                bracket_has_number = true;
+            }
+            _ => {}
+        }
+    }
+
+    match bracket_pairs {
+        1 => Some(mq_lang::Selector::List(indices.first().copied().flatten(), None)),
+        2 => Some(mq_lang::Selector::Table(
+            indices.first().copied().flatten(),
+            indices.get(1).copied().flatten(),
+        )),
+        _ => None,
+    }
+}
+
 #[derive(Debug)]
 pub struct Hir {
     pub builtin: Builtin,
@@ -227,17 +289,19 @@ impl Hir {
 
         let selector_keys: Vec<_> = self.builtin.selectors.keys().cloned().collect();
         for name in selector_keys {
-            self.add_symbol(Symbol {
-                value: Some(name.clone()),
-                kind: SymbolKind::Selector,
-                source: SourceInfo::new(Some(self.builtin.source_id), None),
-                scope: self.builtin.scope_id,
-                doc: vec![(
-                    mq_lang::Range::default(),
-                    mq_lang::BUILTIN_SELECTOR_DOC[&name].description.to_string(),
-                )],
-                parent: None,
-            });
+            if let Ok(selector) = mq_lang::Selector::try_from(&mq_lang::Token::new(TokenKind::Selector(name.clone()))) {
+                self.add_symbol(Symbol {
+                    value: Some(name.clone()),
+                    kind: SymbolKind::Selector(selector),
+                    source: SourceInfo::new(Some(self.builtin.source_id), None),
+                    scope: self.builtin.scope_id,
+                    doc: vec![(
+                        mq_lang::Range::default(),
+                        mq_lang::BUILTIN_SELECTOR_DOC[&name].description.to_string(),
+                    )],
+                    parent: None,
+                });
+            }
         }
 
         self.builtin.loaded = true;
@@ -929,7 +993,7 @@ impl Hir {
             ..
         } = &**node
         {
-            self.symbols.insert(Symbol {
+            let symbol_id = self.symbols.insert(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Ref,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -937,6 +1001,13 @@ impl Hir {
                 doc: node.comments(),
                 parent,
             });
+
+            // Process Selector children, e.g. `md.depth` is an Ident(md) with a Selector(.depth) child.
+            for child in node.children_without_token() {
+                if matches!(child.kind, mq_lang::CstNodeKind::Selector) {
+                    self.add_selector_expr(&child, source_id, scope_id, Some(symbol_id));
+                }
+            }
         }
     }
 
@@ -951,10 +1022,11 @@ impl Hir {
             kind: mq_lang::CstNodeKind::Selector,
             ..
         } = &**node
+            && let Some(selector) = selector_from_cst_node(node)
         {
             let symbol_id = self.symbols.insert(Symbol {
                 value: node.name(),
-                kind: SymbolKind::Selector,
+                kind: SymbolKind::Selector(selector),
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
                 doc: node.comments(),
@@ -1175,14 +1247,7 @@ impl Hir {
                 parent: Some(symbol_id),
             });
 
-            self.add_symbol(Symbol {
-                value: arg.name(),
-                kind: SymbolKind::Ref,
-                source: SourceInfo::new(Some(source_id), Some(arg.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent: Some(symbol_id),
-            });
+            self.add_expr(arg, source_id, scope_id, Some(symbol_id));
 
             program.iter().for_each(|child| {
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
@@ -1919,8 +1984,15 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::elif_("if (true): 1 elif (false): 2 else: 3;", "elif", SymbolKind::Elif)]
     #[case::else_("if (true): 1 else: 2;", "else", SymbolKind::Else)]
     #[case::literal("42", "42", SymbolKind::Number)]
-    #[case::selector(".h", ".h", SymbolKind::Selector)]
-    #[case::selector(".code.lang", ".code", SymbolKind::Selector)]
+    #[case::selector(".h", ".h", SymbolKind::Selector(mq_lang::Selector::Heading(None)))]
+    #[case::selector(".code.lang", ".code", SymbolKind::Selector(mq_lang::Selector::Code))]
+    // Bracket selectors: .[n] → List, .[n][m] → Table
+    #[case::selector_list_any(".[]", ".", SymbolKind::Selector(mq_lang::Selector::List(None, None)))]
+    #[case::selector_list_index(".[1]", ".", SymbolKind::Selector(mq_lang::Selector::List(Some(1), None)))]
+    #[case::selector_table_any(".[][]", ".", SymbolKind::Selector(mq_lang::Selector::Table(None, None)))]
+    #[case::selector_table_row_any(".[1][]", ".", SymbolKind::Selector(mq_lang::Selector::Table(Some(1), None)))]
+    #[case::selector_table_row_col(".[1][2]", ".", SymbolKind::Selector(mq_lang::Selector::Table(Some(1), Some(2))))]
+    #[case::selector_table_any_col(".[][2]", ".", SymbolKind::Selector(mq_lang::Selector::Table(None, Some(2))))]
     #[case::interpolated_string("s\"hello ${world}\"", "world", SymbolKind::Variable)]
     #[case::include("include \"foo\"", "foo", SymbolKind::Include(SourceId::default()))]
     #[case::fn_expr("fn(): 42", "fn", SymbolKind::Keyword)]

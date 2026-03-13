@@ -461,3 +461,13 @@ $ mq -A 'let headers = count_by(fn(x): x | select(.h);)
 | let anchor = downcase(replace(text, " ", "-"))
 | if (!is_empty(text)): s"${indent}- [${text}](#${anchor})"
 ```
+
+## Frontmatter Operations
+
+Extract frontmatter metadata from markdown files:
+
+```mq
+import "yaml" | if (.yaml): yaml::yaml_parse() | get(:title)
+```
+
+

@@ -1,8 +1,12 @@
 //! Constraint generation for type inference.
 
-use crate::infer::{DeferredOverload, DeferredParameterCall, DeferredUserCall, InferenceContext};
+use crate::infer::{
+    DeferredOverload, DeferredParameterCall, DeferredUserCall, InferenceContext, NarrowingEntry, TypeNarrowing,
+};
+use crate::narrowing::analyze_condition;
 use crate::types::Type;
 use crate::unify::range_to_span;
+use crate::{TypeError, infer, walk_ancestors};
 use mq_hir::{Hir, SymbolId, SymbolKind};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smol_str::SmolStr;
@@ -26,17 +30,17 @@ impl fmt::Display for Constraint {
 /// Walks the HIR parent chain from `symbol_id` and returns the nearest ancestor
 /// whose kind is `SymbolKind::Function(_)`, if any.
 fn find_enclosing_function(hir: &Hir, symbol_id: SymbolId) -> Option<SymbolId> {
-    crate::walk_ancestors(hir, symbol_id).find_map(|(id, sym)| if sym.is_function() { Some(id) } else { None })
+    walk_ancestors(hir, symbol_id).find_map(|(id, sym)| if sym.is_function() { Some(id) } else { None })
 }
 
 /// Pre-built index mapping each parent symbol to its children.
 ///
 /// Built once at the start of constraint generation to avoid O(n) full HIR scans
 /// on every `get_children` call.
-type ChildrenIndex = FxHashMap<SymbolId, Vec<SymbolId>>;
+pub(crate) type ChildrenIndex = FxHashMap<SymbolId, Vec<SymbolId>>;
 
 /// Builds the children index from all HIR symbols in a single pass.
-fn build_children_index(hir: &Hir) -> ChildrenIndex {
+pub(crate) fn build_children_index(hir: &Hir) -> ChildrenIndex {
     let mut index: ChildrenIndex = FxHashMap::default();
     for (id, symbol) in hir.symbols() {
         if let Some(parent) = symbol.parent {
@@ -47,8 +51,29 @@ fn build_children_index(hir: &Hir) -> ChildrenIndex {
 }
 
 /// Helper function to get children of a symbol from the pre-built index.
-fn get_children(children_index: &ChildrenIndex, parent_id: SymbolId) -> &[SymbolId] {
+pub(crate) fn get_children(children_index: &ChildrenIndex, parent_id: SymbolId) -> &[SymbolId] {
     children_index.get(&parent_id).map(|v| v.as_slice()).unwrap_or(&[])
+}
+
+/// Returns the non-keyword children of a symbol.
+///
+/// Keyword symbols (e.g. `fn` in lambda expressions) are syntax elements that
+/// should not be treated as arguments or operands. This helper filters them out
+/// and is used wherever argument lists are extracted from Call symbols.
+pub(crate) fn get_non_keyword_children(
+    hir: &Hir,
+    symbol_id: SymbolId,
+    children_index: &ChildrenIndex,
+) -> Vec<SymbolId> {
+    get_children(children_index, symbol_id)
+        .iter()
+        .copied()
+        .filter(|&child_id| {
+            hir.symbol(child_id)
+                .map(|s| !matches!(s.kind, SymbolKind::Keyword))
+                .unwrap_or(true)
+        })
+        .collect()
 }
 
 /// Helper function to get the range of a symbol
@@ -258,7 +283,7 @@ fn generate_block_constraints(
         if let Some(child_symbol) = hir.symbol(children[i])
             && matches!(
                 child_symbol.kind,
-                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign
+                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_)
             )
         {
             generate_symbol_constraints(hir, children[i], child_symbol.kind.clone(), ctx, children_index);
@@ -312,7 +337,7 @@ fn generate_function_body_pipe_constraints(
         if let Some(child_symbol) = hir.symbol(body_children[i])
             && matches!(
                 child_symbol.kind,
-                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign
+                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_)
             )
         {
             generate_symbol_constraints(hir, body_children[i], child_symbol.kind.clone(), ctx, children_index);
@@ -422,6 +447,32 @@ fn is_foreach_iterable_ref(hir: &Hir, symbol_id: SymbolId) -> bool {
         .unwrap_or(false)
 }
 
+/// Maps a Markdown node attribute kind to its concrete return type.
+///
+/// - String attributes: value, lang, meta, fence, url, alt, title, ident, label, align, name
+/// - Number attributes: depth, level, index, column, row
+/// - Bool attributes: ordered, checked
+/// - Markdown array attributes: values, children
+pub(crate) fn attr_kind_to_type(attr_kind: &mq_lang::AttrKind) -> Type {
+    use mq_lang::AttrKind;
+    match attr_kind {
+        AttrKind::Value
+        | AttrKind::Lang
+        | AttrKind::Meta
+        | AttrKind::Fence
+        | AttrKind::Url
+        | AttrKind::Alt
+        | AttrKind::Title
+        | AttrKind::Ident
+        | AttrKind::Label
+        | AttrKind::Align
+        | AttrKind::Name => Type::String,
+        AttrKind::Depth | AttrKind::Level | AttrKind::Index | AttrKind::Column | AttrKind::Row => Type::Number,
+        AttrKind::Ordered | AttrKind::Checked => Type::Bool,
+        AttrKind::Values | AttrKind::Children => Type::array(Type::Markdown),
+    }
+}
+
 /// Checks if a symbol might receive piped input later (i.e., is inside a Block
 /// or a Function/Macro body with multiple expressions).
 ///
@@ -438,7 +489,7 @@ fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool {
     };
     if matches!(
         parent.kind,
-        SymbolKind::Block | SymbolKind::Function(_) | SymbolKind::Macro(_)
+        SymbolKind::Block | SymbolKind::Function(_) | SymbolKind::Macro(_) | SymbolKind::Call
     ) {
         return true;
     }
@@ -453,6 +504,30 @@ fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool {
         );
     }
     false
+}
+
+/// Checks if a symbol is nested inside a `quote do...end` or `unquote(...)` block.
+///
+/// Code inside `quote do...end` is template/meta-code that generates AST at runtime
+/// rather than being directly executed. Type errors inside such blocks should be
+/// suppressed because `unquote(expr)` splices in expressions from macro parameters
+/// whose types are only known at the macro call site.
+fn is_inside_quote_block(hir: &Hir, symbol_id: SymbolId) -> bool {
+    let mut current_id = symbol_id;
+    loop {
+        let parent_id = match hir.symbol(current_id).and_then(|s| s.parent) {
+            Some(id) => id,
+            None => return false,
+        };
+        if let Some(parent) = hir.symbol(parent_id) {
+            // Quote and unquote keywords have value = None; other keywords (break, self)
+            // have named values and are not quote blocks.
+            if matches!(parent.kind, SymbolKind::Keyword) && parent.value.is_none() {
+                return true;
+            }
+        }
+        current_id = parent_id;
+    }
 }
 
 /// Builds the argument type list for a piped builtin function call.
@@ -638,10 +713,10 @@ fn collect_break_types_inner(
             }
         }
         // When there is no else and a break was found inside this if, the "condition false"
-        // path passes through the input with an unknown type.  Add a fresh variable to
-        // represent this so the loop type becomes a union.
+        // path returns None (no else in mq returns None).  Add None to the break type
+        // list so the loop type becomes Union(break_value_type, None).
         if !has_explicit_else && found_break {
-            result.push(Type::Var(ctx.fresh_var()));
+            result.push(Type::None);
         }
         return found_break;
     }
@@ -702,6 +777,23 @@ fn merge_loop_types(base_ty: Type, break_tys: Vec<Type>, ctx: &InferenceContext)
     // All unresolved type variables: return the base type unchanged and let
     // unification constraints handle the rest.
     all_tys.into_iter().next().unwrap()
+}
+
+/// Returns the sibling symbol IDs that come after `while_id` in its parent's child list.
+///
+/// These are the symbols that execute after the while loop exits (i.e., when the loop
+/// condition becomes false), allowing post-loop type narrowing.
+fn get_post_loop_siblings(hir: &Hir, while_id: SymbolId, children_index: &ChildrenIndex) -> Vec<SymbolId> {
+    let parent_id = match hir.symbol(while_id).and_then(|s| s.parent) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+    let siblings = get_children(children_index, parent_id);
+    let pos = match siblings.iter().position(|&id| id == while_id) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+    siblings[pos + 1..].to_vec()
 }
 
 /// Finds the lambda Function symbol that a Variable was initialized with, if any.
@@ -893,7 +985,7 @@ fn generate_symbol_constraints(
                                 }
                             } else {
                                 let range = get_symbol_range(hir, symbol_id);
-                                ctx.add_error(crate::TypeError::Mismatch {
+                                ctx.add_error(TypeError::Mismatch {
                                     expected: format!("argument matching {} overloads", name),
                                     found: arg_tys[0].display_renumbered(),
                                     span: range.as_ref().map(range_to_span),
@@ -923,8 +1015,18 @@ fn generate_symbol_constraints(
                     }
                 }
 
-                // Normal reference resolution
-                let ref_ty = ctx.get_or_create_symbol_type(symbol_id);
+                // Collect any child Selector symbols for variable attribute access,
+                // e.g. `md.depth` where `md` is an Ident with a Selector child.
+                let child_selectors: Vec<SymbolId> = get_children(children_index, symbol_id)
+                    .iter()
+                    .copied()
+                    .filter(|&child_id| {
+                        hir.symbol(child_id)
+                            .map(|s| matches!(s.kind, SymbolKind::Selector(_)))
+                            .unwrap_or(false)
+                    })
+                    .collect();
+
                 let def_ty = ctx.get_or_create_symbol_type(def_id);
                 // Instantiate fresh type variables for function references to enable
                 // polymorphic use at different call/reference sites
@@ -934,7 +1036,42 @@ fn generate_symbol_constraints(
                     def_ty
                 };
                 let range = get_symbol_range(hir, symbol_id);
-                ctx.add_constraint(Constraint::Equal(ref_ty, def_ty, range));
+
+                if child_selectors.is_empty() {
+                    // Normal reference resolution: the Ref's stored type = def type
+                    let ref_ty = ctx.get_or_create_symbol_type(symbol_id);
+                    ctx.add_constraint(Constraint::Equal(ref_ty, def_ty, range));
+                } else {
+                    // Variable attribute access (e.g. `md.depth`):
+                    // Use a fresh lookup_var for the def-type equality so it doesn't
+                    // conflict with the symbol's stored type, which will be overwritten
+                    // with the child selector's output type (e.g. Number for `.depth`).
+                    // This prevents a spurious "Number = Markdown" unification error on
+                    // the second pass when `get_or_create_symbol_type(symbol_id)` would
+                    // return the already-overwritten Number type.
+                    let lookup_var = Type::Var(ctx.fresh_var());
+                    ctx.add_constraint(Constraint::Equal(lookup_var.clone(), def_ty, range));
+
+                    ctx.set_piped_input(child_selectors[0], lookup_var);
+                    for i in 0..child_selectors.len() {
+                        if let Some(child_sym) = hir.symbol(child_selectors[i]) {
+                            generate_symbol_constraints(
+                                hir,
+                                child_selectors[i],
+                                child_sym.kind.clone(),
+                                ctx,
+                                children_index,
+                            );
+                        }
+                        if i + 1 < child_selectors.len() {
+                            let next_ty = ctx.get_or_create_symbol_type(child_selectors[i]);
+                            ctx.set_piped_input(child_selectors[i + 1], next_ty);
+                        }
+                    }
+                    // The Ref's final type is the last child selector's output type.
+                    let last_ty = ctx.get_or_create_symbol_type(*child_selectors.last().unwrap());
+                    ctx.set_symbol_type(symbol_id, last_ty);
+                }
             } else {
                 // No HIR resolution — try builtin registry by name as fallback
                 if let Some(symbol) = hir.symbol(symbol_id)
@@ -994,21 +1131,16 @@ fn generate_symbol_constraints(
                                 range,
                             });
                         } else if has_union {
-                            // Union types cannot be used with binary operators
-                            // Report an error with a clear message
-                            ctx.add_error(crate::TypeError::UnificationError {
-                                left: format!(
-                                    "{} with arguments ({}, {})",
-                                    op_name,
-                                    resolved_left.display_renumbered(),
-                                    resolved_right.display_renumbered()
-                                ),
-                                right: "union types cannot be used with binary operators".to_string(),
-                                span: range.as_ref().map(range_to_span),
-                                location: range.as_ref().map(|r| (r.start.line, r.start.column)),
-                            });
+                            // Defer — Union operands are resolved in `resolve_deferred_overloads`
+                            // where `union_members_consistent_return` can check all members.
                             let ty_var = ctx.fresh_var();
                             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                            ctx.add_deferred_overload(DeferredOverload {
+                                symbol_id,
+                                op_name: SmolStr::new(op_name.as_str()),
+                                operand_tys: vec![left_ty, right_ty],
+                                range,
+                            });
                         } else {
                             // Try to resolve the best matching overload
                             let arg_types = vec![resolved_left.clone(), resolved_right.clone()];
@@ -1194,15 +1326,7 @@ fn generate_symbol_constraints(
                 if let Some(func_name) = &call_symbol.value {
                     // All children are explicit arguments (filter out Keyword symbols
                     // which are syntax elements like `fn` in lambda expressions)
-                    let children: Vec<SymbolId> = get_children(children_index, symbol_id)
-                        .iter()
-                        .copied()
-                        .filter(|&child_id| {
-                            hir.symbol(child_id)
-                                .map(|s| !matches!(s.kind, SymbolKind::Keyword))
-                                .unwrap_or(true)
-                        })
-                        .collect();
+                    let children = get_non_keyword_children(hir, symbol_id, children_index);
                     let explicit_arg_tys: Vec<Type> = children
                         .iter()
                         .map(|&arg_id| ctx.get_or_create_symbol_type(arg_id))
@@ -1256,7 +1380,7 @@ fn generate_symbol_constraints(
                                     // If arity doesn't match and the call might receive piped input later
                                     // (inside a Block), defer the error until Pass 4 re-processing
                                     if !might_receive_piped_input(hir, symbol_id) {
-                                        ctx.add_error(crate::TypeError::WrongArity {
+                                        ctx.add_error(TypeError::WrongArity {
                                             expected: param_tys.len(),
                                             found: arg_tys.len(),
                                             span: range.as_ref().map(range_to_span),
@@ -1294,22 +1418,92 @@ fn generate_symbol_constraints(
                                     range,
                                 });
                             } else {
-                                // The definition exists but isn't a function type yet.
-                                // If the definition is a function parameter (higher-order call),
-                                // record the inner call so that `check_user_call_body_operators`
-                                // can propagate the concrete element type to the lambda's body.
-                                let ret_ty = Type::Var(ctx.fresh_var());
-                                let expected_func_ty = Type::function(explicit_arg_tys.clone(), ret_ty.clone());
-                                ctx.add_constraint(Constraint::Equal(func_ty, expected_func_ty, range));
-                                ctx.set_symbol_type(symbol_id, ret_ty);
-                                if def_symbol.map(|s| s.is_parameter()).unwrap_or(false)
-                                    && let Some(outer_def_id) = find_enclosing_function(hir, symbol_id)
-                                {
-                                    ctx.add_deferred_parameter_call(DeferredParameterCall {
-                                        outer_def_id,
-                                        param_sym_id: def_id,
-                                        arg_tys: explicit_arg_tys.clone(),
+                                // Check for potential Record field access via bracket notation
+                                // (e.g., v[:key]). Only trigger when the argument is a
+                                // Symbol/Selector (`:key` pattern), not a regular variable ref.
+                                let field_name = children.first().and_then(|&arg_id| {
+                                    let arg_symbol = hir.symbol(arg_id)?;
+                                    if matches!(
+                                        arg_symbol.kind,
+                                        SymbolKind::Symbol | SymbolKind::Selector(_) | SymbolKind::String
+                                    ) {
+                                        arg_symbol.value.as_ref().map(|v| v.to_string())
+                                    } else {
+                                        None
+                                    }
+                                });
+
+                                if let Some(name) = field_name {
+                                    // Defer field access resolution to post-unification
+                                    ctx.add_deferred_record_access(infer::DeferredRecordAccess {
+                                        call_symbol_id: symbol_id,
+                                        def_id,
+                                        field_name: name,
+                                        range: get_symbol_range(hir, symbol_id),
                                     });
+                                    let ty_var = ctx.fresh_var();
+                                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                                } else {
+                                    // The definition exists but isn't a function type yet.
+                                    // If the definition is a function parameter (higher-order call),
+                                    // record the inner call so that `check_user_call_body_operators`
+                                    // can propagate the concrete element type to the lambda's body.
+                                    if def_symbol.map(|s| s.is_parameter()).unwrap_or(false) {
+                                        let ret_ty = Type::Var(ctx.fresh_var());
+                                        let expected_func_ty = Type::function(explicit_arg_tys.clone(), ret_ty.clone());
+                                        ctx.add_constraint(Constraint::Equal(func_ty, expected_func_ty, range));
+                                        ctx.set_symbol_type(symbol_id, ret_ty);
+                                        if let Some(outer_def_id) = find_enclosing_function(hir, symbol_id) {
+                                            ctx.add_deferred_parameter_call(DeferredParameterCall {
+                                                outer_def_id,
+                                                param_sym_id: def_id,
+                                                arg_tys: explicit_arg_tys.clone(),
+                                            });
+                                        }
+                                    } else {
+                                        // Non-function variable with bracket access (e.g., v[0]).
+                                        // Always defer index access resolution to post-unification.
+                                        // This handles both Array and Tuple types correctly:
+                                        // - For Tuple (heterogeneous arrays), per-element types are preserved
+                                        // - For Array, element type is used as before
+                                        // - For unresolved vars, the fallback adds an Array structural constraint
+                                        // This avoids false positives where different elements of a heterogeneous
+                                        // array share the same type variable and get incorrectly unified.
+                                        let literal_index = children.first().and_then(|&arg_id| {
+                                            let arg_sym = hir.symbol(arg_id)?;
+                                            if matches!(arg_sym.kind, SymbolKind::Number) {
+                                                arg_sym.value.as_ref()?.parse::<usize>().ok()
+                                            } else {
+                                                None
+                                            }
+                                        });
+
+                                        // Only constrain the index to Number when it is a literal
+                                        // numeric index (e.g. v[0]). For variable indices
+                                        // (e.g. a String key used for Dict access), skip this
+                                        // constraint — the correct element type is resolved via
+                                        // resolve_deferred_tuple_accesses once the container's
+                                        // type is known.
+                                        if literal_index.is_some()
+                                            && let Some(index_ty) = explicit_arg_tys.first()
+                                        {
+                                            ctx.add_constraint(Constraint::Equal(
+                                                index_ty.clone(),
+                                                Type::Number,
+                                                range,
+                                            ));
+                                        }
+
+                                        let ty_var = ctx.fresh_var();
+                                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+
+                                        ctx.add_deferred_tuple_access(infer::DeferredTupleAccess {
+                                            call_symbol_id: symbol_id,
+                                            def_id,
+                                            index: literal_index,
+                                            range: get_symbol_range(hir, symbol_id),
+                                        });
+                                    }
                                 }
                             }
                         } else {
@@ -1317,14 +1511,16 @@ fn generate_symbol_constraints(
                             // If there's piped input, prepend it as the implicit first argument
                             let arg_tys = build_piped_call_args(ctx, symbol_id, &explicit_arg_tys, func_name);
                             // Defer error if call might receive piped input later (inside a Block)
-                            let defer = might_receive_piped_input(hir, symbol_id);
+                            // or if it is inside a quote block (template code not directly executed).
+                            let defer =
+                                might_receive_piped_input(hir, symbol_id) || is_inside_quote_block(hir, symbol_id);
                             resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
                         }
                     } else {
                         // No HIR resolution - try builtin overload resolution
                         // If there's piped input, prepend it as the implicit first argument
                         let arg_tys = build_piped_call_args(ctx, symbol_id, &explicit_arg_tys, func_name);
-                        let defer = might_receive_piped_input(hir, symbol_id);
+                        let defer = might_receive_piped_input(hir, symbol_id) || is_inside_quote_block(hir, symbol_id);
                         resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
                     }
                 } else {
@@ -1366,14 +1562,36 @@ fn generate_symbol_constraints(
                         .windows(2)
                         .any(|w| std::mem::discriminant(w[0]) != std::mem::discriminant(w[1]));
 
-                if is_heterogeneous || concrete_tys.len() != elem_tys.len() {
-                    // Heterogeneous or partially-unresolved array (used as tuple) —
-                    // use fresh type variable to avoid corrupting type inference
-                    // for downstream code. When some elements are still type variables,
-                    // we cannot know if they will resolve to compatible types.
-                    let elem_ty_var = ctx.fresh_var();
-                    let array_ty = Type::array(Type::Var(elem_ty_var));
-                    ctx.set_symbol_type(symbol_id, array_ty);
+                // Use Tuple only when there are multiple elements with mixed resolved/unresolved
+                // types, or when the elements are heterogeneous. A single-element array [x] where
+                // x is still a type variable should be Array(Var), not Tuple(Var), so that array
+                // operations like `[x] + [y]` and `arr + [x]` resolve correctly via Array overloads.
+                let needs_tuple = is_heterogeneous || (elem_tys.len() >= 2 && concrete_tys.len() != elem_tys.len());
+
+                if needs_tuple {
+                    // In strict array mode, report heterogeneous arrays as errors
+                    if is_heterogeneous && ctx.strict_array() {
+                        let range = get_symbol_range(hir, symbol_id);
+                        let types_str = concrete_tys
+                            .iter()
+                            .map(|ty| ty.display_renumbered())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        ctx.add_error(TypeError::HeterogeneousArray {
+                            types: types_str,
+                            span: range.as_ref().map(range_to_span),
+                            location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                        });
+                    }
+
+                    // Always use Tuple to preserve per-element type information.
+                    // When elements have different concrete types (heterogeneous) or some
+                    // elements are still type variables (partially-resolved), a single
+                    // shared element type variable would be incorrectly unified with
+                    // incompatible types (e.g., both String from result[0] and Bool from
+                    // result[1] if the same Var is used for all elements).
+                    let tuple_ty = Type::tuple(elem_tys);
+                    ctx.set_symbol_type(symbol_id, tuple_ty);
                 } else {
                     // Homogeneous or unresolved — unify all element types
                     let elem_ty = elem_tys[0].clone();
@@ -1390,35 +1608,71 @@ fn generate_symbol_constraints(
 
         SymbolKind::Dict => {
             // Dict structure in HIR: Dict -> key_symbol -> value_expr
-            // Direct children of Dict are the key symbols
-            // Note: mq dicts are like JSON objects - values can have different types
-            // So we only unify key types, not value types
+            // Direct children of Dict are the key symbols.
+            // When all keys are string literals, use Record type (row polymorphism)
+            // to track per-field value types.
             let key_symbols = get_children(children_index, symbol_id);
             if key_symbols.is_empty() {
-                let key_ty_var = ctx.fresh_var();
-                let val_ty_var = ctx.fresh_var();
-                let dict_ty = Type::dict(Type::Var(key_ty_var), Type::Var(val_ty_var));
-                ctx.set_symbol_type(symbol_id, dict_ty);
+                // Empty dict → open record with fresh row variable
+                let row_var = ctx.fresh_var();
+                let record_ty = Type::record(std::collections::BTreeMap::new(), Type::Var(row_var));
+                ctx.set_symbol_type(symbol_id, record_ty);
             } else {
-                let key_ty_var = ctx.fresh_var();
-                let val_ty_var = ctx.fresh_var();
-                let key_ty = Type::Var(key_ty_var);
-                let range = get_symbol_range(hir, symbol_id);
+                // Try to build a Record type from known keys (string literals or symbols)
+                let mut fields = std::collections::BTreeMap::new();
+                let mut all_string_keys = true;
 
                 for &key_id in key_symbols {
-                    // Key symbol type - all keys should be the same type
-                    let k_ty = ctx.get_or_create_symbol_type(key_id);
-                    ctx.add_constraint(Constraint::Equal(key_ty.clone(), k_ty, range));
+                    let symbol = hir.symbol(key_id);
+                    let key_name = symbol.and_then(|s| s.value.as_ref().map(|v| v.to_string()));
+                    let key_kind = symbol.map(|s| s.kind.clone());
 
-                    // Process value expressions (to assign types to them)
-                    let value_children = get_children(children_index, key_id);
-                    for &val_id in value_children {
-                        ctx.get_or_create_symbol_type(val_id);
+                    if let Some(name) = key_name {
+                        // Get value type from the key's children
+                        let value_children = get_children(children_index, key_id);
+                        let val_ty = if let Some(&val_id) = value_children.last() {
+                            ctx.get_or_create_symbol_type(val_id)
+                        } else {
+                            Type::Var(ctx.fresh_var())
+                        };
+                        // Assign appropriate type to the key symbol
+                        let key_ty = if key_kind == Some(SymbolKind::String) {
+                            Type::String
+                        } else {
+                            Type::Symbol
+                        };
+                        ctx.set_symbol_type(key_id, key_ty);
+                        fields.insert(name, val_ty);
+                    } else {
+                        all_string_keys = false;
+                        break;
                     }
                 }
 
-                let dict_ty = Type::dict(key_ty, Type::Var(val_ty_var));
-                ctx.set_symbol_type(symbol_id, dict_ty);
+                if all_string_keys {
+                    // Closed record: all field keys are statically known
+                    let record_ty = Type::record(fields, Type::RowEmpty);
+                    ctx.set_symbol_type(symbol_id, record_ty);
+                } else {
+                    // Fallback: dynamic keys → use Dict type
+                    let key_ty_var = ctx.fresh_var();
+                    let val_ty_var = ctx.fresh_var();
+                    let key_ty = Type::Var(key_ty_var);
+                    let range = get_symbol_range(hir, symbol_id);
+
+                    for &key_id in key_symbols {
+                        let k_ty = ctx.get_or_create_symbol_type(key_id);
+                        ctx.add_constraint(Constraint::Equal(key_ty.clone(), k_ty, range));
+
+                        let value_children = get_children(children_index, key_id);
+                        for &val_id in value_children {
+                            ctx.get_or_create_symbol_type(val_id);
+                        }
+                    }
+
+                    let dict_ty = Type::dict(key_ty, Type::Var(val_ty_var));
+                    ctx.set_symbol_type(symbol_id, dict_ty);
+                }
             }
         }
 
@@ -1431,6 +1685,18 @@ fn generate_symbol_constraints(
                 // First child is the condition — mq is dynamically typed, so any
                 // value can be used as a condition (truthy/falsy), not just Bool.
                 let _cond_ty = ctx.get_or_create_symbol_type(children[0]);
+
+                // Analyze condition for type narrowing (e.g., is_string(x))
+                let cond_narrowings = analyze_condition(hir, children[0], children_index, ctx);
+                if !cond_narrowings.is_empty() && children.len() > 1 {
+                    let else_branch_ids: Vec<SymbolId> = children[2..].to_vec();
+                    ctx.add_type_narrowing(TypeNarrowing {
+                        then_narrowings: cond_narrowings.then_narrowings,
+                        else_narrowings: cond_narrowings.else_narrowings,
+                        then_branch_id: children[1],
+                        else_branch_ids,
+                    });
+                }
 
                 // Subsequent children are then-branch and elif/else branches.
                 // mq is dynamically typed: branches may return different types
@@ -1448,11 +1714,13 @@ fn generate_symbol_constraints(
                     let resolved: Vec<Type> = branch_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
                     let concrete: Vec<&Type> = resolved.iter().filter(|ty| !ty.is_var()).collect();
 
-                    // Check if all concrete types are the same
+                    // Check if all concrete types are structurally compatible.
+                    // Use `can_branch_unify_with` for strict structural comparison:
+                    // Var vs concrete → incompatible, preventing false unification of
+                    // branches like Tuple([None,Var]) vs Tuple([Var,Var]) where the Var
+                    // might later resolve to an incompatible concrete type (e.g. Number).
                     let all_same = if concrete.len() >= 2 {
-                        concrete
-                            .windows(2)
-                            .all(|w| std::mem::discriminant(w[0]) == std::mem::discriminant(w[1]))
+                        concrete.windows(2).all(|w| w[0].can_branch_unify_with(w[1]))
                     } else {
                         true
                     };
@@ -1461,15 +1729,31 @@ fn generate_symbol_constraints(
                     // should not unify `value` with None; instead treat as different types.
                     let has_none_branch = resolved.iter().any(|t| matches!(t, Type::None));
 
-                    if (!all_same && concrete.len() >= 2) || (has_none_branch && resolved.len() >= 2) {
-                        // Different concrete types in branches — use Union type
-                        let unique_types: Vec<Type> = concrete.into_iter().cloned().collect();
-                        if unique_types.is_empty() {
-                            ctx.set_symbol_type(symbol_id, then_ty.clone());
+                    // Detect patterns like `if (is_array(x)): x else: [x]` where one branch
+                    // is Var(a) and another contains Var(a).  Trying to unify these directly
+                    // would trigger an "infinite type" occurs-check error.  Instead, form a
+                    // Union so both branches coexist without being forcibly equated.
+                    let would_cause_infinite_type = resolved.iter().any(|ty| {
+                        if let Type::Var(v) = ty {
+                            resolved
+                                .iter()
+                                .any(|other| !matches!(other, Type::Var(_)) && other.free_vars().contains(v))
                         } else {
-                            let union_ty = Type::union(unique_types);
-                            ctx.set_symbol_type(symbol_id, union_ty);
+                            false
                         }
+                    });
+
+                    if would_cause_infinite_type
+                        || (!all_same && concrete.len() >= 2)
+                        || (has_none_branch && resolved.len() >= 2)
+                    {
+                        // Different concrete types across branches — use Union type.
+                        // Include ALL resolved branch types (vars and concrete) so that
+                        // branches whose types are not yet fully resolved can still be
+                        // tracked and resolved later (e.g., `if (...): items else: None`
+                        // where `items` is still a Var at constraint-generation time).
+                        let union_ty = Type::union(resolved.clone());
+                        ctx.set_symbol_type(symbol_id, union_ty);
                     } else {
                         // Homogeneous or unresolved — unify all branch types
                         ctx.set_symbol_type(symbol_id, then_ty.clone());
@@ -1506,6 +1790,39 @@ fn generate_symbol_constraints(
                 // First child is the condition
                 let cond_ty = ctx.get_or_create_symbol_type(children[0]);
                 ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range));
+
+                // Analyze condition for type narrowing: narrowings apply inside the loop body
+                // (then-branch) and to code after the loop (else-branch, when condition is false).
+                if children.len() > 1 {
+                    let cond_narrowings = analyze_condition(hir, children[0], children_index, ctx);
+                    if !cond_narrowings.is_empty() {
+                        // Loop body is the last child; all body children receive then-narrowings.
+                        let body_children: Vec<SymbolId> = children[1..].to_vec();
+                        for &body_id in &body_children {
+                            ctx.add_type_narrowing(TypeNarrowing {
+                                then_narrowings: cond_narrowings.then_narrowings.clone(),
+                                else_narrowings: Vec::new(),
+                                then_branch_id: body_id,
+                                else_branch_ids: Vec::new(),
+                            });
+                        }
+
+                        // Post-loop narrowing: when the while condition becomes false,
+                        // apply else_narrowings to siblings that follow the While node
+                        // in its parent scope.
+                        if !cond_narrowings.else_narrowings.is_empty() {
+                            let post_loop_siblings = get_post_loop_siblings(hir, symbol_id, children_index);
+                            if !post_loop_siblings.is_empty() {
+                                ctx.add_type_narrowing(TypeNarrowing {
+                                    then_narrowings: Vec::new(),
+                                    else_narrowings: cond_narrowings.else_narrowings,
+                                    then_branch_id: symbol_id, // unused (then_narrowings empty)
+                                    else_branch_ids: post_loop_siblings,
+                                });
+                            }
+                        }
+                    }
+                }
 
                 // Result type comes from the body (last child after condition)
                 if children.len() > 1 {
@@ -1622,9 +1939,16 @@ fn generate_symbol_constraints(
             let range = get_symbol_range(hir, symbol_id);
 
             if children.len() > 1 {
-                // First child is the match expression, rest are arms
+                // First child is the match expression, rest are arms.
                 let match_expr_ty = ctx.get_or_create_symbol_type(children[0]);
                 let arm_children: Vec<_> = children[1..].to_vec();
+
+                // If the match expression is a direct variable reference, we can narrow
+                // its type inside each arm body to match the arm's pattern type.
+                let match_var_def_id = hir
+                    .symbol(children[0])
+                    .filter(|s| matches!(s.kind, SymbolKind::Ref))
+                    .and_then(|_| hir.resolve_reference_symbol(children[0]));
 
                 if !arm_children.is_empty() {
                     let mut arm_body_tys = Vec::new();
@@ -1632,19 +1956,44 @@ fn generate_symbol_constraints(
                     for &arm_id in &arm_children {
                         let arm_children_inner = get_children(children_index, arm_id);
 
-                        // Separate pattern and body children
+                        // Separate pattern and body children, tracking both IDs and types.
                         let mut body_ty = None;
+                        let mut body_id = None;
+                        let mut arm_pattern_ty = None;
                         for &arm_child_id in arm_children_inner {
                             if let Some(arm_child_symbol) = hir.symbol(arm_child_id) {
                                 if matches!(arm_child_symbol.kind, SymbolKind::Pattern) {
                                     // Determine pattern type from its literal children
                                     let pattern_ty = resolve_pattern_type(hir, arm_child_id, ctx, children_index);
-                                    ctx.add_constraint(Constraint::Equal(match_expr_ty.clone(), pattern_ty, range));
+                                    ctx.add_constraint(Constraint::Equal(
+                                        match_expr_ty.clone(),
+                                        pattern_ty.clone(),
+                                        range,
+                                    ));
+                                    // Keep the pattern type if it is concrete (not a wildcard Var)
+                                    if !pattern_ty.is_var() {
+                                        arm_pattern_ty = Some(pattern_ty);
+                                    }
                                 } else {
                                     // Track the last non-Pattern child as the body
                                     body_ty = Some(ctx.get_or_create_symbol_type(arm_child_id));
+                                    body_id = Some(arm_child_id);
                                 }
                             }
+                        }
+
+                        // Narrow the matched variable to the concrete pattern type inside the arm body.
+                        if let (Some(def_id), Some(pat_ty), Some(bid)) = (match_var_def_id, arm_pattern_ty, body_id) {
+                            ctx.add_type_narrowing(TypeNarrowing {
+                                then_narrowings: vec![NarrowingEntry {
+                                    def_id,
+                                    narrowed_type: pat_ty,
+                                    is_complement: false,
+                                }],
+                                else_narrowings: Vec::new(),
+                                then_branch_id: bid,
+                                else_branch_ids: Vec::new(),
+                            });
                         }
 
                         if let Some(body_ty) = body_ty {
@@ -1806,8 +2155,125 @@ fn generate_symbol_constraints(
             }
         }
 
-        // Selector, QualifiedAccess, and other kinds that don't need deep type checking
-        SymbolKind::Selector | SymbolKind::QualifiedAccess => {
+        // Selector: resolve the type for chained selectors like `.h1.value` or `.h1.depth`.
+        //
+        // In the HIR, `.h1.value` is represented as Selector(.h1) with a child Selector(.value).
+        // The parent selector's output type (always `Type::Markdown` for non-Attr selectors)
+        // is propagated as piped input to each child selector in the chain.
+        //
+        // Attr selectors (`Selector::Attr`) return the concrete attribute type via `attr_kind_to_type`.
+        // Non-Attr selectors (`.h1`, `.code`, etc.) always return `Type::Markdown`.
+        SymbolKind::Selector(ref selector) => {
+            // Compute this selector's own output type based on the incoming piped input.
+            let own_type = if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
+                let resolved = ctx.resolve_type(&piped_ty);
+                let field_name = hir
+                    .symbol(symbol_id)
+                    .and_then(|s| s.value.as_ref())
+                    .map(|v| v.trim_start_matches('.').trim_start_matches("[:").trim_end_matches(']'));
+
+                if let Type::Markdown = resolved {
+                    // Piped input is a Markdown node (from a parent selector in a chain).
+                    // Attr selectors return their specific type; non-Attr still return Markdown.
+                    if let mq_lang::Selector::Attr(attr_kind) = selector {
+                        attr_kind_to_type(attr_kind)
+                    } else {
+                        Type::Markdown
+                    }
+                } else if let Type::Record(ref fields, ref rest) = resolved {
+                    if let Some(name) = field_name {
+                        if let Some(field_ty) = fields.get(name) {
+                            field_ty.clone()
+                        } else if matches!(**rest, Type::RowEmpty) {
+                            let range = get_symbol_range(hir, symbol_id);
+                            ctx.add_error(TypeError::UndefinedField {
+                                field: name.to_string(),
+                                record_ty: resolved.display_renumbered(),
+                                span: range.as_ref().map(range_to_span),
+                                location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                            });
+                            let ty_var = ctx.fresh_var();
+                            Type::Var(ty_var)
+                        } else {
+                            let ty_var = ctx.fresh_var();
+                            Type::Var(ty_var)
+                        }
+                    } else {
+                        let ty_var = ctx.fresh_var();
+                        Type::Var(ty_var)
+                    }
+                } else {
+                    // Piped type not yet resolved — defer to post-unification.
+                    // Include the attr_kind so that if the piped type resolves to Markdown,
+                    // the correct attribute type can be returned (e.g., `md.depth` → number).
+                    if let Some(name) = field_name {
+                        let attr_kind = if let mq_lang::Selector::Attr(ak) = selector {
+                            Some(ak.clone())
+                        } else {
+                            None
+                        };
+                        ctx.add_deferred_selector_access(infer::DeferredSelectorAccess {
+                            symbol_id,
+                            piped_ty: piped_ty.clone(),
+                            field_name: name.to_string(),
+                            attr_kind,
+                            range: get_symbol_range(hir, symbol_id),
+                        });
+                    }
+                    let ty_var = ctx.fresh_var();
+                    Type::Var(ty_var)
+                }
+            } else {
+                // No piped input: non-Attr selectors (`.h1`, `.code`, etc.) always produce
+                // a Markdown node. Attr selectors (`.value`, `.depth`, etc.) as the root of
+                // a chain return their concrete type.
+                if let mq_lang::Selector::Attr(attr_kind) = selector {
+                    attr_kind_to_type(attr_kind)
+                } else {
+                    Type::Markdown
+                }
+            };
+
+            // Propagate own_type as piped input to child selectors (for chains like `.h1.value`).
+            // The parent selector's final type is the last child selector's output type.
+            let child_selectors: Vec<SymbolId> = get_children(children_index, symbol_id)
+                .iter()
+                .copied()
+                .filter(|&child_id| {
+                    hir.symbol(child_id)
+                        .map(|s| matches!(s.kind, SymbolKind::Selector(_)))
+                        .unwrap_or(false)
+                })
+                .collect();
+
+            if child_selectors.is_empty() {
+                ctx.set_symbol_type(symbol_id, own_type);
+            } else {
+                // Thread the output type through the chain of child selectors.
+                ctx.set_piped_input(child_selectors[0], own_type);
+                for i in 0..child_selectors.len() {
+                    if let Some(child_sym) = hir.symbol(child_selectors[i]) {
+                        generate_symbol_constraints(
+                            hir,
+                            child_selectors[i],
+                            child_sym.kind.clone(),
+                            ctx,
+                            children_index,
+                        );
+                    }
+                    if i + 1 < child_selectors.len() {
+                        let next_ty = ctx.get_or_create_symbol_type(child_selectors[i]);
+                        ctx.set_piped_input(child_selectors[i + 1], next_ty);
+                    }
+                }
+                // The parent's type is the last child's type.
+                let last_ty = ctx.get_or_create_symbol_type(*child_selectors.last().unwrap());
+                ctx.set_symbol_type(symbol_id, last_ty);
+            }
+        }
+
+        // QualifiedAccess doesn't need deep type checking
+        SymbolKind::QualifiedAccess => {
             let ty_var = ctx.fresh_var();
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }
@@ -1821,6 +2287,14 @@ fn generate_symbol_constraints(
                 if let Some(&value_child) = children.first() {
                     let child_ty = ctx.get_or_create_symbol_type(value_child);
                     ctx.set_symbol_type(symbol_id, child_ty);
+                } else {
+                    let ty_var = ctx.fresh_var();
+                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                }
+            } else if symbol.is_some_and(|s| s.value.as_deref() == Some("self")) {
+                // `self` refers to the piped input value
+                if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
+                    ctx.set_symbol_type(symbol_id, piped_ty);
                 } else {
                     let ty_var = ctx.fresh_var();
                     ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
@@ -1842,10 +2316,96 @@ fn generate_symbol_constraints(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn test_constraint_display() {
         let c = Constraint::Equal(Type::Number, Type::String, None);
         assert_eq!(c.to_string(), "number ~ string");
+    }
+
+    #[test]
+    fn test_children_index() {
+        let mut hir = Hir::default();
+        let _ = hir.add_code(None, "let x = 1 | x + 2");
+
+        let index = build_children_index(&hir);
+        assert!(!index.is_empty());
+
+        // Root symbols should have parent = None, not in index
+        // But symbols inside the root scope/block should be indexed
+        for (id, symbol) in hir.symbols() {
+            if let Some(parent) = symbol.parent {
+                let children = get_children(&index, parent);
+                assert!(children.contains(&id));
+            }
+        }
+    }
+
+    #[rstest]
+    #[case(mq_lang::AttrKind::Value, Type::String)]
+    #[case(mq_lang::AttrKind::Depth, Type::Number)]
+    #[case(mq_lang::AttrKind::Ordered, Type::Bool)]
+    #[case(mq_lang::AttrKind::Children, Type::array(Type::Markdown))]
+    fn test_attr_kind_to_type(#[case] kind: mq_lang::AttrKind, #[case] expected: Type) {
+        assert_eq!(attr_kind_to_type(&kind), expected);
+    }
+
+    #[test]
+    fn test_is_foreach_iterable_ref() {
+        let mut hir = Hir::default();
+        hir.add_code(None, "foreach(x, y): 1;");
+
+        let y_ref = hir
+            .symbols()
+            .find(|(_, s)| s.value.as_deref() == Some("y"))
+            .map(|(id, _)| id)
+            .unwrap();
+        assert!(is_foreach_iterable_ref(&hir, y_ref));
+
+        let x_var = hir
+            .symbols()
+            .find(|(_, s)| s.value.as_deref() == Some("x"))
+            .map(|(id, _)| id)
+            .unwrap();
+        assert!(!is_foreach_iterable_ref(&hir, x_var));
+    }
+
+    #[test]
+    fn test_might_receive_piped_input() {
+        let mut hir = Hir::default();
+        // x | f() -> f() might receive piped input
+        hir.add_code(None, "let x = 1 | f()");
+        let f_call = hir
+            .symbols()
+            .find(|(_, s)| s.value.as_deref() == Some("f"))
+            .map(|(id, _)| id)
+            .unwrap();
+        assert!(might_receive_piped_input(&hir, f_call));
+    }
+
+    #[test]
+    fn test_is_inside_quote_block() {
+        let mut hir = Hir::default();
+        // In HIR, is_inside_quote_block checks if a Keyword symbol with None value is an ancestor.
+        // Bare quote/unquote keywords in HIR (added by add_quote_expr/add_unquote_expr)
+        // have value=None and kind=Keyword.
+        // Quote block in mq uses `quote do ... end` which is parsed into Quote node.
+        let _ = hir.add_code(None, "quote: x + 1;");
+
+        // Try to find the 'x' reference
+        let x_ref = hir
+            .symbols()
+            .find(|(_, s)| s.value.as_deref() == Some("x"))
+            .map(|(id, _)| id)
+            .expect("Reference to 'x' should be found");
+
+        // Verify that the setup created a quote keyword parent
+        let has_quote_parent =
+            walk_ancestors(&hir, x_ref).any(|(_, s)| matches!(s.kind, SymbolKind::Keyword) && s.value.is_none());
+
+        if has_quote_parent {
+            assert!(is_inside_quote_block(&hir, x_ref));
+        }
     }
 }

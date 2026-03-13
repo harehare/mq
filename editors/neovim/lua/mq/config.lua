@@ -33,6 +33,12 @@ M.defaults = {
   show_examples = true,
   -- Automatically start LSP server
   auto_start_lsp = true,
+  -- Enable type checking (passes --enable-type-checking to mq-lsp)
+  enable_type_check = false,
+  -- Enable strict array mode (passes --strict-array to mq-lsp, requires enable_type_check)
+  strict_array = false,
+  -- Enable LSP inlay hints (requires Neovim 0.10+)
+  enable_inlay_hints = true,
   -- LSP server configuration
   lsp = {
     on_attach = nil,    -- User-defined on_attach function

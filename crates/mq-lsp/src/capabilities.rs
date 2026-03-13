@@ -1,7 +1,8 @@
 use tower_lsp_server::ls_types::{
     CompletionOptions, DocumentFormattingOptions, DocumentRangeFormattingOptions, ExecuteCommandOptions,
-    HoverProviderCapability, OneOf, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
-    SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
+    HoverProviderCapability, InlayHintOptions, InlayHintServerCapabilities, OneOf, SemanticTokensFullOptions,
+    SemanticTokensLegend, SemanticTokensOptions, SemanticTokensServerCapabilities, ServerCapabilities,
+    TextDocumentSyncCapability, TextDocumentSyncKind,
 };
 
 use crate::semantic_tokens;
@@ -46,6 +47,10 @@ pub fn server_capabilities() -> ServerCapabilities {
                 ..Default::default()
             },
         )),
+        inlay_hint_provider: Some(OneOf::Right(InlayHintServerCapabilities::Options(InlayHintOptions {
+            resolve_provider: Some(false),
+            ..Default::default()
+        }))),
         ..Default::default()
     }
 }

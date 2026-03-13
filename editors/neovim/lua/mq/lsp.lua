@@ -30,7 +30,17 @@ function M.start()
     table.insert(multi_workspace_args, folder)
   end
 
+  -- Build type checking args from config
+  local type_check_args = {}
+  if config.get("enable_type_check") then
+    table.insert(type_check_args, "--enable-type-checking")
+    if config.get("strict_array") then
+      table.insert(type_check_args, "--strict-array")
+    end
+  end
+
   local args = vim.list_extend(vim.deepcopy(config.get("lsp_args")), multi_workspace_args)
+  vim.list_extend(args, type_check_args)
 
   local lsp_config = config.get("lsp")
 
@@ -131,6 +141,11 @@ function M.setup_buffer(bufnr)
   end
 
   vim.lsp.buf_attach_client(bufnr, client_id)
+
+  -- Enable inlay hints if configured and supported (Neovim 0.10+)
+  if config.get("enable_inlay_hints") and vim.lsp.inlay_hint then
+    vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
+  end
 end
 
 -- Auto-start LSP server when opening mq file

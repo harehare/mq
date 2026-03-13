@@ -1,4 +1,4 @@
-use zed_extension_api::{self as zed, Result};
+use zed_extension_api::{self as zed, Result, settings::LspSettings};
 
 struct MqExtension {
     cached_binary_path: Option<String>,
@@ -10,6 +10,14 @@ impl MqExtension {
         language_server_id: &zed::LanguageServerId,
         worktree: &zed::Worktree,
     ) -> Result<String> {
+        // Check if user has specified a custom binary path via settings
+        if let Ok(lsp_settings) = LspSettings::for_worktree("mq-lsp", worktree)
+            && let Some(binary) = lsp_settings.binary
+            && let Some(path) = binary.path
+        {
+            return Ok(path);
+        }
+
         if let Some(path) = &self.cached_binary_path
             && std::fs::metadata(path).is_ok_and(|stat| stat.is_file())
         {
@@ -87,6 +95,36 @@ impl MqExtension {
         self.cached_binary_path = Some(binary_path.clone());
         Ok(binary_path)
     }
+
+    /// Build type-checking CLI args from LSP initialization options.
+    ///
+    /// Reads `enableTypeCheck`, `strictArray` from `initialization_options`
+    /// and converts them to `mq-lsp` CLI flags.
+    fn type_check_args_from_settings(worktree: &zed::Worktree) -> Vec<String> {
+        let Ok(lsp_settings) = LspSettings::for_worktree("mq-lsp", worktree) else {
+            return vec![];
+        };
+        let Some(init_opts) = lsp_settings.initialization_options else {
+            return vec![];
+        };
+
+        let enable_type_check = init_opts
+            .get("enableTypeCheck")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        if !enable_type_check {
+            return vec![];
+        }
+
+        let mut args = vec!["--enable-type-checking".to_string()];
+
+        if init_opts.get("strictArray").and_then(|v| v.as_bool()).unwrap_or(false) {
+            args.push("--strict-array".to_string());
+        }
+
+        args
+    }
 }
 
 impl zed::Extension for MqExtension {
@@ -101,9 +139,21 @@ impl zed::Extension for MqExtension {
         language_server_id: &zed::LanguageServerId,
         worktree: &zed::Worktree,
     ) -> Result<zed::Command> {
+        // Check if user specified custom binary arguments via settings
+        let user_args = LspSettings::for_worktree("mq-lsp", worktree)
+            .ok()
+            .and_then(|s| s.binary)
+            .and_then(|b| b.arguments);
+
+        let args = if let Some(args) = user_args {
+            args
+        } else {
+            Self::type_check_args_from_settings(worktree)
+        };
+
         Ok(zed::Command {
             command: self.language_server_binary_path(language_server_id, worktree)?,
-            args: vec![],
+            args,
             env: Default::default(),
         })
     }

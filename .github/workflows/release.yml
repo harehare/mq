@@ -52,7 +52,8 @@ jobs:
           mv target/${{ matrix.target }}/release/mq${{ matrix.ext }} target/${{ matrix.target }}/release/mq-${{ matrix.asset_name}}${{ matrix.ext }}
           mv target/${{ matrix.target }}/release/mq-dbg${{ matrix.ext }} target/${{ matrix.target }}/release/mq-dbg-${{ matrix.asset_name}}${{ matrix.ext }}
           mv target/${{ matrix.target }}/release/mq-lsp${{ matrix.ext }} target/${{ matrix.target }}/release/mq-lsp-${{ matrix.asset_name}}${{ matrix.ext }}
-          mv target/${{ matrix.target }}/release/mqcr${{ matrix.ext }} target/${{ matrix.target }}/release/mqcr-${{ matrix.asset_name}}${{ matrix.ext }}
+          mv target/${{ matrix.target }}/release/mq-check${{ matrix.ext }} target/${{ matrix.target }}/release/mq-check-${{ matrix.asset_name}}${{ matrix.ext }}
+          mv target/${{ matrix.target }}/release/mq-crawl${{ matrix.ext }} target/${{ matrix.target }}/release/mq-crawl-${{ matrix.asset_name}}${{ matrix.ext }}
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
@@ -61,7 +62,8 @@ jobs:
             target/${{ matrix.target }}/release/mq-${{ matrix.asset_name}}${{ matrix.ext }}
             target/${{ matrix.target }}/release/mq-dbg-${{ matrix.asset_name}}${{ matrix.ext }}
             target/${{ matrix.target }}/release/mq-lsp-${{ matrix.asset_name }}${{ matrix.ext }}
-            target/${{ matrix.target }}/release/mqcr-${{ matrix.asset_name }}${{ matrix.ext }}
+            target/${{ matrix.target }}/release/mq-check-${{ matrix.asset_name }}${{ matrix.ext }}
+            target/${{ matrix.target }}/release/mq-crawl-${{ matrix.asset_name }}${{ matrix.ext }}
           if-no-files-found: error
           retention-days: 1
 
@@ -152,23 +154,23 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Extract metadata for Docker
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true

@@ -1219,7 +1219,8 @@ impl Node {
             Self::Fragment(Fragment { values }) => values
                 .iter()
                 .map(|value| value.render_with_theme(options, theme))
-                .collect::<String>(),
+                .filter(|s| !s.is_empty())
+                .join("\n"),
             Self::Empty => String::new(),
         }
     }
@@ -3450,6 +3451,23 @@ mod tests {
         value: "import React from 'react'".into(),
         position: None,
     }), RenderOptions::default(), "import React from 'react'")]
+    #[case::fragment_empty(Node::Fragment(Fragment{values: vec![]}), RenderOptions::default(), "")]
+    #[case::fragment_single(Node::Fragment(Fragment{values: vec![
+        Node::Text(Text{value: "hello".to_string(), position: None})
+    ]}), RenderOptions::default(), "hello")]
+    #[case::fragment_multiple(Node::Fragment(Fragment{values: vec![
+        Node::Text(Text{value: "hello".to_string(), position: None}),
+        Node::Text(Text{value: "world".to_string(), position: None})
+    ]}), RenderOptions::default(), "hello\nworld")]
+    #[case::fragment_filters_empty(Node::Fragment(Fragment{values: vec![
+        Node::Text(Text{value: "hello".to_string(), position: None}),
+        Node::Empty,
+        Node::Text(Text{value: "world".to_string(), position: None})
+    ]}), RenderOptions::default(), "hello\nworld")]
+    #[case::fragment_all_empty(Node::Fragment(Fragment{values: vec![
+        Node::Empty,
+        Node::Empty,
+    ]}), RenderOptions::default(), "")]
     fn test_to_string_with(#[case] node: Node, #[case] options: RenderOptions, #[case] expected: &str) {
         assert_eq!(node.to_string_with(&options), expected);
     }
