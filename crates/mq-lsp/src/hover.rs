@@ -10,7 +10,7 @@ pub fn response(
     type_env: Option<mq_check::TypeEnv>,
     position: Position,
 ) -> Option<Hover> {
-    let source = hir.write().unwrap().source_by_url(&url);
+    let source = hir.read().unwrap().source_by_url(&url);
 
     if let Some(source) = source {
         if let Some((symbol_id, symbol)) = hir.read().unwrap().find_symbol_in_position(

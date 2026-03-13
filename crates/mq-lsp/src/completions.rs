@@ -16,53 +16,50 @@ pub fn response(
 ) -> Option<CompletionResponse> {
     match source_map.get_by_left(&url.to_string()) {
         Some(source_id) => {
-            let scope_id = hir
-                .read()
-                .unwrap()
+            let hir_guard = hir.read().unwrap();
+
+            let scope_id = hir_guard
                 .find_scope_in_position(
                     *source_id,
                     mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
                 )
                 .map(|(scope_id, _)| scope_id)
-                .unwrap_or_else(|| hir.read().unwrap().find_scope_by_source(source_id));
+                .unwrap_or_else(|| hir_guard.find_scope_by_source(source_id));
 
             let module_completion = if position.character >= 3 {
                 let before_pos =
                     mq_lang::Position::new(position.line + 1, (position.character.saturating_sub(3)) as usize);
 
-                hir.read()
-                    .unwrap()
-                    .find_symbol_in_position(*source_id, before_pos)
-                    .and_then(|(_, symbol)| {
-                        if matches!(symbol.kind, mq_hir::SymbolKind::QualifiedAccess) {
-                            let module_name = symbol.value.as_ref()?;
+                let found = hir_guard.find_symbol_in_position(*source_id, before_pos);
+                found.and_then(|(_, symbol)| {
+                    if matches!(symbol.kind, mq_hir::SymbolKind::QualifiedAccess) {
+                        let module_name = symbol.value.as_ref()?;
 
-                            let hir_guard = hir.read().unwrap();
-                            for (_, mod_symbol) in hir_guard.symbols() {
-                                if mod_symbol.is_module()
-                                    && mod_symbol.value.as_ref() == Some(module_name)
-                                    && let mq_hir::SymbolKind::Module(module_source_id) = mod_symbol.kind
-                                {
-                                    return Some(hir_guard.find_symbols_in_module(module_source_id));
-                                } else if mod_symbol.is_import()
-                                    && mod_symbol.value.as_ref() == Some(module_name)
-                                    && let mq_hir::SymbolKind::Import(module_source_id) = mod_symbol.kind
-                                {
-                                    return Some(hir_guard.find_symbols_in_module(module_source_id));
-                                }
+                        for (_, mod_symbol) in hir_guard.symbols() {
+                            if mod_symbol.is_module()
+                                && mod_symbol.value.as_ref() == Some(module_name)
+                                && let mq_hir::SymbolKind::Module(module_source_id) = mod_symbol.kind
+                            {
+                                return Some(hir_guard.find_symbols_in_module(module_source_id));
+                            } else if mod_symbol.is_import()
+                                && mod_symbol.value.as_ref() == Some(module_name)
+                                && let mq_hir::SymbolKind::Import(module_source_id) = mod_symbol.kind
+                            {
+                                return Some(hir_guard.find_symbols_in_module(module_source_id));
                             }
-                            None
-                        } else if symbol.is_module() {
-                            // Direct module reference
-                            if let mq_hir::SymbolKind::Module(module_source_id) = symbol.kind {
-                                Some(hir.read().unwrap().find_symbols_in_module(module_source_id))
-                            } else {
-                                None
-                            }
+                        }
+                        None
+                    } else if symbol.is_module() {
+                        // Direct module reference
+                        if let mq_hir::SymbolKind::Module(module_source_id) = symbol.kind {
+                            Some(hir_guard.find_symbols_in_module(module_source_id))
                         } else {
                             None
                         }
-                    })
+                    } else {
+                        None
+                    }
+                })
             } else {
                 None
             };
@@ -70,16 +67,16 @@ pub fn response(
             let symbols = if let Some(module_symbols) = module_completion {
                 module_symbols
             } else {
-                let hir_guard = hir.read().unwrap();
-
-                itertools::concat(vec![
-                    hir_guard.find_symbols_in_scope(scope_id),
-                    hir_guard.find_symbols_in_source(hir_guard.builtin.source_id),
-                ])
-                .into_iter()
-                .unique_by(|s| s.value.clone())
-                .collect::<Vec<_>>()
+                let scope_symbols = hir_guard.find_symbols_in_scope(scope_id);
+                let builtin_symbols = hir_guard.find_symbols_in_source(hir_guard.builtin.source_id);
+                scope_symbols
+                    .into_iter()
+                    .chain(builtin_symbols)
+                    .unique_by(|s| s.value.clone())
+                    .collect::<Vec<_>>()
             };
+
+            drop(hir_guard);
 
             Some(CompletionResponse::Array(
                 symbols

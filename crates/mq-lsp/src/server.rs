@@ -201,14 +201,12 @@ impl LanguageServer for Backend {
         &self,
         params: ls_types::DocumentFormattingParams,
     ) -> jsonrpc::Result<Option<Vec<ls_types::TextEdit>>> {
-        if !self
+        if self
             .error_map
             .get(&params.text_document.uri.to_string())
             .unwrap()
             .iter()
-            .filter(|e| matches!(e, LspError::SyntaxError(_)))
-            .collect::<Vec<_>>()
-            .is_empty()
+            .any(|e| matches!(e, LspError::SyntaxError(_)))
         {
             return Ok(None);
         }
@@ -394,7 +392,7 @@ impl Backend {
         }
 
         self.source_map.write().unwrap().insert(uri_string.clone(), source_id);
-        self.text_map.insert(uri_string.clone(), text.to_string().into());
+        self.text_map.insert(uri_string.clone(), text.into());
         self.error_map.insert(uri_string, errors);
     }
 
@@ -407,8 +405,7 @@ impl Backend {
 
         // Add parsing errors if they exist
         if let Some(errors) = file_errors {
-            let errors: Vec<ls_types::Diagnostic> = (*errors).iter().map(Into::into).collect::<Vec<_>>();
-            diagnostics.extend(errors);
+            diagnostics.extend(errors.iter().map(Into::into));
         }
 
         {
@@ -416,19 +413,21 @@ impl Backend {
             if let Some(source_id) = source_map_guard.get_by_left(&uri_string) {
                 let hir_guard = self.hir.read().unwrap();
 
-                // Build a map of text_range -> bool for this file's symbols for O(1) lookup
-                let mut range_map = std::collections::HashMap::new();
-                for (_, symbol) in hir_guard.symbols() {
-                    if symbol.source.source_id == Some(*source_id)
-                        && let Some(ref text_range) = symbol.source.text_range
-                    {
-                        range_map.insert(text_range, true);
-                    }
-                }
+                // Build a set of text_ranges for this file's symbols for O(1) lookup
+                let range_set: FxHashSet<mq_lang::Range> = hir_guard
+                    .symbols()
+                    .filter_map(|(_, symbol)| {
+                        if symbol.source.source_id == Some(*source_id) {
+                            symbol.source.text_range
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
 
                 // Filter HIR errors to only include ones from this specific source
                 diagnostics.extend(hir_guard.error_ranges().into_iter().filter_map(|(message, item)| {
-                    if range_map.contains_key(&item) {
+                    if range_set.contains(&item) {
                         Some(ls_types::Diagnostic::new_simple(
                             ls_types::Range::new(
                                 ls_types::Position {
@@ -474,7 +473,7 @@ impl Backend {
 
                 // Add HIR warnings (including unreachable code warnings)
                 diagnostics.extend(hir_guard.warning_ranges().into_iter().filter_map(|(message, item)| {
-                    if range_map.contains_key(&item) {
+                    if range_set.contains(&item) {
                         let mut diagnostic = ls_types::Diagnostic::new_simple(
                             ls_types::Range::new(
                                 ls_types::Position {
