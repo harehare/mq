@@ -87,7 +87,7 @@ pub enum TypeError {
         found: String,
         #[label("type mismatch here")]
         span: Option<miette::SourceSpan>,
-        location: Option<(u32, usize)>,
+        location: Option<mq_lang::Range>,
     },
     #[error("Cannot unify types: {left} and {right}")]
     #[diagnostic(code(typechecker::unification_error))]
@@ -97,7 +97,7 @@ pub enum TypeError {
         right: String,
         #[label("cannot unify these types")]
         span: Option<miette::SourceSpan>,
-        location: Option<(u32, usize)>,
+        location: Option<mq_lang::Range>,
     },
     #[error("Occurs check failed: type variable {var} occurs in {ty}")]
     #[diagnostic(code(typechecker::occurs_check))]
@@ -107,7 +107,7 @@ pub enum TypeError {
         ty: String,
         #[label("infinite type")]
         span: Option<miette::SourceSpan>,
-        location: Option<(u32, usize)>,
+        location: Option<mq_lang::Range>,
     },
     #[error("Undefined symbol: {name}")]
     #[diagnostic(code(typechecker::undefined_symbol))]
@@ -116,7 +116,7 @@ pub enum TypeError {
         name: String,
         #[label("undefined symbol")]
         span: Option<miette::SourceSpan>,
-        location: Option<(u32, usize)>,
+        location: Option<mq_lang::Range>,
     },
     #[error("Wrong number of arguments: expected {expected}, found {found}")]
     #[diagnostic(code(typechecker::wrong_arity))]
@@ -126,7 +126,7 @@ pub enum TypeError {
         found: usize,
         #[label("wrong number of arguments")]
         span: Option<miette::SourceSpan>,
-        location: Option<(u32, usize)>,
+        location: Option<mq_lang::Range>,
     },
     #[error("Undefined field `{field}` in record type {record_ty}")]
     #[diagnostic(code(typechecker::undefined_field))]
@@ -136,7 +136,7 @@ pub enum TypeError {
         record_ty: String,
         #[label("field not found")]
         span: Option<miette::SourceSpan>,
-        location: Option<(u32, usize)>,
+        location: Option<mq_lang::Range>,
     },
     #[error("Heterogeneous array: elements have mixed types [{types}]")]
     #[diagnostic(code(typechecker::heterogeneous_array))]
@@ -145,7 +145,7 @@ pub enum TypeError {
         types: String,
         #[label("mixed types in array")]
         span: Option<miette::SourceSpan>,
-        location: Option<(u32, usize)>,
+        location: Option<mq_lang::Range>,
     },
     #[error("Type variable not found: {0}")]
     #[diagnostic(code(typechecker::type_var_not_found))]
@@ -156,8 +156,8 @@ pub enum TypeError {
 }
 
 impl TypeError {
-    /// Returns the location (line, column) of the error, if available.
-    pub fn location(&self) -> Option<(u32, usize)> {
+    /// Returns the location (range) of the error, if available.
+    pub fn location(&self) -> Option<mq_lang::Range> {
         match self {
             TypeError::Mismatch { location, .. }
             | TypeError::UnificationError { location, .. }
@@ -330,7 +330,7 @@ impl TypeChecker {
                         field: access.field_name.clone(),
                         record_ty: var_ty.display_renumbered(),
                         span: access.range.as_ref().map(unify::range_to_span),
-                        location: access.range.as_ref().map(|r| (r.start.line, r.start.column)),
+                        location: access.range,
                     });
                 }
             }
@@ -372,7 +372,7 @@ impl TypeChecker {
                         field: access.field_name.clone(),
                         record_ty: resolved.display_renumbered(),
                         span: access.range.as_ref().map(unify::range_to_span),
-                        location: access.range.as_ref().map(|r| (r.start.line, r.start.column)),
+                        location: access.range,
                     });
                 }
             }
@@ -645,7 +645,7 @@ impl TypeChecker {
                         left: format!("{} with arguments ({})", d.op_name, args_str),
                         right: "union types cannot be used with binary operators".to_string(),
                         span: d.range.as_ref().map(unify::range_to_span),
-                        location: d.range.as_ref().map(|r| (r.start.line, r.start.column)),
+                        location: d.range,
                     });
                     continue;
                 }
@@ -1132,10 +1132,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(TypeError::Mismatch { expected: "n".into(), found: "s".into(), span: None, location: Some((1, 5)) }, Some((1, 5)))]
-    #[case(TypeError::UnificationError { left: "l".into(), right: "r".into(), span: None, location: Some((2, 10)) }, Some((2, 10)))]
+    #[case(TypeError::Mismatch { expected: "n".into(), found: "s".into(), span: None, location: Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }) }, Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }))]
+    #[case(TypeError::UnificationError { left: "l".into(), right: "r".into(), span: None, location: Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }) }, Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }))]
     #[case(TypeError::TypeVarNotFound("a".into()), None)]
-    fn test_type_error_location(#[case] err: TypeError, #[case] expected: Option<(u32, usize)>) {
+    fn test_type_error_location(#[case] err: TypeError, #[case] expected: Option<mq_lang::Range>) {
         assert_eq!(err.location(), expected);
     }
 

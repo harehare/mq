@@ -244,7 +244,7 @@ fn check_type(
 fn write_error(w: &mut impl Write, error: &TypeError) -> io::Result<()> {
     let location = error.location();
     let loc_str = location
-        .map(|(line, col)| format!("{}:{}", line, col).dimmed().to_string())
+        .map(|range| format!("{}:{}", range.start.line, range.start.column).dimmed().to_string())
         .unwrap_or_default();
     let sep = "│".dimmed();
 

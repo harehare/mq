@@ -989,7 +989,7 @@ fn generate_symbol_constraints(
                                     expected: format!("argument matching {} overloads", name),
                                     found: arg_tys[0].display_renumbered(),
                                     span: range.as_ref().map(range_to_span),
-                                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                                    location: range,
                                 });
                                 let ty_var = ctx.fresh_var();
                                 ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
@@ -1384,7 +1384,7 @@ fn generate_symbol_constraints(
                                             expected: param_tys.len(),
                                             found: arg_tys.len(),
                                             span: range.as_ref().map(range_to_span),
-                                            location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                                            location: range,
                                         });
                                     }
                                 } else {
@@ -1580,7 +1580,7 @@ fn generate_symbol_constraints(
                         ctx.add_error(TypeError::HeterogeneousArray {
                             types: types_str,
                             span: range.as_ref().map(range_to_span),
-                            location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                            location: range,
                         });
                     }
 
@@ -2190,7 +2190,7 @@ fn generate_symbol_constraints(
                                 field: name.to_string(),
                                 record_ty: resolved.display_renumbered(),
                                 span: range.as_ref().map(range_to_span),
-                                location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                                location: range,
                             });
                             let ty_var = ctx.fresh_var();
                             Type::Var(ty_var)

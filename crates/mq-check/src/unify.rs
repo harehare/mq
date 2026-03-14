@@ -152,7 +152,7 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
                     expected: params1.len(),
                     found: params2.len(),
                     span: range.as_ref().map(range_to_span),
-                    location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+                    location: range,
                 });
                 return;
             }

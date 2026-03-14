@@ -363,18 +363,12 @@ impl Backend {
             let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options);
             let type_errors = checker.check(&hir_guard);
 
-            // Build a set of (line, column) start positions from the current source's symbols
+            // Build a set of text ranges from the current source's symbols
             // so that type errors originating from other sources (e.g., pre-loaded modules)
             // are not incorrectly attributed to this file.
-            let source_locations: FxHashSet<(u32, usize)> = hir_guard
+            let source_locations: FxHashSet<mq_lang::Range> = hir_guard
                 .symbols_for_source(source_id)
-                .filter_map(|(_, symbol)| {
-                    symbol
-                        .source
-                        .text_range
-                        .as_ref()
-                        .map(|r| (r.start.line, r.start.column))
-                })
+                .filter_map(|(_, symbol)| symbol.source.text_range)
                 .collect();
 
             self.type_env_map
@@ -384,7 +378,7 @@ impl Backend {
                     .into_iter()
                     .filter(|e| {
                         e.location()
-                            .map(|(line, col)| source_locations.contains(&(line, col)))
+                            .map(|range| source_locations.contains(&range))
                             .unwrap_or(false)
                     })
                     .map(LspError::TypeError),
