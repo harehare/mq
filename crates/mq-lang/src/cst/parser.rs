@@ -11,6 +11,20 @@ use super::{
     error::ParseError,
     node::{Node, NodeKind, Trivia},
 };
+
+/// Return value of [`Parser::parse_with_ranges`].
+#[derive(Debug, Default)]
+pub struct ParseWithRangesResult {
+    /// Top-level CST nodes produced by the parse.
+    pub nodes: Vec<Shared<Node>>,
+    /// Half-open token index range `[start, end)` for each top-level node group.
+    pub token_ranges: Vec<(usize, usize)>,
+    /// Half-open node index range `[start, end)` for each top-level node group.
+    /// `node_ranges[i]` identifies the slice of `nodes` that belongs to group `i`.
+    pub node_ranges: Vec<(usize, usize)>,
+    /// Errors collected during the parse.
+    pub errors: ErrorReporter,
+}
 use itertools::Itertools;
 use thiserror::Error;
 
@@ -156,15 +170,18 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse(&mut self) -> (Vec<Shared<Node>>, ErrorReporter) {
-        let (nodes, _, errors) = self.parse_program(true, false);
+        let ParseWithRangesResult { nodes, errors, .. } = self.parse_program(true, false);
         (nodes, errors)
     }
 
-    /// Parses the full program and also returns token index ranges for each top-level node group.
+    /// Parses the full program and also returns token index ranges and node index ranges for each
+    /// top-level node group.
     ///
-    /// Each entry `(start, end)` in the returned `Vec` corresponds to the node group at the same
-    /// index in `Vec<Shared<Node>>` and represents the half-open token index range `[start, end)`.
-    pub fn parse_with_ranges(&mut self) -> (Vec<Shared<Node>>, Vec<(usize, usize)>, ErrorReporter) {
+    /// Returns `(nodes, token_ranges, node_ranges, errors)` where:
+    /// - `token_ranges[i]` is the half-open token index range `[start, end)` for group `i`.
+    /// - `node_ranges[i]` is the half-open node index range `[start, end)` for group `i`,
+    ///   allowing callers to know exactly which entries in `nodes` belong to each group.
+    pub fn parse_with_ranges(&mut self) -> ParseWithRangesResult {
         self.parse_program(true, false)
     }
 
@@ -202,11 +219,29 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_program(&mut self, root: bool, in_loop: bool) -> (Vec<Shared<Node>>, Vec<(usize, usize)>, ErrorReporter) {
+    // `node_group_start` is reassigned inside `push_ranges!` even after the last push
+    // (e.g. before a `break`), which triggers an unused_assignments lint.  That final
+    // write is harmless and keeping the macro uniform is cleaner than special-casing it.
+    #[allow(unused_assignments)]
+    fn parse_program(&mut self, root: bool, in_loop: bool) -> ParseWithRangesResult {
         let mut nodes: Vec<Shared<Node>> = Vec::with_capacity((self.tokens.len() - self.pos) / 4);
-        // token index ranges for each statement group (only populated when root=true)
+        // Token index ranges for each statement group (only populated when root=true).
         let mut ranges: Vec<(usize, usize)> = Vec::new();
+        // Node index ranges for each statement group, parallel to `ranges`.
+        // `node_ranges[i]` gives the half-open range `[start, end)` into `nodes` for group i.
+        let mut node_ranges: Vec<(usize, usize)> = Vec::new();
+        // Starting node index for the current statement group.
+        let mut node_group_start: usize = 0;
         let mut leading_trivia = self.parse_leading_trivia();
+
+        // Helper macro: push both a token range and the corresponding node index range.
+        macro_rules! push_ranges {
+            ($stmt_start:expr) => {
+                ranges.push(($stmt_start, self.pos));
+                node_ranges.push((node_group_start, nodes.len()));
+                node_group_start = nodes.len();
+            };
+        }
 
         while self.peek().is_some() {
             let stmt_start = self.pos.saturating_sub(leading_trivia.len());
@@ -241,7 +276,7 @@ impl<'a> Parser<'a> {
                     }
 
                     if root {
-                        ranges.push((stmt_start, self.pos));
+                        push_ranges!(stmt_start);
                     }
                     break;
                 }
@@ -257,7 +292,7 @@ impl<'a> Parser<'a> {
                         children: Vec::new(),
                     }));
                     if root {
-                        ranges.push((stmt_start, self.pos));
+                        push_ranges!(stmt_start);
                     }
                     leading_trivia = self.parse_leading_trivia();
 
@@ -294,7 +329,7 @@ impl<'a> Parser<'a> {
                                     trailing_trivia: Vec::new(),
                                     children: Vec::new(),
                                 }));
-                                ranges.push((stmt_start, self.pos));
+                                push_ranges!(stmt_start);
                                 break;
                             } else if matches!(token.kind, TokenKind::Pipe) {
                                 self.pos += 1;
@@ -305,33 +340,33 @@ impl<'a> Parser<'a> {
                                     trailing_trivia: self.parse_trailing_trivia(),
                                     children: Vec::new(),
                                 }));
-                                ranges.push((stmt_start, self.pos));
+                                push_ranges!(stmt_start);
                                 leading_trivia = self.parse_leading_trivia();
                                 continue;
                             } else {
                                 self.errors.report(ParseError::UnexpectedToken(token));
                             }
                         }
-                        ranges.push((stmt_start, self.pos));
+                        push_ranges!(stmt_start);
                     }
 
                     break;
                 }
                 TokenKind::Def => {
                     if root {
-                        ranges.push((stmt_start, self.pos));
+                        push_ranges!(stmt_start);
                     }
                 }
                 TokenKind::Macro => {
                     if root {
-                        ranges.push((stmt_start, self.pos));
+                        push_ranges!(stmt_start);
                     }
                 }
                 _ => {
                     self.errors
                         .report(ParseError::UnexpectedToken(Shared::new((*token).clone())));
                     if root {
-                        ranges.push((stmt_start, self.pos));
+                        push_ranges!(stmt_start);
                     }
                     break;
                 }
@@ -345,7 +380,12 @@ impl<'a> Parser<'a> {
             };
         }
 
-        (nodes, ranges, self.errors.clone())
+        ParseWithRangesResult {
+            nodes,
+            token_ranges: ranges,
+            node_ranges,
+            errors: self.errors.clone(),
+        }
     }
 
     fn parse_expr(
@@ -775,7 +815,7 @@ impl<'a> Parser<'a> {
 
         self.push_colon_or_do_token_if_present(&mut children)?;
 
-        let (mut program, _, _) = self.parse_program(false, false);
+        let mut program = self.parse_program(false, false).nodes;
 
         children.append(&mut program);
 
@@ -831,7 +871,7 @@ impl<'a> Parser<'a> {
 
         self.push_colon_or_do_token_if_present(&mut children)?;
 
-        let (mut program, _, _) = self.parse_program(false, in_loop);
+        let mut program = self.parse_program(false, in_loop).nodes;
 
         children.append(&mut program);
 
@@ -842,7 +882,7 @@ impl<'a> Parser<'a> {
     fn parse_block(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
         let token = self.advance();
         let trailing_trivia = self.parse_trailing_trivia();
-        let (program, _, _) = self.parse_program(false, in_loop);
+        let program = self.parse_program(false, in_loop).nodes;
 
         Ok(Shared::new(Node {
             kind: NodeKind::Block,
@@ -982,7 +1022,11 @@ impl<'a> Parser<'a> {
         self.push_colon_or_do_token_if_present(&mut children)?;
 
         // Parse program block (contains let, def, or module statements)
-        let (program_nodes, _, errors) = self.parse_program(false, false);
+        let ParseWithRangesResult {
+            nodes: program_nodes,
+            errors,
+            ..
+        } = self.parse_program(false, false);
 
         // Merge errors from parse_program into self.errors
         for error in errors.to_vec() {
@@ -1408,7 +1452,7 @@ impl<'a> Parser<'a> {
 
         self.push_colon_or_do_token_if_present(&mut children)?;
 
-        let (mut program, _, _) = self.parse_program(false, true);
+        let mut program = self.parse_program(false, true).nodes;
 
         children.append(&mut program);
 
@@ -1438,7 +1482,7 @@ impl<'a> Parser<'a> {
 
         self.push_colon_or_do_token_if_present(&mut children)?;
 
-        let (mut program, _, _) = self.parse_program(false, true);
+        let mut program = self.parse_program(false, true).nodes;
 
         children.append(&mut program);
 
@@ -1461,7 +1505,7 @@ impl<'a> Parser<'a> {
 
         self.push_colon_or_do_token_if_present(&mut children)?;
 
-        let (mut program, _, _) = self.parse_program(false, true);
+        let mut program = self.parse_program(false, true).nodes;
 
         children.append(&mut program);
 
