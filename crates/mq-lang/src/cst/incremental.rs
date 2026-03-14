@@ -532,22 +532,27 @@ mod prop_tests {
 
     use super::*;
 
-    // ---------------------------------------------------------------------------
-    // Helper: reconstruct source text from CST nodes
-    // ---------------------------------------------------------------------------
-
     /// Reconstructs the source text from a slice of CST nodes by walking the
     /// node tree and concatenating trivia and token text in order.
     ///
     /// This mirrors how the lexer/parser consume tokens, so the result should
     /// round-trip back to the original source for any well-formed input.
     fn nodes_to_source(nodes: &[Shared<Node>]) -> String {
+        use crate::lexer::token::TokenKind;
+
         fn node_text(node: &Node, out: &mut String) {
             for trivia in &node.leading_trivia {
                 out.push_str(&trivia.to_string());
             }
             if let Some(token) = &node.token {
-                out.push_str(&token.kind.to_string());
+                // `StringLiteral` stores only the inner value; re-add the quotes.
+                if let TokenKind::StringLiteral(s) = &token.kind {
+                    out.push('"');
+                    out.push_str(s);
+                    out.push('"');
+                } else {
+                    out.push_str(&token.kind.to_string());
+                }
             }
             for child in &node.children {
                 node_text(child, out);
@@ -564,12 +569,35 @@ mod prop_tests {
         out
     }
 
-    // ---------------------------------------------------------------------------
     // Strategies
-    // ---------------------------------------------------------------------------
+    /// Generates a string literal value (the text *inside* the quotes), including
+    /// ASCII words, multibyte Japanese text, emoji, and Greek letters.
+    fn string_value() -> impl Strategy<Value = String> {
+        prop_oneof![
+            Just("hello"),
+            Just("world"),
+            Just("foo"),
+            Just("bar"),
+            // multibyte
+            Just("こんにちは"),
+            Just("世界"),
+            Just("日本語"),
+            Just("🦀"),
+            Just("αβγδ"),
+            Just("résumé"),
+            Just("中文"),
+            Just("한국어"),
+        ]
+        .prop_map(|s| s.to_string())
+    }
+
+    /// Generates a quoted string literal token, e.g. `"hello"` or `"こんにちは"`.
+    fn string_literal() -> impl Strategy<Value = String> {
+        string_value().prop_map(|s| format!("\"{}\"", s))
+    }
 
     /// Generates one of the well-known zero-argument built-in function calls.
-    fn builtin_call() -> impl Strategy<Value = String> {
+    fn zero_arg_builtin() -> impl Strategy<Value = String> {
         prop_oneof![
             Just("upcase()"),
             Just("downcase()"),
@@ -581,8 +609,89 @@ mod prop_tests {
             Just("keys()"),
             Just("values()"),
             Just("flatten()"),
+            Just("not()"),
+            Just("ascii_downcase()"),
+            Just("ascii_upcase()"),
         ]
         .prop_map(|s| s.to_string())
+    }
+
+    /// Generates built-in calls that take a single string argument, including
+    /// multibyte string arguments.
+    fn one_string_arg_builtin() -> impl Strategy<Value = String> {
+        (
+            prop_oneof![Just("starts_with"), Just("ends_with"), Just("contains"), Just("split"),],
+            string_literal(),
+        )
+            .prop_map(|(func, arg)| format!("{}({})", func, arg))
+    }
+
+    /// Generates built-in calls that take two string arguments.
+    fn two_string_arg_builtin() -> impl Strategy<Value = String> {
+        (string_literal(), string_literal()).prop_map(|(s1, s2)| format!("replace({}, {})", s1, s2))
+    }
+
+    /// Generates a `starts_with` or `ends_with` call with a multibyte argument.
+    fn multibyte_arg_builtin() -> impl Strategy<Value = String> {
+        (
+            prop_oneof![Just("starts_with"), Just("ends_with"), Just("contains"),],
+            prop_oneof![
+                Just("\"こんにちは\""),
+                Just("\"世界\""),
+                Just("\"🦀\""),
+                Just("\"αβγ\""),
+                Just("\"日本語\""),
+            ],
+        )
+            .prop_map(|(func, arg)| format!("{}({})", func, arg))
+    }
+
+    /// Generates any kind of single built-in call (zero-arg, one-arg, two-arg, multibyte).
+    fn builtin_call() -> impl Strategy<Value = String> {
+        prop_oneof![
+            3 => zero_arg_builtin(),
+            3 => one_string_arg_builtin(),
+            1 => two_string_arg_builtin(),
+            2 => multibyte_arg_builtin(),
+        ]
+    }
+
+    /// Generates a simple `def` expression with no parameters and an ASCII body,
+    /// e.g. `def greet(): upcase() end`.
+    fn def_expr() -> impl Strategy<Value = String> {
+        (
+            prop_oneof![Just("greet"), Just("process"), Just("transform"), Just("my_func"),],
+            zero_arg_builtin(),
+        )
+            .prop_map(|(name, body)| format!("def {}(): {} end", name, body))
+    }
+
+    /// Generates a `def` with a single string-arg body.
+    fn def_with_arg_expr() -> impl Strategy<Value = String> {
+        (
+            prop_oneof![Just("check"), Just("test_fn"), Just("my_check"),],
+            one_string_arg_builtin(),
+        )
+            .prop_map(|(name, body)| format!("def {}(): {} end", name, body))
+    }
+
+    /// Generates a simple `if` expression (condition is a builtin call that
+    /// returns a boolean, branch is another builtin call).
+    fn if_expr() -> impl Strategy<Value = String> {
+        (
+            prop_oneof![
+                Just("starts_with(\"a\")"),
+                Just("ends_with(\"z\")"),
+                Just("contains(\"x\")"),
+                Just("starts_with(\"こ\")"),
+                Just("ends_with(\"界\")"),
+            ],
+            zero_arg_builtin(),
+            zero_arg_builtin(),
+        )
+            .prop_map(|(cond, then_branch, else_branch)| {
+                format!("if ({}): {} else: {} end", cond, then_branch, else_branch)
+            })
     }
 
     /// Generates a pipe-chain of 1–4 built-in calls, e.g. `"upcase() | ltrim()"`.
@@ -590,10 +699,20 @@ mod prop_tests {
         vec(builtin_call(), 1..=4).prop_map(|calls| calls.join(" | "))
     }
 
-    // ---------------------------------------------------------------------------
-    // Property 1 – source() always reflects the last source passed to update()
-    // ---------------------------------------------------------------------------
+    /// Generates a program that may include def, if, and pipe expressions.
+    fn mixed_program() -> impl Strategy<Value = String> {
+        prop_oneof![
+            2 => pipe_chain(),
+            1 => def_expr(),
+            1 => def_with_arg_expr(),
+            1 => if_expr(),
+            // def followed by a pipe chain
+            1 => (def_expr(), pipe_chain())
+                .prop_map(|(d, p)| format!("{}\n| {}", d, p)),
+        ]
+    }
 
+    // source() always reflects the last source passed to update()
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
@@ -607,10 +726,7 @@ mod prop_tests {
         }
     }
 
-    // ---------------------------------------------------------------------------
-    // Property 2 – multiple sequential updates: source() == the last one
-    // ---------------------------------------------------------------------------
-
+    // multiple sequential updates: source() == the last one
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(150))]
         #[test]
@@ -626,10 +742,7 @@ mod prop_tests {
         }
     }
 
-    // ---------------------------------------------------------------------------
-    // Property 3 – incremental update produces same node count as a fresh parse
-    // ---------------------------------------------------------------------------
-
+    // incremental update produces same node count as a fresh parse
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
@@ -654,10 +767,7 @@ mod prop_tests {
         }
     }
 
-    // ---------------------------------------------------------------------------
-    // Property 4 – updating with the same source is idempotent
-    // ---------------------------------------------------------------------------
-
+    // updating with the same source is idempotent
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
@@ -673,10 +783,7 @@ mod prop_tests {
         }
     }
 
-    // ---------------------------------------------------------------------------
-    // Property 5 – incremental parse never produces more errors than a fresh parse
-    // ---------------------------------------------------------------------------
-
+    // incremental parse never produces more errors than a fresh parse
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
@@ -699,10 +806,7 @@ mod prop_tests {
         }
     }
 
-    // ---------------------------------------------------------------------------
-    // Property 6 – apply_edit (full replace) produces correct source
-    // ---------------------------------------------------------------------------
-
+    // apply_edit (full replace) produces correct source
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
@@ -719,10 +823,7 @@ mod prop_tests {
         }
     }
 
-    // ---------------------------------------------------------------------------
-    // Property 7 – two sequential apply_edits: source reflects both
-    // ---------------------------------------------------------------------------
-
+    // two sequential apply_edits: source reflects both
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(150))]
         #[test]
@@ -805,6 +906,258 @@ mod prop_tests {
             let result = parser.apply_edit(&edit);
             prop_assert!(result.is_ok());
             prop_assert_eq!(parser.source(), insert);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 11 – builtin_call with multibyte string arguments: no parse error
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_multibyte_arg_builtin_no_error(src in multibyte_arg_builtin()) {
+            let parser = IncrementalParser::new(&src);
+            let (_, errors) = parser.result();
+            prop_assert!(
+                !errors.has_errors(),
+                "unexpected parse error for src={:?}",
+                src
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 12 – one_string_arg_builtin: no parse error
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_one_string_arg_builtin_no_error(src in one_string_arg_builtin()) {
+            let parser = IncrementalParser::new(&src);
+            let (_, errors) = parser.result();
+            prop_assert!(
+                !errors.has_errors(),
+                "unexpected parse error for src={:?}",
+                src
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 13 – two_string_arg_builtin: no parse error
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_two_string_arg_builtin_no_error(src in two_string_arg_builtin()) {
+            let parser = IncrementalParser::new(&src);
+            let (_, errors) = parser.result();
+            prop_assert!(
+                !errors.has_errors(),
+                "unexpected parse error for src={:?}",
+                src
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 14 – def_expr: no parse error, source preserved after update
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_def_expr_no_error(src in def_expr()) {
+            let parser = IncrementalParser::new(&src);
+            let (_, errors) = parser.result();
+            prop_assert!(
+                !errors.has_errors(),
+                "unexpected parse error for def src={:?}",
+                src
+            );
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_def_with_arg_no_error(src in def_with_arg_expr()) {
+            let parser = IncrementalParser::new(&src);
+            let (_, errors) = parser.result();
+            prop_assert!(
+                !errors.has_errors(),
+                "unexpected parse error for def-with-arg src={:?}",
+                src
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 15 – if_expr: no parse error
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_if_expr_no_error(src in if_expr()) {
+            let parser = IncrementalParser::new(&src);
+            let (_, errors) = parser.result();
+            prop_assert!(
+                !errors.has_errors(),
+                "unexpected parse error for if src={:?}",
+                src
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 16 – mixed_program: incremental node count matches fresh parse
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_mixed_program_incremental_matches_fresh(
+            src1 in mixed_program(),
+            src2 in mixed_program(),
+        ) {
+            let mut incremental = IncrementalParser::new(&src1);
+            let (inc_nodes, _) = incremental.update(&src2);
+            let inc_count = inc_nodes.len();
+
+            let fresh = IncrementalParser::new(&src2);
+            let (fresh_nodes, _) = fresh.result();
+            prop_assert_eq!(
+                inc_count,
+                fresh_nodes.len(),
+                "node count mismatch: incremental={} fresh={} src={:?}",
+                inc_count,
+                fresh_nodes.len(),
+                src2,
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 17 – mixed_program: error status matches fresh parse
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_mixed_program_error_status_matches_fresh(
+            src1 in mixed_program(),
+            src2 in mixed_program(),
+        ) {
+            let mut incremental = IncrementalParser::new(&src1);
+            let (_, inc_errors) = incremental.update(&src2);
+            let inc_has_errors = inc_errors.has_errors();
+
+            let fresh = IncrementalParser::new(&src2);
+            let (_, fresh_errors) = fresh.result();
+            prop_assert_eq!(
+                inc_has_errors,
+                fresh_errors.has_errors(),
+                "error status mismatch after incremental update for src={:?}",
+                src2,
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 18 – pipe_chain (with string args): nodes_to_source round-trip
+    //
+    // `nodes_to_source` faithfully reconstructs sources composed of built-in
+    // calls (including those with string arguments).  Structural expressions
+    // such as `def`/`if` are exercised in separate consistency properties.
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_pipe_chain_with_args_roundtrip(src in pipe_chain()) {
+            let parser = IncrementalParser::new(&src);
+            let (nodes, _) = parser.result();
+            let reconstructed = nodes_to_source(nodes);
+            prop_assert_eq!(
+                reconstructed,
+                src,
+                "nodes_to_source did not reproduce the original source"
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 19 – apply_edit with multibyte builtin-arg source: source correct
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_apply_edit_on_multibyte_arg_source(
+            base  in multibyte_arg_builtin(),
+            target in multibyte_arg_builtin(),
+        ) {
+            let mut parser = IncrementalParser::new(&base);
+            let char_len = parser.char_len();
+            let edit = TextEdit::new(0, char_len, target.clone());
+            let result = parser.apply_edit(&edit);
+            prop_assert!(result.is_ok(), "apply_edit failed: {:?}", result.err());
+            prop_assert_eq!(parser.source(), target);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 20 – partial edit inside a multibyte string argument
+    //
+    // Replaces only the inner string value of a `starts_with("X")` call while
+    // leaving the surrounding syntax intact.  Verifies that the source is correct
+    // and that the parser does not panic.
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_partial_edit_multibyte_string_arg(
+            prefix in prop_oneof![
+                Just("starts_with"),
+                Just("ends_with"),
+                Just("contains"),
+            ],
+            old_val in prop_oneof![
+                Just("hello"),
+                Just("world"),
+                Just("abc"),
+            ],
+            new_val in prop_oneof![
+                Just("こんにちは"),
+                Just("世界"),
+                Just("🦀"),
+                Just("αβγ"),
+                Just("日本語"),
+            ],
+        ) {
+            // Build e.g. `starts_with("hello")`
+            let src = format!("{}(\"{}\")", prefix, old_val);
+            let mut parser = IncrementalParser::new(&src);
+            let (_, errors) = parser.result();
+            prop_assert!(!errors.has_errors(), "initial parse error for src={:?}", src);
+
+            // Locate the char offsets of `old_val` inside the quotes.
+            // Layout: prefix ( " old_val " )
+            //          0..n   n  n+1  ...
+            let quote_start = parser.source().chars().position(|c| c == '"').unwrap() + 1;
+            let quote_end = quote_start + old_val.chars().count();
+
+            let edit = TextEdit::new(quote_start, quote_end, new_val);
+            let result = parser.apply_edit(&edit);
+            prop_assert!(result.is_ok(), "apply_edit failed: {:?}", result.err());
+
+            let expected = format!("{}(\"{}\")", prefix, new_val);
+            prop_assert_eq!(parser.source(), expected);
         }
     }
 }
