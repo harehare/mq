@@ -875,11 +875,11 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(300))]
         #[test]
-        fn prop_no_panic_on_arbitrary_source(src in ".*") {
+        fn prop_no_panic_on_arbitrary_source(src in ".*", updated in ".*") {
             let mut parser = IncrementalParser::new(&src);
             let _ = parser.result();
             // update with another arbitrary string also must not panic
-            let _ = parser.update("");
+            let _ = parser.update(&updated);
         }
     }
 
