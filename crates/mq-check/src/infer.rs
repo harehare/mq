@@ -337,7 +337,7 @@ impl InferenceContext {
             expected: resolved_t1.display_renumbered(),
             found: resolved_t2.display_renumbered(),
             span: range.as_ref().map(unify::range_to_span),
-            location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+            location: range,
         });
     }
 
@@ -348,7 +348,7 @@ impl InferenceContext {
             left: format!("{} with arguments ({})", op_name, args_str),
             right: "no matching overload".to_string(),
             span: range.as_ref().map(unify::range_to_span),
-            location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+            location: range,
         });
     }
 

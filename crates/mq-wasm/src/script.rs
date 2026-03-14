@@ -468,15 +468,12 @@ pub async fn diagnostics(code: &str, enable_type_check: Option<bool>) -> JsValue
         let type_errors = checker.check(&hir);
 
         for error in type_errors {
-            if let Some((line, column)) = error.location() {
-                let line0 = line.saturating_sub(1);
-                let char_start = column as u32;
-
+            if let Some(range) = error.location() {
                 errors.push(Diagnostic {
-                    start_line: line0,
-                    start_column: char_start,
-                    end_line: line0,
-                    end_column: char_start.saturating_add(1),
+                    start_line: range.start.line.saturating_sub(1),
+                    start_column: range.start.column.saturating_sub(1) as u32,
+                    end_line: range.end.line.saturating_sub(1),
+                    end_column: range.end.column.saturating_sub(1) as u32,
                     message: error.to_string(),
                 });
             }
