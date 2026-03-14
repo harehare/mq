@@ -24,12 +24,23 @@ fn to_uri(uri: &Url) -> ls_types::Uri {
 }
 
 #[derive(Debug)]
+struct TypeInfo {
+    pub env: mq_check::TypeEnv,
+    pub errors: Vec<LspError>,
+}
+
+impl TypeInfo {
+    fn new(env: mq_check::TypeEnv, errors: Vec<LspError>) -> Self {
+        Self { env, errors }
+    }
+}
+
+#[derive(Debug)]
 struct Backend {
     client: Client,
     hir: Arc<RwLock<mq_hir::Hir>>,
     source_map: RwLock<BiMap<String, mq_hir::SourceId>>,
-    type_env_map: DashMap<String, mq_check::TypeEnv>,
-    type_error_map: DashMap<String, Vec<LspError>>,
+    type_map: DashMap<String, TypeInfo>,
     incremental_parser_map: DashMap<String, mq_lang::IncrementalParser>,
     config: LspConfig,
 }
@@ -72,9 +83,8 @@ impl LanguageServer for Backend {
         let uri_string = params.text_document.uri.to_string();
 
         // Remove error information for the closed file
-        self.type_error_map.remove(&uri_string);
         self.incremental_parser_map.remove(&uri_string);
-        self.type_env_map.remove(&uri_string);
+        self.type_map.remove(&uri_string);
 
         // Remove from source map
         self.source_map.write().unwrap().remove_by_left(&uri_string);
@@ -152,7 +162,7 @@ impl LanguageServer for Backend {
         let position = params.text_document_position_params.position;
 
         let type_env = if self.config.enable_type_checking {
-            self.type_env_map.get(&url.to_string()).map(|e| e.clone())
+            self.type_map.get(&url.to_string()).map(|e| e.env.clone())
         } else {
             None
         };
@@ -165,7 +175,7 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
         let url = to_url(&params.text_document.uri);
-        let type_env = self.type_env_map.get(&url.to_string()).map(|e| e.clone());
+        let type_env = self.type_map.get(&url.to_string()).map(|e| e.env.clone());
         Ok(inlay_hints::response(
             Arc::clone(&self.hir),
             url,
@@ -361,9 +371,6 @@ impl Backend {
                 .filter_map(|(_, symbol)| symbol.source.text_range)
                 .collect();
 
-            self.type_env_map
-                .insert(uri_string.clone(), checker.symbol_types().clone());
-
             let lsp_errors: Vec<LspError> = type_errors
                 .into_iter()
                 .filter(|e| {
@@ -373,9 +380,13 @@ impl Backend {
                 })
                 .map(LspError::TypeError)
                 .collect();
-            self.type_error_map.insert(uri_string.clone(), lsp_errors);
+
+            self.type_map.insert(
+                uri_string.clone(),
+                TypeInfo::new(checker.symbol_types().clone(), lsp_errors),
+            );
         } else {
-            self.type_error_map.remove(&uri_string);
+            self.type_map.remove(&uri_string);
         }
 
         self.source_map.write().unwrap().insert(uri_string, source_id);
@@ -401,8 +412,8 @@ impl Backend {
         }
 
         // Add type errors
-        if let Some(type_errors) = self.type_error_map.get(&uri_string) {
-            let errs: Vec<ls_types::Diagnostic> = (*type_errors).iter().map(Into::into).collect();
+        if let Some(type_info) = self.type_map.get(&uri_string) {
+            let errs: Vec<ls_types::Diagnostic> = type_info.errors.iter().map(Into::into).collect();
             diagnostics.extend(errs);
         }
 
@@ -536,8 +547,7 @@ pub async fn start(config: LspConfig) {
         client,
         hir: Arc::new(RwLock::new(mq_hir::Hir::new(config.module_paths.clone()))),
         source_map: RwLock::new(BiMap::new()),
-        type_env_map: DashMap::new(),
-        type_error_map: DashMap::new(),
+        type_map: DashMap::new(),
         incremental_parser_map: DashMap::new(),
         config,
     });
@@ -557,8 +567,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -605,8 +614,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -643,8 +651,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -673,8 +680,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -702,8 +708,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -730,8 +735,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -790,8 +794,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -828,8 +831,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -872,8 +874,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -916,8 +917,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -961,8 +961,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -1000,8 +999,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -1028,8 +1026,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -1065,8 +1062,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -1091,8 +1087,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -1129,8 +1124,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -1164,8 +1158,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -1209,8 +1202,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -1252,8 +1244,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -1293,8 +1284,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
@@ -1344,8 +1334,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::new(vec![], false, mq_check::TypeCheckerOptions::default()),
         });
@@ -1374,8 +1363,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions::default()),
         });
@@ -1413,8 +1401,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions::default()),
         });
@@ -1430,9 +1417,11 @@ mod tests {
         backend.on_change(uri.clone(), code.to_string()).await;
 
         let errors = backend
-            .type_error_map
+            .type_map
             .get(&uri.to_string())
-            .expect("expected type diagnostics entry for URI");
+            .expect("expected type diagnostics entry for URI")
+            .errors
+            .clone();
 
         // Ensure that a type error is surfaced through the diagnostics pipeline.
         assert!(
@@ -1450,8 +1439,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions::default()),
         });
@@ -1486,8 +1474,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions { strict_array: true }),
         });
@@ -1524,8 +1511,7 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            type_error_map: DashMap::new(),
+            type_map: DashMap::new(),
             incremental_parser_map: DashMap::new(),
             config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions { strict_array: false }),
         });
