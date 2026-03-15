@@ -97,12 +97,24 @@ impl Type {
             }
         }
 
-        // Deduplicate using a HashSet (avoids repeated allocations in a sort comparator)
-        let mut seen = rustc_hash::FxHashSet::default();
-        normalized.retain(|t| seen.insert(t.clone()));
-
-        // Sort once using a non-allocating discriminant key for stable display
-        normalized.sort_by_key(|t| t.discriminant());
+        // Deduplicate and sort
+        if normalized.len() <= 4 {
+            // For small unions, avoid HashSet allocation with an O(n²) scan
+            let mut i = 0;
+            while i < normalized.len() {
+                if normalized[..i].iter().any(|t| t == &normalized[i]) {
+                    normalized.swap_remove(i);
+                } else {
+                    i += 1;
+                }
+            }
+            normalized.sort_by_key(|t| t.discriminant());
+        } else {
+            // For larger unions, use a HashSet for O(n) deduplication
+            let mut seen = rustc_hash::FxHashSet::default();
+            normalized.retain(|t| seen.insert(t.clone()));
+            normalized.sort_by_key(|t| t.discriminant());
+        }
 
         // If only one type remains, return it directly
         if normalized.len() == 1 {
