@@ -76,10 +76,13 @@ impl Hir {
     ) -> Option<(SymbolId, Symbol)> {
         let mut candidates = Vec::new();
 
-        for (symbol_id, symbol) in &self.symbols {
+        // Use the name index to avoid an O(n) full-symbol scan.
+        for &symbol_id in self.name_index.get(ref_name).into_iter().flatten() {
+            let Some(symbol) = self.symbols.get(symbol_id) else {
+                continue;
+            };
             if let Some(source_id) = symbol.source.source_id
                 && source_ids.contains(&source_id)
-                && symbol.value.as_ref() == Some(ref_name)
                 && (symbol.is_function()
                     || symbol.is_parameter()
                     || symbol.is_variable()
@@ -128,10 +131,17 @@ impl Hir {
             .map(|r| r.start.line);
 
         // Find all matching symbols in current scope with priority order.
+        // Use the name index to avoid an O(n) full-symbol scan.
         let mut candidates = Vec::new();
 
-        for (symbol_id, symbol) in &self.symbols {
-            if symbol_id == ref_symbol_id || symbol.scope != scope_id || symbol.value.as_ref() != Some(ref_name) {
+        for &symbol_id in self.name_index.get(ref_name).into_iter().flatten() {
+            if symbol_id == ref_symbol_id {
+                continue;
+            }
+            let Some(symbol) = self.symbols.get(symbol_id) else {
+                continue;
+            };
+            if symbol.scope != scope_id {
                 continue;
             }
 

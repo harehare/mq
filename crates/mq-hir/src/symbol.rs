@@ -46,6 +46,10 @@ pub struct Symbol {
     pub scope: ScopeId,
     pub source: SourceInfo,
     pub parent: Option<SymbolId>,
+    /// Monotonically increasing counter set at insertion time.
+    /// Parent symbols always receive a lower number than their children because
+    /// `add_expr` inserts parents before recursing into child nodes.
+    pub(crate) insertion_order: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -177,6 +181,7 @@ mod tests {
             scope: ScopeId::default(),
             source: SourceInfo::new(None, None),
             parent: None,
+            insertion_order: 0,
         }
     }
 
