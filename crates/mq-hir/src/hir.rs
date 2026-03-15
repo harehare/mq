@@ -86,6 +86,14 @@ pub struct Hir {
     pub(crate) source_scopes: FxHashMap<SourceId, ScopeId>,
     pub(crate) references: FxHashMap<SymbolId, SymbolId>,
     pub(crate) source_symbols: FxHashMap<SourceId, Vec<SymbolId>>,
+    /// Monotonically-increasing counter assigned to each symbol at insertion time.
+    /// Because `SlotMap` reuses freed slots (LIFO), the slot-based key order no longer
+    /// reflects insertion order after a source is reloaded (e.g. on repeated LSP saves).
+    /// Using an explicit counter guarantees that parent symbols always have a lower order
+    /// value than their children, which is required by the type-checker's constraint-
+    /// generation passes.
+    pub(crate) symbol_insertion_counter: u32,
+    pub(crate) symbol_insertion_order: FxHashMap<SymbolId, u32>,
 }
 
 impl Default for Hir {
@@ -124,6 +132,8 @@ impl Hir {
             source_scopes,
             references: FxHashMap::default(),
             source_symbols: FxHashMap::default(),
+            symbol_insertion_counter: 0,
+            symbol_insertion_order: FxHashMap::default(),
         }
     }
 
@@ -320,6 +330,16 @@ impl Hir {
                 self.source_symbols.remove(source_id);
             })
             .unwrap_or_else(|| self.add_source(Source::new(Some(url))));
+
+        // Clean up stale entries in the auxiliary maps whose symbols were removed above.
+        // Without this, these maps accumulate dead entries across multiple `add_nodes`
+        // calls (e.g. repeated LSP saves).
+        {
+            let symbols = &self.symbols;
+            self.references
+                .retain(|ref_id, def_id| symbols.contains_key(*ref_id) && symbols.contains_key(*def_id));
+            self.symbol_insertion_order.retain(|id, _| symbols.contains_key(*id));
+        }
 
         let scope_id = self.scope_by_source(&source_id).unwrap_or_else(|| {
             self.add_scope(Scope::new(
@@ -677,7 +697,7 @@ impl Hir {
                     });
                 }
                 mq_lang::StringSegment::Expr(expr, range) => {
-                    self.symbols.insert(Symbol {
+                    self.insert_symbol(Symbol {
                         value: Some(expr.clone()),
                         kind: SymbolKind::Variable,
                         source: SourceInfo::new(Some(source_id), Some(*range)),
@@ -955,7 +975,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if matches!(node.kind, mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var) {
-            self.symbols.insert(Symbol {
+            self.insert_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Keyword,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -966,7 +986,7 @@ impl Hir {
 
             let children = node.children_without_token();
             let ident = children.first().unwrap();
-            let symbol_id = self.symbols.insert(Symbol {
+            let symbol_id = self.insert_symbol(Symbol {
                 value: ident.name(),
                 kind: SymbolKind::Variable,
                 source: SourceInfo::new(Some(source_id), Some(ident.range())),
@@ -993,7 +1013,7 @@ impl Hir {
             ..
         } = &**node
         {
-            let symbol_id = self.symbols.insert(Symbol {
+            let symbol_id = self.insert_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Ref,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -1024,7 +1044,7 @@ impl Hir {
         } = &**node
             && let Some(selector) = selector_from_cst_node(node)
         {
-            let symbol_id = self.symbols.insert(Symbol {
+            let symbol_id = self.insert_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Selector(selector),
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -1269,7 +1289,7 @@ impl Hir {
             ..
         } = &**node
         {
-            self.symbols.insert(Symbol {
+            self.insert_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Keyword,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -1356,7 +1376,7 @@ impl Hir {
             ..
         } = &**node
         {
-            self.symbols.insert(Symbol {
+            self.insert_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Keyword,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -1465,7 +1485,7 @@ impl Hir {
             ..
         } = &**node
         {
-            self.symbols.insert(Symbol {
+            self.insert_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Keyword,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -1549,15 +1569,41 @@ impl Hir {
         scope_id
     }
 
+    /// Inserts a symbol into the SlotMap and records its insertion order.
+    ///
+    /// This is the low-level primitive used by both `add_symbol` (which also
+    /// registers the symbol in `source_symbols`) and by the handful of call
+    /// sites that insert symbols without source tracking.  Every symbol must
+    /// go through this method so that `symbol_insertion_order` is populated
+    /// for all symbols, enabling stable ordering in the type-checker.
+    fn insert_symbol(&mut self, symbol: Symbol) -> SymbolId {
+        let symbol_id = self.symbols.insert(symbol);
+        self.symbol_insertion_order
+            .insert(symbol_id, self.symbol_insertion_counter);
+        self.symbol_insertion_counter += 1;
+        symbol_id
+    }
+
     fn add_symbol(&mut self, symbol: Symbol) -> SymbolId {
         let source_id = symbol.source.source_id;
-        let symbol_id = self.symbols.insert(symbol);
+        let symbol_id = self.insert_symbol(symbol);
 
         if let Some(source_id) = source_id {
             self.source_symbols.entry(source_id).or_default().push(symbol_id);
         }
 
         symbol_id
+    }
+
+    /// Returns the insertion-order sequence number for a symbol.
+    ///
+    /// Parent symbols are always assigned a lower sequence number than their
+    /// children because `add_expr` inserts parents before recursing into child
+    /// nodes.  This ordering is stable across multiple `add_nodes` calls because
+    /// the counter is monotonically increasing and never reset.
+    #[inline(always)]
+    pub fn symbol_insertion_order(&self, symbol_id: SymbolId) -> u32 {
+        self.symbol_insertion_order.get(&symbol_id).copied().unwrap_or(0)
     }
 
     fn add_source(&mut self, source: Source) -> SourceId {

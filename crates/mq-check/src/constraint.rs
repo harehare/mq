@@ -76,12 +76,22 @@ fn find_enclosing_function(hir: &Hir, symbol_id: SymbolId) -> Option<SymbolId> {
 pub(crate) type ChildrenIndex = FxHashMap<SymbolId, Vec<SymbolId>>;
 
 /// Builds the children index from all HIR symbols in a single pass.
+///
+/// Children are sorted by their insertion order so that the order within each
+/// child list reflects the source-level order (left-to-right in a pipe chain,
+/// etc.).  Using slot-based iteration order instead would break after any
+/// `add_nodes` call that reloads a source, because SlotMap reuses freed slots
+/// in LIFO order, reversing the apparent position of siblings.
 pub(crate) fn build_children_index(hir: &Hir) -> ChildrenIndex {
     let mut index: ChildrenIndex = FxHashMap::default();
     for (id, symbol) in hir.symbols() {
         if let Some(parent) = symbol.parent {
             index.entry(parent).or_default().push(id);
         }
+    }
+    // Sort each child list by insertion order to restore source-level ordering.
+    for children in index.values_mut() {
+        children.sort_by_key(|&id| hir.symbol_insertion_order(id));
     }
     index
 }
@@ -272,8 +282,15 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
     }
 
     // Pass 3: Process operators, calls, etc.
-    // Process in reverse order so children (higher IDs) are typed before parents (lower IDs)
-    for (symbol_id, kind) in cats.pass3_symbols.into_iter().rev() {
+    // Process children before parents: symbols inserted later (children) must be
+    // typed before their parents.  The original `.rev()` on the pass3 vec relied on
+    // children having *higher* SlotMap IDs than parents, which holds on a fresh HIR
+    // but breaks on subsequent `add_nodes` calls because SlotMap reuses freed slots
+    // in LIFO order (most-recently-freed first), reversing parent/child IDs.
+    // Using the explicit insertion-order counter avoids this fragility.
+    let mut pass3_sorted = cats.pass3_symbols;
+    pass3_sorted.sort_by_key(|(id, _)| std::cmp::Reverse(hir.symbol_insertion_order(*id)));
+    for (symbol_id, kind) in pass3_sorted {
         generate_symbol_constraints(hir, symbol_id, kind, ctx, &children_index);
     }
 
