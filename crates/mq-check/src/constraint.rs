@@ -12,17 +12,53 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use smol_str::SmolStr;
 use std::fmt;
 
+/// The origin/reason a type constraint was generated.
+///
+/// Used to provide contextual help messages in type error diagnostics.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum ConstraintOrigin {
+    /// Constraint from argument N to a function call
+    Argument { fn_name: SmolStr, arg_index: usize },
+    /// Constraint from piped input to a function
+    PipedInput { fn_name: SmolStr },
+    /// Constraint from a binary or unary operator operand
+    Operator { op: SmolStr },
+    /// Constraint from a function return type
+    ReturnType { fn_name: SmolStr },
+    /// Constraint from a variable assignment
+    Assignment { var_name: SmolStr },
+    /// General constraint with no specific origin
+    #[default]
+    General,
+}
+
+impl ConstraintOrigin {
+    /// Returns a human-readable context string for help messages, if applicable.
+    pub fn to_context_string(&self) -> Option<String> {
+        match self {
+            ConstraintOrigin::Argument { fn_name, arg_index } => {
+                Some(format!("in argument {} to '{}'", arg_index + 1, fn_name))
+            }
+            ConstraintOrigin::PipedInput { fn_name } => Some(format!("in piped input to '{}'", fn_name)),
+            ConstraintOrigin::Operator { op } => Some(format!("in operand of '{}'", op)),
+            ConstraintOrigin::ReturnType { fn_name } => Some(format!("in return type of '{}'", fn_name)),
+            ConstraintOrigin::Assignment { var_name } => Some(format!("in assignment to '{}'", var_name)),
+            ConstraintOrigin::General => None,
+        }
+    }
+}
+
 /// Type constraint for unification
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Constraint {
     /// Two types must be equal
-    Equal(Type, Type, Option<mq_lang::Range>),
+    Equal(Type, Type, Option<mq_lang::Range>, ConstraintOrigin),
 }
 
 impl fmt::Display for Constraint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Constraint::Equal(t1, t2, _) => write!(f, "{} ~ {}", t1, t2),
+            Constraint::Equal(t1, t2, _, _) => write!(f, "{} ~ {}", t1, t2),
         }
     }
 }
@@ -396,7 +432,7 @@ fn resolve_branch_body_type(
                     let range = get_symbol_range(hir, branch_id);
                     // First child is condition
                     let cond_ty = ctx.get_or_create_symbol_type(children[0]);
-                    ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range));
+                    ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range, ConstraintOrigin::General));
                     // Last child is the body
                     let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
                     ctx.set_symbol_type(branch_id, body_ty.clone());
@@ -595,8 +631,16 @@ fn resolve_builtin_call(
 
     if let Some(resolved_ty) = ctx.resolve_overload(func_name, &resolved_arg_tys) {
         if let Type::Function(param_tys, ret_ty) = resolved_ty {
-            for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
-                ctx.add_constraint(Constraint::Equal(arg_ty.clone(), param_ty.clone(), range));
+            for (arg_index, (arg_ty, param_ty)) in arg_tys.iter().zip(param_tys.iter()).enumerate() {
+                ctx.add_constraint(Constraint::Equal(
+                    arg_ty.clone(),
+                    param_ty.clone(),
+                    range,
+                    ConstraintOrigin::Argument {
+                        fn_name: SmolStr::new(func_name),
+                        arg_index,
+                    },
+                ));
             }
             ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
         } else {
@@ -856,7 +900,12 @@ fn generate_symbol_constraints(
             if let Some(&last_child) = children.last() {
                 let child_ty = ctx.get_or_create_symbol_type(last_child);
                 let range = get_symbol_range(hir, symbol_id);
-                ctx.add_constraint(Constraint::Equal(Type::Var(ty_var), child_ty, range));
+                ctx.add_constraint(Constraint::Equal(
+                    Type::Var(ty_var),
+                    child_ty,
+                    range,
+                    ConstraintOrigin::General,
+                ));
             }
         }
 
@@ -886,7 +935,12 @@ fn generate_symbol_constraints(
             for (i, (param_sym, param_ty)) in param_children.iter().zip(param_tys.iter()).enumerate() {
                 let sym_ty = ctx.get_or_create_symbol_type(*param_sym);
                 let range = get_symbol_range(hir, *param_sym);
-                ctx.add_constraint(Constraint::Equal(sym_ty, param_ty.clone(), range));
+                ctx.add_constraint(Constraint::Equal(
+                    sym_ty,
+                    param_ty.clone(),
+                    range,
+                    ConstraintOrigin::General,
+                ));
 
                 // Connect default parameter values to their parameter types.
                 // In HIR, parameters with defaults have `has_default: true` and the
@@ -903,7 +957,12 @@ fn generate_symbol_constraints(
                             && !matches!(default_sym.kind, SymbolKind::Parameter | SymbolKind::Keyword)
                         {
                             let default_ty = ctx.get_or_create_symbol_type(default_id);
-                            ctx.add_constraint(Constraint::Equal(param_ty.clone(), default_ty, range));
+                            ctx.add_constraint(Constraint::Equal(
+                                param_ty.clone(),
+                                default_ty,
+                                range,
+                                ConstraintOrigin::General,
+                            ));
                         }
                     }
                 }
@@ -923,7 +982,15 @@ fn generate_symbol_constraints(
             if let Some(&last_body) = body_children.last() {
                 let body_ty = ctx.get_or_create_symbol_type(last_body);
                 let range = get_symbol_range(hir, symbol_id);
-                ctx.add_constraint(Constraint::Equal(ret_ty, body_ty, range));
+                let fn_name = hir.symbol(symbol_id).and_then(|s| s.value.clone()).unwrap_or_default();
+                ctx.add_constraint(Constraint::Equal(
+                    ret_ty,
+                    body_ty,
+                    range,
+                    ConstraintOrigin::ReturnType {
+                        fn_name: SmolStr::new(fn_name.as_str()),
+                    },
+                ));
             }
         }
 
@@ -978,19 +1045,21 @@ fn generate_symbol_constraints(
                                 if let Type::Function(param_tys, ret_ty) = resolved_ty {
                                     let range = get_symbol_range(hir, symbol_id);
                                     for (arg_ty, param_ty) in [piped_ty].iter().zip(param_tys.iter()) {
-                                        ctx.add_constraint(Constraint::Equal(arg_ty.clone(), param_ty.clone(), range));
+                                        ctx.add_constraint(Constraint::Equal(
+                                            arg_ty.clone(),
+                                            param_ty.clone(),
+                                            range,
+                                            ConstraintOrigin::PipedInput {
+                                                fn_name: SmolStr::new(name.as_str()),
+                                            },
+                                        ));
                                     }
                                     ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
                                     return;
                                 }
                             } else {
                                 let range = get_symbol_range(hir, symbol_id);
-                                ctx.add_error(TypeError::Mismatch {
-                                    expected: format!("argument matching {} overloads", name),
-                                    found: arg_tys[0].display_renumbered(),
-                                    span: range.as_ref().map(range_to_span),
-                                    location: range,
-                                });
+                                ctx.report_no_matching_overload(name.as_str(), &arg_tys, range);
                                 let ty_var = ctx.fresh_var();
                                 ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                                 return;
@@ -1008,7 +1077,7 @@ fn generate_symbol_constraints(
                         if overload_count == 1 {
                             let builtin_ty = ctx.get_builtin_overloads(name.as_str()).unwrap()[0].clone();
                             let range = get_symbol_range(hir, symbol_id);
-                            ctx.add_constraint(Constraint::Equal(ref_ty, builtin_ty, range));
+                            ctx.add_constraint(Constraint::Equal(ref_ty, builtin_ty, range, ConstraintOrigin::General));
                         }
                         // For multiple overloads, the type will be resolved at the call site
                         return;
@@ -1040,7 +1109,7 @@ fn generate_symbol_constraints(
                 if child_selectors.is_empty() {
                     // Normal reference resolution: the Ref's stored type = def type
                     let ref_ty = ctx.get_or_create_symbol_type(symbol_id);
-                    ctx.add_constraint(Constraint::Equal(ref_ty, def_ty, range));
+                    ctx.add_constraint(Constraint::Equal(ref_ty, def_ty, range, ConstraintOrigin::General));
                 } else {
                     // Variable attribute access (e.g. `md.depth`):
                     // Use a fresh lookup_var for the def-type equality so it doesn't
@@ -1050,7 +1119,12 @@ fn generate_symbol_constraints(
                     // the second pass when `get_or_create_symbol_type(symbol_id)` would
                     // return the already-overwritten Number type.
                     let lookup_var = Type::Var(ctx.fresh_var());
-                    ctx.add_constraint(Constraint::Equal(lookup_var.clone(), def_ty, range));
+                    ctx.add_constraint(Constraint::Equal(
+                        lookup_var.clone(),
+                        def_ty,
+                        range,
+                        ConstraintOrigin::General,
+                    ));
 
                     ctx.set_piped_input(child_selectors[0], lookup_var);
                     for i in 0..child_selectors.len() {
@@ -1083,7 +1157,12 @@ fn generate_symbol_constraints(
                         if let Some(Type::Function(param_tys, ret_ty)) = ctx.resolve_overload(name.as_str(), &arg_tys) {
                             let range = get_symbol_range(hir, symbol_id);
                             for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
-                                ctx.add_constraint(Constraint::Equal(arg_ty.clone(), param_ty.clone(), range));
+                                ctx.add_constraint(Constraint::Equal(
+                                    arg_ty.clone(),
+                                    param_ty.clone(),
+                                    range,
+                                    ConstraintOrigin::General,
+                                ));
                             }
                             ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
                             return;
@@ -1095,7 +1174,7 @@ fn generate_symbol_constraints(
                     if overload_count == 1 {
                         let builtin_ty = ctx.get_builtin_overloads(name.as_str()).unwrap()[0].clone();
                         let range = get_symbol_range(hir, symbol_id);
-                        ctx.add_constraint(Constraint::Equal(ref_ty, builtin_ty, range));
+                        ctx.add_constraint(Constraint::Equal(ref_ty, builtin_ty, range, ConstraintOrigin::General));
                     }
                 }
             }
@@ -1148,8 +1227,22 @@ fn generate_symbol_constraints(
                                 // resolved_ty is the matched function type: (T1, T2) -> T3
                                 if let Type::Function(param_tys, ret_ty) = resolved_ty {
                                     if param_tys.len() == 2 {
-                                        ctx.add_constraint(Constraint::Equal(left_ty, param_tys[0].clone(), range));
-                                        ctx.add_constraint(Constraint::Equal(right_ty, param_tys[1].clone(), range));
+                                        ctx.add_constraint(Constraint::Equal(
+                                            left_ty,
+                                            param_tys[0].clone(),
+                                            range,
+                                            ConstraintOrigin::Operator {
+                                                op: SmolStr::new(op_name.as_str()),
+                                            },
+                                        ));
+                                        ctx.add_constraint(Constraint::Equal(
+                                            right_ty,
+                                            param_tys[1].clone(),
+                                            range,
+                                            ConstraintOrigin::Operator {
+                                                op: SmolStr::new(op_name.as_str()),
+                                            },
+                                        ));
                                         ctx.set_symbol_type(symbol_id, *ret_ty);
                                     } else {
                                         let ty_var = ctx.fresh_var();
@@ -1201,7 +1294,15 @@ fn generate_symbol_constraints(
                             // because tv1→Number and tv1→String would conflict).
                             let new_var_ty = ctx.fresh_var();
                             ctx.set_symbol_type_no_bind(var_id, Type::Var(new_var_ty));
-                            ctx.add_constraint(Constraint::Equal(Type::Var(new_var_ty), rhs_ty.clone(), range));
+                            let var_name = hir.symbol(lhs_id).and_then(|s| s.value.clone()).unwrap_or_default();
+                            ctx.add_constraint(Constraint::Equal(
+                                Type::Var(new_var_ty),
+                                rhs_ty.clone(),
+                                range,
+                                ConstraintOrigin::Assignment {
+                                    var_name: SmolStr::new(var_name.as_str()),
+                                },
+                            ));
 
                             // No need to re-bind subsequent Refs — Assigns are processed
                             // in Pass 2.5 (before Refs/Calls in Pass 3), so Refs will
@@ -1237,8 +1338,18 @@ fn generate_symbol_constraints(
                                     && let Type::Function(param_tys, ret_ty) = resolved_ty
                                     && param_tys.len() == 2
                                 {
-                                    ctx.add_constraint(Constraint::Equal(current_var_ty, param_tys[0].clone(), range));
-                                    ctx.add_constraint(Constraint::Equal(rhs_ty, param_tys[1].clone(), range));
+                                    ctx.add_constraint(Constraint::Equal(
+                                        current_var_ty,
+                                        param_tys[0].clone(),
+                                        range,
+                                        ConstraintOrigin::General,
+                                    ));
+                                    ctx.add_constraint(Constraint::Equal(
+                                        rhs_ty,
+                                        param_tys[1].clone(),
+                                        range,
+                                        ConstraintOrigin::General,
+                                    ));
                                     // Update variable type to result
                                     ctx.set_symbol_type(var_id, *ret_ty);
                                 } else if ctx.resolve_overload(base_op, &arg_types).is_none() {
@@ -1291,7 +1402,14 @@ fn generate_symbol_constraints(
                             if let Some(resolved_ty) = ctx.resolve_overload(op_name.as_str(), &arg_types) {
                                 if let Type::Function(param_tys, ret_ty) = resolved_ty {
                                     if param_tys.len() == 1 {
-                                        ctx.add_constraint(Constraint::Equal(operand_ty, param_tys[0].clone(), range));
+                                        ctx.add_constraint(Constraint::Equal(
+                                            operand_ty,
+                                            param_tys[0].clone(),
+                                            range,
+                                            ConstraintOrigin::Operator {
+                                                op: SmolStr::new(op_name.as_str()),
+                                            },
+                                        ));
                                         ctx.set_symbol_type(symbol_id, *ret_ty);
                                     } else {
                                         let ty_var = ctx.fresh_var();
@@ -1385,12 +1503,18 @@ fn generate_symbol_constraints(
                                             found: arg_tys.len(),
                                             span: range.as_ref().map(range_to_span),
                                             location: range,
+                                            context: None,
                                         });
                                     }
                                 } else {
                                     // Unify argument types with parameter types
                                     for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
-                                        ctx.add_constraint(Constraint::Equal(arg_ty.clone(), param_ty.clone(), range));
+                                        ctx.add_constraint(Constraint::Equal(
+                                            arg_ty.clone(),
+                                            param_ty.clone(),
+                                            range,
+                                            ConstraintOrigin::General,
+                                        ));
                                     }
                                 }
                                 ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
@@ -1451,7 +1575,12 @@ fn generate_symbol_constraints(
                                     if def_symbol.map(|s| s.is_parameter()).unwrap_or(false) {
                                         let ret_ty = Type::Var(ctx.fresh_var());
                                         let expected_func_ty = Type::function(explicit_arg_tys.clone(), ret_ty.clone());
-                                        ctx.add_constraint(Constraint::Equal(func_ty, expected_func_ty, range));
+                                        ctx.add_constraint(Constraint::Equal(
+                                            func_ty,
+                                            expected_func_ty,
+                                            range,
+                                            ConstraintOrigin::General,
+                                        ));
                                         ctx.set_symbol_type(symbol_id, ret_ty);
                                         if let Some(outer_def_id) = find_enclosing_function(hir, symbol_id) {
                                             ctx.add_deferred_parameter_call(DeferredParameterCall {
@@ -1491,6 +1620,7 @@ fn generate_symbol_constraints(
                                                 index_ty.clone(),
                                                 Type::Number,
                                                 range,
+                                                ConstraintOrigin::General,
                                             ));
                                         }
 
@@ -1597,7 +1727,12 @@ fn generate_symbol_constraints(
                     let elem_ty = elem_tys[0].clone();
                     let range = get_symbol_range(hir, symbol_id);
                     for ty in &elem_tys[1..] {
-                        ctx.add_constraint(Constraint::Equal(elem_ty.clone(), ty.clone(), range));
+                        ctx.add_constraint(Constraint::Equal(
+                            elem_ty.clone(),
+                            ty.clone(),
+                            range,
+                            ConstraintOrigin::General,
+                        ));
                     }
 
                     let array_ty = Type::array(elem_ty);
@@ -1662,7 +1797,12 @@ fn generate_symbol_constraints(
 
                     for &key_id in key_symbols {
                         let k_ty = ctx.get_or_create_symbol_type(key_id);
-                        ctx.add_constraint(Constraint::Equal(key_ty.clone(), k_ty, range));
+                        ctx.add_constraint(Constraint::Equal(
+                            key_ty.clone(),
+                            k_ty,
+                            range,
+                            ConstraintOrigin::General,
+                        ));
 
                         let value_children = get_children(children_index, key_id);
                         for &val_id in value_children {
@@ -1758,7 +1898,12 @@ fn generate_symbol_constraints(
                         // Homogeneous or unresolved — unify all branch types
                         ctx.set_symbol_type(symbol_id, then_ty.clone());
                         for ty in &branch_tys[1..] {
-                            ctx.add_constraint(Constraint::Equal(then_ty.clone(), ty.clone(), range));
+                            ctx.add_constraint(Constraint::Equal(
+                                then_ty.clone(),
+                                ty.clone(),
+                                range,
+                                ConstraintOrigin::General,
+                            ));
                         }
                     }
                 } else {
@@ -1789,7 +1934,7 @@ fn generate_symbol_constraints(
             if !children.is_empty() {
                 // First child is the condition
                 let cond_ty = ctx.get_or_create_symbol_type(children[0]);
-                ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range));
+                ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range, ConstraintOrigin::General));
 
                 // Analyze condition for type narrowing: narrowings apply inside the loop body
                 // (then-branch) and to code after the loop (else-branch, when condition is false).
@@ -1882,11 +2027,21 @@ fn generate_symbol_constraints(
                     match &resolved_iterable {
                         Type::Array(elem) => {
                             // Iterable is a concrete array - directly constrain loop variable
-                            ctx.add_constraint(Constraint::Equal(item_ty, *elem.clone(), range));
+                            ctx.add_constraint(Constraint::Equal(
+                                item_ty,
+                                *elem.clone(),
+                                range,
+                                ConstraintOrigin::General,
+                            ));
                         }
                         Type::String => {
                             // String iteration yields string characters
-                            ctx.add_constraint(Constraint::Equal(item_ty, Type::String, range));
+                            ctx.add_constraint(Constraint::Equal(
+                                item_ty,
+                                Type::String,
+                                range,
+                                ConstraintOrigin::General,
+                            ));
                         }
                         Type::Var(_) => {
                             // Unknown iterable type: create fresh element variable,
@@ -1895,8 +2050,13 @@ fn generate_symbol_constraints(
                             // (e.g. when the iterable is a function parameter).
                             let elem_var = ctx.fresh_var();
                             let elem_ty = Type::Var(elem_var);
-                            ctx.add_constraint(Constraint::Equal(iterable_ty, Type::array(elem_ty.clone()), range));
-                            ctx.add_constraint(Constraint::Equal(item_ty, elem_ty, range));
+                            ctx.add_constraint(Constraint::Equal(
+                                iterable_ty,
+                                Type::array(elem_ty.clone()),
+                                range,
+                                ConstraintOrigin::General,
+                            ));
+                            ctx.add_constraint(Constraint::Equal(item_ty, elem_ty, range, ConstraintOrigin::General));
                         }
                         _ => {
                             // Other types (number, bool, etc.): skip constraint to avoid
@@ -1969,6 +2129,7 @@ fn generate_symbol_constraints(
                                         match_expr_ty.clone(),
                                         pattern_ty.clone(),
                                         range,
+                                        ConstraintOrigin::General,
                                     ));
                                     // Keep the pattern type if it is concrete (not a wildcard Var)
                                     if !pattern_ty.is_var() {
@@ -2027,7 +2188,12 @@ fn generate_symbol_constraints(
                         let result_ty_var = ctx.fresh_var();
                         let result_ty = Type::Var(result_ty_var);
                         for ty in &arm_body_tys {
-                            ctx.add_constraint(Constraint::Equal(result_ty.clone(), ty.clone(), range));
+                            ctx.add_constraint(Constraint::Equal(
+                                result_ty.clone(),
+                                ty.clone(),
+                                range,
+                                ConstraintOrigin::General,
+                            ));
                         }
                         ctx.set_symbol_type(symbol_id, result_ty);
                     }
@@ -2080,7 +2246,12 @@ fn generate_symbol_constraints(
                     ctx.set_symbol_type(symbol_id, union_ty);
                 } else {
                     // Same type or at least one is a type variable: unify them
-                    ctx.add_constraint(Constraint::Equal(try_ty.clone(), catch_ty, range));
+                    ctx.add_constraint(Constraint::Equal(
+                        try_ty.clone(),
+                        catch_ty,
+                        range,
+                        ConstraintOrigin::General,
+                    ));
                     ctx.set_symbol_type(symbol_id, try_ty);
                 }
             } else if !children.is_empty() {
@@ -2113,7 +2284,12 @@ fn generate_symbol_constraints(
             for (param_sym, param_ty) in param_children.iter().zip(param_tys.iter()) {
                 let sym_ty = ctx.get_or_create_symbol_type(*param_sym);
                 let range = get_symbol_range(hir, *param_sym);
-                ctx.add_constraint(Constraint::Equal(sym_ty, param_ty.clone(), range));
+                ctx.add_constraint(Constraint::Equal(
+                    sym_ty,
+                    param_ty.clone(),
+                    range,
+                    ConstraintOrigin::General,
+                ));
             }
 
             // Connect macro body's type to the return type
@@ -2129,7 +2305,7 @@ fn generate_symbol_constraints(
             if let Some(&last_body) = body_children.last() {
                 let body_ty = ctx.get_or_create_symbol_type(last_body);
                 let range = get_symbol_range(hir, symbol_id);
-                ctx.add_constraint(Constraint::Equal(ret_ty, body_ty, range));
+                ctx.add_constraint(Constraint::Equal(ret_ty, body_ty, range, ConstraintOrigin::General));
             }
         }
 
@@ -2147,7 +2323,12 @@ fn generate_symbol_constraints(
                 // Build the expected function type and unify with the callable
                 let ret_ty = Type::Var(ctx.fresh_var());
                 let expected_func_ty = Type::function(arg_tys, ret_ty.clone());
-                ctx.add_constraint(Constraint::Equal(callable_ty, expected_func_ty, range));
+                ctx.add_constraint(Constraint::Equal(
+                    callable_ty,
+                    expected_func_ty,
+                    range,
+                    ConstraintOrigin::General,
+                ));
                 ctx.set_symbol_type(symbol_id, ret_ty);
             } else {
                 let ty_var = ctx.fresh_var();
@@ -2320,7 +2501,7 @@ mod tests {
 
     #[test]
     fn test_constraint_display() {
-        let c = Constraint::Equal(Type::Number, Type::String, None);
+        let c = Constraint::Equal(Type::Number, Type::String, None, ConstraintOrigin::General);
         assert_eq!(c.to_string(), "number ~ string");
     }
 

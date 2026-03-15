@@ -88,6 +88,8 @@ pub enum TypeError {
         #[label("type mismatch here")]
         span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
+        #[help]
+        context: Option<String>,
     },
     #[error("Cannot unify types: {left} and {right}")]
     #[diagnostic(code(typechecker::unification_error))]
@@ -98,6 +100,8 @@ pub enum TypeError {
         #[label("cannot unify these types")]
         span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
+        #[help]
+        context: Option<String>,
     },
     #[error("Occurs check failed: type variable {var} occurs in {ty}")]
     #[diagnostic(code(typechecker::occurs_check))]
@@ -127,6 +131,8 @@ pub enum TypeError {
         #[label("wrong number of arguments")]
         span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
+        #[help]
+        context: Option<String>,
     },
     #[error("Undefined field `{field}` in record type {record_ty}")]
     #[diagnostic(code(typechecker::undefined_field))]
@@ -322,7 +328,12 @@ impl TypeChecker {
                 if let Some(field_ty) = fields.get(&access.field_name) {
                     // Bind the bracket access expression's type to the field type
                     let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
-                    ctx.add_constraint(constraint::Constraint::Equal(call_ty, field_ty.clone(), None));
+                    ctx.add_constraint(constraint::Constraint::Equal(
+                        call_ty,
+                        field_ty.clone(),
+                        None,
+                        constraint::ConstraintOrigin::General,
+                    ));
                     resolved_any = true;
                 } else if matches!(rest.as_ref(), types::Type::RowEmpty) {
                     // Field not found in closed record — report error
@@ -358,15 +369,30 @@ impl TypeChecker {
                 if let Some(ref attr_kind) = access.attr_kind {
                     let attr_ty = constraint::attr_kind_to_type(attr_kind);
                     let sel_ty = ctx.get_or_create_symbol_type(access.symbol_id);
-                    ctx.add_constraint(constraint::Constraint::Equal(sel_ty, attr_ty, None));
+                    ctx.add_constraint(constraint::Constraint::Equal(
+                        sel_ty,
+                        attr_ty,
+                        None,
+                        constraint::ConstraintOrigin::General,
+                    ));
                 } else {
                     let sel_ty = ctx.get_or_create_symbol_type(access.symbol_id);
-                    ctx.add_constraint(constraint::Constraint::Equal(sel_ty, types::Type::Markdown, None));
+                    ctx.add_constraint(constraint::Constraint::Equal(
+                        sel_ty,
+                        types::Type::Markdown,
+                        None,
+                        constraint::ConstraintOrigin::General,
+                    ));
                 }
             } else if let types::Type::Record(fields, rest) = &resolved {
                 if let Some(field_ty) = fields.get(&access.field_name) {
                     let sel_ty = ctx.get_or_create_symbol_type(access.symbol_id);
-                    ctx.add_constraint(constraint::Constraint::Equal(sel_ty, field_ty.clone(), None));
+                    ctx.add_constraint(constraint::Constraint::Equal(
+                        sel_ty,
+                        field_ty.clone(),
+                        None,
+                        constraint::ConstraintOrigin::General,
+                    ));
                 } else if matches!(rest.as_ref(), types::Type::RowEmpty) {
                     ctx.add_error(TypeError::UndefinedField {
                         field: access.field_name.clone(),
@@ -418,13 +444,23 @@ impl TypeChecker {
                         types::Type::union(elems.clone())
                     };
                     let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
-                    ctx.add_constraint(constraint::Constraint::Equal(call_ty, result_ty, None));
+                    ctx.add_constraint(constraint::Constraint::Equal(
+                        call_ty,
+                        result_ty,
+                        None,
+                        constraint::ConstraintOrigin::General,
+                    ));
                     resolved_any = true;
                 }
                 types::Type::Array(elem) => {
                     // Normal array — bind to element type
                     let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
-                    ctx.add_constraint(constraint::Constraint::Equal(call_ty, *elem.clone(), None));
+                    ctx.add_constraint(constraint::Constraint::Equal(
+                        call_ty,
+                        *elem.clone(),
+                        None,
+                        constraint::ConstraintOrigin::General,
+                    ));
                     resolved_any = true;
                 }
                 types::Type::Union(members) => {
@@ -461,7 +497,12 @@ impl TypeChecker {
                             types::Type::union(elem_types)
                         };
                         let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
-                        ctx.add_constraint(constraint::Constraint::Equal(call_ty, result_ty, None));
+                        ctx.add_constraint(constraint::Constraint::Equal(
+                            call_ty,
+                            result_ty,
+                            None,
+                            constraint::ConstraintOrigin::General,
+                        ));
                         resolved_any = true;
                     }
                 }
@@ -469,13 +510,23 @@ impl TypeChecker {
                     // Dict bracket access: result type is the dict's value type.
                     // e.g. `d[key]` where d: Dict(String, V) → V
                     let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
-                    ctx.add_constraint(constraint::Constraint::Equal(call_ty, *value.clone(), None));
+                    ctx.add_constraint(constraint::Constraint::Equal(
+                        call_ty,
+                        *value.clone(),
+                        None,
+                        constraint::ConstraintOrigin::General,
+                    ));
                     resolved_any = true;
                 }
                 types::Type::String => {
                     // String bracket access: `s[n]` or `s[n:m]` returns a String (character/slice).
                     let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
-                    ctx.add_constraint(constraint::Constraint::Equal(call_ty, types::Type::String, None));
+                    ctx.add_constraint(constraint::Constraint::Equal(
+                        call_ty,
+                        types::Type::String,
+                        None,
+                        constraint::ConstraintOrigin::General,
+                    ));
                     resolved_any = true;
                 }
                 types::Type::Var(_) => {
@@ -493,9 +544,15 @@ impl TypeChecker {
                         var_ty.clone(),
                         types::Type::array(elem_ty.clone()),
                         access.range,
+                        constraint::ConstraintOrigin::General,
                     ));
                     let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
-                    ctx.add_constraint(constraint::Constraint::Equal(call_ty, elem_ty, None));
+                    ctx.add_constraint(constraint::Constraint::Equal(
+                        call_ty,
+                        elem_ty,
+                        None,
+                        constraint::ConstraintOrigin::General,
+                    ));
                     resolved_any = true;
                 }
             }
@@ -617,6 +674,7 @@ impl TypeChecker {
                                     operand_ty.clone(),
                                     param_ty.clone(),
                                     d.range,
+                                    constraint::ConstraintOrigin::General,
                                 ));
                             }
                             ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
@@ -646,6 +704,7 @@ impl TypeChecker {
                         right: "union types cannot be used with binary operators".to_string(),
                         span: d.range.as_ref().map(unify::range_to_span),
                         location: d.range,
+                        context: None,
                     });
                     continue;
                 }
@@ -674,6 +733,7 @@ impl TypeChecker {
                                 operand_ty.clone(),
                                 param_ty.clone(),
                                 d.range,
+                                constraint::ConstraintOrigin::General,
                             ));
                         }
                         ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
@@ -715,6 +775,7 @@ impl TypeChecker {
                                     operand_ty.clone(),
                                     param_ty.clone(),
                                     d.range,
+                                    constraint::ConstraintOrigin::General,
                                 ));
                             }
                             ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
@@ -760,6 +821,7 @@ impl TypeChecker {
                             call.fresh_ret_ty.clone(),
                             resolved_ret,
                             call.range,
+                            constraint::ConstraintOrigin::General,
                         ));
                     }
                 }
@@ -1132,8 +1194,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(TypeError::Mismatch { expected: "n".into(), found: "s".into(), span: None, location: Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }) }, Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }))]
-    #[case(TypeError::UnificationError { left: "l".into(), right: "r".into(), span: None, location: Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }) }, Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }))]
+    #[case(TypeError::Mismatch { expected: "n".into(), found: "s".into(), span: None, location: Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }), context: None }, Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }))]
+    #[case(TypeError::UnificationError { left: "l".into(), right: "r".into(), span: None, location: Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }), context: None }, Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }))]
     #[case(TypeError::TypeVarNotFound("a".into()), None)]
     fn test_type_error_location(#[case] err: TypeError, #[case] expected: Option<mq_lang::Range>) {
         assert_eq!(err.location(), expected);

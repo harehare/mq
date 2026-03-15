@@ -136,7 +136,7 @@ fn check_file(w: &mut impl Write, code: &str, source_url: Option<Url>, opts: &Ch
         return Ok(true);
     }
 
-    check_type(w, &hir, opts.show_types, &opts.type_checker_options)
+    check_type(w, code, &hir, opts.show_types, &opts.type_checker_options)
 }
 
 /// Checks HIR for syntax errors/warnings and writes them in a unified format.
@@ -201,6 +201,7 @@ fn check_syntax(w: &mut impl Write, hir: &mq_hir::Hir) -> io::Result<bool> {
 /// Returns `true` if any type errors were found.
 fn check_type(
     w: &mut impl Write,
+    code: &str,
     hir: &mq_hir::Hir,
     show_types: bool,
     options: &TypeCheckerOptions,
@@ -210,8 +211,9 @@ fn check_type(
 
     errors.sort_by_key(|a| a.location());
 
-    for error in &errors {
-        write_error(w, error)?;
+    let total = errors.len();
+    for (i, error) in errors.iter().enumerate() {
+        write_error(w, error, code, i + 1, total)?;
     }
 
     if show_types {
@@ -231,103 +233,143 @@ fn check_type(
     } else {
         writeln!(
             w,
-            "{}  {} type error{} found.",
+            "{} {} type error{} found.",
             "✗".bright_red().bold(),
-            errors.len().to_string().bright_red().bold(),
-            if errors.len() == 1 { "" } else { "s" },
+            total.to_string().bright_red().bold(),
+            if total == 1 { "" } else { "s" },
         )?;
         Ok(true)
     }
 }
 
-/// Writes a single type error with rich formatting to the given writer.
-fn write_error(w: &mut impl Write, error: &TypeError) -> io::Result<()> {
-    let location = error.location();
-    let loc_str = location
-        .map(|range| {
-            format!("{}:{}", range.start.line, range.start.column)
-                .dimmed()
-                .to_string()
-        })
-        .unwrap_or_default();
+/// Writes a source snippet for the error location with a caret underline.
+///
+/// `prefix_width` is the visual width of the location prefix (e.g. "1:5" = 3)
+/// used to align the gutter with the surrounding error message lines.
+fn write_snippet(w: &mut impl Write, code: &str, range: &mq_lang::Range, prefix_width: usize) -> io::Result<()> {
     let sep = "│".dimmed();
+    let lines: Vec<&str> = code.lines().collect();
+    let line_idx = range.start.line.saturating_sub(1) as usize;
+    let Some(source_line) = lines.get(line_idx) else {
+        return Ok(());
+    };
 
+    let col_start = range.start.column.saturating_sub(1);
+    let col_end = if range.end.line == range.start.line {
+        range.end.column.saturating_sub(1)
+    } else {
+        source_line.len()
+    };
+    let underline_len = col_end.saturating_sub(col_start).max(1);
+
+    let line_num = range.start.line.to_string();
+    // Pad gutter to align with the loc_str prefix used in error message lines
+    let gutter = " ".repeat(prefix_width.max(line_num.len()));
+
+    writeln!(w, "  {} {} {}", gutter, sep, source_line.dimmed())?;
+    writeln!(
+        w,
+        "  {} {} {}{}",
+        format!("{:>width$}", line_num, width = prefix_width).dimmed(),
+        sep,
+        " ".repeat(col_start),
+        "^".repeat(underline_len).bright_red().bold(),
+    )?;
+    Ok(())
+}
+
+/// Returns a short one-line title for an error (used in the numbered header).
+fn error_title(error: &TypeError) -> String {
     match error {
-        TypeError::Mismatch { expected, found, .. } => writeln!(
+        TypeError::Mismatch { expected, found, .. } => {
+            format!("type mismatch: expected {expected}, found {found}")
+        }
+        TypeError::UnificationError { left, right, .. } => {
+            format!("cannot unify: {left} and {right}")
+        }
+        TypeError::OccursCheck { var, ty, .. } => format!("infinite type: {var} in {ty}"),
+        TypeError::UndefinedSymbol { name, .. } => format!("undefined symbol: {name}"),
+        TypeError::WrongArity { expected, found, .. } => {
+            format!("wrong arity: expected {expected}, found {found}")
+        }
+        TypeError::UndefinedField { field, record_ty, .. } => {
+            format!("undefined field `{field}` in {record_ty}")
+        }
+        TypeError::HeterogeneousArray { types, .. } => format!("heterogeneous array: [{types}]"),
+        TypeError::TypeVarNotFound(name) => format!("type variable not found: {name}"),
+        TypeError::Internal(msg) => format!("internal error: {msg}"),
+    }
+}
+
+/// Writes a single type error with rich formatting to the given writer.
+///
+/// `index` is the 1-based error number; `total` is the total error count.
+/// - Single error  → compact inline format  (`loc │ message` + snippet)
+/// - Multiple errors → Rust-style block format (`error[E000N] title` / ` --> loc` / snippet)
+fn write_error(w: &mut impl Write, error: &TypeError, code: &str, index: usize, total: usize) -> io::Result<()> {
+    let location = error.location();
+    let loc_plain = location
+        .map(|range| format!("{}:{}", range.start.line, range.start.column))
+        .unwrap_or_default();
+
+    if total > 1 {
+        // ── Rust-style block ──────────────────────────────────────────────────
+        writeln!(
             w,
-            "  {} {} {} expected {}, found {}",
-            loc_str,
-            sep,
-            "type mismatch:".bright_red().bold(),
-            expected.bright_cyan(),
-            found.bright_yellow(),
-        ),
-        TypeError::UnificationError { left, right, .. } => writeln!(
-            w,
-            "  {} {} {} {} and {}",
-            loc_str,
-            sep,
-            "cannot unify:".bright_red().bold(),
-            left.bright_cyan(),
-            right.bright_yellow(),
-        ),
-        TypeError::OccursCheck { var, ty, .. } => writeln!(
-            w,
-            "  {} {} {} type variable {} occurs in {}",
-            loc_str,
-            sep,
-            "infinite type:".bright_red().bold(),
-            var.bright_cyan(),
-            ty.bright_yellow(),
-        ),
-        TypeError::UndefinedSymbol { name, .. } => writeln!(
-            w,
-            "  {} {} {} {}",
-            loc_str,
-            sep,
-            "undefined symbol:".bright_red().bold(),
-            name.bright_magenta(),
-        ),
-        TypeError::WrongArity { expected, found, .. } => writeln!(
-            w,
-            "  {} {} {} expected {}, found {}",
-            loc_str,
-            sep,
-            "wrong arity:".bright_red().bold(),
-            expected.to_string().bright_cyan(),
-            found.to_string().bright_yellow(),
-        ),
-        TypeError::UndefinedField { field, record_ty, .. } => writeln!(
-            w,
-            "  {} {} {} field {} not found in {}",
-            loc_str,
-            sep,
-            "undefined field:".bright_red().bold(),
-            field.bright_magenta(),
-            record_ty.bright_cyan(),
-        ),
-        TypeError::HeterogeneousArray { types, .. } => writeln!(
-            w,
-            "  {} {} {} [{}]",
-            loc_str,
-            sep,
-            "heterogeneous array:".bright_red().bold(),
-            types.bright_yellow(),
-        ),
-        TypeError::TypeVarNotFound(name) => writeln!(
-            w,
-            "  {} {} type variable {} not found",
-            loc_str,
-            sep,
-            name.bright_cyan(),
-        ),
-        TypeError::Internal(msg) => writeln!(
-            w,
-            "  {} {} {}",
-            loc_str,
-            sep,
-            format!("internal error: {msg}").bright_red(),
-        ),
+            "{} {}",
+            format!("error[E{index:04}]").bright_red().bold(),
+            error_title(error).white().bold(),
+        )?;
+        if !loc_plain.is_empty() {
+            writeln!(w, "  {} {}", "-->".dimmed(), loc_plain.dimmed())?;
+        }
+        if let Some(range) = &location {
+            write_snippet(w, code, range, loc_plain.len())?;
+        }
+        if let Some(ctx) = error_help(error) {
+            writeln!(
+                w,
+                "  {} {} {}",
+                " ".repeat(loc_plain.len()),
+                "│".dimmed(),
+                format!("help: {ctx}").bright_blue(),
+            )?;
+        }
+        writeln!(w)?; // blank line between blocks
+    } else {
+        // ── Compact inline format ─────────────────────────────────────────────
+        let prefix_width = loc_plain.len();
+        let loc_str = if loc_plain.is_empty() {
+            String::new()
+        } else {
+            loc_plain.dimmed().to_string()
+        };
+        let sep = "│".dimmed();
+
+        writeln!(w, "  {} {} {}", loc_str, sep, error_title(error).white(),)?;
+        if let Some(range) = &location {
+            write_snippet(w, code, range, prefix_width)?;
+        }
+        if let Some(ctx) = error_help(error) {
+            writeln!(
+                w,
+                "  {} {} {}",
+                " ".repeat(prefix_width),
+                sep,
+                format!("help: {ctx}").bright_blue(),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// Returns the optional help/context string for an error.
+fn error_help(error: &TypeError) -> Option<&str> {
+    match error {
+        TypeError::Mismatch { context, .. }
+        | TypeError::UnificationError { context, .. }
+        | TypeError::WrongArity { context, .. } => context.as_deref(),
+        _ => None,
     }
 }
 

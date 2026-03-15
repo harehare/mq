@@ -1,7 +1,7 @@
 //! Unification algorithm for type inference.
 
 use crate::TypeError;
-use crate::constraint::Constraint;
+use crate::constraint::{Constraint, ConstraintOrigin};
 use crate::infer::InferenceContext;
 use crate::types::{Type, TypeVarId};
 use std::collections::{BTreeMap, HashSet};
@@ -29,15 +29,21 @@ pub fn solve_constraints(ctx: &mut InferenceContext) {
 
     for constraint in constraints {
         match constraint {
-            Constraint::Equal(t1, t2, range) => {
-                unify(ctx, &t1, &t2, range);
+            Constraint::Equal(t1, t2, range, origin) => {
+                unify(ctx, &t1, &t2, range, &origin);
             }
         }
     }
 }
 
 /// Unifies two types
-pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_lang::Range>) {
+pub fn unify(
+    ctx: &mut InferenceContext,
+    t1: &Type,
+    t2: &Type,
+    range: Option<mq_lang::Range>,
+    origin: &ConstraintOrigin,
+) {
     match (t1, t2) {
         // Same concrete types unify trivially
         (Type::Int, Type::Int)
@@ -63,7 +69,7 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
                 (Type::Var(var), ty) => (*var, ty),
                 (ty, Type::Var(var)) => (*var, ty),
                 _ => {
-                    unify(ctx, &t1, &t2, range);
+                    unify(ctx, &t1, &t2, range, origin);
                     return;
                 }
             };
@@ -86,30 +92,30 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
         }
 
         // Arrays
-        (Type::Array(elem1), Type::Array(elem2)) => unify(ctx, elem1, elem2, range),
+        (Type::Array(elem1), Type::Array(elem2)) => unify(ctx, elem1, elem2, range, origin),
 
         // Tuples: same-length tuples unify element-wise
         (Type::Tuple(elems1), Type::Tuple(elems2)) => {
             if elems1.len() != elems2.len() {
-                ctx.report_mismatch(t1, t2, range);
+                ctx.report_mismatch(t1, t2, range, origin);
                 return;
             }
             for (e1, e2) in elems1.iter().zip(elems2.iter()) {
-                unify(ctx, e1, e2, range);
+                unify(ctx, e1, e2, range, origin);
             }
         }
 
         // Tuple ↔ Array: unify each tuple element with the array element type
         (Type::Tuple(elems), Type::Array(elem)) | (Type::Array(elem), Type::Tuple(elems)) => {
             for e in elems {
-                unify(ctx, e, elem, range);
+                unify(ctx, e, elem, range, origin);
             }
         }
 
         // Dictionaries
         (Type::Dict(k1, v1), Type::Dict(k2, v2)) => {
-            unify(ctx, k1, k2, range);
-            unify(ctx, v1, v2, range);
+            unify(ctx, k1, k2, range, origin);
+            unify(ctx, v1, v2, range, origin);
         }
 
         // RowEmpty ↔ RowEmpty
@@ -122,27 +128,27 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
         // RowEmpty ↔ Record: closed row can absorb an empty record
         (Type::RowEmpty, Type::Record(fields, rest)) | (Type::Record(fields, rest), Type::RowEmpty) => {
             if fields.is_empty() {
-                unify(ctx, rest, &Type::RowEmpty, range);
+                unify(ctx, rest, &Type::RowEmpty, range, origin);
             } else {
-                ctx.report_mismatch(t1, t2, range);
+                ctx.report_mismatch(t1, t2, range, origin);
             }
         }
 
         // Record ↔ Record (row polymorphism)
         (Type::Record(f1, r1), Type::Record(f2, r2)) => {
-            unify_records(ctx, f1, r1, f2, r2, range);
+            unify_records(ctx, f1, r1, f2, r2, range, origin);
         }
 
         // Record ↔ Dict compatibility
         (Type::Record(fields, rest), Type::Dict(k, v)) | (Type::Dict(k, v), Type::Record(fields, rest)) => {
             // All record keys are strings → unify k with String
-            unify(ctx, k, &Type::String, range);
+            unify(ctx, k, &Type::String, range, origin);
             // All record field values must unify with the dict value type
             for field_ty in fields.values() {
-                unify(ctx, field_ty, v, range);
+                unify(ctx, field_ty, v, range, origin);
             }
             // The rest of the row must also be compatible with the dict
-            unify(ctx, rest, &Type::Dict(k.clone(), v.clone()), range);
+            unify(ctx, rest, &Type::Dict(k.clone(), v.clone()), range, origin);
         }
 
         // Functions
@@ -153,17 +159,18 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
                     found: params2.len(),
                     span: range.as_ref().map(range_to_span),
                     location: range,
+                    context: None,
                 });
                 return;
             }
 
             // Unify parameter types
             for (p1, p2) in params1.iter().zip(params2.iter()) {
-                unify(ctx, p1, p2, range);
+                unify(ctx, p1, p2, range, origin);
             }
 
             // Unify return types
-            unify(ctx, ret1, ret2, range);
+            unify(ctx, ret1, ret2, range, origin);
         }
 
         // Union types: a union can unify with a type if any of its members can unify with it
@@ -180,14 +187,14 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
 
             if !matches_any {
                 // No member of the union can unify with the other type - report error
-                ctx.report_mismatch(t1, t2, range);
+                ctx.report_mismatch(t1, t2, range, origin);
             }
             // If at least one member matches, allow it (union type semantics)
         }
 
         // Mismatch
         _ => {
-            ctx.report_mismatch(t1, t2, range);
+            ctx.report_mismatch(t1, t2, range, origin);
         }
     }
 }
@@ -206,11 +213,12 @@ fn unify_records(
     f2: &BTreeMap<String, Type>,
     r2: &Type,
     range: Option<mq_lang::Range>,
+    origin: &ConstraintOrigin,
 ) {
     // Unify common fields
     for (k, v1) in f1 {
         if let Some(v2) = f2.get(k) {
-            unify(ctx, v1, v2, range);
+            unify(ctx, v1, v2, range, origin);
         }
     }
 
@@ -228,25 +236,25 @@ fn unify_records(
     match (only1.is_empty(), only2.is_empty()) {
         (true, true) => {
             // No unique fields — just unify the row tails
-            unify(ctx, r1, r2, range);
+            unify(ctx, r1, r2, range, origin);
         }
         (false, true) => {
             // f1 has extra fields; r2 must accommodate them
             let fresh = ctx.fresh_var();
-            unify(ctx, r2, &Type::record(only1, Type::Var(fresh)), range);
-            unify(ctx, r1, &Type::Var(fresh), range);
+            unify(ctx, r2, &Type::record(only1, Type::Var(fresh)), range, origin);
+            unify(ctx, r1, &Type::Var(fresh), range, origin);
         }
         (true, false) => {
             // f2 has extra fields; r1 must accommodate them
             let fresh = ctx.fresh_var();
-            unify(ctx, r1, &Type::record(only2, Type::Var(fresh)), range);
-            unify(ctx, r2, &Type::Var(fresh), range);
+            unify(ctx, r1, &Type::record(only2, Type::Var(fresh)), range, origin);
+            unify(ctx, r2, &Type::Var(fresh), range, origin);
         }
         (false, false) => {
             // Both sides have unique fields
             let fresh = ctx.fresh_var();
-            unify(ctx, r1, &Type::record(only2, Type::Var(fresh)), range);
-            unify(ctx, r2, &Type::record(only1, Type::Var(fresh)), range);
+            unify(ctx, r1, &Type::record(only2, Type::Var(fresh)), range, origin);
+            unify(ctx, r2, &Type::record(only1, Type::Var(fresh)), range, origin);
         }
     }
 }
@@ -435,10 +443,10 @@ mod tests {
     #[test]
     fn test_unify_concrete_types() {
         let mut ctx = InferenceContext::new();
-        unify(&mut ctx, &Type::Number, &Type::Number, None);
+        unify(&mut ctx, &Type::Number, &Type::Number, None, &ConstraintOrigin::General);
         assert!(ctx.take_errors().is_empty());
 
-        unify(&mut ctx, &Type::String, &Type::Number, None);
+        unify(&mut ctx, &Type::String, &Type::Number, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
     }
 
@@ -451,11 +459,23 @@ mod tests {
         let var2 = var_ctx.fresh();
 
         // Unify var1 with Number
-        unify(&mut ctx, &Type::Var(var1), &Type::Number, None);
+        unify(
+            &mut ctx,
+            &Type::Var(var1),
+            &Type::Number,
+            None,
+            &ConstraintOrigin::General,
+        );
         assert!(ctx.take_errors().is_empty());
 
         // Unify var2 with var1 (should transitively become Number)
-        unify(&mut ctx, &Type::Var(var2), &Type::Var(var1), None);
+        unify(
+            &mut ctx,
+            &Type::Var(var2),
+            &Type::Var(var1),
+            None,
+            &ConstraintOrigin::General,
+        );
         assert!(ctx.take_errors().is_empty());
     }
 
@@ -464,11 +484,11 @@ mod tests {
         let mut ctx = InferenceContext::new();
         let arr1 = Type::array(Type::Number);
         let arr2 = Type::array(Type::Number);
-        unify(&mut ctx, &arr1, &arr2, None);
+        unify(&mut ctx, &arr1, &arr2, None, &ConstraintOrigin::General);
         assert!(ctx.take_errors().is_empty());
 
         let arr3 = Type::array(Type::String);
-        unify(&mut ctx, &arr1, &arr3, None);
+        unify(&mut ctx, &arr1, &arr3, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
     }
 
@@ -509,15 +529,15 @@ mod tests {
         let mut ctx = InferenceContext::new();
         let t1 = Type::tuple(vec![Type::Number, Type::String]);
         let t2 = Type::tuple(vec![Type::Number, Type::String]);
-        unify(&mut ctx, &t1, &t2, None);
+        unify(&mut ctx, &t1, &t2, None, &ConstraintOrigin::General);
         assert!(ctx.take_errors().is_empty());
 
         let t3 = Type::tuple(vec![Type::Number]);
-        unify(&mut ctx, &t1, &t3, None);
+        unify(&mut ctx, &t1, &t3, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
 
         let t4 = Type::tuple(vec![Type::String, Type::Number]);
-        unify(&mut ctx, &t1, &t4, None);
+        unify(&mut ctx, &t1, &t4, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
     }
 
@@ -527,11 +547,11 @@ mod tests {
         let tuple = Type::tuple(vec![Type::Number, Type::Number]);
         let array = Type::array(Type::Number);
 
-        unify(&mut ctx, &tuple, &array, None);
+        unify(&mut ctx, &tuple, &array, None, &ConstraintOrigin::General);
         assert!(ctx.take_errors().is_empty());
 
         let tuple2 = Type::tuple(vec![Type::Number, Type::String]);
-        unify(&mut ctx, &tuple2, &array, None);
+        unify(&mut ctx, &tuple2, &array, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
     }
 
@@ -540,11 +560,11 @@ mod tests {
         let mut ctx = InferenceContext::new();
         let d1 = Type::dict(Type::String, Type::Number);
         let d2 = Type::dict(Type::String, Type::Number);
-        unify(&mut ctx, &d1, &d2, None);
+        unify(&mut ctx, &d1, &d2, None, &ConstraintOrigin::General);
         assert!(ctx.take_errors().is_empty());
 
         let d3 = Type::dict(Type::Number, Type::Number);
-        unify(&mut ctx, &d1, &d3, None);
+        unify(&mut ctx, &d1, &d3, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
     }
 
@@ -555,12 +575,12 @@ mod tests {
         // Identical records
         let r1 = Type::record([("a".to_string(), Type::Number)].into_iter().collect(), Type::RowEmpty);
         let r2 = Type::record([("a".to_string(), Type::Number)].into_iter().collect(), Type::RowEmpty);
-        unify(&mut ctx, &r1, &r2, None);
+        unify(&mut ctx, &r1, &r2, None, &ConstraintOrigin::General);
         assert!(ctx.take_errors().is_empty());
 
         // Field type mismatch
         let r3 = Type::record([("a".to_string(), Type::String)].into_iter().collect(), Type::RowEmpty);
-        unify(&mut ctx, &r1, &r3, None);
+        unify(&mut ctx, &r1, &r3, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
 
         // Row polymorphism: open record
@@ -572,7 +592,7 @@ mod tests {
                 .collect(),
             Type::RowEmpty,
         );
-        unify(&mut ctx, &r_open, &r_closed, None);
+        unify(&mut ctx, &r_open, &r_closed, None, &ConstraintOrigin::General);
         assert!(ctx.take_errors().is_empty());
 
         // Check if var was bound to {b: String}
@@ -592,11 +612,11 @@ mod tests {
         let record = Type::record([("a".to_string(), Type::Number)].into_iter().collect(), Type::RowEmpty);
         let dict = Type::dict(Type::String, Type::Number);
 
-        unify(&mut ctx, &record, &dict, None);
+        unify(&mut ctx, &record, &dict, None, &ConstraintOrigin::General);
         assert!(ctx.take_errors().is_empty());
 
         let dict2 = Type::dict(Type::String, Type::String);
-        unify(&mut ctx, &record, &dict2, None);
+        unify(&mut ctx, &record, &dict2, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
     }
 
@@ -606,19 +626,19 @@ mod tests {
         let union = Type::union(vec![Type::Number, Type::String]);
 
         // Unify union with one of its members
-        unify(&mut ctx, &union, &Type::Number, None);
+        unify(&mut ctx, &union, &Type::Number, None, &ConstraintOrigin::General);
         assert!(ctx.take_errors().is_empty());
 
-        unify(&mut ctx, &Type::String, &union, None);
+        unify(&mut ctx, &Type::String, &union, None, &ConstraintOrigin::General);
         assert!(ctx.take_errors().is_empty());
 
         // Unify union with incompatible type
-        unify(&mut ctx, &union, &Type::Bool, None);
+        unify(&mut ctx, &union, &Type::Bool, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
 
         // Unify union with another union
         let union2 = Type::union(vec![Type::String, Type::Bool]);
-        unify(&mut ctx, &union, &union2, None);
+        unify(&mut ctx, &union, &union2, None, &ConstraintOrigin::General);
         // This currently fails in the implementation because it only checks discriminant equality
         // and doesn't handle Union vs Union recursively.
         // Actually, the implementation says:
@@ -632,22 +652,22 @@ mod tests {
         let mut ctx = InferenceContext::new();
         let f1 = Type::function(vec![Type::Number], Type::String);
         let f2 = Type::function(vec![Type::Number], Type::String);
-        unify(&mut ctx, &f1, &f2, None);
+        unify(&mut ctx, &f1, &f2, None, &ConstraintOrigin::General);
         assert!(ctx.take_errors().is_empty());
 
         // Arity mismatch
         let f3 = Type::function(vec![Type::Number, Type::Number], Type::String);
-        unify(&mut ctx, &f1, &f3, None);
+        unify(&mut ctx, &f1, &f3, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
 
         // Param mismatch
         let f4 = Type::function(vec![Type::String], Type::String);
-        unify(&mut ctx, &f1, &f4, None);
+        unify(&mut ctx, &f1, &f4, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
 
         // Return mismatch
         let f5 = Type::function(vec![Type::Number], Type::Number);
-        unify(&mut ctx, &f1, &f5, None);
+        unify(&mut ctx, &f1, &f5, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
     }
 
@@ -715,7 +735,12 @@ mod tests {
     fn test_solve_constraints() {
         let mut ctx = InferenceContext::new();
         let v1 = ctx.fresh_var();
-        ctx.add_constraint(Constraint::Equal(Type::Var(v1), Type::Number, None));
+        ctx.add_constraint(Constraint::Equal(
+            Type::Var(v1),
+            Type::Number,
+            None,
+            ConstraintOrigin::General,
+        ));
 
         solve_constraints(&mut ctx);
         assert_eq!(ctx.resolve_type(&Type::Var(v1)), Type::Number);
@@ -726,22 +751,34 @@ mod tests {
         let mut ctx = InferenceContext::new();
 
         // RowEmpty <-> RowEmpty
-        unify(&mut ctx, &Type::RowEmpty, &Type::RowEmpty, None);
+        unify(
+            &mut ctx,
+            &Type::RowEmpty,
+            &Type::RowEmpty,
+            None,
+            &ConstraintOrigin::General,
+        );
         assert!(ctx.take_errors().is_empty());
 
         // RowEmpty <-> Dict
         let dict = Type::dict(Type::String, Type::Number);
-        unify(&mut ctx, &Type::RowEmpty, &dict, None);
+        unify(&mut ctx, &Type::RowEmpty, &dict, None, &ConstraintOrigin::General);
         assert!(ctx.take_errors().is_empty());
 
         // RowEmpty <-> Empty Record
         let empty_record = Type::record(BTreeMap::new(), Type::RowEmpty);
-        unify(&mut ctx, &Type::RowEmpty, &empty_record, None);
+        unify(
+            &mut ctx,
+            &Type::RowEmpty,
+            &empty_record,
+            None,
+            &ConstraintOrigin::General,
+        );
         assert!(ctx.take_errors().is_empty());
 
         // RowEmpty <-> Non-empty Record (should fail)
         let record = Type::record([("a".to_string(), Type::Number)].into_iter().collect(), Type::RowEmpty);
-        unify(&mut ctx, &Type::RowEmpty, &record, None);
+        unify(&mut ctx, &Type::RowEmpty, &record, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
     }
 }
