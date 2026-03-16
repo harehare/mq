@@ -23,7 +23,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "baseline-browser-mapping": "^2.10.8",
-    "oxlint": "^1.55.0",
+    "oxlint": "^1.56.0",
     "typescript": "^5.9.3",
     "vite": "^8.0.0"
   }
