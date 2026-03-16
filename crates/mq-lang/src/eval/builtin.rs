@@ -9,6 +9,7 @@ use crate::ident::all_symbols;
 use crate::number;
 use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
+use csv::ReaderBuilder;
 use itertools::Itertools;
 use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
@@ -2189,6 +2190,90 @@ define_builtin!(
     }
 );
 
+define_builtin!(_CSV_PARSE, ParamNum::Range(1, 3), |ident, _, mut args, _| {
+    let (csv_str, delimiter, has_header) = match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => (std::mem::take(s), b',', false),
+        [RuntimeValue::String(s), RuntimeValue::String(delim)] => {
+            let ch = delim
+                .chars()
+                .next()
+                .ok_or_else(|| Error::Runtime("Delimiter must be a non-empty string".to_string()))?;
+            if !ch.is_ascii() {
+                return Err(Error::Runtime("Delimiter must be an ASCII character".to_string()));
+            }
+            (std::mem::take(s), ch as u8, false)
+        }
+        [
+            RuntimeValue::String(s),
+            RuntimeValue::String(delim),
+            RuntimeValue::Boolean(b),
+        ] => {
+            let ch = delim
+                .chars()
+                .next()
+                .ok_or_else(|| Error::Runtime("Delimiter must be a non-empty string".to_string()))?;
+            if !ch.is_ascii() {
+                return Err(Error::Runtime("Delimiter must be an ASCII character".to_string()));
+            }
+            (std::mem::take(s), ch as u8, *b)
+        }
+        [a] => return Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        [a, b] => {
+            return Err(Error::InvalidTypes(
+                ident.to_string(),
+                vec![std::mem::take(a), std::mem::take(b)],
+            ));
+        }
+        [a, b, c] => {
+            return Err(Error::InvalidTypes(
+                ident.to_string(),
+                vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+            ));
+        }
+        _ => unreachable!(),
+    };
+
+    let mut reader = ReaderBuilder::new()
+        .has_headers(has_header)
+        .delimiter(delimiter)
+        .from_reader(csv_str.as_bytes());
+
+    if has_header {
+        let headers: Vec<String> = reader
+            .headers()
+            .map_err(|e| Error::Runtime(format!("Failed to parse CSV headers: {e}")))?
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        let rows: Result<Vec<RuntimeValue>, Error> = reader
+            .records()
+            .map(|record| {
+                let record = record.map_err(|e| Error::Runtime(format!("Failed to parse CSV record: {e}")))?;
+                let map: BTreeMap<Ident, RuntimeValue> = headers
+                    .iter()
+                    .zip(record.iter())
+                    .map(|(k, v)| (Ident::new(k), RuntimeValue::String(v.to_string())))
+                    .collect();
+                Ok(RuntimeValue::Dict(map))
+            })
+            .collect();
+
+        Ok(RuntimeValue::Array(rows?))
+    } else {
+        let rows: Result<Vec<RuntimeValue>, Error> = reader
+            .records()
+            .map(|record| {
+                let record = record.map_err(|e| Error::Runtime(format!("Failed to parse CSV record: {e}")))?;
+                let arr: Vec<RuntimeValue> = record.iter().map(|v| RuntimeValue::String(v.to_string())).collect();
+                Ok(RuntimeValue::Array(arr))
+            })
+            .collect();
+
+        Ok(RuntimeValue::Array(rows?))
+    }
+});
+
 define_builtin!(
     SET_VARIABLE,
     ParamNum::Fixed(2),
@@ -2532,6 +2617,7 @@ const HASH_UTF8BYTELEN: u64 = fnv1a_hash_64("utf8bytelen");
 const HASH_VALUES: u64 = fnv1a_hash_64("values");
 const HASH_INTERN: u64 = fnv1a_hash_64("intern");
 const HASH_GET_MARKDOWN_POSITION: u64 = fnv1a_hash_64("_get_markdown_position");
+const HASH_CSV_PARSE: u64 = fnv1a_hash_64("_csv_parse");
 #[cfg(feature = "file-io")]
 const HASH_READ_FILE: u64 = fnv1a_hash_64("read_file");
 
@@ -2663,6 +2749,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_VALUES => Some(&VALUES),
         HASH_INTERN => Some(&INTERN),
         HASH_GET_MARKDOWN_POSITION => Some(&_GET_MARKDOWN_POSITION),
+        HASH_CSV_PARSE => Some(&_CSV_PARSE),
         #[cfg(feature = "file-io")]
         HASH_READ_FILE => Some(&READ_FILE),
         _ => None,
@@ -3052,6 +3139,14 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
             params: &["ast_node"],
         },
     );
+    map.insert(
+        SmolStr::new("_csv_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses a CSV string into an array of arrays, using the specified delimiter and header options.",
+            params: &["csv_string", "delimiter", "has_header"],
+        },
+    );
+
     map
 });
 
@@ -5265,5 +5360,162 @@ mod tests {
         } else {
             panic!("Expected successful string repeat");
         }
+    }
+
+    #[rstest]
+    #[case::simple_no_header(
+        "a,b,c\n1,2,3\n4,5,6",
+        Ok(RuntimeValue::Array(vec![
+            RuntimeValue::Array(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("c".to_string()),
+            ]),
+            RuntimeValue::Array(vec![
+                RuntimeValue::String("1".to_string()),
+                RuntimeValue::String("2".to_string()),
+                RuntimeValue::String("3".to_string()),
+            ]),
+            RuntimeValue::Array(vec![
+                RuntimeValue::String("4".to_string()),
+                RuntimeValue::String("5".to_string()),
+                RuntimeValue::String("6".to_string()),
+            ]),
+        ]))
+    )]
+    #[case::single_row_no_header(
+        "x,y",
+        Ok(RuntimeValue::Array(vec![
+            RuntimeValue::Array(vec![
+                RuntimeValue::String("x".to_string()),
+                RuntimeValue::String("y".to_string()),
+            ]),
+        ]))
+    )]
+    #[case::empty_no_header(
+        "",
+        Ok(RuntimeValue::Array(vec![]))
+    )]
+    fn test_csv_parse_no_header(#[case] csv: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("_csv_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(csv.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::simple_with_header(
+        "name,age\nAlice,30\nBob,25",
+        {
+            let mut alice = BTreeMap::new();
+            alice.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+            alice.insert(Ident::new("age"), RuntimeValue::String("30".to_string()));
+            let mut bob = BTreeMap::new();
+            bob.insert(Ident::new("name"), RuntimeValue::String("Bob".to_string()));
+            bob.insert(Ident::new("age"), RuntimeValue::String("25".to_string()));
+            Ok(RuntimeValue::Array(vec![
+                RuntimeValue::Dict(alice),
+                RuntimeValue::Dict(bob),
+            ]))
+        }
+    )]
+    #[case::single_row_with_header(
+        "id,value\n1,hello",
+        {
+            let mut row = BTreeMap::new();
+            row.insert(Ident::new("id"), RuntimeValue::String("1".to_string()));
+            row.insert(Ident::new("value"), RuntimeValue::String("hello".to_string()));
+            Ok(RuntimeValue::Array(vec![RuntimeValue::Dict(row)]))
+        }
+    )]
+    #[case::quoted_fields_with_header(
+        "name,note\n\"Doe, Jane\",\"says \"\"hi\"\"\"",
+        {
+            let mut row = BTreeMap::new();
+            row.insert(Ident::new("name"), RuntimeValue::String("Doe, Jane".to_string()));
+            row.insert(Ident::new("note"), RuntimeValue::String("says \"hi\"".to_string()));
+            Ok(RuntimeValue::Array(vec![RuntimeValue::Dict(row)]))
+        }
+    )]
+    fn test_csv_parse_with_header(#[case] csv: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("_csv_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![
+                RuntimeValue::String(csv.to_string()),
+                RuntimeValue::String(",".to_string()),
+                RuntimeValue::Boolean(true),
+            ],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::tsv_no_header(
+        "a\tb\tc\n1\t2\t3",
+        "\t",
+        false,
+        Ok(RuntimeValue::Array(vec![
+            RuntimeValue::Array(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("c".to_string()),
+            ]),
+            RuntimeValue::Array(vec![
+                RuntimeValue::String("1".to_string()),
+                RuntimeValue::String("2".to_string()),
+                RuntimeValue::String("3".to_string()),
+            ]),
+        ]))
+    )]
+    #[case::tsv_with_header(
+        "name\tage\nAlice\t30",
+        "\t",
+        true,
+        {
+            let mut row = BTreeMap::new();
+            row.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+            row.insert(Ident::new("age"), RuntimeValue::String("30".to_string()));
+            Ok(RuntimeValue::Array(vec![RuntimeValue::Dict(row)]))
+        }
+    )]
+    fn test_csv_parse_custom_delimiter(
+        #[case] csv: &str,
+        #[case] delimiter: &str,
+        #[case] has_header: bool,
+        #[case] expected: Result<RuntimeValue, Error>,
+    ) {
+        let ident = Ident::new("_csv_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![
+                RuntimeValue::String(csv.to_string()),
+                RuntimeValue::String(delimiter.to_string()),
+                RuntimeValue::Boolean(has_header),
+            ],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::invalid_type_number(RuntimeValue::Number(42.into()))]
+    #[case::invalid_type_bool(RuntimeValue::Boolean(false))]
+    fn test_csv_parse_invalid_arg_type(#[case] invalid_arg: RuntimeValue) {
+        let ident = Ident::new("_csv_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![invalid_arg],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
     }
 }
