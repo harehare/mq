@@ -193,21 +193,27 @@ impl IncrementalParser {
         let new_changed_end = new_tokens.len().saturating_sub(new_suffix);
 
         // Token structure is identical — just update the source rope.
-        if prefix >= old_changed_end && prefix >= new_changed_end {
+        // The token-count guard prevents a false early-return when an insertion
+        // or deletion creates a "symmetric" token pattern where the reversed
+        // suffix happens to match extra tokens beyond the true change boundary
+        // (e.g. `foo | bar` → `foo | foo | bar`).  If the counts differ the
+        // source has genuinely changed even though prefix + suffix cover both
+        // ends, so we must fall through to a proper re-parse.
+        if prefix >= old_changed_end && prefix >= new_changed_end && self.tokens.len() == new_tokens.len() {
             self.source = Rope::from_str(new_source);
             self.tokens = new_tokens;
             return (&self.nodes, &self.errors);
         }
 
-        // Identify the affected top-level node groups.
+        // Identify the first top-level node group touched by the edit.
+        // All groups from this index onward will be re-parsed (see below).
         let first_affected = self.node_token_ranges.partition_point(|&(_, end)| end <= prefix);
-        let last_affected = self
-            .node_token_ranges
-            .partition_point(|&(start, _)| start < old_changed_end);
 
         // Fall back to a full parse when too many node groups are affected.
+        // Because the partial path re-parses everything from `first_affected`
+        // onward, the effective affected count is `total_groups - first_affected`.
         let total_groups = self.node_token_ranges.len();
-        let affected_groups = last_affected.saturating_sub(first_affected);
+        let affected_groups = total_groups.saturating_sub(first_affected);
         let should_full_parse =
             total_groups == 0 || (affected_groups as f64 / total_groups as f64) >= FULL_PARSE_THRESHOLD;
 
@@ -215,65 +221,40 @@ impl IncrementalParser {
             return self.full_parse(new_source, new_tokens);
         }
 
-        // Compute the token range in old tokens that the affected groups cover.
-        let reparse_old_start = self
+        // Compute the start token index for the first affected group.
+        // Tokens before this index are part of the unchanged prefix and their
+        // positions have not moved, so prefix nodes can be safely reused.
+        let reparse_new_start = self
             .node_token_ranges
             .get(first_affected)
             .map(|r| r.0)
             .unwrap_or(prefix);
-        let reparse_old_end = if last_affected > 0 {
-            self.node_token_ranges
-                .get(last_affected - 1)
-                .map(|r| r.1)
-                .unwrap_or(old_changed_end)
-        } else {
-            old_changed_end
-        };
 
-        // Compute the corresponding range in new tokens.
-        // Tokens before `reparse_old_start` are unchanged → same index in new.
-        let reparse_new_start = reparse_old_start;
-        let delta = new_tokens.len() as isize - self.tokens.len() as isize;
-        let reparse_new_end = ((reparse_old_end as isize) + delta).max(reparse_new_start as isize) as usize;
-
-        // Re-parse only the affected token slice.
+        // Re-parse from the first affected group to the end of the file.
+        //
+        // Re-parsing the entire suffix (instead of only the directly-affected
+        // nodes) is required for correctness: nodes that survive unchanged in
+        // the suffix would otherwise keep `Shared<Token>` references to the
+        // *old* token objects whose `range` fields reflect pre-edit source
+        // positions.  After an insertion or deletion every suffix token shifts,
+        // so reusing those stale references produces wrong ranges for all LSP
+        // features (hover, diagnostics, completions, …).
+        //
+        // The prefix nodes (before `first_affected`) are still reused because
+        // no text before the edit point changes position.
         let ParseWithRangesResult {
             nodes: new_nodes,
             token_ranges: new_token_ranges,
             node_ranges: new_node_index_ranges,
             ..
-        } = Self::parse_tokens_range(&new_tokens, reparse_new_start, reparse_new_end);
+        } = Self::parse_tokens_range(&new_tokens, reparse_new_start, new_tokens.len());
 
-        // Determine the node sub-slice covered by the affected groups so we
-        // splice exactly the right entries (a group can have >1 node).
+        // Node index where re-parsed content should begin.
         let node_splice_start = self
             .node_index_ranges
             .get(first_affected)
             .map(|r| r.0)
             .unwrap_or(self.nodes.len());
-        let node_splice_end = if last_affected > 0 {
-            self.node_index_ranges
-                .get(last_affected - 1)
-                .map(|r| r.1)
-                .unwrap_or(self.nodes.len())
-        } else {
-            node_splice_start
-        };
-
-        // Adjust suffix node-group token ranges by the net token delta.
-        for range in &mut self.node_token_ranges[last_affected..] {
-            range.0 = ((range.0 as isize) + delta) as usize;
-            range.1 = ((range.1 as isize) + delta) as usize;
-        }
-
-        // Adjust suffix node index ranges by the node count delta.
-        let new_group_node_count: usize = new_node_index_ranges.last().map(|r| r.1).unwrap_or(0);
-        let old_group_node_count = node_splice_end - node_splice_start;
-        let node_delta = new_group_node_count as isize - old_group_node_count as isize;
-        for range in &mut self.node_index_ranges[last_affected..] {
-            range.0 = ((range.0 as isize) + node_delta) as usize;
-            range.1 = ((range.1 as isize) + node_delta) as usize;
-        }
 
         // Adjust absolute node index ranges for newly-inserted groups.
         let adjusted_new_node_ranges: Vec<(usize, usize)> = new_node_index_ranges
@@ -281,12 +262,12 @@ impl IncrementalParser {
             .map(|(s, e)| (s + node_splice_start, e + node_splice_start))
             .collect();
 
-        // Splice in the new nodes and ranges.
-        self.nodes.splice(node_splice_start..node_splice_end, new_nodes);
-        self.node_token_ranges
-            .splice(first_affected..last_affected, new_token_ranges);
-        self.node_index_ranges
-            .splice(first_affected..last_affected, adjusted_new_node_ranges);
+        // Replace all nodes and group metadata from `first_affected` onward
+        // with the freshly parsed results.  The suffix is no longer kept so
+        // there is nothing to adjust for the old suffix token ranges.
+        self.nodes.splice(node_splice_start.., new_nodes);
+        self.node_token_ranges.splice(first_affected.., new_token_ranges);
+        self.node_index_ranges.splice(first_affected.., adjusted_new_node_ranges);
 
         self.source = Rope::from_str(new_source);
         self.tokens = new_tokens;
@@ -522,6 +503,62 @@ mod tests {
         let (nodes, errors) = parser.update("upcase()");
         assert!(!errors.has_errors());
         assert!(!nodes.is_empty());
+    }
+
+    /// Regression: inserting a new pipe-stage in the middle used to trigger the
+    /// early-return path because the reversed-suffix comparison matched tokens
+    /// "too far" (e.g. the trailing `foo` in old matched `foo` in the new middle
+    /// segment).  The fix adds a token-count guard to the early return.
+    #[test]
+    fn test_symmetric_insert_no_early_return() {
+        // `upcase() | upcase()` → insert another `upcase() | ` in the middle.
+        let old = "upcase() | upcase()";
+        let new = "upcase() | upcase() | upcase()";
+        let mut parser = IncrementalParser::new(old);
+        parser.update(new);
+        // All three call sites must be reflected in the CST.
+        assert_eq!(parser.source(), new);
+        let (nodes, errors) = parser.result();
+        assert!(!errors.has_errors());
+        assert!(!nodes.is_empty());
+        // The node count must match a fresh parse.
+        let fresh = IncrementalParser::new(new);
+        assert_eq!(nodes.len(), fresh.result().0.len());
+    }
+
+    /// Regression: after an edit, nodes that survived in the suffix kept
+    /// `Shared<Token>` references to old token objects with pre-edit positions.
+    /// The fix re-parses everything from the first affected group onward so
+    /// every surviving node holds a fresh token with correct range information.
+    #[test]
+    fn test_suffix_node_positions_updated_after_insert() {
+        // Two independent statements separated by a newline.
+        let old = "upcase()\ndowncase()";
+        // Prepend a new statement so the original two shift down one line.
+        let new = "ltrim()\nupcase()\ndowncase()";
+        let mut parser = IncrementalParser::new(old);
+        parser.update(new);
+
+        // Build a fresh reference parser from the new source.
+        let fresh = IncrementalParser::new(new);
+
+        // Compare every top-level node range between the incremental and fresh parsers.
+        let inc_nodes = parser.result().0;
+        let fresh_nodes = fresh.result().0;
+        assert_eq!(
+            inc_nodes.len(),
+            fresh_nodes.len(),
+            "incremental and fresh node counts differ"
+        );
+        for (i, (inc, ref_node)) in inc_nodes.iter().zip(fresh_nodes.iter()).enumerate() {
+            assert_eq!(
+                inc.range(),
+                ref_node.range(),
+                "node {i} range mismatch: incremental={:?} fresh={:?}",
+                inc.range(),
+                ref_node.range()
+            );
+        }
     }
 }
 
