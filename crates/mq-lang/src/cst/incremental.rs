@@ -267,7 +267,8 @@ impl IncrementalParser {
         // there is nothing to adjust for the old suffix token ranges.
         self.nodes.splice(node_splice_start.., new_nodes);
         self.node_token_ranges.splice(first_affected.., new_token_ranges);
-        self.node_index_ranges.splice(first_affected.., adjusted_new_node_ranges);
+        self.node_index_ranges
+            .splice(first_affected.., adjusted_new_node_ranges);
 
         self.source = Rope::from_str(new_source);
         self.tokens = new_tokens;
