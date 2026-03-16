@@ -129,9 +129,9 @@ impl CommandContext {
             }
         } else {
             let keywords = [
-                "def", "let", "if", "elif", "else", "end", "while", "loop", "foreach", "self", "nodes", "fn",
-                "break", "continue", "include", "true", "false", "None", "match", "try", "catch", "import",
-                "module", "do", "var", "macro", "quote", "unquote",
+                "def", "let", "if", "elif", "else", "end", "while", "loop", "foreach", "self", "nodes", "fn", "break",
+                "continue", "include", "true", "false", "None", "match", "try", "catch", "import", "module", "do",
+                "var", "macro", "quote", "unquote",
             ];
 
             for keyword in keywords {
