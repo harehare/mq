@@ -26,6 +26,17 @@ pub enum Command {
     NotFound(String),
 }
 
+/// List of language keywords used for REPL completions.
+///
+/// This list must be kept in sync with the keyword definitions in
+/// `crates/mq-lang/src/lexer.rs` (see the lexer keyword table around
+/// lines 207–260).
+const KEYWORDS: &[&str] = &[
+    "def", "let", "if", "elif", "else", "end", "while", "loop", "foreach", "self", "nodes", "fn", "break", "continue",
+    "include", "true", "false", "None", "match", "try", "catch", "import", "module", "do", "var", "macro", "quote",
+    "unquote",
+];
+
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -105,17 +116,49 @@ impl CommandContext {
         }
     }
 
-    pub fn completions(&self, line: &str, pos: usize) -> Vec<String> {
-        let src = &line[..pos];
+    pub fn completions(&self, line: &str, pos: usize) -> (usize, Vec<String>) {
+        let prefix = &line[..pos];
+        let start = prefix
+            .char_indices()
+            .rev()
+            .find(|&(_, c)| !c.is_alphanumeric() && c != '_' && c != '/' && c != '@' && c != '.')
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        let word = &line[start..pos];
 
-        self.hir
-            .symbols()
-            .filter_map(|(_, symbol)| {
-                let name = symbol.value.as_ref().map(|name| name.to_string()).unwrap_or_default();
+        let mut matches = Vec::new();
 
-                if name.contains(src) { Some(name) } else { None }
-            })
-            .collect::<Vec<_>>()
+        if word.starts_with('/') {
+            for cmd in Command::iter() {
+                if matches!(cmd, Command::Eval(_) | Command::NotFound(_)) {
+                    continue;
+                }
+                let cmd_str = cmd.to_string();
+                if cmd_str.starts_with(word) {
+                    matches.push(cmd_str);
+                }
+            }
+        } else {
+            for keyword in KEYWORDS {
+                if keyword.starts_with(word) {
+                    matches.push(keyword.to_string());
+                }
+            }
+
+            for (_, symbol) in self.hir.symbols() {
+                if let Some(name) = &symbol.value {
+                    if name.starts_with('_') {
+                        continue;
+                    }
+                    if name.starts_with(word) && !matches.contains(&name.to_string()) {
+                        matches.push(name.to_string());
+                    }
+                }
+            }
+        }
+
+        matches.sort();
+        (start, matches)
     }
 
     pub fn execute(&mut self, to_run: &str) -> miette::Result<CommandOutput> {
@@ -374,12 +417,42 @@ mod tests {
     }
 
     #[test]
-    fn test_completions() {
+    fn test_completions_basic() {
         let engine = mq_lang::DefaultEngine::default();
         let ctx = CommandContext::new(engine, Vec::new());
 
-        let completions = ctx.completions("", 0);
-        assert!(!completions.is_empty(), "Completions should not be empty");
+        let (start, matches) = ctx.completions("ad", 2);
+        assert_eq!(start, 0);
+        assert!(matches.contains(&"add".to_string()));
+    }
+
+    #[test]
+    fn test_completions_command() {
+        let engine = mq_lang::DefaultEngine::default();
+        let ctx = CommandContext::new(engine, Vec::new());
+
+        let (start, matches) = ctx.completions("/he", 3);
+        assert_eq!(start, 0);
+        assert!(matches.contains(&"/help".to_string()));
+    }
+
+    #[test]
+    fn test_completions_middle_of_line() {
+        let engine = mq_lang::DefaultEngine::default();
+        let ctx = CommandContext::new(engine, Vec::new());
+
+        let (start, matches) = ctx.completions("let x = ad", 10);
+        assert_eq!(start, 8);
+        assert!(matches.contains(&"add".to_string()));
+    }
+
+    #[test]
+    fn test_completions_internal_filtered() {
+        let engine = mq_lang::DefaultEngine::default();
+        let ctx = CommandContext::new(engine, Vec::new());
+
+        let (_, matches) = ctx.completions("_", 1);
+        assert!(matches.iter().all(|m| !m.starts_with('_')));
     }
 
     #[test]

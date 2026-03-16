@@ -154,10 +154,9 @@ impl Completer for MqLineHelper {
     type Candidate = Pair;
 
     fn complete(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Result<(usize, Vec<Pair>), ReadlineError> {
-        let mut completions = self
-            .command_context
-            .borrow()
-            .completions(line, pos)
+        let (start, matches) = self.command_context.borrow().completions(line, pos);
+
+        let mut completions = matches
             .iter()
             .map(|cmd| Pair {
                 display: cmd.clone(),
@@ -170,7 +169,7 @@ impl Completer for MqLineHelper {
             completions.extend(file_completions);
         }
 
-        Ok((0, completions))
+        Ok((start, completions))
     }
 }
 
