@@ -3139,6 +3139,14 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
             params: &["ast_node"],
         },
     );
+    map.insert(
+        SmolStr::new("_csv_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses a CSV string into an array of arrays, using the specified delimiter and header options.",
+            params: &["csv_string", "delimiter", "has_header"],
+        },
+    );
+
     map
 });
 
