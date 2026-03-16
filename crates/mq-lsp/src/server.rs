@@ -68,11 +68,18 @@ impl LanguageServer for Backend {
     }
 
     async fn did_change(&self, mut params: ls_types::DidChangeTextDocumentParams) {
-        self.on_change(
-            to_url(&params.text_document.uri),
-            std::mem::take(&mut params.content_changes[0].text),
-        )
-        .await
+        let Some(change) = params.content_changes.first_mut() else {
+            return;
+        };
+        let text = std::mem::take(&mut change.text);
+        let uri = to_url(&params.text_document.uri);
+        self.on_change(uri, text).await;
+        // Notify the client to re-request semantic tokens after the HIR has been
+        // updated.  Without this, clients that process `textDocument/didChange`
+        // and `textDocument/semanticTokens/full` concurrently (e.g. when a
+        // Copilot completion is accepted) may answer the tokens request from the
+        // stale HIR state and then never issue a follow-up request.
+        self.client.semantic_tokens_refresh().await.ok();
     }
 
     async fn did_save(&self, params: ls_types::DidSaveTextDocumentParams) {
