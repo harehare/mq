@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -388,6 +389,83 @@
         margin: 2rem 0;
       }
 
+      /* Installation Section */
+      .install-box {
+        background-color: var(--code-bg);
+        border: 1px solid var(--border-default);
+        border-radius: 12px;
+        margin: 2rem auto;
+        max-width: 800px;
+        overflow: hidden;
+        padding: 0;
+      }
+      .install-tabs {
+        background-color: rgba(0, 0, 0, 0.2);
+        display: flex;
+        border-bottom: 1px solid var(--border-default);
+      }
+      .tab-button {
+        background: none;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        flex: 1;
+        font-family: inherit;
+        font-size: 0.9rem;
+        font-weight: 600;
+        padding: 1rem;
+        transition: all 0.2s;
+      }
+      .tab-button:hover {
+        color: var(--text-primary);
+        background-color: rgba(255, 255, 255, 0.05);
+      }
+      .tab-button.active {
+        border-bottom-color: var(--accent-primary);
+        color: var(--accent-primary);
+        background-color: rgba(255, 255, 255, 0.05);
+      }
+      .tab-content {
+        display: none;
+        padding: 1.5rem;
+      }
+      .tab-content.active {
+        display: block;
+      }
+      .code-block {
+        align-items: center;
+        background-color: rgba(0, 0, 0, 0.3);
+        border-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        padding: 1rem;
+        position: relative;
+      }
+      .code-block code {
+        color: var(--code-color);
+        font-family: "Consolas", "Monaco", "Courier New", monospace;
+        font-size: 0.95rem;
+        word-break: break-all;
+      }
+      .copy-button {
+        background-color: var(--bg-tertiary);
+        border: 1px solid var(--border-default);
+        border-radius: 4px;
+        color: var(--text-secondary);
+        cursor: pointer;
+        font-size: 0.8rem;
+        margin-left: 1rem;
+        padding: 0.4rem 0.8rem;
+        transition: all 0.2s;
+        white-space: nowrap;
+      }
+      .copy-button:hover {
+        background-color: var(--accent-primary);
+        border-color: var(--accent-primary);
+        color: var(--bg-primary);
+      }
+
       /* Section Intro */
       .section-intro {
         color: var(--text-secondary);
@@ -755,6 +833,7 @@
         </a>
         <ul class="nav-links">
           <li><a href="#about">Overview</a></li>
+          <li><a href="#install">Installation</a></li>
           <li><a href="#why-mq">Why mq?</a></li>
           <li><a href="#features">Features</a></li>
           <li><a href="#examples">Examples</a></li>
@@ -818,6 +897,42 @@
                   <img src="demo.gif" alt="mq demo" class="demo-gif" loading="lazy" />
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="install">
+      <div class="container">
+        <h2>🚀 Installation</h2>
+        <div class="install-box">
+          <div class="install-tabs">
+            <button class="tab-button active" data-platform="linux">
+              Linux
+            </button>
+            <button class="tab-button" data-platform="macos">macOS</button>
+            <button class="tab-button" data-platform="windows">Windows</button>
+          </div>
+
+          <div id="linux" class="tab-content active">
+            <div class="code-block">
+              <code>curl -sSL https://mqlang.org/install.sh | bash</code>
+              <button class="copy-button" onclick="copyCode(this)">Copy</button>
+            </div>
+          </div>
+
+          <div id="macos" class="tab-content">
+            <div class="code-block">
+              <code>brew install mq</code>
+              <button class="copy-button" onclick="copyCode(this)">Copy</button>
+            </div>
+          </div>
+
+          <div id="windows" class="tab-content">
+            <div class="code-block">
+              <code>Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.19/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"</code>
+              <button class="copy-button" onclick="copyCode(this)">Copy</button>
             </div>
           </div>
         </div>
@@ -986,6 +1101,65 @@
       </div>
     </section>
 
+    <script>
+      function copyCode(button) {
+        const code = button.previousElementSibling.innerText.replace(/\s+/g, ' ').trim();
+        navigator.clipboard.writeText(code).then(() => {
+          const originalText = button.innerText;
+          button.innerText = "Copied!";
+          setTimeout(() => {
+            button.innerText = originalText;
+          }, 2000);
+        });
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        const tabButtons = document.querySelectorAll(".tab-button");
+        const tabContents = document.querySelectorAll(".tab-content");
+
+        // OS detection
+        const userAgent = navigator.userAgent;
+        const platform = (
+          navigator.userAgentData?.platform ||
+          navigator.platform ||
+          ""
+        ).toLowerCase();
+        let defaultTab = "linux";
+
+        if (platform.includes("win") || /Windows/.test(userAgent)) {
+          defaultTab = "windows";
+        } else if (
+          platform.includes("mac") ||
+          /Macintosh|MacIntel|iPhone|iPad|iPod/.test(userAgent)
+        ) {
+          defaultTab = "macos";
+        } else if (platform.includes("linux") || /Linux/.test(userAgent)) {
+          defaultTab = "linux";
+        }
+
+        function switchTab(platformId) {
+          tabButtons.forEach((btn) => {
+            btn.classList.toggle(
+              "active",
+              btn.getAttribute("data-platform") === platformId
+            );
+          });
+          tabContents.forEach((content) => {
+            content.classList.toggle("active", content.id === platformId);
+          });
+        }
+
+        tabButtons.forEach((button) => {
+          button.addEventListener("click", () => {
+            switchTab(button.getAttribute("data-platform"));
+          });
+        });
+
+        // Set default tab based on OS
+        switchTab(defaultTab);
+      });
+    </script>
+
     <script type="module">
       const queryInput = document.getElementById("queryInput");
       const inputMarkdown = document.getElementById("inputMarkdown");
@@ -1100,3 +1274,4 @@ More content.`;
     </footer>
   </body>
 </html>
+
