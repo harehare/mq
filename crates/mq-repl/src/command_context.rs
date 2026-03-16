@@ -108,8 +108,10 @@ impl CommandContext {
     pub fn completions(&self, line: &str, pos: usize) -> (usize, Vec<String>) {
         let prefix = &line[..pos];
         let start = prefix
-            .rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '/' && c != '@' && c != '.')
-            .map(|i| i + 1)
+            .char_indices()
+            .rev()
+            .find(|&(_, c)| !c.is_alphanumeric() && c != '_' && c != '/' && c != '@' && c != '.')
+            .map(|(i, c)| i + c.len_utf8())
             .unwrap_or(0);
         let word = &line[start..pos];
 
