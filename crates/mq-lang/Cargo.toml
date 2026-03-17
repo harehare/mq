@@ -33,6 +33,7 @@ string-interner = {workspace = true}
 thiserror = {workspace = true}
 url = {workspace = true}
 toon-format = { version = "0.4", default-features = false }
+quick-xml = "0.39.2"
 
 [features]
 ast-json = ["smallvec/serde", "smol_str/serde"]
