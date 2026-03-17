@@ -2331,8 +2331,7 @@ define_builtin!(_XML_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
                         stack.push((tag, attrs, Vec::new(), None));
                     }
                     Ok(quick_xml::events::Event::End(e)) => {
-                        let end_tag =
-                            String::from_utf8_lossy(e.name().as_ref()).to_string();
+                        let end_tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
                         let (tag, attrs, children, text) = stack.pop().ok_or_else(|| {
                             Error::Runtime(format!(
                                 "XML parse error at position {}: unexpected closing tag </{}>",
@@ -2386,9 +2385,12 @@ define_builtin!(_XML_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
                     }
                     Ok(quick_xml::events::Event::Text(e)) => {
                         if let Some(parent) = stack.last_mut() {
-                            let text = e
-                                .unescape_and_decode(&reader)
-                                .map_err(|e| Error::Runtime(format!("XML text error: {}", e)))?;
+                            let text = reader
+                                .decoder()
+                                .decode(e.as_ref())
+                                .map_err(|e| Error::Runtime(format!("XML text error: {}", e)))?
+                                .to_string();
+
                             if !text.is_empty() {
                                 match &mut parent.3 {
                                     Some(t) => t.push_str(&text),
