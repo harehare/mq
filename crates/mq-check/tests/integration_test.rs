@@ -1465,8 +1465,8 @@ fn check_types_with_builtins(code: &str) -> Vec<mq_check::TypeError> {
     true
 )]
 #[case(
-    r#"[1, 2, 3] | let x = length() | x"#,
-    "piped array into let binding via length() should not error",
+    r#"[1, 2, 3] | let x = len() | x"#,
+    "piped array into let binding via len() should not error",
     true
 )]
 #[case(
