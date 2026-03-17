@@ -2286,6 +2286,19 @@ define_builtin!(_JSON_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
     }
 });
 
+define_builtin!(_TOON_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => Ok(toon_format::decode::<serde_json::Value>(
+            s,
+            &toon_format::DecodeOptions::default(),
+        )
+        .map_err(|e| Error::Runtime(format!("Failed to parse TOON: {}", e)))?
+        .into()),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
 define_builtin!(
     SET_VARIABLE,
     ParamNum::Fixed(2),
@@ -2631,6 +2644,7 @@ const HASH_INTERN: u64 = fnv1a_hash_64("intern");
 const HASH_GET_MARKDOWN_POSITION: u64 = fnv1a_hash_64("_get_markdown_position");
 const HASH_CSV_PARSE: u64 = fnv1a_hash_64("_csv_parse");
 const HASH_JSON_PARSE: u64 = fnv1a_hash_64("_json_parse");
+const HASH_TOON_PARSE: u64 = fnv1a_hash_64("_toon_parse");
 #[cfg(feature = "file-io")]
 const HASH_READ_FILE: u64 = fnv1a_hash_64("read_file");
 
@@ -2764,6 +2778,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_GET_MARKDOWN_POSITION => Some(&_GET_MARKDOWN_POSITION),
         HASH_CSV_PARSE => Some(&_CSV_PARSE),
         HASH_JSON_PARSE => Some(&_JSON_PARSE),
+        HASH_TOON_PARSE => Some(&_TOON_PARSE),
         #[cfg(feature = "file-io")]
         HASH_READ_FILE => Some(&READ_FILE),
         _ => None,
@@ -3165,6 +3180,13 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a JSON string into a data structure.",
             params: &["json_string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_toon_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses a TOON string into a data structure.",
+            params: &["toon_string"],
         },
     );
 
@@ -5602,5 +5624,84 @@ mod tests {
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::simple_kv(
+        "a: 1\nb: 2",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
+            map.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::nested_indent(
+        "parent:\n  child: value",
+        {
+            let mut child_map = BTreeMap::new();
+            child_map.insert(Ident::new("child"), RuntimeValue::String("value".to_string()));
+            let mut parent_map = BTreeMap::new();
+            parent_map.insert(Ident::new("parent"), RuntimeValue::Dict(child_map));
+            Ok(RuntimeValue::Dict(parent_map))
+        }
+    )]
+    #[case::tabular_data(
+        "hikes[2]{id,name}:\n  1,Blue Lake\n  2,Ridge Trail",
+        {
+            let mut row1 = BTreeMap::new();
+            row1.insert(Ident::new("id"), RuntimeValue::Number(1.into()));
+            row1.insert(Ident::new("name"), RuntimeValue::String("Blue Lake".to_string()));
+            let mut row2 = BTreeMap::new();
+            row2.insert(Ident::new("id"), RuntimeValue::Number(2.into()));
+            row2.insert(Ident::new("name"), RuntimeValue::String("Ridge Trail".to_string()));
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("hikes"), RuntimeValue::Array(vec![RuntimeValue::Dict(row1), RuntimeValue::Dict(row2)]));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::inline_array(
+        "items[3]: 1, 2, 3",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("items"), RuntimeValue::Array(vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(2.into()),
+                RuntimeValue::Number(3.into()),
+            ]));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::expanded_array(
+        "items[2]:\n  - 1\n  - 2",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("items"), RuntimeValue::Array(vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(2.into()),
+            ]));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::primitives(
+        "s: \"string\"\nb: true\nn: null\nf: false",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("s"), RuntimeValue::String("string".to_string()));
+            map.insert(Ident::new("b"), RuntimeValue::TRUE);
+            map.insert(Ident::new("n"), RuntimeValue::NONE);
+            map.insert(Ident::new("f"), RuntimeValue::FALSE);
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    fn test_toon_parse(#[case] toon: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("_toon_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(toon.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
     }
 }

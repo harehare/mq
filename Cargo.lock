@@ -2756,6 +2756,7 @@ dependencies = [
  "smol_str",
  "string-interner",
  "thiserror 2.0.18",
+ "toon-format",
  "url",
 ]
 
@@ -4151,6 +4152,7 @@ version = "1.0.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
 dependencies = [
+ "indexmap 2.13.0",
  "itoa",
  "memchr",
  "serde",
@@ -4853,6 +4855,18 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
+]
+
+[[package]]
+name = "toon-format"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d25e33e50b37f95f3b55b6e664218cac7e1a50f056a75bb4c7a6cccfbc8a8c4"
+dependencies = [
+ "indexmap 2.13.0",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
