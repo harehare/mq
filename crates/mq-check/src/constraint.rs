@@ -116,11 +116,26 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
         generate_symbol_constraints(hir, *symbol_id, kind.clone(), ctx, &children_index);
     }
 
-    // Pass 2: Set up piped inputs for root-level symbols
-    // Root-level symbols (parent=None, not builtin/module) form an implicit pipe chain
+    // Pass 2: Set up piped inputs for root-level symbols.
+    //
+    // Root-level symbols (parent=None, not builtin/module) form an implicit pipe chain.
+    // In the same pass, propagate piped input into Variable initializer expressions so that
+    // Pass 3 can resolve calls like `items | let x = first()` without a second iteration
+    // (avoids re-scanning root_symbols and an extra `get_piped_input` lookup per Variable).
     for i in 1..cats.root_symbols.len() {
         let prev_ty = ctx.get_or_create_symbol_type(cats.root_symbols[i - 1]);
-        ctx.set_piped_input(cats.root_symbols[i], prev_ty);
+        ctx.set_piped_input(cats.root_symbols[i], prev_ty.clone());
+
+        // For root-level Variables (e.g. `let x = first()`), forward the piped type to
+        // the initializer Call/Ref so Pass 3 sees it before resolving the overload.
+        if let Some(sym) = hir.symbol(cats.root_symbols[i])
+            && matches!(sym.kind, SymbolKind::Variable)
+        {
+            let init_children = get_children(&children_index, cats.root_symbols[i]);
+            if let Some(&init_id) = init_children.last() {
+                ctx.set_piped_input(init_id, prev_ty);
+            }
+        }
     }
 
     // Pass 2.5: Process Assign symbols before other operators/calls.
