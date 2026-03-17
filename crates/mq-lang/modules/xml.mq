@@ -2,7 +2,7 @@
 
 # Parses an XML string and returns the corresponding data structure.
 def xml_parse(input):
-  _xml_parse(input)
+  _xml_parse(to_string(input))
 end
 
 def _xml_stringify(data):
