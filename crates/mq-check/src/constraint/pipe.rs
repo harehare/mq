@@ -37,13 +37,19 @@ pub(super) fn generate_block_constraints(
 
         // Re-process Call/Ref children that received piped input,
         // since they were already processed in Pass 3 before piped inputs were set
-        if let Some(child_symbol) = hir.symbol(children[i])
-            && matches!(
-                child_symbol.kind,
-                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_)
-            )
-        {
-            generate_symbol_constraints(hir, children[i], child_symbol.kind.clone(), ctx, children_index);
+        if let Some(child_symbol) = hir.symbol(children[i]) {
+            match &child_symbol.kind {
+                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_) => {
+                    generate_symbol_constraints(hir, children[i], child_symbol.kind.clone(), ctx, children_index);
+                }
+                // For Variable (`let x = expr`), propagate piped input to the initializer
+                // (last child) so that `items | let x = first()` correctly passes `items`
+                // to `first()`.
+                SymbolKind::Variable => {
+                    propagate_piped_input_to_variable_initializer(hir, children[i], ctx, children_index);
+                }
+                _ => {}
+            }
         }
     }
 
@@ -91,13 +97,16 @@ pub(super) fn generate_function_body_pipe_constraints(
         ctx.set_piped_input(body_children[i], prev_ty);
 
         // Re-process Call/Ref children that received piped input
-        if let Some(child_symbol) = hir.symbol(body_children[i])
-            && matches!(
-                child_symbol.kind,
-                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_)
-            )
-        {
-            generate_symbol_constraints(hir, body_children[i], child_symbol.kind.clone(), ctx, children_index);
+        if let Some(child_symbol) = hir.symbol(body_children[i]) {
+            match &child_symbol.kind {
+                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_) => {
+                    generate_symbol_constraints(hir, body_children[i], child_symbol.kind.clone(), ctx, children_index);
+                }
+                SymbolKind::Variable => {
+                    propagate_piped_input_to_variable_initializer(hir, body_children[i], ctx, children_index);
+                }
+                _ => {}
+            }
         }
     }
 
@@ -131,6 +140,39 @@ pub(super) fn propagate_piped_input_through_unary_ops(
                 }
             }
         }
+    }
+}
+
+/// Propagates piped input from a Variable to its initializer expression (last child).
+///
+/// When `let x = first()` appears inside a pipe chain (e.g., `items | let x = first()`),
+/// the piped input set on the Variable must be forwarded to the inner Call/Ref so that
+/// `first()` sees `items` as its implicit first argument.
+fn propagate_piped_input_to_variable_initializer(
+    hir: &Hir,
+    variable_id: SymbolId,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) {
+    let Some(piped_ty) = ctx.get_piped_input(variable_id).cloned() else {
+        return;
+    };
+
+    let children = get_children(children_index, variable_id);
+    let Some(&init_id) = children.last() else {
+        return;
+    };
+
+    let Some(init_sym) = hir.symbol(init_id) else {
+        return;
+    };
+
+    match &init_sym.kind {
+        SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_) => {
+            ctx.set_piped_input(init_id, piped_ty);
+            generate_symbol_constraints(hir, init_id, init_sym.kind.clone(), ctx, children_index);
+        }
+        _ => {}
     }
 }
 

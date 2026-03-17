@@ -123,6 +123,23 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
         ctx.set_piped_input(cats.root_symbols[i], prev_ty);
     }
 
+    // Pass 2.7: Propagate piped inputs from root-level Variables to their initializer expressions.
+    //
+    // Pass 2 sets piped_input[Variable] for root-level `let x = first()`.
+    // Forward that piped input to the initializer Call/Ref so that Pass 3 can correctly
+    // resolve the overload (e.g. `items | let x = first()` passes `items` to `first()`).
+    for &var_id in &cats.root_symbols {
+        if let Some(sym) = hir.symbol(var_id)
+            && matches!(sym.kind, SymbolKind::Variable)
+            && let Some(piped_ty) = ctx.get_piped_input(var_id).cloned()
+        {
+            let init_children = get_children(&children_index, var_id);
+            if let Some(&init_id) = init_children.last() {
+                ctx.set_piped_input(init_id, piped_ty);
+            }
+        }
+    }
+
     // Pass 2.5: Process Assign symbols before other operators/calls.
     // This ensures that variable types are updated by assignments before
     // Refs and Calls in Pass 3 resolve against the (potentially stale) type.
