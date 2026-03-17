@@ -25,8 +25,8 @@ percent-encoding = {workspace = true}
 regex-lite = {workspace = true}
 ropey = {workspace = true, optional = true}
 rustc-hash = {workspace = true}
-serde = {workspace = true, features = ["derive", "rc"], optional = true}
-serde_json = {workspace = true, optional = true}
+serde = {workspace = true, features = ["derive", "rc"]}
+serde_json = {workspace = true}
 smallvec = {workspace = true}
 smol_str = {workspace = true}
 string-interner = {workspace = true}
@@ -34,7 +34,7 @@ thiserror = {workspace = true}
 url = {workspace = true}
 
 [features]
-ast-json = ["dep:serde", "dep:serde_json", "smallvec/serde", "smol_str/serde"]
+ast-json = ["smallvec/serde", "smol_str/serde"]
 cst = ["dep:ropey"]
 debugger = ["sync"]
 default = ["std"]

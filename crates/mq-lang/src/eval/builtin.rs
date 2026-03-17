@@ -2274,6 +2274,18 @@ define_builtin!(_CSV_PARSE, ParamNum::Range(1, 3), |ident, _, mut args, _| {
     }
 });
 
+define_builtin!(_JSON_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => {
+            let value: serde_json::Value =
+                serde_json::from_str(s).map_err(|e| Error::Runtime(format!("Failed to parse JSON: {}", e)))?;
+            Ok(value.into())
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
 define_builtin!(
     SET_VARIABLE,
     ParamNum::Fixed(2),
@@ -2618,6 +2630,7 @@ const HASH_VALUES: u64 = fnv1a_hash_64("values");
 const HASH_INTERN: u64 = fnv1a_hash_64("intern");
 const HASH_GET_MARKDOWN_POSITION: u64 = fnv1a_hash_64("_get_markdown_position");
 const HASH_CSV_PARSE: u64 = fnv1a_hash_64("_csv_parse");
+const HASH_JSON_PARSE: u64 = fnv1a_hash_64("_json_parse");
 #[cfg(feature = "file-io")]
 const HASH_READ_FILE: u64 = fnv1a_hash_64("read_file");
 
@@ -2750,6 +2763,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_INTERN => Some(&INTERN),
         HASH_GET_MARKDOWN_POSITION => Some(&_GET_MARKDOWN_POSITION),
         HASH_CSV_PARSE => Some(&_CSV_PARSE),
+        HASH_JSON_PARSE => Some(&_JSON_PARSE),
         #[cfg(feature = "file-io")]
         HASH_READ_FILE => Some(&READ_FILE),
         _ => None,
@@ -3144,6 +3158,13 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a CSV string into an array of arrays, using the specified delimiter and header options.",
             params: &["csv_string", "delimiter", "has_header"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_json_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses a JSON string into a data structure.",
+            params: &["json_string"],
         },
     );
 
@@ -5514,6 +5535,70 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![invalid_arg],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::simple_object(
+        r#"{"key": "value"}"#,
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("key"), RuntimeValue::String("value".to_string()));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::array(
+        r#"[1, 2, 3]"#,
+        Ok(RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(3.into()),
+        ]))
+    )]
+    #[case::nested(
+        r#"{"a": [true, null], "b": {"c": 1.2}}"#,
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("a"), RuntimeValue::Array(vec![
+                RuntimeValue::Boolean(true),
+                RuntimeValue::NONE,
+            ]));
+            let mut inner = BTreeMap::new();
+            inner.insert(Ident::new("c"), RuntimeValue::Number(1.2.into()));
+            map.insert(Ident::new("b"), RuntimeValue::Dict(inner));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::string(r#""hello""#, Ok(RuntimeValue::String("hello".to_string())))]
+    #[case::number(r#"42"#, Ok(RuntimeValue::Number(42.into())))]
+    #[case::boolean(r#"false"#, Ok(RuntimeValue::Boolean(false)))]
+    #[case::null(r#"null"#, Ok(RuntimeValue::NONE))]
+    fn test_json_parse(#[case] json: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("_json_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(json.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::invalid_json(r#"{"key": "value""#)]
+    #[case::invalid_type(RuntimeValue::Number(1.into()))]
+    fn test_json_parse_error(#[case] input: impl Into<RuntimeValue>) {
+        let ident = Ident::new("_json_parse");
+        let arg: RuntimeValue = match input.into() {
+            RuntimeValue::Number(n) => RuntimeValue::Number(n),
+            s => RuntimeValue::String(s.to_string()),
+        };
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![arg],
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
