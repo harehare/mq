@@ -2330,24 +2330,41 @@ define_builtin!(_XML_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
                         let attrs = parse_attrs(&e, &reader)?;
                         stack.push((tag, attrs, Vec::new(), None));
                     }
-                    Ok(quick_xml::events::Event::End(_)) => {
-                        if let Some((tag, attrs, children, text)) = stack.pop() {
-                            let mut dict = BTreeMap::new();
-                            dict.insert(Ident::new("tag"), RuntimeValue::String(tag));
-                            dict.insert(Ident::new("attributes"), RuntimeValue::Dict(attrs));
-                            dict.insert(Ident::new("children"), RuntimeValue::Array(children));
-                            dict.insert(
-                                Ident::new("text"),
-                                text.map(RuntimeValue::String).unwrap_or(RuntimeValue::NONE),
-                            );
-                            let element = RuntimeValue::Dict(dict);
+                    Ok(quick_xml::events::Event::End(e)) => {
+                        let end_tag =
+                            String::from_utf8_lossy(e.name().as_ref()).to_string();
+                        let (tag, attrs, children, text) = stack.pop().ok_or_else(|| {
+                            Error::Runtime(format!(
+                                "XML parse error at position {}: unexpected closing tag </{}>",
+                                reader.buffer_position(),
+                                end_tag
+                            ))
+                        })?;
 
-                            if let Some(parent) = stack.last_mut() {
-                                parent.2.push(element);
-                            } else {
-                                root = Some(element);
-                                break;
-                            }
+                        if tag != end_tag {
+                            return Err(Error::Runtime(format!(
+                                "XML parse error at position {}: mismatched closing tag: expected </{}> but found </{}>",
+                                reader.buffer_position(),
+                                tag,
+                                end_tag
+                            )));
+                        }
+
+                        let mut dict = BTreeMap::new();
+                        dict.insert(Ident::new("tag"), RuntimeValue::String(tag));
+                        dict.insert(Ident::new("attributes"), RuntimeValue::Dict(attrs));
+                        dict.insert(Ident::new("children"), RuntimeValue::Array(children));
+                        dict.insert(
+                            Ident::new("text"),
+                            text.map(RuntimeValue::String).unwrap_or(RuntimeValue::NONE),
+                        );
+                        let element = RuntimeValue::Dict(dict);
+
+                        if let Some(parent) = stack.last_mut() {
+                            parent.2.push(element);
+                        } else {
+                            root = Some(element);
+                            break;
                         }
                     }
                     Ok(quick_xml::events::Event::Empty(e)) => {
