@@ -2386,11 +2386,9 @@ define_builtin!(_XML_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
                     }
                     Ok(quick_xml::events::Event::Text(e)) => {
                         if let Some(parent) = stack.last_mut() {
-                            let text = reader
-                                .decoder()
-                                .decode(e.as_ref())
-                                .map_err(|e| Error::Runtime(format!("XML text error: {}", e)))?
-                                .to_string();
+                            let text = e
+                                .unescape_and_decode(&reader)
+                                .map_err(|e| Error::Runtime(format!("XML text error: {}", e)))?;
                             if !text.is_empty() {
                                 match &mut parent.3 {
                                     Some(t) => t.push_str(&text),
