@@ -32,6 +32,7 @@ smol_str = {workspace = true}
 string-interner = {workspace = true}
 thiserror = {workspace = true}
 url = {workspace = true}
+toon-format = { version = "0.4", default-features = false }
 
 [features]
 ast-json = ["smallvec/serde", "smol_str/serde"]
