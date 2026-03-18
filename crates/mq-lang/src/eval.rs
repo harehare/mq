@@ -402,7 +402,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                             }
                         }
                         None => {
-                            let token = (*get_token(Shared::clone(&self.token_arena), rhs.token_id)).clone();
+                            let token = (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone();
                             return Err(RuntimeError::DestructuringFailed(token));
                         }
                     }
@@ -544,7 +544,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                                 }
                             }
                             None => {
-                                let token = (*get_token(Shared::clone(&self.token_arena), rhs.token_id)).clone();
+                                let token = (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone();
                                 return Err(RuntimeError::DestructuringFailed(token).into());
                             }
                         }
