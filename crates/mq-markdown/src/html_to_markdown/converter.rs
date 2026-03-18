@@ -570,6 +570,7 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                         parts.push(format!("<u>{}</u>", link_text));
                     }
                     "span" => parts.push(link_text),
+                    "nav" | "aside" | "noscript" => {} // skip
                     _ => parts.push(link_text),
                 }
             }
@@ -590,7 +591,10 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
             }
             HtmlNode::Element(element) => {
                 match element.tag_name.as_str() {
-                    "html" | "head" | "header" | "footer" | "body" | "div" | "nav" | "main" | "article" | "section"
+                    "nav" | "aside" | "noscript" => {
+                        // Skip navigational/sidebar/noscript noise entirely
+                    }
+                    "html" | "head" | "header" | "footer" | "body" | "div" | "main" | "article" | "section"
                     | "hgroup" => {
                         let markdown_block = convert_nodes_to_markdown(&element.children, options)?;
 
@@ -799,5 +803,23 @@ mod tests {
         let md = convert_nodes_to_markdown(&nodes, ConversionOptions::default()).unwrap();
         let md_trimmed = md.trim();
         assert_eq!(md_trimmed, expected);
+    }
+
+    #[rstest]
+    #[case(
+        vec![element_node("nav", vec![element_node("a", vec![text_node("Home")])])],
+        ""
+    )]
+    #[case(
+        vec![element_node("aside", vec![text_node("Related")])],
+        ""
+    )]
+    #[case(
+        vec![element_node("noscript", vec![text_node("Enable JavaScript")])],
+        ""
+    )]
+    fn test_noisy_elements_are_skipped(#[case] nodes: Vec<HtmlNode>, #[case] expected: &str) {
+        let md = convert_nodes_to_markdown(&nodes, ConversionOptions::default()).unwrap();
+        assert_eq!(md.trim(), expected);
     }
 }

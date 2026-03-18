@@ -1106,6 +1106,51 @@ fn test_html_to_markdown(#[case] html: &str, #[case] options: ConversionOptions,
     assert_conversion_with_options(html, expected, options);
 }
 
+#[rstest]
+#[case::nav_skipped("<html><body><nav><a href='/'>Home</a></nav><p>Content</p></body></html>", "")]
+#[case::aside_skipped("<html><body><aside>Sidebar</aside><p>Content</p></body></html>", "")]
+#[case::noscript_skipped("<html><body><noscript>Enable JavaScript</noscript><p>Content</p></body></html>", "")]
+fn test_noisy_elements_skipped(#[case] html: &str, #[case] expected_excluded: &str) {
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(
+        !md.contains(expected_excluded) || expected_excluded.is_empty(),
+        "Expected '{}' to not appear in output:\n{}",
+        expected_excluded,
+        md
+    );
+}
+
+#[test]
+fn test_smart_extraction_uses_main() {
+    let html = r#"<html><body>
+        <nav><a href="/">Home</a></nav>
+        <main><h1>Article</h1><p>Main content</p></main>
+        <aside>Sidebar</aside>
+    </body></html>"#;
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("Article"), "should contain heading");
+    assert!(md.contains("Main content"), "should contain paragraph");
+    assert!(!md.contains("Home"), "nav should be excluded");
+    assert!(!md.contains("Sidebar"), "aside should be excluded");
+}
+
+#[test]
+fn test_smart_extraction_falls_back_to_article() {
+    let html = r#"<html><body>
+        <article><h2>Blog Post</h2><p>Post content</p></article>
+    </body></html>"#;
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("Blog Post"));
+    assert!(md.contains("Post content"));
+}
+
+#[test]
+fn test_smart_extraction_falls_back_to_full_document() {
+    let html = r#"<html><body><div><p>Body content</p></div></body></html>"#;
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("Body content"));
+}
+
 // TODO: Add tests for headings with links, images etc. once those elements are supported.
 
 // Test for parsing error on malformed heading (illustrative, might need adjustment based on parser behavior)

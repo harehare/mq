@@ -2,11 +2,19 @@ use crate::http_client::HttpClient;
 use crate::robots::RobotsTxt;
 use crossbeam::queue::SegQueue;
 use dashmap::{DashMap, DashSet};
-use futures::stream::StreamExt;
 use miette::miette;
 use mq_markdown::ConversionOptions;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
+use std::{fs, io};
+use tokio::sync::{RwLock, Semaphore};
+use tokio::time::sleep;
+use url::Url;
 
 #[derive(Clone, Debug, Default)]
 pub enum OutputFormat {
@@ -14,14 +22,6 @@ pub enum OutputFormat {
     Text,
     Json,
 }
-use std::io::Write;
-use std::path::Path;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use std::{fs, io};
-use tokio::sync::RwLock;
-use tokio::time::sleep;
-use url::Url;
 
 #[derive(Debug, Default)]
 pub struct CrawlResult {
@@ -144,19 +144,21 @@ fn extract_links(html_content: &str, base_url: &Url) -> Vec<Url> {
 
 #[derive(Debug, Clone)]
 pub struct Crawler {
+    allowed_domains: Option<Vec<String>>,
     conversion_options: mq_markdown::ConversionOptions,
     crawl_delay: Duration,
-    custom_robots_path: Option<String>, // Store custom robots path
+    custom_robots_path: Option<String>,
     concurrency: usize,
-    depth_limit: Option<usize>, // Maximum crawl depth (None for unlimited)
+    depth_limit: Option<usize>,
+    domain_last_request: Arc<DashMap<String, Instant>>,
     format: OutputFormat,
     http_client: HttpClient,
-    initial_domain: String, // To keep crawls within the starting domain
+    initial_domain: String,
     mq_query: String,
     output_path: Option<String>,
     result: Arc<RwLock<CrawlResult>>,
     robots_cache: Arc<DashMap<String, Arc<RobotsTxt>>>,
-    to_visit: Arc<SegQueue<(Url, usize)>>, // URL with its depth
+    to_visit: Arc<SegQueue<(Url, usize)>>,
     user_agent: String,
     visited: Arc<DashSet<Url>>,
 }
@@ -167,13 +169,14 @@ impl Crawler {
         http_client: HttpClient,
         start_url: Url,
         crawl_delay_secs: f64,
-        custom_robots_path: Option<String>, // Accept from CLI args
+        custom_robots_path: Option<String>,
         mq_query: Option<String>,
         output_path: Option<String>,
         concurrency: usize,
         format: OutputFormat,
         conversion_options: mq_markdown::ConversionOptions,
-        depth_limit: Option<usize>, // Maximum crawl depth
+        depth_limit: Option<usize>,
+        allowed_domains: Option<Vec<String>>,
     ) -> Result<Self, String> {
         let initial_domain = start_url
             .domain()
@@ -182,14 +185,16 @@ impl Crawler {
         let user_agent = format!("mq crawler/0.1 ({})", env!("CARGO_PKG_HOMEPAGE"));
 
         let to_visit = SegQueue::new();
-        to_visit.push((start_url.clone(), 0)); // Start with depth 0
+        to_visit.push((start_url.clone(), 0));
 
         Ok(Self {
+            allowed_domains,
             http_client,
             to_visit: Arc::new(to_visit),
             visited: Arc::new(DashSet::new()),
             robots_cache: Arc::new(DashMap::new()),
             crawl_delay: Duration::from_secs_f64(crawl_delay_secs),
+            domain_last_request: Arc::new(DashMap::new()),
             mq_query: mq_query.unwrap_or("identity()".to_string()),
             user_agent,
             output_path,
@@ -264,47 +269,35 @@ impl Crawler {
     }
 
     async fn run_parallel(&mut self) -> Result<(), String> {
-        while !self.to_visit.is_empty() {
-            // Collect up to `concurrency` URLs for processing
-            let mut urls_to_process = Vec::with_capacity(self.concurrency);
+        let semaphore = Arc::new(Semaphore::new(self.concurrency));
+        let active_tasks = Arc::new(AtomicUsize::new(0));
 
-            while urls_to_process.len() < self.concurrency {
-                if let Some((url, depth)) = self.to_visit.pop() {
-                    urls_to_process.push((url, depth));
-                } else {
-                    break;
-                }
-            }
-
-            if urls_to_process.is_empty() {
+        loop {
+            // Termination condition: queue empty AND no tasks in flight
+            if self.to_visit.is_empty() && active_tasks.load(Ordering::SeqCst) == 0 {
                 break;
             }
 
-            // Filter out URLs that should be skipped and mark as visited atomically
-            let mut valid_urls = Vec::with_capacity(self.concurrency);
-
-            for (url, depth) in urls_to_process {
-                if !self.should_skip_url_without_visited_check(&url) && self.visited.insert(url.clone()) {
-                    valid_urls.push((url, depth));
+            // Drain the queue, spawning tasks up to the semaphore limit
+            while let Some((url, depth)) = self.to_visit.pop() {
+                if self.should_skip_url_without_visited_check(&url) || !self.visited.insert(url.clone()) {
+                    continue;
                 }
+
+                let permit = semaphore.clone().acquire_owned().await.expect("Semaphore closed");
+                active_tasks.fetch_add(1, Ordering::SeqCst);
+
+                let crawler = self.clone();
+                let active_tasks_clone = active_tasks.clone();
+                tokio::spawn(async move {
+                    let _permit = permit;
+                    crawler.process_url_with_rate_limit(url, depth).await;
+                    active_tasks_clone.fetch_sub(1, Ordering::SeqCst);
+                });
             }
 
-            let futures = valid_urls
-                .into_iter()
-                .map(|(url, depth)| {
-                    let crawler = self.clone();
-                    tokio::task::spawn(async move {
-                        crawler.process_url(url, depth).await;
-                        // Apply crawl delay after processing batch
-                        sleep(crawler.crawl_delay).await;
-                    })
-                })
-                .collect::<Vec<_>>();
-
-            futures::stream::iter(futures)
-                .buffer_unordered(self.concurrency)
-                .collect::<Vec<_>>()
-                .await;
+            // Yield so spawned tasks can make progress and enqueue new URLs
+            tokio::task::yield_now().await;
         }
 
         self.finalize_crawl().await;
@@ -312,13 +305,57 @@ impl Crawler {
     }
 
     fn should_skip_url_without_visited_check(&self, url: &Url) -> bool {
-        // Check domain
-        if url.domain().is_none_or(|d| d != self.initial_domain) {
-            tracing::info!("Skipping URL from different domain: {}", url);
+        let Some(domain) = url.domain() else {
+            tracing::info!("Skipping URL with no domain: {}", url);
+            return true;
+        };
+
+        let allowed = match &self.allowed_domains {
+            None => domain == self.initial_domain,
+            Some(list) if list.is_empty() => true,
+            Some(list) => list.iter().any(|d| d == domain),
+        };
+
+        if !allowed {
+            tracing::info!("Skipping URL from disallowed domain: {}", url);
             return true;
         }
 
         false
+    }
+
+    async fn wait_for_domain_rate_limit(&self, domain: &str) {
+        if self.crawl_delay.is_zero() {
+            return;
+        }
+        loop {
+            let now = Instant::now();
+            let wait = match self.domain_last_request.get(domain) {
+                Some(last) => {
+                    let elapsed = now.duration_since(*last);
+                    if elapsed >= self.crawl_delay {
+                        None
+                    } else {
+                        Some(self.crawl_delay - elapsed)
+                    }
+                }
+                None => None,
+            };
+            match wait {
+                None => {
+                    self.domain_last_request.insert(domain.to_string(), now);
+                    return;
+                }
+                Some(dur) => sleep(dur).await,
+            }
+        }
+    }
+
+    async fn process_url_with_rate_limit(&self, url: Url, depth: usize) {
+        if let Some(domain) = url.domain() {
+            self.wait_for_domain_rate_limit(domain).await;
+        }
+        self.process_url(url, depth).await;
     }
 
     async fn process_url(&self, current_url: Url, current_depth: usize) {
@@ -380,7 +417,7 @@ impl Crawler {
                             let next_depth = current_depth + 1;
                             for link in new_links {
                                 if !self.visited.contains(&link)
-                                    && link.domain().is_some_and(|d| d == self.initial_domain)
+                                    && !self.should_skip_url_without_visited_check(&link)
                                     && self.depth_limit.is_none_or(|limit| next_depth <= limit)
                                 {
                                     self.to_visit.push((link, next_depth));
@@ -469,19 +506,19 @@ impl Crawler {
                 .map_err(|e| format!("Failed to write markdown to file '{:?}': {}", output_file_path, e))?;
             tracing::debug!("Successfully wrote {} bytes to {:?}", markdown.len(), output_file_path);
         } else {
-            let stdout = io::stdout();
-            let mut handle = stdout.lock();
-            writeln!(
-                handle,
-                "Filename: {}_{}.md --",
+            let filename = format!(
+                "{}_{}.md",
                 sanitize_filename_component(url.domain().unwrap_or("unknown_domain"), 50),
                 if url.path() == "/" || url.path().is_empty() {
                     "index".to_string()
                 } else {
                     sanitize_filename_component(url.path().trim_matches('/'), 100)
                 }
-            )
-            .map_err(|e| format!("Failed to write to stdout: {}", e))?;
+            );
+            writeln!(io::stderr().lock(), "Filename: {} --", filename)
+                .map_err(|e| format!("Failed to write to stderr: {}", e))?;
+            let stdout = io::stdout();
+            let mut handle = stdout.lock();
             handle
                 .write_all(markdown.as_bytes())
                 .map_err(|e| format!("Failed to write markdown to stdout: {}", e))?;
@@ -626,9 +663,77 @@ mod tests {
         assert_eq!(result.duration(), None);
     }
 
+    /// Helper to build a Crawler for unit tests without sending any HTTP requests.
+    /// Uses the `.invalid` TLD (RFC 2606 reserved) to make clear no real domain is intended.
+    async fn make_test_crawler(
+        start_domain: &str,
+        allowed_domains: Option<Vec<String>>,
+        depth_limit: Option<usize>,
+    ) -> Crawler {
+        let start_url = Url::parse(&format!("http://{}/", start_domain)).unwrap();
+        let http_client = HttpClient::new_reqwest(30.0).unwrap();
+        Crawler::new(
+            http_client,
+            start_url,
+            0.0,
+            None,
+            None,
+            None,
+            1,
+            OutputFormat::Text,
+            mq_markdown::ConversionOptions::default(),
+            depth_limit,
+            allowed_domains,
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_should_skip_url_no_domain() {
+        let crawler = make_test_crawler("start.invalid", None, None).await;
+
+        // URL without domain (e.g. data: URI) should be skipped
+        let no_domain = Url::parse("data:text/plain,hello").unwrap();
+        assert!(crawler.should_skip_url_without_visited_check(&no_domain));
+    }
+
+    #[tokio::test]
+    async fn test_should_skip_url_same_domain_allowed() {
+        let crawler = make_test_crawler("start.invalid", None, None).await;
+        let same = Url::parse("http://start.invalid/page").unwrap();
+        assert!(!crawler.should_skip_url_without_visited_check(&same));
+    }
+
+    #[tokio::test]
+    async fn test_should_skip_url_different_domain_denied() {
+        let crawler = make_test_crawler("start.invalid", None, None).await;
+        let other = Url::parse("http://other.invalid/page").unwrap();
+        assert!(crawler.should_skip_url_without_visited_check(&other));
+    }
+
+    #[tokio::test]
+    async fn test_should_skip_url_empty_allowed_list_permits_all() {
+        let crawler = make_test_crawler("start.invalid", Some(vec![]), None).await;
+        let other = Url::parse("http://other.invalid/page").unwrap();
+        assert!(!crawler.should_skip_url_without_visited_check(&other));
+    }
+
+    #[tokio::test]
+    async fn test_should_skip_url_explicit_allowed_list() {
+        let allowed = vec!["start.invalid".to_string(), "extra.invalid".to_string()];
+        let crawler = make_test_crawler("start.invalid", Some(allowed), None).await;
+
+        let allowed_url = Url::parse("http://extra.invalid/page").unwrap();
+        let denied_url = Url::parse("http://denied.invalid/page").unwrap();
+
+        assert!(!crawler.should_skip_url_without_visited_check(&allowed_url));
+        assert!(crawler.should_skip_url_without_visited_check(&denied_url));
+    }
+
     #[tokio::test]
     async fn test_crawler_new_with_depth_limit() {
-        let start_url = Url::parse("http://example.com").unwrap();
+        let start_url = Url::parse("http://start.invalid/").unwrap();
         let http_client = HttpClient::new_reqwest(30.0).unwrap();
         let crawler = Crawler::new(
             http_client,
@@ -641,6 +746,7 @@ mod tests {
             OutputFormat::Text,
             mq_markdown::ConversionOptions::default(),
             Some(2),
+            None,
         )
         .await
         .unwrap();
@@ -650,7 +756,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_crawler_new_with_unlimited_depth() {
-        let start_url = Url::parse("http://example.com").unwrap();
+        let start_url = Url::parse("http://start.invalid/").unwrap();
         let http_client = HttpClient::new_reqwest(30.0).unwrap();
         let crawler = Crawler::new(
             http_client,
@@ -662,6 +768,7 @@ mod tests {
             1,
             OutputFormat::Text,
             mq_markdown::ConversionOptions::default(),
+            None,
             None,
         )
         .await

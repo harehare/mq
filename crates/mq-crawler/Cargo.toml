@@ -12,10 +12,12 @@ repository = "https://github.com/harehare/mq"
 version = "0.5.19"
 
 [dependencies]
+chromiumoxide = {workspace = true}
 clap = {workspace = true, features = ["derive"]}
+rustls = {workspace = true}
 crossbeam = {workspace = true}
 dashmap = {workspace = true}
-fantoccini = {workspace = true}
+fantoccini = {workspace = true, features = ["rustls-tls"]}
 futures = {workspace = true}
 miette = {workspace = true, features = ["fancy"]}
 mq-lang = {workspace = true}

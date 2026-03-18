@@ -10,18 +10,15 @@ use scraper::Html;
 use scraper::Selector;
 use std::collections::BTreeMap;
 
-fn find_element_by_tag_name<'a>(html: &'a Html, tag_name: &str) -> Option<scraper::ElementRef<'a>> {
-    use scraper::Selector;
-    if let Ok(selector) = Selector::parse(tag_name) {
-        html.select(&selector).next()
-    } else {
-        None
-    }
+fn find_element<'a>(html: &'a Html, selector_str: &str) -> Option<scraper::ElementRef<'a>> {
+    Selector::parse(selector_str)
+        .ok()
+        .and_then(|sel| html.select(&sel).next())
 }
 
 fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, serde_yaml::Value>> {
     // First, find the <head> element
-    let head_element = find_element_by_tag_name(html, "head")?;
+    let head_element = find_element(html, "head")?;
     let mut fm_map = BTreeMap::new();
 
     // Extract <title> only from within <head>
@@ -113,7 +110,12 @@ pub fn convert_html_to_markdown(html_input: &str, options: ConversionOptions) ->
         }
     }
 
-    let doc_children: Vec<_> = html.root_element().children().collect();
+    // Smart extraction: prefer main → [role="main"] → article, fall back to full document
+    let doc_children = ["main", "[role=\"main\"]", "article"]
+        .iter()
+        .find_map(|sel| find_element(&html, sel).map(|el| el.children().collect::<Vec<_>>()))
+        .unwrap_or_else(|| html.root_element().children().collect());
+
     let nodes_for_markdown_conversion = parser::map_nodes_to_html_nodes(doc_children)?;
     let body_markdown = converter::convert_nodes_to_markdown(&nodes_for_markdown_conversion, options)?;
 
