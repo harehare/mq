@@ -8,18 +8,15 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
     let mut pre_line = 0;
     let mut pre_start = 0;
 
-    let source_id = hir.read().unwrap().source_by_url(&url);
+    let hir_guard = hir.read().unwrap();
+    let source_id = hir_guard.source_by_url(&url);
     let symbols = source_id
-        .map(|source_id| hir.read().unwrap().find_symbols_in_source(source_id))
+        .map(|source_id| hir_guard.find_symbols_in_source(source_id))
         .unwrap_or_default();
 
     let mut semantic_tokens = Vec::with_capacity(symbols.len());
 
-    for symbol in symbols
-        .into_iter()
-        .sorted_by_key(|symbol| symbol.source.text_range)
-        .collect::<Vec<_>>()
-    {
+    for symbol in symbols.into_iter().sorted_by_key(|symbol| symbol.source.text_range) {
         for (range, _) in &symbol.doc {
             let line = range.start.line - 1_u32;
             let start = (range.start.column - 2) as u32;
@@ -89,10 +86,11 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 mq_hir::SymbolKind::Selector(_) => token_type(ls_types::SemanticTokenType::METHOD),
                 mq_hir::SymbolKind::String => token_type(ls_types::SemanticTokenType::STRING),
                 mq_hir::SymbolKind::Variable
+                | mq_hir::SymbolKind::DestructuringBinding
                 | mq_hir::SymbolKind::Symbol
                 | mq_hir::SymbolKind::MatchArm
-                | mq_hir::SymbolKind::Pattern
-                | mq_hir::SymbolKind::PatternVariable
+                | mq_hir::SymbolKind::Pattern { .. }
+                | mq_hir::SymbolKind::PatternVariable { .. }
                 | mq_hir::SymbolKind::Ident => token_type(ls_types::SemanticTokenType::VARIABLE),
             };
 
@@ -102,9 +100,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
             pre_line = line;
             pre_start = start;
 
-            let hir_guard = hir.read().unwrap();
             let is_builtin = hir_guard.is_builtin_symbol(&symbol);
-            drop(hir_guard);
 
             let mut modifiers_bitset = 0;
             if is_builtin {

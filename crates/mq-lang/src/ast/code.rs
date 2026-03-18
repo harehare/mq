@@ -65,12 +65,16 @@ impl Node {
                 format_args(args, buf, indent);
                 buf.push(')');
             }
-            Expr::Let(ident, value) => {
-                write!(buf, "let {} = ", ident).unwrap();
+            Expr::Let(pattern, value) => {
+                buf.push_str("let ");
+                format_pattern(pattern, buf);
+                buf.push_str(" = ");
                 value.format_to_code(buf, indent);
             }
-            Expr::Var(ident, value) => {
-                write!(buf, "var {} = ", ident).unwrap();
+            Expr::Var(pattern, value) => {
+                buf.push_str("var ");
+                format_pattern(pattern, buf);
+                buf.push_str(" = ");
                 value.format_to_code(buf, indent);
             }
             Expr::Assign(ident, value) => {
@@ -390,7 +394,7 @@ mod tests {
     use crate::{
         Ident, IdentWithToken, Shared,
         arena::ArenaId,
-        ast::node::{MatchArm, Param},
+        ast::node::{MatchArm, Param, Pattern},
         number::Number,
     };
     use rstest::rstest;
@@ -504,14 +508,34 @@ mod tests {
     #[rstest]
     #[case::let_simple(
         Expr::Let(
-            IdentWithToken::new("x"),
+            Pattern::Ident(IdentWithToken::new("x")),
             Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(42.0)))))
         ),
         "let x = 42"
     )]
+    #[case::let_array_pattern(
+        Expr::Let(
+            Pattern::Array(vec![
+                Pattern::Ident(IdentWithToken::new("a")),
+                Pattern::Ident(IdentWithToken::new("b")),
+            ]),
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("arr"))))
+        ),
+        "let [a, b] = arr"
+    )]
+    #[case::let_dict_pattern(
+        Expr::Let(
+            Pattern::Dict(vec![
+                (IdentWithToken::new("x"), Pattern::Ident(IdentWithToken::new("x"))),
+                (IdentWithToken::new("y"), Pattern::Ident(IdentWithToken::new("y"))),
+            ]),
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("d"))))
+        ),
+        "let {x: x, y: y} = d"
+    )]
     #[case::var_simple(
         Expr::Var(
-            IdentWithToken::new("y"),
+            Pattern::Ident(IdentWithToken::new("y")),
             Shared::new(create_node(Expr::Literal(Literal::String("hello".to_string()))))
         ),
         r#"var y = "hello""#

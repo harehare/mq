@@ -570,6 +570,7 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                         parts.push(format!("<u>{}</u>", link_text));
                     }
                     "span" => parts.push(link_text),
+                    "nav" | "aside" | "noscript" => {} // skip
                     _ => parts.push(link_text),
                 }
             }
@@ -590,7 +591,10 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
             }
             HtmlNode::Element(element) => {
                 match element.tag_name.as_str() {
-                    "html" | "head" | "header" | "footer" | "body" | "div" | "nav" | "main" | "article" | "section"
+                    "nav" | "aside" | "noscript" => {
+                        // Skip navigational/sidebar/noscript noise entirely
+                    }
+                    "html" | "head" | "header" | "footer" | "body" | "div" | "main" | "article" | "section"
                     | "hgroup" => {
                         let markdown_block = convert_nodes_to_markdown(&element.children, options)?;
 
@@ -604,12 +608,6 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                     "p" => markdown_blocks.push((handle_paragraph_element(element)?, false)),
                     "hr" => markdown_blocks.push((handle_hr_element()?, false)),
                     "ul" | "ol" => markdown_blocks.push((handle_list_element(element, options)?, false)),
-                    "title" if options.use_title_as_h1 => {
-                        let children_content_str = convert_children_to_string(&element.children)?;
-                        if !children_content_str.is_empty() {
-                            markdown_blocks.push((format!("# {}", children_content_str), false));
-                        }
-                    }
                     "blockquote" => markdown_blocks.push((handle_blockquote_element(element, options)?, false)),
                     "pre" => markdown_blocks.push((handle_pre_element(element, options)?, false)),
                     "table" => {
@@ -629,7 +627,7 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                             markdown_blocks.push((script_md, false));
                         }
                     }
-                    "style" => { /* Style tags are ignored */ }
+                    "style" | "title" => { /* Metadata tags are ignored; title is handled at the top level */ }
                     "iframe" | "video" | "audio" | "embed" | "object" => {
                         if let Some(embed_md) = handle_embedded_content_element(element)? {
                             markdown_blocks.push((embed_md, false));
@@ -799,5 +797,23 @@ mod tests {
         let md = convert_nodes_to_markdown(&nodes, ConversionOptions::default()).unwrap();
         let md_trimmed = md.trim();
         assert_eq!(md_trimmed, expected);
+    }
+
+    #[rstest]
+    #[case(
+        vec![element_node("nav", vec![element_node("a", vec![text_node("Home")])])],
+        ""
+    )]
+    #[case(
+        vec![element_node("aside", vec![text_node("Related")])],
+        ""
+    )]
+    #[case(
+        vec![element_node("noscript", vec![text_node("Enable JavaScript")])],
+        ""
+    )]
+    fn test_noisy_elements_are_skipped(#[case] nodes: Vec<HtmlNode>, #[case] expected: &str) {
+        let md = convert_nodes_to_markdown(&nodes, ConversionOptions::default()).unwrap();
+        assert_eq!(md.trim(), expected);
     }
 }

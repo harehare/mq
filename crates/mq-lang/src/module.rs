@@ -68,6 +68,7 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     std_module!(test);
     std_module!(table);
     std_module!(toml);
+    std_module!(toon);
     std_module!(xml);
     std_module!(yaml);
 
@@ -269,11 +270,11 @@ mod tests {
         modules: Vec::new(),
         vars: vec![
             Shared::new(ast::Node{token_id: 0.into(), expr: Shared::new(ast::Expr::Let(
-                IdentWithToken::new_with_token("test", Some(Shared::new(Token{
+                ast::Pattern::Ident(IdentWithToken::new_with_token("test", Some(Shared::new(Token{
                     kind: TokenKind::Ident(SmolStr::new("test")),
                     range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
                     module_id: 1.into()
-                }))),
+                })))),
                 Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::String("value".to_string())))})
             ))})],
         macros: Vec::new(),

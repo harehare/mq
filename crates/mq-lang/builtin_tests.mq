@@ -552,6 +552,44 @@ def test_index_by():
   | assert_eq(result2, dict())
 end
 
+def test_percentile():
+  # median of odd-length array
+  let result1 = percentile([1, 2, 3, 4, 5], 0.5)
+  | assert_eq(result1, 3.0)
+
+  # median of even-length array (linear interpolation)
+  | let result2 = percentile([1, 2, 3, 4], 0.5)
+  | assert_eq(result2, 2.5)
+
+  # 0th percentile = min
+  | let result3 = percentile([3, 1, 4, 1, 5], 0)
+  | assert_eq(result3, 1.0)
+
+  # 100th percentile = max
+  | let result4 = percentile([3, 1, 4, 1, 5], 1)
+  | assert_eq(result4, 5.0)
+
+  # 25th percentile
+  | let result5 = percentile([1, 2, 3, 4], 0.25)
+  | assert_eq(result5, 1.75)
+
+  # 75th percentile
+  | let result6 = percentile([1, 2, 3, 4], 0.75)
+  | assert_eq(result6, 3.25)
+
+  # single element array
+  | let result7 = percentile([42], 0.5)
+  | assert_eq(result7, 42.0)
+
+  # unsorted input is handled correctly
+  | let result8 = percentile([5, 1, 3], 0.5)
+  | assert_eq(result8, 3.0)
+
+  # empty array returns None
+  | let result9 = percentile([], 0.5)
+  | assert_eq(result9, None)
+end
+
 def test_inspect():
   let v = 1
   | let result1 = inspect(v)
@@ -681,4 +719,5 @@ end
   test_case("between", test_between),
   test_case("sum_by", test_sum_by),
   test_case("index_by", test_index_by),
+  test_case("percentile", test_percentile),
 ])

@@ -572,3 +572,30 @@ fn test_union_tuple_index_access(#[case] code: &str, #[case] should_succeed: boo
     let result = check_types_tuple(code);
     assert_eq!(result.is_empty(), should_succeed, "{}: {result:?}", description);
 }
+
+// Tests for dict destructuring with explicit key:binding syntax `{key: var}`
+#[rstest]
+#[case::shorthand_no_error(
+    r#"let {a} = {"a": 1} | a + 1"#,
+    true,
+    "shorthand dict destructuring with number field used as number should be ok"
+)]
+#[case::shorthand_type_error(
+    r#"let {a} = {"a": 1} | a + true"#,
+    false,
+    "shorthand dict destructuring: number field used as boolean should error"
+)]
+#[case::explicit_key_no_error(
+    r#"let {a: xxx} = {"a": 1} | xxx + 1"#,
+    true,
+    "explicit key dict destructuring with number field used as number should be ok"
+)]
+#[case::explicit_key_type_error(
+    r#"let {a: xxx} = {"a": 1, "b": 2} | xxx + true"#,
+    false,
+    "explicit key dict destructuring: number field used as boolean should error"
+)]
+fn test_dict_destructuring_type_check(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types(code);
+    assert_eq!(result.is_empty(), should_succeed, "{}: {result:?}", description);
+}

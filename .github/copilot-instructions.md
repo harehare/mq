@@ -14,44 +14,6 @@
 - Avoid panics whenever possible and return appropriate `Result` types
 - Write comprehensive tests and update related tests when adding or changing functionality
 
-### Directory Structure
-
-The mq project follows this main directory structure:
-
-- `/crates` - Contains multiple Rust crates
-  - `mq-ffi` - C API for integrating mq functionality into C applications
-  - `mq-run` - Implementation of the mq command-line interface
-  - `mq-crawler` - Tool for crawling directories and collecting Markdown files for batch processing
-  - `mq-dap` - Debug Adapter Protocol implementation
-  - `mq-formatter` - Code formatter
-  - `mq-hir` - High-level Internal Representation (HIR)
-  - `mq-lang` - Implementation of the mq
-  - `mq-lsp` - Language Server Protocol implementation
-  - `mq-markdown` - Markdown parser and manipulation utilities
-  - `mq-repl` - REPL (Read-Eval-Print Loop) for mq
-  - `mq-wasm` - WebAssembly (Wasm) implementation for running mq in browsers and other WASM environments
-  - `mq-web-api` - Web API bindings for mq
-- `/docs` - Documentation and user guides
-- `/editors` - Editor integrations and plugins for popular code editors
-- `/assets` - Static assets such as images, icons, and other resources
-- `/examples` - Usage examples
-- `/tests` - Integration tests
-- `/scripts` - Scripts for automation tasks
-- `/packages` - Contains various packages for different functionalities
-  - `mq-web` - npm package for using mq in web applications and JavaScript environments
-  - `playground` - A playground for developing and testing for mq
-  - `tools` - Additional development tools and utilities
-
-## Pull Request Review Criteria
-
-When creating a pull request, please ensure:
-
-1. All tests pass
-2. Code coverage is maintained at existing levels (check with Codecov)
-3. Code is formatted and passes lint checks
-4. Appropriate documentation is added/updated
-5. Changes are recorded in `CHANGELOG.md`
-
 ## Commit Message Conventions
 
 Use the following format for commit messages:
@@ -89,14 +51,6 @@ When adding new features, update the documentation.
 - Ensure documentation is consistent across all files and crates.
 - Use Markdown best practices for formatting and structure.
 
-## Feature Requests
-
-When proposing feature additions to `mq`, include:
-
-1. A description of the use case
-2. Examples of the proposed syntax and behavior
-3. Relationship to existing features
-
 ## Testing Conventions
 
 - Write comprehensive tests for all new features and bug fixes.
@@ -131,17 +85,6 @@ Use `just test` to run tests instead of `cargo test`.
 - Avoid unsafe code unless absolutely necessary; document all unsafe blocks.
 - Use feature flags for optional functionality.
 - Keep dependencies minimal and up-to-date.
-- Each crate should have its own `CHANGELOG.md` if it is published independently.
-
-## Language Server Protocol (LSP) Coding Rules
-
-- Follow LSP specification and conventions for all protocol handling.
-- Clearly separate protocol, transport, and business logic.
-- Document all public types and functions, especially those exposed to LSP clients.
-- Write integration tests for LSP features and message handling.
-- Use `miette` for error reporting to the user where possible.
-- Avoid blocking operations in async handlers.
-- Ensure robust handling of invalid or unexpected LSP messages.
 
 ## CLI Tool Coding Rules
 
@@ -152,15 +95,6 @@ Use `just test` to run tests instead of `cargo test`.
 - Write integration tests for CLI behavior and edge cases.
 - Ensure the CLI is robust against malformed input and unexpected usage.
 - Output should be clear and suitable for piping/automation.
-
-## Bug Reports
-
-When reporting bugs, provide:
-
-1. A detailed description of the issue
-2. Steps to reproduce
-3. Expected behavior vs. actual behavior
-4. If possible, Markdown and `mq` query examples that reproduce the issue
 
 ## License
 

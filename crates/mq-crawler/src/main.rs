@@ -57,8 +57,25 @@ struct CliArgs {
     #[clap(required = true)]
     url: Url,
     /// Optional WebDriver URL for browser-based crawling (e.g., http://localhost:4444).
+    /// When specified, uses a headless browser to render JavaScript before extracting content.
     #[clap(short = 'U', long, value_name = "WEBDRIVER_URL")]
     webdriver_url: Option<Url>,
+    /// Use a built-in headless Chrome to render JavaScript without an external WebDriver server.
+    /// Requires Chrome or Chromium to be installed on the system.
+    /// Cannot be used together with --webdriver-url.
+    #[clap(long, conflicts_with = "webdriver_url")]
+    headless: bool,
+    /// Path to the Chrome/Chromium executable for headless crawling.
+    /// If not specified, Chrome is auto-detected from standard installation paths.
+    /// Only used when --headless is set.
+    #[clap(long, value_name = "PATH", requires = "headless")]
+    chrome_path: Option<std::path::PathBuf>,
+    /// Comma-separated list of domains to crawl in addition to the start URL's domain.
+    /// If not specified, only the start URL's domain is crawled.
+    /// If specified, the start URL's domain is always included automatically.
+    /// Example: --allowed-domains example.com,docs.example.com
+    #[clap(long, value_delimiter = ',', value_name = "DOMAIN")]
+    allowed_domains: Option<Vec<String>>,
     /// Output format for results and statistics
     #[clap(short = 'f', long, default_value_t = OutputFormat::Text)]
     format: OutputFormat,
@@ -94,10 +111,23 @@ pub struct ConversionArgs {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt().with_writer(std::io::stderr).init();
     let args = CliArgs::parse();
 
     tracing::info!("Initializing crawler for URL: {}", args.url);
+
+    // Build the effective allowed domains list.
+    // When --allowed-domains is provided, always include the start URL's domain as well.
+    let effective_allowed = args.allowed_domains.map(|v| {
+        let mut v: Vec<String> = v.into_iter().map(|d| d.trim().to_lowercase()).collect();
+        if let Some(start_domain) = args.url.domain() {
+            let start_domain = start_domain.to_lowercase();
+            if !v.contains(&start_domain) {
+                v.push(start_domain);
+            }
+        }
+        v
+    });
 
     let client = if let Some(url) = args.webdriver_url {
         mq_crawler::http_client::HttpClient::Fantoccini({
@@ -118,6 +148,13 @@ async fn main() {
 
             fantoccini_client
         })
+    } else if args.headless {
+        mq_crawler::http_client::HttpClient::new_chromium(args.chrome_path)
+            .await
+            .expect("Failed to launch headless Chrome. Ensure Chrome or Chromium is installed.")
+    } else if effective_allowed.is_some() {
+        mq_crawler::http_client::HttpClient::new_reqwest_multi_domain(args.page_load_timeout, args.concurrency.max(5))
+            .unwrap()
     } else {
         mq_crawler::http_client::HttpClient::new_reqwest(args.page_load_timeout).unwrap()
     };
@@ -142,6 +179,7 @@ async fn main() {
             use_title_as_h1: args.conversion.use_title_as_h1,
         },
         args.depth,
+        effective_allowed,
     )
     .await
     {

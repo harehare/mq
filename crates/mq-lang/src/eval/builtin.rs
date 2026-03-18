@@ -9,6 +9,7 @@ use crate::ident::all_symbols;
 use crate::number;
 use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
+use csv::ReaderBuilder;
 use itertools::Itertools;
 use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
@@ -2189,6 +2190,248 @@ define_builtin!(
     }
 );
 
+define_builtin!(_CSV_PARSE, ParamNum::Range(1, 3), |ident, _, mut args, _| {
+    let (csv_str, delimiter, has_header) = match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => (std::mem::take(s), b',', false),
+        [RuntimeValue::String(s), RuntimeValue::String(delim)] => {
+            let ch = delim
+                .chars()
+                .next()
+                .ok_or_else(|| Error::Runtime("Delimiter must be a non-empty string".to_string()))?;
+            if !ch.is_ascii() {
+                return Err(Error::Runtime("Delimiter must be an ASCII character".to_string()));
+            }
+            (std::mem::take(s), ch as u8, false)
+        }
+        [
+            RuntimeValue::String(s),
+            RuntimeValue::String(delim),
+            RuntimeValue::Boolean(b),
+        ] => {
+            let ch = delim
+                .chars()
+                .next()
+                .ok_or_else(|| Error::Runtime("Delimiter must be a non-empty string".to_string()))?;
+            if !ch.is_ascii() {
+                return Err(Error::Runtime("Delimiter must be an ASCII character".to_string()));
+            }
+            (std::mem::take(s), ch as u8, *b)
+        }
+        [a] => return Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        [a, b] => {
+            return Err(Error::InvalidTypes(
+                ident.to_string(),
+                vec![std::mem::take(a), std::mem::take(b)],
+            ));
+        }
+        [a, b, c] => {
+            return Err(Error::InvalidTypes(
+                ident.to_string(),
+                vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+            ));
+        }
+        _ => unreachable!(),
+    };
+
+    let mut reader = ReaderBuilder::new()
+        .has_headers(has_header)
+        .delimiter(delimiter)
+        .from_reader(csv_str.as_bytes());
+
+    if has_header {
+        let headers: Vec<String> = reader
+            .headers()
+            .map_err(|e| Error::Runtime(format!("Failed to parse CSV headers: {e}")))?
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        let rows: Result<Vec<RuntimeValue>, Error> = reader
+            .records()
+            .map(|record| {
+                let record = record.map_err(|e| Error::Runtime(format!("Failed to parse CSV record: {e}")))?;
+                let map: BTreeMap<Ident, RuntimeValue> = headers
+                    .iter()
+                    .zip(record.iter())
+                    .map(|(k, v)| (Ident::new(k), RuntimeValue::String(v.to_string())))
+                    .collect();
+                Ok(RuntimeValue::Dict(map))
+            })
+            .collect();
+
+        Ok(RuntimeValue::Array(rows?))
+    } else {
+        let rows: Result<Vec<RuntimeValue>, Error> = reader
+            .records()
+            .map(|record| {
+                let record = record.map_err(|e| Error::Runtime(format!("Failed to parse CSV record: {e}")))?;
+                let arr: Vec<RuntimeValue> = record.iter().map(|v| RuntimeValue::String(v.to_string())).collect();
+                Ok(RuntimeValue::Array(arr))
+            })
+            .collect();
+
+        Ok(RuntimeValue::Array(rows?))
+    }
+});
+
+define_builtin!(_JSON_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => {
+            let value: serde_json::Value =
+                serde_json::from_str(s).map_err(|e| Error::Runtime(format!("Failed to parse JSON: {}", e)))?;
+            Ok(value.into())
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
+define_builtin!(_TOON_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => Ok(toon_format::decode::<serde_json::Value>(
+            s,
+            &toon_format::DecodeOptions::default(),
+        )
+        .map_err(|e| Error::Runtime(format!("Failed to parse TOON: {}", e)))?
+        .into()),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
+define_builtin!(_XML_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(xml_str)] => {
+            let mut reader = quick_xml::Reader::from_str(xml_str);
+            reader.config_mut().trim_text(true);
+            let mut buf = Vec::new();
+            #[allow(clippy::type_complexity)]
+            let mut stack: Vec<(String, BTreeMap<Ident, RuntimeValue>, Vec<RuntimeValue>, Option<String>)> = Vec::new();
+            let mut root: Option<RuntimeValue> = None;
+
+            let parse_attrs = |e: &quick_xml::events::BytesStart<'_>, reader: &quick_xml::Reader<&[u8]>| {
+                let mut attrs = BTreeMap::new();
+                for attr in e.attributes() {
+                    let attr = attr.map_err(|e| Error::Runtime(format!("XML attribute error: {}", e)))?;
+                    let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
+                    let value = attr
+                        .decode_and_unescape_value(reader.decoder())
+                        .map_err(|e| Error::Runtime(format!("XML attribute value error: {}", e)))?
+                        .to_string();
+                    attrs.insert(Ident::new(&key), RuntimeValue::String(value));
+                }
+                Ok::<_, Error>(attrs)
+            };
+
+            loop {
+                match reader.read_event_into(&mut buf) {
+                    Ok(quick_xml::events::Event::Start(e)) => {
+                        let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                        let attrs = parse_attrs(&e, &reader)?;
+                        stack.push((tag, attrs, Vec::new(), None));
+                    }
+                    Ok(quick_xml::events::Event::End(e)) => {
+                        let end_tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                        let (tag, attrs, children, text) = stack.pop().ok_or_else(|| {
+                            Error::Runtime(format!(
+                                "XML parse error at position {}: unexpected closing tag </{}>",
+                                reader.buffer_position(),
+                                end_tag
+                            ))
+                        })?;
+
+                        if tag != end_tag {
+                            return Err(Error::Runtime(format!(
+                                "XML parse error at position {}: mismatched closing tag: expected </{}> but found </{}>",
+                                reader.buffer_position(),
+                                tag,
+                                end_tag
+                            )));
+                        }
+
+                        let mut dict = BTreeMap::new();
+                        dict.insert(Ident::new("tag"), RuntimeValue::String(tag));
+                        dict.insert(Ident::new("attributes"), RuntimeValue::Dict(attrs));
+                        dict.insert(Ident::new("children"), RuntimeValue::Array(children));
+                        dict.insert(
+                            Ident::new("text"),
+                            text.map(RuntimeValue::String).unwrap_or(RuntimeValue::NONE),
+                        );
+                        let element = RuntimeValue::Dict(dict);
+
+                        if let Some(parent) = stack.last_mut() {
+                            parent.2.push(element);
+                        } else {
+                            root = Some(element);
+                            break;
+                        }
+                    }
+                    Ok(quick_xml::events::Event::Empty(e)) => {
+                        let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                        let attrs = parse_attrs(&e, &reader)?;
+                        let mut dict = BTreeMap::new();
+                        dict.insert(Ident::new("tag"), RuntimeValue::String(tag));
+                        dict.insert(Ident::new("attributes"), RuntimeValue::Dict(attrs));
+                        dict.insert(Ident::new("children"), RuntimeValue::EMPTY_ARRAY);
+                        dict.insert(Ident::new("text"), RuntimeValue::NONE);
+                        let element = RuntimeValue::Dict(dict);
+
+                        if let Some(parent) = stack.last_mut() {
+                            parent.2.push(element);
+                        } else {
+                            root = Some(element);
+                            break;
+                        }
+                    }
+                    Ok(quick_xml::events::Event::Text(e)) => {
+                        if let Some(parent) = stack.last_mut() {
+                            let text = reader
+                                .decoder()
+                                .decode(e.as_ref())
+                                .map_err(|e| Error::Runtime(format!("XML text error: {}", e)))?
+                                .to_string();
+
+                            if !text.is_empty() {
+                                match &mut parent.3 {
+                                    Some(t) => t.push_str(&text),
+                                    None => parent.3 = Some(text),
+                                }
+                            }
+                        }
+                    }
+                    Ok(quick_xml::events::Event::CData(e)) => {
+                        if let Some(parent) = stack.last_mut() {
+                            let text = reader
+                                .decoder()
+                                .decode(e.as_ref())
+                                .map_err(|e| Error::Runtime(format!("XML CDATA error: {}", e)))?
+                                .to_string();
+                            match &mut parent.3 {
+                                Some(t) => t.push_str(&text),
+                                None => parent.3 = Some(text),
+                            }
+                        }
+                    }
+                    Ok(quick_xml::events::Event::Eof) => break,
+                    Err(e) => {
+                        return Err(Error::Runtime(format!(
+                            "XML parse error at position {}: {}",
+                            reader.buffer_position(),
+                            e
+                        )));
+                    }
+                    _ => (),
+                }
+                buf.clear();
+            }
+
+            Ok(root.unwrap_or(RuntimeValue::NONE))
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
 define_builtin!(
     SET_VARIABLE,
     ParamNum::Fixed(2),
@@ -2532,6 +2775,10 @@ const HASH_UTF8BYTELEN: u64 = fnv1a_hash_64("utf8bytelen");
 const HASH_VALUES: u64 = fnv1a_hash_64("values");
 const HASH_INTERN: u64 = fnv1a_hash_64("intern");
 const HASH_GET_MARKDOWN_POSITION: u64 = fnv1a_hash_64("_get_markdown_position");
+const HASH_CSV_PARSE: u64 = fnv1a_hash_64("_csv_parse");
+const HASH_XML_PARSE: u64 = fnv1a_hash_64("_xml_parse");
+const HASH_JSON_PARSE: u64 = fnv1a_hash_64("_json_parse");
+const HASH_TOON_PARSE: u64 = fnv1a_hash_64("_toon_parse");
 #[cfg(feature = "file-io")]
 const HASH_READ_FILE: u64 = fnv1a_hash_64("read_file");
 
@@ -2663,6 +2910,10 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_VALUES => Some(&VALUES),
         HASH_INTERN => Some(&INTERN),
         HASH_GET_MARKDOWN_POSITION => Some(&_GET_MARKDOWN_POSITION),
+        HASH_CSV_PARSE => Some(&_CSV_PARSE),
+        HASH_XML_PARSE => Some(&_XML_PARSE),
+        HASH_JSON_PARSE => Some(&_JSON_PARSE),
+        HASH_TOON_PARSE => Some(&_TOON_PARSE),
         #[cfg(feature = "file-io")]
         HASH_READ_FILE => Some(&READ_FILE),
         _ => None,
@@ -3052,6 +3303,35 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
             params: &["ast_node"],
         },
     );
+    map.insert(
+        SmolStr::new("_csv_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses a CSV string into an array of arrays, using the specified delimiter and header options.",
+            params: &["csv_string", "delimiter", "has_header"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_xml_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses an XML string and returns the corresponding data structure.",
+            params: &["xml_string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_json_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses a JSON string into a data structure.",
+            params: &["json_string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_toon_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses a TOON string into a data structure.",
+            params: &["toon_string"],
+        },
+    );
+
     map
 });
 
@@ -5265,5 +5545,393 @@ mod tests {
         } else {
             panic!("Expected successful string repeat");
         }
+    }
+
+    #[rstest]
+    #[case::simple_no_header(
+        "a,b,c\n1,2,3\n4,5,6",
+        Ok(RuntimeValue::Array(vec![
+            RuntimeValue::Array(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("c".to_string()),
+            ]),
+            RuntimeValue::Array(vec![
+                RuntimeValue::String("1".to_string()),
+                RuntimeValue::String("2".to_string()),
+                RuntimeValue::String("3".to_string()),
+            ]),
+            RuntimeValue::Array(vec![
+                RuntimeValue::String("4".to_string()),
+                RuntimeValue::String("5".to_string()),
+                RuntimeValue::String("6".to_string()),
+            ]),
+        ]))
+    )]
+    #[case::single_row_no_header(
+        "x,y",
+        Ok(RuntimeValue::Array(vec![
+            RuntimeValue::Array(vec![
+                RuntimeValue::String("x".to_string()),
+                RuntimeValue::String("y".to_string()),
+            ]),
+        ]))
+    )]
+    #[case::empty_no_header(
+        "",
+        Ok(RuntimeValue::Array(vec![]))
+    )]
+    fn test_csv_parse_no_header(#[case] csv: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("_csv_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(csv.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::simple_with_header(
+        "name,age\nAlice,30\nBob,25",
+        {
+            let mut alice = BTreeMap::new();
+            alice.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+            alice.insert(Ident::new("age"), RuntimeValue::String("30".to_string()));
+            let mut bob = BTreeMap::new();
+            bob.insert(Ident::new("name"), RuntimeValue::String("Bob".to_string()));
+            bob.insert(Ident::new("age"), RuntimeValue::String("25".to_string()));
+            Ok(RuntimeValue::Array(vec![
+                RuntimeValue::Dict(alice),
+                RuntimeValue::Dict(bob),
+            ]))
+        }
+    )]
+    #[case::single_row_with_header(
+        "id,value\n1,hello",
+        {
+            let mut row = BTreeMap::new();
+            row.insert(Ident::new("id"), RuntimeValue::String("1".to_string()));
+            row.insert(Ident::new("value"), RuntimeValue::String("hello".to_string()));
+            Ok(RuntimeValue::Array(vec![RuntimeValue::Dict(row)]))
+        }
+    )]
+    #[case::quoted_fields_with_header(
+        "name,note\n\"Doe, Jane\",\"says \"\"hi\"\"\"",
+        {
+            let mut row = BTreeMap::new();
+            row.insert(Ident::new("name"), RuntimeValue::String("Doe, Jane".to_string()));
+            row.insert(Ident::new("note"), RuntimeValue::String("says \"hi\"".to_string()));
+            Ok(RuntimeValue::Array(vec![RuntimeValue::Dict(row)]))
+        }
+    )]
+    fn test_csv_parse_with_header(#[case] csv: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("_csv_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![
+                RuntimeValue::String(csv.to_string()),
+                RuntimeValue::String(",".to_string()),
+                RuntimeValue::Boolean(true),
+            ],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::tsv_no_header(
+        "a\tb\tc\n1\t2\t3",
+        "\t",
+        false,
+        Ok(RuntimeValue::Array(vec![
+            RuntimeValue::Array(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("c".to_string()),
+            ]),
+            RuntimeValue::Array(vec![
+                RuntimeValue::String("1".to_string()),
+                RuntimeValue::String("2".to_string()),
+                RuntimeValue::String("3".to_string()),
+            ]),
+        ]))
+    )]
+    #[case::tsv_with_header(
+        "name\tage\nAlice\t30",
+        "\t",
+        true,
+        {
+            let mut row = BTreeMap::new();
+            row.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+            row.insert(Ident::new("age"), RuntimeValue::String("30".to_string()));
+            Ok(RuntimeValue::Array(vec![RuntimeValue::Dict(row)]))
+        }
+    )]
+    fn test_csv_parse_custom_delimiter(
+        #[case] csv: &str,
+        #[case] delimiter: &str,
+        #[case] has_header: bool,
+        #[case] expected: Result<RuntimeValue, Error>,
+    ) {
+        let ident = Ident::new("_csv_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![
+                RuntimeValue::String(csv.to_string()),
+                RuntimeValue::String(delimiter.to_string()),
+                RuntimeValue::Boolean(has_header),
+            ],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::invalid_type_number(RuntimeValue::Number(42.into()))]
+    #[case::invalid_type_bool(RuntimeValue::Boolean(false))]
+    fn test_csv_parse_invalid_arg_type(#[case] invalid_arg: RuntimeValue) {
+        let ident = Ident::new("_csv_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![invalid_arg],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::simple_object(
+        r#"{"key": "value"}"#,
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("key"), RuntimeValue::String("value".to_string()));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::array(
+        r#"[1, 2, 3]"#,
+        Ok(RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(3.into()),
+        ]))
+    )]
+    #[case::nested(
+        r#"{"a": [true, null], "b": {"c": 1.2}}"#,
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("a"), RuntimeValue::Array(vec![
+                RuntimeValue::Boolean(true),
+                RuntimeValue::NONE,
+            ]));
+            let mut inner = BTreeMap::new();
+            inner.insert(Ident::new("c"), RuntimeValue::Number(1.2.into()));
+            map.insert(Ident::new("b"), RuntimeValue::Dict(inner));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::string(r#""hello""#, Ok(RuntimeValue::String("hello".to_string())))]
+    #[case::number(r#"42"#, Ok(RuntimeValue::Number(42.into())))]
+    #[case::boolean(r#"false"#, Ok(RuntimeValue::Boolean(false)))]
+    #[case::null(r#"null"#, Ok(RuntimeValue::NONE))]
+    fn test_json_parse(#[case] json: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("_json_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(json.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::invalid_json(r#"{"key": "value""#)]
+    #[case::invalid_type(RuntimeValue::Number(1.into()))]
+    fn test_json_parse_error(#[case] input: impl Into<RuntimeValue>) {
+        let ident = Ident::new("_json_parse");
+        let arg: RuntimeValue = match input.into() {
+            RuntimeValue::Number(n) => RuntimeValue::Number(n),
+            s => RuntimeValue::String(s.to_string()),
+        };
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![arg],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::simple_kv(
+        "a: 1\nb: 2",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
+            map.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::nested_indent(
+        "parent:\n  child: value",
+        {
+            let mut child_map = BTreeMap::new();
+            child_map.insert(Ident::new("child"), RuntimeValue::String("value".to_string()));
+            let mut parent_map = BTreeMap::new();
+            parent_map.insert(Ident::new("parent"), RuntimeValue::Dict(child_map));
+            Ok(RuntimeValue::Dict(parent_map))
+        }
+    )]
+    #[case::tabular_data(
+        "hikes[2]{id,name}:\n  1,Blue Lake\n  2,Ridge Trail",
+        {
+            let mut row1 = BTreeMap::new();
+            row1.insert(Ident::new("id"), RuntimeValue::Number(1.into()));
+            row1.insert(Ident::new("name"), RuntimeValue::String("Blue Lake".to_string()));
+            let mut row2 = BTreeMap::new();
+            row2.insert(Ident::new("id"), RuntimeValue::Number(2.into()));
+            row2.insert(Ident::new("name"), RuntimeValue::String("Ridge Trail".to_string()));
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("hikes"), RuntimeValue::Array(vec![RuntimeValue::Dict(row1), RuntimeValue::Dict(row2)]));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::inline_array(
+        "items[3]: 1, 2, 3",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("items"), RuntimeValue::Array(vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(2.into()),
+                RuntimeValue::Number(3.into()),
+            ]));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::expanded_array(
+        "items[2]:\n  - 1\n  - 2",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("items"), RuntimeValue::Array(vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(2.into()),
+            ]));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::primitives(
+        "s: \"string\"\nb: true\nn: null\nf: false",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("s"), RuntimeValue::String("string".to_string()));
+            map.insert(Ident::new("b"), RuntimeValue::TRUE);
+            map.insert(Ident::new("n"), RuntimeValue::NONE);
+            map.insert(Ident::new("f"), RuntimeValue::FALSE);
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    fn test_toon_parse(#[case] toon: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("_toon_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(toon.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::simple(
+        "<root>hello</root>",
+        {
+            let mut root = BTreeMap::new();
+            root.insert(Ident::new("tag"), RuntimeValue::String("root".to_string()));
+            root.insert(Ident::new("attributes"), RuntimeValue::new_dict());
+            root.insert(Ident::new("children"), RuntimeValue::EMPTY_ARRAY);
+            root.insert(Ident::new("text"), RuntimeValue::String("hello".to_string()));
+            Ok(RuntimeValue::Dict(root))
+        }
+    )]
+    #[case::with_attributes(
+        "<root id=\"1\" class=\"main\">hello</root>",
+        {
+            let mut root = BTreeMap::new();
+            let mut attrs = BTreeMap::new();
+            attrs.insert(Ident::new("id"), RuntimeValue::String("1".to_string()));
+            attrs.insert(Ident::new("class"), RuntimeValue::String("main".to_string()));
+            root.insert(Ident::new("tag"), RuntimeValue::String("root".to_string()));
+            root.insert(Ident::new("attributes"), RuntimeValue::Dict(attrs));
+            root.insert(Ident::new("children"), RuntimeValue::EMPTY_ARRAY);
+            root.insert(Ident::new("text"), RuntimeValue::String("hello".to_string()));
+            Ok(RuntimeValue::Dict(root))
+        }
+    )]
+    #[case::nested(
+        "<root><child id=\"1\">hello</child><child id=\"2\">world</child></root>",
+        {
+            let mut root = BTreeMap::new();
+            let mut child1 = BTreeMap::new();
+            let mut attrs1 = BTreeMap::new();
+            attrs1.insert(Ident::new("id"), RuntimeValue::String("1".to_string()));
+            child1.insert(Ident::new("tag"), RuntimeValue::String("child".to_string()));
+            child1.insert(Ident::new("attributes"), RuntimeValue::Dict(attrs1));
+            child1.insert(Ident::new("children"), RuntimeValue::EMPTY_ARRAY);
+            child1.insert(Ident::new("text"), RuntimeValue::String("hello".to_string()));
+
+            let mut child2 = BTreeMap::new();
+            let mut attrs2 = BTreeMap::new();
+            attrs2.insert(Ident::new("id"), RuntimeValue::String("2".to_string()));
+            child2.insert(Ident::new("tag"), RuntimeValue::String("child".to_string()));
+            child2.insert(Ident::new("attributes"), RuntimeValue::Dict(attrs2));
+            child2.insert(Ident::new("children"), RuntimeValue::EMPTY_ARRAY);
+            child2.insert(Ident::new("text"), RuntimeValue::String("world".to_string()));
+
+            root.insert(Ident::new("tag"), RuntimeValue::String("root".to_string()));
+            root.insert(Ident::new("attributes"), RuntimeValue::new_dict());
+            root.insert(Ident::new("children"), RuntimeValue::Array(vec![
+                RuntimeValue::Dict(child1),
+                RuntimeValue::Dict(child2),
+            ]));
+            root.insert(Ident::new("text"), RuntimeValue::NONE);
+            Ok(RuntimeValue::Dict(root))
+        }
+    )]
+    #[case::self_closing(
+        "<root><child id=\"1\"/></root>",
+        {
+            let mut root = BTreeMap::new();
+            let mut child = BTreeMap::new();
+            let mut attrs = BTreeMap::new();
+            attrs.insert(Ident::new("id"), RuntimeValue::String("1".to_string()));
+            child.insert(Ident::new("tag"), RuntimeValue::String("child".to_string()));
+            child.insert(Ident::new("attributes"), RuntimeValue::Dict(attrs));
+            child.insert(Ident::new("children"), RuntimeValue::EMPTY_ARRAY);
+            child.insert(Ident::new("text"), RuntimeValue::NONE);
+
+            root.insert(Ident::new("tag"), RuntimeValue::String("root".to_string()));
+            root.insert(Ident::new("attributes"), RuntimeValue::new_dict());
+            root.insert(Ident::new("children"), RuntimeValue::Array(vec![
+                RuntimeValue::Dict(child),
+            ]));
+            root.insert(Ident::new("text"), RuntimeValue::NONE);
+            Ok(RuntimeValue::Dict(root))
+        }
+    )]
+    fn test_xml_parse(#[case] xml: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("_xml_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(xml.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
     }
 }

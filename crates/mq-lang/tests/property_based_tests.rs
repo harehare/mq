@@ -1,6 +1,7 @@
 //! Property-based tests for mq-lang AST operations.
 use mq_lang::{
-    Arena, AstExpr, AstLiteral, AstNode, DefaultEngine, IdentWithToken, Program, RuntimeValue, Shared, SharedCell,
+    Arena, AstExpr, AstLiteral, AstNode, AstPattern, DefaultEngine, IdentWithToken, Program, RuntimeValue, Shared,
+    SharedCell,
 };
 use proptest::prelude::*;
 use smallvec::smallvec;
@@ -151,11 +152,13 @@ mod strategies {
     }
 
     pub fn let_expr() -> impl Strategy<Value = Shared<AstNode>> {
-        (ident(), simple_expr()).prop_map(|(var_name, value)| make_node(AstExpr::Let(var_name, value)))
+        (ident(), simple_expr())
+            .prop_map(|(var_name, value)| make_node(AstExpr::Let(AstPattern::Ident(var_name), value)))
     }
 
     pub fn var_expr() -> impl Strategy<Value = Shared<AstNode>> {
-        (ident(), simple_expr()).prop_map(|(var_name, value)| make_node(AstExpr::Var(var_name, value)))
+        (ident(), simple_expr())
+            .prop_map(|(var_name, value)| make_node(AstExpr::Var(AstPattern::Ident(var_name), value)))
     }
 
     pub fn assign_expr() -> impl Strategy<Value = Shared<AstNode>> {

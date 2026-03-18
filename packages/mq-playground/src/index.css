@@ -128,7 +128,31 @@ body {
 .footer-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+}
+
+.footer-icon-button {
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 2px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  transition: background-color 0.15s;
+}
+
+.footer-icon-button:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.cursor-position {
+  font-family: monospace;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
 }
 
 .footer-item {
@@ -148,11 +172,10 @@ body {
 }
 
 .file-tree-panel {
-  width: 250px;
-  min-width: 200px;
-  max-width: 400px;
-  resize: horizontal;
-  overflow: auto;
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .left-panel {
@@ -170,7 +193,8 @@ body {
 .editor-container {
   display: flex;
   flex-direction: column;
-  height: 50%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .editor {

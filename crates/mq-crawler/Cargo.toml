@@ -9,18 +9,19 @@ license = "MIT"
 name = "mq-crawler"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.19"
+version = "0.5.20"
 
 [dependencies]
+chromiumoxide = {workspace = true}
 clap = {workspace = true, features = ["derive"]}
 crossbeam = {workspace = true}
 dashmap = {workspace = true}
-fantoccini = {workspace = true}
+fantoccini = {workspace = true, features = ["rustls-tls"]}
 futures = {workspace = true}
 miette = {workspace = true, features = ["fancy"]}
 mq-lang = {workspace = true}
 mq-markdown = {workspace = true}
-reqwest = {workspace = true, features = ["json", "rustls-tls"]}
+reqwest = {workspace = true, features = ["json"]}
 robots_txt = {workspace = true}
 scraper = {workspace = true}
 serde = {workspace = true, features = ["derive"]}

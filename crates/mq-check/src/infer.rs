@@ -1,6 +1,6 @@
 //! Type inference context and engine.
 
-use crate::constraint::Constraint;
+use crate::constraint::{Constraint, ConstraintOrigin};
 use crate::types::{Substitution, Type, TypeScheme, TypeVarContext, TypeVarId, format_type_list};
 use crate::{TypeEnv, TypeError, unify};
 use mq_hir::SymbolId;
@@ -330,25 +330,60 @@ impl InferenceContext {
     /// Resolves both types before formatting them, and constructs the error with
     /// source location info from `range`. Use this instead of hand-rolling
     /// `resolve_type` + `display_renumbered` + `add_error(TypeError::Mismatch {...})`.
-    pub fn report_mismatch(&mut self, t1: &Type, t2: &Type, range: Option<mq_lang::Range>) {
+    pub fn report_mismatch(&mut self, t1: &Type, t2: &Type, range: Option<mq_lang::Range>, origin: &ConstraintOrigin) {
         let resolved_t1 = self.resolve_type(t1);
         let resolved_t2 = self.resolve_type(t2);
         self.add_error(TypeError::Mismatch {
             expected: resolved_t1.display_renumbered(),
             found: resolved_t2.display_renumbered(),
             span: range.as_ref().map(unify::range_to_span),
-            location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+            location: range,
+            context: origin.to_context_string(),
         });
+    }
+
+    /// Formats available overloads for a builtin function as a compact help string.
+    ///
+    /// Shows at most 3 overloads inline; appends "+N more" if there are additional ones.
+    fn format_available_overloads(&self, name: &str) -> Option<String> {
+        const MAX_SHOWN: usize = 3;
+        let overloads = self.get_builtin_overloads(name)?;
+        let sigs: Vec<String> = overloads
+            .iter()
+            .filter_map(|ty| {
+                if let Type::Function(params, ret) = ty {
+                    let params_str = params
+                        .iter()
+                        .map(|p| p.display_renumbered())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    Some(format!("{}({}) -> {}", name, params_str, ret.display_renumbered()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if sigs.is_empty() {
+            return None;
+        }
+        let shown = &sigs[..sigs.len().min(MAX_SHOWN)];
+        let mut result = format!("try: {}", shown.join(" | "));
+        if sigs.len() > MAX_SHOWN {
+            result.push_str(&format!(" (+{} more)", sigs.len() - MAX_SHOWN));
+        }
+        Some(result)
     }
 
     /// Reports a "no matching overload" error with formatted argument types.
     pub fn report_no_matching_overload(&mut self, op_name: &str, arg_tys: &[Type], range: Option<mq_lang::Range>) {
         let args_str = format_type_list(arg_tys);
+        let context = self.format_available_overloads(op_name);
         self.add_error(TypeError::UnificationError {
             left: format!("{} with arguments ({})", op_name, args_str),
             right: "no matching overload".to_string(),
             span: range.as_ref().map(unify::range_to_span),
-            location: range.as_ref().map(|r| (r.start.line, r.start.column)),
+            location: range,
+            context,
         });
     }
 

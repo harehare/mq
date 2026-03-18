@@ -626,3 +626,24 @@ def slugify(s, separator = "-"):
   | gsub("^-+|-+$", "")
 end
 
+# Calculates the p-th percentile of an array of numbers using linear interpolation between closest ranks.
+def percentile(arr, p):
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)):
+    None
+  elif (p < 0 || p > 1):
+    error("p must be between 0 and 1")
+  else:
+    do
+      let sorted = sort(arr)
+      | let rank = p * (len(sorted) - 1)
+      | let lower_index = floor(rank)
+      | let upper_index = ceil(rank)
+      | let weight = rank - lower_index
+      | if (upper_index >= len(sorted)):
+          sorted[lower_index]
+        else:
+          sorted[lower_index] * (1 - weight) + sorted[upper_index] * weight
+    end
+end

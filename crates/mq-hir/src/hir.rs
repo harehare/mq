@@ -1,6 +1,4 @@
-use std::{path::PathBuf, vec};
-
-use mq_lang::{Token, TokenKind};
+use std::path::PathBuf;
 
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
@@ -11,70 +9,11 @@ use crate::{
     builtin::Builtin,
     scope::{Scope, ScopeId, ScopeKind},
     source::{Source, SourceId, SourceInfo},
-    symbol::{ParamInfo, Symbol, SymbolId, SymbolKind},
+    symbol::{Symbol, SymbolId, SymbolKind},
 };
 
-/// Constructs a [`mq_lang::Selector`] from a CST selector node.
-///
-/// For bracket-based selectors (e.g., `.[n]`, `.[n][m]`), the CST node has
-/// `token = Selector(".")` with bracket tokens and optional number literals as
-/// children. This function inspects all children to determine bracket count and
-/// indices, then returns the appropriate `List` or `Table` selector variant.
-///
-/// For all other selectors the token value is passed directly to
-/// [`mq_lang::Selector::try_from`].
-fn selector_from_cst_node(node: &mq_lang::CstNode) -> Option<mq_lang::Selector> {
-    let token = node.token.as_ref()?;
-
-    if !matches!(&token.kind, TokenKind::Selector(s) if s == ".") {
-        return mq_lang::Selector::try_from(&**token).ok();
-    }
-
-    // Bracket-based selector: walk all children to count bracket pairs and
-    // collect the optional number literal inside each pair.
-    let mut bracket_pairs: u32 = 0;
-    let mut indices: Vec<Option<usize>> = Vec::with_capacity(2);
-    let mut in_bracket = false;
-    let mut bracket_has_number = false;
-
-    for child in &node.children {
-        let Some(tok) = child.token.as_ref() else {
-            continue;
-        };
-        match &tok.kind {
-            TokenKind::LBracket => {
-                in_bracket = true;
-                bracket_has_number = false;
-                bracket_pairs += 1;
-            }
-            TokenKind::RBracket => {
-                if in_bracket && !bracket_has_number {
-                    indices.push(None);
-                }
-                in_bracket = false;
-            }
-            TokenKind::NumberLiteral(n) if in_bracket => {
-                let idx = if n.is_int() && n.value() >= 0.0 {
-                    Some(n.to_int() as usize)
-                } else {
-                    None
-                };
-                indices.push(idx);
-                bracket_has_number = true;
-            }
-            _ => {}
-        }
-    }
-
-    match bracket_pairs {
-        1 => Some(mq_lang::Selector::List(indices.first().copied().flatten(), None)),
-        2 => Some(mq_lang::Selector::Table(
-            indices.first().copied().flatten(),
-            indices.get(1).copied().flatten(),
-        )),
-        _ => None,
-    }
-}
+mod lower;
+mod query;
 
 #[derive(Debug)]
 pub struct Hir {
@@ -86,6 +25,17 @@ pub struct Hir {
     pub(crate) source_scopes: FxHashMap<SourceId, ScopeId>,
     pub(crate) references: FxHashMap<SymbolId, SymbolId>,
     pub(crate) source_symbols: FxHashMap<SourceId, Vec<SymbolId>>,
+    /// Monotonically-increasing counter assigned to each symbol at insertion time.
+    /// Because `SlotMap` reuses freed slots (LIFO), the slot-based key order no longer
+    /// reflects insertion order after a source is reloaded (e.g. on repeated LSP saves).
+    /// Using an explicit counter guarantees that parent symbols always have a lower order
+    /// value than their children, which is required by the type-checker's constraint-
+    /// generation passes.
+    pub(crate) symbol_insertion_counter: u32,
+    /// Reverse index from symbol name → list of SymbolIds that carry that name.
+    /// Populated by `insert_symbol` and pruned by `add_nodes` cleanup.
+    /// Allows name-based lookups in `resolve.rs` to skip an O(n) full-symbol scan.
+    pub(crate) name_index: FxHashMap<SmolStr, Vec<SymbolId>>,
 }
 
 impl Default for Hir {
@@ -124,85 +74,9 @@ impl Hir {
             source_scopes,
             references: FxHashMap::default(),
             source_symbols: FxHashMap::default(),
+            symbol_insertion_counter: 0,
+            name_index: FxHashMap::default(),
         }
-    }
-
-    pub fn is_builtin_symbol(&self, symbol: &Symbol) -> bool {
-        symbol.source.source_id == Some(self.builtin.source_id)
-    }
-
-    /// Returns an iterator over symbols for a specific source using the index.
-    /// This is much faster than iterating over all symbols and filtering.
-    pub fn symbols_for_source(&self, source_id: SourceId) -> impl Iterator<Item = (SymbolId, &Symbol)> + '_ {
-        self.source_symbols
-            .get(&source_id)
-            .into_iter()
-            .flat_map(move |symbol_ids| {
-                symbol_ids
-                    .iter()
-                    .filter_map(move |&symbol_id| self.symbols.get(symbol_id).map(|symbol| (symbol_id, symbol)))
-            })
-    }
-
-    /// Returns a list of unused user-defined functions for a given source
-    pub fn unused_functions(&self, source_id: SourceId) -> Vec<(SymbolId, &Symbol)> {
-        // Build usage map and collect functions using the index for fast lookup
-        // This only iterates over symbols from the specific source, not all symbols
-        let mut usage_map: FxHashMap<&SmolStr, bool> = FxHashMap::default();
-        let mut user_functions = Vec::new();
-
-        for (symbol_id, symbol) in self.symbols_for_source(source_id) {
-            // Collect user-defined functions from this source
-            if symbol.is_function() && !self.is_builtin_symbol(symbol) && !symbol.is_internal_function() {
-                if let Some(ref name) = symbol.value {
-                    usage_map.entry(name).or_insert(false);
-                    user_functions.push((symbol_id, symbol));
-                }
-            }
-            // Mark functions as used if they're referenced
-            else if let Some(ref name) = symbol.value
-                && matches!(symbol.kind, SymbolKind::Call | SymbolKind::Ref | SymbolKind::Argument)
-            {
-                usage_map.entry(name).and_modify(|used| *used = true).or_insert(true);
-            }
-        }
-
-        // Filter out used functions (O(m) where m = number of user functions in this source)
-        user_functions
-            .into_iter()
-            .filter(|(_, symbol)| {
-                symbol
-                    .value
-                    .as_ref()
-                    .and_then(|name| usage_map.get(name))
-                    .is_none_or(|&used| !used)
-            })
-            .collect()
-    }
-
-    #[inline(always)]
-    pub fn builtins(&self) -> impl Iterator<Item = &mq_lang::BuiltinFunctionDoc> {
-        self.builtin.functions.values()
-    }
-
-    #[inline(always)]
-    pub fn symbol(&self, symbol_id: SymbolId) -> Option<&Symbol> {
-        self.symbols.get(symbol_id)
-    }
-
-    #[inline(always)]
-    pub fn symbols(&self) -> impl Iterator<Item = (SymbolId, &Symbol)> {
-        self.symbols.iter()
-    }
-
-    #[inline(always)]
-    pub fn scope(&self, scope_id: ScopeId) -> Option<&Scope> {
-        self.scopes.get(scope_id)
-    }
-
-    #[inline(always)]
-    pub fn scopes(&self) -> impl Iterator<Item = (ScopeId, &Scope)> {
-        self.scopes.iter()
     }
 
     pub fn add_new_source(&mut self, url: Option<Url>) -> (SourceId, ScopeId) {
@@ -263,6 +137,7 @@ impl Hir {
                     mq_lang::BUILTIN_FUNCTION_DOC[&name].description.to_string(),
                 )],
                 parent: None,
+                insertion_order: 0,
             });
         }
 
@@ -284,12 +159,15 @@ impl Hir {
                     mq_lang::INTERNAL_FUNCTION_DOC[&name].description.to_string(),
                 )],
                 parent: None,
+                insertion_order: 0,
             });
         }
 
         let selector_keys: Vec<_> = self.builtin.selectors.keys().cloned().collect();
         for name in selector_keys {
-            if let Ok(selector) = mq_lang::Selector::try_from(&mq_lang::Token::new(TokenKind::Selector(name.clone()))) {
+            if let Ok(selector) =
+                mq_lang::Selector::try_from(&mq_lang::Token::new(mq_lang::TokenKind::Selector(name.clone())))
+            {
                 self.add_symbol(Symbol {
                     value: Some(name.clone()),
                     kind: SymbolKind::Selector(selector),
@@ -300,6 +178,7 @@ impl Hir {
                         mq_lang::BUILTIN_SELECTOR_DOC[&name].description.to_string(),
                     )],
                     parent: None,
+                    insertion_order: 0,
                 });
             }
         }
@@ -320,6 +199,20 @@ impl Hir {
                 self.source_symbols.remove(source_id);
             })
             .unwrap_or_else(|| self.add_source(Source::new(Some(url))));
+
+        // Clean up stale entries in the auxiliary maps whose symbols were removed above.
+        // Without this, these maps accumulate dead entries across multiple `add_nodes`
+        // calls (e.g. repeated LSP saves).
+        {
+            let symbols = &self.symbols;
+            self.references
+                .retain(|ref_id, def_id| symbols.contains_key(*ref_id) && symbols.contains_key(*def_id));
+            // Prune name_index: remove dead SymbolIds, then drop empty name entries.
+            self.name_index.retain(|_, ids| {
+                ids.retain(|id| symbols.contains_key(*id));
+                !ids.is_empty()
+            });
+        }
 
         let scope_id = self.scope_by_source(&source_id).unwrap_or_else(|| {
             self.add_scope(Scope::new(
@@ -361,1181 +254,6 @@ impl Hir {
         })
     }
 
-    fn add_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        let mq_lang::CstNode { kind, .. } = &**node;
-
-        match kind {
-            mq_lang::CstNodeKind::BinaryOp(_) => {
-                self.add_binary_op_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Block => {
-                self.add_block_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::UnaryOp(_) => {
-                self.add_unary_op_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Call => {
-                self.add_call_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::CallDynamic => {
-                self.add_call_dynamic_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Def => {
-                self.add_def_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Macro => {
-                self.add_macro_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::MacroCall => {
-                self.add_macro_call_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Foreach => {
-                self.add_foreach_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Fn => {
-                self.add_fn_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Ident => {
-                self.add_ident_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::If => {
-                self.add_if_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Include => {
-                self.add_include_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Import => {
-                self.add_import_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Module => {
-                self.add_module_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::QualifiedAccess => {
-                self.add_qualified_access_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::InterpolatedString => {
-                self.add_interpolated_string(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var => {
-                self.add_var_decl(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Literal => {
-                self.add_literal_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Selector => {
-                self.add_selector_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::While => {
-                self.add_while_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Loop => {
-                self.add_loop_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Try => {
-                self.add_try_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Catch => {
-                self.add_catch_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Array => {
-                self.add_array_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Dict => {
-                self.add_dict_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Match => {
-                self.add_match_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::MatchArm => {
-                self.add_match_arm_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Pattern => {
-                self.add_pattern_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Quote => {
-                self.add_quote_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Unquote => {
-                self.add_unquote_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Break => {
-                self.add_break_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Self_
-            | mq_lang::CstNodeKind::Nodes
-            | mq_lang::CstNodeKind::End
-            | mq_lang::CstNodeKind::Continue => {
-                self.add_keyword(node, source_id, scope_id, parent);
-            }
-
-            mq_lang::CstNodeKind::Assign => {
-                self.add_assign_expr(node, source_id, scope_id, parent);
-            }
-
-            _ => {}
-        }
-    }
-
-    /// Lowers a `CstNodeKind::Assign` node into a `SymbolKind::Assign` symbol.
-    ///
-    /// Assignment nodes (e.g., `x = 10`, `x += 1`) have two children: the LHS
-    /// (target identifier) and the RHS (value expression). The operator token
-    /// name is stored as the symbol's value.
-    fn add_assign_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Assign,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Assign,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            for child in node.children_without_token() {
-                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
-            }
-        }
-    }
-
-    fn add_block_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Block,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: None,
-                kind: SymbolKind::Block,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            // Create a new scope for the block
-            let block_scope_id = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Block(symbol_id),
-                Some(scope_id),
-            ));
-
-            // Process all child nodes within the block scope
-            node.children.iter().for_each(|child| {
-                self.add_expr(child, source_id, block_scope_id, Some(symbol_id));
-            });
-        }
-    }
-
-    fn add_binary_op_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::BinaryOp(_),
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::BinaryOp,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            for child in node.children_without_token() {
-                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
-            }
-        }
-    }
-
-    fn add_unary_op_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::UnaryOp(_),
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::UnaryOp,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            for child in node.children_without_token() {
-                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
-            }
-        }
-    }
-
-    fn add_literal_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Literal,
-            ..
-        } = &**node
-        {
-            // Check if this is a symbol literal (has children: colon + identifier/string)
-            if !node.children.is_empty() {
-                // Symbol literal: extract the symbol name from the second child
-                if let Some(symbol_child) = node.children.get(1) {
-                    self.add_symbol(Symbol {
-                        value: symbol_child.name(),
-                        kind: SymbolKind::Symbol,
-                        source: SourceInfo::new(Some(source_id), Some(node.range())),
-                        scope: scope_id,
-                        doc: node.comments(),
-                        parent,
-                    });
-                }
-            } else {
-                // Regular literal with token
-                self.add_symbol(Symbol {
-                    value: node.name(),
-                    kind: match &node.token.clone().unwrap().kind {
-                        mq_lang::TokenKind::StringLiteral(_) => SymbolKind::String,
-                        mq_lang::TokenKind::NumberLiteral(_) => SymbolKind::Number,
-                        mq_lang::TokenKind::BoolLiteral(_) => SymbolKind::Boolean,
-                        mq_lang::TokenKind::None => SymbolKind::None,
-                        _ => unreachable!(),
-                    },
-                    source: SourceInfo::new(Some(source_id), Some(node.range())),
-                    scope: scope_id,
-                    doc: node.comments(),
-                    parent,
-                });
-            }
-        }
-    }
-
-    fn add_interpolated_string(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::InterpolatedString,
-            token: Some(token),
-            ..
-        } = &**node
-            && let Token {
-                kind: TokenKind::InterpolatedString(segments),
-                ..
-            } = &**token
-        {
-            segments.iter().for_each(|segment| match segment {
-                mq_lang::StringSegment::Text(text, range) => {
-                    self.add_symbol(Symbol {
-                        value: Some(text.into()),
-                        kind: SymbolKind::String,
-                        source: SourceInfo::new(Some(source_id), Some(*range)),
-                        scope: scope_id,
-                        doc: node.comments(),
-                        parent,
-                    });
-                }
-                mq_lang::StringSegment::Expr(expr, range) => {
-                    self.symbols.insert(Symbol {
-                        value: Some(expr.clone()),
-                        kind: SymbolKind::Variable,
-                        source: SourceInfo::new(Some(source_id), Some(*range)),
-                        scope: scope_id,
-                        doc: node.comments(),
-                        parent,
-                    });
-                }
-            });
-        }
-    }
-
-    fn add_include_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Include,
-            ..
-        } = &**node
-        {
-            let _ = node.children_without_token().first().map(|child| {
-                let module_name = child.name().unwrap();
-                let module_path = self.module_loader.get_module_path(&module_name);
-
-                if let Ok(url) = Url::parse(&format!("file:///{}", module_path.unwrap_or(module_name.to_string()))) {
-                    let code = self.module_loader.resolve(&module_name);
-                    let (module_source_id, _) = self.add_code(Some(url), &code.unwrap_or_default());
-
-                    self.add_symbol(Symbol {
-                        value: Some(module_name.clone()),
-                        kind: SymbolKind::Include(module_source_id),
-                        source: SourceInfo::new(Some(source_id), Some(node.range())),
-                        scope: scope_id,
-                        doc: node.comments(),
-                        parent,
-                    });
-                }
-            });
-        }
-    }
-
-    fn add_import_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Import,
-            ..
-        } = &**node
-        {
-            let _ = node.children_without_token().first().map(|child| {
-                let module_name = child.name().unwrap();
-                let module_path = self.module_loader.get_module_path(&module_name);
-
-                if let Ok(url) = Url::parse(&format!("file:///{}", module_path.unwrap_or(module_name.to_string()))) {
-                    let code = self.module_loader.resolve(&module_name);
-                    let (module_source_id, _) = self.add_code(Some(url), &code.unwrap_or_default());
-
-                    self.add_symbol(Symbol {
-                        value: Some(module_name.clone()),
-                        kind: SymbolKind::Import(module_source_id),
-                        source: SourceInfo::new(Some(source_id), Some(node.range())),
-                        scope: scope_id,
-                        doc: node.comments(),
-                        parent,
-                    });
-                }
-            });
-        }
-    }
-
-    fn add_module_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Module,
-            ..
-        } = &**node
-        {
-            let children = node.children_without_token();
-
-            // Get the module name from the first child
-            let module_name = children.first().and_then(|n| n.name());
-
-            // First child is the module name - register as Ident
-            if let Some(module_name_node) = children.first() {
-                self.add_symbol(Symbol {
-                    value: module_name_node.name(),
-                    kind: SymbolKind::Ident,
-                    source: SourceInfo::new(Some(source_id), Some(module_name_node.range())),
-                    scope: scope_id,
-                    doc: node.comments(),
-                    parent,
-                });
-            }
-
-            let symbol_id = self.add_symbol(Symbol {
-                value: module_name,
-                kind: SymbolKind::Module(source_id),
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            // Process remaining child nodes (module body)
-            for child in children.iter().skip(1) {
-                self.add_expr(child, source_id, scope_id, Some(symbol_id));
-            }
-        }
-    }
-
-    fn add_qualified_access_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::QualifiedAccess,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::QualifiedAccess,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            // Process child nodes (module name, function/value name, and args if call)
-            for child in node.children_without_token() {
-                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
-            }
-        }
-    }
-
-    fn add_while_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::While,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::While,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-            let loop_scope_id = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Loop(symbol_id),
-                Some(scope_id),
-            ));
-
-            node.children_without_token().iter().for_each(|child| {
-                self.add_expr(child, source_id, loop_scope_id, Some(symbol_id));
-            });
-        }
-    }
-
-    fn add_loop_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Loop,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Loop,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-            let loop_scope_id = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Loop(symbol_id),
-                Some(scope_id),
-            ));
-
-            node.children_without_token().iter().for_each(|child| {
-                self.add_expr(child, source_id, loop_scope_id, Some(symbol_id));
-            });
-        }
-    }
-
-    fn add_try_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Try,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Try,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            node.children_without_token().iter().for_each(|child| {
-                self.add_expr(child, source_id, scope_id, Some(symbol_id));
-            });
-        }
-    }
-
-    fn add_catch_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Catch,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Catch,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            node.children_without_token().iter().for_each(|child| {
-                self.add_expr(child, source_id, scope_id, Some(symbol_id));
-            });
-        }
-    }
-
-    fn add_var_decl(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if matches!(node.kind, mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var) {
-            self.symbols.insert(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Keyword,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            let children = node.children_without_token();
-            let ident = children.first().unwrap();
-            let symbol_id = self.symbols.insert(Symbol {
-                value: ident.name(),
-                kind: SymbolKind::Variable,
-                source: SourceInfo::new(Some(source_id), Some(ident.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            children.iter().skip(1).for_each(|child| {
-                self.add_expr(child, source_id, scope_id, Some(symbol_id));
-            });
-        }
-    }
-
-    fn add_ident_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Ident,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.symbols.insert(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Ref,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            // Process Selector children, e.g. `md.depth` is an Ident(md) with a Selector(.depth) child.
-            for child in node.children_without_token() {
-                if matches!(child.kind, mq_lang::CstNodeKind::Selector) {
-                    self.add_selector_expr(&child, source_id, scope_id, Some(symbol_id));
-                }
-            }
-        }
-    }
-
-    fn add_selector_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Selector,
-            ..
-        } = &**node
-            && let Some(selector) = selector_from_cst_node(node)
-        {
-            let symbol_id = self.symbols.insert(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Selector(selector),
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            for child in node.children_without_token() {
-                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
-            }
-        }
-    }
-
-    fn add_if_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::If,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::If,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-            let if_scope = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Block(symbol_id),
-                Some(scope_id),
-            ));
-
-            if let [cond, then_expr, rest @ ..] = node.children_without_token().as_slice() {
-                self.add_expr(cond, source_id, if_scope, Some(symbol_id));
-                self.add_expr(then_expr, source_id, if_scope, Some(symbol_id));
-
-                for child in rest {
-                    self.add_elif_expr(child, source_id, scope_id, Some(symbol_id));
-                    self.add_else_expr(child, source_id, scope_id, Some(symbol_id));
-                }
-            }
-        }
-    }
-
-    fn add_elif_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Elif,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Elif,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-            let elif_scope = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Block(symbol_id),
-                Some(scope_id),
-            ));
-
-            if let [cond, then_expr] = node.children_without_token().as_slice() {
-                self.add_expr(cond, source_id, elif_scope, Some(symbol_id));
-                self.add_expr(then_expr, source_id, elif_scope, Some(symbol_id));
-            }
-        }
-    }
-
-    fn add_else_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Else,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Else,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-            let elif_scope = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Block(symbol_id),
-                Some(scope_id),
-            ));
-
-            if let [then_expr] = node.children_without_token().as_slice() {
-                self.add_expr(then_expr, source_id, elif_scope, Some(symbol_id));
-            }
-        }
-    }
-
-    fn add_call_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Call,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Call,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            node.children_without_token().iter().for_each(|child| {
-                // Process all arguments recursively to handle complex expressions
-                // This ensures that identifiers inside bracket access (e.g., vars in vars["x"])
-                // are properly registered as Ref symbols that can be resolved
-                self.add_expr(child, source_id, scope_id, Some(symbol_id));
-            });
-        }
-    }
-
-    fn add_call_dynamic_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::CallDynamic,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: None, // Dynamic calls don't have a static name
-                kind: SymbolKind::CallDynamic,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            // Process all children (callable expression and arguments)
-            let children = node.children_without_token();
-
-            // First child is the callable expression (e.g., arr[0])
-            if let Some(callable) = children.first() {
-                self.add_expr(callable, source_id, scope_id, Some(symbol_id));
-            }
-
-            // Remaining children are arguments - process them recursively
-            for child in children.iter().skip(1) {
-                self.add_expr(child, source_id, scope_id, Some(symbol_id));
-            }
-        }
-    }
-
-    fn add_foreach_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Foreach,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Foreach,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            let scope_id = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Loop(symbol_id),
-                Some(scope_id),
-            ));
-            let (params, program) = node.split_cond_and_program();
-            let loop_val = params.first().unwrap();
-            let arg = params.get(1).unwrap();
-
-            self.add_symbol(Symbol {
-                value: loop_val.name(),
-                kind: SymbolKind::Variable,
-                source: SourceInfo::new(Some(source_id), Some(loop_val.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent: Some(symbol_id),
-            });
-
-            self.add_expr(arg, source_id, scope_id, Some(symbol_id));
-
-            program.iter().for_each(|child| {
-                self.add_expr(child, source_id, scope_id, Some(symbol_id));
-            });
-        } else {
-            unreachable!()
-        }
-    }
-
-    fn add_def_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Def,
-            ..
-        } = &**node
-        {
-            self.symbols.insert(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Keyword,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            let (params, program) = node.split_cond_and_program();
-            let ident = params.first().unwrap();
-
-            let symbol_id = self.add_symbol(Symbol {
-                value: ident.name(),
-                kind: SymbolKind::Function(Vec::new()),
-                source: SourceInfo::new(Some(source_id), Some(ident.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            let scope_id = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Function(symbol_id),
-                Some(scope_id),
-            ));
-
-            let mut param_info = Vec::with_capacity(params.len().saturating_sub(1));
-
-            // For def expressions, the first param is the function name, so skip it
-            params.iter().skip(1).for_each(|child| {
-                // Check if parameter has default value
-                // In CST, param with default has children: ident, '=', default_expr
-                let has_default = child.children.len() > 1;
-                // Check if parameter is variadic
-                // In CST, variadic param has exactly 1 child with Asterisk token
-                let is_variadic = child.children.len() == 1
-                    && child.children[0]
-                        .token
-                        .as_ref()
-                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::Asterisk));
-                let param_name = child.name().unwrap_or("arg".into());
-
-                param_info.push(ParamInfo {
-                    name: param_name.clone(),
-                    has_default,
-                    is_variadic,
-                });
-
-                self.add_symbol(Symbol {
-                    value: Some(param_name),
-                    kind: SymbolKind::Parameter,
-                    source: SourceInfo::new(Some(source_id), Some(child.range())),
-                    scope: scope_id,
-                    doc: Vec::new(),
-                    parent: Some(symbol_id),
-                });
-
-                // If has default, also analyze the default expression
-                if has_default && child.children.len() >= 3 {
-                    let default_expr = &child.children[2];
-                    self.add_expr(default_expr, source_id, scope_id, Some(symbol_id));
-                }
-            });
-
-            self.symbols[symbol_id].kind = SymbolKind::Function(param_info);
-
-            program.iter().for_each(|child| {
-                self.add_expr(child, source_id, scope_id, Some(symbol_id));
-            });
-        } else {
-            unreachable!()
-        }
-    }
-
-    fn add_macro_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Macro,
-            ..
-        } = &**node
-        {
-            self.symbols.insert(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Keyword,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            let (params, program) = node.split_cond_and_program();
-            let ident = params.first().unwrap();
-
-            let symbol_id = self.add_symbol(Symbol {
-                value: ident.name(),
-                kind: SymbolKind::Macro(Vec::new()),
-                source: SourceInfo::new(Some(source_id), Some(ident.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            let scope_id = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Function(symbol_id),
-                Some(scope_id),
-            ));
-
-            let mut param_info = Vec::with_capacity(params.len().saturating_sub(1));
-
-            // For macro expressions, the first param is the macro name, so skip it
-            params.iter().skip(1).for_each(|child| {
-                // Macros should not have defaults, but we still need to store param info
-                let has_default = child.children.len() > 1;
-                let is_variadic = child.children.len() == 1
-                    && child.children[0]
-                        .token
-                        .as_ref()
-                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::Asterisk));
-                let param_name = child.name().unwrap_or("arg".into());
-
-                param_info.push(ParamInfo {
-                    name: param_name.clone(),
-                    has_default,
-                    is_variadic,
-                });
-
-                self.add_symbol(Symbol {
-                    value: Some(param_name),
-                    kind: SymbolKind::Parameter,
-                    source: SourceInfo::new(Some(source_id), Some(child.range())),
-                    scope: scope_id,
-                    doc: Vec::new(),
-                    parent: Some(symbol_id),
-                });
-            });
-
-            self.symbols[symbol_id].kind = SymbolKind::Macro(param_info);
-
-            program.iter().for_each(|child| {
-                self.add_expr(child, source_id, scope_id, Some(symbol_id));
-            });
-        } else {
-            unreachable!()
-        }
-    }
-
-    fn add_macro_call_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::MacroCall,
-            ..
-        } = &**node
-        {
-            // Add the macro call as a regular call symbol
-            self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Call,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            // Process all children (macro arguments and program body)
-            node.children_without_token().iter().for_each(|child| {
-                self.add_expr(child, source_id, scope_id, parent);
-            });
-        } else {
-            unreachable!()
-        }
-    }
-
-    fn add_fn_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Fn,
-            ..
-        } = &**node
-        {
-            self.symbols.insert(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Keyword,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            let (params, program) = node.split_cond_and_program();
-            let symbol_id = self.add_symbol(Symbol {
-                value: None,
-                kind: SymbolKind::Function(Vec::new()),
-                source: SourceInfo::new(Some(source_id), None),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            let scope_id = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Function(symbol_id),
-                Some(scope_id),
-            ));
-
-            let mut param_info = Vec::with_capacity(params.len());
-
-            params.iter().for_each(|child| {
-                // Check if parameter has default value
-                // In CST, param with default has children: ident, '=', default_expr
-                let has_default = child.children.len() > 1;
-                // Check if parameter is variadic
-                let is_variadic = child.children.len() == 1
-                    && child.children[0]
-                        .token
-                        .as_ref()
-                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::Asterisk));
-                let param_name = child.name().unwrap_or("arg".into());
-
-                param_info.push(crate::symbol::ParamInfo {
-                    name: param_name.clone(),
-                    has_default,
-                    is_variadic,
-                });
-
-                self.add_symbol(Symbol {
-                    value: Some(param_name),
-                    kind: SymbolKind::Parameter,
-                    source: SourceInfo::new(Some(source_id), Some(child.range())),
-                    scope: scope_id,
-                    doc: Vec::new(),
-                    parent: Some(symbol_id),
-                });
-
-                // If has default, also analyze the default expression
-                if has_default && child.children.len() >= 3 {
-                    let default_expr = &child.children[2];
-                    self.add_expr(default_expr, source_id, scope_id, Some(symbol_id));
-                }
-            });
-
-            self.symbols[symbol_id].kind = SymbolKind::Function(param_info);
-
-            program.iter().for_each(|child| {
-                self.add_expr(child, source_id, scope_id, Some(symbol_id));
-            });
-        } else {
-            unreachable!()
-        }
-    }
-
     fn add_scope(&mut self, scope: Scope) -> ScopeId {
         let parent_scope_id = scope.parent_id;
         let scope_id = self.scopes.insert(scope);
@@ -1549,9 +267,26 @@ impl Hir {
         scope_id
     }
 
+    /// Inserts a symbol into the SlotMap and stamps its `insertion_order` field.
+    ///
+    /// This is the low-level primitive used by both `add_symbol` (which also
+    /// registers the symbol in `source_symbols`) and by the handful of call
+    /// sites that insert symbols without source tracking.  Every symbol must
+    /// go through this method so that `insertion_order` is set for all symbols,
+    /// enabling stable ordering in the type-checker.
+    fn insert_symbol(&mut self, symbol: Symbol) -> SymbolId {
+        let symbol_id = self.symbols.insert(symbol);
+        self.symbols[symbol_id].insertion_order = self.symbol_insertion_counter;
+        self.symbol_insertion_counter += 1;
+        if let Some(ref name) = self.symbols[symbol_id].value {
+            self.name_index.entry(name.clone()).or_default().push(symbol_id);
+        }
+        symbol_id
+    }
+
     fn add_symbol(&mut self, symbol: Symbol) -> SymbolId {
         let source_id = symbol.source.source_id;
-        let symbol_id = self.symbols.insert(symbol);
+        let symbol_id = self.insert_symbol(symbol);
 
         if let Some(source_id) = source_id {
             self.source_symbols.entry(source_id).or_default().push(symbol_id);
@@ -1560,386 +295,19 @@ impl Hir {
         symbol_id
     }
 
+    /// Returns the insertion-order sequence number for a symbol.
+    ///
+    /// Parent symbols are always assigned a lower sequence number than their
+    /// children because `add_expr` inserts parents before recursing into child
+    /// nodes.  This ordering is stable across multiple `add_nodes` calls because
+    /// the counter is monotonically increasing and never reset.
+    #[inline(always)]
+    pub fn symbol_insertion_order(&self, symbol_id: SymbolId) -> u32 {
+        self.symbols.get(symbol_id).map_or(0, |s| s.insertion_order)
+    }
+
     fn add_source(&mut self, source: Source) -> SourceId {
         self.sources.insert(source)
-    }
-
-    fn add_array_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Array,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Array,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-            for child in node.children_without_token() {
-                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
-            }
-        }
-    }
-
-    fn add_dict_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Dict,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Dict,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            for entry in node.children_without_token() {
-                if let (Some(key_node), Some(value_node)) = (entry.children.first(), entry.children.get(2)) {
-                    let key_symbol_id = self.add_symbol(Symbol {
-                        value: key_node.name(),
-                        kind: match &key_node.token {
-                            Some(token) => match &token.kind {
-                                mq_lang::TokenKind::StringLiteral(_) => SymbolKind::String,
-                                mq_lang::TokenKind::Ident(_) => SymbolKind::Symbol,
-                                _ => SymbolKind::Symbol,
-                            },
-                            None => SymbolKind::Symbol,
-                        },
-                        source: SourceInfo::new(Some(source_id), Some(key_node.range())),
-                        scope: scope_id,
-                        doc: key_node.comments(),
-                        parent: Some(symbol_id),
-                    });
-
-                    self.add_expr(value_node, source_id, scope_id, Some(key_symbol_id));
-                } else {
-                    unreachable!()
-                }
-            }
-        }
-    }
-
-    fn add_match_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Match,
-            ..
-        } = &**node
-        {
-            // Create Match symbol
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Match,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            let children = node.children_without_token();
-
-            // Process the value expression (first child: match (value))
-            if let Some(value_expr) = children.first() {
-                // Skip MatchArm nodes when looking for the value expression
-                if !matches!(value_expr.kind, mq_lang::CstNodeKind::MatchArm) {
-                    self.add_expr(value_expr, source_id, scope_id, Some(symbol_id));
-                }
-            }
-
-            // Process each MatchArm
-            for child in children.iter() {
-                if matches!(child.kind, mq_lang::CstNodeKind::MatchArm) {
-                    self.add_match_arm_expr(child, source_id, scope_id, Some(symbol_id));
-                }
-            }
-        }
-    }
-
-    fn add_keyword(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        self.add_symbol(Symbol {
-            value: node.name(),
-            kind: SymbolKind::Keyword,
-            source: SourceInfo::new(Some(source_id), Some(node.range())),
-            scope: scope_id,
-            doc: node.comments(),
-            parent,
-        });
-    }
-
-    /// Adds a `break` expression to the HIR.
-    ///
-    /// Unlike bare keywords, `break` may carry a value (`break: expr`).
-    /// The value expression is added as a child of the break symbol so that
-    /// the type checker can infer the break's type and propagate it to the
-    /// enclosing loop as part of a union type.
-    fn add_break_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        let symbol_id = self.add_symbol(Symbol {
-            value: node.name(),
-            kind: SymbolKind::Keyword,
-            source: SourceInfo::new(Some(source_id), Some(node.range())),
-            scope: scope_id,
-            doc: node.comments(),
-            parent,
-        });
-        // Process break value expression (if present) as a child of this symbol.
-        for child in node.children_without_token() {
-            self.add_expr(&child, source_id, scope_id, Some(symbol_id));
-        }
-    }
-
-    fn add_pattern_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Pattern,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Pattern,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            // Extract pattern variables and add them to the scope
-            self.extract_pattern_variables(node, source_id, scope_id, Some(symbol_id));
-
-            // Process nested patterns (for array, dict patterns)
-            for child in node.children_without_token() {
-                if matches!(child.kind, mq_lang::CstNodeKind::Pattern) {
-                    self.add_pattern_expr(&child, source_id, scope_id, Some(symbol_id));
-                } else if matches!(child.kind, mq_lang::CstNodeKind::Ident) {
-                    // Ident nodes in patterns are part of symbol literals (:foo -> foo)
-                    // They should be registered as Symbol, not Ref
-                    self.add_symbol(Symbol {
-                        value: child.name(),
-                        kind: SymbolKind::Symbol,
-                        source: SourceInfo::new(Some(source_id), Some(child.range())),
-                        scope: scope_id,
-                        doc: child.comments(),
-                        parent: Some(symbol_id),
-                    });
-                } else {
-                    // Process other expressions in the pattern (e.g., literals, guard conditions)
-                    self.add_expr(&child, source_id, scope_id, Some(symbol_id));
-                }
-            }
-        }
-    }
-
-    fn add_quote_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Quote,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: None,
-                kind: SymbolKind::Keyword,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            // Process children (quoted expressions)
-            for child in node.children_without_token() {
-                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
-            }
-        }
-    }
-
-    fn add_unquote_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Unquote,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: None,
-                kind: SymbolKind::Keyword,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            // Process children (unquoted expressions)
-            for child in node.children_without_token() {
-                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
-            }
-        }
-    }
-
-    fn add_match_arm_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::MatchArm,
-            ..
-        } = &**node
-        {
-            // Create MatchArm symbol
-            let symbol_id = self.add_symbol(Symbol {
-                value: None,
-                kind: SymbolKind::MatchArm,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
-            // Create a dedicated scope for this MatchArm
-            // Pattern variables will be visible in this scope
-            let arm_scope_id = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::MatchArm(symbol_id),
-                Some(scope_id),
-            ));
-
-            let children = node.children_without_token();
-
-            // Process pattern (first child after the pipe token)
-            // The pattern introduces variables into the arm scope
-            if let Some(pattern) = children.first()
-                && matches!(pattern.kind, mq_lang::CstNodeKind::Pattern)
-            {
-                self.add_pattern_expr(pattern, source_id, arm_scope_id, Some(symbol_id));
-            }
-
-            // Process remaining children (guard and body)
-            // These execute in the arm scope where pattern variables are visible
-            for child in children.iter().skip(1) {
-                self.add_expr(child, source_id, arm_scope_id, Some(symbol_id));
-            }
-        }
-    }
-
-    fn extract_pattern_variables(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let Some(token) = &node.token {
-            match &token.kind {
-                // Identifier pattern: introduces a variable binding
-                mq_lang::TokenKind::Ident(name) if name != "_" => {
-                    // Skip wildcards
-                    self.add_symbol(Symbol {
-                        value: Some(name.clone()),
-                        kind: SymbolKind::PatternVariable,
-                        source: SourceInfo::new(Some(source_id), Some(node.range())),
-                        scope: scope_id,
-                        doc: node.comments(),
-                        parent,
-                    });
-                }
-                // Literal patterns: create a literal child symbol for type checking
-                mq_lang::TokenKind::StringLiteral(s) => {
-                    self.add_symbol(Symbol {
-                        value: Some(s.as_str().into()),
-                        kind: SymbolKind::String,
-                        source: SourceInfo::new(Some(source_id), Some(node.range())),
-                        scope: scope_id,
-                        doc: node.comments(),
-                        parent,
-                    });
-                }
-                mq_lang::TokenKind::NumberLiteral(n) => {
-                    self.add_symbol(Symbol {
-                        value: Some(n.to_string().into()),
-                        kind: SymbolKind::Number,
-                        source: SourceInfo::new(Some(source_id), Some(node.range())),
-                        scope: scope_id,
-                        doc: node.comments(),
-                        parent,
-                    });
-                }
-                mq_lang::TokenKind::BoolLiteral(b) => {
-                    self.add_symbol(Symbol {
-                        value: Some(b.to_string().into()),
-                        kind: SymbolKind::Boolean,
-                        source: SourceInfo::new(Some(source_id), Some(node.range())),
-                        scope: scope_id,
-                        doc: node.comments(),
-                        parent,
-                    });
-                }
-                mq_lang::TokenKind::None => {
-                    self.add_symbol(Symbol {
-                        value: Some("none".into()),
-                        kind: SymbolKind::None,
-                        source: SourceInfo::new(Some(source_id), Some(node.range())),
-                        scope: scope_id,
-                        doc: node.comments(),
-                        parent,
-                    });
-                }
-                _ => {
-                    // For other token types (wildcards), no variable or literal is introduced
-                }
-            }
-        }
     }
 }
 
@@ -2030,7 +398,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::symbol_ident(":foo", "foo", SymbolKind::Symbol)]
     #[case::symbol_string(":\"hello\"", "hello", SymbolKind::Symbol)]
     #[case::pattern_match("match (v): | [1,2,3]: 1 end", "match", SymbolKind::Match)]
-    #[case::pattern_match_arm("match (v): | 1: \"one\" end", "1", SymbolKind::Pattern)]
+    #[case::pattern_match_arm("match (v): | 1: \"one\" end", "1", SymbolKind::Pattern { is_dict: false })]
     #[case::import("import \"foo\"", "foo", SymbolKind::Import(SourceId::default()))]
     #[case::module("module a: def b(): 1; end", "a", SymbolKind::Module(SourceId::default()))]
     #[case::module_name_ident("module math: def add(): 1; end", "math", SymbolKind::Ident)]
@@ -2246,7 +614,7 @@ end"#;
         // Check for Pattern symbols
         let patterns: Vec<_> = hir
             .symbols()
-            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Pattern))
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Pattern { .. }))
             .collect();
         assert_eq!(patterns.len(), 2, "Should have 2 Pattern symbols");
     }
@@ -2260,9 +628,9 @@ end"#;
         hir.add_code(None, code);
 
         // Check for PatternVariable
-        let pattern_var = hir
-            .symbols()
-            .find(|(_, symbol)| symbol.kind == SymbolKind::PatternVariable && symbol.value.as_deref() == Some("x"));
+        let pattern_var = hir.symbols().find(|(_, symbol)| {
+            matches!(symbol.kind, SymbolKind::PatternVariable { .. }) && symbol.value.as_deref() == Some("x")
+        });
         assert!(pattern_var.is_some(), "Should have a PatternVariable 'x'");
 
         // Check for Ref to 'x' in the body
@@ -2290,7 +658,7 @@ end"#;
         // Check for PatternVariables
         let pattern_vars: Vec<_> = hir
             .symbols()
-            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable))
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable { .. }))
             .collect();
         assert_eq!(pattern_vars.len(), 3, "Should have 3 PatternVariables (a, b, c)");
 
@@ -2315,14 +683,14 @@ end"#;
         // Wildcard should NOT create a PatternVariable
         let pattern_vars: Vec<_> = hir
             .symbols()
-            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable))
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable { .. }))
             .collect();
         assert_eq!(pattern_vars.len(), 0, "Wildcard should not create PatternVariables");
 
         // But should still have a Pattern symbol
         let patterns: Vec<_> = hir
             .symbols()
-            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Pattern))
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Pattern { .. }))
             .collect();
         assert!(!patterns.is_empty(), "Should have Pattern symbols");
     }
@@ -2338,7 +706,9 @@ end"#;
         // Find the PatternVariable 'x'
         let pattern_var = hir
             .symbols()
-            .find(|(_, symbol)| symbol.kind == SymbolKind::PatternVariable && symbol.value.as_deref() == Some("x"))
+            .find(|(_, symbol)| {
+                matches!(symbol.kind, SymbolKind::PatternVariable { .. }) && symbol.value.as_deref() == Some("x")
+            })
             .map(|(id, _)| id);
         assert!(pattern_var.is_some(), "Should have a PatternVariable 'x'");
 
@@ -2373,7 +743,7 @@ end"#;
         // Find all PatternVariables
         let pattern_vars: Vec<_> = hir
             .symbols()
-            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable))
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable { .. }))
             .map(|(id, symbol)| (id, symbol.value.clone()))
             .collect();
         assert_eq!(pattern_vars.len(), 3, "Should have 3 PatternVariables");
@@ -2391,9 +761,8 @@ end"#;
             assert!(resolved.is_some(), "Ref should resolve");
 
             let resolved_symbol = &hir.symbols[resolved.unwrap()];
-            assert_eq!(
-                resolved_symbol.kind,
-                SymbolKind::PatternVariable,
+            assert!(
+                matches!(resolved_symbol.kind, SymbolKind::PatternVariable { .. }),
                 "Should resolve to PatternVariable"
             );
             assert_eq!(resolved_symbol.value, ref_name, "Resolved variable name should match");
@@ -2421,6 +790,46 @@ end"#;
         assert_eq!(symbols.len(), 4, "Should have 4 Symbol literals");
 
         // Verify no unresolved errors
+        assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
+    }
+
+    #[test]
+    fn test_destructuring_let_creates_destructuring_binding() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = r#"let [a, b] = [1, 2]"#;
+        hir.add_code(None, code);
+
+        // Should have a DestructuringBinding symbol (sibling to Keyword, same as Variable)
+        let binding = hir
+            .symbols()
+            .find(|(_, symbol)| matches!(symbol.kind, SymbolKind::DestructuringBinding));
+        assert!(binding.is_some(), "Should have a DestructuringBinding symbol");
+
+        let (binding_id, _) = binding.unwrap();
+
+        // The outer Pattern node should be a direct child of DestructuringBinding
+        let outer_pattern = hir
+            .symbols()
+            .find(|(_, symbol)| matches!(symbol.kind, SymbolKind::Pattern { .. }) && symbol.parent == Some(binding_id));
+        assert!(
+            outer_pattern.is_some(),
+            "Should have a Pattern child under DestructuringBinding"
+        );
+
+        // PatternVariables (a, b) should exist anywhere in the HIR for this let
+        let pattern_vars: Vec<_> = hir
+            .symbols()
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable { .. }))
+            .collect();
+        assert_eq!(pattern_vars.len(), 2, "Should have 2 PatternVariables");
+
+        let names: Vec<_> = pattern_vars.iter().map(|(_, s)| s.value.as_deref().unwrap()).collect();
+        assert!(names.contains(&"a"));
+        assert!(names.contains(&"b"));
+
+        // Should have no unresolved errors
         assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
     }
 

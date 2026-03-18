@@ -39,6 +39,36 @@ var message = "Hello"
 # message is now "Hello World"
 ```
 
+## Destructuring Assignment
+
+Both `let` and `var` support destructuring patterns on the left-hand side.
+
+### Array Destructuring
+
+```mq
+let [a, b] = [1, 2] | a
+# => 1
+
+let [head, ..tail] = [1, 2, 3] | tail
+# => [2, 3]
+```
+
+### Dict Destructuring
+
+```mq
+let {name, age} = {"name": "Alice", "age": 30} | name
+# => "Alice"
+```
+
+### Mutable Destructuring
+
+Using `var` allows reassigning destructured variables:
+
+```mq
+var [a, b] = [1, 2] | a = 99 | a
+# => 99
+```
+
 ## Choosing Between Let and Var
 
 - Use `let` when you want to create an immutable binding (most cases)

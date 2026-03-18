@@ -46,6 +46,10 @@ pub struct Symbol {
     pub scope: ScopeId,
     pub source: SourceInfo,
     pub parent: Option<SymbolId>,
+    /// Monotonically increasing counter set at insertion time.
+    /// Parent symbols always receive a lower number than their children because
+    /// `add_expr` inserts parents before recursing into child nodes.
+    pub(crate) insertion_order: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -58,6 +62,10 @@ pub enum SymbolKind {
     Boolean,
     Call,
     CallDynamic,
+    /// Represents a destructuring binding (`let [a, b] = expr`).
+    /// Owns PatternVariable children and the initializer expression,
+    /// mirroring the structure of `Variable` for simple let bindings.
+    DestructuringBinding,
     Dict,
     Elif,
     Else,
@@ -74,8 +82,18 @@ pub enum SymbolKind {
     None,
     Number,
     Parameter,
-    Pattern,
-    PatternVariable,
+    /// `is_dict` is `true` for dict patterns (`{a, b}` or `{x: y}`),
+    /// `false` for array patterns (`[a, b]`) or match arm patterns.
+    Pattern {
+        is_dict: bool,
+    },
+    /// A variable introduced by a pattern binding.
+    ///
+    /// `is_rest` is `true` for the rest element in an array pattern (`..rest`),
+    /// which has type `Array(elem_ty)` rather than `elem_ty`.
+    PatternVariable {
+        is_rest: bool,
+    },
     Ref,
     Selector(mq_lang::Selector),
     String,
@@ -103,7 +121,7 @@ impl Symbol {
 
     #[inline(always)]
     pub fn is_variable(&self) -> bool {
-        matches!(self.kind, SymbolKind::Variable)
+        matches!(self.kind, SymbolKind::Variable | SymbolKind::DestructuringBinding)
     }
 
     #[inline(always)]
@@ -128,7 +146,7 @@ impl Symbol {
 
     #[inline(always)]
     pub fn is_pattern_variable(&self) -> bool {
-        matches!(self.kind, SymbolKind::PatternVariable)
+        matches!(self.kind, SymbolKind::PatternVariable { .. })
     }
 
     #[inline(always)]
@@ -177,6 +195,7 @@ mod tests {
             scope: ScopeId::default(),
             source: SourceInfo::new(None, None),
             parent: None,
+            insertion_order: 0,
         }
     }
 

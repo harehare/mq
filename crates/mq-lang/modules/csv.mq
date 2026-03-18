@@ -1,125 +1,22 @@
 # CSV/TSV Implementation in mq
 # Based on RFC 4180 for CSV format
 
-def _parse_csv_line(line, delimiter):
-  var fields = []
-  | var pos = 0
-  | let line_count = len(line)
-  | let result = while (pos < line_count):
-      let field_result =
-        if (starts_with(line[pos], "\"")):
-          do
-            pos += 1
-            | var field_content = ""
-            | var escaped = false
-            | var end_pos = pos
-            | let result = while (end_pos < line_count && (escaped || line[end_pos] != "\"")):
-                          let char = line[end_pos]
-                          | field_content += char
-                          | escaped = char == "\"" && !escaped
-                          | end_pos += 1
-                          | [field_content, end_pos]
-                        end
-            | field_content = do if (is_none(result)): "" else: result[0] | replace(field_content, "\"\"", "\"");
-            | end_pos = if (is_none(result)): pos else: result[1]
-            | let next_pos = if (end_pos < line_count): end_pos + 1 else: end_pos
-            | [field_content, next_pos]
-
-          end
-        else:
-          do
-            var end_pos = pos
-            | var current_input = line[end_pos]
-            | let result = while (end_pos < line_count && (current_input != delimiter) && (current_input != "\n") && (current_input != "\r")):
-                          end_pos += 1
-                          | current_input = line[end_pos]
-                          | end_pos
-                        end
-            | let result = if (is_none(result)): end_pos else: result
-            | let field_content = line[pos:result]
-            | [field_content, result]
-          end
-      | let new_pos = field_result[1]
-      | fields += field_result[0]
-      | pos = if (new_pos < line_count && line[new_pos] == delimiter):
-        new_pos + 1
-      else:
-        new_pos
-      | [fields, pos]
-    end
-  | result[0]
-end
-
-def _split_csv_lines(input):
-  var lines = []
-  | var current_line = ""
-  | var in_quotes = false
-  | var i = 0
-  | let result = do foreach (char, input):
-          i += 1
-          | let result = if (char == "\"" && !in_quotes):
-                      [current_line + char, true]
-                    elif (char == "\"" && in_quotes):
-                      [current_line + char, false]
-                    elif (char != "\"" && in_quotes):
-                      [current_line + char, true]
-                    elif ((char == "\n" || char == "\r") && !in_quotes): do
-                        if (!is_empty(trim(current_line))): lines += current_line
-                        | ["", false]
-                      end
-                    else:
-                      [current_line + char, in_quotes]
-          | current_line = result[0]
-          | in_quotes = result[1]
-          | if (i < len(input)): continue else: result
-        end
-      | first()
-    end
-  | let current_line = result[0]
-  | if (is_empty(trim(current_line))): lines else: lines + current_line
-end
-
-def _parse_csv_content(input, delimiter, has_header):
-  let lines = _split_csv_lines(to_string(input))
-  | let parse_line = fn(line): _parse_csv_line(line, delimiter);
-  | let parsed_lines = map(lines, parse_line)
-  | let headers = if (has_header && len(parsed_lines) > 0): first(parsed_lines) else: None
-  | let data_lines = if (has_header && len(parsed_lines) > 0): parsed_lines[1:len(parsed_lines)] else: parsed_lines
-  | let csv_to_dict = fn(row):
-      let obj = {}
-      | var i = 0
-      | let headers_count = len(headers)
-      | let rows_count = len(row)
-      | while (i < headers_count && i < rows_count):
-          let key = if (i < headers_count): headers[i] else: "column_" + to_string(i)
-          | let value = if (i < rows_count): row[i] else: ""
-          | let obj = set(obj, key, value)
-          | i += 1
-          | obj
-        end
-    end
-  | if (!is_none(headers)):
-      map(data_lines, csv_to_dict)
-    else:
-      data_lines
-end
-
 def csv_needs_quote(field, delimiter):
   let s = to_string(field)
   | contains(s, "\"") || contains(s, "\n") || contains(s, "\r") || contains(s, delimiter) || starts_with(s, " ") || ends_with(s, " ")
 end
 
 # Parses CSV content with a specified delimiter and optional header row.
-def csv_parse_with_delimiter(input, delimiter, has_header): _parse_csv_content(input, delimiter, has_header);
+def csv_parse_with_delimiter(input, delimiter, has_header): _csv_parse(input, delimiter, has_header);
 
 # Parses CSV content using a comma as the delimiter.
-def csv_parse(input, has_header): _parse_csv_content(input, ",", has_header);
+def csv_parse(input, has_header): _csv_parse(input, ",", has_header);
 
 # Parses TSV (Tab-Separated Values) content.
-def tsv_parse(input, has_header): _parse_csv_content(input, "\t", has_header);
+def tsv_parse(input, has_header): _csv_parse(input, "\t", has_header);
 
 # Parses PSV (Pipe-Separated Values) content.
-def psv_parse(input, has_header): _parse_csv_content(input, "|", has_header);
+def psv_parse(input, has_header): _csv_parse(input, "|", has_header);
 
 # Converts data to a CSV string with a specified delimiter.
 def csv_stringify(data, delimiter):

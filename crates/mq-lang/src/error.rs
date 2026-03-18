@@ -345,6 +345,9 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::InvalidMacroResult(_)) => Some(Cow::Borrowed(
                 "Invalid macro result: expected AST value during macro body evaluation.",
             )),
+            InnerError::Runtime(RuntimeError::DestructuringFailed(_)) => Some(Cow::Borrowed(
+                "Destructuring pattern did not match the value. Check that the pattern structure matches the value.",
+            )),
         };
 
         msg.map(|m| Box::new(m) as Box<dyn std::fmt::Display>)

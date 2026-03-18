@@ -212,6 +212,31 @@ impl From<mq_markdown::AttrValue> for RuntimeValue {
     }
 }
 
+impl From<serde_json::Value> for RuntimeValue {
+    fn from(value: serde_json::Value) -> Self {
+        match value {
+            serde_json::Value::Null => RuntimeValue::NONE,
+            serde_json::Value::Bool(b) => RuntimeValue::Boolean(b),
+            serde_json::Value::Number(n) => {
+                if let Some(f) = n.as_f64() {
+                    RuntimeValue::Number(f.into())
+                } else {
+                    RuntimeValue::Number(0.into())
+                }
+            }
+            serde_json::Value::String(s) => RuntimeValue::String(s),
+            serde_json::Value::Array(arr) => RuntimeValue::Array(arr.into_iter().map(RuntimeValue::from).collect()),
+            serde_json::Value::Object(obj) => {
+                let mut map = BTreeMap::new();
+                for (k, v) in obj {
+                    map.insert(Ident::new(&k), RuntimeValue::from(v));
+                }
+                RuntimeValue::Dict(map)
+            }
+        }
+    }
+}
+
 impl PartialOrd for RuntimeValue {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {

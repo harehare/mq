@@ -118,7 +118,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::front_matter_disabled(
     "<html><head><title>My Title</title></head><body><p>Body</p></body></html>",
     ConversionOptions::default(),
-    "My Title\n\nBody"
+    "Body"
 )]
 #[case::front_matter_title_only(
     "<html><head><title>My Title</title></head><body><p>Body</p></body></html>",
@@ -126,7 +126,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         generate_front_matter: true,
         ..ConversionOptions::default()
     },
-    "---\ntitle: My Title\n---\n\nMy Title\n\nBody",
+    "---\ntitle: My Title\n---\n\nBody",
 )]
 #[case::front_matter_description(
     "<html><head><meta name=\"description\" content=\"Page description.\"></head><body><p>B</p></body></html>",
@@ -174,7 +174,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         generate_front_matter: true,
         ..ConversionOptions::default()
     },
-    "---\nauthor: Author Name\ndescription: Desc here\nkeywords:\n- key1\n- key2\ntitle: Full Test\n---\n\nFull Test\n\nContent",
+    "---\nauthor: Author Name\ndescription: Desc here\nkeywords:\n- key1\n- key2\ntitle: Full Test\n---\n\nContent",
 )]
 #[case::front_matter_no_head_tag(
     "<html><body><p>Only body</p></body></html>",
@@ -207,7 +207,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         extract_scripts_as_code_blocks: true,
         ..ConversionOptions::default()
     },
-    "---\ntitle: Script Page\n---\n\nScript Page\n\n```\nlet x=1;\n```\n\nText",
+    "---\ntitle: Script Page\n---\n\n```\nlet x=1;\n```\n\nText",
 )]
 #[case::front_matter_html_fragment_no_head(
     "<p>Just a paragraph</p><meta name=\"description\" content=\"Hidden\">",
@@ -1100,10 +1100,88 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         use_title_as_h1: false,
         ..ConversionOptions::default()
     },
-    "My Document\n\nBody text"
+    "Body text"
+)]
+#[case::use_title_as_h1_true_with_main(
+    concat!(
+        "<html><head><title>Page Title</title></head>",
+        "<body><nav>Nav</nav><main><p>Main content</p></main></body></html>"
+    ),
+    ConversionOptions {
+        use_title_as_h1: true,
+        ..ConversionOptions::default()
+    },
+    "# Page Title\n\nMain content"
+)]
+#[case::use_title_as_h1_true_with_article(
+    concat!(
+        "<html><head><title>Article Title</title></head>",
+        "<body><aside>Sidebar</aside><article><p>Article content</p></article></body></html>"
+    ),
+    ConversionOptions {
+        use_title_as_h1: true,
+        ..ConversionOptions::default()
+    },
+    "# Article Title\n\nArticle content"
+)]
+#[case::use_title_as_h1_true_with_role_main(
+    concat!(
+        "<html><head><title>Role Main Title</title></head>",
+        "<body><div role=\"main\"><p>Role main content</p></div></body></html>"
+    ),
+    ConversionOptions {
+        use_title_as_h1: true,
+        ..ConversionOptions::default()
+    },
+    "# Role Main Title\n\nRole main content"
 )]
 fn test_html_to_markdown(#[case] html: &str, #[case] options: ConversionOptions, #[case] expected: &str) {
     assert_conversion_with_options(html, expected, options);
+}
+
+#[rstest]
+#[case::nav_skipped("<html><body><nav><a href='/'>Home</a></nav><p>Content</p></body></html>", "")]
+#[case::aside_skipped("<html><body><aside>Sidebar</aside><p>Content</p></body></html>", "")]
+#[case::noscript_skipped("<html><body><noscript>Enable JavaScript</noscript><p>Content</p></body></html>", "")]
+fn test_noisy_elements_skipped(#[case] html: &str, #[case] expected_excluded: &str) {
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(
+        !md.contains(expected_excluded) || expected_excluded.is_empty(),
+        "Expected '{}' to not appear in output:\n{}",
+        expected_excluded,
+        md
+    );
+}
+
+#[test]
+fn test_smart_extraction_uses_main() {
+    let html = r#"<html><body>
+        <nav><a href="/">Home</a></nav>
+        <main><h1>Article</h1><p>Main content</p></main>
+        <aside>Sidebar</aside>
+    </body></html>"#;
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("Article"), "should contain heading");
+    assert!(md.contains("Main content"), "should contain paragraph");
+    assert!(!md.contains("Home"), "nav should be excluded");
+    assert!(!md.contains("Sidebar"), "aside should be excluded");
+}
+
+#[test]
+fn test_smart_extraction_falls_back_to_article() {
+    let html = r#"<html><body>
+        <article><h2>Blog Post</h2><p>Post content</p></article>
+    </body></html>"#;
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("Blog Post"));
+    assert!(md.contains("Post content"));
+}
+
+#[test]
+fn test_smart_extraction_falls_back_to_full_document() {
+    let html = r#"<html><body><div><p>Body content</p></div></body></html>"#;
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("Body content"));
 }
 
 // TODO: Add tests for headings with links, images etc. once those elements are supported.

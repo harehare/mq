@@ -1437,3 +1437,55 @@ fn test_self_keyword_preserves_piped_type(#[case] code: &str, #[case] descriptio
     // `self` should unify with the piped input type
     assert_eq!(check_types(code).is_empty(), should_succeed, "{}", description);
 }
+
+// Let binding with piped function call
+
+/// Helper that creates HIR with builtins enabled (needed for first(), last(), etc.)
+fn create_hir_with_builtins(code: &str) -> mq_hir::Hir {
+    let mut hir = mq_hir::Hir::default();
+    hir.add_code(None, code);
+    hir
+}
+
+fn check_types_with_builtins(code: &str) -> Vec<mq_check::TypeError> {
+    let hir = create_hir_with_builtins(code);
+    let mut checker = mq_check::TypeChecker::new();
+    checker.check(&hir)
+}
+
+#[rstest]
+#[case(
+    r#"[1, 2, 3] | let x = first() | x"#,
+    "piped array into let binding via first() should not error",
+    true
+)]
+#[case(
+    r#"[1, 2, 3] | let x = last() | x"#,
+    "piped array into let binding via last() should not error",
+    true
+)]
+#[case(
+    r#"[1, 2, 3] | let x = len() | x"#,
+    "piped array into let binding via len() should not error",
+    true
+)]
+#[case(
+    r#""hello" | let x = upcase() | x"#,
+    "piped string into let binding via upcase() should not error",
+    true
+)]
+fn test_let_binding_with_piped_function_call(
+    #[case] code: &str,
+    #[case] description: &str,
+    #[case] should_succeed: bool,
+) {
+    let result = check_types_with_builtins(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}\nCode: {}\nErrors: {:?}",
+        description,
+        code,
+        result
+    );
+}

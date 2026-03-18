@@ -60,9 +60,9 @@ impl Hir {
         match symbol_kind {
             SymbolKind::Function(_) => 0,
             SymbolKind::Macro(_) => 0,
-            SymbolKind::Variable => 1,
+            SymbolKind::Variable | SymbolKind::DestructuringBinding => 1,
             SymbolKind::Parameter => 2,
-            SymbolKind::PatternVariable => 2,
+            SymbolKind::PatternVariable { .. } => 2,
             SymbolKind::Ident => 2,
             SymbolKind::Argument => 3,
             _ => 4,
@@ -76,10 +76,13 @@ impl Hir {
     ) -> Option<(SymbolId, Symbol)> {
         let mut candidates = Vec::new();
 
-        for (symbol_id, symbol) in &self.symbols {
+        // Use the name index to avoid an O(n) full-symbol scan.
+        for &symbol_id in self.name_index.get(ref_name).into_iter().flatten() {
+            let Some(symbol) = self.symbols.get(symbol_id) else {
+                continue;
+            };
             if let Some(source_id) = symbol.source.source_id
                 && source_ids.contains(&source_id)
-                && symbol.value.as_ref() == Some(ref_name)
                 && (symbol.is_function()
                     || symbol.is_parameter()
                     || symbol.is_variable()
@@ -105,9 +108,9 @@ impl Hir {
         match symbol_kind {
             SymbolKind::Argument => 0,
             SymbolKind::Parameter => 1,
-            SymbolKind::PatternVariable => 1,
+            SymbolKind::PatternVariable { .. } => 1,
             SymbolKind::Ident => 2,
-            SymbolKind::Variable => 3,
+            SymbolKind::Variable | SymbolKind::DestructuringBinding => 3,
             SymbolKind::Function(_) => 4,
             SymbolKind::Macro(_) => 4,
             _ => 5,
@@ -128,10 +131,17 @@ impl Hir {
             .map(|r| r.start.line);
 
         // Find all matching symbols in current scope with priority order.
+        // Use the name index to avoid an O(n) full-symbol scan.
         let mut candidates = Vec::new();
 
-        for (symbol_id, symbol) in &self.symbols {
-            if symbol_id == ref_symbol_id || symbol.scope != scope_id || symbol.value.as_ref() != Some(ref_name) {
+        for &symbol_id in self.name_index.get(ref_name).into_iter().flatten() {
+            if symbol_id == ref_symbol_id {
+                continue;
+            }
+            let Some(symbol) = self.symbols.get(symbol_id) else {
+                continue;
+            };
+            if symbol.scope != scope_id {
                 continue;
             }
 

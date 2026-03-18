@@ -40,3 +40,9 @@
 .context-menu-label {
   flex: 1;
 }
+
+.context-menu-separator {
+  height: 1px;
+  background-color: var(--tree-border);
+  margin: 4px 0;
+}
