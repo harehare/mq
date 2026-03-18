@@ -2,7 +2,6 @@ use clap::Parser;
 use fantoccini::wd::TimeoutConfiguration;
 use mq_crawler::crawler::Crawler;
 use url::Url;
-use miette::{Context, IntoDiagnostic};
 
 #[derive(Clone, Debug, Default, clap::ValueEnum)]
 enum OutputFormat {
@@ -112,11 +111,6 @@ pub struct ConversionArgs {
 
 #[tokio::main]
 async fn main() {
-    // Install ring as the default rustls CryptoProvider to resolve conflicts
-    // between chromiumoxide, reqwest, and fantoccini each pulling in different
-    // rustls feature flags.
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
     tracing_subscriber::fmt().with_writer(std::io::stderr).init();
     let args = CliArgs::parse();
 
@@ -156,8 +150,7 @@ async fn main() {
     } else if args.headless {
         mq_crawler::http_client::HttpClient::new_chromium(args.chrome_path)
             .await
-            .into_diagnostic()
-            .wrap_err("Failed to launch headless Chrome. Ensure Chrome or Chromium is installed.")?
+            .expect("Failed to launch headless Chrome. Ensure Chrome or Chromium is installed.")
     } else if effective_allowed.is_some() {
         mq_crawler::http_client::HttpClient::new_reqwest_multi_domain(args.page_load_timeout, args.concurrency.max(5))
             .unwrap()

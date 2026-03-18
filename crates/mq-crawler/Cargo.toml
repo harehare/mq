@@ -14,7 +14,6 @@ version = "0.5.19"
 [dependencies]
 chromiumoxide = {workspace = true}
 clap = {workspace = true, features = ["derive"]}
-rustls = {workspace = true}
 crossbeam = {workspace = true}
 dashmap = {workspace = true}
 fantoccini = {workspace = true, features = ["rustls-tls"]}
@@ -22,7 +21,7 @@ futures = {workspace = true}
 miette = {workspace = true, features = ["fancy"]}
 mq-lang = {workspace = true}
 mq-markdown = {workspace = true}
-reqwest = {workspace = true, features = ["json", "rustls-tls"]}
+reqwest = {workspace = true, features = ["json"]}
 robots_txt = {workspace = true}
 scraper = {workspace = true}
 serde = {workspace = true, features = ["derive"]}
