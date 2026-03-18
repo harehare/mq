@@ -6,6 +6,8 @@ type ResizeHandleProps = {
   onResize: (delta: number) => void;
 };
 
+const KEYBOARD_RESIZE_STEP = 10;
+
 export const ResizeHandle = ({ direction, onResize }: ResizeHandleProps) => {
   const isDragging = useRef(false);
   const lastPos = useRef(0);
@@ -20,6 +22,32 @@ export const ResizeHandle = ({ direction, onResize }: ResizeHandleProps) => {
       document.body.style.userSelect = "none";
     },
     [direction],
+  );
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      let delta = 0;
+
+      if (direction === "horizontal") {
+        if (event.key === "ArrowLeft") {
+          delta = -KEYBOARD_RESIZE_STEP;
+        } else if (event.key === "ArrowRight") {
+          delta = KEYBOARD_RESIZE_STEP;
+        }
+      } else {
+        if (event.key === "ArrowUp") {
+          delta = -KEYBOARD_RESIZE_STEP;
+        } else if (event.key === "ArrowDown") {
+          delta = KEYBOARD_RESIZE_STEP;
+        }
+      }
+
+      if (delta !== 0) {
+        event.preventDefault();
+        onResize(delta);
+      }
+    },
+    [direction, onResize],
   );
 
   useEffect(() => {
@@ -49,7 +77,11 @@ export const ResizeHandle = ({ direction, onResize }: ResizeHandleProps) => {
   return (
     <div
       className={`resize-handle resize-handle-${direction}`}
+      role="separator"
+      aria-orientation={direction}
+      tabIndex={0}
       onMouseDown={handleMouseDown}
+      onKeyDown={handleKeyDown}
     />
   );
 };
