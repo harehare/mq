@@ -514,7 +514,7 @@ export const Playground = () => {
       if (tabId === activeTabId) return;
 
       // Auto-save current tab before switching
-      if (currentFilePath && code && activeTabId) {
+      if (currentFilePath && code !== undefined && activeTabId) {
         const currentTab = tabs.find((t) => t.id === activeTabId);
         if (currentTab?.isDirty) {
           try {

@@ -50,6 +50,11 @@ export const ResizeHandle = ({ direction, onResize }: ResizeHandleProps) => {
     [direction, onResize],
   );
 
+  const resetBodyStyles = useCallback(() => {
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }, []);
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging.current) return;
@@ -62,8 +67,7 @@ export const ResizeHandle = ({ direction, onResize }: ResizeHandleProps) => {
     const handleMouseUp = () => {
       if (!isDragging.current) return;
       isDragging.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
+      resetBodyStyles();
     };
 
     document.addEventListener("mousemove", handleMouseMove);
@@ -71,8 +75,12 @@ export const ResizeHandle = ({ direction, onResize }: ResizeHandleProps) => {
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
+      if (isDragging.current) {
+        isDragging.current = false;
+        resetBodyStyles();
+      }
     };
-  }, [direction, onResize]);
+  }, [direction, onResize, resetBodyStyles]);
 
   return (
     <div
