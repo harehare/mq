@@ -174,7 +174,7 @@ pub(super) fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool 
     // Check grandparent: if parent is Variable (let binding) inside a pipe-capable construct,
     // e.g. `items | let x = first()` — the Call inside the Variable will receive piped
     // input in Pass 4 via propagate_piped_input_to_variable_initializer, so defer errors.
-    if matches!(parent.kind, SymbolKind::Variable)
+    if matches!(parent.kind, SymbolKind::Variable | SymbolKind::DestructuringBinding)
         && let Some(grandparent_id) = parent.parent
         && let Some(grandparent) = hir.symbol(grandparent_id)
     {

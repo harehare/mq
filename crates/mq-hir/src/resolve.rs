@@ -60,7 +60,7 @@ impl Hir {
         match symbol_kind {
             SymbolKind::Function(_) => 0,
             SymbolKind::Macro(_) => 0,
-            SymbolKind::Variable => 1,
+            SymbolKind::Variable | SymbolKind::DestructuringBinding => 1,
             SymbolKind::Parameter => 2,
             SymbolKind::PatternVariable => 2,
             SymbolKind::Ident => 2,
@@ -110,7 +110,7 @@ impl Hir {
             SymbolKind::Parameter => 1,
             SymbolKind::PatternVariable => 1,
             SymbolKind::Ident => 2,
-            SymbolKind::Variable => 3,
+            SymbolKind::Variable | SymbolKind::DestructuringBinding => 3,
             SymbolKind::Function(_) => 4,
             SymbolKind::Macro(_) => 4,
             _ => 5,

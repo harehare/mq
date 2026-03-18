@@ -62,6 +62,10 @@ pub enum SymbolKind {
     Boolean,
     Call,
     CallDynamic,
+    /// Represents a destructuring binding (`let [a, b] = expr`).
+    /// Owns PatternVariable children and the initializer expression,
+    /// mirroring the structure of `Variable` for simple let bindings.
+    DestructuringBinding,
     Dict,
     Elif,
     Else,
@@ -107,7 +111,7 @@ impl Symbol {
 
     #[inline(always)]
     pub fn is_variable(&self) -> bool {
-        matches!(self.kind, SymbolKind::Variable)
+        matches!(self.kind, SymbolKind::Variable | SymbolKind::DestructuringBinding)
     }
 
     #[inline(always)]

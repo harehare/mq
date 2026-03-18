@@ -47,6 +47,7 @@ pub fn response(
             match &symbol.kind {
                 mq_hir::SymbolKind::Parameter
                 | mq_hir::SymbolKind::Variable
+                | mq_hir::SymbolKind::DestructuringBinding
                 | mq_hir::SymbolKind::Call
                 | mq_hir::SymbolKind::Ref
                     if type_scheme.ty.is_concrete() =>

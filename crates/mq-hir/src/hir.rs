@@ -793,6 +793,46 @@ end"#;
     }
 
     #[test]
+    fn test_destructuring_let_creates_destructuring_binding() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = r#"let [a, b] = [1, 2]"#;
+        hir.add_code(None, code);
+
+        // Should have a DestructuringBinding symbol (sibling to Keyword, same as Variable)
+        let binding = hir
+            .symbols()
+            .find(|(_, symbol)| matches!(symbol.kind, SymbolKind::DestructuringBinding));
+        assert!(binding.is_some(), "Should have a DestructuringBinding symbol");
+
+        let (binding_id, _) = binding.unwrap();
+
+        // The outer Pattern node should be a direct child of DestructuringBinding
+        let outer_pattern = hir
+            .symbols()
+            .find(|(_, symbol)| matches!(symbol.kind, SymbolKind::Pattern) && symbol.parent == Some(binding_id));
+        assert!(
+            outer_pattern.is_some(),
+            "Should have a Pattern child under DestructuringBinding"
+        );
+
+        // PatternVariables (a, b) should exist anywhere in the HIR for this let
+        let pattern_vars: Vec<_> = hir
+            .symbols()
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable))
+            .collect();
+        assert_eq!(pattern_vars.len(), 2, "Should have 2 PatternVariables");
+
+        let names: Vec<_> = pattern_vars.iter().map(|(_, s)| s.value.as_deref().unwrap()).collect();
+        assert!(names.contains(&"a"));
+        assert!(names.contains(&"b"));
+
+        // Should have no unresolved errors
+        assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
+    }
+
+    #[test]
     fn test_macro_definition_and_call() {
         let mut hir = Hir::default();
         hir.builtin.disabled = true;

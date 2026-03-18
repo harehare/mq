@@ -558,7 +558,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if matches!(node.kind, mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var) {
-            let keyword_id = self.insert_symbol(Symbol {
+            let _keyword_id = self.insert_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Keyword,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -572,10 +572,22 @@ impl Hir {
             let lhs = children.first().unwrap();
 
             if matches!(lhs.kind, mq_lang::CstNodeKind::Pattern) {
-                // Destructuring pattern: create PatternVariable symbols via add_pattern_expr
-                self.add_pattern_expr(lhs, source_id, scope_id, Some(keyword_id));
+                // Destructuring pattern: create a DestructuringBinding symbol (sibling to the
+                // Keyword, same as Variable for simple let) that owns PatternVariable children
+                // and the initializer, so piped-input propagation and type constraints can
+                // treat it identically to Variable.
+                let destructuring_id = self.insert_symbol(Symbol {
+                    value: None,
+                    kind: SymbolKind::DestructuringBinding,
+                    source: SourceInfo::new(Some(source_id), Some(lhs.range())),
+                    scope: scope_id,
+                    doc: node.comments(),
+                    parent,
+                    insertion_order: 0,
+                });
+                self.add_pattern_expr(lhs, source_id, scope_id, Some(destructuring_id));
                 children.iter().skip(1).for_each(|child| {
-                    self.add_expr(child, source_id, scope_id, Some(keyword_id));
+                    self.add_expr(child, source_id, scope_id, Some(destructuring_id));
                 });
             } else {
                 // Simple identifier: create a single Variable symbol

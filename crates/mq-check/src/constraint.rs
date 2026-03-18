@@ -109,7 +109,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
         SymbolKind::Number | SymbolKind::String | SymbolKind::Boolean | SymbolKind::Symbol | SymbolKind::None => 0u8,
         SymbolKind::Parameter | SymbolKind::PatternVariable => 1,
         SymbolKind::Function(_) | SymbolKind::Macro(_) => 2,
-        SymbolKind::Variable => 3,
+        SymbolKind::Variable | SymbolKind::DestructuringBinding => 3,
         _ => 4,
     });
     for (symbol_id, kind) in &sorted_pass1 {
@@ -129,7 +129,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
         // For root-level Variables (e.g. `let x = first()`), forward the piped type to
         // the initializer Call/Ref so Pass 3 sees it before resolving the overload.
         if let Some(sym) = hir.symbol(cats.root_symbols[i])
-            && matches!(sym.kind, SymbolKind::Variable)
+            && matches!(sym.kind, SymbolKind::Variable | SymbolKind::DestructuringBinding)
         {
             let init_children = get_children(&children_index, cats.root_symbols[i]);
             if let Some(&init_id) = init_children.last() {
@@ -208,11 +208,13 @@ pub(super) fn generate_symbol_constraints(
         }
 
         // Variables get fresh type variables, constrained to their initializer
-        SymbolKind::Variable => {
+        SymbolKind::Variable | SymbolKind::DestructuringBinding => {
             let ty_var = ctx.fresh_var();
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
 
-            // Connect variable type to its initializer expression (last child)
+            // Connect variable type to its initializer expression (last child).
+            // For DestructuringBinding, PatternVariable children come first;
+            // the initializer is always the last child.
             let children = get_children(children_index, symbol_id);
             if let Some(&last_child) = children.last() {
                 let child_ty = ctx.get_or_create_symbol_type(last_child);

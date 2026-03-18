@@ -21,6 +21,7 @@ pub fn response(
                 mq_hir::SymbolKind::Function(_)
                 | mq_hir::SymbolKind::Macro(_)
                 | mq_hir::SymbolKind::Variable
+                | mq_hir::SymbolKind::DestructuringBinding
                 | mq_hir::SymbolKind::PatternVariable => {
                     let deprecated = symbol.is_deprecated();
                     let deprecated_notice = if deprecated { "⚠️ **DEPRECATED**\n\n" } else { "" };
@@ -42,7 +43,9 @@ pub fn response(
                                         doc = symbol.doc.iter().map(|(_, doc)| doc).join("\n")
                                     )
                                 }
-                                mq_hir::SymbolKind::Variable | mq_hir::SymbolKind::PatternVariable => {
+                                mq_hir::SymbolKind::Variable
+                                | mq_hir::SymbolKind::DestructuringBinding
+                                | mq_hir::SymbolKind::PatternVariable => {
                                     let type_annotation =
                                         type_scheme.map(|s| format!(": {}", s.ty)).unwrap_or_default();
                                     format!(
