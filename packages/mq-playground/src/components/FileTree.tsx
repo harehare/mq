@@ -676,6 +676,7 @@ export const FileTree = ({
             className="file-tree-search-clear"
             onClick={() => setSearchQuery("")}
             title="Clear search"
+            aria-label="Clear search"
           >
             <VscClose size={14} />
           </button>
