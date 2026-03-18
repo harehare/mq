@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import "./ContextMenu.css";
 
 export type ContextMenuItem = {
@@ -6,6 +6,7 @@ export type ContextMenuItem = {
   onClick: () => void;
   icon?: React.ReactNode;
   disabled?: boolean;
+  separator?: boolean;
 };
 
 type ContextMenuProps = {
@@ -17,6 +18,15 @@ type ContextMenuProps = {
 
 export const ContextMenu = ({ x, y, items, onClose }: ContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ x, y });
+
+  useLayoutEffect(() => {
+    if (!menuRef.current) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    const clampedX = Math.min(x, window.innerWidth - rect.width - 8);
+    const clampedY = Math.min(y, window.innerHeight - rect.height - 8);
+    setPosition({ x: Math.max(0, clampedX), y: Math.max(0, clampedY) });
+  }, [x, y]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -44,23 +54,29 @@ export const ContextMenu = ({ x, y, items, onClose }: ContextMenuProps) => {
     <div
       ref={menuRef}
       className="context-menu"
-      style={{ top: `${y}px`, left: `${x}px` }}
+      style={{ top: `${position.y}px`, left: `${position.x}px` }}
     >
-      {items.map((item, index) => (
-        <div
-          key={index}
-          className={`context-menu-item ${item.disabled ? "disabled" : ""}`}
-          onClick={() => {
-            if (!item.disabled) {
-              item.onClick();
-              onClose();
-            }
-          }}
-        >
-          {item.icon && <span className="context-menu-icon">{item.icon}</span>}
-          <span className="context-menu-label">{item.label}</span>
-        </div>
-      ))}
+      {items.map((item, index) =>
+        item.separator ? (
+          <div key={index} className="context-menu-separator" />
+        ) : (
+          <div
+            key={index}
+            className={`context-menu-item ${item.disabled ? "disabled" : ""}`}
+            onClick={() => {
+              if (!item.disabled) {
+                item.onClick();
+                onClose();
+              }
+            }}
+          >
+            {item.icon && (
+              <span className="context-menu-icon">{item.icon}</span>
+            )}
+            <span className="context-menu-label">{item.label}</span>
+          </div>
+        ),
+      )}
     </div>
   );
 };
