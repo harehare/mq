@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use std::{fs, io};
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::{Notify, RwLock, Semaphore};
 use tokio::time::sleep;
 use url::Url;
 
@@ -160,6 +160,7 @@ pub struct Crawler {
     result: Arc<RwLock<CrawlResult>>,
     robots_cache: Arc<DashMap<String, Arc<RobotsTxt>>>,
     to_visit: Arc<SegQueue<(Url, usize)>>,
+    notify: Arc<Notify>,
     user_agent: String,
     visited: Arc<DashSet<Url>>,
 }
@@ -202,6 +203,7 @@ impl Crawler {
             initial_domain,
             custom_robots_path,
             result: Arc::new(RwLock::new(CrawlResult::default())),
+            notify: Arc::new(Notify::new()),
             concurrency: concurrency.max(1),
             format,
             conversion_options,
@@ -279,6 +281,10 @@ impl Crawler {
                 break;
             }
 
+            // Register interest in the next notification *before* draining the
+            // queue so we cannot miss a wakeup that arrives while we are spawning.
+            let notified = self.notify.notified();
+
             // Drain the queue, spawning tasks up to the semaphore limit
             while let Some((url, depth)) = self.to_visit.pop() {
                 if self.should_skip_url_without_visited_check(&url) || !self.visited.insert(url.clone()) {
@@ -290,15 +296,21 @@ impl Crawler {
 
                 let crawler = self.clone();
                 let active_tasks_clone = active_tasks.clone();
+                let notify_clone = self.notify.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
                     crawler.process_url_with_rate_limit(url, depth).await;
                     active_tasks_clone.fetch_sub(1, Ordering::SeqCst);
+                    // Wake the main loop so it can either spawn new tasks or
+                    // detect the termination condition.
+                    notify_clone.notify_one();
                 });
             }
 
-            // Yield so spawned tasks can make progress and enqueue new URLs
-            tokio::task::yield_now().await;
+            // Block until a task finishes or a new URL is enqueued.
+            // If notify_one() was already called since we created `notified`
+            // above, this returns immediately without spinning.
+            notified.await;
         }
 
         self.finalize_crawl().await;
@@ -427,6 +439,8 @@ impl Crawler {
                                     && self.depth_limit.is_none_or(|limit| next_depth <= limit)
                                 {
                                     self.to_visit.push((link, next_depth));
+                                    // Wake the main loop to pick up the new URL.
+                                    self.notify.notify_one();
                                 }
                             }
                         }
