@@ -505,7 +505,7 @@ pub async fn inlay_hints(code: &str) -> JsValue {
                 mq_hir::SymbolKind::Variable
                     | mq_hir::SymbolKind::Function(_)
                     | mq_hir::SymbolKind::DestructuringBinding
-                    | mq_hir::SymbolKind::PatternVariable
+                    | mq_hir::SymbolKind::PatternVariable { .. }
             );
             if !show {
                 return None;

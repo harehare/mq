@@ -83,7 +83,13 @@ pub enum SymbolKind {
     Number,
     Parameter,
     Pattern,
-    PatternVariable,
+    /// A variable introduced by a pattern binding.
+    ///
+    /// `is_rest` is `true` for the rest element in an array pattern (`..rest`),
+    /// which has type `Array(elem_ty)` rather than `elem_ty`.
+    PatternVariable {
+        is_rest: bool,
+    },
     Ref,
     Selector(mq_lang::Selector),
     String,
@@ -136,7 +142,7 @@ impl Symbol {
 
     #[inline(always)]
     pub fn is_pattern_variable(&self) -> bool {
-        matches!(self.kind, SymbolKind::PatternVariable)
+        matches!(self.kind, SymbolKind::PatternVariable { .. })
     }
 
     #[inline(always)]

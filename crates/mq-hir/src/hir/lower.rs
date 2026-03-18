@@ -1326,6 +1326,17 @@ impl Hir {
         scope_id: ScopeId,
         parent: Option<SymbolId>,
     ) {
+        self.add_pattern_expr_inner(node, source_id, scope_id, parent, false);
+    }
+
+    fn add_pattern_expr_inner(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+        is_rest: bool,
+    ) {
         if let mq_lang::CstNode {
             kind: mq_lang::CstNodeKind::Pattern,
             ..
@@ -1341,8 +1352,9 @@ impl Hir {
                 insertion_order: 0,
             });
 
-            // Extract pattern variables and add them to the scope
-            self.extract_pattern_variables(node, source_id, scope_id, Some(symbol_id));
+            // Extract pattern variables and add them to the scope.
+            // Pass `is_rest` so the rest binding (`..rest`) gets the correct kind.
+            self.extract_pattern_variables(node, source_id, scope_id, Some(symbol_id), is_rest);
 
             // Detect dict patterns: the CST Pattern node for `{a, b}` or `{a: p}` has a
             // Token child with LBrace kind.
@@ -1354,13 +1366,34 @@ impl Hir {
                         .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::LBrace))
             });
 
+            // Detect array patterns with a rest element (`[a, ..rest]`): the CST Pattern node
+            // contains a DoubleDot token. When present, the LAST inner Pattern child is the
+            // rest binding and should produce `PatternVariable { is_rest: true }`.
+            let has_rest_element = node.children.iter().any(|child| {
+                child.is_token()
+                    && child
+                        .token
+                        .as_ref()
+                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::DoubleDot))
+            });
+
             // Process nested patterns (for array, dict patterns)
             let non_token_children = node.children_without_token();
+            let last_pattern_idx = if has_rest_element {
+                non_token_children
+                    .iter()
+                    .rposition(|c| matches!(c.kind, mq_lang::CstNodeKind::Pattern))
+            } else {
+                None
+            };
+            let mut pattern_idx = 0;
             let mut idx = 0;
             while idx < non_token_children.len() {
                 let child = &non_token_children[idx];
                 if matches!(child.kind, mq_lang::CstNodeKind::Pattern) {
-                    self.add_pattern_expr(child, source_id, scope_id, Some(symbol_id));
+                    let child_is_rest = last_pattern_idx == Some(pattern_idx);
+                    self.add_pattern_expr_inner(child, source_id, scope_id, Some(symbol_id), child_is_rest);
+                    pattern_idx += 1;
                 } else if matches!(child.kind, mq_lang::CstNodeKind::Ident) {
                     if is_dict_pattern {
                         // In dict patterns `{a, b}` shorthand, an Ident NOT followed by a
@@ -1373,7 +1406,7 @@ impl Hir {
                         if !next_is_pattern {
                             self.add_symbol(Symbol {
                                 value: child.name(),
-                                kind: SymbolKind::PatternVariable,
+                                kind: SymbolKind::PatternVariable { is_rest: false },
                                 source: SourceInfo::new(Some(source_id), Some(child.range())),
                                 scope: scope_id,
                                 doc: child.comments(),
@@ -1515,6 +1548,7 @@ impl Hir {
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
+        is_rest: bool,
     ) {
         if let Some(token) = &node.token {
             match &token.kind {
@@ -1523,7 +1557,7 @@ impl Hir {
                     // Skip wildcards
                     self.add_symbol(Symbol {
                         value: Some(name.clone()),
-                        kind: SymbolKind::PatternVariable,
+                        kind: SymbolKind::PatternVariable { is_rest },
                         source: SourceInfo::new(Some(source_id), Some(node.range())),
                         scope: scope_id,
                         doc: node.comments(),

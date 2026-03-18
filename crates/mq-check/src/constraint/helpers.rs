@@ -359,7 +359,7 @@ fn collect_pattern_variables_inner(
 ) {
     for &child_id in get_children(children_index, symbol_id) {
         if let Some(sym) = hir.symbol(child_id) {
-            if matches!(sym.kind, SymbolKind::PatternVariable) {
+            if matches!(sym.kind, SymbolKind::PatternVariable { .. }) {
                 result.push(child_id);
             } else {
                 collect_pattern_variables_inner(hir, child_id, children_index, result);

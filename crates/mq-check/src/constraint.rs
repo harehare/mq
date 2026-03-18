@@ -107,7 +107,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
     let mut sorted_pass1 = cats.pass1_symbols.clone();
     sorted_pass1.sort_by_key(|(_, kind)| match kind {
         SymbolKind::Number | SymbolKind::String | SymbolKind::Boolean | SymbolKind::Symbol | SymbolKind::None => 0u8,
-        SymbolKind::Parameter | SymbolKind::PatternVariable => 1,
+        SymbolKind::Parameter | SymbolKind::PatternVariable { .. } => 1,
         SymbolKind::Function(_) | SymbolKind::Macro(_) => 2,
         SymbolKind::Variable | SymbolKind::DestructuringBinding => 3,
         _ => 4,
@@ -202,7 +202,7 @@ pub(super) fn generate_symbol_constraints(
         }
 
         // Parameters and pattern variables get fresh type variables
-        SymbolKind::Parameter | SymbolKind::PatternVariable => {
+        SymbolKind::Parameter | SymbolKind::PatternVariable { .. } => {
             let ty_var = ctx.fresh_var();
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }
@@ -246,7 +246,7 @@ pub(super) fn generate_symbol_constraints(
                 .map(|pid| {
                     get_children(children_index, pid).iter().any(|&cid| {
                         hir.symbol(cid)
-                            .is_some_and(|s| matches!(s.kind, SymbolKind::PatternVariable))
+                            .is_some_and(|s| matches!(s.kind, SymbolKind::PatternVariable { .. }))
                     })
                 })
                 .unwrap_or(false);
@@ -289,7 +289,7 @@ pub(super) fn generate_symbol_constraints(
                         if let Some(pid) = outer_pattern_id {
                             for &pv_id in get_children(children_index, pid) {
                                 if let Some(pv_sym) = hir.symbol(pv_id)
-                                    && matches!(pv_sym.kind, SymbolKind::PatternVariable)
+                                    && matches!(pv_sym.kind, SymbolKind::PatternVariable { .. })
                                     && let Some(key) = pv_sym.value.as_deref()
                                     && let Some(val_ty) = key_to_val_ty.get(key)
                                 {
@@ -321,12 +321,17 @@ pub(super) fn generate_symbol_constraints(
                 let pv_ids = collect_pattern_variable_descendants(hir, symbol_id, children_index);
                 for pv_id in pv_ids {
                     let pv_ty = ctx.get_or_create_symbol_type(pv_id);
-                    ctx.add_constraint(Constraint::Equal(
-                        pv_ty,
-                        Type::Var(elem_ty_var),
-                        range,
-                        ConstraintOrigin::General,
-                    ));
+                    // Rest bindings (`..rest`) capture the remaining elements as an array,
+                    // so their type is `Array(elem_ty)` rather than `elem_ty`.
+                    let target_ty = if hir
+                        .symbol(pv_id)
+                        .is_some_and(|s| matches!(s.kind, SymbolKind::PatternVariable { is_rest: true }))
+                    {
+                        Type::array(Type::Var(elem_ty_var))
+                    } else {
+                        Type::Var(elem_ty_var)
+                    };
+                    ctx.add_constraint(Constraint::Equal(pv_ty, target_ty, range, ConstraintOrigin::General));
                 }
             }
         }

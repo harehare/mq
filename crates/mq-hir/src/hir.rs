@@ -628,9 +628,9 @@ end"#;
         hir.add_code(None, code);
 
         // Check for PatternVariable
-        let pattern_var = hir
-            .symbols()
-            .find(|(_, symbol)| symbol.kind == SymbolKind::PatternVariable && symbol.value.as_deref() == Some("x"));
+        let pattern_var = hir.symbols().find(|(_, symbol)| {
+            matches!(symbol.kind, SymbolKind::PatternVariable { .. }) && symbol.value.as_deref() == Some("x")
+        });
         assert!(pattern_var.is_some(), "Should have a PatternVariable 'x'");
 
         // Check for Ref to 'x' in the body
@@ -658,7 +658,7 @@ end"#;
         // Check for PatternVariables
         let pattern_vars: Vec<_> = hir
             .symbols()
-            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable))
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable { .. }))
             .collect();
         assert_eq!(pattern_vars.len(), 3, "Should have 3 PatternVariables (a, b, c)");
 
@@ -683,7 +683,7 @@ end"#;
         // Wildcard should NOT create a PatternVariable
         let pattern_vars: Vec<_> = hir
             .symbols()
-            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable))
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable { .. }))
             .collect();
         assert_eq!(pattern_vars.len(), 0, "Wildcard should not create PatternVariables");
 
@@ -706,7 +706,9 @@ end"#;
         // Find the PatternVariable 'x'
         let pattern_var = hir
             .symbols()
-            .find(|(_, symbol)| symbol.kind == SymbolKind::PatternVariable && symbol.value.as_deref() == Some("x"))
+            .find(|(_, symbol)| {
+                matches!(symbol.kind, SymbolKind::PatternVariable { .. }) && symbol.value.as_deref() == Some("x")
+            })
             .map(|(id, _)| id);
         assert!(pattern_var.is_some(), "Should have a PatternVariable 'x'");
 
@@ -741,7 +743,7 @@ end"#;
         // Find all PatternVariables
         let pattern_vars: Vec<_> = hir
             .symbols()
-            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable))
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable { .. }))
             .map(|(id, symbol)| (id, symbol.value.clone()))
             .collect();
         assert_eq!(pattern_vars.len(), 3, "Should have 3 PatternVariables");
@@ -759,9 +761,8 @@ end"#;
             assert!(resolved.is_some(), "Ref should resolve");
 
             let resolved_symbol = &hir.symbols[resolved.unwrap()];
-            assert_eq!(
-                resolved_symbol.kind,
-                SymbolKind::PatternVariable,
+            assert!(
+                matches!(resolved_symbol.kind, SymbolKind::PatternVariable { .. }),
                 "Should resolve to PatternVariable"
             );
             assert_eq!(resolved_symbol.value, ref_name, "Resolved variable name should match");
@@ -820,7 +821,7 @@ end"#;
         // PatternVariables (a, b) should exist anywhere in the HIR for this let
         let pattern_vars: Vec<_> = hir
             .symbols()
-            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable))
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable { .. }))
             .collect();
         assert_eq!(pattern_vars.len(), 2, "Should have 2 PatternVariables");
 
