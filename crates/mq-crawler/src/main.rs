@@ -118,9 +118,10 @@ async fn main() {
 
     // Build the effective allowed domains list.
     // When --allowed-domains is provided, always include the start URL's domain as well.
-    let effective_allowed = args.allowed_domains.map(|mut v| {
+    let effective_allowed = args.allowed_domains.map(|v| {
+        let mut v: Vec<String> = v.into_iter().map(|d| d.trim().to_lowercase()).collect();
         if let Some(start_domain) = args.url.domain() {
-            let start_domain = start_domain.to_string();
+            let start_domain = start_domain.to_lowercase();
             if !v.contains(&start_domain) {
                 v.push(start_domain);
             }
