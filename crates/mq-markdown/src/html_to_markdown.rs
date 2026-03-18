@@ -19,11 +19,7 @@ fn find_element<'a>(html: &'a Html, selector_str: &str) -> Option<scraper::Eleme
 fn extract_title_text(html: &Html) -> Option<String> {
     let head = find_element(html, "head")?;
     let title_sel = Selector::parse("title").ok()?;
-    let title_text = head
-        .select(&title_sel)
-        .next()?
-        .text()
-        .collect::<String>();
+    let title_text = head.select(&title_sel).next()?.text().collect::<String>();
     let trimmed = title_text.trim().to_string();
     if trimmed.is_empty() { None } else { Some(trimmed) }
 }
