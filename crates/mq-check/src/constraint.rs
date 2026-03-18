@@ -11,9 +11,9 @@ pub(crate) use helpers::{
 
 use categories::categorize_symbols;
 use helpers::{
-    build_piped_call_args, collect_break_value_types, find_enclosing_function, find_lambda_function_child,
-    get_post_loop_siblings, get_symbol_range, is_foreach_iterable_ref, is_inside_quote_block, merge_loop_types,
-    might_receive_piped_input, resolve_builtin_call, resolve_pattern_type,
+    build_piped_call_args, collect_break_value_types, collect_pattern_variable_descendants, find_enclosing_function,
+    find_lambda_function_child, get_post_loop_siblings, get_symbol_range, is_foreach_iterable_ref,
+    is_inside_quote_block, merge_loop_types, might_receive_piped_input, resolve_builtin_call, resolve_pattern_type,
 };
 use pipe::{generate_block_constraints, generate_function_body_pipe_constraints, resolve_branch_body_type};
 
@@ -208,13 +208,11 @@ pub(super) fn generate_symbol_constraints(
         }
 
         // Variables get fresh type variables, constrained to their initializer
-        SymbolKind::Variable | SymbolKind::DestructuringBinding => {
+        SymbolKind::Variable => {
             let ty_var = ctx.fresh_var();
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
 
-            // Connect variable type to its initializer expression (last child).
-            // For DestructuringBinding, PatternVariable children come first;
-            // the initializer is always the last child.
+            // Connect variable type to its initializer expression (last child)
             let children = get_children(children_index, symbol_id);
             if let Some(&last_child) = children.last() {
                 let child_ty = ctx.get_or_create_symbol_type(last_child);
@@ -222,6 +220,35 @@ pub(super) fn generate_symbol_constraints(
                 ctx.add_constraint(Constraint::Equal(
                     Type::Var(ty_var),
                     child_ty,
+                    range,
+                    ConstraintOrigin::General,
+                ));
+            }
+        }
+
+        // Destructuring bindings (`let [a, b] = expr`): the binding type is Array(elem_ty),
+        // constrained to the initializer. Each PatternVariable descendant is constrained to
+        // the element type so that `a + true` is flagged as a type error when `a: Number`.
+        SymbolKind::DestructuringBinding => {
+            let elem_ty_var = ctx.fresh_var();
+            let array_ty = Type::array(Type::Var(elem_ty_var));
+            ctx.set_symbol_type(symbol_id, array_ty.clone());
+
+            let children = get_children(children_index, symbol_id);
+            let range = get_symbol_range(hir, symbol_id);
+            if let Some(&last_child) = children.last() {
+                let init_ty = ctx.get_or_create_symbol_type(last_child);
+                ctx.add_constraint(Constraint::Equal(array_ty, init_ty, range, ConstraintOrigin::General));
+            }
+
+            // Wire each PatternVariable to the element type of the array initializer
+            let range = get_symbol_range(hir, symbol_id);
+            let pv_ids = collect_pattern_variable_descendants(hir, symbol_id, children_index);
+            for pv_id in pv_ids {
+                let pv_ty = ctx.get_or_create_symbol_type(pv_id);
+                ctx.add_constraint(Constraint::Equal(
+                    pv_ty,
+                    Type::Var(elem_ty_var),
                     range,
                     ConstraintOrigin::General,
                 ));

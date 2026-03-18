@@ -337,6 +337,37 @@ pub(super) fn resolve_pattern_type(
 /// Collects the types of all `break: value` expressions that directly belong to
 /// the given loop symbol (i.e., not nested inside an inner while/loop/foreach).
 ///
+/// Collects all `PatternVariable` symbol IDs that are descendants of `root_id`.
+///
+/// Used by `DestructuringBinding` constraint generation to wire each bound
+/// pattern variable to the array element type of the initializer.
+pub(super) fn collect_pattern_variable_descendants(
+    hir: &Hir,
+    root_id: SymbolId,
+    children_index: &ChildrenIndex,
+) -> Vec<SymbolId> {
+    let mut result = Vec::new();
+    collect_pattern_variables_inner(hir, root_id, children_index, &mut result);
+    result
+}
+
+fn collect_pattern_variables_inner(
+    hir: &Hir,
+    symbol_id: SymbolId,
+    children_index: &ChildrenIndex,
+    result: &mut Vec<SymbolId>,
+) {
+    for &child_id in get_children(children_index, symbol_id) {
+        if let Some(sym) = hir.symbol(child_id) {
+            if matches!(sym.kind, SymbolKind::PatternVariable) {
+                result.push(child_id);
+            } else {
+                collect_pattern_variables_inner(hir, child_id, children_index, result);
+            }
+        }
+    }
+}
+
 /// Only `break: expr` (with a value) contributes to the union type; bare `break`
 /// without a value is ignored because it falls through to the loop's normal exit type.
 ///
