@@ -1,6 +1,7 @@
 use crate::http_client::HttpClient;
 use crate::robots::RobotsTxt;
 use crossbeam::queue::SegQueue;
+use dashmap::mapref::entry::Entry;
 use dashmap::{DashMap, DashSet};
 use miette::miette;
 use mq_markdown::ConversionOptions;
@@ -330,22 +331,27 @@ impl Crawler {
         }
         loop {
             let now = Instant::now();
-            let wait = match self.domain_last_request.get(domain) {
-                Some(last) => {
-                    let elapsed = now.duration_since(*last);
+            // Hold the shard lock for the entire check-and-update so concurrent
+            // tasks cannot both observe the same (or absent) timestamp and
+            // simultaneously bypass the intended per-domain delay.
+            let wait = match self.domain_last_request.entry(domain.to_string()) {
+                Entry::Occupied(mut e) => {
+                    let elapsed = now.duration_since(*e.get());
                     if elapsed >= self.crawl_delay {
+                        e.insert(now);
                         None
                     } else {
                         Some(self.crawl_delay - elapsed)
                     }
                 }
-                None => None,
-            };
-            match wait {
-                None => {
-                    self.domain_last_request.insert(domain.to_string(), now);
-                    return;
+                Entry::Vacant(e) => {
+                    e.insert(now);
+                    None
                 }
+            };
+            // The entry (and its shard lock) is dropped before any await point.
+            match wait {
+                None => return,
                 Some(dur) => sleep(dur).await,
             }
         }

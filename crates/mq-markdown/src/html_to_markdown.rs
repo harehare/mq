@@ -16,6 +16,18 @@ fn find_element<'a>(html: &'a Html, selector_str: &str) -> Option<scraper::Eleme
         .and_then(|sel| html.select(&sel).next())
 }
 
+fn extract_title_text(html: &Html) -> Option<String> {
+    let head = find_element(html, "head")?;
+    let title_sel = Selector::parse("title").ok()?;
+    let title_text = head
+        .select(&title_sel)
+        .next()?
+        .text()
+        .collect::<String>();
+    let trimmed = title_text.trim().to_string();
+    if trimmed.is_empty() { None } else { Some(trimmed) }
+}
+
 fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, serde_yaml::Value>> {
     // First, find the <head> element
     let head_element = find_element(html, "head")?;
@@ -119,5 +131,15 @@ pub fn convert_html_to_markdown(html_input: &str, options: ConversionOptions) ->
     let nodes_for_markdown_conversion = parser::map_nodes_to_html_nodes(doc_children)?;
     let body_markdown = converter::convert_nodes_to_markdown(&nodes_for_markdown_conversion, options)?;
 
-    Ok(format!("{}{}", front_matter_str, body_markdown))
+    // Extract <title> from <head> separately so it is available even when smart extraction
+    // selected only the children of <main>/<article> (which do not include <head>).
+    let title_prefix = if options.use_title_as_h1 {
+        extract_title_text(&html)
+            .map(|t| format!("# {}\n\n", t))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    Ok(format!("{}{}{}", front_matter_str, title_prefix, body_markdown))
 }

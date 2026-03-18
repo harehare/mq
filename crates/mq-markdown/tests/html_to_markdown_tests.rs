@@ -118,7 +118,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::front_matter_disabled(
     "<html><head><title>My Title</title></head><body><p>Body</p></body></html>",
     ConversionOptions::default(),
-    "My Title\n\nBody"
+    "Body"
 )]
 #[case::front_matter_title_only(
     "<html><head><title>My Title</title></head><body><p>Body</p></body></html>",
@@ -126,7 +126,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         generate_front_matter: true,
         ..ConversionOptions::default()
     },
-    "---\ntitle: My Title\n---\n\nMy Title\n\nBody",
+    "---\ntitle: My Title\n---\n\nBody",
 )]
 #[case::front_matter_description(
     "<html><head><meta name=\"description\" content=\"Page description.\"></head><body><p>B</p></body></html>",
@@ -174,7 +174,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         generate_front_matter: true,
         ..ConversionOptions::default()
     },
-    "---\nauthor: Author Name\ndescription: Desc here\nkeywords:\n- key1\n- key2\ntitle: Full Test\n---\n\nFull Test\n\nContent",
+    "---\nauthor: Author Name\ndescription: Desc here\nkeywords:\n- key1\n- key2\ntitle: Full Test\n---\n\nContent",
 )]
 #[case::front_matter_no_head_tag(
     "<html><body><p>Only body</p></body></html>",
@@ -207,7 +207,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         extract_scripts_as_code_blocks: true,
         ..ConversionOptions::default()
     },
-    "---\ntitle: Script Page\n---\n\nScript Page\n\n```\nlet x=1;\n```\n\nText",
+    "---\ntitle: Script Page\n---\n\n```\nlet x=1;\n```\n\nText",
 )]
 #[case::front_matter_html_fragment_no_head(
     "<p>Just a paragraph</p><meta name=\"description\" content=\"Hidden\">",
@@ -1100,7 +1100,40 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         use_title_as_h1: false,
         ..ConversionOptions::default()
     },
-    "My Document\n\nBody text"
+    "Body text"
+)]
+#[case::use_title_as_h1_true_with_main(
+    concat!(
+        "<html><head><title>Page Title</title></head>",
+        "<body><nav>Nav</nav><main><p>Main content</p></main></body></html>"
+    ),
+    ConversionOptions {
+        use_title_as_h1: true,
+        ..ConversionOptions::default()
+    },
+    "# Page Title\n\nMain content"
+)]
+#[case::use_title_as_h1_true_with_article(
+    concat!(
+        "<html><head><title>Article Title</title></head>",
+        "<body><aside>Sidebar</aside><article><p>Article content</p></article></body></html>"
+    ),
+    ConversionOptions {
+        use_title_as_h1: true,
+        ..ConversionOptions::default()
+    },
+    "# Article Title\n\nArticle content"
+)]
+#[case::use_title_as_h1_true_with_role_main(
+    concat!(
+        "<html><head><title>Role Main Title</title></head>",
+        "<body><div role=\"main\"><p>Role main content</p></div></body></html>"
+    ),
+    ConversionOptions {
+        use_title_as_h1: true,
+        ..ConversionOptions::default()
+    },
+    "# Role Main Title\n\nRole main content"
 )]
 fn test_html_to_markdown(#[case] html: &str, #[case] options: ConversionOptions, #[case] expected: &str) {
     assert_conversion_with_options(html, expected, options);

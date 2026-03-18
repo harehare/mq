@@ -608,12 +608,6 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                     "p" => markdown_blocks.push((handle_paragraph_element(element)?, false)),
                     "hr" => markdown_blocks.push((handle_hr_element()?, false)),
                     "ul" | "ol" => markdown_blocks.push((handle_list_element(element, options)?, false)),
-                    "title" if options.use_title_as_h1 => {
-                        let children_content_str = convert_children_to_string(&element.children)?;
-                        if !children_content_str.is_empty() {
-                            markdown_blocks.push((format!("# {}", children_content_str), false));
-                        }
-                    }
                     "blockquote" => markdown_blocks.push((handle_blockquote_element(element, options)?, false)),
                     "pre" => markdown_blocks.push((handle_pre_element(element, options)?, false)),
                     "table" => {
@@ -633,7 +627,7 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                             markdown_blocks.push((script_md, false));
                         }
                     }
-                    "style" => { /* Style tags are ignored */ }
+                    "style" | "title" => { /* Metadata tags are ignored; title is handled at the top level */ }
                     "iframe" | "video" | "audio" | "embed" | "object" => {
                         if let Some(embed_md) = handle_embedded_content_element(element)? {
                             markdown_blocks.push((embed_md, false));
