@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { FileNode } from "../utils/fileSystem";
 import { FileIcon } from "./FileIcon";
 import {
@@ -9,6 +9,10 @@ import {
   VscRefresh,
   VscTrash,
   VscEdit,
+  VscFile,
+  VscCopy,
+  VscSearch,
+  VscClose,
 } from "react-icons/vsc";
 import "./FileTree.css";
 import { ContextMenu, ContextMenuItem } from "./ContextMenu";
@@ -44,6 +48,7 @@ type FileTreeNodeProps = {
   onCreatingCancel: () => void;
   selectedFile: string | null;
   level: number;
+  forceExpand: boolean;
   // Drag and drop
   onDragStart: (node: FileNode) => void;
   onDragEnd: () => void;
@@ -138,6 +143,7 @@ const FileTreeNode = ({
   onCreatingCancel,
   selectedFile,
   level,
+  forceExpand,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -153,8 +159,8 @@ const FileTreeNode = ({
   const isDragging = draggingPath === node.path;
   const isDragOver = dragOverPath === node.path;
   const isSelected = selectedFile === node.path;
+  const expanded = forceExpand || isExpanded;
 
-  // Focus and select input when renaming starts
   useEffect(() => {
     if (isRenaming) {
       inputRef.current?.focus();
@@ -162,7 +168,6 @@ const FileTreeNode = ({
     }
   }, [isRenaming]);
 
-  // Event handlers
   const handleClick = useCallback(() => {
     if (node.type === "directory") {
       setIsExpanded(!isExpanded);
@@ -180,7 +185,7 @@ const FileTreeNode = ({
       e.preventDefault();
       onContextMenu(e, node);
     },
-    [node, onContextMenu]
+    [node, onContextMenu],
   );
 
   const handleKeyDown = useCallback(
@@ -196,10 +201,9 @@ const FileTreeNode = ({
         onStartRename(node);
       }
     },
-    [node, isRenaming, onStartRename, onRenamingComplete, onRenamingCancel]
+    [node, isRenaming, onStartRename, onRenamingComplete, onRenamingCancel],
   );
 
-  // Drag and drop handlers
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
       if (isRenaming) {
@@ -213,7 +217,7 @@ const FileTreeNode = ({
       e.dataTransfer.setData("text/plain", node.path);
       e.dataTransfer.setDragImage(e.currentTarget as HTMLElement, 0, 0);
     },
-    [node, onDragStart, isRenaming]
+    [node, onDragStart, isRenaming],
   );
 
   const handleDragEnd = useCallback(
@@ -222,7 +226,7 @@ const FileTreeNode = ({
       e.stopPropagation();
       onDragEnd();
     },
-    [onDragEnd]
+    [onDragEnd],
   );
 
   const handleDragOver = useCallback(
@@ -234,7 +238,7 @@ const FileTreeNode = ({
         onDragOver(e, node);
       }
     },
-    [node, onDragOver]
+    [node, onDragOver],
   );
 
   const handleDrop = useCallback(
@@ -243,7 +247,7 @@ const FileTreeNode = ({
       e.stopPropagation();
       onDrop(e, node);
     },
-    [node, onDrop]
+    [node, onDrop],
   );
 
   const handleDragLeave = useCallback(
@@ -252,7 +256,7 @@ const FileTreeNode = ({
         onDragLeave();
       }
     },
-    [onDragLeave]
+    [onDragLeave],
   );
 
   return (
@@ -276,7 +280,7 @@ const FileTreeNode = ({
       >
         {node.type === "directory" && (
           <span className="file-tree-chevron">
-            {isExpanded ? (
+            {expanded ? (
               <VscChevronDown size={16} />
             ) : (
               <VscChevronRight size={16} />
@@ -287,7 +291,7 @@ const FileTreeNode = ({
         <FileIcon
           fileName={node.name}
           isDirectory={node.type === "directory"}
-          isExpanded={isExpanded}
+          isExpanded={expanded}
         />
         {isRenaming ? (
           <input
@@ -305,7 +309,7 @@ const FileTreeNode = ({
         )}
       </div>
 
-      {node.type === "directory" && isExpanded && (
+      {node.type === "directory" && expanded && (
         <div className="file-tree-children">
           {creatingInPath === node.path && creatingType && (
             <CreateInput
@@ -337,6 +341,7 @@ const FileTreeNode = ({
               onCreatingCancel={onCreatingCancel}
               selectedFile={selectedFile}
               level={level + 1}
+              forceExpand={forceExpand}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
               onDragOver={onDragOver}
@@ -352,6 +357,21 @@ const FileTreeNode = ({
   );
 };
 
+const filterNodes = (nodes: FileNode[], query: string): FileNode[] => {
+  if (!query) return nodes;
+  const q = query.toLowerCase();
+  return nodes.flatMap((node) => {
+    if (node.type === "file") {
+      return node.name.toLowerCase().includes(q) ? [node] : [];
+    }
+    const filteredChildren = filterNodes(node.children ?? [], query);
+    if (filteredChildren.length > 0) {
+      return [{ ...node, children: filteredChildren }];
+    }
+    return node.name.toLowerCase().includes(q) ? [node] : [];
+  });
+};
+
 export const FileTree = ({
   files,
   onFileSelect,
@@ -363,38 +383,40 @@ export const FileTree = ({
   onMoveFile,
   selectedFile,
 }: FileTreeProps) => {
-  // Context menu state
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
     node: FileNode;
   }>();
 
-  // Rename state
   const [renamingNode, setRenamingNode] = useState<FileNode>();
   const [renamingValue, setRenamingValue] = useState("");
 
-  // Create state
   const [creatingItem, setCreatingItem] = useState<{
     parentPath: string | undefined;
     type: NodeType;
   }>();
   const [creatingValue, setCreatingValue] = useState("");
 
-  // Drag and drop state
   const [dragState, setDragState] = useState<DragState>({
     draggingNode: null,
     dragOverNode: null,
     dragOverRoot: false,
   });
 
-  // Context Menu Handlers
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const displayedFiles = useMemo(
+    () => filterNodes(files, searchQuery),
+    [files, searchQuery],
+  );
+
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, node: FileNode) => {
       e.preventDefault();
       setContextMenu({ x: e.clientX, y: e.clientY, node });
     },
-    []
+    [],
   );
 
   const getContextMenuItems = (): ContextMenuItem[] => {
@@ -402,6 +424,15 @@ export const FileTree = ({
 
     const { node } = contextMenu;
     const items: ContextMenuItem[] = [];
+
+    if (node.type === "file") {
+      items.push({
+        label: "Open",
+        icon: <VscFile size={16} />,
+        onClick: () => onFileSelect(node.path),
+      });
+      items.push({ type: "separator" });
+    }
 
     if (node.type === "directory") {
       items.push({
@@ -414,14 +445,20 @@ export const FileTree = ({
         icon: <VscNewFolder size={16} />,
         onClick: () => handleStartCreate(node.path, "folder"),
       });
+      items.push({ type: "separator" });
     }
 
+    items.push({
+      label: "Copy Path",
+      icon: <VscCopy size={16} />,
+      onClick: () => navigator.clipboard.writeText(node.path),
+    });
+    items.push({ type: "separator" });
     items.push({
       label: "Rename",
       icon: <VscEdit size={16} />,
       onClick: () => handleStartRename(node),
     });
-
     items.push({
       label: "Delete",
       icon: <VscTrash size={16} />,
@@ -457,7 +494,7 @@ export const FileTree = ({
       setCreatingItem({ parentPath, type });
       setCreatingValue("");
     },
-    []
+    [],
   );
 
   const handleCreatingComplete = useCallback(() => {
@@ -500,15 +537,14 @@ export const FileTree = ({
         return;
       }
 
-      // Check if target is a descendant of the dragging node
       const isDescendant = node.path.startsWith(
-        dragState.draggingNode.path + "/"
+        dragState.draggingNode.path + "/",
       );
       if (!isDescendant) {
         setDragState((prev) => ({ ...prev, dragOverNode: node }));
       }
     },
-    [dragState.draggingNode]
+    [dragState.draggingNode],
   );
 
   const handleDrop = useCallback(
@@ -522,7 +558,6 @@ export const FileTree = ({
         return;
       }
 
-      // Don't allow dropping a node onto itself or its descendants
       const canDrop =
         dragState.draggingNode.path !== targetNode.path &&
         !targetNode.path.startsWith(dragState.draggingNode.path + "/");
@@ -537,7 +572,7 @@ export const FileTree = ({
         dragOverRoot: false,
       });
     },
-    [dragState.draggingNode, onMoveFile]
+    [dragState.draggingNode, onMoveFile],
   );
 
   const handleDragLeave = useCallback(() => {
@@ -557,7 +592,7 @@ export const FileTree = ({
         }));
       }
     },
-    [dragState.draggingNode]
+    [dragState.draggingNode],
   );
 
   const handleRootDrop = useCallback(
@@ -572,7 +607,6 @@ export const FileTree = ({
         const fileName = sourceParts[sourceParts.length - 1];
         const newPath = `/${fileName}`;
 
-        // Don't move if already at root
         if (dragState.draggingNode.path !== newPath) {
           onMoveFile(dragState.draggingNode.path, "");
         }
@@ -584,7 +618,7 @@ export const FileTree = ({
         dragOverRoot: false,
       });
     },
-    [dragState.draggingNode, onMoveFile]
+    [dragState.draggingNode, onMoveFile],
   );
 
   const handleRootDragLeave = useCallback((e: React.DragEvent) => {
@@ -628,6 +662,27 @@ export const FileTree = ({
         </div>
       </div>
 
+      <div className="file-tree-search">
+        <VscSearch size={14} className="file-tree-search-icon" />
+        <input
+          type="text"
+          className="file-tree-search-input"
+          placeholder="Search files..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        {searchQuery && (
+          <button
+            className="file-tree-search-clear"
+            onClick={() => setSearchQuery("")}
+            title="Clear search"
+            aria-label="Clear search"
+          >
+            <VscClose size={14} />
+          </button>
+        )}
+      </div>
+
       <div
         className={contentClassName}
         onDragOver={handleRootDragOver}
@@ -644,10 +699,12 @@ export const FileTree = ({
             level={0}
           />
         )}
-        {files.length === 0 && !creatingItem ? (
-          <div className="file-tree-empty">No files</div>
+        {displayedFiles.length === 0 && !creatingItem ? (
+          <div className="file-tree-empty">
+            {searchQuery ? "No matching files" : "No files"}
+          </div>
         ) : (
-          files.map((node) => (
+          displayedFiles.map((node) => (
             <FileTreeNode
               key={node.path}
               node={node}
@@ -667,6 +724,7 @@ export const FileTree = ({
               onCreatingCancel={handleCreatingCancel}
               selectedFile={selectedFile}
               level={0}
+              forceExpand={!!searchQuery}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               onDragOver={handleDragOver}

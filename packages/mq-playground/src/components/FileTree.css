@@ -50,6 +50,50 @@
   background-color: var(--tree-border);
 }
 
+.file-tree-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--tree-border);
+}
+
+.file-tree-search-icon {
+  color: var(--tree-title-color);
+  flex-shrink: 0;
+}
+
+.file-tree-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 12px;
+  color: var(--tree-item-color);
+  font-family: inherit;
+}
+
+.file-tree-search-input::placeholder {
+  color: var(--tree-empty-color);
+}
+
+.file-tree-search-clear {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--tree-title-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.file-tree-search-clear:hover {
+  background-color: var(--tree-border);
+}
+
 .file-tree-content {
   flex: 1;
   overflow-y: auto;

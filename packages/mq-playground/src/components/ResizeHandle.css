@@ -1,0 +1,24 @@
+.resize-handle {
+  flex-shrink: 0;
+  background-color: var(--tree-border);
+  transition: background-color 0.15s;
+  position: relative;
+  z-index: 10;
+}
+
+.resize-handle:hover,
+.resize-handle:active {
+  background-color: var(--accent-blue);
+}
+
+.resize-handle-horizontal {
+  width: 4px;
+  cursor: col-resize;
+  align-self: stretch;
+}
+
+.resize-handle-vertical {
+  height: 4px;
+  cursor: row-resize;
+  width: 100%;
+}

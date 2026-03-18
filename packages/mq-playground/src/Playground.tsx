@@ -7,6 +7,7 @@ import LZString from "lz-string";
 import { FileTree } from "./components/FileTree";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { TabBar, Tab } from "./components/TabBar";
+import { ResizeHandle } from "./components/ResizeHandle";
 import { fileSystem, FileNode, OPFSFileSystem } from "./utils/fileSystem";
 import { isMobile, isDesktop } from "./utils/deviceDetection";
 import {
@@ -15,6 +16,8 @@ import {
   VscSave,
   VscCheck,
   VscLoading,
+  VscWordWrap,
+  VscMap,
 } from "react-icons/vsc";
 import { EXAMPLE_CATEGORIES, EXAMPLES } from "./examples";
 
@@ -34,6 +37,11 @@ const CURRENT_FILE_PATH_KEY = "mq-playground.current_file_path";
 const SIDEBAR_VISIBLE_KEY = "mq-playground.sidebar-visible";
 const TABS_KEY = "mq-playground.tabs";
 const ACTIVE_TAB_ID_KEY = "mq-playground.active_tab_id";
+const SIDEBAR_WIDTH_KEY = "mq-playground.sidebar-width";
+const LEFT_RIGHT_SPLIT_KEY = "mq-playground.left-right-split";
+const TOP_BOTTOM_SPLIT_KEY = "mq-playground.top-bottom-split";
+const MINIMAP_ENABLED_KEY = "mq-playground.minimap-enabled";
+const WORD_WRAP_KEY = "mq-playground.word-wrap";
 
 export const Playground = () => {
   const [code, setCode] = useState<string | undefined>(
@@ -105,6 +113,30 @@ export const Playground = () => {
     path: string;
   } | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    return stored > 0 ? stored : 250;
+  });
+  const [leftRightSplit, setLeftRightSplit] = useState(() => {
+    const stored = Number(localStorage.getItem(LEFT_RIGHT_SPLIT_KEY));
+    return stored > 0 ? stored : 50;
+  });
+  const [topBottomSplit, setTopBottomSplit] = useState(() => {
+    const stored = Number(localStorage.getItem(TOP_BOTTOM_SPLIT_KEY));
+    return stored > 0 ? stored : 50;
+  });
+  const [minimapEnabled, setMinimapEnabled] = useState(
+    localStorage.getItem(MINIMAP_ENABLED_KEY) === "true",
+  );
+  const [wordWrap, setWordWrap] = useState<"on" | "off">(
+    localStorage.getItem(WORD_WRAP_KEY) === "on" ? "on" : "off",
+  );
+  const [cursorPosition, setCursorPosition] = useState({
+    line: 1,
+    column: 1,
+  });
+  const contentRef = useRef<HTMLDivElement>(null);
+  const leftPanelRef = useRef<HTMLDivElement>(null);
   const [tabs, setTabs] = useState<Tab[]>(() => {
     // Restore tabs from localStorage on initial load
     try {
@@ -478,7 +510,31 @@ export const Playground = () => {
   }, []);
 
   const handleTabClick = useCallback(
-    (tabId: string) => {
+    async (tabId: string) => {
+      if (tabId === activeTabId) return;
+
+      // Auto-save current tab before switching
+      if (currentFilePath && code !== undefined && activeTabId) {
+        const currentTab = tabs.find((t) => t.id === activeTabId);
+        if (currentTab?.isDirty) {
+          try {
+            setSaveStatus("saving");
+            await fileSystem.writeFile(currentFilePath, code);
+            setSaveStatus("saved");
+            setTabs((prev) =>
+              prev.map((tab) =>
+                tab.id === activeTabId
+                  ? { ...tab, content: code, savedContent: code, isDirty: false }
+                  : tab,
+              ),
+            );
+          } catch (error) {
+            console.error("Failed to auto-save file:", error);
+            setSaveStatus("unsaved");
+          }
+        }
+      }
+
       const tab = tabs.find((t) => t.id === tabId);
       if (!tab) return;
 
@@ -486,7 +542,7 @@ export const Playground = () => {
       setEditorContent(tab.filePath, tab.content);
       setSelectedFile(tab.filePath);
     },
-    [tabs],
+    [tabs, activeTabId, currentFilePath, code],
   );
 
   const handleTabClose = useCallback(
@@ -878,6 +934,60 @@ export const Playground = () => {
 
   const toggleSidebar = useCallback(() => {
     setIsSidebarVisible((prev) => !prev);
+  }, []);
+
+  const handleSidebarResize = useCallback((delta: number) => {
+    setSidebarWidth((prev) => {
+      const next = Math.min(500, Math.max(150, prev + delta));
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  const handlePanelResize = useCallback(
+    (delta: number) => {
+      const container = contentRef.current;
+      if (!container) return;
+      const availableWidth =
+        container.clientWidth - (isSidebarVisible ? sidebarWidth : 0);
+      if (availableWidth <= 0) return;
+      const deltaPct = (delta / availableWidth) * 100;
+      setLeftRightSplit((prev) => {
+        const next = Math.min(80, Math.max(20, prev + deltaPct));
+        localStorage.setItem(LEFT_RIGHT_SPLIT_KEY, String(next));
+        return next;
+      });
+    },
+    [isSidebarVisible, sidebarWidth],
+  );
+
+  const handleEditorResize = useCallback((delta: number) => {
+    const leftPanel = leftPanelRef.current;
+    if (!leftPanel) return;
+    const height = leftPanel.clientHeight;
+    if (height <= 0) return;
+    const deltaPct = (delta / height) * 100;
+    setTopBottomSplit((prev) => {
+      const next = Math.min(80, Math.max(20, prev + deltaPct));
+      localStorage.setItem(TOP_BOTTOM_SPLIT_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  const toggleMinimap = useCallback(() => {
+    setMinimapEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem(MINIMAP_ENABLED_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  const toggleWordWrap = useCallback(() => {
+    setWordWrap((prev) => {
+      const next = prev === "on" ? "off" : "on";
+      localStorage.setItem(WORD_WRAP_KEY, next);
+      return next;
+    });
   }, []);
 
   const beforeMount = (monaco: Monaco) => {
@@ -1309,24 +1419,46 @@ export const Playground = () => {
         </header>
       )}
 
-      <div className="playground-content">
+      <div className="playground-content" ref={contentRef}>
         {isOPFSSupported && isSidebarVisible && isDesktop() && (
-          <div className="file-tree-panel">
-            <FileTree
-              files={files}
-              onFileSelect={handleFileSelect}
-              onRefresh={loadFiles}
-              onCreateFile={handleCreateFile}
-              onCreateFolder={handleCreateFolder}
-              onDeleteFile={handleDeleteFile}
-              onRenameFile={handleRenameFile}
-              onMoveFile={handleMoveFile}
-              selectedFile={selectedFile}
+          <>
+            <div className="file-tree-panel" style={{ width: sidebarWidth }}>
+              <FileTree
+                files={files}
+                onFileSelect={handleFileSelect}
+                onRefresh={loadFiles}
+                onCreateFile={handleCreateFile}
+                onCreateFolder={handleCreateFolder}
+                onDeleteFile={handleDeleteFile}
+                onRenameFile={handleRenameFile}
+                onMoveFile={handleMoveFile}
+                selectedFile={selectedFile}
+              />
+            </div>
+            <ResizeHandle
+              direction="horizontal"
+              onResize={handleSidebarResize}
             />
-          </div>
+          </>
         )}
-        <div className="left-panel">
-          <div className="editor-container">
+        <div
+          className="left-panel"
+          ref={leftPanelRef}
+          style={
+            isDesktop()
+              ? {
+                  width: `calc((100% - ${isOPFSSupported && isSidebarVisible ? sidebarWidth + 4 : 0}px) * ${leftRightSplit / 100})`,
+                  flex: "none",
+                }
+              : undefined
+          }
+        >
+          <div
+            className="editor-container"
+            style={
+              isDesktop() ? { height: `${topBottomSplit}%` } : undefined
+            }
+          >
             {tabs.length > 0 && (
               <TabBar
                 tabs={tabs}
@@ -1409,21 +1541,38 @@ export const Playground = () => {
                 value={code}
                 onChange={setCode}
                 beforeMount={beforeMount}
+                onMount={(editor) => {
+                  const disposable = editor.onDidChangeCursorPosition((e) => {
+                    setCursorPosition({
+                      line: e.position.lineNumber,
+                      column: e.position.column,
+                    });
+                  });
+                  editor.onDidDispose(() => disposable.dispose());
+                }}
                 options={{
-                  minimap: { enabled: false },
+                  minimap: { enabled: minimapEnabled },
                   scrollBeyondLastLine: false,
                   fontSize: 12,
                   automaticLayout: true,
                   fontFamily:
                     "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
                   fontLigatures: true,
+                  wordWrap,
                 }}
                 theme="mq-base"
               />
             </div>
           </div>
 
-          <div className="editor-container">
+          {isDesktop() && (
+            <ResizeHandle
+              direction="vertical"
+              onResize={handleEditorResize}
+            />
+          )}
+
+          <div className="editor-container" style={{ flex: 1 }}>
             <div className="editor-header">
               <label className="label">
                 <select
@@ -1462,6 +1611,9 @@ export const Playground = () => {
             </div>
           </div>
         </div>
+        {isDesktop() && (
+          <ResizeHandle direction="horizontal" onResize={handlePanelResize} />
+        )}
         <div className="right-panel">
           <div className="tab-container">
             <button
@@ -1655,13 +1807,32 @@ export const Playground = () => {
               </span>
             )}
           </div>
-          {executionTime && (
-            <div className="footer-right">
+          <div className="footer-right">
+            <span className="cursor-position">
+              Ln {cursorPosition.line}, Col {cursorPosition.column}
+            </span>
+            <button
+              className="footer-icon-button"
+              onClick={toggleWordWrap}
+              title={wordWrap === "on" ? "Disable Word Wrap" : "Enable Word Wrap"}
+              style={{ opacity: wordWrap === "on" ? 1 : 0.5 }}
+            >
+              <VscWordWrap size={14} />
+            </button>
+            <button
+              className="footer-icon-button"
+              onClick={toggleMinimap}
+              title={minimapEnabled ? "Disable Minimap" : "Enable Minimap"}
+              style={{ opacity: minimapEnabled ? 1 : 0.5 }}
+            >
+              <VscMap size={14} />
+            </button>
+            {executionTime && (
               <div className="execution-time">
                 {executionTime.toFixed(2)} ms
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </footer>
       )}
 
