@@ -392,14 +392,20 @@ impl<T: ModuleResolver> Evaluator<T> {
                 let val = self
                     .eval_expr(&RuntimeValue::NONE, rhs, env)
                     .map_err(|e| e.into_runtime_error())?;
-                let token = (*get_token(Shared::clone(&self.token_arena), rhs.token_id)).clone();
-                match self.match_pattern(&val, pattern)? {
-                    Some(bindings) => {
-                        for (name, bound_val) in bindings {
-                            define(env, name, bound_val);
+                if let Pattern::Ident(ident) = pattern {
+                    define(env, ident.name, val);
+                } else {
+                    match self.match_pattern(&val, pattern)? {
+                        Some(bindings) => {
+                            for (name, bound_val) in bindings {
+                                define(env, name, bound_val);
+                            }
+                        }
+                        None => {
+                            let token = (*get_token(Shared::clone(&self.token_arena), rhs.token_id)).clone();
+                            return Err(RuntimeError::DestructuringFailed(token));
                         }
                     }
-                    None => return Err(RuntimeError::DestructuringFailed(token)),
                 }
             } else {
                 return Err(RuntimeError::InternalError(
@@ -528,14 +534,20 @@ impl<T: ModuleResolver> Evaluator<T> {
                 }
                 ast::Expr::Let(pattern, rhs) => {
                     let val = self.eval_expr(&RuntimeValue::NONE, rhs, &Shared::clone(&module_env))?;
-                    let token = (*get_token(Shared::clone(&self.token_arena), rhs.token_id)).clone();
-                    match self.match_pattern(&val, pattern)? {
-                        Some(bindings) => {
-                            for (name, bound_val) in bindings {
-                                define(&module_env, name, bound_val);
+                    if let Pattern::Ident(ident) = pattern {
+                        define(&module_env, ident.name, val);
+                    } else {
+                        match self.match_pattern(&val, pattern)? {
+                            Some(bindings) => {
+                                for (name, bound_val) in bindings {
+                                    define(&module_env, name, bound_val);
+                                }
+                            }
+                            None => {
+                                let token = (*get_token(Shared::clone(&self.token_arena), rhs.token_id)).clone();
+                                return Err(RuntimeError::DestructuringFailed(token).into());
                             }
                         }
-                        None => return Err(RuntimeError::DestructuringFailed(token).into()),
                     }
                 }
                 ast::Expr::Import(module_path) => {
@@ -847,27 +859,39 @@ impl<T: ModuleResolver> Evaluator<T> {
             )),
             ast::Expr::Let(pattern, node) => {
                 let val = self.eval_expr(runtime_value, node, env)?;
-                let token = (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone();
-                match self.match_pattern(&val, pattern)? {
-                    Some(bindings) => {
-                        for (name, bound_val) in bindings {
-                            define(env, name, bound_val);
+                if let Pattern::Ident(ident) = pattern {
+                    define(env, ident.name, val);
+                } else {
+                    match self.match_pattern(&val, pattern)? {
+                        Some(bindings) => {
+                            for (name, bound_val) in bindings {
+                                define(env, name, bound_val);
+                            }
+                        }
+                        None => {
+                            let token = (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone();
+                            return Err(RuntimeError::DestructuringFailed(token).into());
                         }
                     }
-                    None => return Err(RuntimeError::DestructuringFailed(token).into()),
                 }
                 Ok(runtime_value.clone())
             }
             ast::Expr::Var(pattern, node) => {
                 let val = self.eval_expr(runtime_value, node, env)?;
-                let token = (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone();
-                match self.match_pattern(&val, pattern)? {
-                    Some(bindings) => {
-                        for (name, bound_val) in bindings {
-                            define_mutable(env, name, bound_val);
+                if let Pattern::Ident(ident) = pattern {
+                    define_mutable(env, ident.name, val);
+                } else {
+                    match self.match_pattern(&val, pattern)? {
+                        Some(bindings) => {
+                            for (name, bound_val) in bindings {
+                                define_mutable(env, name, bound_val);
+                            }
+                        }
+                        None => {
+                            let token = (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone();
+                            return Err(RuntimeError::DestructuringFailed(token).into());
                         }
                     }
-                    None => return Err(RuntimeError::DestructuringFailed(token).into()),
                 }
                 Ok(runtime_value.clone())
             }
