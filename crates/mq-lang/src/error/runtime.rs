@@ -78,6 +78,8 @@ pub enum RuntimeError {
     InvalidMacroResult(Token),
     #[error("Invalid convert: {1}")]
     InvalidConvert(Token, String),
+    #[error("Destructuring pattern did not match value")]
+    DestructuringFailed(Token),
 }
 
 impl RuntimeError {
@@ -111,6 +113,7 @@ impl RuntimeError {
             RuntimeError::InvalidMacroResultAst(token) => Some(token),
             RuntimeError::InvalidMacroResult(token) => Some(token),
             RuntimeError::InvalidConvert(token, _) => Some(token),
+            RuntimeError::DestructuringFailed(token) => Some(token),
         }
     }
 }

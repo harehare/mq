@@ -558,7 +558,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if matches!(node.kind, mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var) {
-            self.insert_symbol(Symbol {
+            let keyword_id = self.insert_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Keyword,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -569,20 +569,30 @@ impl Hir {
             });
 
             let children = node.children_without_token();
-            let ident = children.first().unwrap();
-            let symbol_id = self.insert_symbol(Symbol {
-                value: ident.name(),
-                kind: SymbolKind::Variable,
-                source: SourceInfo::new(Some(source_id), Some(ident.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-                insertion_order: 0,
-            });
+            let lhs = children.first().unwrap();
 
-            children.iter().skip(1).for_each(|child| {
-                self.add_expr(child, source_id, scope_id, Some(symbol_id));
-            });
+            if matches!(lhs.kind, mq_lang::CstNodeKind::Pattern) {
+                // Destructuring pattern: create PatternVariable symbols via add_pattern_expr
+                self.add_pattern_expr(lhs, source_id, scope_id, Some(keyword_id));
+                children.iter().skip(1).for_each(|child| {
+                    self.add_expr(child, source_id, scope_id, Some(keyword_id));
+                });
+            } else {
+                // Simple identifier: create a single Variable symbol
+                let symbol_id = self.insert_symbol(Symbol {
+                    value: lhs.name(),
+                    kind: SymbolKind::Variable,
+                    source: SourceInfo::new(Some(source_id), Some(lhs.range())),
+                    scope: scope_id,
+                    doc: node.comments(),
+                    parent,
+                    insertion_order: 0,
+                });
+
+                children.iter().skip(1).for_each(|child| {
+                    self.add_expr(child, source_id, scope_id, Some(symbol_id));
+                });
+            }
         }
     }
 

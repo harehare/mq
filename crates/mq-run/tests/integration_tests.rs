@@ -445,3 +445,83 @@ fn test_loop_with_continue() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+fn test_let_array_destructuring() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("let [a, b] = [1, 2] | a")
+        .assert();
+
+    assert.success().code(0).stdout("1\n");
+
+    Ok(())
+}
+
+#[test]
+fn test_let_array_rest_destructuring() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("let [x, ..r] = [1, 2, 3] | r")
+        .assert();
+
+    assert.success().code(0).stdout("[2, 3]\n");
+
+    Ok(())
+}
+
+#[test]
+fn test_let_dict_destructuring() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg(r#"let {a} = {"a": 10} | a"#)
+        .assert();
+
+    assert.success().code(0).stdout("10\n");
+
+    Ok(())
+}
+
+#[test]
+fn test_var_array_destructuring_mutation() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("var [a, b] = [1, 2] | a = 99 | a")
+        .assert();
+
+    assert.success().code(0).stdout("99\n");
+
+    Ok(())
+}
+
+#[test]
+fn test_let_simple_regression() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("let a = 42 | a")
+        .assert();
+
+    assert.success().code(0).stdout("42\n");
+
+    Ok(())
+}
