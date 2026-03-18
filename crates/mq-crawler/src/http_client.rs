@@ -67,9 +67,7 @@ impl HttpClient {
     /// synchronous JavaScript execution. The captured DOM reflects the rendered
     /// state at that point, making this suitable for most JS-driven pages.
     pub async fn new_chromium(chrome_path: Option<PathBuf>) -> Result<Self, String> {
-        let mut config_builder = chromiumoxide::browser::BrowserConfig::builder()
-            .arg("--no-sandbox")
-            .arg("--disable-gpu");
+        let mut config_builder = chromiumoxide::browser::BrowserConfig::builder().arg("--disable-gpu");
 
         if let Some(path) = chrome_path {
             config_builder = config_builder.chrome_executable(path);
