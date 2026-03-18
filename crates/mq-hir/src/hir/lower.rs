@@ -558,7 +558,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if matches!(node.kind, mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var) {
-            self.insert_symbol(Symbol {
+            let _keyword_id = self.insert_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Keyword,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -569,20 +569,42 @@ impl Hir {
             });
 
             let children = node.children_without_token();
-            let ident = children.first().unwrap();
-            let symbol_id = self.insert_symbol(Symbol {
-                value: ident.name(),
-                kind: SymbolKind::Variable,
-                source: SourceInfo::new(Some(source_id), Some(ident.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-                insertion_order: 0,
-            });
+            let lhs = children.first().unwrap();
 
-            children.iter().skip(1).for_each(|child| {
-                self.add_expr(child, source_id, scope_id, Some(symbol_id));
-            });
+            if matches!(lhs.kind, mq_lang::CstNodeKind::Pattern) {
+                // Destructuring pattern: create a DestructuringBinding symbol (sibling to the
+                // Keyword, same as Variable for simple let) that owns PatternVariable children
+                // and the initializer, so piped-input propagation and type constraints can
+                // treat it identically to Variable.
+                let destructuring_id = self.insert_symbol(Symbol {
+                    value: None,
+                    kind: SymbolKind::DestructuringBinding,
+                    source: SourceInfo::new(Some(source_id), Some(lhs.range())),
+                    scope: scope_id,
+                    doc: node.comments(),
+                    parent,
+                    insertion_order: 0,
+                });
+                self.add_pattern_expr(lhs, source_id, scope_id, Some(destructuring_id));
+                children.iter().skip(1).for_each(|child| {
+                    self.add_expr(child, source_id, scope_id, Some(destructuring_id));
+                });
+            } else {
+                // Simple identifier: create a single Variable symbol
+                let symbol_id = self.insert_symbol(Symbol {
+                    value: lhs.name(),
+                    kind: SymbolKind::Variable,
+                    source: SourceInfo::new(Some(source_id), Some(lhs.range())),
+                    scope: scope_id,
+                    doc: node.comments(),
+                    parent,
+                    insertion_order: 0,
+                });
+
+                children.iter().skip(1).for_each(|child| {
+                    self.add_expr(child, source_id, scope_id, Some(symbol_id));
+                });
+            }
         }
     }
 
@@ -1304,14 +1326,36 @@ impl Hir {
         scope_id: ScopeId,
         parent: Option<SymbolId>,
     ) {
+        self.add_pattern_expr_inner(node, source_id, scope_id, parent, false, None);
+    }
+
+    fn add_pattern_expr_inner(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+        is_rest: bool,
+        dict_key: Option<smol_str::SmolStr>,
+    ) {
         if let mq_lang::CstNode {
             kind: mq_lang::CstNodeKind::Pattern,
             ..
         } = &**node
         {
+            let is_dict_pattern = node.children.iter().any(|child| {
+                child.is_token()
+                    && child
+                        .token
+                        .as_ref()
+                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::LBrace))
+            });
+
             let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Pattern,
+                value: dict_key.or_else(|| node.name()),
+                kind: SymbolKind::Pattern {
+                    is_dict: is_dict_pattern,
+                },
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
                 doc: node.comments(),
@@ -1319,29 +1363,87 @@ impl Hir {
                 insertion_order: 0,
             });
 
-            // Extract pattern variables and add them to the scope
-            self.extract_pattern_variables(node, source_id, scope_id, Some(symbol_id));
+            // Extract pattern variables and add them to the scope.
+            // Pass `is_rest` so the rest binding (`..rest`) gets the correct kind.
+            self.extract_pattern_variables(node, source_id, scope_id, Some(symbol_id), is_rest);
+
+            let has_rest_element = node.children.iter().any(|child| {
+                child.is_token()
+                    && child
+                        .token
+                        .as_ref()
+                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::DoubleDot))
+            });
 
             // Process nested patterns (for array, dict patterns)
-            for child in node.children_without_token() {
+            let non_token_children = node.children_without_token();
+            let last_pattern_idx = if has_rest_element {
+                non_token_children
+                    .iter()
+                    .rposition(|c| matches!(c.kind, mq_lang::CstNodeKind::Pattern))
+            } else {
+                None
+            };
+            let mut pattern_idx = 0;
+            let mut idx = 0;
+            while idx < non_token_children.len() {
+                let child = &non_token_children[idx];
                 if matches!(child.kind, mq_lang::CstNodeKind::Pattern) {
-                    self.add_pattern_expr(&child, source_id, scope_id, Some(symbol_id));
+                    let child_is_rest = last_pattern_idx == Some(pattern_idx);
+                    self.add_pattern_expr_inner(child, source_id, scope_id, Some(symbol_id), child_is_rest, None);
+                    pattern_idx += 1;
                 } else if matches!(child.kind, mq_lang::CstNodeKind::Ident) {
-                    // Ident nodes in patterns are part of symbol literals (:foo -> foo)
-                    // They should be registered as Symbol, not Ref
-                    self.add_symbol(Symbol {
-                        value: child.name(),
-                        kind: SymbolKind::Symbol,
-                        source: SourceInfo::new(Some(source_id), Some(child.range())),
-                        scope: scope_id,
-                        doc: child.comments(),
-                        parent: Some(symbol_id),
-                        insertion_order: 0,
-                    });
+                    if is_dict_pattern {
+                        // In dict patterns `{a, b}` shorthand, an Ident NOT followed by a
+                        // Pattern sibling is both the key name and the binding variable.
+                        // In `{a: pattern}`, the Ident is the dict key and the following
+                        // Pattern carries the binding. Process the pair together here so
+                        // the key name can be stored in the inner Pattern's `value` field,
+                        // enabling constraint generation to map the binding to its field type.
+                        let next = non_token_children.get(idx + 1);
+                        let next_is_pattern = next.is_some_and(|c| matches!(c.kind, mq_lang::CstNodeKind::Pattern));
+                        if !next_is_pattern {
+                            self.add_symbol(Symbol {
+                                value: child.name(),
+                                kind: SymbolKind::PatternVariable { is_rest: false },
+                                source: SourceInfo::new(Some(source_id), Some(child.range())),
+                                scope: scope_id,
+                                doc: child.comments(),
+                                parent: Some(symbol_id),
+                                insertion_order: 0,
+                            });
+                        } else {
+                            // Explicit `{key: pattern}`: pass the key name so the inner
+                            // Pattern symbol stores it in its `value` field.
+                            let inner = next.unwrap();
+                            self.add_pattern_expr_inner(
+                                inner,
+                                source_id,
+                                scope_id,
+                                Some(symbol_id),
+                                false,
+                                child.name(),
+                            );
+                            idx += 1; // skip the inner Pattern on the next iteration
+                            pattern_idx += 1;
+                        }
+                    } else {
+                        // Ident nodes in non-dict patterns are symbol literal names (:foo -> foo)
+                        self.add_symbol(Symbol {
+                            value: child.name(),
+                            kind: SymbolKind::Symbol,
+                            source: SourceInfo::new(Some(source_id), Some(child.range())),
+                            scope: scope_id,
+                            doc: child.comments(),
+                            parent: Some(symbol_id),
+                            insertion_order: 0,
+                        });
+                    }
                 } else {
                     // Process other expressions in the pattern (e.g., literals, guard conditions)
-                    self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+                    self.add_expr(child, source_id, scope_id, Some(symbol_id));
                 }
+                idx += 1;
             }
         }
     }
@@ -1459,6 +1561,7 @@ impl Hir {
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
+        is_rest: bool,
     ) {
         if let Some(token) = &node.token {
             match &token.kind {
@@ -1467,7 +1570,7 @@ impl Hir {
                     // Skip wildcards
                     self.add_symbol(Symbol {
                         value: Some(name.clone()),
-                        kind: SymbolKind::PatternVariable,
+                        kind: SymbolKind::PatternVariable { is_rest },
                         source: SourceInfo::new(Some(source_id), Some(node.range())),
                         scope: scope_id,
                         doc: node.comments(),

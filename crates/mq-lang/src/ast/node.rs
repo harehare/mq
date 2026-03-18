@@ -312,9 +312,9 @@ pub enum Expr {
     Def(IdentWithToken, Params, Program),
     Macro(IdentWithToken, Params, Shared<Node>),
     Fn(Params, Program),
-    Let(IdentWithToken, Shared<Node>),
+    Let(Pattern, Shared<Node>),
     Loop(Program),
-    Var(IdentWithToken, Shared<Node>),
+    Var(Pattern, Shared<Node>),
     Assign(IdentWithToken, Shared<Node>),
     And(Shared<Node>, Shared<Node>),
     Or(Shared<Node>, Shared<Node>),
@@ -459,7 +459,7 @@ mod tests {
     )]
     #[case(
         Expr::Let(
-            IdentWithToken::new("x"),
+            Pattern::Ident(IdentWithToken::new("x")),
             Shared::new(Node {
                 token_id: ArenaId::new(0),
                 expr: Shared::new(Expr::Literal(Literal::String("letval".to_string()))),

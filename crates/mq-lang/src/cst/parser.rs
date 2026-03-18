@@ -1300,7 +1300,12 @@ impl<'a> Parser<'a> {
         };
 
         let leading_trivia = self.parse_leading_trivia();
-        children.push(self.parse_ident(leading_trivia)?);
+        let lhs = match self.peek().map(|t| &t.kind) {
+            Some(TokenKind::LBracket) => self.parse_array_pattern(leading_trivia)?,
+            Some(TokenKind::LBrace) => self.parse_dict_pattern(leading_trivia)?,
+            _ => self.parse_ident(leading_trivia)?,
+        };
+        children.push(lhs);
 
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Equal), NodeKind::Token)?);
 

@@ -211,18 +211,18 @@ impl Macro {
                     expr: Shared::new(Expr::Foreach(ident.clone(), expanded_collection, expanded_program)),
                 }))
             }
-            Expr::Let(ident, value) => {
+            Expr::Let(pattern, value) => {
                 let expanded_value = self.expand_node(value, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Let(ident.clone(), expanded_value)),
+                    expr: Shared::new(Expr::Let(pattern.clone(), expanded_value)),
                 }))
             }
-            Expr::Var(ident, value) => {
+            Expr::Var(pattern, value) => {
                 let expanded_value = self.expand_node(value, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Var(ident.clone(), expanded_value)),
+                    expr: Shared::new(Expr::Var(pattern.clone(), expanded_value)),
                 }))
             }
             Expr::Assign(ident, value) => {
@@ -612,18 +612,18 @@ impl Macro {
                     )),
                 })
             }
-            Expr::Let(ident, value) => {
+            Expr::Let(pattern, value) => {
                 let substituted_value = self.substitute_node(value, substitutions);
                 Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Let(ident.clone(), substituted_value)),
+                    expr: Shared::new(Expr::Let(pattern.clone(), substituted_value)),
                 })
             }
-            Expr::Var(ident, value) => {
+            Expr::Var(pattern, value) => {
                 let substituted_value = self.substitute_node(value, substitutions);
                 Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Var(ident.clone(), substituted_value)),
+                    expr: Shared::new(Expr::Var(pattern.clone(), substituted_value)),
                 })
             }
             Expr::Assign(ident, value) => {
@@ -934,18 +934,18 @@ impl Macro {
                     )),
                 })
             }
-            Expr::Let(ident, value) => {
+            Expr::Let(pattern, value) => {
                 let substituted_value = self.substitute_in_quote(value, substitutions);
                 Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Let(ident.clone(), substituted_value)),
+                    expr: Shared::new(Expr::Let(pattern.clone(), substituted_value)),
                 })
             }
-            Expr::Var(ident, value) => {
+            Expr::Var(pattern, value) => {
                 let substituted_value = self.substitute_in_quote(value, substitutions);
                 Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Var(ident.clone(), substituted_value)),
+                    expr: Shared::new(Expr::Var(pattern.clone(), substituted_value)),
                 })
             }
             Expr::Assign(ident, value) => {

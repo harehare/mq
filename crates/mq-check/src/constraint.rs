@@ -11,9 +11,9 @@ pub(crate) use helpers::{
 
 use categories::categorize_symbols;
 use helpers::{
-    build_piped_call_args, collect_break_value_types, find_enclosing_function, find_lambda_function_child,
-    get_post_loop_siblings, get_symbol_range, is_foreach_iterable_ref, is_inside_quote_block, merge_loop_types,
-    might_receive_piped_input, resolve_builtin_call, resolve_pattern_type,
+    build_piped_call_args, collect_break_value_types, collect_pattern_variable_descendants, find_enclosing_function,
+    find_lambda_function_child, get_post_loop_siblings, get_symbol_range, is_foreach_iterable_ref,
+    is_inside_quote_block, merge_loop_types, might_receive_piped_input, resolve_builtin_call, resolve_pattern_type,
 };
 use pipe::{generate_block_constraints, generate_function_body_pipe_constraints, resolve_branch_body_type};
 
@@ -107,9 +107,9 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
     let mut sorted_pass1 = cats.pass1_symbols.clone();
     sorted_pass1.sort_by_key(|(_, kind)| match kind {
         SymbolKind::Number | SymbolKind::String | SymbolKind::Boolean | SymbolKind::Symbol | SymbolKind::None => 0u8,
-        SymbolKind::Parameter | SymbolKind::PatternVariable => 1,
+        SymbolKind::Parameter | SymbolKind::PatternVariable { .. } => 1,
         SymbolKind::Function(_) | SymbolKind::Macro(_) => 2,
-        SymbolKind::Variable => 3,
+        SymbolKind::Variable | SymbolKind::DestructuringBinding => 3,
         _ => 4,
     });
     for (symbol_id, kind) in &sorted_pass1 {
@@ -129,7 +129,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
         // For root-level Variables (e.g. `let x = first()`), forward the piped type to
         // the initializer Call/Ref so Pass 3 sees it before resolving the overload.
         if let Some(sym) = hir.symbol(cats.root_symbols[i])
-            && matches!(sym.kind, SymbolKind::Variable)
+            && matches!(sym.kind, SymbolKind::Variable | SymbolKind::DestructuringBinding)
         {
             let init_children = get_children(&children_index, cats.root_symbols[i]);
             if let Some(&init_id) = init_children.last() {
@@ -202,7 +202,7 @@ pub(super) fn generate_symbol_constraints(
         }
 
         // Parameters and pattern variables get fresh type variables
-        SymbolKind::Parameter | SymbolKind::PatternVariable => {
+        SymbolKind::Parameter | SymbolKind::PatternVariable { .. } => {
             let ty_var = ctx.fresh_var();
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }
@@ -223,6 +223,140 @@ pub(super) fn generate_symbol_constraints(
                     range,
                     ConstraintOrigin::General,
                 ));
+            }
+        }
+
+        // Destructuring bindings (`let [a, b] = expr` or `let {a, b} = expr`).
+        //
+        // After HIR lowering both patterns produce PatternVariable descendants, but
+        // their structure differs:
+        //   Array `let [a, b]`: DestructuringBinding → Pattern → Pattern("a") → PatternVariable("a")
+        //   Dict  `let {a, b}`: DestructuringBinding → Pattern → PatternVariable("a")
+        //
+        // The outer Pattern's direct children reveal the kind:
+        //   - direct PatternVariable children → dict pattern
+        //   - direct Pattern children         → array pattern
+        SymbolKind::DestructuringBinding => {
+            let children = get_children(children_index, symbol_id);
+            let range = get_symbol_range(hir, symbol_id);
+
+            // Determine pattern kind from the `is_dict` flag stored in the outer Pattern symbol.
+            let outer_pattern_id = children.first().copied();
+            let is_dict_pattern = outer_pattern_id
+                .and_then(|pid| hir.symbol(pid))
+                .is_some_and(|s| matches!(s.kind, SymbolKind::Pattern { is_dict: true }));
+
+            if is_dict_pattern {
+                // Dict pattern: constrain binding to the initializer.
+                // When the initializer is a literal Dict, wire each PatternVariable to
+                // the corresponding field's value type so `a + true` is caught when `a: number`.
+                let ty_var = ctx.fresh_var();
+                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+
+                if let Some(&init_id) = children.last() {
+                    let init_ty = ctx.get_or_create_symbol_type(init_id);
+                    ctx.add_constraint(Constraint::Equal(
+                        Type::Var(ty_var),
+                        init_ty,
+                        range,
+                        ConstraintOrigin::General,
+                    ));
+
+                    // For literal Dict initializers, look up per-field types
+                    if let Some(init_sym) = hir.symbol(init_id)
+                        && matches!(init_sym.kind, SymbolKind::Dict)
+                    {
+                        // Build key → value_type map from the Dict's key symbols
+                        let key_to_val_ty: std::collections::HashMap<String, Type> =
+                            get_children(children_index, init_id)
+                                .iter()
+                                .filter_map(|&key_id| {
+                                    let key_name = hir.symbol(key_id)?.value.as_deref()?.to_string();
+                                    let val_children = get_children(children_index, key_id);
+                                    let val_ty = val_children
+                                        .last()
+                                        .map(|&vid| ctx.get_or_create_symbol_type(vid))
+                                        .unwrap_or_else(|| Type::Var(ctx.fresh_var()));
+                                    Some((key_name, val_ty))
+                                })
+                                .collect();
+
+                        if let Some(pid) = outer_pattern_id {
+                            for &child_id in get_children(children_index, pid) {
+                                if let Some(child_sym) = hir.symbol(child_id) {
+                                    match &child_sym.kind {
+                                        // Shorthand `{a}`: PatternVariable is a direct child;
+                                        // its value is both the key and the binding name.
+                                        SymbolKind::PatternVariable { .. } => {
+                                            if let Some(key) = child_sym.value.as_deref()
+                                                && let Some(val_ty) = key_to_val_ty.get(key)
+                                            {
+                                                let pv_ty = ctx.get_or_create_symbol_type(child_id);
+                                                ctx.add_constraint(Constraint::Equal(
+                                                    pv_ty,
+                                                    val_ty.clone(),
+                                                    range,
+                                                    ConstraintOrigin::General,
+                                                ));
+                                            }
+                                        }
+                                        // Explicit `{key: pattern}`: the inner Pattern's `value`
+                                        // holds the dict key name (set during HIR lowering).
+                                        // Constrain all PatternVariables under it.
+                                        SymbolKind::Pattern { .. } => {
+                                            if let Some(key) = child_sym.value.as_deref()
+                                                && let Some(val_ty) = key_to_val_ty.get(key)
+                                            {
+                                                for &pv_id in get_children(children_index, child_id) {
+                                                    if hir.symbol(pv_id).is_some_and(|s| {
+                                                        matches!(s.kind, SymbolKind::PatternVariable { .. })
+                                                    }) {
+                                                        let pv_ty = ctx.get_or_create_symbol_type(pv_id);
+                                                        ctx.add_constraint(Constraint::Equal(
+                                                            pv_ty,
+                                                            val_ty.clone(),
+                                                            range,
+                                                            ConstraintOrigin::General,
+                                                        ));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Array pattern: binding type is Array(elem_ty); each PatternVariable
+                // is constrained to elem_ty so that `a + true` is flagged when `a: Number`.
+                let elem_ty_var = ctx.fresh_var();
+                let array_ty = Type::array(Type::Var(elem_ty_var));
+                ctx.set_symbol_type(symbol_id, array_ty.clone());
+
+                if let Some(&last_child) = children.last() {
+                    let init_ty = ctx.get_or_create_symbol_type(last_child);
+                    ctx.add_constraint(Constraint::Equal(array_ty, init_ty, range, ConstraintOrigin::General));
+                }
+
+                let range = get_symbol_range(hir, symbol_id);
+                let pv_ids = collect_pattern_variable_descendants(hir, symbol_id, children_index);
+                for pv_id in pv_ids {
+                    let pv_ty = ctx.get_or_create_symbol_type(pv_id);
+                    // Rest bindings (`..rest`) capture the remaining elements as an array,
+                    // so their type is `Array(elem_ty)` rather than `elem_ty`.
+                    let target_ty = if hir
+                        .symbol(pv_id)
+                        .is_some_and(|s| matches!(s.kind, SymbolKind::PatternVariable { is_rest: true }))
+                    {
+                        Type::array(Type::Var(elem_ty_var))
+                    } else {
+                        Type::Var(elem_ty_var)
+                    };
+                    ctx.add_constraint(Constraint::Equal(pv_ty, target_ty, range, ConstraintOrigin::General));
+                }
             }
         }
 
@@ -1402,7 +1536,7 @@ pub(super) fn generate_symbol_constraints(
             }
         }
 
-        SymbolKind::MatchArm | SymbolKind::Pattern => {
+        SymbolKind::MatchArm | SymbolKind::Pattern { .. } => {
             // These are handled by the Match handler below.
             // Assign a fresh type variable as default.
             let ty_var = ctx.fresh_var();
@@ -1439,7 +1573,7 @@ pub(super) fn generate_symbol_constraints(
                         let mut arm_pattern_ty = None;
                         for &arm_child_id in arm_children_inner {
                             if let Some(arm_child_symbol) = hir.symbol(arm_child_id) {
-                                if matches!(arm_child_symbol.kind, SymbolKind::Pattern) {
+                                if matches!(arm_child_symbol.kind, SymbolKind::Pattern { .. }) {
                                     // Determine pattern type from its literal children
                                     let pattern_ty = resolve_pattern_type(hir, arm_child_id, ctx, children_index);
                                     ctx.add_constraint(Constraint::Equal(

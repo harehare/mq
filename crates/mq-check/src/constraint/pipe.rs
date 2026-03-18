@@ -45,7 +45,7 @@ pub(super) fn generate_block_constraints(
                 // For Variable (`let x = expr`), propagate piped input to the initializer
                 // (last child) so that `items | let x = first()` correctly passes `items`
                 // to `first()`.
-                SymbolKind::Variable => {
+                SymbolKind::Variable | SymbolKind::DestructuringBinding => {
                     propagate_piped_input_to_variable_initializer(hir, children[i], ctx, children_index);
                 }
                 _ => {}

@@ -67,8 +67,9 @@ pub(super) fn categorize_symbols(hir: &Hir) -> SymbolCategories {
             | SymbolKind::Symbol
             | SymbolKind::None
             | SymbolKind::Variable
+            | SymbolKind::DestructuringBinding
             | SymbolKind::Parameter
-            | SymbolKind::PatternVariable
+            | SymbolKind::PatternVariable { .. }
             | SymbolKind::Function(_)
             | SymbolKind::Macro(_) => {
                 cats.pass1_symbols.push((symbol_id, symbol.kind.clone()));

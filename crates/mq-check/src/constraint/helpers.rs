@@ -174,7 +174,7 @@ pub(super) fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool 
     // Check grandparent: if parent is Variable (let binding) inside a pipe-capable construct,
     // e.g. `items | let x = first()` — the Call inside the Variable will receive piped
     // input in Pass 4 via propagate_piped_input_to_variable_initializer, so defer errors.
-    if matches!(parent.kind, SymbolKind::Variable)
+    if matches!(parent.kind, SymbolKind::Variable | SymbolKind::DestructuringBinding)
         && let Some(grandparent_id) = parent.parent
         && let Some(grandparent) = hir.symbol(grandparent_id)
     {
@@ -337,6 +337,37 @@ pub(super) fn resolve_pattern_type(
 /// Collects the types of all `break: value` expressions that directly belong to
 /// the given loop symbol (i.e., not nested inside an inner while/loop/foreach).
 ///
+/// Collects all `PatternVariable` symbol IDs that are descendants of `root_id`.
+///
+/// Used by `DestructuringBinding` constraint generation to wire each bound
+/// pattern variable to the array element type of the initializer.
+pub(super) fn collect_pattern_variable_descendants(
+    hir: &Hir,
+    root_id: SymbolId,
+    children_index: &ChildrenIndex,
+) -> Vec<SymbolId> {
+    let mut result = Vec::new();
+    collect_pattern_variables_inner(hir, root_id, children_index, &mut result);
+    result
+}
+
+fn collect_pattern_variables_inner(
+    hir: &Hir,
+    symbol_id: SymbolId,
+    children_index: &ChildrenIndex,
+    result: &mut Vec<SymbolId>,
+) {
+    for &child_id in get_children(children_index, symbol_id) {
+        if let Some(sym) = hir.symbol(child_id) {
+            if matches!(sym.kind, SymbolKind::PatternVariable { .. }) {
+                result.push(child_id);
+            } else {
+                collect_pattern_variables_inner(hir, child_id, children_index, result);
+            }
+        }
+    }
+}
+
 /// Only `break: expr` (with a value) contributes to the union type; bare `break`
 /// without a value is ignored because it falls through to the loop's normal exit type.
 ///

@@ -1689,21 +1689,39 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         Ok(nodes)
     }
 
-    fn parse_let(&mut self, let_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let ident_token = self.tokens.next();
-        let ident = match &ident_token {
-            Some(token) => match &***token {
-                Token {
-                    range: _,
-                    kind: TokenKind::Ident(ident),
-                    module_id: _,
-                } => Ok(ident),
-                token => Err(SyntaxError::UnexpectedToken((*token).clone())),
-            },
-            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
-        }?;
+    fn parse_let_or_var_pattern(&mut self) -> Result<Pattern, SyntaxError> {
+        // Clone kind to release the peek borrow before calling next()
+        let token_kind = match self.tokens.peek() {
+            Some(t) => t.kind.clone(),
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+        };
+        match token_kind {
+            TokenKind::LBracket => {
+                self.tokens.next(); // consume [
+                self.parse_array_pattern()
+            }
+            TokenKind::LBrace => {
+                self.tokens.next(); // consume {
+                self.parse_dict_pattern()
+            }
+            TokenKind::Ident(ref name) => {
+                let ident_token = self.tokens.next().unwrap();
+                Ok(Pattern::Ident(IdentWithToken::new_with_token(
+                    name,
+                    Some(Shared::clone(ident_token)),
+                )))
+            }
+            _ => {
+                let bad_token = self.tokens.next().unwrap();
+                Err(SyntaxError::UnexpectedToken((**bad_token).clone()))
+            }
+        }
+    }
 
+    fn parse_let(&mut self, let_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let let_token_id = self.token_arena.alloc(Shared::clone(let_token));
+        let pattern = self.parse_let_or_var_pattern()?;
+
         self.next_token(|token_kind| matches!(token_kind, TokenKind::Equal))?;
         let expr_token = match self.tokens.next() {
             Some(token) => Ok(token),
@@ -1727,24 +1745,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         Ok(Shared::new(Node {
             token_id: let_token_id,
-            expr: Shared::new(Expr::Let(
-                IdentWithToken::new_with_token(ident, ident_token.map(Shared::clone)),
-                ast,
-            )),
+            expr: Shared::new(Expr::Let(pattern, ast)),
         }))
     }
 
     fn parse_var(&mut self, var_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let ident_token = self.tokens.next();
-        let ident = match &ident_token {
-            Some(token) => match &token.kind {
-                TokenKind::Ident(ident) => Ok(ident),
-                _ => Err(SyntaxError::UnexpectedToken((***token).clone())),
-            },
-            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
-        }?;
-
         let var_token_id = self.token_arena.alloc(Shared::clone(var_token));
+        let pattern = self.parse_let_or_var_pattern()?;
+
         self.next_token(|token_kind| matches!(token_kind, TokenKind::Equal))?;
         let expr_token = match self.tokens.next() {
             Some(token) => Ok(token),
@@ -1768,10 +1776,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         Ok(Shared::new(Node {
             token_id: var_token_id,
-            expr: Shared::new(Expr::Var(
-                IdentWithToken::new_with_token(ident, ident_token.map(Shared::clone)),
-                ast,
-            )),
+            expr: Shared::new(Expr::Var(pattern, ast)),
         }))
     }
 
@@ -2683,7 +2688,7 @@ mod tests {
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Shared::new(Expr::Let(
-                        IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))),
+                        Pattern::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         Shared::new(Node {
                             token_id: 2.into(),
                             expr: Shared::new(Expr::Literal(Literal::Number(42.into()))),
@@ -2703,7 +2708,7 @@ mod tests {
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Shared::new(Expr::Let(
-                        IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))),
+                        Pattern::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
                         Shared::new(Node {
                             token_id: 2.into(),
                             expr: Shared::new(Expr::Literal(Literal::String("hello".to_owned()))),
@@ -2723,7 +2728,7 @@ mod tests {
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Shared::new(Expr::Let(
-                        IdentWithToken::new_with_token("flag", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("flag")))))),
+                        Pattern::Ident(IdentWithToken::new_with_token("flag", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("flag"))))))),
                         Shared::new(Node {
                             token_id: 2.into(),
                             expr: Shared::new(Expr::Literal(Literal::Bool(true))),
@@ -2743,7 +2748,7 @@ mod tests {
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Shared::new(Expr::Let(
-                        IdentWithToken::new_with_token("z", Some(Shared::new(token(TokenKind::Ident("z".into()))))),
+                        Pattern::Ident(IdentWithToken::new_with_token("z", Some(Shared::new(token(TokenKind::Ident("z".into())))))),
                         Shared::new(Node {
                             token_id: 2.into(),
                             expr: Shared::new(
@@ -2765,7 +2770,7 @@ mod tests {
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Shared::new(Expr::Let(
-                        IdentWithToken::new_with_token("z", Some(Shared::new(token(TokenKind::Ident("z".into()))))),
+                        Pattern::Ident(IdentWithToken::new_with_token("z", Some(Shared::new(token(TokenKind::Ident("z".into())))))),
                         Shared::new(Node {
                             token_id: 2.into(),
                             expr: Shared::new(
@@ -2785,7 +2790,7 @@ mod tests {
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Shared::new(Expr::Let(
-                        IdentWithToken::new_with_token("z", Some(Shared::new(token(TokenKind::Ident("z".into()))))),
+                        Pattern::Ident(IdentWithToken::new_with_token("z", Some(Shared::new(token(TokenKind::Ident("z".into())))))),
                         Shared::new(Node {
                             token_id: 2.into(),
                             expr: Shared::new(
@@ -2806,7 +2811,7 @@ mod tests {
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Shared::new(Expr::Var(
-                        IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))),
+                        Pattern::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         Shared::new(Node {
                             token_id: 2.into(),
                             expr: Shared::new(Expr::Literal(Literal::Number(42.into()))),
@@ -2826,7 +2831,7 @@ mod tests {
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Shared::new(Expr::Var(
-                        IdentWithToken::new_with_token("count", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("count")))))),
+                        Pattern::Ident(IdentWithToken::new_with_token("count", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("count"))))))),
                         Shared::new(Node {
                             token_id: 2.into(),
                             expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
