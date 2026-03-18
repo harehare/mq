@@ -510,7 +510,31 @@ export const Playground = () => {
   }, []);
 
   const handleTabClick = useCallback(
-    (tabId: string) => {
+    async (tabId: string) => {
+      if (tabId === activeTabId) return;
+
+      // Auto-save current tab before switching
+      if (currentFilePath && code && activeTabId) {
+        const currentTab = tabs.find((t) => t.id === activeTabId);
+        if (currentTab?.isDirty) {
+          try {
+            setSaveStatus("saving");
+            await fileSystem.writeFile(currentFilePath, code);
+            setSaveStatus("saved");
+            setTabs((prev) =>
+              prev.map((tab) =>
+                tab.id === activeTabId
+                  ? { ...tab, content: code, savedContent: code, isDirty: false }
+                  : tab,
+              ),
+            );
+          } catch (error) {
+            console.error("Failed to auto-save file:", error);
+            setSaveStatus("unsaved");
+          }
+        }
+      }
+
       const tab = tabs.find((t) => t.id === tabId);
       if (!tab) return;
 
@@ -518,7 +542,7 @@ export const Playground = () => {
       setEditorContent(tab.filePath, tab.content);
       setSelectedFile(tab.filePath);
     },
-    [tabs],
+    [tabs, activeTabId, currentFilePath, code],
   );
 
   const handleTabClose = useCallback(
