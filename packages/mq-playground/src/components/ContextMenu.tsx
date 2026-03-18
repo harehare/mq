@@ -1,13 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import "./ContextMenu.css";
 
-export type ContextMenuItem = {
-  label: string;
-  onClick: () => void;
-  icon?: React.ReactNode;
-  disabled?: boolean;
-  separator?: boolean;
-};
+export type ContextMenuItem =
+  | { type: "separator" }
+  | {
+      type?: "item";
+      label: string;
+      onClick: () => void;
+      icon?: React.ReactNode;
+      disabled?: boolean;
+    };
 
 type ContextMenuProps = {
   x: number;
@@ -57,7 +59,7 @@ export const ContextMenu = ({ x, y, items, onClose }: ContextMenuProps) => {
       style={{ top: `${position.y}px`, left: `${position.x}px` }}
     >
       {items.map((item, index) =>
-        item.separator ? (
+        item.type === "separator" ? (
           <div key={index} className="context-menu-separator" />
         ) : (
           <div

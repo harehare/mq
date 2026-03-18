@@ -431,7 +431,7 @@ export const FileTree = ({
         icon: <VscFile size={16} />,
         onClick: () => onFileSelect(node.path),
       });
-      items.push({ separator: true, label: "", onClick: () => {} });
+      items.push({ type: "separator" });
     }
 
     if (node.type === "directory") {
@@ -445,7 +445,7 @@ export const FileTree = ({
         icon: <VscNewFolder size={16} />,
         onClick: () => handleStartCreate(node.path, "folder"),
       });
-      items.push({ separator: true, label: "", onClick: () => {} });
+      items.push({ type: "separator" });
     }
 
     items.push({
@@ -453,7 +453,7 @@ export const FileTree = ({
       icon: <VscCopy size={16} />,
       onClick: () => navigator.clipboard.writeText(node.path),
     });
-    items.push({ separator: true, label: "", onClick: () => {} });
+    items.push({ type: "separator" });
     items.push({
       label: "Rename",
       icon: <VscEdit size={16} />,

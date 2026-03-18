@@ -1446,7 +1446,10 @@ export const Playground = () => {
           ref={leftPanelRef}
           style={
             isDesktop()
-              ? { width: `${leftRightSplit}%`, flex: "none" }
+              ? {
+                  width: `calc((100% - ${isOPFSSupported && isSidebarVisible ? sidebarWidth + 4 : 0}px) * ${leftRightSplit / 100})`,
+                  flex: "none",
+                }
               : undefined
           }
         >
@@ -1539,12 +1542,13 @@ export const Playground = () => {
                 onChange={setCode}
                 beforeMount={beforeMount}
                 onMount={(editor) => {
-                  editor.onDidChangeCursorPosition((e) => {
+                  const disposable = editor.onDidChangeCursorPosition((e) => {
                     setCursorPosition({
                       line: e.position.lineNumber,
                       column: e.position.column,
                     });
                   });
+                  editor.onDidDispose(() => disposable.dispose());
                 }}
                 options={{
                   minimap: { enabled: minimapEnabled },
