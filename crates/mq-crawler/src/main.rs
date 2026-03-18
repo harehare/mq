@@ -70,8 +70,9 @@ struct CliArgs {
     /// Only used when --headless is set.
     #[clap(long, value_name = "PATH", requires = "headless")]
     chrome_path: Option<std::path::PathBuf>,
-    /// Comma-separated list of additional domains to crawl beyond the start URL's domain.
-    /// Use an empty value to allow all domains. By default only the start URL's domain is crawled.
+    /// Comma-separated list of domains to crawl in addition to the start URL's domain.
+    /// If not specified, only the start URL's domain is crawled.
+    /// If specified, the start URL's domain is always included automatically.
     /// Example: --allowed-domains example.com,docs.example.com
     #[clap(long, value_delimiter = ',', value_name = "DOMAIN")]
     allowed_domains: Option<Vec<String>>,
@@ -120,7 +121,8 @@ async fn main() {
 
     tracing::info!("Initializing crawler for URL: {}", args.url);
 
-    // Build the effective allowed domains list, always including the start URL's domain
+    // Build the effective allowed domains list.
+    // When --allowed-domains is provided, always include the start URL's domain as well.
     let effective_allowed = args.allowed_domains.map(|mut v| {
         if let Some(start_domain) = args.url.domain() {
             let start_domain = start_domain.to_string();
