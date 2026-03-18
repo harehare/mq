@@ -106,7 +106,9 @@ pub fn response(
                                 ..Default::default()
                             })
                         }
-                        mq_hir::SymbolKind::Parameter | mq_hir::SymbolKind::Variable => {
+                        mq_hir::SymbolKind::Parameter
+                        | mq_hir::SymbolKind::Variable
+                        | mq_hir::SymbolKind::PatternVariable => {
                             let deprecated = symbol.is_deprecated();
                             Some(CompletionItem {
                                 label: symbol.value.clone().unwrap_or_default().to_string(),
