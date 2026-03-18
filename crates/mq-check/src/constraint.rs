@@ -226,32 +226,108 @@ pub(super) fn generate_symbol_constraints(
             }
         }
 
-        // Destructuring bindings (`let [a, b] = expr`): the binding type is Array(elem_ty),
-        // constrained to the initializer. Each PatternVariable descendant is constrained to
-        // the element type so that `a + true` is flagged as a type error when `a: Number`.
+        // Destructuring bindings (`let [a, b] = expr` or `let {a, b} = expr`).
+        //
+        // After HIR lowering both patterns produce PatternVariable descendants, but
+        // their structure differs:
+        //   Array `let [a, b]`: DestructuringBinding → Pattern → Pattern("a") → PatternVariable("a")
+        //   Dict  `let {a, b}`: DestructuringBinding → Pattern → PatternVariable("a")
+        //
+        // The outer Pattern's direct children reveal the kind:
+        //   - direct PatternVariable children → dict pattern
+        //   - direct Pattern children         → array pattern
         SymbolKind::DestructuringBinding => {
-            let elem_ty_var = ctx.fresh_var();
-            let array_ty = Type::array(Type::Var(elem_ty_var));
-            ctx.set_symbol_type(symbol_id, array_ty.clone());
-
             let children = get_children(children_index, symbol_id);
             let range = get_symbol_range(hir, symbol_id);
-            if let Some(&last_child) = children.last() {
-                let init_ty = ctx.get_or_create_symbol_type(last_child);
-                ctx.add_constraint(Constraint::Equal(array_ty, init_ty, range, ConstraintOrigin::General));
-            }
 
-            // Wire each PatternVariable to the element type of the array initializer
-            let range = get_symbol_range(hir, symbol_id);
-            let pv_ids = collect_pattern_variable_descendants(hir, symbol_id, children_index);
-            for pv_id in pv_ids {
-                let pv_ty = ctx.get_or_create_symbol_type(pv_id);
-                ctx.add_constraint(Constraint::Equal(
-                    pv_ty,
-                    Type::Var(elem_ty_var),
-                    range,
-                    ConstraintOrigin::General,
-                ));
+            // Determine pattern kind from the outer Pattern's direct children
+            let outer_pattern_id = children.first().copied();
+            let is_dict_pattern = outer_pattern_id
+                .map(|pid| {
+                    get_children(children_index, pid).iter().any(|&cid| {
+                        hir.symbol(cid)
+                            .is_some_and(|s| matches!(s.kind, SymbolKind::PatternVariable))
+                    })
+                })
+                .unwrap_or(false);
+
+            if is_dict_pattern {
+                // Dict pattern: constrain binding to the initializer.
+                // When the initializer is a literal Dict, wire each PatternVariable to
+                // the corresponding field's value type so `a + true` is caught when `a: number`.
+                let ty_var = ctx.fresh_var();
+                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+
+                if let Some(&init_id) = children.last() {
+                    let init_ty = ctx.get_or_create_symbol_type(init_id);
+                    ctx.add_constraint(Constraint::Equal(
+                        Type::Var(ty_var),
+                        init_ty,
+                        range,
+                        ConstraintOrigin::General,
+                    ));
+
+                    // For literal Dict initializers, look up per-field types
+                    if let Some(init_sym) = hir.symbol(init_id)
+                        && matches!(init_sym.kind, SymbolKind::Dict)
+                    {
+                        // Build key → value_type map from the Dict's key symbols
+                        let key_to_val_ty: std::collections::HashMap<String, Type> =
+                            get_children(children_index, init_id)
+                                .iter()
+                                .filter_map(|&key_id| {
+                                    let key_name = hir.symbol(key_id)?.value.as_deref()?.to_string();
+                                    let val_children = get_children(children_index, key_id);
+                                    let val_ty = val_children
+                                        .last()
+                                        .map(|&vid| ctx.get_or_create_symbol_type(vid))
+                                        .unwrap_or_else(|| Type::Var(ctx.fresh_var()));
+                                    Some((key_name, val_ty))
+                                })
+                                .collect();
+
+                        if let Some(pid) = outer_pattern_id {
+                            for &pv_id in get_children(children_index, pid) {
+                                if let Some(pv_sym) = hir.symbol(pv_id)
+                                    && matches!(pv_sym.kind, SymbolKind::PatternVariable)
+                                    && let Some(key) = pv_sym.value.as_deref()
+                                    && let Some(val_ty) = key_to_val_ty.get(key)
+                                {
+                                    let pv_ty = ctx.get_or_create_symbol_type(pv_id);
+                                    ctx.add_constraint(Constraint::Equal(
+                                        pv_ty,
+                                        val_ty.clone(),
+                                        range,
+                                        ConstraintOrigin::General,
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Array pattern: binding type is Array(elem_ty); each PatternVariable
+                // is constrained to elem_ty so that `a + true` is flagged when `a: Number`.
+                let elem_ty_var = ctx.fresh_var();
+                let array_ty = Type::array(Type::Var(elem_ty_var));
+                ctx.set_symbol_type(symbol_id, array_ty.clone());
+
+                if let Some(&last_child) = children.last() {
+                    let init_ty = ctx.get_or_create_symbol_type(last_child);
+                    ctx.add_constraint(Constraint::Equal(array_ty, init_ty, range, ConstraintOrigin::General));
+                }
+
+                let range = get_symbol_range(hir, symbol_id);
+                let pv_ids = collect_pattern_variable_descendants(hir, symbol_id, children_index);
+                for pv_id in pv_ids {
+                    let pv_ty = ctx.get_or_create_symbol_type(pv_id);
+                    ctx.add_constraint(Constraint::Equal(
+                        pv_ty,
+                        Type::Var(elem_ty_var),
+                        range,
+                        ConstraintOrigin::General,
+                    ));
+                }
             }
         }
 

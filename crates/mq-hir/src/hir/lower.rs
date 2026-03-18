@@ -1344,26 +1344,60 @@ impl Hir {
             // Extract pattern variables and add them to the scope
             self.extract_pattern_variables(node, source_id, scope_id, Some(symbol_id));
 
+            // Detect dict patterns: the CST Pattern node for `{a, b}` or `{a: p}` has a
+            // Token child with LBrace kind.
+            let is_dict_pattern = node.children.iter().any(|child| {
+                child.is_token()
+                    && child
+                        .token
+                        .as_ref()
+                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::LBrace))
+            });
+
             // Process nested patterns (for array, dict patterns)
-            for child in node.children_without_token() {
+            let non_token_children = node.children_without_token();
+            let mut idx = 0;
+            while idx < non_token_children.len() {
+                let child = &non_token_children[idx];
                 if matches!(child.kind, mq_lang::CstNodeKind::Pattern) {
-                    self.add_pattern_expr(&child, source_id, scope_id, Some(symbol_id));
+                    self.add_pattern_expr(child, source_id, scope_id, Some(symbol_id));
                 } else if matches!(child.kind, mq_lang::CstNodeKind::Ident) {
-                    // Ident nodes in patterns are part of symbol literals (:foo -> foo)
-                    // They should be registered as Symbol, not Ref
-                    self.add_symbol(Symbol {
-                        value: child.name(),
-                        kind: SymbolKind::Symbol,
-                        source: SourceInfo::new(Some(source_id), Some(child.range())),
-                        scope: scope_id,
-                        doc: child.comments(),
-                        parent: Some(symbol_id),
-                        insertion_order: 0,
-                    });
+                    if is_dict_pattern {
+                        // In dict patterns `{a, b}` shorthand, an Ident NOT followed by a
+                        // Pattern sibling is both the key name and the binding variable.
+                        // In `{a: pattern}`, the Ident is just a key; the sub-Pattern carries
+                        // the binding and is handled in the Pattern arm above.
+                        let next_is_pattern = non_token_children
+                            .get(idx + 1)
+                            .is_some_and(|c| matches!(c.kind, mq_lang::CstNodeKind::Pattern));
+                        if !next_is_pattern {
+                            self.add_symbol(Symbol {
+                                value: child.name(),
+                                kind: SymbolKind::PatternVariable,
+                                source: SourceInfo::new(Some(source_id), Some(child.range())),
+                                scope: scope_id,
+                                doc: child.comments(),
+                                parent: Some(symbol_id),
+                                insertion_order: 0,
+                            });
+                        }
+                    } else {
+                        // Ident nodes in non-dict patterns are symbol literal names (:foo -> foo)
+                        self.add_symbol(Symbol {
+                            value: child.name(),
+                            kind: SymbolKind::Symbol,
+                            source: SourceInfo::new(Some(source_id), Some(child.range())),
+                            scope: scope_id,
+                            doc: child.comments(),
+                            parent: Some(symbol_id),
+                            insertion_order: 0,
+                        });
+                    }
                 } else {
                     // Process other expressions in the pattern (e.g., literals, guard conditions)
-                    self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+                    self.add_expr(child, source_id, scope_id, Some(symbol_id));
                 }
+                idx += 1;
             }
         }
     }
