@@ -647,4 +647,3 @@ def percentile(arr, p):
           sorted[lower_index] * (1 - weight) + sorted[upper_index] * weight
     end
 end
-
