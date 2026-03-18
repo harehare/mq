@@ -2,6 +2,7 @@ use clap::Parser;
 use fantoccini::wd::TimeoutConfiguration;
 use mq_crawler::crawler::Crawler;
 use url::Url;
+use miette::{Context, IntoDiagnostic};
 
 #[derive(Clone, Debug, Default, clap::ValueEnum)]
 enum OutputFormat {
@@ -155,7 +156,8 @@ async fn main() {
     } else if args.headless {
         mq_crawler::http_client::HttpClient::new_chromium(args.chrome_path)
             .await
-            .expect("Failed to launch headless Chrome. Ensure Chrome or Chromium is installed.")
+            .into_diagnostic()
+            .wrap_err("Failed to launch headless Chrome. Ensure Chrome or Chromium is installed.")?
     } else if effective_allowed.is_some() {
         mq_crawler::http_client::HttpClient::new_reqwest_multi_domain(args.page_load_timeout, args.concurrency.max(5))
             .unwrap()
