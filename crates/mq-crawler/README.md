@@ -15,15 +15,17 @@ Make web scraping and content extraction effortless with intelligent Markdown co
 
 ## Features
 
-- 🌐 **Web Crawling**: Fetch and process web pages with configurable depth and delay
-- 🔄 **HTML to Markdown**: Automatic conversion with customizable options
-- 🤖 **Robots.txt Compliance**: Respects robots.txt rules for ethical crawling
-- 🔍 **mq Query Integration**: Filter and transform crawled content on-the-fly
-- 🚀 **Parallel Processing**: Concurrent workers for faster crawling
-- 🎯 **Depth Control**: Limit crawl depth to control scope
-- ⏱️ **Rate Limiting**: Configurable delays to avoid overloading servers
-- 📊 **Statistics**: Track crawling progress and results
-- 🌐 **WebDriver Support**: Use Selenium WebDriver for JavaScript-heavy sites
+- **Web Crawling**: Fetch and process web pages with configurable depth and delay
+- **HTML to Markdown**: Automatic conversion with customizable options
+- **Robots.txt Compliance**: Respects robots.txt rules for ethical crawling
+- **mq Query Integration**: Filter and transform crawled content on-the-fly
+- **Parallel Processing**: Concurrent workers for faster crawling
+- **Depth Control**: Limit crawl depth to control scope
+- **Rate Limiting**: Configurable delays to avoid overloading servers
+- **Statistics**: Track crawling progress and results
+- **Headless Chrome**: Built-in headless Chrome for JavaScript-heavy sites (no external server needed)
+- **WebDriver Support**: Use Selenium WebDriver for browser-based crawling
+- **Domain Filtering**: Restrict crawling to specific domains
 
 ## Installation
 
@@ -121,9 +123,32 @@ mq-crawl --format json https://example.com
 mq-crawl --format text https://example.com
 ```
 
-### Browser-Based Crawling
+### Domain Filtering
 
-For JavaScript-heavy sites, use WebDriver (requires Selenium):
+```bash
+# Crawl only the start URL's domain (default behavior)
+mq-crawl https://example.com
+
+# Also crawl docs.example.com and blog.example.com
+# The start URL's domain (example.com) is always included automatically
+mq-crawl --allowed-domains docs.example.com,blog.example.com https://example.com
+```
+
+### Browser-Based Crawling (Headless Chrome)
+
+For JavaScript-heavy sites, use the built-in headless Chrome without an external server:
+
+```bash
+# Use built-in headless Chrome (Chrome or Chromium must be installed)
+mq-crawl --headless https://spa-example.com
+
+# Specify a custom Chrome/Chromium executable path
+mq-crawl --headless --chrome-path /usr/bin/chromium https://spa-example.com
+```
+
+### Browser-Based Crawling (WebDriver)
+
+Alternatively, use an external Selenium WebDriver server:
 
 ```bash
 # Start Selenium server first
@@ -152,14 +177,14 @@ Arguments:
 
 Options:
   -d, --crawl-delay <CRAWL_DELAY>
-          Delay (in seconds) between crawl requests [default: 0.5]
+          Delay (in seconds) between crawl requests [default: 1]
   -c, --concurrency <CONCURRENCY>
           Number of concurrent workers [default: 1]
       --depth <DEPTH>
           Maximum crawl depth (0 = only start URL, 1 = start URL + direct links)
       --implicit-timeout <IMPLICIT_TIMEOUT>
-          Timeout for element finding [default: 5]
-  -m, --mq-query <MQ_QUERY>
+          Timeout for element finding (WebDriver only) [default: 5]
+  -q, --mq-query <MQ_QUERY>
           Optional mq query to process the crawled Markdown
       --page-load-timeout <PAGE_LOAD_TIMEOUT>
           Timeout for loading a page [default: 30]
@@ -168,17 +193,24 @@ Options:
       --robots-path <ROBOTS_PATH>
           Path to custom robots.txt file
       --script-timeout <SCRIPT_TIMEOUT>
-          Timeout for executing scripts [default: 10]
+          Timeout for executing scripts (WebDriver only) [default: 10]
+      --allowed-domains <DOMAIN>
+          Comma-separated list of extra domains to crawl; the start URL's domain is always included
+          Example: --allowed-domains docs.example.com,blog.example.com
+      --headless
+          Use built-in headless Chrome (Chrome/Chromium must be installed; cannot be used with --webdriver-url)
+      --chrome-path <PATH>
+          Path to Chrome/Chromium executable (only used with --headless)
   -U, --webdriver-url <WEBDRIVER_URL>
           WebDriver URL for browser-based crawling (e.g., http://localhost:4444)
-      --format <FORMAT>
+  -f, --format <FORMAT>
           Output format: text or json [default: text]
       --extract-scripts-as-code-blocks
-          Extract <script> tags as code blocks
+          Extract <script> tags as code blocks in Markdown
       --generate-front-matter
-          Generate YAML front matter with metadata
+          Generate YAML front matter from page metadata
       --use-title-as-h1
-          Use page title as H1 heading
+          Use the HTML <title> as the first H1 heading
   -h, --help
           Print help
   -V, --version
