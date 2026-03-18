@@ -240,16 +240,11 @@ pub(super) fn generate_symbol_constraints(
             let children = get_children(children_index, symbol_id);
             let range = get_symbol_range(hir, symbol_id);
 
-            // Determine pattern kind from the outer Pattern's direct children
+            // Determine pattern kind from the `is_dict` flag stored in the outer Pattern symbol.
             let outer_pattern_id = children.first().copied();
             let is_dict_pattern = outer_pattern_id
-                .map(|pid| {
-                    get_children(children_index, pid).iter().any(|&cid| {
-                        hir.symbol(cid)
-                            .is_some_and(|s| matches!(s.kind, SymbolKind::PatternVariable { .. }))
-                    })
-                })
-                .unwrap_or(false);
+                .and_then(|pid| hir.symbol(pid))
+                .is_some_and(|s| matches!(s.kind, SymbolKind::Pattern { is_dict: true }));
 
             if is_dict_pattern {
                 // Dict pattern: constrain binding to the initializer.
@@ -287,19 +282,48 @@ pub(super) fn generate_symbol_constraints(
                                 .collect();
 
                         if let Some(pid) = outer_pattern_id {
-                            for &pv_id in get_children(children_index, pid) {
-                                if let Some(pv_sym) = hir.symbol(pv_id)
-                                    && matches!(pv_sym.kind, SymbolKind::PatternVariable { .. })
-                                    && let Some(key) = pv_sym.value.as_deref()
-                                    && let Some(val_ty) = key_to_val_ty.get(key)
-                                {
-                                    let pv_ty = ctx.get_or_create_symbol_type(pv_id);
-                                    ctx.add_constraint(Constraint::Equal(
-                                        pv_ty,
-                                        val_ty.clone(),
-                                        range,
-                                        ConstraintOrigin::General,
-                                    ));
+                            for &child_id in get_children(children_index, pid) {
+                                if let Some(child_sym) = hir.symbol(child_id) {
+                                    match &child_sym.kind {
+                                        // Shorthand `{a}`: PatternVariable is a direct child;
+                                        // its value is both the key and the binding name.
+                                        SymbolKind::PatternVariable { .. } => {
+                                            if let Some(key) = child_sym.value.as_deref()
+                                                && let Some(val_ty) = key_to_val_ty.get(key)
+                                            {
+                                                let pv_ty = ctx.get_or_create_symbol_type(child_id);
+                                                ctx.add_constraint(Constraint::Equal(
+                                                    pv_ty,
+                                                    val_ty.clone(),
+                                                    range,
+                                                    ConstraintOrigin::General,
+                                                ));
+                                            }
+                                        }
+                                        // Explicit `{key: pattern}`: the inner Pattern's `value`
+                                        // holds the dict key name (set during HIR lowering).
+                                        // Constrain all PatternVariables under it.
+                                        SymbolKind::Pattern { .. } => {
+                                            if let Some(key) = child_sym.value.as_deref()
+                                                && let Some(val_ty) = key_to_val_ty.get(key)
+                                            {
+                                                for &pv_id in get_children(children_index, child_id) {
+                                                    if hir.symbol(pv_id).is_some_and(|s| {
+                                                        matches!(s.kind, SymbolKind::PatternVariable { .. })
+                                                    }) {
+                                                        let pv_ty = ctx.get_or_create_symbol_type(pv_id);
+                                                        ctx.add_constraint(Constraint::Equal(
+                                                            pv_ty,
+                                                            val_ty.clone(),
+                                                            range,
+                                                            ConstraintOrigin::General,
+                                                        ));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        _ => {}
+                                    }
                                 }
                             }
                         }
@@ -1512,7 +1536,7 @@ pub(super) fn generate_symbol_constraints(
             }
         }
 
-        SymbolKind::MatchArm | SymbolKind::Pattern => {
+        SymbolKind::MatchArm | SymbolKind::Pattern { .. } => {
             // These are handled by the Match handler below.
             // Assign a fresh type variable as default.
             let ty_var = ctx.fresh_var();
@@ -1549,7 +1573,7 @@ pub(super) fn generate_symbol_constraints(
                         let mut arm_pattern_ty = None;
                         for &arm_child_id in arm_children_inner {
                             if let Some(arm_child_symbol) = hir.symbol(arm_child_id) {
-                                if matches!(arm_child_symbol.kind, SymbolKind::Pattern) {
+                                if matches!(arm_child_symbol.kind, SymbolKind::Pattern { .. }) {
                                     // Determine pattern type from its literal children
                                     let pattern_ty = resolve_pattern_type(hir, arm_child_id, ctx, children_index);
                                     ctx.add_constraint(Constraint::Equal(

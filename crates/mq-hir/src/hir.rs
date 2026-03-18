@@ -398,7 +398,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::symbol_ident(":foo", "foo", SymbolKind::Symbol)]
     #[case::symbol_string(":\"hello\"", "hello", SymbolKind::Symbol)]
     #[case::pattern_match("match (v): | [1,2,3]: 1 end", "match", SymbolKind::Match)]
-    #[case::pattern_match_arm("match (v): | 1: \"one\" end", "1", SymbolKind::Pattern)]
+    #[case::pattern_match_arm("match (v): | 1: \"one\" end", "1", SymbolKind::Pattern { is_dict: false })]
     #[case::import("import \"foo\"", "foo", SymbolKind::Import(SourceId::default()))]
     #[case::module("module a: def b(): 1; end", "a", SymbolKind::Module(SourceId::default()))]
     #[case::module_name_ident("module math: def add(): 1; end", "math", SymbolKind::Ident)]
@@ -614,7 +614,7 @@ end"#;
         // Check for Pattern symbols
         let patterns: Vec<_> = hir
             .symbols()
-            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Pattern))
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Pattern { .. }))
             .collect();
         assert_eq!(patterns.len(), 2, "Should have 2 Pattern symbols");
     }
@@ -690,7 +690,7 @@ end"#;
         // But should still have a Pattern symbol
         let patterns: Vec<_> = hir
             .symbols()
-            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Pattern))
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Pattern { .. }))
             .collect();
         assert!(!patterns.is_empty(), "Should have Pattern symbols");
     }
@@ -812,7 +812,7 @@ end"#;
         // The outer Pattern node should be a direct child of DestructuringBinding
         let outer_pattern = hir
             .symbols()
-            .find(|(_, symbol)| matches!(symbol.kind, SymbolKind::Pattern) && symbol.parent == Some(binding_id));
+            .find(|(_, symbol)| matches!(symbol.kind, SymbolKind::Pattern { .. }) && symbol.parent == Some(binding_id));
         assert!(
             outer_pattern.is_some(),
             "Should have a Pattern child under DestructuringBinding"

@@ -1326,7 +1326,7 @@ impl Hir {
         scope_id: ScopeId,
         parent: Option<SymbolId>,
     ) {
-        self.add_pattern_expr_inner(node, source_id, scope_id, parent, false);
+        self.add_pattern_expr_inner(node, source_id, scope_id, parent, false, None);
     }
 
     fn add_pattern_expr_inner(
@@ -1336,15 +1336,26 @@ impl Hir {
         scope_id: ScopeId,
         parent: Option<SymbolId>,
         is_rest: bool,
+        dict_key: Option<smol_str::SmolStr>,
     ) {
         if let mq_lang::CstNode {
             kind: mq_lang::CstNodeKind::Pattern,
             ..
         } = &**node
         {
+            let is_dict_pattern = node.children.iter().any(|child| {
+                child.is_token()
+                    && child
+                        .token
+                        .as_ref()
+                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::LBrace))
+            });
+
             let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Pattern,
+                value: dict_key.or_else(|| node.name()),
+                kind: SymbolKind::Pattern {
+                    is_dict: is_dict_pattern,
+                },
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
                 doc: node.comments(),
@@ -1356,19 +1367,6 @@ impl Hir {
             // Pass `is_rest` so the rest binding (`..rest`) gets the correct kind.
             self.extract_pattern_variables(node, source_id, scope_id, Some(symbol_id), is_rest);
 
-            // Detect dict patterns: the CST Pattern node for `{a, b}` or `{a: p}` has a
-            // Token child with LBrace kind.
-            let is_dict_pattern = node.children.iter().any(|child| {
-                child.is_token()
-                    && child
-                        .token
-                        .as_ref()
-                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::LBrace))
-            });
-
-            // Detect array patterns with a rest element (`[a, ..rest]`): the CST Pattern node
-            // contains a DoubleDot token. When present, the LAST inner Pattern child is the
-            // rest binding and should produce `PatternVariable { is_rest: true }`.
             let has_rest_element = node.children.iter().any(|child| {
                 child.is_token()
                     && child
@@ -1392,17 +1390,18 @@ impl Hir {
                 let child = &non_token_children[idx];
                 if matches!(child.kind, mq_lang::CstNodeKind::Pattern) {
                     let child_is_rest = last_pattern_idx == Some(pattern_idx);
-                    self.add_pattern_expr_inner(child, source_id, scope_id, Some(symbol_id), child_is_rest);
+                    self.add_pattern_expr_inner(child, source_id, scope_id, Some(symbol_id), child_is_rest, None);
                     pattern_idx += 1;
                 } else if matches!(child.kind, mq_lang::CstNodeKind::Ident) {
                     if is_dict_pattern {
                         // In dict patterns `{a, b}` shorthand, an Ident NOT followed by a
                         // Pattern sibling is both the key name and the binding variable.
-                        // In `{a: pattern}`, the Ident is just a key; the sub-Pattern carries
-                        // the binding and is handled in the Pattern arm above.
-                        let next_is_pattern = non_token_children
-                            .get(idx + 1)
-                            .is_some_and(|c| matches!(c.kind, mq_lang::CstNodeKind::Pattern));
+                        // In `{a: pattern}`, the Ident is the dict key and the following
+                        // Pattern carries the binding. Process the pair together here so
+                        // the key name can be stored in the inner Pattern's `value` field,
+                        // enabling constraint generation to map the binding to its field type.
+                        let next = non_token_children.get(idx + 1);
+                        let next_is_pattern = next.is_some_and(|c| matches!(c.kind, mq_lang::CstNodeKind::Pattern));
                         if !next_is_pattern {
                             self.add_symbol(Symbol {
                                 value: child.name(),
@@ -1413,6 +1412,20 @@ impl Hir {
                                 parent: Some(symbol_id),
                                 insertion_order: 0,
                             });
+                        } else {
+                            // Explicit `{key: pattern}`: pass the key name so the inner
+                            // Pattern symbol stores it in its `value` field.
+                            let inner = next.unwrap();
+                            self.add_pattern_expr_inner(
+                                inner,
+                                source_id,
+                                scope_id,
+                                Some(symbol_id),
+                                false,
+                                child.name(),
+                            );
+                            idx += 1; // skip the inner Pattern on the next iteration
+                            pattern_idx += 1;
                         }
                     } else {
                         // Ident nodes in non-dict patterns are symbol literal names (:foo -> foo)

@@ -82,7 +82,11 @@ pub enum SymbolKind {
     None,
     Number,
     Parameter,
-    Pattern,
+    /// `is_dict` is `true` for dict patterns (`{a, b}` or `{x: y}`),
+    /// `false` for array patterns (`[a, b]`) or match arm patterns.
+    Pattern {
+        is_dict: bool,
+    },
     /// A variable introduced by a pattern binding.
     ///
     /// `is_rest` is `true` for the rest element in an array pattern (`..rest`),

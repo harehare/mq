@@ -495,6 +495,22 @@ fn test_let_dict_destructuring() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
+fn test_let_dict_destructuring_explicit_key() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg(r#"let {a: xxx} = {"a": 10, "b": 20} | xxx"#)
+        .assert();
+
+    assert.success().code(0).stdout("10\n");
+
+    Ok(())
+}
+
+#[test]
 fn test_var_array_destructuring_mutation() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = cargo::cargo_bin_cmd!("mq");
 
