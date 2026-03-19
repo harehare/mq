@@ -15,7 +15,7 @@ pub enum HttpClient {
     /// `new_page()` waits for the `load` event, which covers synchronous JS
     /// execution. The DOM captured by `page.content()` reflects the fully
     /// rendered state at that point.
-    Chromium(Arc<chromiumoxide::Browser>),
+    Chromium(Arc<chromiumoxide::Browser>, Duration),
 }
 
 impl Default for HttpClient {
@@ -66,7 +66,7 @@ impl HttpClient {
     /// Pages are fetched after the browser's `load` event fires, which includes
     /// synchronous JavaScript execution. The captured DOM reflects the rendered
     /// state at that point, making this suitable for most JS-driven pages.
-    pub async fn new_chromium(chrome_path: Option<PathBuf>) -> Result<Self, String> {
+    pub async fn new_chromium(chrome_path: Option<PathBuf>, headless_wait: Duration) -> Result<Self, String> {
         let mut config_builder = chromiumoxide::browser::BrowserConfig::builder().arg("--disable-gpu");
 
         if let Some(path) = chrome_path {
@@ -93,7 +93,7 @@ impl HttpClient {
             }
         });
 
-        Ok(Self::Chromium(Arc::new(browser)))
+        Ok(Self::Chromium(Arc::new(browser), headless_wait))
     }
 
     /// Fetch content from a URL
@@ -130,13 +130,17 @@ impl HttpClient {
 
                 Ok(page_source)
             }
-            HttpClient::Chromium(browser) => {
+            HttpClient::Chromium(browser, wait_duration) => {
                 // new_page() navigates and waits for the load event, which includes
                 // synchronous JS execution. The resulting DOM is the rendered state.
                 let page = browser
                     .new_page(url.as_str())
                     .await
                     .map_err(|e| format!("Chrome failed to open page {}: {}", url, e))?;
+
+                if !wait_duration.is_zero() {
+                    tokio::time::sleep(*wait_duration).await;
+                }
 
                 let content = page
                     .content()
