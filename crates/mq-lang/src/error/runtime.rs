@@ -23,7 +23,7 @@ pub enum RuntimeError {
     IndexOutOfBounds(ErrorToken, Number),
     #[error("Invalid definition for \"{1}\"")]
     InvalidDefinition(ErrorToken, String),
-    #[error("Maximum recursion depth exceeded \"{0}\"")]
+    #[error("Maximum recursion depth exceeded ({0})")]
     RecursionError(u32),
     #[error(r#"Invalid types for "{}", got {}"#, name, args.join(", "))]
     InvalidTypes {
@@ -46,13 +46,13 @@ pub enum RuntimeError {
     ModuleLoadError(#[from] ModuleError),
     #[error("Runtime error: {1}")]
     Runtime(ErrorToken, String),
-    #[error("Divided by 0")]
+    #[error("Division by zero")]
     ZeroDivision(ErrorToken),
     #[error("Unexpected break outside of loop")]
     UnexpectedBreak(ErrorToken),
     #[error("Unexpected continue outside of loop")]
     UnexpectedContinue(ErrorToken),
-    #[error("Not found env `{1}`")]
+    #[error("Environment variable `{1}` not found")]
     EnvNotFound(Token, SmolStr),
     #[error("Cannot assign to immutable variable \"{1}\"")]
     AssignToImmutable(Token, String),

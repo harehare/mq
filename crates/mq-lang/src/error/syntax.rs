@@ -13,7 +13,7 @@ pub enum SyntaxError {
     #[error("Unexpected token `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
     UnexpectedToken(Token),
     /// Unexpected end-of-file was encountered.
-    #[error("Unexpected EOF detected")]
+    #[error("Unexpected end of input")]
     UnexpectedEOFDetected(ModuleId),
     /// Insufficient tokens available to complete parsing.
     #[error("Insufficient tokens `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
@@ -33,11 +33,10 @@ pub enum SyntaxError {
     /// An unknown selector was encountered.
     #[error(transparent)]
     UnknownSelector(selector::UnknownSelector),
-    #[error("Macro parameters must be identifiers, but got `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
-    MacroParamsMustBeIdents(Token),
     /// A parameter without a default value was found after a parameter with a default value.
     #[error(
-        "Parameter without default value after parameter with default: parameters with defaults must come after all parameters without defaults"
+        "Non-default parameter `{}` cannot follow a parameter with a default value",
+        if .0.is_eof() { "EOF".to_string() } else { .0.to_string() }
     )]
     ParameterWithoutDefaultAfterDefault(Token),
     /// Macro parameters cannot have default values.
@@ -68,7 +67,6 @@ impl SyntaxError {
             SyntaxError::ExpectedClosingBracket(token) => Some(token),
             SyntaxError::InvalidAssignmentTarget(token) => Some(token),
             SyntaxError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
-            SyntaxError::MacroParamsMustBeIdents(token) => Some(token),
             SyntaxError::ParameterWithoutDefaultAfterDefault(token) => Some(token),
             SyntaxError::MacroParametersCannotHaveDefaults(token) => Some(token),
             SyntaxError::VariadicParameterMustBeLast(token) => Some(token),

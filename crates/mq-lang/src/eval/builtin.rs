@@ -4245,7 +4245,7 @@ impl Error {
             Error::InvalidTypes(name, args) => RuntimeError::InvalidTypes {
                 token: (*get_token(token_arena, node.token_id)).clone(),
                 name: name.clone(),
-                args: args.iter().map(|o| format!("{:?}", o).into()).collect::<Vec<_>>(),
+                args: args.iter().map(|o| o.name().into()).collect::<Vec<_>>(),
             },
             Error::InvalidNumberOfArguments(name, expected, got) => RuntimeError::InvalidNumberOfArguments {
                 token: (*get_token(token_arena, node.token_id)).clone(),
