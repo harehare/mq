@@ -25,7 +25,7 @@ colored = {workspace = true, optional = true}
 itertools = {workspace = true}
 miette = {workspace = true, features = ["fancy"]}
 mq-hir = {workspace = true}
-mq-lang = {workspace = true, features = ["cst"]}
+mq-lang = {workspace = true, features = ["cst", "file-io"]}
 rustc-hash = {workspace = true}
 slotmap = {workspace = true}
 smol_str = {workspace = true}
