@@ -153,9 +153,19 @@ async fn main() {
             fantoccini_client
         })
     } else if args.headless {
+        let headless_wait_secs = if !args.headless_wait.is_finite() || args.headless_wait < 0.0 {
+            tracing::warn!(
+                "Invalid value for --headless-wait ({}). Falling back to 0 seconds.",
+                args.headless_wait
+            );
+            0.0
+        } else {
+            args.headless_wait
+        };
+
         mq_crawler::http_client::HttpClient::new_chromium(
             args.chrome_path,
-            std::time::Duration::from_secs_f64(args.headless_wait),
+            std::time::Duration::from_secs_f64(headless_wait_secs),
         )
         .await
         .expect("Failed to launch headless Chrome. Ensure Chrome or Chromium is installed.")
