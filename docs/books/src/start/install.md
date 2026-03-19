@@ -138,7 +138,28 @@ $ npm i mq-web
 
 ## Web crawler
 
-```sh
-# Using Homebrew (macOS and Linux)
-$ brew install harehare/tap/mqcr
+### Quick Install
+
+```bash
+curl -sSL https://mqlang.org/install_crawler.sh | bash
 ```
+
+The installer will:
+- Download the latest `mq-crawl` binary for your platform
+- Install it to `~/.mq/bin/`
+- Verify the checksum of the downloaded binary
+- Update your shell profile to add `mq-crawl` to your PATH
+
+### Homebrew
+
+```sh
+brew install harehare/tap/mq-crawl
+```
+
+### Cargo
+
+```sh
+cargo install mq-crawler
+```
+
+See the [Web Crawler](./crawler.md) page for usage details.
