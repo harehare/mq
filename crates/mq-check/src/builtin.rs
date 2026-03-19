@@ -369,6 +369,11 @@ fn register_string(ctx: &mut InferenceContext) {
     // gsub/replace: (none, string, string) -> none
     register_ternary(ctx, "gsub", Type::None, Type::String, Type::String, Type::None);
     register_ternary(ctx, "replace", Type::None, Type::String, Type::String, Type::None);
+
+    // slugify: (string, string) -> string
+    register_unary(ctx, "slugify", Type::String, Type::String);
+    // slugify: (string) -> string
+    register_binary(ctx, "slugify", Type::String, Type::String, Type::String);
 }
 
 /// Array functions: flatten, reverse, sort, uniq, compact, len, slice, insert, range, repeat
@@ -487,6 +492,10 @@ fn register_array(ctx: &mut InferenceContext) {
     register_ternary(ctx, "slice", Type::None, Type::Number, Type::Number, Type::None);
     // slice: (none, number) -> none  (open-ended slice)
     register_binary(ctx, "slice", Type::None, Type::Number, Type::None);
+
+    // percentile: ([a], number) -> number
+    let a = ctx.fresh_var();
+    register_binary(ctx, "percentile", Type::array(a), Type::Number, Type::Number);
 }
 
 /// Dictionary functions: keys, values, entries, get, set, del, update, dict
