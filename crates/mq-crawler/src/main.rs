@@ -70,6 +70,10 @@ struct CliArgs {
     /// Only used when --headless is set.
     #[clap(long, value_name = "PATH", requires = "headless")]
     chrome_path: Option<std::path::PathBuf>,
+    /// Wait time (in seconds) after page load in headless mode.
+    /// Only used when --headless is set.
+    #[clap(long, default_value_t = 0.0, requires = "headless")]
+    headless_wait: f64,
     /// Comma-separated list of domains to crawl in addition to the start URL's domain.
     /// If not specified, only the start URL's domain is crawled.
     /// If specified, the start URL's domain is always included automatically.
@@ -149,9 +153,12 @@ async fn main() {
             fantoccini_client
         })
     } else if args.headless {
-        mq_crawler::http_client::HttpClient::new_chromium(args.chrome_path)
-            .await
-            .expect("Failed to launch headless Chrome. Ensure Chrome or Chromium is installed.")
+        mq_crawler::http_client::HttpClient::new_chromium(
+            args.chrome_path,
+            std::time::Duration::from_secs_f64(args.headless_wait),
+        )
+        .await
+        .expect("Failed to launch headless Chrome. Ensure Chrome or Chromium is installed.")
     } else if effective_allowed.is_some() {
         mq_crawler::http_client::HttpClient::new_reqwest_multi_domain(args.page_load_timeout, args.concurrency.max(5))
             .unwrap()
