@@ -113,7 +113,7 @@ get_download_url() {
         target="${arch}-unknown-linux-gnu"
     fi
 
-    echo "https://github.com/$MQ_REPO/releases/download/$version/mqcr-${target}${ext}"
+    echo "https://github.com/$MQ_REPO/releases/download/$version/mq-crawl-${target}${ext}"
 }
 
 # Download checksums file
@@ -158,9 +158,9 @@ verify_checksum() {
 
     # Find the expected checksum from the checksums file
     # checksums.txt format: <checksum>  mq-<target>/<binary_name>
-    # e.g., "abc123  mq-aarch64-apple-darwin/mqcr-aarch64-apple-darwin"
-    local target="${binary_name#mqcr-}"  # Remove "mqcr-" prefix to get target
-    target="${target%.exe}"              # Remove .exe suffix for Windows
+    # e.g., "abc123  mq-aarch64-apple-darwin/mq-crawl-aarch64-apple-darwin"
+    local target="${binary_name#mq-crawl-}"  # Remove "mq-crawl-" prefix to get target
+    target="${target%.exe}"                   # Remove .exe suffix for Windows
     local checksum_pattern="mq-${target}/${binary_name}"
     local expected_checksum
     expected_checksum=$(grep "$checksum_pattern" "$checksums_file" | cut -d' ' -f1)
@@ -182,8 +182,8 @@ verify_checksum() {
     fi
 }
 
-# Download and install mq-crawler
-install_mqcr() {
+# Download and install mq-crawl
+install_mq_crawl() {
     local version="$1"
     local os="$2"
     local arch="$3"
@@ -194,7 +194,7 @@ install_mqcr() {
 
     if [[ "$os" == "windows" ]]; then
         ext=".exe"
-        binary_name="mqcr.exe"
+        binary_name="mq-crawl.exe"
         target="${arch}-pc-windows-msvc"
     elif [[ "$os" == "darwin" ]]; then
         target="${arch}-apple-darwin"
@@ -223,7 +223,7 @@ install_mqcr() {
     fi
 
     # Verify checksum
-    local release_binary_name="mqcr-${target}${ext}"
+    local release_binary_name="mq-crawl-${target}${ext}"
     if [[ -n "$checksums_file" && -f "$checksums_file" ]]; then
         if ! verify_checksum "$temp_file" "$checksums_file" "$release_binary_name"; then
             rm -f "$checksums_file"
@@ -293,28 +293,13 @@ update_shell_profile() {
 
 # Verify installation
 verify_installation() {
-    local mqcr_installed=false
-
-    # Check mqcr installation
-    if [[ -x "$MQ_BIN_DIR/mqcr" ]] || [[ -x "$MQ_BIN_DIR/mqcr.exe" ]]; then
-        mqcr_installed=true
-        log "✓ mqcr installation verified"
-    else
-        error "mqcr installation verification failed"
-    fi
-
-    # Check mq-crawl symlink
-    if [[ -L "$MQ_BIN_DIR/mq-crawl" ]] || [[ -L "$MQ_BIN_DIR/mq-crawl.exe" ]]; then
-        log "✓ mq-crawl symlink verified"
-    else
-        warn "mq-crawl symlink verification failed"
-    fi
-
-    if [[ "$mqcr_installed" == "true" ]]; then
+    # Check mq-crawl installation
+    if [[ -x "$MQ_BIN_DIR/mq-crawl" ]] || [[ -x "$MQ_BIN_DIR/mq-crawl.exe" ]]; then
+        log "✓ mq-crawl installation verified"
         log "Installation verification successful!"
         return 0
     else
-        error "Installation verification failed"
+        error "mq-crawl installation verification failed"
     fi
 }
 
@@ -331,14 +316,13 @@ show_post_install() {
     echo -e "     ${CYAN}source ~/.bashrc${NC} ${BLUE}(or your shell's profile)${NC}"
     echo ""
     echo -e "  ${YELLOW}2.${NC} Verify the installation:"
-    echo -e "     ${CYAN}mqcr --version${NC}"
-    echo -e "     ${CYAN}mq-crawl --version${NC}  ${BLUE}(symlink)${NC}"
+    echo -e "     ${CYAN}mq-crawl --version${NC}"
     echo ""
     echo -e "  ${YELLOW}3.${NC} Get help:"
-    echo -e "     ${CYAN}mqcr --help${NC}"
+    echo -e "     ${CYAN}mq-crawl --help${NC}"
     echo ""
     echo -e "${BOLD}${CYAN}⚡ Quick Examples:${NC}"
-    echo -e "  ${GREEN}▶${NC} ${CYAN}mqcr ./docs '.h1'${NC}"
+    echo -e "  ${GREEN}▶${NC} ${CYAN}mq-crawl ./docs '.h1'${NC}"
     echo -e "  ${GREEN}▶${NC} ${CYAN}mq-crawl ./project 'select(type == \"code_block\")'${NC}"
     echo ""
     echo -e "${BOLD}${CYAN}📚 Learn More:${NC}"
@@ -369,8 +353,8 @@ main() {
     version=$(get_latest_version)
     log "Latest version: $version"
 
-    # Install mq-crawler
-    install_mqcr "$version" "$os" "$arch"
+    # Install mq-crawl
+    install_mq_crawl "$version" "$os" "$arch"
 
     # Update shell profile
     update_shell_profile
