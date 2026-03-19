@@ -495,7 +495,7 @@ fn register_array(ctx: &mut InferenceContext) {
 
     // percentile: ([a], number) -> number
     let a = ctx.fresh_var();
-    register_binary(ctx, "percentile", Type::array(a), Type::Number, Type::Number);
+    register_binary(ctx, "percentile", Type::array(Type::Var(a)), Type::Number, Type::Number);
 }
 
 /// Dictionary functions: keys, values, entries, get, set, del, update, dict
