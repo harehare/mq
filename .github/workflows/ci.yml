@@ -40,8 +40,6 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: nextest,cargo-llvm-cov
-      - name: Build
-        run: just build
       - name: Configure RUSTFLAGS for Windows
         if: runner.os == 'Windows'
         shell: bash
