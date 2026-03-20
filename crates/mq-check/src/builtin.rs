@@ -978,6 +978,14 @@ fn register_markdown(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_binary(ctx, "to_code", Type::Var(a), Type::String, Type::Markdown);
     register_binary(ctx, "attr", Type::Markdown, Type::String, Type::String);
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "attr",
+        Type::array(Type::Var(a)),
+        Type::String,
+        Type::array(Type::Var(a)),
+    );
 
     // (markdown, string, string) -> markdown
     register_ternary(

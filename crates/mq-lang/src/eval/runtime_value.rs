@@ -600,13 +600,13 @@ impl RuntimeValues {
                             array
                                 .iter()
                                 .filter_map(|o| {
-                                    if !matches!(o, RuntimeValue::None) {
+                                    if o.is_none() {
+                                        None
+                                    } else {
                                         Some(RuntimeValue::Markdown(
                                             node.clone().with_value(o.to_string().as_str()),
                                             None,
                                         ))
-                                    } else {
-                                        None
                                     }
                                 })
                                 .collect::<Vec<_>>(),
