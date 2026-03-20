@@ -1422,6 +1422,22 @@ define_builtin!(
     |_, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] =>
             Ok(node.attr(attr).map(Into::into).unwrap_or(RuntimeValue::NONE)),
+        [RuntimeValue::Array(nodes), RuntimeValue::String(attr)] => Ok(nodes
+            .iter_mut()
+            .flat_map(|node| match node {
+                RuntimeValue::Markdown(node, _) => {
+                    let value = node.attr(attr).map(Into::into).unwrap_or(RuntimeValue::NONE);
+
+                    match value {
+                        RuntimeValue::Array(arr) => arr,
+                        RuntimeValue::None => Vec::new(),
+                        v => vec![v],
+                    }
+                }
+                a => vec![std::mem::take(a)],
+            })
+            .collect::<Vec<_>>()
+            .into()),
         [a, ..] => Ok(std::mem::take(a)),
         _ => unreachable!(),
     }

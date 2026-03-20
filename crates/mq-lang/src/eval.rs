@@ -321,8 +321,13 @@ impl<T: ModuleResolver> Evaluator<T> {
                 | RuntimeValue::NativeFunction(_)
                 | RuntimeValue::Module(_)
                 | RuntimeValue::Ast(_) => mq_markdown::Node::Empty,
-                RuntimeValue::Array(_)
-                | RuntimeValue::Dict(_)
+                RuntimeValue::Array(arr) => arr
+                    .iter()
+                    .filter_map(|v| if v.is_none() { None } else { Some(v.to_string()) })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .into(),
+                RuntimeValue::Dict(_)
                 | RuntimeValue::Boolean(_)
                 | RuntimeValue::Number(_)
                 | RuntimeValue::String(_) => value.to_string().into(),
@@ -2681,7 +2686,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string())))
             ])
        ],
-       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: r#"["test1", "test2"]"#.to_string(), position: None}), None)]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test1\ntest2".to_string(), position: None}), None)]))]
     #[case::split(vec![RuntimeValue::Number(1.into())],
        vec![
             ast_call("split", smallvec![ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string())))])
@@ -3188,7 +3193,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
             ])
        ],
-       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: r#"["123"]"#.to_string(), position: None}), None)]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "123".to_string(), position: None}), None)]))]
     #[case::match_regex3(vec![RuntimeValue::Number(123.into())],
        vec![
             ast_call("regex_match", smallvec![
@@ -3234,7 +3239,7 @@ mod tests {
         vec![
              ast_call("explode", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "[65, 66, 67]".to_string(), position: None}), None)]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "65\n66\n67".to_string(), position: None}), None)]))]
     #[case::to_number(vec![RuntimeValue::String("42".to_string())],
        vec![
             ast_call("to_number", SmallVec::new())
