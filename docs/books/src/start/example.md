@@ -242,7 +242,7 @@ Use the tool like this.
 Split a document into sections based on header level:
 
 ```mq
-include "section" | nodes | split(2)
+include "section" | nodes | split(2) | collect()
 ```
 
 **Input example**:
@@ -469,5 +469,3 @@ Extract frontmatter metadata from markdown files:
 ```mq
 import "yaml" | if (.yaml): yaml::yaml_parse() | get(:title)
 ```
-
-
