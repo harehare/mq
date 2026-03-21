@@ -160,11 +160,9 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
         generate_symbol_constraints(hir, symbol_id, kind, ctx, &children_index);
     }
 
-    // Pass 4: Process Block symbols and Function body pipe chains
-    // Children are now typed, so we can thread output types through the chain
-    for symbol_id in &cats.pass4_blocks {
-        generate_block_constraints(hir, *symbol_id, ctx, &children_index);
-    }
+    // Pass 4: Process Function body pipe chains
+    // (Block symbols are now processed in pass 3, in reverse insertion order,
+    //  so they are typed before their parent If/Else nodes.)
     for symbol_id in &cats.pass4_functions {
         generate_function_body_pipe_constraints(hir, *symbol_id, ctx, &children_index);
     }
@@ -1316,9 +1314,17 @@ pub(super) fn generate_symbol_constraints(
                         true
                     };
 
-                    // Check if any branch is None — in mq, `if (...): value else: None`
-                    // should not unify `value` with None; instead treat as different types.
-                    let has_none_branch = resolved.iter().any(|t| matches!(t, Type::None));
+                    // Check if any branch is None or a Union containing None — in mq,
+                    // `if (...): value else: None` (or a while-loop branch that returns
+                    // `Union(T, None)`) should not unify `value` with None; instead treat
+                    // as different types so the overall if-expression preserves the None
+                    // possibility. This prevents false dead-code positives when a let
+                    // binding is later checked with `is_none(x)`.
+                    let has_none_branch = resolved.iter().any(|t| match t {
+                        Type::None => true,
+                        Type::Union(members) => members.iter().any(|m| matches!(m, Type::None)),
+                        _ => false,
+                    });
 
                     // Detect patterns like `if (is_array(x)): x else: [x]` where one branch
                     // is Var(a) and another contains Var(a).  Trying to unify these directly
@@ -1420,10 +1426,14 @@ pub(super) fn generate_symbol_constraints(
                     }
                 }
 
-                // Result type comes from the body (last child after condition)
+                // Result type comes from the body (last child after condition).
+                // `while` always includes `None` in its return type because the condition
+                // may be false on the very first check (loop body never runs).
                 if children.len() > 1 {
                     let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
-                    let break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
+                    let mut break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
+                    // Condition-initially-false path → None.
+                    break_tys.push(Type::None);
                     let loop_ty = merge_loop_types(body_ty, break_tys, ctx);
                     ctx.set_symbol_type(symbol_id, loop_ty);
                 } else {
@@ -1935,6 +1945,15 @@ pub(super) fn generate_symbol_constraints(
                 let ty_var = ctx.fresh_var();
                 ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
             }
+        }
+
+        // Block: pipe chain — compute type from children in pass 3.
+        // Block has higher insertion order than its parent (If/Else/etc.), so in
+        // the reverse-order pass 3 loop it is processed before its parent.  This
+        // means the If handler can see the Block's real type (e.g. Union(T, None)
+        // from a While loop) instead of a fresh Var.
+        SymbolKind::Block => {
+            generate_block_constraints(hir, symbol_id, ctx, children_index);
         }
 
         // Inert kinds: identifiers, arguments, imports, modules, etc.

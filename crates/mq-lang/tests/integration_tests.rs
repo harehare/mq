@@ -2179,6 +2179,57 @@ fn engine() -> DefaultEngine {
     Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
         position: None,
     }), None)].into()))]
+#[case::skip_while_basic("skip_while([1,2,3,4,5], fn(x): x < 3;)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::Number(3.into()),
+        RuntimeValue::Number(4.into()),
+        RuntimeValue::Number(5.into()),
+    ])].into()))]
+#[case::skip_while_all_match("skip_while([1,2,3], fn(x): x < 10;)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![])].into()))]
+#[case::skip_while_none_match("skip_while([1,2,3], fn(x): x > 10;)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::Number(1.into()),
+        RuntimeValue::Number(2.into()),
+        RuntimeValue::Number(3.into()),
+    ])].into()))]
+#[case::skip_while_empty_array("skip_while([], fn(x): x < 3;)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![])].into()))]
+#[case::skip_while_stops_at_first_non_match("skip_while([1,3,2,4], fn(x): x < 3;)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::Number(3.into()),
+        RuntimeValue::Number(2.into()),
+        RuntimeValue::Number(4.into()),
+    ])].into()))]
+#[case::take_while_basic("take_while([1,2,3,4,5], fn(x): x < 3;)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::Number(1.into()),
+        RuntimeValue::Number(2.into()),
+    ])].into()))]
+#[case::take_while_all_match("take_while([1,2,3], fn(x): x < 10;)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::Number(1.into()),
+        RuntimeValue::Number(2.into()),
+        RuntimeValue::Number(3.into()),
+    ])].into()))]
+#[case::take_while_none_match("take_while([1,2,3], fn(x): x > 10;)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![])].into()))]
+#[case::take_while_empty_array("take_while([], fn(x): x < 3;)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![])].into()))]
+#[case::take_while_stops_at_first_non_match("take_while([1,3,2,4], fn(x): x < 3;)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::Number(1.into()),
+    ])].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
