@@ -524,7 +524,12 @@ export const Playground = () => {
             setTabs((prev) =>
               prev.map((tab) =>
                 tab.id === activeTabId
-                  ? { ...tab, content: code, savedContent: code, isDirty: false }
+                  ? {
+                      ...tab,
+                      content: code,
+                      savedContent: code,
+                      isDirty: false,
+                    }
                   : tab,
               ),
             );
@@ -1037,7 +1042,7 @@ export const Playground = () => {
     });
 
     monaco.languages.registerCompletionItemProvider("mq", {
-      triggerCharacters: [" ", "|", ":"],
+      triggerCharacters: ["|", ":", "."],
       provideCompletionItems: async (
         model: editor.ITextModel,
         position: IPosition,
@@ -1455,9 +1460,7 @@ export const Playground = () => {
         >
           <div
             className="editor-container"
-            style={
-              isDesktop() ? { height: `${topBottomSplit}%` } : undefined
-            }
+            style={isDesktop() ? { height: `${topBottomSplit}%` } : undefined}
           >
             {tabs.length > 0 && (
               <TabBar
@@ -1566,10 +1569,7 @@ export const Playground = () => {
           </div>
 
           {isDesktop() && (
-            <ResizeHandle
-              direction="vertical"
-              onResize={handleEditorResize}
-            />
+            <ResizeHandle direction="vertical" onResize={handleEditorResize} />
           )}
 
           <div className="editor-container" style={{ flex: 1 }}>
@@ -1814,7 +1814,9 @@ export const Playground = () => {
             <button
               className="footer-icon-button"
               onClick={toggleWordWrap}
-              title={wordWrap === "on" ? "Disable Word Wrap" : "Enable Word Wrap"}
+              title={
+                wordWrap === "on" ? "Disable Word Wrap" : "Enable Word Wrap"
+              }
               style={{ opacity: wordWrap === "on" ? 1 : 0.5 }}
             >
               <VscWordWrap size={14} />
