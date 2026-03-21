@@ -536,3 +536,169 @@ fn test_let_simple_regression() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+// ── skip_while ────────────────────────────────────────────────────────────────
+
+/// skip_while drops leading elements that satisfy the predicate.
+#[test]
+fn test_skip_while_basic() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("skip_while([1,2,3,4,5], fn(x): x < 3;)")
+        .assert();
+    assert.success().code(0).stdout("[3, 4, 5]\n");
+    Ok(())
+}
+
+/// skip_while returns an empty array when every element satisfies the predicate.
+#[test]
+fn test_skip_while_all_match() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("skip_while([1,2,3], fn(x): x < 10;)")
+        .assert();
+    assert.success().code(0).stdout("[]\n");
+    Ok(())
+}
+
+/// skip_while returns the full array when no element satisfies the predicate.
+#[test]
+fn test_skip_while_none_match() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("skip_while([1,2,3], fn(x): x > 10;)")
+        .assert();
+    assert.success().code(0).stdout("[1, 2, 3]\n");
+    Ok(())
+}
+
+/// skip_while on an empty array returns an empty array.
+#[test]
+fn test_skip_while_empty_array() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("skip_while([], fn(x): x < 3;)")
+        .assert();
+    assert.success().code(0).stdout("[]\n");
+    Ok(())
+}
+
+/// skip_while stops at the first non-matching element (does not skip inner matches).
+#[test]
+fn test_skip_while_stops_at_first_non_match() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("skip_while([1,3,2,4], fn(x): x < 3;)")
+        .assert();
+    // 1 < 3 → skip; 3 is NOT < 3 → stop; keep [3,2,4]
+    assert.success().code(0).stdout("[3, 2, 4]\n");
+    Ok(())
+}
+
+// ── take_while ────────────────────────────────────────────────────────────────
+
+/// take_while keeps leading elements that satisfy the predicate.
+#[test]
+fn test_take_while_basic() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("take_while([1,2,3,4,5], fn(x): x < 3;)")
+        .assert();
+    assert.success().code(0).stdout("[1, 2]\n");
+    Ok(())
+}
+
+/// take_while returns the full array when every element satisfies the predicate.
+#[test]
+fn test_take_while_all_match() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("take_while([1,2,3], fn(x): x < 10;)")
+        .assert();
+    assert.success().code(0).stdout("[1, 2, 3]\n");
+    Ok(())
+}
+
+/// take_while returns an empty array when no element satisfies the predicate.
+#[test]
+fn test_take_while_none_match() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("take_while([1,2,3], fn(x): x > 10;)")
+        .assert();
+    assert.success().code(0).stdout("[]\n");
+    Ok(())
+}
+
+/// take_while on an empty array returns an empty array.
+#[test]
+fn test_take_while_empty_array() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("take_while([], fn(x): x < 3;)")
+        .assert();
+    assert.success().code(0).stdout("[]\n");
+    Ok(())
+}
+
+/// take_while stops at the first non-matching element (does not keep inner matches).
+#[test]
+fn test_take_while_stops_at_first_non_match() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("take_while([1,3,2,4], fn(x): x < 3;)")
+        .assert();
+    // 1 < 3 → keep; 3 is NOT < 3 → stop; result [1]
+    assert.success().code(0).stdout("[1]\n");
+    Ok(())
+}
+
+/// skip_while and take_while are complementary: their results partition the array.
+#[test]
+fn test_skip_while_take_while_partition() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    // taken ++ skipped should equal the original [1,2,3,4,5]
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg(
+            "let arr = [1,2,3,4,5] | \
+             let taken = take_while(arr, fn(x): x <= 3;) | \
+             let skipped = skip_while(arr, fn(x): x <= 3;) | \
+             taken + skipped",
+        )
+        .assert();
+    assert.success().code(0).stdout("[1, 2, 3, 4, 5]\n");
+    Ok(())
+}

@@ -253,23 +253,41 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
     resolved_any
 }
 
+/// Result of checking union member overload compatibility.
+enum UnionCheckResult {
+    /// All non-None members return a consistent type, with optional None propagation.
+    /// The `has_none_propagation` flag is `true` when at least one `None` member was
+    /// skipped (standard None-propagation pattern), meaning the result may be `None`
+    /// at runtime even though the statically-inferred return type is concrete.
+    Consistent {
+        ret: types::Type,
+        has_none_propagation: bool,
+    },
+    /// A union member type has no matching overload for the operator.
+    MemberUnsupported(types::Type),
+    /// Different union members return different types (inconsistent).
+    InconsistentReturn,
+    /// At least one union member is still an unresolved type variable; defer.
+    HasVarMember,
+}
+
 /// Checks whether all non-None-propagating members of every union-typed argument
 /// resolve to the same return type when applied to the given operator.
 ///
-/// Returns `Some(return_type)` if every non-None member produces an identical return
-/// type, indicating the operation is safe for the non-None cases. Returns `None` if
-/// any member fails to match an overload, any member returns a different type, or
-/// any union contains unresolved type variables.
+/// Returns [`UnionCheckResult::Consistent`] if every non-None member produces an
+/// identical return type, indicating the operation is safe for the non-None cases.
 ///
 /// None members that follow the standard none-propagation pattern (`f(None) -> None`)
 /// are skipped when determining consistency, since they are an expected dynamic
 /// behavior in mq (e.g. `len(None)` returns None while `len(Array) → Number`).
-fn union_members_consistent_return(
+fn check_union_members(
     ctx: &mut InferenceContext,
     op_name: &str,
     resolved_operands: &[types::Type],
-) -> Option<types::Type> {
+) -> UnionCheckResult {
     let mut unique_ret: Option<types::Type> = None;
+    let mut has_none_propagation = false;
+
     for (i, arg_ty) in resolved_operands.iter().enumerate() {
         let types::Type::Union(members) = arg_ty else {
             continue;
@@ -278,13 +296,13 @@ fn union_members_consistent_return(
         for member in members {
             // Reject unions containing unresolved type variables
             if member.is_var() {
-                return None;
+                return UnionCheckResult::HasVarMember;
             }
 
             let mut test_args = resolved_operands.to_vec();
             test_args[i] = member.clone();
             let Some(types::Type::Function(_, member_ret)) = ctx.resolve_overload(op_name, &test_args) else {
-                return None;
+                return UnionCheckResult::MemberUnsupported(member.clone());
             };
             let resolved_ret = ctx.resolve_type(&member_ret);
 
@@ -292,17 +310,29 @@ fn union_members_consistent_return(
             // is the standard mq "propagate None" pattern and does not affect the
             // consistency of the return type for non-None inputs.
             if matches!(member, types::Type::None) && matches!(resolved_ret, types::Type::None) {
+                has_none_propagation = true;
                 continue;
             }
 
             match &unique_ret {
                 None => unique_ret = Some(resolved_ret),
                 Some(prev) if prev == &resolved_ret => {}
-                _ => return None,
+                _ => return UnionCheckResult::InconsistentReturn,
             }
         }
     }
-    unique_ret
+
+    match unique_ret {
+        Some(ret) => UnionCheckResult::Consistent {
+            ret,
+            has_none_propagation,
+        },
+        // All members were None-propagation (or no union args) → use None as result
+        None => UnionCheckResult::Consistent {
+            ret: types::Type::None,
+            has_none_propagation: false,
+        },
+    }
 }
 
 /// Resolves deferred overloads after the first round of unification.
@@ -382,24 +412,75 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                 // This handles patterns like `len(Union(Array(String), None))` where
                 // None-propagation (None → None) should be ignored when determining
                 // the consistent return type.
-                if let Some(consistent_ret) = union_members_consistent_return(ctx, &d.op_name, &resolved_operands) {
-                    ctx.set_symbol_type_no_bind(d.symbol_id, consistent_ret);
-                    unify::solve_constraints(ctx);
-                    continue;
+                match check_union_members(ctx, &d.op_name, &resolved_operands) {
+                    UnionCheckResult::Consistent {
+                        ret,
+                        has_none_propagation,
+                    } => {
+                        ctx.set_symbol_type_no_bind(d.symbol_id, ret);
+                        // Phase 2: None safety — warn when None propagation silently makes
+                        // the result `none` at runtime even though the static type is concrete.
+                        if has_none_propagation {
+                            let nullable_args: Vec<String> = resolved_operands
+                                .iter()
+                                .filter(|t| t.is_nullable())
+                                .map(|t| t.display_renumbered())
+                                .collect();
+                            if !nullable_args.is_empty() {
+                                ctx.add_error(TypeError::NullablePropagation {
+                                    op: d.op_name.to_string(),
+                                    nullable_arg: nullable_args.join(", "),
+                                    span: d.range.as_ref().map(unify::range_to_span),
+                                    location: d.range,
+                                    context: Some(
+                                        "guard with `if x != none: ...` to avoid `none` propagation".to_string(),
+                                    ),
+                                });
+                            }
+                        }
+                        unify::solve_constraints(ctx);
+                        continue;
+                    }
+                    UnionCheckResult::MemberUnsupported(bad_member) => {
+                        let args_str = resolved_operands
+                            .iter()
+                            .map(|t| t.display_renumbered())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        ctx.add_error(TypeError::UnificationError {
+                            left: format!("`{}` cannot be applied to all members of ({})", d.op_name, args_str),
+                            right: format!("`{}` does not support `{}`", bad_member.display_renumbered(), d.op_name),
+                            span: d.range.as_ref().map(unify::range_to_span),
+                            location: d.range,
+                            context: Some(format!(
+                                "consider narrowing the type with `if is_{}(x): ...` before using `{}`",
+                                bad_member.display_renumbered(),
+                                d.op_name
+                            )),
+                        });
+                        continue;
+                    }
+                    UnionCheckResult::InconsistentReturn => {
+                        let args_str = resolved_operands
+                            .iter()
+                            .map(|t| t.display_renumbered())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        ctx.add_error(TypeError::UnificationError {
+                            left: format!("`{}` with arguments ({})", d.op_name, args_str),
+                            right: "union members return inconsistent types".to_string(),
+                            span: d.range.as_ref().map(unify::range_to_span),
+                            location: d.range,
+                            context: None,
+                        });
+                        continue;
+                    }
+                    UnionCheckResult::HasVarMember => {
+                        // Union contains unresolved type variable — defer
+                        next_remaining.push(idx);
+                        continue;
+                    }
                 }
-                let args_str = resolved_operands
-                    .iter()
-                    .map(|t| t.display_renumbered())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                ctx.add_error(TypeError::UnificationError {
-                    left: format!("{} with arguments ({})", d.op_name, args_str),
-                    right: "union types cannot be used with binary operators".to_string(),
-                    span: d.range.as_ref().map(unify::range_to_span),
-                    location: d.range,
-                    context: None,
-                });
-                continue;
             }
 
             // Skip resolution when any operand is a bare type variable (unknown type)

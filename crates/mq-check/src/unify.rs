@@ -45,6 +45,9 @@ pub fn unify(
     origin: &ConstraintOrigin,
 ) {
     match (t1, t2) {
+        // Never (bottom type) unifies with anything without error
+        (Type::Never, _) | (_, Type::Never) => {}
+
         // Same concrete types unify trivially
         (Type::Int, Type::Int)
         | (Type::Float, Type::Float)
@@ -173,7 +176,26 @@ pub fn unify(
             unify(ctx, ret1, ret2, range, origin);
         }
 
-        // Union types: a union can unify with a type if any of its members can unify with it
+        // Union vs Union: compatible when every member of each union has a corresponding
+        // member (by discriminant) in the other union, or when a type variable is present.
+        // This must come before the general Union arm to avoid incorrectly comparing each
+        // member of the first union against the whole-Union discriminant of the second.
+        (Type::Union(types1), Type::Union(types2)) => {
+            let member_matches = |m1: &Type, members: &[Type]| {
+                members.iter().any(|m2| {
+                    std::mem::discriminant(m1) == std::mem::discriminant(m2)
+                        || matches!(m1, Type::Var(_))
+                        || matches!(m2, Type::Var(_))
+                })
+            };
+            let all_matched = types1.iter().all(|m1| member_matches(m1, types2))
+                && types2.iter().all(|m2| member_matches(m2, types1));
+            if !all_matched {
+                ctx.report_mismatch(t1, t2, range, origin);
+            }
+        }
+
+        // Union types: a union can unify with a non-union type if any of its members can.
         (Type::Union(types), other) | (other, Type::Union(types)) => {
             // Check if the other type matches any member of the union
             let matches_any = types.iter().any(|t| {
@@ -636,15 +658,16 @@ mod tests {
         unify(&mut ctx, &union, &Type::Bool, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
 
-        // Unify union with another union
+        // Unify union with another union that has different members — should fail.
+        // Union(Number, String) vs Union(String, Bool): Number has no match in [String, Bool].
         let union2 = Type::union(vec![Type::String, Type::Bool]);
         unify(&mut ctx, &union, &union2, None, &ConstraintOrigin::General);
-        // This currently fails in the implementation because it only checks discriminant equality
-        // and doesn't handle Union vs Union recursively.
-        // Actually, the implementation says:
-        // (Type::Union(types), other) | (other, Type::Union(types)) => { ... }
-        // If 'other' is also a Union, it compares discriminant of members of 'types' with Union discriminant.
         assert!(!ctx.take_errors().is_empty());
+
+        // Unify identical unions — should succeed.
+        let union3 = Type::union(vec![Type::Number, Type::String]);
+        unify(&mut ctx, &union, &union3, None, &ConstraintOrigin::General);
+        assert!(ctx.take_errors().is_empty());
     }
 
     #[test]

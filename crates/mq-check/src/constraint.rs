@@ -1420,10 +1420,14 @@ pub(super) fn generate_symbol_constraints(
                     }
                 }
 
-                // Result type comes from the body (last child after condition)
+                // Result type comes from the body (last child after condition).
+                // `while` always includes `None` in its return type because the condition
+                // may be false on the very first check (loop body never runs).
                 if children.len() > 1 {
                     let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
-                    let break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
+                    let mut break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
+                    // Condition-initially-false path → None.
+                    break_tys.push(Type::None);
                     let loop_ty = merge_loop_types(body_ty, break_tys, ctx);
                     ctx.set_symbol_type(symbol_id, loop_ty);
                 } else {

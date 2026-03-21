@@ -970,6 +970,10 @@ fn test_loop_type_combinations(#[case] code: &str, #[case] should_succeed: bool,
     r#"let x = while (true): if (true): break: 42; | x + 1"#,
     "while with only if-branch break (no else) should produce union and fail with +"
 )]
+#[case::while_simple_body_with_add(
+    r#"let x = while (true): 42; | x + 1"#,
+    "while with simple body should fail with + because while may return none"
+)]
 fn test_loop_union_arithmetic_errors(#[case] code: &str, #[case] description: &str) {
     let result = check_types(code);
     assert!(
@@ -981,7 +985,10 @@ fn test_loop_union_arithmetic_errors(#[case] code: &str, #[case] description: &s
 
 #[rstest]
 #[case::same_type_add(r#"let x = loop: break: 42;; | x + 1"#, "loop number should allow +")]
-#[case::while_same_type_add(r#"let x = while (true): 42; | x + 1"#, "while number should allow +")]
+#[case::while_same_type_add(
+    r#"let x = while (true): 42; | if (is_number(x)): x + 1 else: x;"#,
+    "while number with None guard should allow +"
+)]
 #[case::loop_break_same_type(
     r#"let x = loop: if (true): break: 1 else: break: 2;; | x + 1"#,
     "loop with break of same type should allow +"
@@ -1487,5 +1494,163 @@ fn test_let_binding_with_piped_function_call(
         description,
         code,
         result
+    );
+}
+
+// ── Dead code / unreachable branch detection ─────────────────────────────────
+#[rstest]
+// Union exhaustion: all array members match is_array → else-branch is dead
+#[case::union_all_array_exhausted_by_is_array(
+    r#"let x = if (true): [1,2,3] else: ["a","b"]; |
+    if (is_array(x)):
+        x
+    else:
+        x
+    ;"#,
+    false,
+    "else-branch is dead when all union members match the predicate"
+)]
+// Concrete non-union type mismatch: String variable tested with is_number → then-branch is dead
+#[case::concrete_type_wrong_predicate(
+    r#"let x = "hello"; |
+    if (is_number(x)):
+        x
+    else:
+        x
+    ;"#,
+    false,
+    "then-branch is dead when concrete type does not match the predicate"
+)]
+// Non-exhausted union: only some members match → else-branch is reachable
+#[case::union_partially_matched_no_dead_branch(
+    r#"let x = if (true): 42 else: "hello"; |
+    if (is_number(x)):
+        x
+    else:
+        x
+    ;"#,
+    true,
+    "else-branch is alive when union has members not matching the predicate"
+)]
+fn test_dead_code_detection(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types_with_builtins(code);
+    let has_unreachable = result
+        .iter()
+        .any(|e| matches!(e, mq_check::TypeError::UnreachableCode { .. }));
+    assert_eq!(
+        !has_unreachable, should_succeed,
+        "{}\nCode: {}\nErrors: {:?}",
+        description, code, result
+    );
+}
+
+// ── Parameter polymorphism: no false dead-code positives ──────────────────────
+//
+// Function parameters are polymorphic — the type inferred from one branch's
+// usage must not cause predicate checks on the parameter to be flagged as dead.
+// These tests verify that `detect_dead_then_branch` skips `SymbolKind::Parameter`
+// definitions, matching the fix for false positives in builtin.mq functions
+// (`contains`, `map`, `flat_map`).
+#[rstest]
+// is_dict on a parameter used as string in else-branch (mirrors `contains`)
+#[case::param_is_dict_no_false_positive(
+    r#"def contains(haystack, needle):
+        if (is_dict(haystack)):
+            !is_none(haystack[needle])
+        else:
+            index(haystack, needle) != -1
+        ;
+    ;"#,
+    true,
+    "is_dict check on parameter must not be flagged as dead even if else-branch uses string ops"
+)]
+// is_dict and is_none on a parameter used as array in else-branch (mirrors `map`)
+#[case::param_is_dict_then_is_none_no_false_positive(
+    r#"def map(v, f):
+        if (is_dict(v)):
+            v
+        elif (is_none(v)):
+            none
+        else:
+            foreach (x, v): f(x);
+        ;
+    ;"#,
+    true,
+    "is_dict/is_none checks on parameter must not be flagged as dead when else-branch iterates"
+)]
+// is_none on a parameter used as array in else-branch (mirrors `flat_map`)
+#[case::param_is_none_no_false_positive(
+    r#"def flat_map(v, f):
+        if (is_none(v)):
+            none
+        else:
+            foreach (x, v): f(x);
+        ;
+    ;"#,
+    true,
+    "is_none check on parameter must not be flagged as dead when else-branch iterates over it"
+)]
+// is_string on a parameter; caller passes number — no false positive because parameter is polymorphic
+#[case::param_is_string_polymorphic(
+    r#"def f(x):
+        if (is_string(x)):
+            upcase(x)
+        else:
+            x
+        ;
+    ;
+    | f(42)"#,
+    true,
+    "is_string on parameter must not be dead even when called with a number literal"
+)]
+// is_array on a parameter; function body branches on array vs non-array
+#[case::param_is_array_branching(
+    r#"def process(v):
+        if (is_array(v)):
+            len(v)
+        elif (is_string(v)):
+            len(v)
+        else:
+            0
+        ;
+    ;"#,
+    true,
+    "multiple predicate checks on a single parameter must all be accepted"
+)]
+// Regression: let-bound concrete type IS still flagged (dead-code detection still works)
+#[case::let_bound_concrete_still_detected(
+    r#"let x = "hello"; |
+    if (is_number(x)):
+        x
+    else:
+        x
+    ;"#,
+    false,
+    "dead-code detection must still fire for let-bound concrete types (not parameters)"
+)]
+// Regression: union let-binding with fully exhausted predicate IS still flagged
+#[case::union_exhausted_still_detected(
+    r#"let x = if (true): [1,2,3] else: ["a","b"]; |
+    if (is_array(x)):
+        x
+    else:
+        x
+    ;"#,
+    false,
+    "dead else-branch on a fully-matched union let-binding must still be detected"
+)]
+fn test_parameter_polymorphism_no_false_dead_code(
+    #[case] code: &str,
+    #[case] should_succeed: bool,
+    #[case] description: &str,
+) {
+    let result = check_types_with_builtins(code);
+    let has_unreachable = result
+        .iter()
+        .any(|e| matches!(e, mq_check::TypeError::UnreachableCode { .. }));
+    assert_eq!(
+        !has_unreachable, should_succeed,
+        "{}\nCode: {}\nErrors: {:?}",
+        description, code, result
     );
 }
