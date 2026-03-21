@@ -92,12 +92,7 @@ end
 
 # Applies a function to each element and flattens the result into a single array
 def flat_map(v, f):
-  if (is_dict(v)):
-    do
-      let flat_map_dict = fn(v, f): let mapped = do foreach (x, entries(v)): f(x); | flatten(mapped) | dict(mapped);;
-      | flat_map_dict(v, f)
-    end
-  elif (is_none(v)):
+  if (is_none(v)):
     None
   else:
     foreach (x, v): f(x); | flatten()
@@ -294,37 +289,34 @@ end
 
 # Skips elements from the beginning of an array while the provided function returns true
 def skip_while(arr, f):
-  let si = if (!is_array(arr)):
+  if (!is_array(arr)):
     error("first argument must be an array")
   elif (is_empty(arr)):
-    0
+    []
   else:
     do
       var i = 0
       | while (i < len(arr) && f(get(arr, i))):
-          i += 1 | i
+          i += 1
         end
+      | slice(arr, i, len(arr))
     end
-  | slice(arr, if (is_none(si)): 0 else: si, len(arr))
 end
 
 # Takes elements from the beginning of an array while the provided function returns true
 def take_while(arr, f):
-  let ti =
-    if (not(is_array(arr))):
-      error("first argument must be an array")
-    elif (is_empty(arr)):
-      0
-    else:
-      do
-        var i = 0
-        | while (and(i < len(arr), f(get(arr, i)))):
-            i += 1 | i
-          end
-      end
-  | if (is_none(ti)): []
-    else:
-      slice(arr, 0, ti)
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)):
+    []
+  else:
+    do
+      var i = 0
+      | while (and(i < len(arr), f(get(arr, i)))):
+          i += 1
+        end
+      | slice(arr, 0, i)
+    end
 end
 
 # Groups elements of an array by the result of applying a function to each element
