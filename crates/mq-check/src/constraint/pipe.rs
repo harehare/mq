@@ -57,8 +57,20 @@ pub(super) fn generate_block_constraints(
     // e.g., `x | !is_empty()` — piped input flows through `!` to `is_empty()`
     propagate_piped_input_through_unary_ops(hir, children, ctx, children_index);
 
-    // The Block's type is the last child's type
-    let last_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
+    // The Block's type is the last meaningful (non-Keyword) child's type.
+    // Keyword children like `end` are syntax delimiters with no semantic type;
+    // using them would give a fresh Var that later gets unified away, losing
+    // type information (e.g., the None possibility from a while-loop result).
+    let last_meaningful = children
+        .iter()
+        .rev()
+        .find(|&&id| {
+            hir.symbol(id)
+                .map(|s| !matches!(s.kind, SymbolKind::Keyword))
+                .unwrap_or(true)
+        })
+        .unwrap_or_else(|| children.last().unwrap());
+    let last_ty = ctx.get_or_create_symbol_type(*last_meaningful);
     ctx.set_symbol_type(symbol_id, last_ty);
 }
 

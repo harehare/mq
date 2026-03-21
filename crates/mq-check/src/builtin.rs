@@ -1640,6 +1640,8 @@ mod tests {
     #[case::in_array("in([1, 2, 3], 1)", true)]
     #[case::in_string("in(\"hello world\", \"world\")", true)]
     #[case::in_sub_array("in([1, 2, 3, 4], [2, 3])", true)]
+    #[case::in_return_plus_number("in([1, 2, 3], 1) + 1", false)] // in returns bool; bool + number is invalid
+    #[case::contains_return_plus_number("contains(\"hello\", \"he\") + 1", false)] // contains returns bool; bool + number is invalid
     #[case::bsearch("bsearch([1, 2, 3, 4], 2)", true)]
     #[case::bsearch_error("bsearch([1, 2, 3, 4], \"2\")", false)]
     fn test_collection_functions(#[case] code: &str, #[case] should_succeed: bool) {

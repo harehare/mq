@@ -594,28 +594,45 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
 /// After unification, the original function's return type is resolved from its body.
 /// This method connects each call site's fresh return type to the original resolved
 /// return type, enabling downstream operators to resolve with concrete types.
+///
+/// Runs in multiple passes until convergence to handle transitive dependencies:
+/// when function A calls function B, A's return type may depend on B's fresh call-site
+/// return type. A single pass would skip A (still Var) before B is propagated.
+/// Iterating until no more progress ensures all transitive chains are resolved.
 pub(crate) fn propagate_user_call_returns(ctx: &mut InferenceContext) {
     let deferred_calls = ctx.take_deferred_user_calls();
 
-    for call in &deferred_calls {
-        if let Some(orig_ty) = ctx.get_symbol_type(call.def_id).cloned() {
-            let resolved_orig_ty = ctx.resolve_type(&orig_ty);
-            if let types::Type::Function(_, orig_ret) = &resolved_orig_ty {
-                let resolved_ret = ctx.resolve_type(orig_ret);
-                if !resolved_ret.is_var() {
-                    ctx.add_constraint(Constraint::Equal(
-                        call.fresh_ret_ty.clone(),
-                        resolved_ret,
-                        call.range,
-                        ConstraintOrigin::General,
-                    ));
+    let mut prev_unresolved = usize::MAX;
+    loop {
+        let mut unresolved = 0;
+        for call in &deferred_calls {
+            if let Some(orig_ty) = ctx.get_symbol_type(call.def_id).cloned() {
+                let resolved_orig_ty = ctx.resolve_type(&orig_ty);
+                if let types::Type::Function(_, orig_ret) = &resolved_orig_ty {
+                    let resolved_ret = ctx.resolve_type(orig_ret);
+                    if !resolved_ret.is_var() {
+                        ctx.add_constraint(Constraint::Equal(
+                            call.fresh_ret_ty.clone(),
+                            resolved_ret,
+                            call.range,
+                            ConstraintOrigin::General,
+                        ));
+                    } else {
+                        unresolved += 1;
+                    }
                 }
             }
         }
-    }
 
-    // Solve new constraints from return type propagation
-    unify::solve_constraints(ctx);
+        // Solve new constraints from this pass
+        unify::solve_constraints(ctx);
+
+        // Stop when fully converged or no more progress
+        if unresolved == 0 || unresolved == prev_unresolved {
+            break;
+        }
+        prev_unresolved = unresolved;
+    }
 
     // Store calls back for body operator checking
     for call in deferred_calls {
