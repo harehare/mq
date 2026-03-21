@@ -120,17 +120,16 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     register_binary(ctx, "sub", Type::Number, Type::Number, Type::Number);
 
     // Multiplication: number * number -> number
-    register_binary(ctx, "*", Type::Number, Type::Number, Type::Number);
-    register_binary(ctx, "mul", Type::Number, Type::Number, Type::Number);
-
-    // Multiplication: [a] * number -> [a] (array repetition)
+    // [a] * number -> [a] (array repetition)
     for name in ["*", "mul"] {
+        register_binary(ctx, name, Type::Number, Type::Number, Type::Number);
+        register_binary(ctx, name, Type::String, Type::Number, Type::String);
         let a = ctx.fresh_var();
         register_binary(
             ctx,
             name,
             Type::array(Type::Var(a)),
-            Type::Number,
+            Type::Var(a),
             Type::array(Type::Var(a)),
         );
     }
@@ -1473,7 +1472,7 @@ mod tests {
     #[case::add_bool_string("true + \"s\"", false)] // bool + string is invalid
     #[case::sub_strings("\"a\" - \"b\"", false)] // strings cannot be subtracted
     #[case::sub_string_number("\"a\" - 1", false)] // string - number is invalid
-    #[case::mul_string_number("\"a\" * 3", false)] // string * number is invalid
+    #[case::mul_string_number("\"a\" * 3", true)] // string * number is invalid
     #[case::div_strings("\"a\" / \"b\"", false)] // strings cannot be divided
     #[case::mod_strings("\"a\" % \"b\"", false)] // strings cannot use modulo
     #[case::sub_bool_bool("true - false", false)] // booleans cannot be subtracted

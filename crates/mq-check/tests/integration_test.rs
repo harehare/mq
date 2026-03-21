@@ -583,7 +583,7 @@ fn test_let_binding_type_errors(#[case] code: &str, #[case] should_succeed: bool
 )]
 #[case::lambda_callsite_mul_str(
     r#"let f = fn(x): x * 2; | f("str")"#,
-    false,
+    true,
     "lambda call-site: string arg passed to multiply lambda"
 )]
 #[case::lambda_callsite_div_str(
