@@ -20,8 +20,6 @@ pub(super) struct SymbolCategories {
     pub(super) assign_symbols: Vec<(SymbolId, SymbolKind)>,
     /// Pass 3: operators, calls, and other symbols (will be reversed for processing)
     pub(super) pass3_symbols: Vec<(SymbolId, SymbolKind)>,
-    /// Pass 4: Block symbols
-    pub(super) pass4_blocks: Vec<SymbolId>,
     /// Pass 4: Function/Macro symbols (for body pipe chains)
     pub(super) pass4_functions: Vec<SymbolId>,
 }
@@ -34,7 +32,6 @@ pub(super) fn categorize_symbols(hir: &Hir) -> SymbolCategories {
         root_symbols: Vec::new(),
         assign_symbols: Vec::new(),
         pass3_symbols: Vec::new(),
-        pass4_blocks: Vec::new(),
         pass4_functions: Vec::new(),
     };
 
@@ -73,10 +70,6 @@ pub(super) fn categorize_symbols(hir: &Hir) -> SymbolCategories {
             | SymbolKind::Function(_)
             | SymbolKind::Macro(_) => {
                 cats.pass1_symbols.push((symbol_id, symbol.kind.clone()));
-            }
-            // Pass 4: Block symbols
-            SymbolKind::Block => {
-                cats.pass4_blocks.push(symbol_id);
             }
             // Pass 2.5: Assign symbols (before other Pass 3 symbols)
             SymbolKind::Assign => {

@@ -298,6 +298,10 @@ fn error_title(error: &TypeError) -> String {
         TypeError::HeterogeneousArray { types, .. } => format!("heterogeneous array: [{types}]"),
         TypeError::TypeVarNotFound(name) => format!("type variable not found: {name}"),
         TypeError::Internal(msg) => format!("internal error: {msg}"),
+        TypeError::NullablePropagation { op, nullable_arg, .. } => {
+            format!("nullable propagation: `{op}` with nullable arg `{nullable_arg}`")
+        }
+        TypeError::UnreachableCode { reason, .. } => format!("unreachable code: {reason}"),
     }
 }
 
