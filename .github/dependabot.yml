@@ -57,9 +57,6 @@ updates:
     schedule:
       interval: "daily"
       time: "20:00"
-    cooldown:
-      default-days: 5
-      semver-major-days: 7
     groups:
       dependencies:
         patterns: ["*"]
