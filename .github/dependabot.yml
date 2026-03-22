@@ -5,28 +5,63 @@ updates:
     schedule:
       interval: "daily"
       time: "20:00"
+    cooldown:
+      default-days: 5
+      semver-major-days: 7
+    groups:
+      dependencies:
+        patterns: ["*"]
     open-pull-requests-limit: 10
+
   - package-ecosystem: "npm"
     directory: "/packages/mq-playground"
     schedule:
       interval: "daily"
       time: "20:00"
+    cooldown:
+      default-days: 5
+      semver-major-days: 7
+    groups:
+      dependencies:
+        patterns: ["*"]
     open-pull-requests-limit: 10
+
   - package-ecosystem: "npm"
     directory: "/packages/mq-web"
     schedule:
       interval: "daily"
       time: "20:00"
+    cooldown:
+      default-days: 5
+      semver-major-days: 7
+    groups:
+      dependencies:
+        patterns: ["*"]
     open-pull-requests-limit: 10
+
   - package-ecosystem: "npm"
     directory: "/editors/vscode"
     schedule:
       interval: "daily"
       time: "20:00"
+    cooldown:
+      default-days: 5
+      semver-major-days: 7
+    groups:
+      dependencies:
+        patterns: ["*"]
     open-pull-requests-limit: 10
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "daily"
       time: "20:00"
+    cooldown:
+      default-days: 5
+      semver-major-days: 7
+    groups:
+      dependencies:
+        patterns: ["*"]
     open-pull-requests-limit: 10
+
