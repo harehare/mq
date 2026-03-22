@@ -2746,7 +2746,7 @@ dependencies = [
 
 [[package]]
 name = "mq-check"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "clap",
  "colored 3.1.1",
@@ -2764,7 +2764,7 @@ dependencies = [
 
 [[package]]
 name = "mq-crawler"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "chromiumoxide",
  "clap",
@@ -2790,7 +2790,7 @@ dependencies = [
 
 [[package]]
 name = "mq-dap"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "crossbeam-channel",
  "dap",
@@ -2806,7 +2806,7 @@ dependencies = [
 
 [[package]]
 name = "mq-ffi"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "cbindgen",
  "libc",
@@ -2816,7 +2816,7 @@ dependencies = [
 
 [[package]]
 name = "mq-formatter"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "codspeed-divan-compat",
  "mq-lang",
@@ -2836,7 +2836,7 @@ dependencies = [
 
 [[package]]
 name = "mq-hir"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "itertools 0.14.0",
  "mq-lang",
@@ -2851,7 +2851,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lang"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2883,7 +2883,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lsp"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "bimap",
  "clap",
@@ -2905,7 +2905,7 @@ dependencies = [
 
 [[package]]
 name = "mq-markdown"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "ego-tree",
  "itertools 0.14.0",
@@ -2922,7 +2922,7 @@ dependencies = [
 
 [[package]]
 name = "mq-repl"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "arboard",
  "colored 3.1.1",
@@ -2941,7 +2941,7 @@ dependencies = [
 
 [[package]]
 name = "mq-run"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -2967,7 +2967,7 @@ dependencies = [
 
 [[package]]
 name = "mq-wasm"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "futures",
  "itertools 0.14.0",
@@ -2988,7 +2988,7 @@ dependencies = [
 
 [[package]]
 name = "mq-web-api"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "async-trait",
  "axum 0.8.8",

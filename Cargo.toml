@@ -20,14 +20,14 @@ resolver = "3"
 
 [workspace.dependencies]
 # Internal crates
-mq-check = {path = "crates/mq-check", version = "0.5.20"}
-mq-dap = {path = "crates/mq-dap", version = "0.5.20"}
-mq-formatter = {path = "crates/mq-formatter", version = "0.5.20"}
-mq-hir = {path = "crates/mq-hir", version = "0.5.20"}
-mq-lang = {path = "crates/mq-lang", version = "0.5.20"}
-mq-lsp = {path = "crates/mq-lsp", version = "0.5.20"}
-mq-markdown = {path = "crates/mq-markdown", version = "0.5.20"}
-mq-repl = {path = "crates/mq-repl", version = "0.5.20"}
+mq-check = {path = "crates/mq-check", version = "0.5.21"}
+mq-dap = {path = "crates/mq-dap", version = "0.5.21"}
+mq-formatter = {path = "crates/mq-formatter", version = "0.5.21"}
+mq-hir = {path = "crates/mq-hir", version = "0.5.21"}
+mq-lang = {path = "crates/mq-lang", version = "0.5.21"}
+mq-lsp = {path = "crates/mq-lsp", version = "0.5.21"}
+mq-markdown = {path = "crates/mq-markdown", version = "0.5.21"}
+mq-repl = {path = "crates/mq-repl", version = "0.5.21"}
 # External dependencies
 arbitrary = {version = "1.4.2", features = ["derive"]}
 arboard = {version = "3.6.1", default-features = false}
@@ -112,3 +112,4 @@ strip = true
 
 [profile.bench]
 inherits = "release"
+
