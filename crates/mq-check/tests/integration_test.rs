@@ -1654,3 +1654,37 @@ fn test_parameter_polymorphism_no_false_dead_code(
         description, code, result
     );
 }
+
+#[test]
+fn test_user_defined_function_return_type_propagation() {
+    // A function whose body clearly returns Bool used in Bool+Number should error
+    let errors = check_types("def c(): false;\ndef f(): c() + 1;");
+    assert!(
+        !errors.is_empty(),
+        "c() + 1 where c returns Bool should detect type error, got 0 errors"
+    );
+
+    // Direct bool+num is caught
+    assert!(!check_types("true + 1").is_empty(), "true + 1 should be a type error");
+
+    // A correct case should pass
+    assert!(
+        check_types("def c(): 42;\ndef f(): c() + 1;").is_empty(),
+        "Number + Number should type check correctly"
+    );
+}
+
+#[test]
+fn test_builtin_mq_has_no_type_errors() {
+    let builtin_content = mq_lang::BUILTIN_MODULE_FILE;
+    let errors = check_types(builtin_content);
+    let type_errors: Vec<_> = errors
+        .iter()
+        .filter(|e| !matches!(e, mq_check::TypeError::UnreachableCode { .. }))
+        .collect();
+    assert!(
+        type_errors.is_empty(),
+        "builtin.mq should have no type errors, got: {:?}",
+        type_errors
+    );
+}
