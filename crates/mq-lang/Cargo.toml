@@ -27,6 +27,7 @@ ropey = {workspace = true, optional = true}
 rustc-hash = {workspace = true}
 serde = {workspace = true, features = ["derive", "rc"]}
 serde_json = {workspace = true}
+yaml-rust2 = {workspace = true}
 smallvec = {workspace = true}
 smol_str = {workspace = true}
 string-interner = {workspace = true}

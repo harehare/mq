@@ -212,6 +212,34 @@ impl From<mq_markdown::AttrValue> for RuntimeValue {
     }
 }
 
+impl From<yaml_rust2::Yaml> for RuntimeValue {
+    fn from(value: yaml_rust2::Yaml) -> Self {
+        match value {
+            yaml_rust2::Yaml::Null | yaml_rust2::Yaml::BadValue => RuntimeValue::NONE,
+            yaml_rust2::Yaml::Boolean(b) => RuntimeValue::Boolean(b),
+            yaml_rust2::Yaml::Integer(i) => RuntimeValue::Number((i as f64).into()),
+            yaml_rust2::Yaml::Real(s) => s
+                .parse::<f64>()
+                .map(|f| RuntimeValue::Number(f.into()))
+                .unwrap_or(RuntimeValue::NONE),
+            yaml_rust2::Yaml::String(s) => RuntimeValue::String(s),
+            yaml_rust2::Yaml::Array(arr) => RuntimeValue::Array(arr.into_iter().map(RuntimeValue::from).collect()),
+            yaml_rust2::Yaml::Hash(map) => {
+                let mut btree = BTreeMap::new();
+                for (k, v) in map {
+                    let key = match k {
+                        yaml_rust2::Yaml::String(s) => s,
+                        other => format!("{other:?}"),
+                    };
+                    btree.insert(Ident::new(&key), RuntimeValue::from(v));
+                }
+                RuntimeValue::Dict(btree)
+            }
+            yaml_rust2::Yaml::Alias(_) => RuntimeValue::NONE,
+        }
+    }
+}
+
 impl From<serde_json::Value> for RuntimeValue {
     fn from(value: serde_json::Value) -> Self {
         match value {
