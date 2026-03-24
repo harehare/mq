@@ -930,10 +930,15 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             );
 
                             let token_id = self.token_arena.alloc(Shared::clone(ident_token));
-                            return Ok(Shared::new(Node {
+                            let qualified_node = Shared::new(Node {
                                 token_id,
                                 expr: Shared::new(Expr::QualifiedAccess(module_path, access_target)),
-                            }));
+                            });
+                            // Check for bracket access after qualified function call (e.g., module::func()[:1])
+                            if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
+                                return self.parse_bracket_access(qualified_node, ident_token);
+                            }
+                            return Ok(qualified_node);
                         }
                         _ => {
                             // This is an identifier: module::...::ident
@@ -1037,6 +1042,84 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         original_token: &Shared<Token>,
     ) -> Result<Shared<Node>, SyntaxError> {
         let _ = self.tokens.next(); // consume '['
+
+        // Check for [:N] or [:]  style slice (empty start index).
+        // [:ident] and [:string] are dict key accesses using a symbol, not slices.
+        let is_slice_from_start = matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Colon))
+            && !matches!(
+                self.tokens.clone().nth(1).map(|t| &t.kind),
+                Some(TokenKind::Ident(_)) | Some(TokenKind::StringLiteral(_))
+            );
+
+        if is_slice_from_start {
+            let _ = self.tokens.next(); // consume ':'
+            let start_node = Shared::new(Node {
+                token_id: self.token_arena.alloc(Shared::clone(original_token)),
+                expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+            });
+
+            let result_node = match self.tokens.next() {
+                Some(t) if t.kind == TokenKind::RBracket => {
+                    // [:] = slice(arr, 0, len(arr))
+                    Shared::new(Node {
+                        token_id: self.token_arena.alloc(Shared::clone(original_token)),
+                        expr: Shared::new(Expr::Call(
+                            IdentWithToken::new_with_token(
+                                constants::builtins::SLICE,
+                                Some(Shared::clone(original_token)),
+                            ),
+                            smallvec![
+                                Shared::clone(&target_node),
+                                start_node,
+                                Shared::new(Node {
+                                    token_id: self.token_arena.alloc(Shared::clone(original_token)),
+                                    expr: Shared::new(Expr::Call(
+                                        IdentWithToken::new_with_token(constants::builtins::LEN, None,),
+                                        smallvec![target_node],
+                                    )),
+                                })
+                            ],
+                        )),
+                    })
+                }
+                Some(t) => {
+                    let end_node = self.parse_expr(t)?;
+                    match self.tokens.peek() {
+                        Some(token) if matches!(token.kind, TokenKind::RBracket) => {
+                            let _ = self.tokens.next();
+                        }
+                        Some(token) => {
+                            return Err(SyntaxError::ExpectedClosingBracket((***token).clone()));
+                        }
+                        None => {
+                            return Err(SyntaxError::ExpectedClosingBracket(Token {
+                                range: original_token.range,
+                                kind: TokenKind::Eof,
+                                module_id: self.module_id,
+                            }));
+                        }
+                    }
+                    Shared::new(Node {
+                        token_id: self.token_arena.alloc(Shared::clone(original_token)),
+                        expr: Shared::new(Expr::Call(
+                            IdentWithToken::new_with_token(
+                                constants::builtins::SLICE,
+                                Some(Shared::clone(original_token)),
+                            ),
+                            smallvec![target_node, start_node, end_node],
+                        )),
+                    })
+                }
+                None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+            };
+
+            let final_result = if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
+                self.parse_bracket_access(result_node, original_token)?
+            } else {
+                result_node
+            };
+            return Ok(final_result);
+        }
 
         // Parse the first expression
         let first_token = match self.tokens.next() {
@@ -6311,6 +6394,120 @@ mod tests {
                     )),
                 })
             ]))]
+    #[case::slice_access_with_end_only(
+        vec![
+            token(TokenKind::Ident(SmolStr::new("arr"))),
+            token(TokenKind::LBracket),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(2.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 3.into(),
+                expr: Shared::new(Expr::Call(
+                    IdentWithToken::new_with_token(constants::builtins::SLICE, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
+                    smallvec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                        }),
+                    ],
+                )),
+            })
+        ]))]
+    #[case::qualified_access_with_call_and_slice(
+        vec![
+            token(TokenKind::Ident(SmolStr::new("mod"))),
+            token(TokenKind::DoubleColon),
+            token(TokenKind::Ident(SmolStr::new("func"))),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::LBracket),
+            token(TokenKind::NumberLiteral(0.into())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(2.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 3.into(),
+                expr: Shared::new(Expr::Call(
+                    IdentWithToken::new_with_token(constants::builtins::SLICE, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod")))))),
+                    smallvec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::QualifiedAccess(
+                                vec![IdentWithToken::new_with_token("mod", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod"))))))],
+                                AccessTarget::Call(
+                                    IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
+                                    smallvec![],
+                                ),
+                            )),
+                        }),
+                        Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                        }),
+                    ],
+                )),
+            })
+        ]))]
+    #[case::qualified_access_with_call_and_end_only_slice(
+        vec![
+            token(TokenKind::Ident(SmolStr::new("mod"))),
+            token(TokenKind::DoubleColon),
+            token(TokenKind::Ident(SmolStr::new("func"))),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::LBracket),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 3.into(),
+                expr: Shared::new(Expr::Call(
+                    IdentWithToken::new_with_token(constants::builtins::SLICE, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod")))))),
+                    smallvec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::QualifiedAccess(
+                                vec![IdentWithToken::new_with_token("mod", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod"))))))],
+                                AccessTarget::Call(
+                                    IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
+                                    smallvec![],
+                                ),
+                            )),
+                        }),
+                        Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                        }),
+                    ],
+                )),
+            })
+        ]))]
     #[case::selector_dot_is_self(
                 vec![
                     token(TokenKind::Selector(SmolStr::new("."))),
