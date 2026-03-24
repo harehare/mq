@@ -731,6 +731,17 @@ impl Cli {
         }
     }
 
+    /// Returns `true` if the dict is a known expandable typed dict (has `type: :symbol`).
+    fn is_typed_dict(
+        map: &std::collections::BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue>,
+    ) -> bool {
+        let type_key = mq_lang::Ident::new("type");
+        matches!(
+            map.get(&type_key),
+            Some(mq_lang::RuntimeValue::Symbol(s)) if matches!(s.as_str().as_str(), "section")
+        )
+    }
+
     /// Expands a typed dict (one with `type: :symbol`) into Markdown nodes.
     ///
     /// Returns `None` if the dict is not a known expandable type.
@@ -771,9 +782,10 @@ impl Cli {
                 Self::expand_typed_dict(map).unwrap_or_else(|| vec![runtime_value.to_string().into()])
             }
             mq_lang::RuntimeValue::Array(items) => {
-                let has_expandable = items.iter().any(|v| {
-                    matches!(v, mq_lang::RuntimeValue::Markdown(_, _))
-                        || matches!(v, mq_lang::RuntimeValue::Dict(m) if Self::expand_typed_dict(m).is_some())
+                let has_expandable = items.iter().any(|v| match v {
+                    mq_lang::RuntimeValue::Markdown(_, _) => true,
+                    mq_lang::RuntimeValue::Dict(m) => Self::is_typed_dict(m),
+                    _ => false,
                 });
                 if has_expandable {
                     items.iter().flat_map(Self::runtime_value_to_nodes).collect()
