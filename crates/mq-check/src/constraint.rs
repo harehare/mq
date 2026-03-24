@@ -1816,9 +1816,12 @@ pub(super) fn generate_symbol_constraints(
 
                 if let Type::Markdown = resolved {
                     // Piped input is a Markdown node (from a parent selector in a chain).
-                    // Attr selectors return their specific type; non-Attr still return Markdown.
+                    // Attr selectors return their specific type; Recursive returns [markdown];
+                    // all other non-Attr selectors still return Markdown.
                     if let mq_lang::Selector::Attr(attr_kind) = selector {
                         attr_kind_to_type(attr_kind)
+                    } else if matches!(selector, mq_lang::Selector::Recursive) {
+                        Type::array(Type::Markdown)
                     } else {
                         Type::Markdown
                     }
@@ -1868,9 +1871,12 @@ pub(super) fn generate_symbol_constraints(
             } else {
                 // No piped input: non-Attr selectors (`.h1`, `.code`, etc.) always produce
                 // a Markdown node. Attr selectors (`.value`, `.depth`, etc.) as the root of
-                // a chain return their concrete type.
+                // a chain return their concrete type. The Recursive selector (`..`) returns
+                // an array of all descendant Markdown nodes.
                 if let mq_lang::Selector::Attr(attr_kind) = selector {
                     attr_kind_to_type(attr_kind)
+                } else if matches!(selector, mq_lang::Selector::Recursive) {
+                    Type::array(Type::Markdown)
                 } else {
                     Type::Markdown
                 }

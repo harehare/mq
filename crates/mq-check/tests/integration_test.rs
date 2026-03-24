@@ -1728,3 +1728,20 @@ fn test_range_operator_no_errors(#[case] code: &str, #[case] desc: &str) {
         result
     );
 }
+
+// ============================================================================
+// `..` (recursive selector) type checking tests
+// ============================================================================
+
+#[rstest]
+#[case("..", "standalone recursive selector returns [markdown]")]
+#[case(".h1 | ..", "recursive selector after selector returns [markdown]")]
+fn test_recursive_selector_no_errors(#[case] code: &str, #[case] desc: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(
+        result.is_empty(),
+        "{}: expected no type errors, got: {:?}",
+        desc,
+        result
+    );
+}
