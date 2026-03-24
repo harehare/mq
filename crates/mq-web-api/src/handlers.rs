@@ -8,7 +8,10 @@ use tracing::{debug, error, info};
 use utoipa::OpenApi;
 
 use crate::{
-    api::{ApiRequest, DiagnosticsApiResponse, InputFormat, QueryApiResponse},
+    api::{
+        ApiRequest, CheckApiRequest, CheckApiResponse, DiagnosticsApiResponse, FormatApiRequest, FormatApiResponse,
+        InputFormat, OutputFormat, QueryApiResponse,
+    },
     problem::ProblemDetails,
 };
 
@@ -29,12 +32,18 @@ pub struct DiagnosticsParams {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_query_api, post_query_api, get_diagnostics_api, openapi_json),
+    paths(get_query_api, post_query_api, get_diagnostics_api, post_check_api, post_format_api, openapi_json),
     components(
         schemas(ApiRequest),
         schemas(InputFormat),
+        schemas(OutputFormat),
         schemas(QueryApiResponse),
-        schemas(DiagnosticsApiResponse)
+        schemas(DiagnosticsApiResponse),
+        schemas(CheckApiRequest),
+        schemas(CheckApiResponse),
+        schemas(crate::api::CheckError),
+        schemas(FormatApiRequest),
+        schemas(FormatApiResponse),
     ),
     tags(
         (name = "mq-api", description = "Markdown Query API")
@@ -69,6 +78,10 @@ pub async fn get_query_api(
         query: params.query.clone(),
         input: params.input.clone(),
         input_format: input_format.clone(),
+        modules: None,
+        args: None,
+        output_format: None,
+        aggregate: None,
     };
 
     debug!("Processing request with input_format: {:?}", input_format);
@@ -146,6 +159,10 @@ pub async fn get_diagnostics_api(
         query: params.query.clone(),
         input: None,
         input_format: None,
+        modules: None,
+        args: None,
+        output_format: None,
+        aggregate: None,
     };
 
     let response = crate::api::diagnostics(request);
@@ -156,6 +173,59 @@ pub async fn get_diagnostics_api(
     );
 
     Json(response)
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/check",
+    responses(
+        (status = 200, description = "Type check completed", body = CheckApiResponse),
+    ),
+    request_body = CheckApiRequest
+)]
+pub async fn post_check_api(
+    State(_state): State<AppState>,
+    Json(request): Json<CheckApiRequest>,
+) -> Json<CheckApiResponse> {
+    debug!("POST /check called with query: {}", request.query);
+
+    let response = crate::api::check(request.clone());
+    info!(
+        "Type check for query '{}': {} errors found",
+        request.query,
+        response.errors.len()
+    );
+
+    Json(response)
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/format",
+    responses(
+        (status = 200, description = "Format completed", body = FormatApiResponse),
+        (status = 400, description = "Invalid query syntax"),
+    ),
+    request_body = FormatApiRequest
+)]
+pub async fn post_format_api(
+    State(_state): State<AppState>,
+    Json(request): Json<FormatApiRequest>,
+) -> Result<Json<FormatApiResponse>, ProblemDetails> {
+    debug!("POST /format called");
+
+    match crate::api::format_query(request) {
+        Ok(response) => {
+            info!("Format completed successfully");
+            Ok(Json(response))
+        }
+        Err(e) => {
+            error!("Format failed: {}", e);
+            Err(ProblemDetails::new(StatusCode::BAD_REQUEST)
+                .with_title("Format error")
+                .with_detail("error", &e.to_string()))
+        }
+    }
 }
 
 #[utoipa::path(
