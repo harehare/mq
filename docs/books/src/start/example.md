@@ -391,6 +391,88 @@ Use the tool like this.
 
 **Output**: `["Introduction", "Usage"]`
 
+## Table Operations
+
+The table module provides functions for extracting and transforming Markdown tables.
+
+> **Note**: Table functions need all document nodes at once. Use `-A` on the command line, or `nodes` in inline queries. Unlike the section module, `import "table"` must be written explicitly.
+
+### Extract Tables
+
+**`-A` flag** (command line):
+
+```bash
+$ mq -A 'import "table" | table::tables()' README.md
+```
+
+**`import` + `nodes`** (inline query or script):
+
+```mq
+import "table"
+| nodes
+| table::tables()
+```
+
+Table objects are automatically expanded to Markdown nodes in CLI output, so `to_markdown()` is not needed.
+
+> **Note (code usage)**: When using the table module from Rust or other code (not the CLI), table objects are plain dicts and must be explicitly converted with `table::to_markdown()`:
+>
+> ```mq
+> import "table"
+> | nodes
+> | table::tables()
+> | table::to_markdown()
+> ```
+
+**Input example**:
+
+```markdown
+| Name  | Age |
+| ----- | --- |
+| Alice | 30  |
+| Bob   | 25  |
+```
+
+**Output**:
+
+```markdown
+| Name  | Age |
+| ----- | --- |
+| Alice | 30  |
+| Bob   | 25  |
+```
+
+### Add a Row to a Table
+
+```bash
+$ mq -A 'import "table" | table::tables() | first() | table::add_row(["Charlie", "35"])' README.md
+```
+
+**Input example**:
+
+```markdown
+| Name  | Age |
+| ----- | --- |
+| Alice | 30  |
+```
+
+**Output**:
+
+```markdown
+| Name    | Age |
+| ------- | --- |
+| Alice   | 30  |
+| Charlie | 35  |
+```
+
+### Convert Table to CSV
+
+```bash
+$ mq -A 'import "table" | table::tables() | first() | table::to_csv()' README.md
+```
+
+**Output**: Returns the table as a CSV string.
+
 ## Custom Functions and Programming
 
 ### Define Custom Function

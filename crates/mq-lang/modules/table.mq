@@ -62,7 +62,7 @@ def add_row(table, row):
   else: do
       var i = 0
       | let cells = foreach (cell, row):
-              to_md_table_cell(cell, len(table[:rows]), i)
+              to_md_table_cell(cell, len(table[:rows]) + 1, i)
               | i += 1
             end
       | set(table, :rows, table[:rows] + [cells])
