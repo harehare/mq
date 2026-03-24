@@ -715,6 +715,88 @@ impl Cli {
         }
     }
 
+    /// Recursively collects Markdown nodes from a `RuntimeValue`.
+    ///
+    /// Flattens nested `Array` values so that any Markdown nodes contained
+    /// within are returned as a flat list.
+    fn collect_markdown_nodes(value: &mq_lang::RuntimeValue, nodes: &mut Vec<mq_markdown::Node>) {
+        match value {
+            mq_lang::RuntimeValue::Markdown(node, _) => nodes.push(node.clone()),
+            mq_lang::RuntimeValue::Array(items) => {
+                for item in items {
+                    Self::collect_markdown_nodes(item, nodes);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Returns `true` if the dict is a known expandable typed dict (has `type: :symbol`).
+    fn is_typed_dict(map: &std::collections::BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue>) -> bool {
+        let type_key = mq_lang::Ident::new("type");
+        matches!(
+            map.get(&type_key),
+            Some(mq_lang::RuntimeValue::Symbol(s)) if matches!(s.as_str().as_str(), "section")
+        )
+    }
+
+    /// Expands a typed dict (one with `type: :symbol`) into Markdown nodes.
+    ///
+    /// Returns `None` if the dict is not a known expandable type.
+    /// To add support for a new type, add a match arm for the type name.
+    fn expand_typed_dict(
+        map: &std::collections::BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue>,
+    ) -> Option<Vec<mq_markdown::Node>> {
+        let type_key = mq_lang::Ident::new("type");
+        match map.get(&type_key) {
+            Some(mq_lang::RuntimeValue::Symbol(s)) => match s.as_str().as_str() {
+                "section" => {
+                    let mut nodes = Vec::new();
+                    if let Some(header) = map.get(&mq_lang::Ident::new("header")) {
+                        Self::collect_markdown_nodes(header, &mut nodes);
+                    }
+                    if let Some(children) = map.get(&mq_lang::Ident::new("children")) {
+                        Self::collect_markdown_nodes(children, &mut nodes);
+                    }
+                    Some(nodes)
+                }
+                // To add a new expandable type: add a match arm here.
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Converts a `RuntimeValue` into a list of Markdown nodes.
+    ///
+    /// Typed dicts (e.g. `{type: :section, ...}`) are automatically expanded
+    /// to their constituent nodes so users can output section objects directly
+    /// without calling `collect()`. Arrays containing Markdown nodes or typed
+    /// dicts are also expanded and flattened.
+    fn runtime_value_to_nodes(runtime_value: &mq_lang::RuntimeValue) -> Vec<mq_markdown::Node> {
+        match runtime_value {
+            mq_lang::RuntimeValue::Markdown(node, _) => vec![node.clone()],
+            mq_lang::RuntimeValue::Dict(map) => {
+                Self::expand_typed_dict(map).unwrap_or_else(|| vec![runtime_value.to_string().into()])
+            }
+            mq_lang::RuntimeValue::Array(items) => {
+                let has_expandable = items.iter().any(|v| match v {
+                    mq_lang::RuntimeValue::Markdown(_, _) => true,
+                    mq_lang::RuntimeValue::Dict(m) => Self::is_typed_dict(m),
+                    _ => false,
+                });
+                if has_expandable {
+                    items.iter().flat_map(Self::runtime_value_to_nodes).collect()
+                } else if items.is_empty() {
+                    vec![]
+                } else {
+                    vec![runtime_value.to_string().into()]
+                }
+            }
+            _ => vec![runtime_value.to_string().into()],
+        }
+    }
+
     fn print(&self, runtime_values: mq_lang::RuntimeValues) -> miette::Result<()> {
         let stdout = io::stdout();
         let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
@@ -726,15 +808,8 @@ impl Cli {
             Box::new(BufWriter::new(stdout.lock()))
         };
         let runtime_values = runtime_values.values();
-        let mut markdown = mq_markdown::Markdown::new(
-            runtime_values
-                .iter()
-                .map(|runtime_value| match runtime_value {
-                    mq_lang::RuntimeValue::Markdown(node, _) => node.clone(),
-                    _ => runtime_value.to_string().into(),
-                })
-                .collect(),
-        );
+        let mut markdown =
+            mq_markdown::Markdown::new(runtime_values.iter().flat_map(Self::runtime_value_to_nodes).collect());
         markdown.set_options(mq_markdown::RenderOptions {
             list_style: match self.output.list_style.clone() {
                 ListStyle::Dash => mq_markdown::ListStyle::Dash,

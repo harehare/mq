@@ -293,6 +293,13 @@ mq '.code | select(.code.lang != "js")' examples.md
 
 # Convert CSV to markdown table
 mq 'include "csv" | csv_parse(true) | csv_to_markdown_table()' example.csv
+
+# Extract a section by title
+mq -A 'section::section("Installation")' README.md
+
+# Filter sections by heading level (scalar or range)
+mq -A 'section::sections() | section::by_level(2)' README.md
+mq -A 'section::sections() | section::by_level(1..2)' README.md
 ```
 
 ### Advanced Usage

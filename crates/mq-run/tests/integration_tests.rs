@@ -126,6 +126,21 @@ In {year}, the snowfall was above average.
     "# title\n\n## subtitle\n",
     Some("subtitle\n")
 )]
+#[case::section_auto_expand(
+    vec!["--unbuffered", "-A", r#"section::section("Introduction")"#],
+    "# Introduction\n\nBody text.\n\n# Conclusion\n\nConclusion text.\n",
+    Some("# Introduction\n\nBody text.\n")
+)]
+#[case::section_no_match_empty_output(
+    vec!["--unbuffered", "-A", r#"section::section("NonExistent")"#],
+    "# Introduction\n\nBody text.\n",
+    Some("")
+)]
+#[case::section_bodies_pipe(
+    vec!["--unbuffered", "-A", r#"section::section("Introduction") | section::bodies() | first()"#],
+    "# Introduction\n\nBody text.\n",
+    Some("Body text.\n")
+)]
 #[case::capture_named_groups(
     vec!["--unbuffered", "-I", "text", r#"capture("(?P<year>\\d{4})-(?P<month>\\d{2})-(?P<day>\\d{2})")"#],
     "2024-01-15",

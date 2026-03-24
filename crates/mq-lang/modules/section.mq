@@ -2,7 +2,7 @@ def _is_section(section): is_dict(section) && section[:type] == :section;
 
 # Returns sections whose title contains the specified pattern.
 def section(md_nodes, pattern):
-  sections(md_nodes) | title_contains(pattern) | collect()
+  sections(md_nodes) | title_contains(pattern)
 end
 
 # Splits markdown nodes into sections based on headers.
@@ -104,7 +104,13 @@ def title(section):
 end
 
 # Returns the content of a section (all nodes except the header).
+# Deprecated: Use body() instead, as content()
 def content(section):
+  body(section)
+end
+
+# Returns the body of a section (all nodes except the header).
+def body(section):
   if (_is_section(section)):
     section[:children]
   else:
@@ -119,6 +125,25 @@ def all_nodes(section):
     end
   else:
     []
+end
+
+# Filters sections by heading level. l can be a number (exact level) or a range array (e.g. 1..2).
+def by_level(sections, l):
+  if (is_empty(sections)):
+    []
+  else:
+    filter(sections, fn(section):
+      if (_is_section(section)):
+        do
+          let lvl = level(section)
+          | if (is_array(l)):
+              contains(l, lvl)
+            else:
+              lvl == l
+        end
+      else:
+        false
+    end)
 end
 
 # Returns the header level (1-6) of a section.
@@ -152,6 +177,14 @@ def titles(sections):
     []
   else:
     map(sections, title)
+end
+
+# Extracts body from all sections.
+def bodies(sections):
+  if (is_empty(sections)):
+    []
+  else:
+    map(sections, body)
 end
 
 # Generates a table of contents from sections.
@@ -193,9 +226,8 @@ def collect(sections):
   else:
     flat_map(sections, fn(section):
       if (_is_section(section)):
-        [section[:header]] + section[:children]
+        all_nodes(section)
       else:
         section
     end)
 end
-
