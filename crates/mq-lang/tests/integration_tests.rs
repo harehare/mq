@@ -2230,6 +2230,30 @@ fn engine() -> DefaultEngine {
     Ok(vec![RuntimeValue::Array(vec![
         RuntimeValue::Number(1.into()),
     ])].into()))]
+#[case::slice_end_only("let x = [1, 2, 3] | x[:2]",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::Number(1.into()),
+        RuntimeValue::Number(2.into()),
+    ])].into()))]
+#[case::slice_end_only_single("let x = [1, 2, 3] | x[:1]",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::Number(1.into()),
+    ])].into()))]
+#[case::slice_end_only_empty("let x = [1, 2, 3] | x[:0]",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![])].into()))]
+#[case::slice_full_colon("let x = [1, 2, 3] | x[:]",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::Number(1.into()),
+        RuntimeValue::Number(2.into()),
+        RuntimeValue::Number(3.into()),
+    ])].into()))]
+#[case::dict_symbol_access_unchanged("let d = {type: :section} | d[:type]",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Symbol(Ident::new("section"))].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
