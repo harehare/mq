@@ -1688,3 +1688,43 @@ fn test_builtin_mq_has_no_type_errors() {
         type_errors
     );
 }
+
+// ============================================================================
+// `??` (coalesce) operator type checking tests
+// ============================================================================
+
+#[rstest]
+#[case(r#"none ?? "default""#, "none ?? string returns string")]
+#[case(r#""hello" ?? "default""#, "string ?? string returns string")]
+#[case(
+    r#"let v = try: "hello" catch: none; v ?? "fallback""#,
+    "string|none ?? string resolves correctly"
+)]
+#[case(r#"42 ?? 0"#, "number ?? number returns number")]
+fn test_coalesce_operator_no_errors(#[case] code: &str, #[case] desc: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(
+        result.is_empty(),
+        "{}: expected no type errors, got: {:?}",
+        desc,
+        result
+    );
+}
+
+// ============================================================================
+// `..` (range) operator type checking tests
+// ============================================================================
+
+#[rstest]
+#[case("1 .. 5", "literal number range")]
+#[case("let n = 5; 1 .. n", "range with variable end")]
+#[case("let s = 1; let e = 10; s .. e", "range with both variable operands")]
+fn test_range_operator_no_errors(#[case] code: &str, #[case] desc: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(
+        result.is_empty(),
+        "{}: expected no type errors, got: {:?}",
+        desc,
+        result
+    );
+}
