@@ -736,7 +736,7 @@ impl Cli {
         let type_key = mq_lang::Ident::new("type");
         matches!(
             map.get(&type_key),
-            Some(mq_lang::RuntimeValue::Symbol(s)) if matches!(s.as_str().as_str(), "section")
+            Some(mq_lang::RuntimeValue::Symbol(s)) if matches!(s.as_str().as_str(), "section" | "table")
         )
     }
 
@@ -757,6 +757,21 @@ impl Cli {
                     }
                     if let Some(children) = map.get(&mq_lang::Ident::new("children")) {
                         Self::collect_markdown_nodes(children, &mut nodes);
+                    }
+                    Some(nodes)
+                }
+                "table" => {
+                    // Reconstruct table nodes in the same order as table::to_markdown():
+                    // header cells + align row + flattened data rows
+                    let mut nodes = Vec::new();
+                    if let Some(header) = map.get(&mq_lang::Ident::new("header")) {
+                        Self::collect_markdown_nodes(header, &mut nodes);
+                    }
+                    if let Some(align) = map.get(&mq_lang::Ident::new("align")) {
+                        Self::collect_markdown_nodes(align, &mut nodes);
+                    }
+                    if let Some(rows) = map.get(&mq_lang::Ident::new("rows")) {
+                        Self::collect_markdown_nodes(rows, &mut nodes);
                     }
                     Some(nodes)
                 }
