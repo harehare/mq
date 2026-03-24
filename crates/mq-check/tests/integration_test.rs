@@ -1688,3 +1688,63 @@ fn test_builtin_mq_has_no_type_errors() {
         type_errors
     );
 }
+
+#[rstest]
+#[case(r#"none ?? "default""#, true, "none ?? string returns string")]
+#[case(r#""hello" ?? "default""#, true, "string ?? string returns string")]
+#[case(
+    r#"let v = try: "hello" catch: none; v ?? "fallback""#,
+    true,
+    "string|none ?? string resolves correctly"
+)]
+#[case(r#"42 ?? 0"#, true, "number ?? number returns number")]
+#[case(r#""hello" ?? 42"#, false, "string ?? number: type mismatch")]
+#[case(r#"42 ?? "fallback""#, false, "number ?? string: type mismatch")]
+#[case(r#"true ?? 0"#, false, "bool ?? number: type mismatch")]
+#[case(r#"true ?? "str""#, false, "bool ?? string: type mismatch")]
+fn test_coalesce_operator(#[case] code: &str, #[case] should_succeed: bool, #[case] desc: &str) {
+    let result = check_types_with_builtins(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: Code='{}' Errors={:?}",
+        desc,
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case("1 .. 5", true, "literal number range")]
+#[case("let n = 5 | 1 .. n", true, "range with variable end")]
+#[case("let s = 1 | let e = 10 | s .. e", true, "range with both variable operands")]
+#[case(r#""a" .. "z""#, false, "string .. string: non-number operands")]
+#[case(r#""a" .. 5"#, false, "string .. number: left operand is string")]
+#[case(r#"1 .. "z""#, false, "number .. string: right operand is string")]
+#[case(r#"true .. 5"#, false, "bool .. number: left operand is bool")]
+fn test_range_operator(#[case] code: &str, #[case] should_succeed: bool, #[case] desc: &str) {
+    let result = check_types_with_builtins(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: Code='{}' Errors={:?}",
+        desc,
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case("..", true, "standalone recursive selector returns [markdown]")]
+#[case(".h1 | ..", true, "recursive selector after selector returns [markdown]")]
+fn test_recursive_selector(#[case] code: &str, #[case] should_succeed: bool, #[case] desc: &str) {
+    let result = check_types_with_builtins(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: Code='{}' Errors={:?}",
+        desc,
+        code,
+        result
+    );
+}
