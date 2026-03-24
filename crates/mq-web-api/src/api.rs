@@ -81,7 +81,7 @@ pub struct Diagnostic {
 /// Request body for `POST /api/check`.
 #[derive(Deserialize, Serialize, ToSchema, Clone, Debug)]
 pub struct CheckApiRequest {
-    #[schema(example = "upcase | downcase")]
+    #[schema(example = "upcase() | downcase()")]
     pub query: String,
 }
 
