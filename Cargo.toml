@@ -20,14 +20,14 @@ resolver = "3"
 
 [workspace.dependencies]
 # Internal crates
-mq-check = {path = "crates/mq-check", version = "0.5.22"}
-mq-dap = {path = "crates/mq-dap", version = "0.5.22"}
-mq-formatter = {path = "crates/mq-formatter", version = "0.5.22"}
-mq-hir = {path = "crates/mq-hir", version = "0.5.22"}
-mq-lang = {path = "crates/mq-lang", version = "0.5.22"}
-mq-lsp = {path = "crates/mq-lsp", version = "0.5.22"}
-mq-markdown = {path = "crates/mq-markdown", version = "0.5.22"}
-mq-repl = {path = "crates/mq-repl", version = "0.5.22"}
+mq-check = {path = "crates/mq-check", version = "0.5.23"}
+mq-dap = {path = "crates/mq-dap", version = "0.5.23"}
+mq-formatter = {path = "crates/mq-formatter", version = "0.5.23"}
+mq-hir = {path = "crates/mq-hir", version = "0.5.23"}
+mq-lang = {path = "crates/mq-lang", version = "0.5.23"}
+mq-lsp = {path = "crates/mq-lsp", version = "0.5.23"}
+mq-markdown = {path = "crates/mq-markdown", version = "0.5.23"}
+mq-repl = {path = "crates/mq-repl", version = "0.5.23"}
 # External dependencies
 arbitrary = {version = "1.4.2", features = ["derive"]}
 arboard = {version = "3.6.1", default-features = false}
@@ -82,7 +82,6 @@ serde = "1.0"
 serde-wasm-bindgen = "0.6.5"
 serde_json = "1.0"
 serde_yaml = "0.9"
-yaml-rust2 = "0.11.0"
 slotmap = "1.1.1"
 smallvec = "1.15.1"
 smol_str = "0.3.6"
@@ -103,6 +102,7 @@ utoipa = "5.4"
 wasm-bindgen = "0.2.100"
 wasm-bindgen-futures = "0.4.55"
 wasm-bindgen-test = "0.3.64"
+yaml-rust2 = "0.11.0"
 
 [profile.release]
 codegen-units = 1
