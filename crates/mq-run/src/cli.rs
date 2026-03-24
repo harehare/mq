@@ -732,9 +732,7 @@ impl Cli {
     }
 
     /// Returns `true` if the dict is a known expandable typed dict (has `type: :symbol`).
-    fn is_typed_dict(
-        map: &std::collections::BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue>,
-    ) -> bool {
+    fn is_typed_dict(map: &std::collections::BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue>) -> bool {
         let type_key = mq_lang::Ident::new("type");
         matches!(
             map.get(&type_key),
