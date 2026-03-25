@@ -80,8 +80,12 @@ impl fmt::Display for Constraint {
     }
 }
 
-/// Generates type constraints from HIR
-pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
+/// Generates type constraints from HIR.
+///
+/// Returns the children index built during constraint generation so callers can
+/// reuse it in subsequent passes (e.g. exhaustiveness checking) without a
+/// second full O(N) scan of all HIR symbols.
+pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIndex {
     // Build children index once to avoid O(n) scans in get_children()
     let children_index = build_children_index(hir);
 
@@ -166,6 +170,8 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) {
     for symbol_id in &cats.pass4_functions {
         generate_function_body_pipe_constraints(hir, *symbol_id, ctx, &children_index);
     }
+
+    children_index
 }
 
 /// Generates constraints for a single symbol
@@ -1546,7 +1552,7 @@ pub(super) fn generate_symbol_constraints(
             }
         }
 
-        SymbolKind::MatchArm | SymbolKind::Pattern { .. } => {
+        SymbolKind::MatchArm { .. } | SymbolKind::Pattern { .. } => {
             // These are handled by the Match handler below.
             // Assign a fresh type variable as default.
             let ty_var = ctx.fresh_var();

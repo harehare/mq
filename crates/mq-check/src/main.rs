@@ -302,6 +302,9 @@ fn error_title(error: &TypeError) -> String {
             format!("nullable propagation: `{op}` with nullable arg `{nullable_arg}`")
         }
         TypeError::UnreachableCode { reason, .. } => format!("unreachable code: {reason}"),
+        TypeError::NonExhaustiveMatch { missing, .. } => {
+            format!("non-exhaustive patterns: missing case for {missing}")
+        }
     }
 }
 
