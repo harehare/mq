@@ -1913,20 +1913,43 @@ define_builtin!(
             .unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] =>
             Ok(map.get_mut(key).map(std::mem::take).unwrap_or(RuntimeValue::NONE)),
-        [RuntimeValue::Array(array), RuntimeValue::Number(index)] => Ok(array
-            .get_mut(index.value() as usize)
-            .map(std::mem::take)
-            .unwrap_or(RuntimeValue::NONE)),
+        [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
+            let len = array.len();
+            let idx = index.value() as isize;
+            let real_idx = if idx < 0 {
+                (len as isize + idx).max(0) as usize
+            } else {
+                idx as usize
+            };
+            Ok(array
+                .get_mut(real_idx)
+                .map(std::mem::take)
+                .unwrap_or(RuntimeValue::NONE))
+        }
         [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
-            match s.chars().nth(n.value() as usize) {
+            let len = s.chars().count();
+            let idx = n.value() as isize;
+            let real_idx = if idx < 0 {
+                (len as isize + idx).max(0) as usize
+            } else {
+                idx as usize
+            };
+            match s.chars().nth(real_idx) {
                 Some(o) => Ok(o.to_string().into()),
                 None => Ok(RuntimeValue::NONE),
             }
         }
         [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
+            let idx = i.value() as isize;
+            let real_idx = if idx < 0 {
+                let len = node.value().chars().count();
+                (len as isize + idx).max(0) as usize
+            } else {
+                idx as usize
+            };
             Ok(RuntimeValue::Markdown(
                 std::mem::replace(node, mq_markdown::Node::Empty),
-                Some(runtime_value::Selector::Index(i.value() as usize)),
+                Some(runtime_value::Selector::Index(real_idx)),
             ))
         }
         [RuntimeValue::None, _] | [_, RuntimeValue::None] => Ok(RuntimeValue::NONE),

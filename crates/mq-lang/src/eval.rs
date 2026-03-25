@@ -1646,7 +1646,7 @@ mod tests {
     use crate::ast::node::{Args, IdentWithToken, Param};
     use crate::error::runtime::RuntimeError;
     use crate::eval::module::error::ModuleError;
-    use crate::number::{INFINITE, NAN};
+    use crate::number::{INFINITE, NAN, Number};
     use crate::range::Range;
     use crate::{AstExpr, AstNode, DefaultModuleLoader, ModuleLoader, token_alloc};
     use crate::{Token, TokenKind};
@@ -3712,11 +3712,24 @@ mod tests {
             ast_call("get", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(5.into())))])
         ],
         Ok(vec![RuntimeValue::NONE]))]
-    #[case::get_array(vec![RuntimeValue::Array(vec!["test1".to_string().into()])],
+    #[case::get_string(vec![RuntimeValue::String("test1".to_string())],
+        vec![
+            ast_call("get", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(Number::new(-1.0))))])
+        ],
+        Ok(vec![RuntimeValue::String("1".to_string())]))]
+    #[case::get_array(vec![RuntimeValue::Array(vec!["1".to_string().into()])],
         vec![
             ast_call("get", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(2.into())))])
         ],
         Ok(vec![RuntimeValue::NONE]))]
+    #[case::get_array(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("test1".to_string()),
+            RuntimeValue::String("test2".to_string()),
+        ])],
+        vec![
+            ast_call("get", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(Number::new(-1.0))))])
+        ],
+        Ok(vec![RuntimeValue::String("test2".to_string())]))]
     #[case::get(vec![RuntimeValue::TRUE],
         vec![
             ast_call("get", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))])
