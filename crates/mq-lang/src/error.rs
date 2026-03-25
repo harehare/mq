@@ -128,21 +128,15 @@ impl Error {
     }
 }
 
-fn type_name<T>(_: &T) -> &'static str {
-    std::any::type_name::<T>()
-}
-
 impl Diagnostic for Error {
     #[cold]
     fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
-        Some(Box::new(
-            match &self.cause {
-                InnerError::Runtime(e) => type_name(&e),
-                InnerError::Syntax(e) => type_name(&e),
-                InnerError::Module(e) => type_name(&e),
-            }
-            .replace("&mq_lang::", ""),
-        ) as Box<dyn std::fmt::Display>)
+        let code = match &self.cause {
+            InnerError::Runtime(_) => "mq::runtime",
+            InnerError::Syntax(_) => "mq::syntax",
+            InnerError::Module(_) => "mq::module",
+        };
+        Some(Box::new(code) as Box<dyn std::fmt::Display>)
     }
 
     #[cold]
@@ -162,17 +156,17 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::EnvNotFound(_, env)) => Some(Cow::Owned(format!(
                 "Environment variable '{env}' not found. Did you forget to set it?"
             ))),
-            InnerError::Syntax(SyntaxError::UnexpectedToken(_)) => {
-                Some(Cow::Borrowed("Check for syntax errors or misplaced tokens."))
-            }
+            InnerError::Syntax(SyntaxError::UnexpectedToken(_)) => Some(Cow::Borrowed(
+                "This token is not valid here. Check for typos, missing operators, or misplaced punctuation.",
+            )),
             InnerError::Syntax(SyntaxError::UnexpectedEOFDetected(_)) => Some(Cow::Borrowed(
-                "Input ended unexpectedly. Check for missing closing brackets or incomplete expressions.",
+                "Unexpected end of input. Check for missing closing brackets, parentheses, or incomplete expressions.",
             )),
             InnerError::Syntax(SyntaxError::InsufficientTokens(_)) => Some(Cow::Borrowed(
-                "Not enough tokens to complete parsing. Check for missing arguments or delimiters.",
+                "Parsing could not continue here. Check for missing arguments, operators, or mismatched delimiters.",
             )),
             InnerError::Syntax(SyntaxError::UnknownSelector(_)) => Some(Cow::Borrowed(
-                "Unknown selector used. Verify that the selector is valid.",
+                "Unknown selector. Valid selectors include node types (e.g. .h1, .p, .code) and bracket access (e.g. .[0], .[n][m]).",
             )),
             InnerError::Syntax(SyntaxError::ExpectedClosingParen(_)) => Some(Cow::Borrowed(
                 "Expected a closing parenthesis ')'. Check your parentheses for balance.",
@@ -186,11 +180,8 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::InvalidAssignmentTarget(_)) => Some(Cow::Borrowed(
                 "Invalid assignment target. Ensure you're assigning to a valid variable or property.",
             )),
-            InnerError::Syntax(SyntaxError::MacroParamsMustBeIdents(_)) => Some(Cow::Borrowed(
-                "Macro parameters must be identifiers. Check your macro definition.",
-            )),
             InnerError::Syntax(SyntaxError::ParameterWithoutDefaultAfterDefault(_)) => Some(Cow::Borrowed(
-                "Parameters with default values must come after all parameters without defaults.",
+                "Move this parameter before any parameters that have default values, or give it a default value.",
             )),
             InnerError::Syntax(SyntaxError::MacroParametersCannotHaveDefaults(_)) => {
                 Some(Cow::Borrowed("Macro parameters cannot have default values."))
@@ -263,17 +254,17 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::UnexpectedContinue(_)) => {
                 Some(Cow::Borrowed("'continue' can only be used inside a loop."))
             }
-            InnerError::Runtime(RuntimeError::EnvNotFound(..)) => {
-                Some(Cow::Borrowed("Environment variable not found during evaluation."))
-            }
+            InnerError::Runtime(RuntimeError::EnvNotFound(_, env)) => Some(Cow::Owned(format!(
+                "Environment variable '{env}' not found. Did you forget to set it?"
+            ))),
             InnerError::Runtime(RuntimeError::QuoteNotAllowedInRuntimeContext(_)) => Some(Cow::Borrowed(
                 "quote() is not allowed in runtime context. It should only appear inside macros.",
             )),
             InnerError::Runtime(RuntimeError::UnquoteNotAllowedOutsideQuote(_)) => {
                 Some(Cow::Borrowed("unquote() can only be used inside quote()."))
             }
-            InnerError::Runtime(RuntimeError::InvalidConvert(format, _)) => Some(Cow::Owned(format!(
-                "Invalid conversion format '{format}'. Check that this conversion is supported and that the value types match the expected types."
+            InnerError::Runtime(RuntimeError::InvalidConvert(_, msg)) => Some(Cow::Owned(format!(
+                "Invalid conversion: {msg}. Check that the conversion is supported and value types match."
             ))),
             InnerError::Module(ModuleError::NotFound(name)) => Some(Cow::Owned(format!(
                 "Module '{name}' not found. Check the module name or path."
@@ -287,49 +278,48 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::EnvNotFound(_, env))) => {
                 Some(Cow::Owned(format!("Environment variable '{env}' not found in module.")))
             }
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedToken(_))) => {
-                Some(Cow::Borrowed("Parse error in module: unexpected token."))
-            }
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedEOFDetected(_))) => {
-                Some(Cow::Borrowed("Parse error in module: unexpected end of file."))
-            }
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::InsufficientTokens(_))) => {
-                Some(Cow::Borrowed("Parse error in module: insufficient tokens."))
-            }
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBracket(_))) => {
-                Some(Cow::Borrowed("Parse error in module: expected closing bracket ']'."))
-            }
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBrace(_))) => {
-                Some(Cow::Borrowed("Parse error in module: expected closing brace '}'."))
-            }
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingParen(_))) => Some(Cow::Borrowed(
-                "Parse error in module: expected closing parenthesis ')'.",
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedToken(_))) => Some(Cow::Borrowed(
+                "This token is not valid here. Check for typos, missing operators, or misplaced punctuation.",
             )),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::InvalidAssignmentTarget(_))) => {
-                Some(Cow::Borrowed("Parse error in module: invalid assignment target."))
-            }
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnknownSelector(_))) => {
-                Some(Cow::Borrowed("Parse error in module: unknown selector used."))
-            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedEOFDetected(_))) => Some(Cow::Borrowed(
+                "Unexpected end of input. Check for missing closing brackets, parentheses, or incomplete expressions.",
+            )),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::InsufficientTokens(_))) => Some(Cow::Borrowed(
+                "Parsing could not continue here. Check for missing arguments, operators, or mismatched delimiters.",
+            )),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBracket(_))) => Some(
+                Cow::Borrowed("Expected a closing bracket ']'. Check your brackets for balance."),
+            ),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBrace(_))) => Some(Cow::Borrowed(
+                "Expected a closing brace '}'. Check your braces for balance.",
+            )),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingParen(_))) => Some(Cow::Borrowed(
+                "Expected a closing parenthesis ')'. Check your parentheses for balance.",
+            )),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::InvalidAssignmentTarget(_))) => Some(
+                Cow::Borrowed("Invalid assignment target. Ensure you're assigning to a valid variable or property."),
+            ),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnknownSelector(_))) => Some(Cow::Borrowed(
+                "Unknown selector. Valid selectors include node types (e.g. .h1, .p, .code) and bracket access (e.g. .[0], .[n][m]).",
+            )),
             InnerError::Module(ModuleError::InvalidModule) => Some(Cow::Borrowed("Invalid module format or content.")),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParamsMustBeIdents(_))) => Some(
-                Cow::Borrowed("Parse error in module: macro parameters must be identifiers."),
-            ),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ParameterWithoutDefaultAfterDefault(_))) => Some(
-                Cow::Borrowed("Parse error in module: parameters with defaults must come after parameters without."),
-            ),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotHaveDefaults(_))) => Some(
-                Cow::Borrowed("Parse error in module: macro parameters cannot have default values."),
-            ),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ParameterWithoutDefaultAfterDefault(_))) => {
+                Some(Cow::Borrowed(
+                    "Move this parameter before any parameters that have default values, or give it a default value.",
+                ))
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotHaveDefaults(_))) => {
+                Some(Cow::Borrowed("Macro parameters cannot have default values."))
+            }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::VariadicParameterMustBeLast(_))) => Some(
-                Cow::Borrowed("Parse error in module: variadic parameter must be the last parameter."),
+                Cow::Borrowed("Variadic parameter (*) must be the last parameter in the parameter list."),
             ),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::MultipleVariadicParameters(_))) => Some(
-                Cow::Borrowed("Parse error in module: only one variadic parameter is allowed."),
+                Cow::Borrowed("Only one variadic parameter (*) is allowed per function."),
             ),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotBeVariadic(_))) => Some(
-                Cow::Borrowed("Parse error in module: macro parameters cannot be variadic."),
-            ),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotBeVariadic(_))) => {
+                Some(Cow::Borrowed("Macro parameters cannot be variadic."))
+            }
             InnerError::Runtime(RuntimeError::UndefinedMacro(_)) => {
                 Some(Cow::Borrowed("Macro expansion error: undefined macro used."))
             }
@@ -355,8 +345,21 @@ impl Diagnostic for Error {
 
     #[cold]
     fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
+        let label = match &self.cause {
+            InnerError::Syntax(SyntaxError::UnexpectedToken(_)) => "unexpected token",
+            InnerError::Syntax(SyntaxError::InsufficientTokens(_)) => "expression incomplete here",
+            InnerError::Syntax(SyntaxError::ExpectedClosingParen(_)) => "expected `)` here",
+            InnerError::Syntax(SyntaxError::ExpectedClosingBrace(_)) => "expected `}` here",
+            InnerError::Syntax(SyntaxError::ExpectedClosingBracket(_)) => "expected `]` here",
+            InnerError::Syntax(SyntaxError::InvalidAssignmentTarget(_)) => "invalid assignment target",
+            InnerError::Syntax(SyntaxError::UnknownSelector(_)) => "unknown selector",
+            InnerError::Syntax(SyntaxError::EnvNotFound(_, _)) => "environment variable not found",
+            InnerError::Syntax(_) => "syntax error here",
+            InnerError::Runtime(_) => "error occurred here",
+            InnerError::Module(_) => "module error here",
+        };
         Some(Box::new(std::iter::once(miette::LabeledSpan::new_with_span(
-            Some(format!("{}", self.cause)),
+            Some(label.to_string()),
             self.location,
         ))))
     }
@@ -810,5 +813,75 @@ mod test {
         // code() and help() must not panic
         let _ = error.code();
         let _ = error.help();
+    }
+
+    #[test]
+    fn test_code_shows_category() {
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let runtime_error = Error::from_error(
+            "source code",
+            InnerError::Runtime(RuntimeError::ZeroDivision(Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            })),
+            module_loader.clone(),
+        );
+        assert_eq!(
+            runtime_error.code().map(|c| c.to_string()),
+            Some("mq::runtime".to_string())
+        );
+
+        let syntax_error = Error::from_error(
+            "source code",
+            InnerError::Syntax(SyntaxError::UnexpectedToken(Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            })),
+            module_loader,
+        );
+        assert_eq!(
+            syntax_error.code().map(|c| c.to_string()),
+            Some("mq::syntax".to_string())
+        );
+    }
+
+    #[test]
+    fn test_env_not_found_help_includes_name() {
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let cause = InnerError::Runtime(RuntimeError::EnvNotFound(
+            Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            "MY_VAR".into(),
+        ));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert_eq!(
+            help,
+            Some("Environment variable 'MY_VAR' not found. Did you forget to set it?".to_string())
+        );
+    }
+
+    #[test]
+    fn test_invalid_convert_help_shows_message() {
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let cause = InnerError::Runtime(RuntimeError::InvalidConvert(
+            Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            "cannot convert array to string".to_string(),
+        ));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert!(
+            help.as_deref().unwrap_or("").contains("cannot convert array to string"),
+            "help text should contain the conversion message, got: {help:?}"
+        );
     }
 }

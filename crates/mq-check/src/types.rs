@@ -57,6 +57,12 @@ pub enum Type {
     RowEmpty,
     /// Type variable for inference
     Var(TypeVarId),
+    /// Never type (bottom type) — represents unreachable code paths.
+    ///
+    /// Produced when type narrowing eliminates all possible types from a union.
+    /// For example, `Union(Array(String), Array(Number))` minus `is_array` predicate
+    /// leaves no viable types, producing `Never` for the else-branch.
+    Never,
 }
 
 impl Type {
@@ -128,6 +134,8 @@ impl Type {
     ///
     /// If this is not a union, returns self unchanged.
     /// If only one type remains after subtraction, returns it directly (unwrapped).
+    /// If all members are removed (e.g., `Union(Array(String), Array(Number))` minus
+    /// `Array`), returns `Type::Never` to signal an unreachable code path.
     pub fn subtract(&self, exclude: &Type) -> Type {
         match self {
             Type::Union(members) => {
@@ -137,13 +145,27 @@ impl Type {
                     .cloned()
                     .collect();
                 if remaining.is_empty() {
-                    self.clone()
+                    Type::Never
                 } else {
                     Type::union(remaining)
                 }
             }
             _ => self.clone(),
         }
+    }
+
+    /// Checks if this type is nullable (is `None` or a `Union` containing `None`).
+    pub fn is_nullable(&self) -> bool {
+        match self {
+            Type::None => true,
+            Type::Union(members) => members.iter().any(|m| matches!(m, Type::None)),
+            _ => false,
+        }
+    }
+
+    /// Checks if this is the bottom type (never/unreachable).
+    pub fn is_never(&self) -> bool {
+        matches!(self, Type::Never)
     }
 
     /// Returns a numeric discriminant for ordering purposes.
@@ -166,6 +188,7 @@ impl Type {
             Type::Record(_, _) => 13,
             Type::RowEmpty => 14,
             Type::Var(_) => 15,
+            Type::Never => 16,
         }
     }
 
@@ -214,6 +237,7 @@ impl Type {
                 let new_fields = fields.iter().map(|(k, v)| (k.clone(), v.apply_subst(subst))).collect();
                 Type::Record(new_fields, Box::new(rest.apply_subst(subst)))
             }
+            // Never and other ground types have no type variables to substitute
             _ => self.clone(),
         }
     }
@@ -251,6 +275,9 @@ impl Type {
     /// Type variables always match.
     pub fn can_match(&self, other: &Type) -> bool {
         match (self, other) {
+            // Never (bottom type) can match anything
+            (Type::Never, _) | (_, Type::Never) => true,
+
             // Type variables always match
             (Type::Var(_), _) | (_, Type::Var(_)) => true,
 
@@ -327,6 +354,9 @@ impl Type {
     /// - All other cases mirror `can_match`
     pub fn can_branch_unify_with(&self, other: &Type) -> bool {
         match (self, other) {
+            // Never (bottom type) can unify with anything
+            (Type::Never, _) | (_, Type::Never) => true,
+
             // Two type variables are compatible (unification will sort them out)
             (Type::Var(_), Type::Var(_)) => true,
 
@@ -391,6 +421,9 @@ impl Type {
         }
 
         match (self, other) {
+            // Never (bottom type) can match anything but with lowest score
+            (Type::Never, _) | (_, Type::Never) => Some(1),
+
             // Exact matches get highest score
             (Type::Int, Type::Int)
             | (Type::Float, Type::Float)
@@ -539,6 +572,7 @@ impl Type {
                 // Convert TypeVarId to a readable name like 'a, 'b, 'c, etc.
                 type_var_name(*id)
             }
+            Type::Never => "never".to_string(),
         }
     }
 
@@ -615,6 +649,7 @@ impl Type {
                 }
             }
             Type::RowEmpty => "{}".to_string(),
+            Type::Never => "never".to_string(),
             Type::Var(id) => {
                 let index = *var_map.entry(*id).or_insert_with(|| {
                     let i = *counter;

@@ -57,8 +57,20 @@ pub(super) fn generate_block_constraints(
     // e.g., `x | !is_empty()` — piped input flows through `!` to `is_empty()`
     propagate_piped_input_through_unary_ops(hir, children, ctx, children_index);
 
-    // The Block's type is the last child's type
-    let last_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
+    // The Block's type is the last meaningful (non-Keyword) child's type.
+    // Keyword children like `end` are syntax delimiters with no semantic type;
+    // using them would give a fresh Var that later gets unified away, losing
+    // type information (e.g., the None possibility from a while-loop result).
+    let last_meaningful = children
+        .iter()
+        .rev()
+        .find(|&&id| {
+            hir.symbol(id)
+                .map(|s| !matches!(s.kind, SymbolKind::Keyword))
+                .unwrap_or(true)
+        })
+        .unwrap_or_else(|| children.last().unwrap());
+    let last_ty = ctx.get_or_create_symbol_type(*last_meaningful);
     ctx.set_symbol_type(symbol_id, last_ty);
 }
 
@@ -84,6 +96,19 @@ pub(super) fn generate_function_body_pipe_constraints(
                 .unwrap_or(false)
         })
         .collect();
+
+    // Connect the function's declared return type variable to the last body expression type.
+    // This is the key HM inference step: without it, user-defined function return types remain
+    // as free type variables and `propagate_user_call_returns` cannot resolve them, making
+    // cross-function type errors (e.g. `c() + 1` where c returns Bool) invisible.
+    if let Some(&last_body_id) = body_children.last() {
+        let body_ty = ctx.get_or_create_symbol_type(last_body_id);
+        let func_ty = ctx.get_or_create_symbol_type(symbol_id);
+        if let Type::Function(_, ret_ty) = func_ty {
+            let range = get_symbol_range(hir, symbol_id);
+            ctx.add_constraint(Constraint::Equal(*ret_ty, body_ty, range, ConstraintOrigin::General));
+        }
+    }
 
     if body_children.len() <= 1 {
         return;

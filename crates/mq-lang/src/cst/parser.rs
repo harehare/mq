@@ -564,6 +564,10 @@ impl<'a> Parser<'a> {
             }
 
             node.children = children;
+            // Check for bracket access after qualified access (e.g., module::func()[:1])
+            if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
+                return self.parse_bracket_access(node);
+            }
             return Ok(Shared::new(node));
         }
 
@@ -652,12 +656,20 @@ impl<'a> Parser<'a> {
         // Parse bracket access: ident[key] -> get(ident, key) or ident[start:end] -> slice(ident, start, end)
         children.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LBracket), NodeKind::Token)?);
 
-        // Parse the first expression
-        let first_expr = self.parse_expr(Vec::new(), false, false)?;
-        children.push(first_expr);
+        // Check for [:N] or [:] style slice (empty start index).
+        // [:ident] and [:string] are dict key accesses using a symbol, not slices.
+        let is_slice_from_start =
+            self.try_next_token(|kind| matches!(kind, TokenKind::Colon)) && !self.is_symbol_after_colon();
+
+        if !is_slice_from_start {
+            // Parse the first expression
+            let first_expr = self.parse_expr(Vec::new(), false, false)?;
+            children.push(first_expr);
+        }
 
         // Check if this is a slice operation (contains ':')
-        let is_slice = matches!(self.peek(), Some(token) if matches!(token.kind, TokenKind::Colon));
+        let is_slice =
+            is_slice_from_start || matches!(self.peek(), Some(token) if matches!(token.kind, TokenKind::Colon));
 
         if is_slice {
             // Add the colon token
@@ -2038,6 +2050,47 @@ impl<'a> Parser<'a> {
             .get(self.pos)
             .map(|t| match_token_kind(&t.kind))
             .unwrap_or(false);
+        self.pos = saved_pos;
+        result
+    }
+
+    /// Returns true if the token immediately following the next `:` is an identifier or string
+    /// literal, indicating a dict key access using a symbol (e.g., `dict[:key]`).
+    fn is_symbol_after_colon(&mut self) -> bool {
+        let saved_pos = self.pos;
+        // Skip leading trivia to reach ':'
+        while let Some(token) = self.tokens.get(self.pos) {
+            if matches!(
+                token.kind,
+                TokenKind::Whitespace(_) | TokenKind::Tab(_) | TokenKind::Comment(_) | TokenKind::NewLine
+            ) {
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+        // Consume the ':' itself
+        if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Colon)) {
+            self.pos += 1;
+        } else {
+            self.pos = saved_pos;
+            return false;
+        }
+        // Skip trivia after ':'
+        while let Some(token) = self.tokens.get(self.pos) {
+            if matches!(
+                token.kind,
+                TokenKind::Whitespace(_) | TokenKind::Tab(_) | TokenKind::Comment(_) | TokenKind::NewLine
+            ) {
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+        let result = self
+            .tokens
+            .get(self.pos)
+            .is_some_and(|t| matches!(t.kind, TokenKind::Ident(_) | TokenKind::StringLiteral(_)));
         self.pos = saved_pos;
         result
     }

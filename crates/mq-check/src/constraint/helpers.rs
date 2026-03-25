@@ -408,13 +408,15 @@ fn collect_break_types_inner(
         return false;
     }
     if matches!(symbol.kind, SymbolKind::Keyword) && symbol.value.as_deref() == Some("break") {
-        // Only include `break: value` (has a value child), not bare `break`.
         let children = get_children(children_index, symbol_id);
         if !children.is_empty() {
+            // `break: value` — carries the value's type.
             result.push(ctx.get_or_create_symbol_type(symbol_id));
-            return true;
+        } else {
+            // bare `break` (no value) — the loop exits returning `none`.
+            result.push(Type::None);
         }
-        return false; // bare break — no value, never recurse
+        return true;
     }
     if matches!(symbol.kind, SymbolKind::If) {
         let children = get_children(children_index, symbol_id);

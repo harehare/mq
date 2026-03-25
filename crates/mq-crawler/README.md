@@ -29,6 +29,24 @@ Make web scraping and content extraction effortless with intelligent Markdown co
 
 ## Installation
 
+### Quick Install (Recommended)
+
+```bash
+curl -sSL https://mqlang.org/install_crawler.sh | bash
+```
+
+The installer will:
+- Download the latest `mq-crawl` binary for your platform
+- Install it to `~/.mq/bin/`
+- Verify the checksum of the downloaded binary
+- Update your shell profile to add `mq-crawl` to your PATH
+
+After installation, restart your terminal or source your shell profile, then verify:
+
+```bash
+mq-crawl --version
+```
+
 ### Homebrew
 
 ```sh

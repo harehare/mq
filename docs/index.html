@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -64,8 +64,15 @@
         color: var(--text-primary);
         display: flex;
         flex-direction: column;
-        font-family: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI",
-          "Noto Sans", Helvetica, Arial, sans-serif;
+        font-family:
+          "Montserrat",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "Noto Sans",
+          Helvetica,
+          Arial,
+          sans-serif;
         font-weight: 400;
         line-height: 1.6;
         min-height: 100vh;
@@ -288,7 +295,8 @@
       .cta {
         background-color: #67b8e3;
         border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(103, 184, 227, 0.2),
+        box-shadow:
+          0 2px 8px rgba(103, 184, 227, 0.2),
           0 1px 3px rgba(0, 0, 0, 0.1);
         color: #1e293b;
         display: inline-block;
@@ -300,7 +308,8 @@
       }
       .cta:hover {
         background-color: #4fc3f7;
-        box-shadow: 0 4px 12px rgba(103, 184, 227, 0.35),
+        box-shadow:
+          0 4px 12px rgba(103, 184, 227, 0.35),
           0 2px 6px rgba(0, 0, 0, 0.15);
         transform: translateY(-2px);
       }
@@ -848,7 +857,7 @@
             <h1 class="title">mq</h1>
           </div>
           <p class="subtitle">
-            jq-like command-line tool for markdown processing
+            A jq-like Markdown query language for command-line processing
           </p>
           <div class="cta-container">
             <a
@@ -879,21 +888,26 @@
                 class="link-item"
                 target="_blank"
               >
-                <span class="link-icon">📚</span> Documentation
+                Documentation
               </a>
               <a
                 href="https://mqlang.org/playground"
                 class="link-item"
                 target="_blank"
               >
-                <span class="link-icon">🎮</span> Playground
+                Playground
               </a>
             </div>
 
             <div class="demo-section">
               <div class="demo-gif-wrapper">
                 <div class="demo-placeholder">
-                  <img src="demo.gif" alt="mq demo" class="demo-gif" loading="lazy" />
+                  <img
+                    src="demo.gif"
+                    alt="mq demo"
+                    class="demo-gif"
+                    loading="lazy"
+                  />
                 </div>
               </div>
             </div>
@@ -902,45 +916,9 @@
       </div>
     </section>
 
-    <section id="install">
-      <div class="container">
-        <h2>🚀 Installation</h2>
-        <div class="install-box">
-          <div class="install-tabs">
-            <button class="tab-button active" data-platform="linux">
-              Linux
-            </button>
-            <button class="tab-button" data-platform="macos">macOS</button>
-            <button class="tab-button" data-platform="windows">Windows</button>
-          </div>
-
-          <div id="linux" class="tab-content active">
-            <div class="code-block">
-              <code>curl -sSL https://mqlang.org/install.sh | bash</code>
-              <button class="copy-button" onclick="copyCode(this)">Copy</button>
-            </div>
-          </div>
-
-          <div id="macos" class="tab-content">
-            <div class="code-block">
-              <code>brew install mq</code>
-              <button class="copy-button" onclick="copyCode(this)">Copy</button>
-            </div>
-          </div>
-
-          <div id="windows" class="tab-content">
-            <div class="code-block">
-              <code>Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/latest/download/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"</code>
-              <button class="copy-button" onclick="copyCode(this)">Copy</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <section id="why-mq">
       <div class="container">
-        <h2>🤔 Why mq?</h2>
+        <h2>Why mq?</h2>
         <p class="section-intro">
           mq makes working with Markdown files as easy as jq makes working with
           JSON. It's especially useful for:
@@ -997,7 +975,7 @@
 
     <section id="features">
       <div class="container">
-        <h2>✨ Features</h2>
+        <h2>Features</h2>
         <div class="features-grid">
           <div class="feature-item">
             <span class="feature-icon">🔍</span>
@@ -1051,10 +1029,10 @@
     <!-- Existing Examples section follows -->
     <section id="examples">
       <div class="container">
-        <h2>📝 Examples</h2>
+        <h2>Examples</h2>
         <div class="interactive-demo">
           <div class="terminal-header">
-            <span class="terminal-title">[mq playground]</span>
+            <span class="terminal-title">mq</span>
             <span class="terminal-status">Press Enter to run</span>
           </div>
           <div class="terminal-body">
@@ -1102,7 +1080,9 @@
 
     <script>
       function copyCode(button) {
-        const code = button.previousElementSibling.innerText.replace(/\s+/g, ' ').trim();
+        const code = button.previousElementSibling.innerText
+          .replace(/\s+/g, " ")
+          .trim();
         navigator.clipboard.writeText(code).then(() => {
           const originalText = button.innerText;
           button.innerText = "Copied!";
@@ -1140,7 +1120,7 @@
           tabButtons.forEach((btn) => {
             btn.classList.toggle(
               "active",
-              btn.getAttribute("data-platform") === platformId
+              btn.getAttribute("data-platform") === platformId,
             );
           });
           tabContents.forEach((content) => {
@@ -1195,7 +1175,8 @@ More content.`;
           return;
         }
 
-        output.textContent = "Running query... Waiting for a response from the Web API.";
+        output.textContent =
+          "Running query... Waiting for a response from the Web API.";
         output.className = "demo-output demo-loading";
         isRunning = true;
 
@@ -1214,7 +1195,7 @@ More content.`;
           if (!response.ok) {
             const errorText = await response.text();
             throw new Error(
-              `HTTP ${response.status}: ${errorText || response.statusText}`
+              `HTTP ${response.status}: ${errorText || response.statusText}`,
             );
           }
 
@@ -1273,4 +1254,3 @@ More content.`;
     </footer>
   </body>
 </html>
-

@@ -427,10 +427,14 @@ pub(crate) fn analyze_condition(
 ///
 /// Builds a def→refs index and a branch→descendants index in single HIR passes to
 /// allow O(1) containment checks instead of O(depth) ancestor walks per (ref, branch) pair.
-pub(crate) fn resolve_type_narrowings(hir: &Hir, ctx: &mut InferenceContext) {
+///
+/// Returns a list of `(reason, range)` pairs for dead branches detected by type analysis.
+/// A dead branch is one whose condition is always false (or always true) based on the
+/// statically known type of the variable.
+pub(crate) fn resolve_type_narrowings(hir: &Hir, ctx: &mut InferenceContext) -> Vec<(String, Option<mq_lang::Range>)> {
     let narrowings = ctx.take_type_narrowings();
     if narrowings.is_empty() {
-        return;
+        return Vec::new();
     }
 
     // Build a set of Ref symbol IDs that have at least one Selector child
@@ -486,9 +490,17 @@ pub(crate) fn resolve_type_narrowings(hir: &Hir, ctx: &mut InferenceContext) {
         }
     }
 
+    let mut dead_branches: Vec<(String, Option<mq_lang::Range>)> = Vec::new();
+
     for narrowing in &narrowings {
-        // Apply then-branch narrowings
+        // Apply then-branch narrowings, and detect always-false conditions.
         for entry in &narrowing.then_narrowings {
+            // Dead code detection: concrete (non-union, non-var) variable type that
+            // doesn't match the predicate type → then-branch is always false.
+            if let Some(dead_reason) = detect_dead_then_branch(ctx, entry, narrowing.then_branch_id, hir) {
+                dead_branches.push(dead_reason);
+            }
+
             if let Some(effective_ty) = compute_narrowed_type(ctx, entry) {
                 apply_narrowing_to_branch(
                     ctx,
@@ -501,31 +513,53 @@ pub(crate) fn resolve_type_narrowings(hir: &Hir, ctx: &mut InferenceContext) {
             }
         }
 
-        // Apply else-branch narrowings
+        // Apply else-branch narrowings, and detect unreachable else-branches.
+        // An else-branch is unreachable when narrowing a union type produces `Type::Never`
+        // (all possible union members match the predicate, so the else-branch can never run).
         for entry in &narrowing.else_narrowings {
             if let Some(effective_ty) = compute_narrowed_type(ctx, entry) {
-                for &else_branch_id in &narrowing.else_branch_ids {
-                    apply_narrowing_to_branch(
-                        ctx,
-                        entry.def_id,
-                        &effective_ty,
-                        else_branch_id,
-                        &def_to_refs,
-                        &branch_descendants,
-                    );
+                if effective_ty.is_never() {
+                    // All union members are covered by the predicate → else-branch is unreachable.
+                    let var_name = hir
+                        .symbol(entry.def_id)
+                        .and_then(|s| s.value.as_deref())
+                        .unwrap_or("the variable");
+                    for &else_branch_id in &narrowing.else_branch_ids {
+                        let range = hir.symbol(else_branch_id).and_then(|s| s.source.text_range);
+                        dead_branches.push((
+                            format!(
+                                "else-branch is unreachable: all possible types of `{}` match the predicate",
+                                var_name
+                            ),
+                            range,
+                        ));
+                    }
+                } else {
+                    for &else_branch_id in &narrowing.else_branch_ids {
+                        apply_narrowing_to_branch(
+                            ctx,
+                            entry.def_id,
+                            &effective_ty,
+                            else_branch_id,
+                            &def_to_refs,
+                            &branch_descendants,
+                        );
+                    }
                 }
             }
         }
     }
+
+    dead_branches
 }
 
 /// Computes the effective narrowed type for a NarrowingEntry.
 ///
-/// - For union types: then-branch returns the predicate type directly; else-branch
-///   subtracts the predicate type from the union.
-/// - For non-union types: then-branch returns the predicate type directly (useful when
-///   the variable has an unresolved type variable or a non-union concrete type); else-branch
-///   returns `None` (no useful narrowing — keep the original type).
+/// - For union types with complement: subtracts the predicate type from the union
+///   (may produce `Type::Never` when all union members are eliminated).
+/// - For union types without complement: returns the predicate type directly.
+/// - For non-union types: then-branch returns the predicate type directly;
+///   else-branch complement returns `None` (nothing to subtract from a concrete type).
 fn compute_narrowed_type(ctx: &InferenceContext, entry: &NarrowingEntry) -> Option<Type> {
     let var_ty = ctx.get_symbol_type(entry.def_id)?;
     let var_ty = ctx.resolve_type(var_ty);
@@ -544,6 +578,62 @@ fn compute_narrowed_type(ctx: &InferenceContext, entry: &NarrowingEntry) -> Opti
         } else {
             Some(entry.narrowed_type.clone())
         }
+    }
+}
+
+/// Detects when a then-branch condition is always false.
+///
+/// Returns `Some((reason, range))` when:
+/// - The variable has a concrete (non-union, non-var) type, AND
+/// - The predicate type doesn't match the variable's type —
+///   the then-branch is never reachable.
+///
+/// Skips function parameters: parameters are polymorphic (they can accept
+/// multiple types at different call sites), so the type checker's inferred
+/// concrete type for a parameter reflects only the observed usage and should
+/// not be used to declare predicate checks on parameters as dead.
+fn detect_dead_then_branch(
+    ctx: &InferenceContext,
+    entry: &NarrowingEntry,
+    then_branch_id: SymbolId,
+    hir: &Hir,
+) -> Option<(String, Option<mq_lang::Range>)> {
+    if entry.is_complement {
+        return None;
+    }
+
+    // Skip parameters — they are polymorphic; the inferred concrete type only
+    // reflects observed usage and must not cause predicate checks to be flagged
+    // as dead code.
+    if hir
+        .symbol(entry.def_id)
+        .is_some_and(|s| matches!(s.kind, SymbolKind::Parameter))
+    {
+        return None;
+    }
+
+    let var_ty = ctx.get_symbol_type(entry.def_id)?;
+    let var_ty = ctx.resolve_type(var_ty);
+
+    // Only detect for fully concrete, non-union types
+    if var_ty.is_var() || var_ty.is_union() || var_ty.is_never() {
+        return None;
+    }
+
+    let types_match = std::mem::discriminant(&var_ty) == std::mem::discriminant(&entry.narrowed_type);
+
+    if !types_match {
+        let range = hir.symbol(then_branch_id).and_then(|s| s.source.text_range);
+        Some((
+            format!(
+                "condition is always false: variable has type `{}`, predicate tests for `{}`",
+                var_ty.display_renumbered(),
+                entry.narrowed_type.display_renumbered()
+            ),
+            range,
+        ))
+    } else {
+        None
     }
 }
 

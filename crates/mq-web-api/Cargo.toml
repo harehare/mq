@@ -10,7 +10,7 @@ name = "mq-web-api"
 publish = false
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.20"
+version = "0.5.23"
 
 [dependencies]
 async-trait = {workspace = true}
@@ -18,8 +18,11 @@ axum = {workspace = true}
 deadpool-libsql = {workspace = true}
 libsql = {workspace = true}
 miette = {workspace = true}
+mq-check = {workspace = true}
+mq-formatter = {workspace = true}
+mq-hir = {workspace = true}
 mq-lang = {workspace = true, features = ["cst"]}
-mq-markdown = {workspace = true}
+mq-markdown = {workspace = true, features = ["json"]}
 serde = {workspace = true, features = ["derive"]}
 serde_json = {workspace = true}
 thiserror = {workspace = true}

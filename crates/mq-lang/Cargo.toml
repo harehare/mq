@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-lang"
 readme = "../../README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.20"
+version = "0.5.23"
 
 [dependencies]
 base64 = {workspace = true}
@@ -27,6 +27,7 @@ ropey = {workspace = true, optional = true}
 rustc-hash = {workspace = true}
 serde = {workspace = true, features = ["derive", "rc"]}
 serde_json = {workspace = true}
+yaml-rust2 = {workspace = true}
 smallvec = {workspace = true}
 smol_str = {workspace = true}
 string-interner = {workspace = true}

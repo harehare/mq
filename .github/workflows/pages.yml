@@ -4,8 +4,8 @@ on:
   push:
     branches: ["main"]
     paths:
-      - 'docs/**'
-      - 'packages/mq-playground/**'
+      - "docs/**"
+      - "packages/mq-playground/**"
   workflow_dispatch:
 
 permissions:
@@ -48,6 +48,7 @@ jobs:
         run: |
           cp ./scripts/install.sh ./docs
           cp ./scripts/install_lsp.sh ./docs
+          cp ./scripts/install_crawler.sh ./docs
       - name: Replace env vars
         env:
           API_URL: ${{ secrets.API_URL }}

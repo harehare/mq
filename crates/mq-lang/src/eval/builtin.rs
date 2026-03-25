@@ -1422,6 +1422,22 @@ define_builtin!(
     |_, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] =>
             Ok(node.attr(attr).map(Into::into).unwrap_or(RuntimeValue::NONE)),
+        [RuntimeValue::Array(nodes), RuntimeValue::String(attr)] => Ok(nodes
+            .iter_mut()
+            .flat_map(|node| match node {
+                RuntimeValue::Markdown(node, _) => {
+                    let value = node.attr(attr).map(Into::into).unwrap_or(RuntimeValue::NONE);
+
+                    match value {
+                        RuntimeValue::Array(arr) => arr,
+                        RuntimeValue::None => Vec::new(),
+                        v => vec![v],
+                    }
+                }
+                a => vec![std::mem::take(a)],
+            })
+            .collect::<Vec<_>>()
+            .into()),
         [a, ..] => Ok(std::mem::take(a)),
         _ => unreachable!(),
     }
@@ -1897,20 +1913,43 @@ define_builtin!(
             .unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] =>
             Ok(map.get_mut(key).map(std::mem::take).unwrap_or(RuntimeValue::NONE)),
-        [RuntimeValue::Array(array), RuntimeValue::Number(index)] => Ok(array
-            .get_mut(index.value() as usize)
-            .map(std::mem::take)
-            .unwrap_or(RuntimeValue::NONE)),
+        [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
+            let len = array.len();
+            let idx = index.value() as isize;
+            let real_idx = if idx < 0 {
+                (len as isize + idx).max(0) as usize
+            } else {
+                idx as usize
+            };
+            Ok(array
+                .get_mut(real_idx)
+                .map(std::mem::take)
+                .unwrap_or(RuntimeValue::NONE))
+        }
         [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
-            match s.chars().nth(n.value() as usize) {
+            let len = s.chars().count();
+            let idx = n.value() as isize;
+            let real_idx = if idx < 0 {
+                (len as isize + idx).max(0) as usize
+            } else {
+                idx as usize
+            };
+            match s.chars().nth(real_idx) {
                 Some(o) => Ok(o.to_string().into()),
                 None => Ok(RuntimeValue::NONE),
             }
         }
         [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
+            let idx = i.value() as isize;
+            let real_idx = if idx < 0 {
+                let len = node.value().chars().count();
+                (len as isize + idx).max(0) as usize
+            } else {
+                idx as usize
+            };
             Ok(RuntimeValue::Markdown(
                 std::mem::replace(node, mq_markdown::Node::Empty),
-                Some(runtime_value::Selector::Index(i.value() as usize)),
+                Some(runtime_value::Selector::Index(real_idx)),
             ))
         }
         [RuntimeValue::None, _] | [_, RuntimeValue::None] => Ok(RuntimeValue::NONE),
@@ -2280,6 +2319,21 @@ define_builtin!(_JSON_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
             let value: serde_json::Value =
                 serde_json::from_str(s).map_err(|e| Error::Runtime(format!("Failed to parse JSON: {}", e)))?;
             Ok(value.into())
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
+define_builtin!(_YAML_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => {
+            let docs = yaml_rust2::YamlLoader::load_from_str(s)
+                .map_err(|e| Error::Runtime(format!("Failed to parse YAML: {}", e)))?;
+            match docs.into_iter().next() {
+                Some(doc) => Ok(doc.into()),
+                None => Ok(RuntimeValue::NONE),
+            }
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!(),
@@ -2778,6 +2832,7 @@ const HASH_GET_MARKDOWN_POSITION: u64 = fnv1a_hash_64("_get_markdown_position");
 const HASH_CSV_PARSE: u64 = fnv1a_hash_64("_csv_parse");
 const HASH_XML_PARSE: u64 = fnv1a_hash_64("_xml_parse");
 const HASH_JSON_PARSE: u64 = fnv1a_hash_64("_json_parse");
+const HASH_YAML_PARSE: u64 = fnv1a_hash_64("_yaml_parse");
 const HASH_TOON_PARSE: u64 = fnv1a_hash_64("_toon_parse");
 #[cfg(feature = "file-io")]
 const HASH_READ_FILE: u64 = fnv1a_hash_64("read_file");
@@ -2913,6 +2968,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_CSV_PARSE => Some(&_CSV_PARSE),
         HASH_XML_PARSE => Some(&_XML_PARSE),
         HASH_JSON_PARSE => Some(&_JSON_PARSE),
+        HASH_YAML_PARSE => Some(&_YAML_PARSE),
         HASH_TOON_PARSE => Some(&_TOON_PARSE),
         #[cfg(feature = "file-io")]
         HASH_READ_FILE => Some(&READ_FILE),
@@ -3322,6 +3378,13 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a JSON string into a data structure.",
             params: &["json_string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_yaml_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses a YAML string into a data structure.",
+            params: &["yaml_string"],
         },
     );
     map.insert(
@@ -4245,7 +4308,7 @@ impl Error {
             Error::InvalidTypes(name, args) => RuntimeError::InvalidTypes {
                 token: (*get_token(token_arena, node.token_id)).clone(),
                 name: name.clone(),
-                args: args.iter().map(|o| format!("{:?}", o).into()).collect::<Vec<_>>(),
+                args: args.iter().map(|o| o.name().into()).collect::<Vec<_>>(),
             },
             Error::InvalidNumberOfArguments(name, expected, got) => RuntimeError::InvalidNumberOfArguments {
                 token: (*get_token(token_arena, node.token_id)).clone(),
@@ -5755,6 +5818,85 @@ mod tests {
     #[case::invalid_type(RuntimeValue::Number(1.into()))]
     fn test_json_parse_error(#[case] input: impl Into<RuntimeValue>) {
         let ident = Ident::new("_json_parse");
+        let arg: RuntimeValue = match input.into() {
+            RuntimeValue::Number(n) => RuntimeValue::Number(n),
+            s => RuntimeValue::String(s.to_string()),
+        };
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![arg],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::mapping(
+        "key: value",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("key"), RuntimeValue::String("value".to_string()));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::sequence(
+        "- 1\n- 2\n- 3",
+        Ok(RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(3.into()),
+        ]))
+    )]
+    #[case::nested(
+        "a:\n  b: 42",
+        {
+            let mut inner = BTreeMap::new();
+            inner.insert(Ident::new("b"), RuntimeValue::Number(42.into()));
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("a"), RuntimeValue::Dict(inner));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::boolean(
+        "flag: true",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("flag"), RuntimeValue::Boolean(true));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::null(
+        "value: null",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("value"), RuntimeValue::NONE);
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::float(
+        "ratio: 1.5",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("ratio"), RuntimeValue::Number(1.5.into()));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    fn test_yaml_parse(#[case] yaml: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("_yaml_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(yaml.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::invalid_type(RuntimeValue::Number(1.into()))]
+    fn test_yaml_parse_error(#[case] input: impl Into<RuntimeValue>) {
+        let ident = Ident::new("_yaml_parse");
         let arg: RuntimeValue = match input.into() {
             RuntimeValue::Number(n) => RuntimeValue::Number(n),
             s => RuntimeValue::String(s.to_string()),

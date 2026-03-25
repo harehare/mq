@@ -211,13 +211,50 @@ $ mq 'sitemap(__FILE__, "https://example.com")' docs/**/*.md
 
 ## Section Operations
 
+The section module provides functions for splitting and filtering Markdown documents by section. There are three ways to use it:
+
+| Style | Syntax | Notes |
+| ----- | ------ | ----- |
+| `import` | `import "section"` then `section::fn()` | Namespaced — recommended |
+| `include` | `include "section"` then `fn()` | No namespace prefix |
+| `-A` flag | `mq -A 'section::fn()'` | Aggregate mode: processes all nodes at once |
+
+> **Note**: Section functions need all document nodes at once. Use `-A` on the command line, or `nodes` in inline queries.
+
 ### Extract Sections by Title
 
-Extract sections whose title contains a specific text:
+**`-A` flag** (command line):
+
+```bash
+$ mq -A 'section::section("Installation")' README.md
+```
+
+**`import` + `nodes`** (inline query or script):
 
 ```mq
-include "section" | nodes | section("Installation")
+import "section"
+| nodes
+| section::section("Installation")
 ```
+
+**`include`** (no namespace prefix):
+
+```mq
+include "section"
+| nodes
+| section("Installation")
+```
+
+Section objects are automatically expanded to Markdown nodes in CLI output, so `collect()` is not needed.
+
+> **Note (code usage)**: When using the section module from Rust or other code (not the CLI), section objects are plain dicts and must be explicitly converted with `section::collect()`:
+>
+> ```mq
+> import "section"
+> | nodes
+> | section::section("Installation")
+> | section::collect()
+> ```
 
 **Input example**:
 
@@ -228,49 +265,92 @@ Welcome to the project.
 
 ## Installation
 
-Run the following command:
+Run the following command.
 
 ## Usage
 
 Use the tool like this.
 ```
 
-**Output**: Returns the "Installation" section with its header and content.
+**Output**:
 
-### Split Document by Header Level
+```markdown
+## Installation
 
-Split a document into sections based on header level:
+Run the following command.
+```
 
-```mq
-include "section" | nodes | split(2)
+### Extract Body Only
+
+Use `bodies()` to get section content without the header:
+
+```bash
+$ mq -A 'section::section("Installation") | section::bodies() | first()' README.md
+```
+
+**Output**: Returns only the body nodes of the "Installation" section, without the `##` header.
+
+### Filter by Heading Level
+
+Use `by_level()` to filter sections by heading level. Accepts a number or a range:
+
+```bash
+# h2 sections only
+$ mq -A 'section::sections() | section::by_level(2)' README.md
+
+# h1 and h2 sections (1..2 includes both)
+$ mq -A 'section::sections() | section::by_level(1..2)' README.md
 ```
 
 **Input example**:
 
 ```markdown
-# Main Title
+# Chapter 1
 
-## Section 1
+Intro.
 
-Content of section 1.
+## Section 1.1
 
-## Section 2
+Detail.
 
-Content of section 2.
+# Chapter 2
 
-## Section 3
-
-Content of section 3.
+Content.
 ```
 
-**Output**: Returns an array of section objects split at `##` headers.
+`by_level(1)` **output**:
+
+```markdown
+# Chapter 1
+
+Intro.
+
+# Chapter 2
+
+Content.
+```
+
+### Split Document by Header Level
+
+Split a document into sections at a specific heading level and flatten back to Markdown:
+
+```bash
+$ mq -A 'section::split(2) | section::collect()' README.md
+```
+
+Or with `nodes`:
+
+```mq
+import "section"
+| nodes
+| section::split(2)
+| section::collect()
+```
 
 ### Generate Table of Contents from Sections
 
-Generate a table of contents from sections:
-
-```mq
-include "section" | nodes | sections() | toc()
+```bash
+$ mq -A 'section::sections() | section::toc()' README.md
 ```
 
 **Input example**:
@@ -278,19 +358,11 @@ include "section" | nodes | sections() | toc()
 ```markdown
 # Introduction
 
-Some text.
-
 ## Getting Started
-
-More text.
 
 ### Prerequisites
 
-Details here.
-
 ## Advanced Usage
-
-Advanced content.
 ```
 
 **Output**: `["- Introduction", "  - Getting Started", "    - Prerequisites", "  - Advanced Usage"]`
@@ -299,8 +371,8 @@ Advanced content.
 
 Filter sections that have content beyond the header:
 
-```mq
-include "section" | nodes | sections() | filter(fn(s): has_content(s);) | titles()
+```bash
+$ mq -A 'section::sections() | filter(fn(s): section::has_content(s);) | section::titles()' README.md
 ```
 
 **Input example**:
@@ -318,6 +390,88 @@ Use the tool like this.
 ```
 
 **Output**: `["Introduction", "Usage"]`
+
+## Table Operations
+
+The table module provides functions for extracting and transforming Markdown tables.
+
+> **Note**: Table functions need all document nodes at once. Use `-A` on the command line, or `nodes` in inline queries. Unlike the section module, `import "table"` must be written explicitly.
+
+### Extract Tables
+
+**`-A` flag** (command line):
+
+```bash
+$ mq -A 'import "table" | table::tables()' README.md
+```
+
+**`import` + `nodes`** (inline query or script):
+
+```mq
+import "table"
+| nodes
+| table::tables()
+```
+
+Table objects are automatically expanded to Markdown nodes in CLI output, so `to_markdown()` is not needed.
+
+> **Note (code usage)**: When using the table module from Rust or other code (not the CLI), table objects are plain dicts and must be explicitly converted with `table::to_markdown()`:
+>
+> ```mq
+> import "table"
+> | nodes
+> | table::tables()
+> | table::to_markdown()
+> ```
+
+**Input example**:
+
+```markdown
+| Name  | Age |
+| ----- | --- |
+| Alice | 30  |
+| Bob   | 25  |
+```
+
+**Output**:
+
+```markdown
+| Name  | Age |
+| ----- | --- |
+| Alice | 30  |
+| Bob   | 25  |
+```
+
+### Add a Row to a Table
+
+```bash
+$ mq -A 'import "table" | table::tables() | first() | table::add_row(["Charlie", "35"])' README.md
+```
+
+**Input example**:
+
+```markdown
+| Name  | Age |
+| ----- | --- |
+| Alice | 30  |
+```
+
+**Output**:
+
+```markdown
+| Name    | Age |
+| ------- | --- |
+| Alice   | 30  |
+| Charlie | 35  |
+```
+
+### Convert Table to CSV
+
+```bash
+$ mq -A 'import "table" | table::tables() | first() | table::to_csv()' README.md
+```
+
+**Output**: Returns the table as a CSV string.
 
 ## Custom Functions and Programming
 
@@ -469,5 +623,3 @@ Extract frontmatter metadata from markdown files:
 ```mq
 import "yaml" | if (.yaml): yaml::yaml_parse() | get(:title)
 ```
-
-

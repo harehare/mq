@@ -10,7 +10,7 @@ name = "mq-wasm"
 publish = false
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.20"
+version = "0.5.23"
 
 [lib]
 crate-type = ["cdylib"]

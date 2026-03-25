@@ -100,12 +100,12 @@ end
 
 def test_yaml_to_json():
   let result = yaml::yaml_to_json(yaml::yaml_parse(yaml_input))
-  | assert_eq(result, "{\"array\": [\"item1\", \"item2\", \"item3\"], \"nested\": {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}}, \"empty_array\": \"[]\", \"string\": \"hello\", \"number\": 42, \"float\": \"3.14\", \"bool_true\": true, \"bool_false\": false, \"null_value\": null, \"object\": {\"key1\": \"value1\", \"key2\": \"value2\"}, \"multiline\": \"This is a\\nmultiline string\", \"quoted\": \"quoted string\", \"single_quoted\": \"single quoted string\", \"date\": \"2024-06-01\", \"timestamp\": \"2024-06-01T12:34:56Z\", \"empty_object\": \"{}\", \"anchors\": \"&anchor_val anchored value\", \"ref\": \"*anchor_val\", \"complex\": [{\"baz\": [\"qux\", \"quux\"]}, \"corge: grault\"], \"special_chars\": \"!@#$%^&*()_+-=[]{}|;:',.<>/?\", \"unicode\": \"こんにちは世界\", \"bool_list\": [true, false], \"null_list\": [null, null]}")
+  | assert_eq(result, "{\"array\": [\"item1\", \"item2\", \"item3\"], \"nested\": {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}}, \"empty_array\": [], \"string\": \"hello\", \"number\": 42, \"float\": 3.14, \"bool_true\": true, \"bool_false\": false, \"null_value\": null, \"object\": {\"key1\": \"value1\", \"key2\": \"value2\"}, \"multiline\": \"This is a\\nmultiline string\\n\", \"quoted\": \"quoted string\", \"single_quoted\": \"single quoted string\", \"date\": \"2024-06-01\", \"timestamp\": \"2024-06-01T12:34:56Z\", \"empty_object\": {}, \"anchors\": \"anchored value\", \"ref\": \"anchored value\", \"complex\": [{\"foo\": \"bar\", \"baz\": [\"qux\", \"quux\"]}, {\"corge\": \"grault\"}], \"special_chars\": \"!@#$%^&*()_+-=[]{}|;:',.<>/?\", \"unicode\": \"こんにちは世界\", \"bool_list\": [true, false], \"null_list\": [null, null]}")
 end
 
 def test_yaml_to_markdown_table():
   let result = yaml::yaml_to_markdown_table(yaml::yaml_parse(yaml_input))
-  | assert_eq(result, "| Key | Value |\n| --- | --- |\n| array | [\"item1\", \"item2\", \"item3\"] |\n| nested | {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}} |\n| empty_array | [] |\n| string | hello |\n| number | 42 |\n| float | 3.14 |\n| bool_true | true |\n| bool_false | false |\n| null_value |  |\n| object | {\"key1\": \"value1\", \"key2\": \"value2\"} |\n| multiline | This is a\\nmultiline string |\n| quoted | quoted string |\n| single_quoted | single quoted string |\n| date | 2024-06-01 |\n| timestamp | 2024-06-01T12:34:56Z |\n| empty_object | {} |\n| anchors | &anchor_val anchored value |\n| ref | *anchor_val |\n| complex | [{\"baz\": [\"qux\", \"quux\"]}, \"corge: grault\"] |\n| special_chars | !@#$%^&*()_+-=[]{}|;:',.<>/? |\n| unicode | こんにちは世界 |\n| bool_list | [true, false] |\n| null_list | [, ] |")
+  | assert_eq(result, "| Key | Value |\n| --- | --- |\n| array | [\"item1\", \"item2\", \"item3\"] |\n| nested | {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}} |\n| empty_array | [] |\n| string | hello |\n| number | 42 |\n| float | 3.14 |\n| bool_true | true |\n| bool_false | false |\n| null_value |  |\n| object | {\"key1\": \"value1\", \"key2\": \"value2\"} |\n| multiline | This is a\\nmultiline string\\n |\n| quoted | quoted string |\n| single_quoted | single quoted string |\n| date | 2024-06-01 |\n| timestamp | 2024-06-01T12:34:56Z |\n| empty_object | {} |\n| anchors | anchored value |\n| ref | anchored value |\n| complex | [{\"foo\": \"bar\", \"baz\": [\"qux\", \"quux\"]}, {\"corge\": \"grault\"}] |\n| special_chars | !@#$%^&*()_+-=[]{}|;:',.<>/? |\n| unicode | こんにちは世界 |\n| bool_list | [true, false] |\n| null_list | [, ] |")
 end
 
 # -- XML Tests --
@@ -287,8 +287,47 @@ end
 
 def test_section_flatten():
   let sections = do test_sections | section::split(1);
-  | let flattened = section::flatten(sections)
+  | let flattened = section::collect(sections)
   | assert(is_array(flattened))
+end
+
+def test_section_section_pattern():
+  let secs = do test_sections | section::section("Introduction");
+  | assert_eq(len(secs), 1)
+  | assert(contains(section::title(first(secs)), "Introduction"))
+end
+
+def test_section_section_no_match():
+  let secs = do test_sections | section::section("NonExistent");
+  | assert_eq(secs, [])
+end
+
+def test_section_bodies_pipe():
+  let body_list = do test_sections | section::section("Introduction") | section::bodies();
+  | assert_eq(len(body_list), 1)
+  | assert(is_array(first(body_list)))
+end
+
+def test_section_by_level_scalar():
+  let secs = do test_sections | section::sections() | section::by_level(1);
+  | assert_eq(len(secs), 2)
+  | assert_eq(section::level(first(secs)), 1)
+end
+
+def test_section_by_level_h2():
+  let secs = do test_sections | section::sections() | section::by_level(2);
+  | assert_eq(len(secs), 1)
+  | assert_eq(section::level(first(secs)), 2)
+end
+
+def test_section_by_level_range():
+  let secs = do test_sections | section::sections() | section::by_level(1..2);
+  | assert_eq(len(secs), 3)
+end
+
+def test_section_by_level_empty():
+  let secs = section::by_level([], 1)
+  | assert_eq(secs, [])
 end
 
 | let table_md = "| Name | Age | City |\n| --- | --- | --- |\n| Alice | 30 | Tokyo |\n| Bob | 25 | Osaka |\n"
@@ -421,6 +460,13 @@ end
   test_case("Section Nth", test_section_nth),
   test_case("Section Titles", test_section_titles),
   test_case("Section Flatten", test_section_flatten),
+  test_case("Section Section Pattern", test_section_section_pattern),
+  test_case("Section Section No Match", test_section_section_no_match),
+  test_case("Section Bodies Pipe", test_section_bodies_pipe),
+  test_case("Section By Level Scalar", test_section_by_level_scalar),
+  test_case("Section By Level H2", test_section_by_level_h2),
+  test_case("Section By Level Range", test_section_by_level_range),
+  test_case("Section By Level Empty", test_section_by_level_empty),
   # table
   test_case("Table Tables", test_table_tables),
   test_case("Table Tables Empty", test_table_tables_empty),

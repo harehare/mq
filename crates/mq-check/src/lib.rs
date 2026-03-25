@@ -160,6 +160,31 @@ pub enum TypeError {
     #[error("Internal error: {0}")]
     #[diagnostic(code(typechecker::internal_error))]
     Internal(String),
+    /// Emitted when an operation receives a nullable argument and may silently
+    /// propagate `none` instead of producing the expected concrete type.
+    #[error("Operation `{op}` may propagate `none`: argument `{nullable_arg}` may be `none`")]
+    #[diagnostic(code(typechecker::nullable_propagation))]
+    #[allow(dead_code)]
+    NullablePropagation {
+        op: String,
+        nullable_arg: String,
+        #[label("this argument may be `none`")]
+        span: Option<miette::SourceSpan>,
+        location: Option<mq_lang::Range>,
+        #[help]
+        context: Option<String>,
+    },
+    /// Emitted when a branch is statically determined to be unreachable based on
+    /// the known type of a variable and the type predicate in the condition.
+    #[error("Unreachable code: this branch can never be executed")]
+    #[diagnostic(code(typechecker::unreachable_code))]
+    #[allow(dead_code)]
+    UnreachableCode {
+        reason: String,
+        #[label("this branch is unreachable")]
+        span: Option<miette::SourceSpan>,
+        location: Option<mq_lang::Range>,
+    },
 }
 
 impl TypeError {
@@ -172,7 +197,9 @@ impl TypeError {
             | TypeError::UndefinedSymbol { location, .. }
             | TypeError::WrongArity { location, .. }
             | TypeError::UndefinedField { location, .. }
-            | TypeError::HeterogeneousArray { location, .. } => *location,
+            | TypeError::HeterogeneousArray { location, .. }
+            | TypeError::NullablePropagation { location, .. }
+            | TypeError::UnreachableCode { location, .. } => *location,
             _ => None,
         }
     }
@@ -253,7 +280,15 @@ impl TypeChecker {
 
         // Apply type narrowings from type predicate conditions (e.g., is_string(x))
         // in if/elif branches. This overrides Ref types within narrowed branches.
-        narrowing::resolve_type_narrowings(hir, &mut ctx);
+        // Returns dead branch ranges for unreachable code detection.
+        let dead_branches = narrowing::resolve_type_narrowings(hir, &mut ctx);
+        for (reason, range) in dead_branches {
+            ctx.add_error(TypeError::UnreachableCode {
+                reason,
+                span: range.as_ref().map(unify::range_to_span),
+                location: range,
+            });
+        }
 
         // Resolve deferred tuple index accesses now that variable types are known.
         if deferred::resolve_deferred_tuple_accesses(&mut ctx) {

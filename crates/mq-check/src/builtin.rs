@@ -120,17 +120,16 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     register_binary(ctx, "sub", Type::Number, Type::Number, Type::Number);
 
     // Multiplication: number * number -> number
-    register_binary(ctx, "*", Type::Number, Type::Number, Type::Number);
-    register_binary(ctx, "mul", Type::Number, Type::Number, Type::Number);
-
-    // Multiplication: [a] * number -> [a] (array repetition)
+    // [a] * number -> [a] (array repetition)
     for name in ["*", "mul"] {
+        register_binary(ctx, name, Type::Number, Type::Number, Type::Number);
+        register_binary(ctx, name, Type::String, Type::Number, Type::String);
         let a = ctx.fresh_var();
         register_binary(
             ctx,
             name,
             Type::array(Type::Var(a)),
-            Type::Number,
+            Type::Var(a),
             Type::array(Type::Var(a)),
         );
     }
@@ -369,6 +368,11 @@ fn register_string(ctx: &mut InferenceContext) {
     // gsub/replace: (none, string, string) -> none
     register_ternary(ctx, "gsub", Type::None, Type::String, Type::String, Type::None);
     register_ternary(ctx, "replace", Type::None, Type::String, Type::String, Type::None);
+
+    // slugify: (string, string) -> string
+    register_unary(ctx, "slugify", Type::String, Type::String);
+    // slugify: (string) -> string
+    register_binary(ctx, "slugify", Type::String, Type::String, Type::String);
 }
 
 /// Array functions: flatten, reverse, sort, uniq, compact, len, slice, insert, range, repeat
@@ -454,6 +458,11 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::array(Type::Number),
     );
 
+    // .. : (number, number) -> [number]  — binary infix range operator
+    register_binary(ctx, "..", Type::Number, Type::Number, Type::array(Type::Number));
+    // None propagation for ".."
+    register_binary(ctx, "..", Type::None, Type::None, Type::None);
+
     // repeat: (string, number) -> string (string repetition)
     register_binary(ctx, "repeat", Type::String, Type::Number, Type::String);
 
@@ -487,6 +496,10 @@ fn register_array(ctx: &mut InferenceContext) {
     register_ternary(ctx, "slice", Type::None, Type::Number, Type::Number, Type::None);
     // slice: (none, number) -> none  (open-ended slice)
     register_binary(ctx, "slice", Type::None, Type::Number, Type::None);
+
+    // percentile: ([a], number) -> number
+    let a = ctx.fresh_var();
+    register_binary(ctx, "percentile", Type::array(Type::Var(a)), Type::Number, Type::Number);
 }
 
 /// Dictionary functions: keys, values, entries, get, set, del, update, dict
@@ -826,8 +839,16 @@ fn register_io(ctx: &mut InferenceContext) {
 
 /// Utility functions: coalesce, convert
 fn register_utility(ctx: &mut InferenceContext) {
-    let a = ctx.fresh_var();
-    register_binary(ctx, "coalesce", Type::Var(a), Type::Var(a), Type::Var(a));
+    // coalesce / ?? : (None, a) -> a  — left is None, return right (null-coalescing)
+    for name in ["coalesce", "??"] {
+        let a = ctx.fresh_var();
+        register_binary(ctx, name, Type::None, Type::Var(a), Type::Var(a));
+    }
+    // coalesce / ?? : (a, a) -> a  — same-type fallback
+    for name in ["coalesce", "??"] {
+        let a = ctx.fresh_var();
+        register_binary(ctx, name, Type::Var(a), Type::Var(a), Type::Var(a));
+    }
 
     // convert: (a, b) -> c  (the @ operator, e.g., "text" @ :html)
     // Registered under both "convert" (for function call syntax) and "@" (for operator syntax)
@@ -969,6 +990,14 @@ fn register_markdown(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_binary(ctx, "to_code", Type::Var(a), Type::String, Type::Markdown);
     register_binary(ctx, "attr", Type::Markdown, Type::String, Type::String);
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "attr",
+        Type::array(Type::Var(a)),
+        Type::String,
+        Type::array(Type::Var(a)),
+    );
 
     // (markdown, string, string) -> markdown
     register_ternary(
@@ -1464,7 +1493,7 @@ mod tests {
     #[case::add_bool_string("true + \"s\"", false)] // bool + string is invalid
     #[case::sub_strings("\"a\" - \"b\"", false)] // strings cannot be subtracted
     #[case::sub_string_number("\"a\" - 1", false)] // string - number is invalid
-    #[case::mul_string_number("\"a\" * 3", false)] // string * number is invalid
+    #[case::mul_string_number("\"a\" * 3", true)] // string * number is invalid
     #[case::div_strings("\"a\" / \"b\"", false)] // strings cannot be divided
     #[case::mod_strings("\"a\" % \"b\"", false)] // strings cannot use modulo
     #[case::sub_bool_bool("true - false", false)] // booleans cannot be subtracted
@@ -1631,6 +1660,8 @@ mod tests {
     #[case::in_array("in([1, 2, 3], 1)", true)]
     #[case::in_string("in(\"hello world\", \"world\")", true)]
     #[case::in_sub_array("in([1, 2, 3, 4], [2, 3])", true)]
+    #[case::in_return_plus_number("in([1, 2, 3], 1) + 1", false)] // in returns bool; bool + number is invalid
+    #[case::contains_return_plus_number("contains(\"hello\", \"he\") + 1", false)] // contains returns bool; bool + number is invalid
     #[case::bsearch("bsearch([1, 2, 3, 4], 2)", true)]
     #[case::bsearch_error("bsearch([1, 2, 3, 4], \"2\")", false)]
     fn test_collection_functions(#[case] code: &str, #[case] should_succeed: bool) {
