@@ -28,11 +28,6 @@ pub struct QueryApiResponse {
     pub results: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct DiagnosticsApiResponse {
-    pub diagnostics: Vec<Diagnostic>,
-}
-
 #[derive(Serialize, Deserialize, ToSchema, Debug, Clone, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum InputFormat {
@@ -66,16 +61,6 @@ pub enum OutputFormat {
     Json,
     /// Suppress output.
     None,
-}
-
-#[derive(Serialize, Deserialize, ToSchema, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Diagnostic {
-    start_line: u32,
-    start_column: u32,
-    end_line: u32,
-    end_column: u32,
-    message: String,
 }
 
 /// Request body for `POST /api/check`.
@@ -126,23 +111,6 @@ pub struct FormatApiResponse {
 
 pub fn query(request: ApiRequest) -> miette::Result<QueryApiResponse> {
     execute_query(request)
-}
-
-pub fn diagnostics(request: ApiRequest) -> DiagnosticsApiResponse {
-    let (_, errors) = mq_lang::parse_recovery(&request.query);
-    DiagnosticsApiResponse {
-        diagnostics: errors
-            .error_ranges(&request.query)
-            .iter()
-            .map(|(message, range)| Diagnostic {
-                start_line: range.start.line,
-                start_column: range.start.column as u32,
-                end_line: range.end.line,
-                end_column: range.end.column as u32,
-                message: message.to_owned(),
-            })
-            .collect::<Vec<_>>(),
-    }
 }
 
 /// Type-checks the given query and returns any errors found.
