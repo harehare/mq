@@ -93,8 +93,7 @@ pub async fn get_query_api(
             ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
                 .with_title("Internal error")
                 .with_detail("error", &e.to_string())
-        })?
-    {
+        })? {
         Ok(response) => {
             info!(
                 "Successfully processed query: {}, results count: {}",
@@ -136,8 +135,7 @@ pub async fn post_query_api(
             ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
                 .with_title("Internal error")
                 .with_detail("error", &e.to_string())
-        })?
-    {
+        })? {
         Ok(response) => {
             info!(
                 "Successfully processed query: {}, results count: {}",
@@ -207,8 +205,7 @@ pub async fn post_format_api(
             ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
                 .with_title("Internal error")
                 .with_detail("error", &e.to_string())
-        })?
-    {
+        })? {
         Ok(response) => {
             info!("Format completed successfully");
             Ok(Json(response))
