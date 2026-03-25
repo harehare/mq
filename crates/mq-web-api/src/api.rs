@@ -184,6 +184,7 @@ fn type_error_kind(e: &mq_check::TypeError) -> String {
         mq_check::TypeError::Internal(_) => "internal_error",
         mq_check::TypeError::NullablePropagation { .. } => "nullable_propagation",
         mq_check::TypeError::UnreachableCode { .. } => "unreachable_code",
+        mq_check::TypeError::NonExhaustiveMatch { .. } => "non_exhaustive_match",
     }
     .to_string()
 }
