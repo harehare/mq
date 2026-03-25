@@ -15,7 +15,7 @@ pub enum HttpClient {
     /// `new_page()` waits for the `load` event, which covers synchronous JS
     /// execution. The DOM captured by `page.content()` reflects the fully
     /// rendered state at that point.
-    Chromium(Arc<chromiumoxide::Browser>, Duration),
+    Chromium(Arc<chromiumoxide::Browser>, Duration, Option<Arc<tempfile::TempDir>>),
 }
 
 impl Default for HttpClient {
@@ -73,6 +73,9 @@ impl HttpClient {
             config_builder = config_builder.chrome_executable(path);
         }
 
+        let temp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temporary directory: {}", e))?;
+        config_builder = config_builder.user_data_dir(temp_dir.path());
+
         let config = config_builder
             .build()
             .map_err(|e| format!("Failed to build Chrome config: {}", e))?;
@@ -93,7 +96,11 @@ impl HttpClient {
             }
         });
 
-        Ok(Self::Chromium(Arc::new(browser), headless_wait))
+        Ok(Self::Chromium(
+            Arc::new(browser),
+            headless_wait,
+            Some(Arc::new(temp_dir)),
+        ))
     }
 
     /// Fetch content from a URL
@@ -130,8 +137,7 @@ impl HttpClient {
 
                 Ok(page_source)
             }
-            HttpClient::Chromium(browser, wait_duration) => {
-                // new_page() navigates and waits for the load event, which includes
+            HttpClient::Chromium(browser, wait_duration, _) => {
                 // synchronous JS execution. The resulting DOM is the rendered state.
                 let page = browser
                     .new_page(url.as_str())
