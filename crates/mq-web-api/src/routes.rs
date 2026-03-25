@@ -13,9 +13,7 @@ use tower_http::{
 
 use crate::{
     config::Config,
-    handlers::{
-        AppState, get_diagnostics_api, get_query_api, openapi_json, post_check_api, post_format_api, post_query_api,
-    },
+    handlers::{AppState, get_query_api, openapi_json, post_check_api, post_format_api, post_query_api},
     middleware::rate_limit_middleware,
     rate_limiter::RateLimiter,
 };
@@ -48,7 +46,6 @@ pub fn create_router(config: &Config, rate_limiter: Arc<RateLimiter>) -> Router 
 
     Router::new()
         .route("/api/query", get(get_query_api).post(post_query_api))
-        .route("/api/query/diagnostics", get(get_diagnostics_api))
         .route("/api/check", post(post_check_api))
         .route("/api/format", post(post_format_api))
         .route("/openapi.json", get(openapi_json))

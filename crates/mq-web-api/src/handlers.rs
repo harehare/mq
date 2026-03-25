@@ -9,8 +9,8 @@ use utoipa::OpenApi;
 
 use crate::{
     api::{
-        ApiRequest, CheckApiRequest, CheckApiResponse, DiagnosticsApiResponse, FormatApiRequest, FormatApiResponse,
-        InputFormat, OutputFormat, QueryApiResponse,
+        ApiRequest, CheckApiRequest, CheckApiResponse, CheckError, FormatApiRequest, FormatApiResponse, InputFormat,
+        OutputFormat, QueryApiResponse,
     },
     problem::ProblemDetails,
 };
@@ -32,16 +32,15 @@ pub struct DiagnosticsParams {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_query_api, post_query_api, get_diagnostics_api, post_check_api, post_format_api, openapi_json),
+    paths(get_query_api, post_query_api, post_check_api, post_format_api, openapi_json),
     components(
         schemas(ApiRequest),
         schemas(InputFormat),
         schemas(OutputFormat),
         schemas(QueryApiResponse),
-        schemas(DiagnosticsApiResponse),
         schemas(CheckApiRequest),
         schemas(CheckApiResponse),
-        schemas(crate::api::CheckError),
+        schemas(CheckError),
         schemas(FormatApiRequest),
         schemas(FormatApiResponse),
     ),
@@ -74,29 +73,38 @@ pub async fn get_query_api(
         .input_format
         .and_then(|v| serde_json::from_str::<InputFormat>(&format!("\"{}\"", v)).ok());
 
+    debug!("Processing request with input_format: {:?}", input_format);
+
+    let query_str = params.query.clone();
     let request = ApiRequest {
-        query: params.query.clone(),
-        input: params.input.clone(),
-        input_format: input_format.clone(),
+        query: params.query,
+        input: params.input,
+        input_format,
         modules: None,
         args: None,
         output_format: None,
         aggregate: None,
     };
 
-    debug!("Processing request with input_format: {:?}", input_format);
-
-    match crate::api::query(request) {
+    match tokio::task::spawn_blocking(move || crate::api::query(request))
+        .await
+        .map_err(|e| {
+            error!("Query task panicked: {}", e);
+            ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .with_title("Internal error")
+                .with_detail("error", &e.to_string())
+        })?
+    {
         Ok(response) => {
             info!(
                 "Successfully processed query: {}, results count: {}",
-                params.query,
+                query_str,
                 response.results.len()
             );
             Ok(Json(response))
         }
         Err(e) => {
-            error!("Failed to process query '{}': {}", params.query, e);
+            error!("Failed to process query '{}': {}", query_str, e);
             Err(ProblemDetails::new(StatusCode::BAD_REQUEST)
                 .with_title("Invalid query")
                 .with_detail("error", &e.to_string()))
@@ -120,59 +128,31 @@ pub async fn post_query_api(
     debug!("POST /query called with query: {}", request.query);
     debug!("Processing request with input_format: {:?}", request.input_format);
 
-    match crate::api::query(request.clone()) {
+    let query_str = request.query.clone();
+    match tokio::task::spawn_blocking(move || crate::api::query(request))
+        .await
+        .map_err(|e| {
+            error!("Query task panicked: {}", e);
+            ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .with_title("Internal error")
+                .with_detail("error", &e.to_string())
+        })?
+    {
         Ok(response) => {
             info!(
                 "Successfully processed query: {}, results count: {}",
-                request.query,
+                query_str,
                 response.results.len()
             );
             Ok(Json(response))
         }
         Err(e) => {
-            error!("Failed to process query '{}': {}", request.query, e);
+            error!("Failed to process query '{}': {}", query_str, e);
             Err(ProblemDetails::new(StatusCode::BAD_REQUEST)
                 .with_title("Invalid query")
                 .with_detail("error", &e.to_string()))
         }
     }
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/query/diagnostics",
-    responses(
-        (status = 200, description = "Diagnostics executed successfully", body = DiagnosticsApiResponse),
-        (status = 400, description = "Invalid request parameters"),
-    ),
-    params(
-        ("query" = String, Query, description = "mq query string to analyze"),
-    )
-)]
-pub async fn get_diagnostics_api(
-    Query(params): Query<DiagnosticsParams>,
-    State(_state): State<AppState>,
-) -> Json<DiagnosticsApiResponse> {
-    debug!("GET /query/diagnostics called with query: {}", params.query);
-
-    let request = ApiRequest {
-        query: params.query.clone(),
-        input: None,
-        input_format: None,
-        modules: None,
-        args: None,
-        output_format: None,
-        aggregate: None,
-    };
-
-    let response = crate::api::diagnostics(request);
-    info!(
-        "Diagnostics for query '{}': {} diagnostics found",
-        params.query,
-        response.diagnostics.len()
-    );
-
-    Json(response)
 }
 
 #[utoipa::path(
@@ -189,10 +169,16 @@ pub async fn post_check_api(
 ) -> Json<CheckApiResponse> {
     debug!("POST /check called with query: {}", request.query);
 
-    let response = crate::api::check(request.clone());
+    let query_str = request.query.clone();
+    let response = tokio::task::spawn_blocking(move || crate::api::check(request))
+        .await
+        .unwrap_or_else(|e| {
+            error!("Check task panicked: {}", e);
+            crate::api::CheckApiResponse { errors: vec![] }
+        });
     info!(
         "Type check for query '{}': {} errors found",
-        request.query,
+        query_str,
         response.errors.len()
     );
 
@@ -214,7 +200,15 @@ pub async fn post_format_api(
 ) -> Result<Json<FormatApiResponse>, ProblemDetails> {
     debug!("POST /format called");
 
-    match crate::api::format_query(request) {
+    match tokio::task::spawn_blocking(move || crate::api::format_query(request))
+        .await
+        .map_err(|e| {
+            error!("Format task panicked: {}", e);
+            ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .with_title("Internal error")
+                .with_detail("error", &e.to_string())
+        })?
+    {
         Ok(response) => {
             info!("Format completed successfully");
             Ok(Json(response))
