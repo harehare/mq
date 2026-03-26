@@ -183,68 +183,68 @@ impl HttpClient {
                     None
                 };
 
-                // Navigate to the target URL after the listener is in place.
-                page.goto(url.as_str())
-                    .await
-                    .map_err(|e| format!("Chrome failed to navigate to {}: {}", url, e))?;
+                let result = async {
+                    // Navigate to the target URL after the listener is in place.
+                    page.goto(url.as_str())
+                        .await
+                        .map_err(|e| format!("Chrome failed to navigate to {}: {}", url, e))?;
 
-                // Now await the networkIdle event from the already-registered listener.
-                if let Some(mut events) = network_idle_listener {
-                    let timeout = if config.strategy_timeout.is_zero() {
-                        Duration::from_secs(30)
-                    } else {
-                        config.strategy_timeout
-                    };
+                    // Now await the networkIdle event from the already-registered listener.
+                    if let Some(mut events) = network_idle_listener {
+                        let timeout = if config.strategy_timeout.is_zero() {
+                            Duration::from_secs(30)
+                        } else {
+                            config.strategy_timeout
+                        };
 
-                    let _ = tokio::time::timeout(timeout, async {
-                        while let Some(event) = events.next().await {
-                            if event.name == "networkIdle" {
-                                break;
-                            }
-                        }
-                    })
-                    .await;
-                }
-
-                // Strategy 2: poll until a CSS selector appears in the DOM.
-                // Useful when you know a specific element that the SPA renders
-                // once its content is ready (e.g. `--headless-wait-for-selector "main"`).
-                if let Some(selector) = &config.wait_for_selector {
-                    let timeout = if config.strategy_timeout.is_zero() {
-                        Duration::from_secs(30)
-                    } else {
-                        config.strategy_timeout
-                    };
-                    let deadline = tokio::time::Instant::now() + timeout;
-                    loop {
-                        match page.find_element(selector.clone()).await {
-                            Ok(_) => break,
-                            Err(_) => {
-                                if tokio::time::Instant::now() >= deadline {
-                                    tracing::warn!("Timed out waiting for selector '{}' on {}", selector, url);
+                        let _ = tokio::time::timeout(timeout, async {
+                            while let Some(event) = events.next().await {
+                                if event.name == "networkIdle" {
                                     break;
                                 }
-                                tokio::time::sleep(Duration::from_millis(200)).await;
+                            }
+                        })
+                        .await;
+                    }
+
+                    // Strategy 2: poll until a CSS selector appears in the DOM.
+                    // Useful when you know a specific element that the SPA renders
+                    // once its content is ready (e.g. `--headless-wait-for-selector "main"`).
+                    if let Some(selector) = &config.wait_for_selector {
+                        let timeout = if config.strategy_timeout.is_zero() {
+                            Duration::from_secs(30)
+                        } else {
+                            config.strategy_timeout
+                        };
+                        let deadline = tokio::time::Instant::now() + timeout;
+                        loop {
+                            match page.find_element(selector.clone()).await {
+                                Ok(_) => break,
+                                Err(_) => {
+                                    if tokio::time::Instant::now() >= deadline {
+                                        tracing::warn!("Timed out waiting for selector '{}' on {}", selector, url);
+                                        break;
+                                    }
+                                    tokio::time::sleep(Duration::from_millis(200)).await;
+                                }
                             }
                         }
                     }
+
+                    // Strategy 3: fixed delay — applied on top of other strategies.
+                    if !config.fixed_delay.is_zero() {
+                        tokio::time::sleep(config.fixed_delay).await;
+                    }
+
+                    page.content()
+                        .await
+                        .map_err(|e| format!("Chrome failed to get content from {}: {}", url, e))
                 }
+                .await;
 
-                // Strategy 3: fixed delay — applied on top of other strategies.
-                if !config.fixed_delay.is_zero() {
-                    tokio::time::sleep(config.fixed_delay).await;
-                }
+                let _ = page.close().await;
 
-                let content = page
-                    .content()
-                    .await
-                    .map_err(|e| format!("Chrome failed to get content from {}: {}", url, e))?;
-
-                page.close()
-                    .await
-                    .map_err(|e| format!("Chrome failed to close page: {}", e))?;
-
-                Ok(content)
+                result
             }
         }
     }
