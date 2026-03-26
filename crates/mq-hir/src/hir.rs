@@ -607,7 +607,7 @@ end"#;
         // Check for MatchArm symbols
         let match_arms: Vec<_> = hir
             .symbols()
-            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::MatchArm))
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::MatchArm { .. }))
             .collect();
         assert_eq!(match_arms.len(), 2, "Should have 2 MatchArm symbols");
 

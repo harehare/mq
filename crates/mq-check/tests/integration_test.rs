@@ -120,6 +120,103 @@ fn test_match_different_types_creates_union() {
     );
 }
 
+// Exhaustiveness tests
+//
+// Each case: (mq code, is_exhaustive, description)
+// is_exhaustive=true  → expect no NonExhaustiveMatch error
+// is_exhaustive=false → expect at least one NonExhaustiveMatch error
+
+#[rstest]
+// ── Wildcard / variable-binding catch-alls ───────────────────────────────────
+#[case::wildcard_only(r#"match (42): | _: 0 end"#, true, "wildcard-only arm covers everything")]
+#[case::wildcard_after_literal(
+    r#"match (42): | 0: "zero" | _: "other" end"#,
+    true,
+    "wildcard after literal arm covers remaining"
+)]
+#[case::var_binding_only(r#"match (42): | x: x end"#, true, "variable-binding only arm covers everything")]
+#[case::var_binding_after_literal(
+    r#"match (42): | 0: "zero" | x: x end"#,
+    true,
+    "variable-binding after literal arm covers remaining"
+)]
+// ── Bool: both arms present ──────────────────────────────────────────────────
+#[case::bool_true_then_false(
+    r#"match (true): | true: 1 | false: 0 end"#,
+    true,
+    "bool with true then false covers both"
+)]
+#[case::bool_false_then_true(
+    r#"match (true): | false: 0 | true: 1 end"#,
+    true,
+    "bool with false then true covers both (order independent)"
+)]
+#[case::bool_true_then_wildcard(
+    r#"match (true): | true: 1 | _: 0 end"#,
+    true,
+    "bool with true then wildcard is exhaustive"
+)]
+#[case::bool_false_then_wildcard(
+    r#"match (true): | false: 0 | _: 1 end"#,
+    true,
+    "bool with false then wildcard is exhaustive"
+)]
+// ── Guarded arm followed by unguarded catch-all ──────────────────────────────
+#[case::guarded_then_unguarded_wildcard(
+    r#"match (42): | x if (eq(x, 0)): "zero" | _: "other" end"#,
+    true,
+    "guarded arm + unguarded wildcard is exhaustive"
+)]
+// ── Non-exhaustive: bool ─────────────────────────────────────────────────────
+#[case::bool_only_true(
+    r#"match (true): | true: 1 end"#,
+    false,
+    "bool with only true arm — false is missing"
+)]
+#[case::bool_only_false(
+    r#"match (true): | false: 0 end"#,
+    false,
+    "bool with only false arm — true is missing"
+)]
+#[case::bool_both_guarded(
+    r#"match (true): | true if (true): 1 | false if (true): 0 end"#,
+    false,
+    "both bool arms guarded — neither counts as unconditional"
+)]
+#[case::bool_true_guarded_false_missing(
+    r#"match (true): | x if (x): 1 | false: 0 end"#,
+    false,
+    "guarded wildcard + false arm — true not unconditionally covered"
+)]
+#[case::bool_false_guarded_true_missing(
+    r#"match (true): | true: 1 | x if (not(x)): 0 end"#,
+    false,
+    "true arm + guarded wildcard — false not unconditionally covered"
+)]
+// ── Non-exhaustive: number (infinite domain) ─────────────────────────────────
+#[case::number_single_literal(r#"match (42): | 0: "zero" end"#, false, "single number literal — no wildcard")]
+#[case::number_multiple_literals(
+    r#"match (42): | 0: "zero" | 1: "one" | 2: "two" end"#,
+    false,
+    "multiple number literals without wildcard — not exhaustive"
+)]
+// ── Non-exhaustive: string (infinite domain) ─────────────────────────────────
+#[case::string_single_literal(r#"match ("a"): | "a": 1 end"#, false, "single string literal without wildcard")]
+#[case::string_multiple_literals(
+    r#"match ("a"): | "a": 1 | "b": 2 end"#,
+    false,
+    "multiple string literals without wildcard"
+)]
+fn test_match_exhaustiveness(#[case] code: &str, #[case] is_exhaustive: bool, #[case] description: &str) {
+    let result = check_types(code);
+    let has_exhaustiveness_error = result.iter().any(|e| matches!(e, TypeError::NonExhaustiveMatch { .. }));
+    assert_eq!(
+        !has_exhaustiveness_error, is_exhaustive,
+        "{}: errors={:?}",
+        description, result
+    );
+}
+
 // TODO: Enable when match is properly implemented in HIR
 // #[test]
 // fn test_match_union_with_arithmetic() {
@@ -661,7 +758,11 @@ fn test_while_condition_type_errors(#[case] code: &str, #[case] should_succeed: 
 #[case::wildcard_pattern("match (1): | _: \"any\" end", true, "wildcard pattern always valid")]
 #[case::variable_pattern("match (1): | x: x end", true, "variable pattern always valid")]
 fn test_match_pattern_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
-    let result = check_types(code);
+    // Filter out exhaustiveness errors — this test focuses on type compatibility only.
+    let result: Vec<_> = check_types(code)
+        .into_iter()
+        .filter(|e| !matches!(e, TypeError::NonExhaustiveMatch { .. }))
+        .collect();
     assert_eq!(
         result.is_empty(),
         should_succeed,
