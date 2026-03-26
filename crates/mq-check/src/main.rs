@@ -26,6 +26,10 @@ struct Cli {
     /// Enforce homogeneous arrays (reject mixed-type arrays like [1, "hello"])
     #[arg(long)]
     strict_array: bool,
+
+    /// Disable exhaustiveness checking for pattern match expressions
+    #[arg(long)]
+    no_exhaustive_patterns: bool,
 }
 
 /// Options for a single file check
@@ -52,6 +56,7 @@ fn run() -> io::Result<()> {
     let multi = cli.files.len() > 1;
     let tc_options = TypeCheckerOptions {
         strict_array: cli.strict_array,
+        no_exhaustive_patterns: cli.no_exhaustive_patterns,
     };
 
     if cli.files.is_empty() {

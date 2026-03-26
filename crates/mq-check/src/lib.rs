@@ -248,6 +248,8 @@ pub struct TypeCheckerOptions {
     /// When true, arrays must contain elements of a single type.
     /// Heterogeneous arrays like `[1, "hello"]` will produce a type error.
     pub strict_array: bool,
+    /// When true, exhaustiveness checking for pattern match expressions is disabled.
+    pub no_exhaustive_patterns: bool,
 }
 
 /// Type checker for mq programs
@@ -348,8 +350,10 @@ impl TypeChecker {
         deferred::check_user_call_body_operators(hir, &mut ctx);
 
         // Check pattern match exhaustiveness (reuses the children index from constraint generation)
-        for e in exhaustiveness::check_match_exhaustiveness(hir, &mut ctx, &children_index) {
-            ctx.add_error(e);
+        if !self.options.no_exhaustive_patterns {
+            for e in exhaustiveness::check_match_exhaustiveness(hir, &mut ctx, &children_index) {
+                ctx.add_error(e);
+            }
         }
 
         // Collect errors before finalizing
