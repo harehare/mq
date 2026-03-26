@@ -71,9 +71,24 @@ struct CliArgs {
     #[clap(long, value_name = "PATH", requires = "headless")]
     chrome_path: Option<std::path::PathBuf>,
     /// Wait time (in seconds) after page load in headless mode.
+    /// When --headless-network-idle or --headless-wait-for-selector is used,
+    /// this value also acts as the maximum timeout for those strategies (default 30 s).
     /// Only used when --headless is set.
     #[clap(long, default_value_t = 0.0, requires = "headless")]
     headless_wait: f64,
+    /// Wait for the browser's networkIdle CDP lifecycle event after page load.
+    /// Effective for SPAs that issue XHR/fetch requests after the load event.
+    /// The wait is bounded by --headless-wait (or 30 s if not set).
+    /// Only used when --headless is set.
+    #[clap(long, default_value_t = false, requires = "headless")]
+    headless_network_idle: bool,
+    /// Wait until the given CSS selector is present in the DOM after page load.
+    /// Useful when the page's content is injected by JavaScript.
+    /// Example: --headless-wait-for-selector "main"
+    /// The wait is bounded by --headless-wait (or 30 s if not set).
+    /// Only used when --headless is set.
+    #[clap(long, value_name = "SELECTOR", requires = "headless")]
+    headless_wait_for_selector: Option<String>,
     /// Comma-separated list of domains to crawl in addition to the start URL's domain.
     /// If not specified, only the start URL's domain is crawled.
     /// If specified, the start URL's domain is always included automatically.
@@ -163,12 +178,29 @@ async fn main() {
             args.headless_wait
         };
 
-        mq_crawler::http_client::HttpClient::new_chromium(
-            args.chrome_path,
-            std::time::Duration::from_secs_f64(headless_wait_secs),
-        )
-        .await
-        .expect("Failed to launch headless Chrome. Ensure Chrome or Chromium is installed.")
+        // strategy_timeout: use --headless-wait if > 0, otherwise 30 s.
+        let strategy_timeout = if headless_wait_secs > 0.0 {
+            std::time::Duration::from_secs_f64(headless_wait_secs)
+        } else {
+            std::time::Duration::from_secs(30)
+        };
+        // fixed_delay: only apply when no other strategy is active.
+        let fixed_delay = if args.headless_network_idle || args.headless_wait_for_selector.is_some() {
+            std::time::Duration::ZERO
+        } else {
+            std::time::Duration::from_secs_f64(headless_wait_secs)
+        };
+
+        let wait_config = mq_crawler::http_client::ChromiumWaitConfig {
+            fixed_delay,
+            wait_for_selector: args.headless_wait_for_selector.clone(),
+            network_idle: args.headless_network_idle,
+            strategy_timeout,
+        };
+
+        mq_crawler::http_client::HttpClient::new_chromium(args.chrome_path, wait_config)
+            .await
+            .expect("Failed to launch headless Chrome. Ensure Chrome or Chromium is installed.")
     } else if effective_allowed.is_some() {
         mq_crawler::http_client::HttpClient::new_reqwest_multi_domain(args.page_load_timeout, args.concurrency.max(5))
             .unwrap()

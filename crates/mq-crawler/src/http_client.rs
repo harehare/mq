@@ -2,9 +2,30 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use chromiumoxide::cdp::browser_protocol::page::EventLifecycleEvent;
 use futures::StreamExt;
 use reqwest::Client as ReqwestClient;
 use url::Url;
+
+/// Wait strategy configuration for headless Chrome.
+///
+/// These strategies are applied after the browser's `load` event fires.
+/// Multiple strategies can be combined; they are executed in order:
+/// network-idle / selector wait first, then the fixed delay.
+#[derive(Debug, Clone, Default)]
+pub struct ChromiumWaitConfig {
+    /// Optional fixed delay applied after all other strategies complete.
+    pub fixed_delay: Duration,
+    /// If set, poll for this CSS selector to appear in the DOM before
+    /// proceeding. Times out after `strategy_timeout`.
+    pub wait_for_selector: Option<String>,
+    /// If `true`, wait for the browser's `networkIdle` CDP lifecycle event
+    /// before proceeding. Times out after `strategy_timeout`.
+    pub network_idle: bool,
+    /// Maximum time to wait for `wait_for_selector` or `network_idle`.
+    /// Defaults to 30 seconds.
+    pub strategy_timeout: Duration,
+}
 
 /// Enum for different HTTP client implementations
 #[derive(Debug, Clone)]
@@ -13,9 +34,13 @@ pub enum HttpClient {
     Fantoccini(fantoccini::Client),
     /// Headless Chrome via CDP.
     /// `new_page()` waits for the `load` event, which covers synchronous JS
-    /// execution. The DOM captured by `page.content()` reflects the fully
-    /// rendered state at that point.
-    Chromium(Arc<chromiumoxide::Browser>, Duration, Option<Arc<tempfile::TempDir>>),
+    /// execution. Additional wait strategies in [`ChromiumWaitConfig`] can be
+    /// used to handle SPAs that fetch data asynchronously after load.
+    Chromium(
+        Arc<chromiumoxide::Browser>,
+        ChromiumWaitConfig,
+        Option<Arc<tempfile::TempDir>>,
+    ),
 }
 
 impl Default for HttpClient {
@@ -64,9 +89,10 @@ impl HttpClient {
     /// If `chrome_path` is `None`, the system Chrome is auto-detected.
     ///
     /// Pages are fetched after the browser's `load` event fires, which includes
-    /// synchronous JavaScript execution. The captured DOM reflects the rendered
-    /// state at that point, making this suitable for most JS-driven pages.
-    pub async fn new_chromium(chrome_path: Option<PathBuf>, headless_wait: Duration) -> Result<Self, String> {
+    /// synchronous JavaScript execution. Additional wait strategies in
+    /// [`ChromiumWaitConfig`] (network-idle, CSS selector polling, fixed delay)
+    /// can be layered on top for SPAs that fetch data asynchronously after load.
+    pub async fn new_chromium(chrome_path: Option<PathBuf>, wait_config: ChromiumWaitConfig) -> Result<Self, String> {
         let mut config_builder = chromiumoxide::browser::BrowserConfig::builder().arg("--disable-gpu");
 
         if let Some(path) = chrome_path {
@@ -96,11 +122,7 @@ impl HttpClient {
             }
         });
 
-        Ok(Self::Chromium(
-            Arc::new(browser),
-            headless_wait,
-            Some(Arc::new(temp_dir)),
-        ))
+        Ok(Self::Chromium(Arc::new(browser), wait_config, Some(Arc::new(temp_dir))))
     }
 
     /// Fetch content from a URL
@@ -137,15 +159,70 @@ impl HttpClient {
 
                 Ok(page_source)
             }
-            HttpClient::Chromium(browser, wait_duration, _) => {
-                // synchronous JS execution. The resulting DOM is the rendered state.
+            HttpClient::Chromium(browser, config, _) => {
+                // new_page() waits for the browser's `load` event, which covers
+                // synchronous JS. For SPAs that fetch data asynchronously after
+                // load, additional strategies in `config` are applied below.
                 let page = browser
                     .new_page(url.as_str())
                     .await
                     .map_err(|e| format!("Chrome failed to open page {}: {}", url, e))?;
 
-                if !wait_duration.is_zero() {
-                    tokio::time::sleep(*wait_duration).await;
+                // Strategy 1: wait for the CDP networkIdle lifecycle event.
+                // This is effective for SPAs that issue XHR/fetch requests after
+                // the load event. The listener is registered after load, so it
+                // catches the next networkIdle that follows the SPA's data fetching.
+                if config.network_idle {
+                    let timeout = if config.strategy_timeout.is_zero() {
+                        Duration::from_secs(30)
+                    } else {
+                        config.strategy_timeout
+                    };
+
+                    match page.event_listener::<EventLifecycleEvent>().await {
+                        Ok(mut events) => {
+                            let _ = tokio::time::timeout(timeout, async {
+                                while let Some(event) = events.next().await {
+                                    if event.name == "networkIdle" {
+                                        break;
+                                    }
+                                }
+                            })
+                            .await;
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to register networkIdle listener for {}: {}", url, e);
+                        }
+                    }
+                }
+
+                // Strategy 2: poll until a CSS selector appears in the DOM.
+                // Useful when you know a specific element that the SPA renders
+                // once its content is ready (e.g. `--headless-wait-for-selector "main"`).
+                if let Some(selector) = &config.wait_for_selector {
+                    let timeout = if config.strategy_timeout.is_zero() {
+                        Duration::from_secs(30)
+                    } else {
+                        config.strategy_timeout
+                    };
+                    let deadline = tokio::time::Instant::now() + timeout;
+                    loop {
+                        match page.find_element(selector.clone()).await {
+                            Ok(_) => break,
+                            Err(_) => {
+                                if tokio::time::Instant::now() >= deadline {
+                                    tracing::warn!("Timed out waiting for selector '{}' on {}", selector, url);
+                                    break;
+                                }
+                                tokio::time::sleep(Duration::from_millis(200)).await;
+                            }
+                        }
+                    }
+                }
+
+                // Strategy 3: fixed delay — applied on top of other strategies.
+                if !config.fixed_delay.is_zero() {
+                    tokio::time::sleep(config.fixed_delay).await;
                 }
 
                 let content = page
