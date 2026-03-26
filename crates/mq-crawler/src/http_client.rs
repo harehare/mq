@@ -160,40 +160,50 @@ impl HttpClient {
                 Ok(page_source)
             }
             HttpClient::Chromium(browser, config, _) => {
-                // new_page() waits for the browser's `load` event, which covers
-                // synchronous JS. For SPAs that fetch data asynchronously after
-                // load, additional strategies in `config` are applied below.
+                // Open a blank page first so we can register event listeners
+                // BEFORE navigating. This eliminates the race condition where
+                // networkIdle fires between the `load` event and listener
+                // registration when using new_page(url) directly.
                 let page = browser
-                    .new_page(url.as_str())
+                    .new_page("about:blank")
                     .await
-                    .map_err(|e| format!("Chrome failed to open page {}: {}", url, e))?;
+                    .map_err(|e| format!("Chrome failed to open blank page: {}", e))?;
 
-                // Strategy 1: wait for the CDP networkIdle lifecycle event.
-                // This is effective for SPAs that issue XHR/fetch requests after
-                // the load event. The listener is registered after load, so it
-                // catches the next networkIdle that follows the SPA's data fetching.
-                if config.network_idle {
+                // Strategy 1: register the networkIdle listener BEFORE navigation
+                // so no lifecycle event can slip past between load and registration.
+                let network_idle_listener = if config.network_idle {
+                    match page.event_listener::<EventLifecycleEvent>().await {
+                        Ok(events) => Some(events),
+                        Err(e) => {
+                            tracing::warn!("Failed to register networkIdle listener for {}: {}", url, e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
+                // Navigate to the target URL after the listener is in place.
+                page.goto(url.as_str())
+                    .await
+                    .map_err(|e| format!("Chrome failed to navigate to {}: {}", url, e))?;
+
+                // Now await the networkIdle event from the already-registered listener.
+                if let Some(mut events) = network_idle_listener {
                     let timeout = if config.strategy_timeout.is_zero() {
                         Duration::from_secs(30)
                     } else {
                         config.strategy_timeout
                     };
 
-                    match page.event_listener::<EventLifecycleEvent>().await {
-                        Ok(mut events) => {
-                            let _ = tokio::time::timeout(timeout, async {
-                                while let Some(event) = events.next().await {
-                                    if event.name == "networkIdle" {
-                                        break;
-                                    }
-                                }
-                            })
-                            .await;
+                    let _ = tokio::time::timeout(timeout, async {
+                        while let Some(event) = events.next().await {
+                            if event.name == "networkIdle" {
+                                break;
+                            }
                         }
-                        Err(e) => {
-                            tracing::warn!("Failed to register networkIdle listener for {}: {}", url, e);
-                        }
-                    }
+                    })
+                    .await;
                 }
 
                 // Strategy 2: poll until a CSS selector appears in the DOM.
