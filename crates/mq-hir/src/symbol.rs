@@ -78,7 +78,9 @@ pub enum SymbolKind {
     Loop,
     Macro(Params),
     Match,
-    MatchArm,
+    MatchArm {
+        has_guard: bool,
+    },
     None,
     Number,
     Parameter,

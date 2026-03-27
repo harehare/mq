@@ -83,8 +83,12 @@ fn test_match_pattern_type_mismatch() {
 
 #[test]
 fn test_match_arm_body_type_mismatch() {
-    // mq is dynamically typed — match arms with different body types are allowed
-    let result = check_types(r#"match (1): | 1: "one" | 2: 222 end"#);
+    // mq is dynamically typed — match arms with different body types are allowed.
+    // Filter out exhaustiveness errors (tested separately) to focus on type compatibility.
+    let result: Vec<_> = check_types(r#"match (1): | 1: "one" | 2: 222 end"#)
+        .into_iter()
+        .filter(|e| !matches!(e, TypeError::NonExhaustiveMatch { .. }))
+        .collect();
     println!("Match arm body type mismatch: {:?}", result);
     assert!(
         result.is_empty(),
@@ -128,7 +132,11 @@ fn test_success_homogeneous_dict() {
 
 #[test]
 fn test_success_match_consistent_patterns() {
-    let result = check_types(r#"match (1): | 1: "one" | 2: "two" end"#);
+    // Filter out exhaustiveness errors (tested separately) to focus on type compatibility.
+    let result: Vec<_> = check_types(r#"match (1): | 1: "one" | 2: "two" end"#)
+        .into_iter()
+        .filter(|e| !matches!(e, TypeError::NonExhaustiveMatch { .. }))
+        .collect();
     for e in &result {
         eprintln!("Error: {}", e);
     }
@@ -360,14 +368,20 @@ fn test_narrowing_selector_various_structural() {
 /// Helper function to run type checker with strict array mode enabled
 fn check_types_strict_array(code: &str) -> Vec<TypeError> {
     let hir = create_hir(code);
-    let mut checker = TypeChecker::with_options(TypeCheckerOptions { strict_array: true });
+    let mut checker = TypeChecker::with_options(TypeCheckerOptions {
+        strict_array: true,
+        ..Default::default()
+    });
     checker.check(&hir)
 }
 
 /// Helper function to run type checker with tuple mode enabled
 fn check_types_tuple(code: &str) -> Vec<TypeError> {
     let hir = create_hir(code);
-    let mut checker = TypeChecker::with_options(TypeCheckerOptions { strict_array: false });
+    let mut checker = TypeChecker::with_options(TypeCheckerOptions {
+        strict_array: false,
+        ..Default::default()
+    });
     checker.check(&hir)
 }
 

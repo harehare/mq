@@ -4,6 +4,7 @@ use axum::{
     response::Json,
 };
 use serde::Deserialize;
+use std::sync::OnceLock;
 use tracing::{debug, error, info};
 use utoipa::OpenApi;
 
@@ -219,6 +220,8 @@ pub async fn post_format_api(
     }
 }
 
+static OPENAPI_SPEC: OnceLock<utoipa::openapi::OpenApi> = OnceLock::new();
+
 #[utoipa::path(
     get,
     path = "/openapi.json",
@@ -228,5 +231,5 @@ pub async fn post_format_api(
 )]
 pub async fn openapi_json() -> Json<utoipa::openapi::OpenApi> {
     debug!("GET /openapi.json called");
-    Json(ApiDoc::openapi())
+    Json(OPENAPI_SPEC.get_or_init(ApiDoc::openapi).clone())
 }

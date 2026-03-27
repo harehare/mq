@@ -1,3 +1,7 @@
+#[cfg(feature = "use_mimalloc")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use mq_web_api::{
     Config,
     server::{init_tracing, start_server},

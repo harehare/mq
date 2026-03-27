@@ -282,7 +282,7 @@ This is a sample document with frontmatter.
     examples: [
       {
         name: "Extract section by title",
-        code: `include "section" | nodes | section("Installation")`,
+        code: `include "section" | nodes | section("Installation") | collect()`,
         markdown: `# Introduction
 
 Welcome to the project.

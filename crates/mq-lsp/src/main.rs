@@ -50,6 +50,7 @@ async fn main() {
     let cli = Cli::parse();
     let type_check_config = mq_check::TypeCheckerOptions {
         strict_array: cli.type_check.strict_array,
+        ..Default::default()
     };
 
     let config = LspConfig::new(

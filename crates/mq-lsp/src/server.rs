@@ -1363,7 +1363,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_lsp_config_new() {
-        let config = LspConfig::new(vec![], true, mq_check::TypeCheckerOptions { strict_array: true });
+        let config = LspConfig::new(
+            vec![],
+            true,
+            mq_check::TypeCheckerOptions {
+                strict_array: true,
+                ..Default::default()
+            },
+        );
         assert!(config.enable_type_checking);
         assert!(config.type_checker_options.strict_array);
     }
@@ -1530,7 +1537,14 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
-            config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions { strict_array: true }),
+            config: LspConfig::new(
+                vec![],
+                true,
+                mq_check::TypeCheckerOptions {
+                    strict_array: true,
+                    ..Default::default()
+                },
+            ),
         });
 
         let backend = service.inner();
@@ -1566,7 +1580,14 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
-            config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions { strict_array: false }),
+            config: LspConfig::new(
+                vec![],
+                true,
+                mq_check::TypeCheckerOptions {
+                    strict_array: false,
+                    ..Default::default()
+                },
+            ),
         });
 
         let backend = service.inner();

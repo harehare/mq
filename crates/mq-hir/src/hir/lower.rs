@@ -1518,10 +1518,16 @@ impl Hir {
             ..
         } = &**node
         {
+            let children = node.children_without_token();
+
+            // A guard is present when the arm has more than 2 non-token children:
+            // [Pattern, guard_expr, body] vs [Pattern, body]
+            let has_guard = children.len() > 2;
+
             // Create MatchArm symbol
             let symbol_id = self.add_symbol(Symbol {
                 value: None,
-                kind: SymbolKind::MatchArm,
+                kind: SymbolKind::MatchArm { has_guard },
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
                 doc: node.comments(),
@@ -1536,8 +1542,6 @@ impl Hir {
                 ScopeKind::MatchArm(symbol_id),
                 Some(scope_id),
             ));
-
-            let children = node.children_without_token();
 
             // Process pattern (first child after the pipe token)
             // The pattern introduces variables into the arm scope

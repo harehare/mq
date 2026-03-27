@@ -27,6 +27,7 @@
 pub mod builtin;
 pub mod constraint;
 pub(crate) mod deferred;
+pub(crate) mod exhaustiveness;
 pub mod infer;
 pub mod narrowing;
 pub mod types;
@@ -185,6 +186,18 @@ pub enum TypeError {
         span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
     },
+    /// Emitted when a match expression does not cover all possible values of the matched type.
+    #[error("Non-exhaustive patterns: missing case for {missing}")]
+    #[diagnostic(code(typechecker::non_exhaustive_patterns))]
+    #[allow(dead_code)]
+    NonExhaustiveMatch {
+        missing: String,
+        #[label("match expression is not exhaustive")]
+        span: Option<miette::SourceSpan>,
+        location: Option<mq_lang::Range>,
+        #[help]
+        context: Option<String>,
+    },
 }
 
 impl TypeError {
@@ -199,7 +212,8 @@ impl TypeError {
             | TypeError::UndefinedField { location, .. }
             | TypeError::HeterogeneousArray { location, .. }
             | TypeError::NullablePropagation { location, .. }
-            | TypeError::UnreachableCode { location, .. } => *location,
+            | TypeError::UnreachableCode { location, .. }
+            | TypeError::NonExhaustiveMatch { location, .. } => *location,
             _ => None,
         }
     }
@@ -234,6 +248,8 @@ pub struct TypeCheckerOptions {
     /// When true, arrays must contain elements of a single type.
     /// Heterogeneous arrays like `[1, "hello"]` will produce a type error.
     pub strict_array: bool,
+    /// When true, exhaustiveness checking for pattern match expressions is disabled.
+    pub no_exhaustive_patterns: bool,
 }
 
 /// Type checker for mq programs
@@ -272,8 +288,9 @@ impl TypeChecker {
 
         builtin::register_all(&mut ctx);
 
-        // Generate constraints from HIR (collects errors internally)
-        constraint::generate_constraints(hir, &mut ctx);
+        // Generate constraints from HIR (collects errors internally).
+        // Returns the children index so it can be reused by later passes.
+        let children_index = constraint::generate_constraints(hir, &mut ctx);
 
         // Solve constraints through unification (collects errors internally)
         unify::solve_constraints(&mut ctx);
@@ -331,6 +348,13 @@ impl TypeChecker {
         // Uses local substitution (original params → call-site args) without modifying
         // global state, so multiple call sites don't interfere.
         deferred::check_user_call_body_operators(hir, &mut ctx);
+
+        // Check pattern match exhaustiveness (reuses the children index from constraint generation)
+        if !self.options.no_exhaustive_patterns {
+            for e in exhaustiveness::check_match_exhaustiveness(hir, &mut ctx, &children_index) {
+                ctx.add_error(e);
+            }
+        }
 
         // Collect errors before finalizing
         let errors = ctx.take_errors();

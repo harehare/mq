@@ -927,7 +927,7 @@ fn is_inside_control_flow(hir: &Hir, symbol_id: SymbolId, func_id: SymbolId) -> 
                 | SymbolKind::While
                 | SymbolKind::Loop
                 | SymbolKind::Match
-                | SymbolKind::MatchArm
+                | SymbolKind::MatchArm { .. }
                 | SymbolKind::Try
                 | SymbolKind::Catch
                 | SymbolKind::Foreach
