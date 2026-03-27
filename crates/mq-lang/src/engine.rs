@@ -109,6 +109,29 @@ impl<T: ModuleResolver> Engine<T> {
             .expect("Failed to load builtin module");
     }
 
+    /// Imoprt an external module by name.
+    ///
+    /// The module will be searched for in the configured search paths
+    /// and made available for use in mq code.
+    pub fn import_module(&mut self, module_name: &str) -> Result<(), Box<error::Error>> {
+        let module = self
+            .evaluator
+            .module_loader
+            .load_from_file(module_name, Shared::clone(&self.token_arena));
+        let module =
+            module.map_err(|e| error::Error::from_error("", e.into(), self.evaluator.module_loader.clone()))?;
+
+        let _ = self.evaluator.import_module(module).map_err(|e| {
+            Box::new(error::Error::from_error(
+                "",
+                e.into(),
+                self.evaluator.module_loader.clone(),
+            ))
+        })?;
+
+        Ok(())
+    }
+
     /// Load an external module by name.
     ///
     /// The module will be searched for in the configured search paths

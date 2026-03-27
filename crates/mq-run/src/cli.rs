@@ -130,6 +130,10 @@ struct InputArgs {
     #[arg(short = 'M', long)]
     module_names: Option<Vec<String>>,
 
+    /// Import modules by name, making them available as `name::fn()` in queries
+    #[arg(short = 'm', long)]
+    import_module_names: Option<Vec<String>>,
+
     /// Sets string that can be referenced at runtime
     #[arg(long, value_names = ["NAME", "VALUE"])]
     args: Option<Vec<String>>,
@@ -500,6 +504,12 @@ impl Cli {
             }
         }
 
+        if let Some(modules) = &self.input.import_module_names {
+            for module_name in modules {
+                engine.import_module(module_name).map_err(|e| *e)?;
+            }
+        }
+
         if let Some(args) = &self.input.args {
             args.chunks(2).for_each(|v| {
                 engine.define_string_value(&v[0], &v[1]);
@@ -540,7 +550,7 @@ impl Cli {
             None => return Err(miette!("Query is required")),
         };
 
-        let aggregate = self.input.aggregate.then_some(r#"nodes | import "section""#);
+        let aggregate = self.input.aggregate.then_some("nodes");
         Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
     }
 
@@ -561,6 +571,10 @@ impl Cli {
                 "__FILE_STEM__",
                 file.file_stem().unwrap_or_default().to_string_lossy().as_ref(),
             );
+        }
+
+        if self.input.aggregate {
+            engine.import_module("section").expect("Failed to load section module");
         }
 
         let input = match self.input.input_format.as_ref().unwrap_or_else(|| {
