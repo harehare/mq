@@ -23,6 +23,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: packages/mq-playground/package.json
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -39,10 +43,10 @@ jobs:
         run: mdbook build -d ../book
         working-directory: ./docs/books
       - name: Install playground dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
         working-directory: ./packages/mq-playground
       - name: Build playground
-        run: npm run build
+        run: pnpm run build
         working-directory: ./packages/mq-playground
       - name: Copy install script
         run: |
