@@ -494,6 +494,10 @@ impl Cli {
         let mut engine = mq_lang::DefaultEngine::default();
         engine.load_builtin_module();
 
+        if self.input.aggregate {
+            engine.import_module("section").expect("Failed to load section module");
+        }
+
         if let Some(dirs) = &self.input.module_directories {
             engine.set_search_paths(dirs.clone());
         }
@@ -571,10 +575,6 @@ impl Cli {
                 "__FILE_STEM__",
                 file.file_stem().unwrap_or_default().to_string_lossy().as_ref(),
             );
-        }
-
-        if self.input.aggregate {
-            engine.import_module("section").expect("Failed to load section module");
         }
 
         let input = match self.input.input_format.as_ref().unwrap_or_else(|| {
