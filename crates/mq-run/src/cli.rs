@@ -495,7 +495,7 @@ impl Cli {
         engine.load_builtin_module();
 
         if self.input.aggregate {
-            engine.import_module("section").expect("Failed to load section module");
+            engine.import_module("section").map_err(|e| *e)?;
         }
 
         if let Some(dirs) = &self.input.module_directories {
