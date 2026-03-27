@@ -9,7 +9,7 @@ run *args:
 # Start the web playground development server
 [working-directory: 'packages/mq-playground']
 playground:
-    pnpm run dev
+    npm run dev
 
 # Run benchmarks using codspeed
 [working-directory: 'crates/mq-lang']
