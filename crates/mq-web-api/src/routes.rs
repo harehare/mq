@@ -7,6 +7,7 @@ use axum::{
 use std::sync::Arc;
 use tower::ServiceBuilder;
 use tower_http::{
+    compression::CompressionLayer,
     cors::{Any, CorsLayer},
     trace::TraceLayer,
 };
@@ -49,7 +50,12 @@ pub fn create_router(config: &Config, rate_limiter: Arc<RateLimiter>) -> Router 
         .route("/api/check", post(post_check_api))
         .route("/api/format", post(post_format_api))
         .route("/openapi.json", get(openapi_json))
-        .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()).layer(cors))
+        .layer(
+            ServiceBuilder::new()
+                .layer(CompressionLayer::new())
+                .layer(TraceLayer::new_for_http())
+                .layer(cors),
+        )
         .layer(middleware::from_fn_with_state(rate_limiter, rate_limit_middleware))
         .with_state(state)
 }

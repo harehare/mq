@@ -12,12 +12,17 @@ readme = "README.md"
 repository = "https://github.com/harehare/mq"
 version = "0.5.23"
 
+[features]
+default = ["use_mimalloc"]
+use_mimalloc = ["mimalloc"]
+
 [dependencies]
 async-trait = {workspace = true}
 axum = {workspace = true}
 deadpool-libsql = {workspace = true}
 libsql = {workspace = true}
 miette = {workspace = true}
+mimalloc = {workspace = true, features = ["v3"], optional = true}
 mq-check = {workspace = true}
 mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
@@ -28,7 +33,7 @@ serde_json = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true, features = ["full"]}
 tower = {workspace = true}
-tower-http = {workspace = true, features = ["cors", "trace"]}
+tower-http = {workspace = true, features = ["cors", "trace", "compression-gzip"]}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true, features = ["env-filter", "json"]}
 utoipa = {workspace = true, features = ["preserve_order"]}
