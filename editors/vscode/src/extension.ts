@@ -156,10 +156,6 @@ function registerLspCommands(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("mq.startLSPServer", async () => {
-      if (client) {
-        await client.stop();
-        client = null;
-      }
       await stopLspServer();
       await startLspServer();
     }),
@@ -565,7 +561,11 @@ const executeCommand = async (
 
 const startLspServer = async (providedLspPath?: string) => {
   if (client !== null) {
-    return;
+    if (client.state === lc.State.Running || client.state === lc.State.Starting) {
+      return;
+    }
+    // client exists but in a non-running state (e.g. startFailed), reset it
+    client = null;
   }
 
   let lspPath: string | null;
@@ -640,15 +640,29 @@ const startLspServer = async (providedLspPath?: string) => {
   });
 
   statusBarManager?.updateStatusBar(lc.State.Starting);
-  await client.start();
-  statusBarManager?.updateStatusBar(lc.State.Running);
+  try {
+    await client.start();
+    statusBarManager?.updateStatusBar(lc.State.Running);
+  } catch (error) {
+    client = null;
+    statusBarManager?.updateStatusBar(lc.State.Stopped);
+    vscode.window.showErrorMessage(
+      `mq: Failed to start LSP server: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
+  }
 };
 
 const stopLspServer = async () => {
   if (!client) {
     return undefined;
   }
-  await client.stop();
+  if (client.state === lc.State.Running || client.state === lc.State.Starting) {
+    try {
+      await client.stop();
+    } catch {
+      // ignore errors
+    }
+  }
   client = null;
   statusBarManager?.updateStatusBar(lc.State.Stopped);
 };
@@ -687,7 +701,6 @@ function downloadFile(url: string, dest: string): Promise<void> {
           ) {
             const location = response.headers.location;
             if (location) {
-              file.close();
               request(location);
               return;
             }
