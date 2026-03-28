@@ -1,5 +1,8 @@
 import * as lc from "vscode-languageclient/node";
 import * as vscode from "vscode";
+import * as https from "https";
+import * as fs from "fs";
+import * as path from "path";
 import which from "which";
 import { MqDebugConfigurationProvider } from "./providers/debugger";
 import { MqCodeLensProvider } from "./providers/codelens";
@@ -146,8 +149,8 @@ function registerLspCommands(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("mq.installServers", async () => {
       await stopLspServer();
-      await installServers(context, true);
-      await startLspServer();
+      const installedPath = await installServers(context, true);
+      await startLspServer(installedPath ?? undefined);
     }),
   );
 
@@ -382,45 +385,83 @@ function updateCodeLensProvider(context: vscode.ExtensionContext) {
 async function initializeLspServer(context: vscode.ExtensionContext) {
   if (process.env._MQ_DEBUG_BIN) {
     await startLspServer();
-  } else {
-    const config = vscode.workspace.getConfiguration("mq");
-    const configLspPath = config.get<string>("path");
+    return;
+  }
 
-    if (configLspPath) {
-      await startLspServer();
-    } else if ((await which("mq", { nothrow: true })) === null) {
+  const config = vscode.workspace.getConfiguration("mq");
+  const configLspPath = config.get<string>("lspPath");
+
+  if (configLspPath) {
+    await startLspServer();
+    return;
+  }
+
+  const ext = process.platform === "win32" ? ".exe" : "";
+  const storageLspPath = path.join(
+    context.globalStorageUri.fsPath,
+    "bin",
+    `mq-lsp${ext}`,
+  );
+
+  if (fs.existsSync(storageLspPath)) {
+    const prevVersion = context.globalState.get<string>(MQ_VERSION_KEY);
+    const currentVersion = context.extension.packageJSON.version;
+
+    if (prevVersion && currentVersion !== prevVersion) {
       const selected = await vscode.window.showInformationMessage(
-        "Install mq?",
+        "mq has been updated. Would you like to download the latest version?",
+        "Yes",
+        "No",
+      );
+
+      if (selected === "Yes") {
+        const newPath = await downloadFromRelease(context, true);
+        await startLspServer(newPath ?? storageLspPath);
+      } else {
+        await context.globalState.update(MQ_VERSION_KEY, currentVersion);
+        await startLspServer(storageLspPath);
+      }
+    } else {
+      await startLspServer(storageLspPath);
+    }
+    return;
+  }
+
+  const lspInPath = await which("mq-lsp", { nothrow: true });
+
+  if (lspInPath !== null) {
+    const prevVersion = context.globalState.get<string>(MQ_VERSION_KEY);
+    const currentVersion = context.extension.packageJSON.version;
+
+    if (!prevVersion || currentVersion !== prevVersion) {
+      const selected = await vscode.window.showInformationMessage(
+        "mq has been updated. Would you like to install the latest version?",
         "Yes",
         "No",
       );
 
       if (selected === "Yes") {
         await installServers(context, false);
-        await startLspServer();
       } else {
-        vscode.window.showErrorMessage("mq not found in PATH");
+        await context.globalState.update(MQ_VERSION_KEY, currentVersion);
       }
-    } else {
-      const prevVersion = context.globalState.get<string>(MQ_VERSION_KEY);
-      const currentVersion = context.extension.packageJSON.version;
-
-      if (!prevVersion || currentVersion !== prevVersion) {
-        const selected = await vscode.window.showInformationMessage(
-          `mq has been updated. Would you like to install the latest version?`,
-          "Yes",
-          "No",
-        );
-
-        if (selected === "Yes") {
-          await installServers(context, false);
-        } else {
-          await context.globalState.update(MQ_VERSION_KEY, currentVersion);
-        }
-      }
-
-      await startLspServer();
     }
+
+    await startLspServer();
+    return;
+  }
+
+  const selected = await vscode.window.showInformationMessage(
+    "Install mq?",
+    "Yes",
+    "No",
+  );
+
+  if (selected === "Yes") {
+    const installedPath = await installServers(context, false);
+    await startLspServer(installedPath ?? undefined);
+  } else {
+    vscode.window.showErrorMessage("mq not found in PATH");
   }
 }
 
@@ -522,7 +563,7 @@ const executeCommand = async (
   }
 };
 
-const startLspServer = async () => {
+const startLspServer = async (providedLspPath?: string) => {
   if (client !== null) {
     return;
   }
@@ -532,6 +573,8 @@ const startLspServer = async () => {
 
   if (process.env._MQ_DEBUG_BIN) {
     lspPath = process.env._MQ_DEBUG_BIN;
+  } else if (providedLspPath) {
+    lspPath = providedLspPath;
   } else {
     const configLspPath = config.get<string>("lspPath");
 
@@ -610,21 +653,186 @@ const stopLspServer = async () => {
   statusBarManager?.updateStatusBar(lc.State.Stopped);
 };
 
+function getTargetTriple(): string | null {
+  const platform = process.platform;
+  const arch = process.arch;
+
+  if (platform === "darwin" && arch === "arm64") {
+    return "aarch64-apple-darwin";
+  }
+  if (platform === "linux" && arch === "x64") {
+    return "x86_64-unknown-linux-gnu";
+  }
+  if (platform === "linux" && arch === "arm64") {
+    return "aarch64-unknown-linux-gnu";
+  }
+  if (platform === "win32" && arch === "x64") {
+    return "x86_64-pc-windows-msvc";
+  }
+  return null;
+}
+
+function downloadFile(url: string, dest: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+
+    const request = (targetUrl: string) => {
+      https
+        .get(targetUrl, (response) => {
+          if (
+            response.statusCode === 301 ||
+            response.statusCode === 302 ||
+            response.statusCode === 307 ||
+            response.statusCode === 308
+          ) {
+            const location = response.headers.location;
+            if (location) {
+              file.close();
+              request(location);
+              return;
+            }
+          }
+
+          if (response.statusCode !== 200) {
+            file.close();
+            fs.unlink(dest, () => {});
+            reject(
+              new Error(`Download failed with status ${response.statusCode}`),
+            );
+            return;
+          }
+
+          response.pipe(file);
+          file.on("finish", () => {
+            file.close();
+            resolve();
+          });
+        })
+        .on("error", (err) => {
+          file.close();
+          fs.unlink(dest, () => {});
+          reject(err);
+        });
+    };
+
+    request(url);
+  });
+}
+
+async function downloadFromRelease(
+  context: vscode.ExtensionContext,
+  force: boolean,
+): Promise<string | null> {
+  const target = getTargetTriple();
+  if (!target) {
+    vscode.window.showErrorMessage(
+      `No prebuilt binary available for ${process.platform}/${process.arch}. Please use the cargo install method instead.`,
+    );
+    return null;
+  }
+
+  const version: string = context.extension.packageJSON.version;
+  const ext = process.platform === "win32" ? ".exe" : "";
+  const binDir = path.join(context.globalStorageUri.fsPath, "bin");
+  const lspDest = path.join(binDir, `mq-lsp${ext}`);
+  const dbgDest = path.join(binDir, `mq-dbg${ext}`);
+
+  if (!force && fs.existsSync(lspDest)) {
+    return lspDest;
+  }
+
+  const baseUrl = `https://github.com/harehare/mq/releases/download/v${version}`;
+  const lspUrl = `${baseUrl}/mq-lsp-${target}${ext}`;
+  const dbgUrl = `${baseUrl}/mq-dbg-${target}${ext}`;
+
+  return vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "mq: Downloading binaries from GitHub Releases...",
+      cancellable: false,
+    },
+    async () => {
+      try {
+        await fs.promises.mkdir(binDir, { recursive: true });
+
+        await downloadFile(lspUrl, lspDest);
+        await downloadFile(dbgUrl, dbgDest);
+
+        if (process.platform !== "win32") {
+          await fs.promises.chmod(lspDest, 0o755);
+          await fs.promises.chmod(dbgDest, 0o755);
+        }
+
+        await context.globalState.update(
+          MQ_VERSION_KEY,
+          context.extension.packageJSON.version,
+        );
+
+        vscode.window.showInformationMessage(
+          "mq: Binaries downloaded successfully.",
+        );
+        return lspDest;
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `mq: Download failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
+        return null;
+      }
+    },
+  );
+}
+
+async function chooseInstallMethod(): Promise<"release" | "cargo" | null> {
+  const config = vscode.workspace.getConfiguration("mq");
+  const configured = config.get<string>("installMethod");
+
+  if (configured === "release" || configured === "cargo") {
+    return configured;
+  }
+
+  const items = [
+    {
+      label: "$(cloud-download) Download from GitHub Releases",
+      description: "Recommended — fast, no Rust toolchain required",
+      value: "release" as const,
+    },
+    {
+      label: "$(tools) Install via Cargo",
+      description: "Build from source using cargo install",
+      value: "cargo" as const,
+    },
+  ];
+
+  const selected = await vscode.window.showQuickPick(items, {
+    placeHolder: "Choose installation method for mq-lsp and mq-dbg",
+  });
+
+  return selected?.value ?? null;
+}
+
 const installServers = async (
   context: vscode.ExtensionContext,
   force: boolean,
-) => {
+): Promise<string | null> => {
+  const method = await chooseInstallMethod();
+
+  if (method === null) {
+    return null;
+  }
+
+  if (method === "release") {
+    return await downloadFromRelease(context, force);
+  }
+
   const cargoPath = await which("cargo", { nothrow: true });
 
   if (cargoPath === null) {
     vscode.window.showErrorMessage("Cargo not found in PATH");
-    return false;
+    return null;
   }
 
-  const installLspCommand = `cargo install --git https://github.com/harehare/mq.git mq-lsp ${force ? " --force" : ""
-    }`;
-  const installDapCommand = `cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger" ${force ? " --force" : ""
-    }`;
+  const installLspCommand = `cargo install --git https://github.com/harehare/mq.git mq-lsp${force ? " --force" : ""}`;
+  const installDapCommand = `cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"${force ? " --force" : ""}`;
 
   const installTask = new vscode.Task(
     { type: "cargo", task: "install-lsp-server" },
@@ -637,27 +845,25 @@ const installServers = async (
   );
 
   try {
-    // Start both tasks
     const execution = await vscode.tasks.executeTask(installTask);
     await context.globalState.update(
       MQ_VERSION_KEY,
       context.extension.packageJSON.version,
     );
 
-    // Track completion of both tasks
-    return new Promise<boolean>((resolve) => {
+    await new Promise<void>((resolve) => {
       const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
         if (e.execution === execution) {
           disposable.dispose();
-          resolve(true);
+          resolve();
         }
       });
     });
+    return null;
   } catch (error) {
     vscode.window.showErrorMessage(
-      `Installation task failed: ${error instanceof Error ? error.message : "Unknown error"
-      }`,
+      `Installation task failed: ${error instanceof Error ? error.message : "Unknown error"}`,
     );
-    return false;
+    return null;
   }
 };

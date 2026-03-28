@@ -144,6 +144,20 @@
           "type": "boolean",
           "default": false,
           "description": "Enable or disable strict array mode. When enabled, arrays must contain elements of a single type."
+        },
+        "mq.installMethod": {
+          "title": "Install Method",
+          "type": "string",
+          "enum": [
+            "release",
+            "cargo"
+          ],
+          "enumDescriptions": [
+            "Download prebuilt binaries from GitHub Releases (recommended)",
+            "Build from source using cargo install"
+          ],
+          "default": "release",
+          "description": "Method to use when installing mq-lsp and mq-dbg"
         }
       }
     },
