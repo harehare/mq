@@ -76,14 +76,6 @@ impl Config {
         }
 
         // Rate limiting configuration
-        if let Ok(database_url) = env::var("DATABASE_URL") {
-            config.rate_limit.database_url = database_url;
-        }
-
-        if let Ok(database_token) = env::var("DATABASE_TOKEN") {
-            config.rate_limit.database_auth_token = Some(database_token);
-        }
-
         if let Ok(requests_str) = env::var("RATE_LIMIT_REQUESTS_PER_WINDOW") {
             if let Ok(requests) = requests_str.parse::<i64>() {
                 config.rate_limit.requests_per_window = requests;
@@ -113,28 +105,6 @@ impl Config {
                 eprintln!(
                     "Warning: Invalid RATE_LIMIT_CLEANUP_INTERVAL_SECONDS value '{}', using default {}",
                     cleanup_str, config.rate_limit.cleanup_interval_seconds
-                );
-            }
-        }
-
-        if let Ok(pool_size_str) = env::var("RATE_LIMIT_POOL_MAX_SIZE") {
-            if let Ok(pool_size) = pool_size_str.parse::<usize>() {
-                config.rate_limit.pool_max_size = pool_size;
-            } else {
-                eprintln!(
-                    "Warning: Invalid RATE_LIMIT_POOL_MAX_SIZE value '{}', using default {}",
-                    pool_size_str, config.rate_limit.pool_max_size
-                );
-            }
-        }
-
-        if let Ok(timeout_str) = env::var("RATE_LIMIT_POOL_TIMEOUT_SECONDS") {
-            if let Ok(timeout) = timeout_str.parse::<u64>() {
-                config.rate_limit.pool_timeout_seconds = timeout;
-            } else {
-                eprintln!(
-                    "Warning: Invalid RATE_LIMIT_POOL_TIMEOUT_SECONDS value '{}', using default {}",
-                    timeout_str, config.rate_limit.pool_timeout_seconds
                 );
             }
         }

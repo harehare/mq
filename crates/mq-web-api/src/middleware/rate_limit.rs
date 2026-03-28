@@ -154,15 +154,11 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limit_headers_added() {
         let config = RateLimitConfig {
-            database_url: ":memory:".to_string(),
-            database_auth_token: None,
             requests_per_window: 10,
             window_size_seconds: 3600,
             cleanup_interval_seconds: 3600,
-            pool_max_size: 10,
-            pool_timeout_seconds: 30,
         };
-        let rate_limiter = RateLimiter::new(config).await.unwrap();
+        let rate_limiter = RateLimiter::new(config);
 
         let mut response = Response::new(Body::empty());
         add_rate_limit_headers(&mut response, 3, &rate_limiter);
