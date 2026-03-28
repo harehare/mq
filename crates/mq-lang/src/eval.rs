@@ -2,10 +2,13 @@ use std::borrow::Cow;
 
 #[cfg(feature = "debugger")]
 use crate::DebuggerHandler;
+use crate::Module;
 #[cfg(feature = "debugger")]
 use crate::ast::constants;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::DefaultDebuggerHandler;
+#[cfg(feature = "debugger")]
+use crate::eval::debugger::Source;
 use crate::{
     Ident, Program, Shared, SharedCell, Token, TokenKind,
     arena::Arena,
@@ -24,8 +27,6 @@ use crate::{
     module::{self, error::ModuleError},
     selector::Selector,
 };
-#[cfg(feature = "debugger")]
-use crate::{Module, eval::debugger::Source};
 
 #[cfg(feature = "debugger")]
 use debugger::{Breakpoint, DebugContext, Debugger};
@@ -351,6 +352,11 @@ impl<T: ModuleResolver> Evaluator<T> {
         self.load_module_with_env(module, &Shared::clone(&self.env))
     }
 
+    pub(crate) fn import_module(&mut self, module: Module) -> Result<RuntimeValue, RuntimeError> {
+        self.import_module_with_env(module, &Shared::clone(&self.env))
+            .map_err(|e| e.into_runtime_error())
+    }
+
     pub(crate) fn load_module_with_env(
         &mut self,
         module: module::Module,
@@ -581,37 +587,39 @@ impl<T: ModuleResolver> Evaluator<T> {
         Ok(runtime_value.clone())
     }
 
+    fn import_module_with_env(&mut self, module: Module, env: &Shared<SharedCell<Env>>) -> EvalResult {
+        // Collect macros from the module
+        // Create a new environment for the module exports
+        let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+        let module_name_to_use = module.name.to_string();
+
+        self.load_module_with_env(module, &Shared::clone(&module_env))?;
+
+        // Register the module in the environment
+        let module_runtime_value = RuntimeValue::Module(runtime_value::ModuleEnv::new(
+            &module_name_to_use,
+            Shared::clone(&module_env),
+        ));
+
+        define(&self.env, Ident::new(&module_name_to_use), module_runtime_value);
+
+        Ok(RuntimeValue::Module(ModuleEnv::new(&module_name_to_use, module_env)))
+    }
+
     fn eval_import(&mut self, module_path: ast::Literal, env: &Shared<SharedCell<Env>>) -> EvalResult {
         match module_path {
             ast::Literal::String(module_name) => {
                 let module = self
                     .module_loader
                     .load_from_file(&module_name, Shared::clone(&self.token_arena));
-
                 match module {
-                    Ok(module) => {
-                        // Collect macros from the module
-                        // Create a new environment for the module exports
-                        let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
-                        let module_name_to_use = module.name.to_string();
-
-                        self.load_module_with_env(module, &Shared::clone(&module_env))?;
-
-                        // Register the module in the environment
-                        let module_runtime_value = RuntimeValue::Module(runtime_value::ModuleEnv::new(
-                            &module_name_to_use,
-                            Shared::clone(&module_env),
-                        ));
-
-                        define(&self.env, Ident::new(&module_name_to_use), module_runtime_value);
-
-                        Ok(RuntimeValue::Module(ModuleEnv::new(&module_name_to_use, module_env)))
-                    }
+                    Ok(module) => self.import_module_with_env(module, env),
                     Err(ModuleError::AlreadyLoaded(_)) => match resolve(&module_name, env) {
                         Ok(value) => Ok(value),
-                        Err(_) => {
-                            Err(RuntimeError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(module_name))).into())
-                        }
+                        Err(_) => Err(RuntimeError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(
+                            module_name.to_string(),
+                        )))
+                        .into()),
                     },
                     Err(e) => Err(RuntimeError::ModuleLoadError(e).into()),
                 }

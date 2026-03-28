@@ -130,6 +130,10 @@ struct InputArgs {
     #[arg(short = 'M', long)]
     module_names: Option<Vec<String>>,
 
+    /// Import modules by name, making them available as `name::fn()` in queries
+    #[arg(short = 'm', long)]
+    import_module_names: Option<Vec<String>>,
+
     /// Sets string that can be referenced at runtime
     #[arg(long, value_names = ["NAME", "VALUE"])]
     args: Option<Vec<String>>,
@@ -490,6 +494,10 @@ impl Cli {
         let mut engine = mq_lang::DefaultEngine::default();
         engine.load_builtin_module();
 
+        if self.input.aggregate {
+            engine.import_module("section").map_err(|e| *e)?;
+        }
+
         if let Some(dirs) = &self.input.module_directories {
             engine.set_search_paths(dirs.clone());
         }
@@ -497,6 +505,12 @@ impl Cli {
         if let Some(modules) = &self.input.module_names {
             for module_name in modules {
                 engine.load_module(module_name).map_err(|e| *e)?;
+            }
+        }
+
+        if let Some(modules) = &self.input.import_module_names {
+            for module_name in modules {
+                engine.import_module(module_name).map_err(|e| *e)?;
             }
         }
 
@@ -540,7 +554,7 @@ impl Cli {
             None => return Err(miette!("Query is required")),
         };
 
-        let aggregate = self.input.aggregate.then_some(r#"nodes | import "section""#);
+        let aggregate = self.input.aggregate.then_some("nodes");
         Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
     }
 

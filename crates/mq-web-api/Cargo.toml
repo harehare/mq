@@ -19,8 +19,6 @@ use_mimalloc = ["mimalloc"]
 [dependencies]
 async-trait = {workspace = true}
 axum = {workspace = true}
-deadpool-libsql = {workspace = true}
-libsql = {workspace = true}
 miette = {workspace = true}
 mimalloc = {workspace = true, features = ["v3"], optional = true}
 mq-check = {workspace = true}

@@ -56,7 +56,7 @@ pub async fn start_server(config: Config) -> Result<(), Box<dyn std::error::Erro
     info!("Starting mq-web-api server with config: {:?}", config);
 
     // Initialize rate limiter
-    let rate_limiter = Arc::new(RateLimiter::new(config.rate_limit.clone()).await?);
+    let rate_limiter = Arc::new(RateLimiter::new(config.rate_limit.clone()));
     info!("Rate limiter initialized successfully");
 
     let app = create_router(&config, rate_limiter.clone()).layer(TraceLayer::new_for_http().on_response(
@@ -82,12 +82,9 @@ pub async fn start_server(config: Config) -> Result<(), Box<dyn std::error::Erro
     info!("  RUST_LOG or MQ_LOG_LEVEL: Log level (default: mq_web_api=debug,tower_http=debug)");
     info!("  LOG_FORMAT: Log format - 'json' or 'text' (default: json)");
     info!("  CORS_ORIGINS: Comma-separated CORS origins (default: *)");
-    info!("  RATE_LIMIT_DATABASE_URL: Rate limit database URL (default: :memory:)");
     info!("  RATE_LIMIT_REQUESTS_PER_WINDOW: Requests per window (default: 100)");
     info!("  RATE_LIMIT_WINDOW_SIZE_SECONDS: Window size in seconds (default: 3600)");
     info!("  RATE_LIMIT_CLEANUP_INTERVAL_SECONDS: Cleanup interval in seconds (default: 3600)");
-    info!("  RATE_LIMIT_POOL_MAX_SIZE: Connection pool max size (default: 10)");
-    info!("  RATE_LIMIT_POOL_TIMEOUT_SECONDS: Connection pool timeout in seconds (default: 30)");
 
     // Start cleanup service
     let mut cleanup_service = CleanupService::new(
