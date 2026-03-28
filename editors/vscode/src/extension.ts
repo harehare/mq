@@ -50,6 +50,7 @@ import "yaml" | if (.yaml): yaml::yaml_parse() | get(:title)
 let client: lc.LanguageClient | null = null;
 let codeLensProvider: vscode.Disposable | null = null;
 let statusBarManager: LspStatusBarManager | null = null;
+let globalStorageBinPath: string | null = null;
 
 const InputFormatMap = {
   md: "markdown",
@@ -462,6 +463,8 @@ async function initializeLspServer(context: vscode.ExtensionContext) {
 }
 
 export async function activate(context: vscode.ExtensionContext) {
+  globalStorageBinPath = path.join(context.globalStorageUri.fsPath, "bin");
+
   // Initialize status bar manager
   statusBarManager = new LspStatusBarManager();
   context.subscriptions.push(statusBarManager);
@@ -581,7 +584,16 @@ const startLspServer = async (providedLspPath?: string) => {
     if (configLspPath) {
       lspPath = configLspPath;
     } else {
-      lspPath = await which("mq-lsp", { nothrow: true });
+      const ext = process.platform === "win32" ? ".exe" : "";
+      const storageLspPath = globalStorageBinPath
+        ? path.join(globalStorageBinPath, `mq-lsp${ext}`)
+        : null;
+
+      if (storageLspPath && fs.existsSync(storageLspPath)) {
+        lspPath = storageLspPath;
+      } else {
+        lspPath = await which("mq-lsp", { nothrow: true });
+      }
     }
 
     if (lspPath === null) {
@@ -800,13 +812,6 @@ async function downloadFromRelease(
 }
 
 async function chooseInstallMethod(): Promise<"release" | "cargo" | null> {
-  const config = vscode.workspace.getConfiguration("mq");
-  const configured = config.get<string>("installMethod");
-
-  if (configured === "release" || configured === "cargo") {
-    return configured;
-  }
-
   const items = [
     {
       label: "$(cloud-download) Download from GitHub Releases",
