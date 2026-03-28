@@ -1,10 +1,10 @@
 use axum::{
-    extract::{Request, State},
+    extract::{ConnectInfo, Request, State},
     http::{HeaderValue, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 use tracing::{debug, warn};
 
 use crate::rate_limiter::{RateLimitError, RateLimiter};
@@ -70,7 +70,11 @@ fn extract_identifier(request: &Request) -> String {
         return ip_str.to_string();
     }
 
-    // Fallback - in a real deployment, you might want to extract from the connection
+    // Fall back to the actual TCP connection peer address
+    if let Some(ConnectInfo(addr)) = request.extensions().get::<ConnectInfo<SocketAddr>>() {
+        return addr.ip().to_string();
+    }
+
     "unknown".to_string()
 }
 

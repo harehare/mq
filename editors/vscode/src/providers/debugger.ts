@@ -62,6 +62,21 @@ export class MqDebugConfigurationProvider
       }
     }
 
+    // Try to find mq-dbg downloaded from GitHub Releases
+    const ext = process.platform === "win32" ? ".exe" : "";
+    const storageMqDbgPath = path.join(
+      this.context.globalStorageUri.fsPath,
+      "bin",
+      `mq-dbg${ext}`
+    );
+
+    try {
+      await vscode.workspace.fs.stat(vscode.Uri.file(storageMqDbgPath));
+      return storageMqDbgPath;
+    } catch {
+      // File doesn't exist, continue to other options
+    }
+
     // Try to find mq-dap in PATH
     const mqDbgPath = await which("mq-dbg", { nothrow: true });
     if (mqDbgPath) {

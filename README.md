@@ -170,6 +170,13 @@ steps:
   - run: mq '.code' README.md
 ```
 
+## Web API
+
+You can try mq without installing anything via the hosted REST API at `https://api.mqlang.org`.
+
+The interactive API documentation (Swagger UI) is available at [`https://api.mqlang.org/docs`](https://api.mqlang.org/docs).
+
+
 ## Language Bindings
 
 Language bindings are available for the following programming languages:
@@ -200,8 +207,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -A, --aggregate
@@ -340,6 +347,23 @@ markitdown https://github.com/harehare/mq | mq '.code'
 markitdown test.xlsx | mq '.[][]'
 ```
 
+### Composing Workflows with Subcommands
+
+`mq` subcommands are designed to work together via Unix pipes.
+
+```sh
+# Convert Excel report to Markdown, then extract all headings
+mq conv report.xlsx | mq '.h'
+
+# Convert a Word document and extract a specific section
+mq conv document.docx | mq -A 'section::section("Summary")'
+
+# Convert and view Markdown directly in the terminal
+mq conv slides.pdf | mq view
+```
+
+Run `mq --list` to see all available subcommands (built-in and external).
+
 ## External Subcommands
 
 You can extend `mq` with custom subcommands by placing executable files starting with `mq-` in `~/.mq/bin/` or anywhere in your `PATH`.
@@ -361,6 +385,11 @@ The following external tools are available to extend mq's functionality:
 - [mq-tui](https://github.com/harehare/mq-tui) - Terminal User Interface (TUI) for interactive mq query
 - [mq-update](https://github.com/harehare/mq-update) - Update mq binary to the latest version
 - [mq-view](https://github.com/harehare/mq-view) - viewer for Markdown content
+
+### AI Assistant Integration
+
+- MCP: [mq-mcp](https://github.com/harehare/mq-mcp) provides a Model Context Protocol server, enabling mq to be used from any MCP-compatible AI assistant.
+- Skill: The [processing-markdown](skills/processing-markdown/SKILL.md) skill adds mq-aware assistance directly to your AI coding workflow.
 
 ## Support
 
