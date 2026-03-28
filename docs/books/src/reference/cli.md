@@ -26,6 +26,8 @@ Options:
           Search modules from the directory
   -M, --module-names <MODULE_NAMES>
           Load additional modules from specified files
+  -m, --import-module-names <IMPORT_MODULE_NAMES>
+          Import modules by name, making them available as `name::fn()` in queries
       --args <NAME> <VALUE>
           Sets string that can be referenced at runtime
       --rawfile <NAME> <FILE>
