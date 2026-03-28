@@ -755,12 +755,16 @@ async function downloadFromRelease(
       try {
         await fs.promises.mkdir(binDir, { recursive: true });
 
-        await downloadFile(lspUrl, lspDest);
-        await downloadFile(dbgUrl, dbgDest);
+        await Promise.all([
+          downloadFile(lspUrl, lspDest),
+          downloadFile(dbgUrl, dbgDest),
+        ]);
 
         if (process.platform !== "win32") {
-          await fs.promises.chmod(lspDest, 0o755);
-          await fs.promises.chmod(dbgDest, 0o755);
+          await Promise.all([
+            fs.promises.chmod(lspDest, 0o755),
+            fs.promises.chmod(dbgDest, 0o755),
+          ]);
         }
 
         await context.globalState.update(
