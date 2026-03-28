@@ -1,12 +1,13 @@
 use axum::{
-    extract::{Query, State},
-    http::StatusCode,
+    extract::{FromRequestParts, Query, State},
+    extract::rejection::QueryRejection,
+    http::{StatusCode, request::Parts},
     response::Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 use tracing::{debug, error, info};
-use utoipa::OpenApi;
+use utoipa::{OpenApi, ToSchema};
 
 use crate::{
     api::{
@@ -31,10 +32,49 @@ pub struct DiagnosticsParams {
     pub query: String,
 }
 
+pub struct ValidatedQuery<T>(pub T);
+
+impl<T, S> FromRequestParts<S> for ValidatedQuery<T>
+where
+    T: serde::de::DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = ProblemDetails;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        Query::<T>::from_request_parts(parts, state)
+            .await
+            .map(|Query(params)| ValidatedQuery(params))
+            .map_err(|e: QueryRejection| {
+                ProblemDetails::new(StatusCode::BAD_REQUEST)
+                    .with_title("Invalid query parameters")
+                    .with_detail("error", &e.body_text())
+            })
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct HealthResponse {
+    pub status: &'static str,
+}
+
+/// Returns 200 OK when the server is healthy.
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "Server is healthy", body = HealthResponse),
+    )
+)]
+pub async fn health_check() -> Json<HealthResponse> {
+    Json(HealthResponse { status: "ok" })
+}
+
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_query_api, post_query_api, post_check_api, post_format_api, openapi_json),
+    paths(health_check, get_query_api, post_query_api, post_check_api, post_format_api, openapi_json),
     components(
+        schemas(HealthResponse),
         schemas(ApiRequest),
         schemas(InputFormat),
         schemas(OutputFormat),
@@ -53,7 +93,7 @@ pub struct ApiDoc;
 
 #[utoipa::path(
     get,
-    path = "/api/query",
+    path = "/api/v1/query",
     responses(
         (status = 200, description = "Query executed successfully", body = QueryApiResponse),
         (status = 400, description = "Invalid request parameters"),
@@ -65,7 +105,7 @@ pub struct ApiDoc;
     )
 )]
 pub async fn get_query_api(
-    Query(params): Query<QueryParams>,
+    ValidatedQuery(params): ValidatedQuery<QueryParams>,
     State(_state): State<AppState>,
 ) -> Result<Json<QueryApiResponse>, ProblemDetails> {
     debug!("GET /query called with query: {}", params.query);
@@ -114,7 +154,7 @@ pub async fn get_query_api(
 
 #[utoipa::path(
     post,
-    path = "/api/query",
+    path = "/api/v1/query",
     responses(
         (status = 200, description = "Query executed successfully", body = QueryApiResponse),
         (status = 400, description = "Invalid request parameters"),
@@ -156,7 +196,7 @@ pub async fn post_query_api(
 
 #[utoipa::path(
     post,
-    path = "/api/check",
+    path = "/api/v1/check",
     responses(
         (status = 200, description = "Type check completed", body = CheckApiResponse),
     ),
@@ -186,7 +226,7 @@ pub async fn post_check_api(
 
 #[utoipa::path(
     post,
-    path = "/api/format",
+    path = "/api/v1/format",
     responses(
         (status = 200, description = "Format completed", body = FormatApiResponse),
         (status = 400, description = "Invalid query syntax"),
@@ -224,7 +264,7 @@ static OPENAPI_SPEC: OnceLock<utoipa::openapi::OpenApi> = OnceLock::new();
 
 #[utoipa::path(
     get,
-    path = "/openapi.json",
+    path = "/api/v1/openapi.json",
     responses(
         (status = 200, description = "OpenAPI specification", body = String),
     )
