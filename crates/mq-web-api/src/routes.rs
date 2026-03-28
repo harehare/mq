@@ -58,10 +58,17 @@ pub fn create_router(config: &Config, rate_limiter: Arc<RateLimiter>) -> Router 
         .route("/health", get(health_check))
         .nest("/api/v1", v1_routes)
         // Legacy paths — kept for backward compatibility, redirects to v1
-        .route("/api/query", get(|| async { Redirect::permanent("/api/v1/query") }).post(|| async { Redirect::permanent("/api/v1/query") }))
+        .route(
+            "/api/query",
+            get(|| async { Redirect::permanent("/api/v1/query") })
+                .post(|| async { Redirect::permanent("/api/v1/query") }),
+        )
         .route("/api/check", post(|| async { Redirect::permanent("/api/v1/check") }))
         .route("/api/format", post(|| async { Redirect::permanent("/api/v1/format") }))
-        .route("/openapi.json", get(|| async { Redirect::permanent("/api/v1/openapi.json") }))
+        .route(
+            "/openapi.json",
+            get(|| async { Redirect::permanent("/api/v1/openapi.json") }),
+        )
         .layer(
             ServiceBuilder::new()
                 .layer(CompressionLayer::new())

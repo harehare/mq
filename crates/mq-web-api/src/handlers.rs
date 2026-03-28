@@ -1,6 +1,6 @@
 use axum::{
-    extract::{FromRequestParts, Query, State},
     extract::rejection::QueryRejection,
+    extract::{FromRequestParts, Query, State},
     http::{StatusCode, request::Parts},
     response::Json,
 };
