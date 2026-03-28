@@ -170,6 +170,13 @@ steps:
   - run: mq '.code' README.md
 ```
 
+## Web API
+
+You can try mq without installing anything via the hosted REST API at `https://api.mqlang.org`.
+
+The interactive API documentation (Swagger UI) is available at [`https://api.mqlang.org/docs`](https://api.mqlang.org/docs).
+
+
 ## Language Bindings
 
 Language bindings are available for the following programming languages:
