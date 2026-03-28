@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::signal;
 use tower_http::trace::TraceLayer;
 use tracing::info;
@@ -93,7 +93,7 @@ pub async fn start_server(config: Config) -> Result<(), Box<dyn std::error::Erro
     );
     cleanup_service.start();
 
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("Failed to start server");

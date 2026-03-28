@@ -2,6 +2,7 @@ use axum::{
     Router,
     http::Method,
     middleware,
+    response::Redirect,
     routing::{get, post},
 };
 use std::sync::Arc;
@@ -11,10 +12,12 @@ use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
 };
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     config::Config,
-    handlers::{AppState, get_query_api, openapi_json, post_check_api, post_format_api, post_query_api},
+    handlers::{ApiDoc, AppState, get_query_api, health_check, post_check_api, post_format_api, post_query_api},
     middleware::rate_limit_middleware,
     rate_limiter::RateLimiter,
 };
@@ -45,11 +48,27 @@ pub fn create_router(config: &Config, rate_limiter: Arc<RateLimiter>) -> Router 
         }
     };
 
+    let v1_routes = Router::new()
+        .route("/query", get(get_query_api).post(post_query_api))
+        .route("/check", post(post_check_api))
+        .route("/format", post(post_format_api));
+
     Router::new()
-        .route("/api/query", get(get_query_api).post(post_query_api))
-        .route("/api/check", post(post_check_api))
-        .route("/api/format", post(post_format_api))
-        .route("/openapi.json", get(openapi_json))
+        .merge(SwaggerUi::new("/docs").url("/api/v1/openapi.json", ApiDoc::openapi()))
+        .route("/health", get(health_check))
+        .nest("/api/v1", v1_routes)
+        // Legacy paths — kept for backward compatibility, redirects to v1
+        .route(
+            "/api/query",
+            get(|| async { Redirect::permanent("/api/v1/query") })
+                .post(|| async { Redirect::permanent("/api/v1/query") }),
+        )
+        .route("/api/check", post(|| async { Redirect::permanent("/api/v1/check") }))
+        .route("/api/format", post(|| async { Redirect::permanent("/api/v1/format") }))
+        .route(
+            "/openapi.json",
+            get(|| async { Redirect::permanent("/api/v1/openapi.json") }),
+        )
         .layer(
             ServiceBuilder::new()
                 .layer(CompressionLayer::new())

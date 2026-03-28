@@ -244,7 +244,10 @@ fn execute_query(request: ApiRequest) -> miette::Result<QueryApiResponse> {
         ],
         OutputFormat::None => vec![],
         OutputFormat::Markdown => vec![markdown.to_string()],
-    };
+    }
+    .into_iter()
+    .filter(|s| !s.is_empty())
+    .collect();
 
     Ok(QueryApiResponse { results })
 }
