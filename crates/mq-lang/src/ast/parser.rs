@@ -617,7 +617,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     break;
                 }
                 Some(token) => {
-                    return Err(SyntaxError::ExpectedClosingBrace((***token).clone()));
+                    return Err(SyntaxError::ExpectedClosingBrace(
+                        (***token).clone(),
+                        Some(Box::new((**lbrace_token).clone())),
+                    ));
                 }
                 None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
             }
@@ -1041,7 +1044,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         target_node: Shared<Node>,
         original_token: &Shared<Token>,
     ) -> Result<Shared<Node>, SyntaxError> {
-        let _ = self.tokens.next(); // consume '['
+        let lbracket = self.tokens.next().map(|t| (**t).clone()); // consume '['
 
         // Check for [:N] or [:]  style slice (empty start index).
         // [:ident] and [:string] are dict key accesses using a symbol, not slices.
@@ -1089,14 +1092,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             let _ = self.tokens.next();
                         }
                         Some(token) => {
-                            return Err(SyntaxError::ExpectedClosingBracket((***token).clone()));
+                            return Err(SyntaxError::ExpectedClosingBracket(
+                                (***token).clone(),
+                                lbracket.clone().map(Box::new),
+                            ));
                         }
                         None => {
-                            return Err(SyntaxError::ExpectedClosingBracket(Token {
-                                range: original_token.range,
-                                kind: TokenKind::Eof,
-                                module_id: self.module_id,
-                            }));
+                            return Err(SyntaxError::ExpectedClosingBracket(
+                                Token {
+                                    range: original_token.range,
+                                    kind: TokenKind::Eof,
+                                    module_id: self.module_id,
+                                },
+                                lbracket.clone().map(Box::new),
+                            ));
                         }
                     }
                     Shared::new(Node {
@@ -1163,14 +1172,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             let _ = self.tokens.next(); // consume ']'
                         }
                         Some(token) => {
-                            return Err(SyntaxError::ExpectedClosingBracket((***token).clone()));
+                            return Err(SyntaxError::ExpectedClosingBracket(
+                                (***token).clone(),
+                                lbracket.clone().map(Box::new),
+                            ));
                         }
                         None => {
-                            return Err(SyntaxError::ExpectedClosingBracket(Token {
-                                range: original_token.range,
-                                kind: TokenKind::Eof,
-                                module_id: self.module_id,
-                            }));
+                            return Err(SyntaxError::ExpectedClosingBracket(
+                                Token {
+                                    range: original_token.range,
+                                    kind: TokenKind::Eof,
+                                    module_id: self.module_id,
+                                },
+                                lbracket.clone().map(Box::new),
+                            ));
                         }
                     }
 
@@ -1194,14 +1209,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     let _ = self.tokens.next(); // consume ']'
                 }
                 Some(token) => {
-                    return Err(SyntaxError::ExpectedClosingBracket((***token).clone()));
+                    return Err(SyntaxError::ExpectedClosingBracket(
+                        (***token).clone(),
+                        lbracket.clone().map(Box::new),
+                    ));
                 }
                 None => {
-                    return Err(SyntaxError::ExpectedClosingBracket(Token {
-                        range: original_token.range,
-                        kind: TokenKind::Eof,
-                        module_id: self.module_id,
-                    }));
+                    return Err(SyntaxError::ExpectedClosingBracket(
+                        Token {
+                            range: original_token.range,
+                            kind: TokenKind::Eof,
+                            module_id: self.module_id,
+                        },
+                        lbracket.map(Box::new),
+                    ));
                 }
             }
 
@@ -1966,10 +1987,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     /// Parse function parameters (supports default values)
     fn parse_params(&mut self) -> Result<Params, SyntaxError> {
-        match self.tokens.peek() {
+        let opening_paren = match self.tokens.peek() {
             Some(token) => match &token.kind {
                 TokenKind::LParen => {
+                    let t = (***token).clone();
                     self.tokens.next();
+                    Some(t)
                 }
                 _ => return Err(SyntaxError::UnexpectedToken((***token).clone())),
             },
@@ -1992,7 +2015,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::Eof => match prev_token {
                     Some(TokenKind::RParen) => break,
                     Some(_) | None => {
-                        return Err(SyntaxError::ExpectedClosingParen((**token).clone()));
+                        return Err(SyntaxError::ExpectedClosingParen(
+                            (**token).clone(),
+                            opening_paren.clone().map(Box::new),
+                        ));
                     }
                 },
                 TokenKind::Comma => match prev_token {
@@ -2073,7 +2099,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             if let Some(token) = self.tokens.peek()
                 && !matches!(token.kind, TokenKind::RParen | TokenKind::Comma)
             {
-                return Err(SyntaxError::ExpectedClosingParen((***token).clone()));
+                return Err(SyntaxError::ExpectedClosingParen(
+                    (***token).clone(),
+                    opening_paren.clone().map(Box::new),
+                ));
             }
         }
 
@@ -2081,10 +2110,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn parse_args(&mut self) -> Result<Args, SyntaxError> {
-        match self.tokens.peek() {
+        let opening_paren = match self.tokens.peek() {
             Some(token) => match &token.kind {
                 TokenKind::LParen => {
+                    let t = (***token).clone();
                     self.tokens.next();
+                    Some(t)
                 }
                 _ => return Err(SyntaxError::UnexpectedToken((***token).clone())),
             },
@@ -2105,7 +2136,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::Eof => match prev_token {
                     Some(TokenKind::RParen) => break,
                     Some(_) | None => {
-                        return Err(SyntaxError::ExpectedClosingParen((**token).clone()));
+                        return Err(SyntaxError::ExpectedClosingParen(
+                            (**token).clone(),
+                            opening_paren.clone().map(Box::new),
+                        ));
                     }
                 },
                 TokenKind::Comma => match prev_token {
@@ -2135,7 +2169,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             if let Some(token) = self.tokens.peek()
                 && !matches!(token.kind, TokenKind::RParen | TokenKind::Comma)
             {
-                return Err(SyntaxError::ExpectedClosingParen((***token).clone()));
+                return Err(SyntaxError::ExpectedClosingParen(
+                    (***token).clone(),
+                    opening_paren.clone().map(Box::new),
+                ));
             }
         }
 
@@ -4883,7 +4920,7 @@ mod tests {
                             token(TokenKind::NumberLiteral(1.into())),
                             token(TokenKind::Eof)
                         ],
-                        Err(SyntaxError::ExpectedClosingBrace(token(TokenKind::Eof))))]
+                        Err(SyntaxError::ExpectedClosingBrace(token(TokenKind::Eof), Some(Box::new(token(TokenKind::LBrace))))))]
     #[case::dict_missing_colon(
                         vec![
                             token(TokenKind::LBrace),
@@ -5439,7 +5476,10 @@ mod tests {
                     // Missing RParen
                     token(TokenKind::Eof)
                 ],
-                Err(SyntaxError::ExpectedClosingParen(token(TokenKind::Eof)))
+                Err(SyntaxError::ExpectedClosingParen(
+                    token(TokenKind::Eof),
+                    Some(Box::new(token(TokenKind::LParen))),
+                ))
             )]
     #[case::args_unexpected_token(
                 vec![
@@ -5450,7 +5490,10 @@ mod tests {
                     token(TokenKind::RParen),
                     token(TokenKind::Eof)
                 ],
-                Err(SyntaxError::ExpectedClosingParen(token(TokenKind::Colon)))
+                Err(SyntaxError::ExpectedClosingParen(
+                    token(TokenKind::Colon),
+                    Some(Box::new(token(TokenKind::LParen))),
+                ))
             )]
     #[case::args_leading_comma(
                 vec![
@@ -5625,7 +5668,10 @@ mod tests {
                     token(TokenKind::NumberLiteral(5.into())),
                     token(TokenKind::Eof)
                 ],
-                Err(SyntaxError::ExpectedClosingBracket(token(TokenKind::Eof))))]
+                Err(SyntaxError::ExpectedClosingBracket(
+                    token(TokenKind::Eof),
+                    Some(Box::new(token(TokenKind::LBracket))),
+                )))]
     #[case::slice_access_with_numbers(
                 vec![
                     token(TokenKind::Ident(SmolStr::new("arr"))),
