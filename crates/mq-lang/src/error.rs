@@ -30,6 +30,24 @@ impl InnerError {
             InnerError::Module(err) => err.token(),
         }
     }
+
+    /// Returns the opening delimiter token for errors that have one (e.g. unclosed brackets).
+    #[cold]
+    pub fn secondary_token(&self) -> Option<&Token> {
+        match self {
+            InnerError::Syntax(SyntaxError::ExpectedClosingParen(_, opening))
+            | InnerError::Syntax(SyntaxError::ExpectedClosingBrace(_, opening))
+            | InnerError::Syntax(SyntaxError::ExpectedClosingBracket(_, opening)) => {
+                opening.as_ref().map(|v| v.as_ref())
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingParen(_, opening)))
+            | InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBrace(_, opening)))
+            | InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBracket(_, opening))) => {
+                opening.as_ref().map(|v| v.as_ref())
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Represents a high-level error with diagnostic information for the user.
@@ -42,6 +60,8 @@ pub struct Error {
     pub source_code: String,
     /// The location in the source code for diagnostics.
     pub location: SourceSpan,
+    /// The location of the opening delimiter, if applicable (e.g. unclosed `(`, `[`, `{`).
+    pub secondary_location: Option<SourceSpan>,
 }
 
 impl Error {
@@ -59,35 +79,34 @@ impl Error {
                 let source_code = module_loader
                     .get_source_code(token.module_id, source_code)
                     .unwrap_or_default();
-                let location = SourceSpan::new(
-                    SourceOffset::from_location(
-                        &source_code,
-                        token.range.start.line as usize,
-                        token.range.start.column,
-                    ),
-                    std::cmp::max(
-                        SourceOffset::from_location(
-                            &source_code,
-                            token.range.end.line as usize,
-                            token.range.end.column,
-                        )
-                        .offset()
-                        .saturating_sub(
-                            SourceOffset::from_location(
-                                &source_code,
-                                token.range.start.line as usize,
-                                token.range.start.column,
-                            )
-                            .offset(),
+
+                let span_for = |t: &Token| {
+                    SourceSpan::new(
+                        SourceOffset::from_location(&source_code, t.range.start.line as usize, t.range.start.column),
+                        std::cmp::max(
+                            SourceOffset::from_location(&source_code, t.range.end.line as usize, t.range.end.column)
+                                .offset()
+                                .saturating_sub(
+                                    SourceOffset::from_location(
+                                        &source_code,
+                                        t.range.start.line as usize,
+                                        t.range.start.column,
+                                    )
+                                    .offset(),
+                                ),
+                            1,
                         ),
-                        1,
-                    ),
-                );
+                    )
+                };
+
+                let location = span_for(token);
+                let secondary_location = cause.secondary_token().map(span_for);
 
                 Self {
                     cause,
                     source_code,
                     location,
+                    secondary_location,
                 }
             }
             None => {
@@ -122,6 +141,7 @@ impl Error {
                     cause,
                     source_code,
                     location,
+                    secondary_location: None,
                 }
             }
         }
@@ -168,13 +188,13 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::UnknownSelector(_)) => Some(Cow::Borrowed(
                 "Unknown selector. Valid selectors include node types (e.g. .h1, .p, .code) and bracket access (e.g. .[0], .[n][m]).",
             )),
-            InnerError::Syntax(SyntaxError::ExpectedClosingParen(_)) => Some(Cow::Borrowed(
+            InnerError::Syntax(SyntaxError::ExpectedClosingParen(_, _)) => Some(Cow::Borrowed(
                 "Expected a closing parenthesis ')'. Check your parentheses for balance.",
             )),
-            InnerError::Syntax(SyntaxError::ExpectedClosingBrace(_)) => Some(Cow::Borrowed(
+            InnerError::Syntax(SyntaxError::ExpectedClosingBrace(_, _)) => Some(Cow::Borrowed(
                 "Expected a closing brace '}'. Check your braces for balance.",
             )),
-            InnerError::Syntax(SyntaxError::ExpectedClosingBracket(_)) => Some(Cow::Borrowed(
+            InnerError::Syntax(SyntaxError::ExpectedClosingBracket(_, _)) => Some(Cow::Borrowed(
                 "Expected a closing bracket ']'. Check your brackets for balance.",
             )),
             InnerError::Syntax(SyntaxError::InvalidAssignmentTarget(_)) => Some(Cow::Borrowed(
@@ -195,6 +215,9 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::MacroParametersCannotBeVariadic(_)) => {
                 Some(Cow::Borrowed("Macro parameters cannot be variadic."))
             }
+            InnerError::Syntax(SyntaxError::UnexpectedEOFAfterToken(_)) => Some(Cow::Borrowed(
+                "An expression was expected here. Check for incomplete expressions after operators or keywords.",
+            )),
             InnerError::Runtime(RuntimeError::UserDefined { .. }) => {
                 Some(Cow::Borrowed("A user-defined error occurred during evaluation."))
             }
@@ -287,15 +310,15 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::InsufficientTokens(_))) => Some(Cow::Borrowed(
                 "Parsing could not continue here. Check for missing arguments, operators, or mismatched delimiters.",
             )),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBracket(_))) => Some(
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBracket(_, _))) => Some(
                 Cow::Borrowed("Expected a closing bracket ']'. Check your brackets for balance."),
             ),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBrace(_))) => Some(Cow::Borrowed(
-                "Expected a closing brace '}'. Check your braces for balance.",
-            )),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingParen(_))) => Some(Cow::Borrowed(
-                "Expected a closing parenthesis ')'. Check your parentheses for balance.",
-            )),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBrace(_, _))) => Some(
+                Cow::Borrowed("Expected a closing brace '}'. Check your braces for balance."),
+            ),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingParen(_, _))) => Some(
+                Cow::Borrowed("Expected a closing parenthesis ')'. Check your parentheses for balance."),
+            ),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::InvalidAssignmentTarget(_))) => Some(
                 Cow::Borrowed("Invalid assignment target. Ensure you're assigning to a valid variable or property."),
             ),
@@ -319,6 +342,11 @@ impl Diagnostic for Error {
             ),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotBeVariadic(_))) => {
                 Some(Cow::Borrowed("Macro parameters cannot be variadic."))
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedEOFAfterToken(_))) => {
+                Some(Cow::Borrowed(
+                    "An expression was expected here. Check for incomplete expressions after operators or keywords.",
+                ))
             }
             InnerError::Runtime(RuntimeError::UndefinedMacro(_)) => {
                 Some(Cow::Borrowed("Macro expansion error: undefined macro used."))
@@ -348,20 +376,77 @@ impl Diagnostic for Error {
         let label = match &self.cause {
             InnerError::Syntax(SyntaxError::UnexpectedToken(_)) => "unexpected token",
             InnerError::Syntax(SyntaxError::InsufficientTokens(_)) => "expression incomplete here",
-            InnerError::Syntax(SyntaxError::ExpectedClosingParen(_)) => "expected `)` here",
-            InnerError::Syntax(SyntaxError::ExpectedClosingBrace(_)) => "expected `}` here",
-            InnerError::Syntax(SyntaxError::ExpectedClosingBracket(_)) => "expected `]` here",
+            InnerError::Syntax(SyntaxError::ExpectedClosingParen(_, _)) => "expected `)` here",
+            InnerError::Syntax(SyntaxError::ExpectedClosingBrace(_, _)) => "expected `}` here",
+            InnerError::Syntax(SyntaxError::ExpectedClosingBracket(_, _)) => "expected `]` here",
             InnerError::Syntax(SyntaxError::InvalidAssignmentTarget(_)) => "invalid assignment target",
             InnerError::Syntax(SyntaxError::UnknownSelector(_)) => "unknown selector",
             InnerError::Syntax(SyntaxError::EnvNotFound(_, _)) => "environment variable not found",
-            InnerError::Syntax(_) => "syntax error here",
+            InnerError::Syntax(SyntaxError::ParameterWithoutDefaultAfterDefault(_)) => "parameter without default",
+            InnerError::Syntax(SyntaxError::MacroParametersCannotHaveDefaults(_)) => "parameter with default value",
+            InnerError::Syntax(SyntaxError::VariadicParameterMustBeLast(_)) => "misplaced variadic parameter",
+            InnerError::Syntax(SyntaxError::MultipleVariadicParameters(_)) => "duplicate variadic parameter",
+            InnerError::Syntax(SyntaxError::MacroParametersCannotBeVariadic(_)) => "variadic macro parameter",
+            InnerError::Syntax(SyntaxError::UnexpectedEOFDetected(_)) => "unexpected end of input",
+            InnerError::Syntax(SyntaxError::UnexpectedEOFAfterToken(_)) => "expected expression here",
             InnerError::Runtime(_) => "error occurred here",
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedToken(_))) => "unexpected token",
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::InsufficientTokens(_))) => {
+                "expression incomplete here"
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingParen(_, _))) => {
+                "expected `)` here"
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBrace(_, _))) => {
+                "expected `}` here"
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBracket(_, _))) => {
+                "expected `]` here"
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::InvalidAssignmentTarget(_))) => {
+                "invalid assignment target"
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnknownSelector(_))) => "unknown selector",
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::EnvNotFound(_, _))) => {
+                "environment variable not found"
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ParameterWithoutDefaultAfterDefault(_))) => {
+                "parameter without default"
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotHaveDefaults(_))) => {
+                "parameter with default value"
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::VariadicParameterMustBeLast(_))) => {
+                "misplaced variadic parameter"
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MultipleVariadicParameters(_))) => {
+                "duplicate variadic parameter"
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotBeVariadic(_))) => {
+                "variadic macro parameter"
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedEOFDetected(_))) => {
+                "unexpected end of input"
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedEOFAfterToken(_))) => {
+                "expected expression here"
+            }
             InnerError::Module(_) => "module error here",
         };
-        Some(Box::new(std::iter::once(miette::LabeledSpan::new_with_span(
-            Some(label.to_string()),
-            self.location,
-        ))))
+
+        let primary = miette::LabeledSpan::new_with_span(Some(label.to_string()), self.location);
+
+        if let Some(secondary_span) = self.secondary_location {
+            Some(Box::new(
+                [
+                    miette::LabeledSpan::new_with_span(Some("opened here".to_string()), secondary_span),
+                    primary,
+                ]
+                .into_iter(),
+            ) as Box<dyn Iterator<Item = miette::LabeledSpan>>)
+        } else {
+            Some(Box::new(std::iter::once(primary)))
+        }
     }
 
     #[cold]
@@ -632,21 +717,21 @@ mod test {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }))
+        }, None))
     )]
     #[case::parse_expected_closing_brace(
         InnerError::Syntax(SyntaxError::ExpectedClosingBrace(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }))
+        }, None))
     )]
     #[case::parse_expected_closing_bracket(
         InnerError::Syntax(SyntaxError::ExpectedClosingBracket(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }))
+        }, None))
     )]
     #[case::eval_recursion_error(InnerError::Runtime(RuntimeError::RecursionError(0)))]
     #[case::eval_module_load_error(
@@ -792,21 +877,21 @@ mod test {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        })))
+        }, None)))
     )]
     #[case::module_parse_error_expected_closing_brace(
         InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBrace(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        })))
+        }, None)))
     )]
     #[case::module_parse_error_expected_closing_bracket(
         InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBracket(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        })))
+        }, None)))
     )]
     fn test_diagnostic_code_and_help(module_loader: ModuleLoader<impl ModuleResolver>, #[case] cause: InnerError) {
         let error = Error::from_error("source code", cause, module_loader);

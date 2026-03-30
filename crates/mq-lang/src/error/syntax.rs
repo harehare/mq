@@ -7,7 +7,7 @@ use crate::{Token, module::ModuleId, selector};
 #[derive(Error, Debug, PartialEq)]
 pub enum SyntaxError {
     /// An environment variable was not found.
-    #[error("Not found env `{1}`")]
+    #[error("Undefined environment variable `{1}`")]
     EnvNotFound(Token, SmolStr),
     /// An unexpected token was encountered during parsing.
     #[error("Unexpected token `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
@@ -19,14 +19,17 @@ pub enum SyntaxError {
     #[error("Insufficient tokens `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
     InsufficientTokens(Token),
     /// Expected a closing parenthesis `)` but found a different delimiter.
+    /// The second field is the opening `(` token, if available.
     #[error("Expected a closing parenthesis `)` but got `{}` delimiter", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
-    ExpectedClosingParen(Token),
+    ExpectedClosingParen(Token, Option<Box<Token>>),
     /// Expected a closing brace `}` but found a different delimiter.
+    /// The second field is the opening `{` token, if available.
     #[error("Expected a closing brace `}}` but got `{}` delimiter", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
-    ExpectedClosingBrace(Token),
+    ExpectedClosingBrace(Token, Option<Box<Token>>),
     /// Expected a closing bracket `]` but found a different delimiter.
+    /// The second field is the opening `[` token, if available.
     #[error("Expected a closing bracket `]` but got `{}` delimiter", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
-    ExpectedClosingBracket(Token),
+    ExpectedClosingBracket(Token, Option<Box<Token>>),
     /// An invalid assignment target was encountered (expected an identifier).
     #[error("Invalid assignment target: expected an identifier but got `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
     InvalidAssignmentTarget(Token),
@@ -51,6 +54,9 @@ pub enum SyntaxError {
     /// Macro parameters cannot be variadic.
     #[error("Macro parameters cannot be variadic")]
     MacroParametersCannotBeVariadic(Token),
+    /// The Token is the keyword or operator that required an expression to follow.
+    #[error("Expected an expression after `{}` but reached end of file", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
+    UnexpectedEOFAfterToken(Token),
 }
 
 impl SyntaxError {
@@ -62,9 +68,9 @@ impl SyntaxError {
             SyntaxError::UnexpectedToken(token) => Some(token),
             SyntaxError::UnexpectedEOFDetected(_) => None,
             SyntaxError::InsufficientTokens(token) => Some(token),
-            SyntaxError::ExpectedClosingParen(token) => Some(token),
-            SyntaxError::ExpectedClosingBrace(token) => Some(token),
-            SyntaxError::ExpectedClosingBracket(token) => Some(token),
+            SyntaxError::ExpectedClosingParen(token, _) => Some(token),
+            SyntaxError::ExpectedClosingBrace(token, _) => Some(token),
+            SyntaxError::ExpectedClosingBracket(token, _) => Some(token),
             SyntaxError::InvalidAssignmentTarget(token) => Some(token),
             SyntaxError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
             SyntaxError::ParameterWithoutDefaultAfterDefault(token) => Some(token),
@@ -72,6 +78,7 @@ impl SyntaxError {
             SyntaxError::VariadicParameterMustBeLast(token) => Some(token),
             SyntaxError::MultipleVariadicParameters(token) => Some(token),
             SyntaxError::MacroParametersCannotBeVariadic(token) => Some(token),
+            SyntaxError::UnexpectedEOFAfterToken(token) => Some(token),
         }
     }
 }

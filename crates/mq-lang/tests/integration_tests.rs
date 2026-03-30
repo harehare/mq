@@ -2296,6 +2296,29 @@ fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec
     assert!(engine.eval(program, input.into_iter()).is_err());
 }
 
+#[rstest]
+#[case::unclosed_brace("{key: val", vec![RuntimeValue::None], "Expected a closing brace")]
+#[case::unclosed_paren("(upcase", vec![RuntimeValue::None], "Expected a closing parenthesis")]
+#[case::unclosed_bracket("[1, 2", vec![RuntimeValue::None], "Expected a closing bracket")]
+#[case::eof_after_not("!", vec![RuntimeValue::None], "Expected an expression after `!`")]
+#[case::eof_after_plus("1 +", vec![RuntimeValue::None], "Expected an expression after `+`")]
+#[case::eof_after_minus("-", vec![RuntimeValue::None], "Expected an expression after `-`")]
+fn test_eof_error_messages(
+    mut engine: Engine,
+    #[case] program: &str,
+    #[case] input: Vec<RuntimeValue>,
+    #[case] expected_msg: &str,
+) {
+    let err = engine.eval(program, input.into_iter()).unwrap_err();
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains(expected_msg),
+        "Expected error message to contain {:?}, got {:?}",
+        expected_msg,
+        msg
+    );
+}
+
 #[cfg(feature = "ast-json")]
 mod ast_json {
     use mq_lang::{ArenaId, AstExpr, AstLiteral, AstNode, Program, Shared};
