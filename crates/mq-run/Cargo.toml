@@ -57,6 +57,9 @@ required-features = ["debugger"]
 pkg-fmt = "bin"
 pkg-url = "{ repo }/releases/download/v{ version }/mq-{ target }{ binary-ext }"
 
+[package.metadata.binstall.overrides.mq-dbg]
+pkg-url = "{ disabled }"
+
 [package.metadata.deb]
 assets = [
   ["target/release/mq", "usr/bin/", "755"],

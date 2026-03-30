@@ -64,7 +64,7 @@ const UNIX_EXECUTABLE_BITS: u32 = 0o111;
 /// - Text: Treats input as plain text.
 /// - Null: No input.
 /// - Raw: Treats all input as a single string, without parsing.
-#[derive(Clone, Debug, Default, clap::ValueEnum)]
+#[derive(Clone, Debug, Default, clap::ValueEnum, PartialEq)]
 enum InputFormat {
     #[default]
     Markdown,
@@ -592,13 +592,7 @@ impl Cli {
 
         let input = match self.input.input_format.as_ref().cloned().unwrap_or_else(|| {
             if let Some(file) = file {
-                InputFormat::from_extension(
-                    file.extension()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_lowercase()
-                        .as_str(),
-                )
+                InputFormat::from_extension(&file.extension().unwrap_or_default().to_string_lossy())
             } else if io::stdin().is_terminal() {
                 InputFormat::Null
             } else {
@@ -2130,5 +2124,29 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         Cli::collect_mq_commands_from_dir(&temp_dir, &mut seen);
         assert!(seen.is_empty(), "Files without mq- prefix should be ignored");
+    }
+
+    #[rstest]
+    #[case("md", InputFormat::Markdown)]
+    #[case("MD", InputFormat::Markdown)]
+    #[case("markdown", InputFormat::Markdown)]
+    #[case("mdx", InputFormat::Mdx)]
+    #[case("html", InputFormat::Html)]
+    #[case("htm", InputFormat::Html)]
+    #[case("txt", InputFormat::Raw)]
+    #[case("log", InputFormat::Raw)]
+    #[case("csv", InputFormat::Raw)]
+    #[case("psv", InputFormat::Raw)]
+    #[case("tsv", InputFormat::Raw)]
+    #[case("json", InputFormat::Raw)]
+    #[case("toml", InputFormat::Raw)]
+    #[case("yaml", InputFormat::Raw)]
+    #[case("yml", InputFormat::Raw)]
+    #[case("xml", InputFormat::Raw)]
+    #[case("jsonl", InputFormat::Text)]
+    #[case("ndjson", InputFormat::Text)]
+    #[case("unknown", InputFormat::Markdown)] // default fallback
+    fn test_from_extension(#[case] ext: &str, #[case] expected: InputFormat) {
+        assert_eq!(InputFormat::from_extension(ext), expected);
     }
 }
