@@ -75,6 +75,19 @@ enum InputFormat {
     Raw,
 }
 
+impl InputFormat {
+    fn from_extension(ext: &str) -> Self {
+        match ext.to_lowercase().as_str() {
+            "md" | "markdown" => Self::Markdown,
+            "mdx" => Self::Mdx,
+            "html" | "htm" => Self::Html,
+            "txt" | "log" | "csv" | "psv" | "tsv" | "json" | "toml" | "yaml" | "yml" | "xml" => Self::Raw,
+            "jsonl" | "ndjson" => Self::Text,
+            _ => Self::Markdown,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, clap::ValueEnum)]
 enum OutputFormat {
     #[default]
@@ -577,25 +590,19 @@ impl Cli {
             );
         }
 
-        let input = match self.input.input_format.as_ref().unwrap_or_else(|| {
+        let input = match self.input.input_format.as_ref().cloned().unwrap_or_else(|| {
             if let Some(file) = file {
-                match file
-                    .extension()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_lowercase()
-                    .as_str()
-                {
-                    "md" | "markdown" => &InputFormat::Markdown,
-                    "mdx" => &InputFormat::Mdx,
-                    "html" | "htm" => &InputFormat::Html,
-                    "txt" | "csv" | "tsv" | "json" | "toml" | "yaml" | "yml" | "xml" => &InputFormat::Raw,
-                    _ => &InputFormat::Markdown,
-                }
+                InputFormat::from_extension(
+                    file.extension()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_lowercase()
+                        .as_str(),
+                )
             } else if io::stdin().is_terminal() {
-                &InputFormat::Null
+                InputFormat::Null
             } else {
-                &InputFormat::Markdown
+                InputFormat::Markdown
             }
         }) {
             InputFormat::Markdown => mq_lang::parse_markdown_input(content)?,
