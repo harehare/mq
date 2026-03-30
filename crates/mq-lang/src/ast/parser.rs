@@ -231,8 +231,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             let operator_token_id = parser.token_arena.alloc(Shared::clone(operator_token));
 
             let rhs_token = match parser.tokens.next() {
+                Some(t) if t.kind == TokenKind::Eof => {
+                    return Err(SyntaxError::UnexpectedEOFAfterToken((**operator_token).clone()));
+                }
                 Some(t) => t,
-                None => return Err(SyntaxError::UnexpectedEOFDetected(parser.module_id)),
+                None => return Err(SyntaxError::UnexpectedEOFAfterToken((**operator_token).clone())),
             };
             let mut rhs = parser.parse_primary_expr(rhs_token)?;
 
@@ -451,15 +454,44 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn parse_paren(&mut self, lparen_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+        let opening = (**lparen_token).clone();
         let token_id = self.token_arena.alloc(Shared::clone(lparen_token));
         let expr_token = match self.tokens.next() {
             Some(t) => t,
-            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+            None => {
+                return Err(SyntaxError::ExpectedClosingParen(
+                    Token {
+                        range: opening.range,
+                        kind: TokenKind::Eof,
+                        module_id: self.module_id,
+                    },
+                    Some(Box::new(opening)),
+                ));
+            }
         };
 
         let expr_node = self.parse_expr(expr_token)?;
 
-        self.next_token(|token_kind| matches!(token_kind, TokenKind::RParen))?;
+        match self.tokens.next() {
+            Some(t) if t.kind == TokenKind::RParen => {}
+            Some(t) if t.kind == TokenKind::Eof => {
+                return Err(SyntaxError::ExpectedClosingParen(
+                    (**t).clone(),
+                    Some(Box::new(opening)),
+                ));
+            }
+            Some(t) => return Err(SyntaxError::UnexpectedToken((**t).clone())),
+            None => {
+                return Err(SyntaxError::ExpectedClosingParen(
+                    Token {
+                        range: opening.range,
+                        kind: TokenKind::Eof,
+                        module_id: self.module_id,
+                    },
+                    Some(Box::new(opening)),
+                ));
+            }
+        }
 
         Ok(Shared::new(Node {
             token_id,
@@ -471,8 +503,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let token_id = self.token_arena.alloc(Shared::clone(not_token));
 
         let expr_token = match self.tokens.next() {
+            Some(t) if t.kind == TokenKind::Eof => {
+                return Err(SyntaxError::UnexpectedEOFAfterToken((**not_token).clone()));
+            }
             Some(t) => t,
-            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+            None => return Err(SyntaxError::UnexpectedEOFAfterToken((**not_token).clone())),
         };
 
         if !matches!(
@@ -512,8 +547,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let token_id = self.token_arena.alloc(Shared::clone(minus_token));
 
         let expr_token = match self.tokens.next() {
+            Some(t) if t.kind == TokenKind::Eof => {
+                return Err(SyntaxError::UnexpectedEOFAfterToken((**minus_token).clone()));
+            }
             Some(t) => t,
-            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+            None => return Err(SyntaxError::UnexpectedEOFAfterToken((**minus_token).clone())),
         };
 
         if !matches!(
@@ -545,8 +583,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn parse_dict(&mut self, lbrace_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+        let opening = (**lbrace_token).clone();
         let token_id = self.token_arena.alloc(Shared::clone(lbrace_token));
         let mut pairs = SmallVec::new();
+
+        let eof_closing_err = |opening: &Token, module_id: ModuleId| {
+            SyntaxError::ExpectedClosingBrace(
+                Token {
+                    range: opening.range,
+                    kind: TokenKind::Eof,
+                    module_id,
+                },
+                Some(Box::new(opening.clone())),
+            )
+        };
 
         loop {
             match self.tokens.peek() {
@@ -554,14 +604,22 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     self.tokens.next();
                     break;
                 }
-                None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+                Some(token) if token.kind == TokenKind::Eof => {
+                    return Err(SyntaxError::ExpectedClosingBrace(
+                        (***token).clone(),
+                        Some(Box::new(opening.clone())),
+                    ));
+                }
+                None => {
+                    return Err(eof_closing_err(&opening, self.module_id));
+                }
                 _ => {}
             }
 
             // Parse key
             let key_token = match self.tokens.next() {
                 Some(t) => t,
-                None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+                None => return Err(eof_closing_err(&opening, self.module_id)),
             };
 
             let key_node = match &key_token.kind {
@@ -582,13 +640,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             match self.tokens.next() {
                 Some(token) if token.kind == TokenKind::Colon => {}
                 Some(token) => return Err(SyntaxError::UnexpectedToken((**token).clone())),
-                None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+                None => return Err(eof_closing_err(&opening, self.module_id)),
             }
 
             // Parse value
             let value_token = match self.tokens.next() {
                 Some(t) => t,
-                None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+                None => return Err(eof_closing_err(&opening, self.module_id)),
             };
             let value_node = self.parse_expr(value_token)?;
 
@@ -619,10 +677,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 Some(token) => {
                     return Err(SyntaxError::ExpectedClosingBrace(
                         (***token).clone(),
-                        Some(Box::new((**lbrace_token).clone())),
+                        Some(Box::new(opening.clone())),
                     ));
                 }
-                None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+                None => return Err(eof_closing_err(&opening, self.module_id)),
             }
         }
 
@@ -740,18 +798,40 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn parse_array(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+        let opening = (**token).clone();
         let token_id = self.token_arena.alloc(Shared::clone(token));
         let mut elements: SmallVec<[Shared<Node>; 4]> = SmallVec::new();
+        let mut closed = false;
 
-        while let Some(token) = self.tokens.next() {
-            match &token.kind {
-                TokenKind::RBracket => break,
+        while let Some(elem_token) = self.tokens.next() {
+            match &elem_token.kind {
+                TokenKind::RBracket => {
+                    closed = true;
+                    break;
+                }
+                TokenKind::Eof => {
+                    return Err(SyntaxError::ExpectedClosingBracket(
+                        (**elem_token).clone(),
+                        Some(Box::new(opening)),
+                    ));
+                }
                 TokenKind::Comma => continue,
                 _ => {
-                    let expr = self.parse_expr(token)?;
+                    let expr = self.parse_expr(elem_token)?;
                     elements.push(expr);
                 }
             }
+        }
+
+        if !closed {
+            return Err(SyntaxError::ExpectedClosingBracket(
+                Token {
+                    range: opening.range,
+                    kind: TokenKind::Eof,
+                    module_id: self.module_id,
+                },
+                Some(Box::new(opening)),
+            ));
         }
 
         Ok(Shared::new(Node {
@@ -4101,7 +4181,7 @@ mod tests {
                         token(TokenKind::StringLiteral("value".to_owned())),
                         token(TokenKind::Eof)
                     ],
-                    Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                    Err(SyntaxError::ExpectedClosingBracket(token(TokenKind::Eof), Some(Box::new(token(TokenKind::LBracket))))))]
     #[case::array_invalid_token(
                     vec![
                         token(TokenKind::LBracket),
@@ -4118,7 +4198,7 @@ mod tests {
                         token(TokenKind::RBracket),
                         token(TokenKind::Eof)
                     ],
-                    Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                    Err(SyntaxError::ExpectedClosingBracket(token(TokenKind::Eof), Some(Box::new(token(TokenKind::LBracket))))))]
     #[case::array_with_ident(
                     vec![
                         token(TokenKind::LBracket),
@@ -4338,7 +4418,7 @@ mod tests {
                         token(TokenKind::EqEq),
                         token(TokenKind::Eof)
                     ],
-                    Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                    Err(SyntaxError::UnexpectedEOFAfterToken(token(TokenKind::EqEq))))]
     #[case::equality_in_if_condition(
                     vec![
                         token(TokenKind::If),
@@ -4572,7 +4652,7 @@ mod tests {
                         token(TokenKind::NeEq),
                         token(TokenKind::Eof)
                     ],
-                    Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                    Err(SyntaxError::UnexpectedEOFAfterToken(token(TokenKind::NeEq))))]
     #[case::not_equality_in_if_condition(
                     vec![
                         token(TokenKind::If),
@@ -4670,7 +4750,7 @@ mod tests {
                         token(TokenKind::Plus),
                         token(TokenKind::Eof)
                     ],
-                    Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                    Err(SyntaxError::UnexpectedEOFAfterToken(token(TokenKind::Plus))))]
     #[case::lt_simple(
                     vec![
                         token(TokenKind::NumberLiteral(1.into())),
@@ -5144,7 +5224,7 @@ mod tests {
                 token(TokenKind::Percent),
                 token(TokenKind::Eof)
             ],
-            Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+            Err(SyntaxError::UnexpectedEOFAfterToken(token(TokenKind::Percent))))]
     #[case::mul_simple(
             vec![
                 token(TokenKind::NumberLiteral(3.into())),
@@ -5201,7 +5281,7 @@ mod tests {
                 token(TokenKind::Asterisk),
                 token(TokenKind::Eof)
             ],
-            Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+            Err(SyntaxError::UnexpectedEOFAfterToken(token(TokenKind::Asterisk))))]
     #[case::convert_simple(
             vec![
                 token(TokenKind::Ident(SmolStr::new("a"))),
@@ -5233,7 +5313,7 @@ mod tests {
                 token(TokenKind::Convert),
                 token(TokenKind::Eof)
             ],
-            Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+            Err(SyntaxError::UnexpectedEOFAfterToken(token(TokenKind::Convert))))]
     #[case::multiple_binary_operators(
             vec![
                 token(TokenKind::NumberLiteral(1.into())),
@@ -5467,7 +5547,7 @@ mod tests {
                     token(TokenKind::DoubleDot),
                     token(TokenKind::Eof)
                 ],
-                Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                Err(SyntaxError::UnexpectedEOFAfterToken(token(TokenKind::DoubleDot))))]
     #[case::args_missing_rparen(
                 vec![
                     token(TokenKind::Ident(SmolStr::new("foo"))),
@@ -5741,7 +5821,7 @@ mod tests {
                     token(TokenKind::Not),
                     token(TokenKind::Eof)
                 ],
-                Err(SyntaxError::UnexpectedToken(token(TokenKind::Eof))))]
+                Err(SyntaxError::UnexpectedEOFAfterToken(token(TokenKind::Not))))]
     #[case::break_(
                     vec![
                         token(TokenKind::Break),
@@ -6257,7 +6337,7 @@ mod tests {
                         token(TokenKind::Coalesce),
                         token(TokenKind::Eof)
                     ],
-                    Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                    Err(SyntaxError::UnexpectedEOFAfterToken(token(TokenKind::Coalesce))))]
     #[case::negate_simple(
         vec![
             token(TokenKind::Minus),
@@ -6303,7 +6383,7 @@ mod tests {
             token(TokenKind::Minus),
             token(TokenKind::Eof)
         ],
-        Err(SyntaxError::UnexpectedToken(token(TokenKind::Eof))))]
+        Err(SyntaxError::UnexpectedEOFAfterToken(token(TokenKind::Minus))))]
     #[case::import_simple(
             vec![
             token(TokenKind::Import),

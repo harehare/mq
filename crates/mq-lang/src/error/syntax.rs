@@ -54,6 +54,9 @@ pub enum SyntaxError {
     /// Macro parameters cannot be variadic.
     #[error("Macro parameters cannot be variadic")]
     MacroParametersCannotBeVariadic(Token),
+    /// The Token is the keyword or operator that required an expression to follow.
+    #[error("Expected an expression after `{}` but reached end of file", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
+    UnexpectedEOFAfterToken(Token),
 }
 
 impl SyntaxError {
@@ -75,6 +78,7 @@ impl SyntaxError {
             SyntaxError::VariadicParameterMustBeLast(token) => Some(token),
             SyntaxError::MultipleVariadicParameters(token) => Some(token),
             SyntaxError::MacroParametersCannotBeVariadic(token) => Some(token),
+            SyntaxError::UnexpectedEOFAfterToken(token) => Some(token),
         }
     }
 }

@@ -215,6 +215,9 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::MacroParametersCannotBeVariadic(_)) => {
                 Some(Cow::Borrowed("Macro parameters cannot be variadic."))
             }
+            InnerError::Syntax(SyntaxError::UnexpectedEOFAfterToken(_)) => Some(Cow::Borrowed(
+                "An expression was expected here. Check for incomplete expressions after operators or keywords.",
+            )),
             InnerError::Runtime(RuntimeError::UserDefined { .. }) => {
                 Some(Cow::Borrowed("A user-defined error occurred during evaluation."))
             }
@@ -340,6 +343,11 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotBeVariadic(_))) => {
                 Some(Cow::Borrowed("Macro parameters cannot be variadic."))
             }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedEOFAfterToken(_))) => {
+                Some(Cow::Borrowed(
+                    "An expression was expected here. Check for incomplete expressions after operators or keywords.",
+                ))
+            }
             InnerError::Runtime(RuntimeError::UndefinedMacro(_)) => {
                 Some(Cow::Borrowed("Macro expansion error: undefined macro used."))
             }
@@ -380,6 +388,7 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::MultipleVariadicParameters(_)) => "duplicate variadic parameter",
             InnerError::Syntax(SyntaxError::MacroParametersCannotBeVariadic(_)) => "variadic macro parameter",
             InnerError::Syntax(SyntaxError::UnexpectedEOFDetected(_)) => "unexpected end of input",
+            InnerError::Syntax(SyntaxError::UnexpectedEOFAfterToken(_)) => "expected expression here",
             InnerError::Runtime(_) => "error occurred here",
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedToken(_))) => "unexpected token",
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::InsufficientTokens(_))) => {
@@ -418,6 +427,9 @@ impl Diagnostic for Error {
             }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedEOFDetected(_))) => {
                 "unexpected end of input"
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedEOFAfterToken(_))) => {
+                "expected expression here"
             }
             InnerError::Module(_) => "module error here",
         };
