@@ -187,6 +187,11 @@
             >
             <a
               class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium"
+              href="#subcommands"
+              >Subcommands</a
+            >
+            <a
+              class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium"
               href="#examples"
               >Examples</a
             >
@@ -269,9 +274,6 @@
                   <div class="w-3 h-3 rounded-full bg-error/40"></div>
                   <div class="w-3 h-3 rounded-full bg-tertiary/40"></div>
                   <div class="w-3 h-3 rounded-full bg-primary/40"></div>
-                </div>
-                <div class="mx-auto text-xs text-slate-500 font-mono">
-                  bash — mq query
                 </div>
               </div>
               <div
@@ -597,6 +599,160 @@
                 starting with <code class="text-primary">mq-</code> in
                 <code class="text-primary">~/.mq/bin/</code>.
               </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Subcommands Section -->
+      <section id="subcommands" class="py-24 bg-surface-container-low/30">
+        <div class="max-w-7xl mx-auto px-8">
+          <div class="mb-20 text-center max-w-2xl mx-auto">
+            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">
+              Subcommands
+            </h2>
+            <p class="text-on-surface-variant">
+              mq can be extended with a variety of specialized subcommands to
+              handle different workflows and data formats.
+            </p>
+          </div>
+          <div class="grid md:grid-cols-3 gap-8 mb-12">
+            <div
+              class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors"
+            >
+              <span
+                class="material-symbols-outlined text-primary mb-6 text-4xl block"
+                >swap_horiz</span
+              >
+              <h3 class="text-2xl font-headline font-bold mb-4">
+                <a href="https://github.com/harehare/mq-conv" target="_blank"
+                  >mq-conv</a
+                >
+              </h3>
+              <p class="text-on-surface-variant leading-relaxed">
+                A powerful tool for converting various file formats (PDF, DOCX,
+                XLSX, etc.) into clean, structured Markdown.
+              </p>
+            </div>
+            <div
+              class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors"
+            >
+              <span
+                class="material-symbols-outlined text-primary mb-6 text-4xl block"
+                >travel_explore</span
+              >
+              <h3 class="text-2xl font-headline font-bold mb-4">
+                <a
+                  href="https://github.com/harehare/mq/tree/main/crates/mq-crawler"
+                  target="_blank"
+                  >mq-crawler</a
+                >
+              </h3>
+              <p class="text-on-surface-variant leading-relaxed">
+                A web crawler that extracts structured content from websites and
+                outputs it directly in Markdown format.
+              </p>
+            </div>
+            <div
+              class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors"
+            >
+              <span
+                class="material-symbols-outlined text-primary mb-6 text-4xl block"
+                >terminal</span
+              >
+              <h3 class="text-2xl font-headline font-bold mb-4">
+                <a href="https://github.com/harehare/mq-tui" target="_blank"
+                  >mq-tui</a
+                >
+              </h3>
+              <p class="text-on-surface-variant leading-relaxed">
+                A terminal-based Markdown viewer that renders content with
+                syntax highlighting and proper formatting.
+              </p>
+            </div>
+          </div>
+          <div class="grid md:grid-cols-3 gap-8">
+            <div
+              class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors"
+            >
+              <span
+                class="material-symbols-outlined text-primary mb-6 text-4xl block"
+                >fact_check</span
+              >
+              <h3 class="text-2xl font-headline font-bold mb-4">
+                <a
+                  href="https://github.com/harehare/mq/tree/main/crates/mq-check"
+                  target="_blank"
+                  >mq-check</a
+                >
+              </h3>
+              <p class="text-on-surface-variant leading-relaxed">
+                A syntax and semantic checker for mq files to ensure your
+                queries are correct and efficient.
+              </p>
+            </div>
+            <div
+              class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors"
+            >
+              <span
+                class="material-symbols-outlined text-primary mb-6 text-4xl block"
+                >code</span
+              >
+              <h3 class="text-2xl font-headline font-bold mb-4">
+                <a
+                  href="https://github.com/harehare/mq/tree/main/crates/mq-lsp"
+                  target="_blank"
+                  >mq-lsp</a
+                >
+              </h3>
+              <p class="text-on-surface-variant leading-relaxed">
+                Language Server Protocol (LSP) implementation providing IDE
+                features like completion and hover for mq queries.
+              </p>
+            </div>
+            <div
+              class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors"
+            >
+              <span
+                class="material-symbols-outlined text-primary mb-6 text-4xl block"
+                >task_alt</span
+              >
+              <h3 class="text-2xl font-headline font-bold mb-4">
+                <a href="https://github.com/harehare/mq-task" target="_blank"
+                  >mq-task</a
+                >
+              </h3>
+              <p class="text-on-surface-variant leading-relaxed">
+                A terminal-based Markdown and code editor with real-time WYSIWYG
+                rendering and integrated LSP support.
+              </p>
+            </div>
+          </div>
+          <div
+            class="mt-16 p-8 bg-surface-container-low rounded-xl border border-outline-variant/20 text-center max-w-3xl mx-auto"
+          >
+            <h4 class="text-xl font-headline font-bold mb-4">
+              Custom Subcommands
+            </h4>
+            <p class="text-on-surface-variant mb-6 leading-relaxed">
+              You can easily extend mq by creating your own subcommands. Any
+              executable named
+              <code class="text-primary">mq-&lt;name&gt;</code> in your
+              <code class="text-primary">~/.mq/bin/</code> or
+              <code class="text-primary">PATH</code> becomes accessible as
+              <code class="text-primary">mq &lt;name&gt;</code>.
+            </p>
+            <div class="flex justify-center">
+              <a
+                href="https://mqlang.org/book/start/external_subcommands"
+                target="_blank"
+                class="text-primary hover:underline flex items-center gap-1 font-medium"
+              >
+                Learn more about subcommands
+                <span class="material-symbols-outlined text-sm"
+                  >open_in_new</span
+                >
+              </a>
             </div>
           </div>
         </div>
