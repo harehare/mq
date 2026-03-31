@@ -14,7 +14,7 @@ def assert_eq(actual, expected):
   if (actual == expected):
     self
   else:
-    {"error": true, "message": "Assertion failed: Expected " + to_string(expected) + " but got " + to_string(actual)}
+    {"error": true, "message": "Assertion failed: Expected " + to_string(expected) + "\n    but got " + to_string(actual)}
 end
 
 # Verifies that two values are not equal
@@ -30,7 +30,7 @@ def assert_true(value):
   if (value == true):
     self
   else:
-    {"error": true, "message": "Assertion failed: Expected true but got " + to_string(value)}
+    {"error": true, "message": "Assertion failed: Expected true\n    but got " + to_string(value)}
 end
 
 # Verifies that a value is false
@@ -38,7 +38,7 @@ def assert_false(value):
   if (value == false):
     self
   else:
-    {"error": true, "message": "Assertion failed: Expected false but got " + to_string(value)}
+    {"error": true, "message": "Assertion failed: Expected false\n    but got " + to_string(value)}
 end
 
 # Verifies that a value is None
@@ -46,7 +46,7 @@ def assert_none(value):
   if (is_none(value)):
     self
   else:
-    {"error": true, "message": "Assertion failed: Expected None but got " + to_string(value)}
+    {"error": true, "message": "Assertion failed: Expected None\n    but got " + to_string(value)}
 end
 
 # Verifies that a value is not None
