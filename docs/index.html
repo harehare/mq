@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html class="dark" lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -12,6 +12,7 @@
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://cdn.tailwindcss.com" />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
@@ -27,13 +28,13 @@
         theme: {
           extend: {
             colors: {
-              "primary": "#67b8e3",
+              primary: "#67b8e3",
               "primary-container": "#4fc3f7",
               "on-primary": "#1e293b",
               "on-primary-container": "#1e293b",
-              "surface": "#2a3444",
+              surface: "#2a3444",
               "surface-dim": "#2a3444",
-              "background": "#2a3444",
+              background: "#2a3444",
               "surface-container-lowest": "#1e293b",
               "surface-container-low": "#232e3d",
               "surface-container": "#2a3444",
@@ -44,32 +45,45 @@
               "on-surface": "#e2e8f0",
               "on-surface-variant": "#94a3b8",
               "on-background": "#e2e8f0",
-              "outline": "#4a5568",
+              outline: "#4a5568",
               "outline-variant": "#4a5568",
-              "error": "#ef4444",
+              error: "#ef4444",
               "error-container": "#7f1d1d",
-              "tertiary": "#cbd5e1",
+              tertiary: "#cbd5e1",
               "tertiary-container": "#94a3b8",
               "inverse-primary": "#0369a1",
               "inverse-surface": "#e2e8f0",
               "inverse-on-surface": "#2a3444",
             },
             fontFamily: {
-              "headline": ["Space Grotesk"],
-              "body": ["Inter"],
-              "label": ["Inter"]
+              headline: ["Space Grotesk"],
+              body: ["Inter"],
+              label: ["Inter"],
             },
-            borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+            borderRadius: {
+              DEFAULT: "0.125rem",
+              lg: "0.25rem",
+              xl: "0.5rem",
+              full: "0.75rem",
+            },
           },
         },
-      }
+      };
     </script>
     <style>
       .material-symbols-outlined {
-        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        font-variation-settings:
+          "FILL" 0,
+          "wght" 400,
+          "GRAD" 0,
+          "opsz" 24;
       }
-      .scale-98-on-click:active { transform: scale(0.98); }
-      html { scroll-behavior: smooth; }
+      .scale-98-on-click:active {
+        transform: scale(0.98);
+      }
+      html {
+        scroll-behavior: smooth;
+      }
       .demo-textarea {
         background: transparent;
         border: none;
@@ -83,7 +97,9 @@
         width: 100%;
         height: 100%;
       }
-      .demo-textarea:focus { outline: none; }
+      .demo-textarea:focus {
+        outline: none;
+      }
       .demo-output {
         color: #d9e3f8;
         font-family: "Consolas", "Monaco", "Courier New", monospace;
@@ -99,40 +115,96 @@
         color: #bfc8cf;
         font-style: italic;
       }
-      .demo-error { color: #ffb4ab; }
-      .demo-loading { color: #bfc8cf; font-style: italic; }
+      .demo-error {
+        color: #ffb4ab;
+      }
+      .demo-loading {
+        color: #bfc8cf;
+        font-style: italic;
+      }
       @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(-10px); }
-        to { opacity: 1; transform: translateY(0); }
+        from {
+          opacity: 0;
+          transform: translateY(-10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
       }
       @keyframes slideUp {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
       }
-      .animate-fade-in { animation: fadeIn 0.8s ease-out; }
-      .animate-slide-up { animation: slideUp 0.8s ease-out forwards 0.4s; opacity: 0; }
+      .animate-fade-in {
+        animation: fadeIn 0.8s ease-out;
+      }
+      .animate-slide-up {
+        animation: slideUp 0.8s ease-out forwards 0.4s;
+        opacity: 0;
+      }
     </style>
   </head>
-  <body class="bg-surface text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container">
-
+  <body
+    class="bg-surface text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container"
+  >
     <!-- Navigation -->
-    <nav class="bg-[#2a3444]/90 backdrop-blur-xl top-0 sticky z-50 border-b border-outline-variant/20">
-      <div class="flex justify-between items-center w-full px-8 h-16 max-w-[1440px] mx-auto">
+    <nav
+      class="bg-[#2a3444]/90 backdrop-blur-xl top-0 sticky z-50 border-b border-outline-variant/20"
+    >
+      <div
+        class="flex justify-between items-center w-full px-8 h-16 max-w-[1440px] mx-auto"
+      >
         <div class="flex items-center gap-8">
           <a href="#" class="flex items-center gap-2 group">
             <img src="./assets/logo.svg" alt="mq logo" class="h-8 w-8 block" />
-            <span class="text-xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-[#85d4ff] to-[#67b8e3] font-headline leading-none">mq</span>
+            <span
+              class="text-xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-[#85d4ff] to-[#67b8e3] font-headline leading-none"
+              >mq</span
+            >
           </a>
           <div class="hidden md:flex items-center gap-6">
-            <a class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium" href="#about">Overview</a>
-            <a class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium" href="#why-mq">Why mq?</a>
-            <a class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium" href="#features">Features</a>
-            <a class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium" href="#examples">Examples</a>
+            <a
+              class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium"
+              href="#about"
+              >Overview</a
+            >
+            <a
+              class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium"
+              href="#why-mq"
+              >Why mq?</a
+            >
+            <a
+              class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium"
+              href="#features"
+              >Features</a
+            >
+            <a
+              class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium"
+              href="#examples"
+              >Examples</a
+            >
           </div>
         </div>
         <div class="flex items-center gap-3">
-          <a href="https://github.com/harehare/mq" target="_blank" class="material-symbols-outlined text-[#85d4ff] p-2 hover:bg-white/5 transition-all duration-300 rounded-lg scale-98-on-click text-xl">code</a>
-          <a href="https://mqlang.org/book/" target="_blank" class="material-symbols-outlined text-[#85d4ff] p-2 hover:bg-white/5 transition-all duration-300 rounded-lg scale-98-on-click text-xl">menu_book</a>
+          <a
+            href="https://github.com/harehare/mq"
+            target="_blank"
+            class="material-symbols-outlined text-[#85d4ff] p-2 hover:bg-white/5 transition-all duration-300 rounded-lg scale-98-on-click text-xl"
+            >code</a
+          >
+          <a
+            href="https://mqlang.org/book/"
+            target="_blank"
+            class="material-symbols-outlined text-[#85d4ff] p-2 hover:bg-white/5 transition-all duration-300 rounded-lg scale-98-on-click text-xl"
+            >menu_book</a
+          >
         </div>
       </div>
     </nav>
@@ -140,45 +212,82 @@
     <main>
       <!-- Hero Section -->
       <section class="relative pt-32 pb-24 overflow-hidden">
-        <div class="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent pointer-events-none"></div>
-        <div class="max-w-[1440px] mx-auto px-8 grid lg:grid-cols-2 gap-16 items-center">
+        <div
+          class="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent pointer-events-none"
+        ></div>
+        <div
+          class="max-w-[1440px] mx-auto px-8 grid lg:grid-cols-2 gap-16 items-center"
+        >
           <div class="relative z-10">
-
-            <h1 class="text-7xl lg:text-8xl font-headline font-bold tracking-tighter leading-[0.9] mb-8 animate-fade-in">
-              Query. Filter.<br/>Transform <span class="text-transparent bg-clip-text bg-gradient-to-r from-primary to-primary-container">Markdown.</span>
+            <h1
+              class="text-7xl lg:text-8xl font-headline font-bold tracking-tighter leading-[0.9] mb-8 animate-fade-in"
+            >
+              Query. Filter.<br />Transform
+              <span
+                class="text-transparent bg-clip-text bg-gradient-to-r from-primary to-primary-container"
+                >Markdown.</span
+              >
             </h1>
-            <p class="text-xl text-on-surface-variant max-w-xl mb-10 leading-relaxed animate-slide-up">
-              A command-line tool that processes Markdown using a syntax similar to jq. Written in Rust — slice, filter, map, and transform with ease.
+            <p
+              class="text-xl text-on-surface-variant max-w-xl mb-10 leading-relaxed animate-slide-up"
+            >
+              A command-line tool that processes Markdown using a syntax similar
+              to jq. Written in Rust — slice, filter, map, and transform with
+              ease.
             </p>
             <div class="flex flex-wrap gap-4">
-              <a href="https://github.com/harehare/mq" target="_blank" class="flex items-center justify-center gap-2 w-full sm:w-[240px] px-8 py-4 bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold rounded-md scale-98-on-click transition-all shadow-xl shadow-primary/10 font-headline">
-                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.385-1.335-1.755-1.335-1.755-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12"/></svg>
+              <a
+                href="https://github.com/harehare/mq"
+                target="_blank"
+                class="flex items-center justify-center gap-2 w-full sm:w-[240px] px-8 py-4 bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold rounded-md scale-98-on-click transition-all shadow-xl shadow-primary/10 font-headline"
+              >
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.385-1.335-1.755-1.335-1.755-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12"
+                  />
+                </svg>
                 View on GitHub
               </a>
-              <a href="https://mqlang.org/playground" target="_blank" class="flex items-center justify-center w-full sm:w-[240px] px-8 py-4 bg-surface-container-highest text-on-surface font-bold rounded-md hover:bg-surface-bright transition-all scale-98-on-click font-headline">Try Playground</a>
+              <a
+                href="https://mqlang.org/playground"
+                target="_blank"
+                class="flex items-center justify-center w-full sm:w-[240px] px-8 py-4 bg-surface-container-highest text-on-surface font-bold rounded-md hover:bg-surface-bright transition-all scale-98-on-click font-headline"
+                >Try Playground</a
+              >
             </div>
           </div>
 
           <!-- Terminal Mockup -->
           <div class="relative group">
-            <div class="relative bg-surface-container-lowest rounded-xl overflow-hidden border border-outline-variant/30 shadow-2xl">
-              <div class="flex items-center gap-2 px-4 py-3 bg-surface-container-low">
+            <div
+              class="relative bg-surface-container-lowest rounded-xl overflow-hidden border border-outline-variant/30 shadow-2xl"
+            >
+              <div
+                class="flex items-center gap-2 px-4 py-3 bg-surface-container-low"
+              >
                 <div class="flex gap-1.5">
                   <div class="w-3 h-3 rounded-full bg-error/40"></div>
                   <div class="w-3 h-3 rounded-full bg-tertiary/40"></div>
                   <div class="w-3 h-3 rounded-full bg-primary/40"></div>
                 </div>
-                <div class="mx-auto text-xs text-slate-500 font-mono">bash — mq query</div>
+                <div class="mx-auto text-xs text-slate-500 font-mono">
+                  bash — mq query
+                </div>
               </div>
-              <div class="p-6 font-mono text-sm leading-relaxed overflow-x-auto">
+              <div
+                class="p-6 font-mono text-sm leading-relaxed overflow-x-auto"
+              >
                 <div class="flex gap-4 mb-4">
                   <span class="text-primary opacity-50">$</span>
-                  <span class="text-on-surface">cat README.md | mq <span class="text-primary">'.list | to_text()'</span></span>
+                  <span class="text-on-surface"
+                    >cat README.md | mq
+                    <span class="text-primary">'.list | to_text()'</span></span
+                  >
                 </div>
                 <div class="text-on-surface-variant opacity-80">
-                  <span class="text-slate-500"># Output:</span><br/>
-                  <span class="text-[#85d4ff]">Slice and Filter</span><br/>
-                  <span class="text-[#85d4ff]">Map and Transform</span><br/>
+                  <span class="text-slate-500"># Output:</span><br />
+                  <span class="text-[#85d4ff]">Slice and Filter</span><br />
+                  <span class="text-[#85d4ff]">Map and Transform</span><br />
                   <span class="text-[#85d4ff]">Command-line Interface</span>
                 </div>
               </div>
@@ -191,13 +300,26 @@
       <section id="about" class="py-24">
         <div class="max-w-7xl mx-auto px-8">
           <div class="mb-16 text-center">
-            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">What is mq?</h2>
-            <p class="text-on-surface-variant text-lg max-w-2xl mx-auto leading-relaxed">
-              mq is a command-line tool that processes Markdown using a syntax similar to jq. It's written in Rust, allowing you to easily slice, filter, map, and transform structured data.
+            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">
+              What is mq?
+            </h2>
+            <p
+              class="text-on-surface-variant text-lg max-w-2xl mx-auto leading-relaxed"
+            >
+              mq is a command-line tool that processes Markdown using a syntax
+              similar to jq. It's written in Rust, allowing you to easily slice,
+              filter, map, and transform structured data.
             </p>
           </div>
-          <div class="max-w-4xl mx-auto rounded-xl overflow-hidden border border-outline-variant/30 shadow-2xl">
-            <img src="demo.gif" alt="mq demo" class="w-full h-auto block" loading="lazy" />
+          <div
+            class="max-w-4xl mx-auto rounded-xl overflow-hidden border border-outline-variant/30 shadow-2xl"
+          >
+            <img
+              src="demo.gif"
+              alt="mq demo"
+              class="w-full h-auto block"
+              loading="lazy"
+            />
           </div>
         </div>
       </section>
@@ -206,57 +328,131 @@
       <section id="why-mq" class="py-32">
         <div class="max-w-7xl mx-auto px-8">
           <div class="mb-20 text-center max-w-2xl mx-auto">
-            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">Why mq?</h2>
+            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">
+              Why mq?
+            </h2>
             <p class="text-on-surface-variant">
-              mq makes working with Markdown files as easy as jq makes working with JSON. It's especially useful for:
+              mq makes working with Markdown files as easy as jq makes working
+              with JSON. It's especially useful for:
             </p>
           </div>
           <div class="grid md:grid-cols-3 gap-8 mb-12">
-            <div class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors relative overflow-hidden">
-              <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                <span class="material-symbols-outlined text-9xl">smart_toy</span>
+            <div
+              class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors relative overflow-hidden"
+            >
+              <div
+                class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"
+              >
+                <span class="material-symbols-outlined text-9xl"
+                  >smart_toy</span
+                >
               </div>
-              <span class="material-symbols-outlined text-primary mb-6 text-4xl block">auto_awesome</span>
-              <h3 class="text-2xl font-headline font-bold mb-4">LLM Workflows</h3>
-              <p class="text-on-surface-variant leading-relaxed">Efficiently manipulate and process Markdown used in LLM prompts and outputs.</p>
+              <span
+                class="material-symbols-outlined text-primary mb-6 text-4xl block"
+                >auto_awesome</span
+              >
+              <h3 class="text-2xl font-headline font-bold mb-4">
+                LLM Workflows
+              </h3>
+              <p class="text-on-surface-variant leading-relaxed">
+                Efficiently manipulate and process Markdown used in LLM prompts
+                and outputs.
+              </p>
             </div>
-            <div class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors relative overflow-hidden">
-              <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                <span class="material-symbols-outlined text-9xl">description</span>
+            <div
+              class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors relative overflow-hidden"
+            >
+              <div
+                class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"
+              >
+                <span class="material-symbols-outlined text-9xl"
+                  >description</span
+                >
               </div>
-              <span class="material-symbols-outlined text-primary mb-6 text-4xl block">library_books</span>
-              <h3 class="text-2xl font-headline font-bold mb-4">Documentation Management</h3>
-              <p class="text-on-surface-variant leading-relaxed">Extract, transform, and organize content across multiple documentation files.</p>
+              <span
+                class="material-symbols-outlined text-primary mb-6 text-4xl block"
+                >library_books</span
+              >
+              <h3 class="text-2xl font-headline font-bold mb-4">
+                Documentation Management
+              </h3>
+              <p class="text-on-surface-variant leading-relaxed">
+                Extract, transform, and organize content across multiple
+                documentation files.
+              </p>
             </div>
-            <div class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors relative overflow-hidden">
-              <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+            <div
+              class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors relative overflow-hidden"
+            >
+              <div
+                class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"
+              >
                 <span class="material-symbols-outlined text-9xl">bolt</span>
               </div>
-              <span class="material-symbols-outlined text-primary mb-6 text-4xl block">batch_prediction</span>
-              <h3 class="text-2xl font-headline font-bold mb-4">Batch Processing</h3>
-              <p class="text-on-surface-variant leading-relaxed">Apply consistent transformations across multiple Markdown files with sub-millisecond execution.</p>
+              <span
+                class="material-symbols-outlined text-primary mb-6 text-4xl block"
+                >batch_prediction</span
+              >
+              <h3 class="text-2xl font-headline font-bold mb-4">
+                Batch Processing
+              </h3>
+              <p class="text-on-surface-variant leading-relaxed">
+                Apply consistent transformations across multiple Markdown files
+                with sub-millisecond execution.
+              </p>
             </div>
           </div>
           <div class="grid md:grid-cols-2 gap-8">
-            <div class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors relative overflow-hidden">
-              <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                <span class="material-symbols-outlined text-9xl">input_circle</span>
+            <div
+              class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors relative overflow-hidden"
+            >
+              <div
+                class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"
+              >
+                <span class="material-symbols-outlined text-9xl"
+                  >input_circle</span
+                >
               </div>
-              <span class="material-symbols-outlined text-primary mb-6 text-4xl block">format_align_left</span>
-              <h3 class="text-2xl font-headline font-bold mb-4">LLM Input Generation</h3>
-              <p class="text-on-surface-variant leading-relaxed">Generate structured Markdown content optimized for LLM consumption, since Markdown serves as the primary input format for most language models.</p>
+              <span
+                class="material-symbols-outlined text-primary mb-6 text-4xl block"
+                >format_align_left</span
+              >
+              <h3 class="text-2xl font-headline font-bold mb-4">
+                LLM Input Generation
+              </h3>
+              <p class="text-on-surface-variant leading-relaxed">
+                Generate structured Markdown content optimized for LLM
+                consumption, since Markdown serves as the primary input format
+                for most language models.
+              </p>
             </div>
-            <div class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors relative overflow-hidden">
-              <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+            <div
+              class="bg-surface-container-highest p-8 rounded-xl group hover:bg-surface-bright transition-colors relative overflow-hidden"
+            >
+              <div
+                class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"
+              >
                 <span class="material-symbols-outlined text-9xl">search</span>
               </div>
-              <span class="material-symbols-outlined text-primary mb-6 text-4xl block">manage_search</span>
-              <h3 class="text-2xl font-headline font-bold mb-4">Content Analysis</h3>
-              <p class="text-on-surface-variant leading-relaxed">Quickly extract specific sections or patterns from Markdown documents with precise node selection.</p>
+              <span
+                class="material-symbols-outlined text-primary mb-6 text-4xl block"
+                >manage_search</span
+              >
+              <h3 class="text-2xl font-headline font-bold mb-4">
+                Content Analysis
+              </h3>
+              <p class="text-on-surface-variant leading-relaxed">
+                Quickly extract specific sections or patterns from Markdown
+                documents with precise node selection.
+              </p>
             </div>
           </div>
-          <p class="text-center text-on-surface-variant mt-12 max-w-2xl mx-auto">
-            Since LLM inputs are primarily in Markdown format, mq provides efficient tools for generating and processing the structured Markdown content that LLMs require.
+          <p
+            class="text-center text-on-surface-variant mt-12 max-w-2xl mx-auto"
+          >
+            Since LLM inputs are primarily in Markdown format, mq provides
+            efficient tools for generating and processing the structured
+            Markdown content that LLMs require.
           </p>
         </div>
       </section>
@@ -265,95 +461,174 @@
       <section id="features" class="py-24">
         <div class="max-w-7xl mx-auto px-8">
           <div class="mb-20 text-center max-w-2xl mx-auto">
-            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">Features</h2>
-            <p class="text-on-surface-variant">A comprehensive set of primitives designed for deep structural manipulation of the web's most popular document format.</p>
+            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">
+              Features
+            </h2>
+            <p class="text-on-surface-variant">
+              A comprehensive set of primitives designed for deep structural
+              manipulation of the web's most popular document format.
+            </p>
           </div>
           <div class="grid grid-cols-2 md:grid-cols-3 gap-8">
             <div class="flex flex-col items-center text-center">
-              <div class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6">
-                <span class="material-symbols-outlined text-primary">filter_list</span>
+              <div
+                class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6"
+              >
+                <span class="material-symbols-outlined text-primary"
+                  >filter_list</span
+                >
               </div>
               <h4 class="font-bold mb-2 font-headline">Slice and Filter</h4>
-              <p class="text-sm text-on-surface-variant">Extract specific parts of your Markdown documents with ease.</p>
+              <p class="text-sm text-on-surface-variant">
+                Extract specific parts of your Markdown documents with ease.
+              </p>
             </div>
             <div class="flex flex-col items-center text-center">
-              <div class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6">
-                <span class="material-symbols-outlined text-primary">transform</span>
+              <div
+                class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6"
+              >
+                <span class="material-symbols-outlined text-primary"
+                  >transform</span
+                >
               </div>
               <h4 class="font-bold mb-2 font-headline">Map and Transform</h4>
-              <p class="text-sm text-on-surface-variant">Apply transformations to your Markdown content.</p>
+              <p class="text-sm text-on-surface-variant">
+                Apply transformations to your Markdown content.
+              </p>
             </div>
             <div class="flex flex-col items-center text-center">
-              <div class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6">
-                <span class="material-symbols-outlined text-primary">terminal</span>
+              <div
+                class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6"
+              >
+                <span class="material-symbols-outlined text-primary"
+                  >terminal</span
+                >
               </div>
-              <h4 class="font-bold mb-2 font-headline">Command-line Interface</h4>
-              <p class="text-sm text-on-surface-variant">Simple and intuitive CLI for quick operations.</p>
+              <h4 class="font-bold mb-2 font-headline">
+                Command-line Interface
+              </h4>
+              <p class="text-sm text-on-surface-variant">
+                Simple and intuitive CLI for quick operations.
+              </p>
             </div>
             <div class="flex flex-col items-center text-center">
-              <div class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6">
-                <span class="material-symbols-outlined text-primary">extension</span>
+              <div
+                class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6"
+              >
+                <span class="material-symbols-outlined text-primary"
+                  >extension</span
+                >
               </div>
               <h4 class="font-bold mb-2 font-headline">Extensibility</h4>
-              <p class="text-sm text-on-surface-variant">Easily extendable with custom functions.</p>
+              <p class="text-sm text-on-surface-variant">
+                Easily extendable with custom functions.
+              </p>
             </div>
             <div class="flex flex-col items-center text-center">
-              <div class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6">
-                <span class="material-symbols-outlined text-primary">support</span>
+              <div
+                class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6"
+              >
+                <span class="material-symbols-outlined text-primary"
+                  >support</span
+                >
               </div>
               <h4 class="font-bold mb-2 font-headline">Built-in Support</h4>
-              <p class="text-sm text-on-surface-variant">Filter and transform content with many built-in functions and selectors.</p>
+              <p class="text-sm text-on-surface-variant">
+                Filter and transform content with many built-in functions and
+                selectors.
+              </p>
             </div>
             <div class="flex flex-col items-center text-center">
-              <div class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6">
-                <span class="material-symbols-outlined text-primary">keyboard_arrow_right</span>
+              <div
+                class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6"
+              >
+                <span class="material-symbols-outlined text-primary"
+                  >keyboard_arrow_right</span
+                >
               </div>
               <h4 class="font-bold mb-2 font-headline">REPL Support</h4>
-              <p class="text-sm text-on-surface-variant">Interactive command-line REPL for testing and experimenting.</p>
+              <p class="text-sm text-on-surface-variant">
+                Interactive command-line REPL for testing and experimenting.
+              </p>
             </div>
             <div class="flex flex-col items-center text-center">
-              <div class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6">
+              <div
+                class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6"
+              >
                 <span class="material-symbols-outlined text-primary">code</span>
               </div>
               <h4 class="font-bold mb-2 font-headline">IDE Support</h4>
-              <p class="text-sm text-on-surface-variant"><a href="https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq" target="_blank" class="text-primary hover:underline">VSCode Extension</a> and Language Server Protocol (LSP) support for custom function development.</p>
+              <p class="text-sm text-on-surface-variant">
+                <a
+                  href="https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq"
+                  target="_blank"
+                  class="text-primary hover:underline"
+                  >VSCode Extension</a
+                >
+                and Language Server Protocol (LSP) support for custom function
+                development.
+              </p>
             </div>
             <div class="flex flex-col items-center text-center">
-              <div class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6">
-                <span class="material-symbols-outlined text-primary">bug_report</span>
+              <div
+                class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6"
+              >
+                <span class="material-symbols-outlined text-primary"
+                  >bug_report</span
+                >
               </div>
               <h4 class="font-bold mb-2 font-headline">Debugger</h4>
-              <p class="text-sm text-on-surface-variant">Experimental debugger (<code class="text-primary">mq-dbg</code>) for inspecting and stepping through mq queries interactively.</p>
+              <p class="text-sm text-on-surface-variant">
+                Experimental debugger (<code class="text-primary">mq-dbg</code>)
+                for inspecting and stepping through mq queries interactively.
+              </p>
             </div>
             <div class="flex flex-col items-center text-center">
-              <div class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6">
-                <span class="material-symbols-outlined text-primary">widgets</span>
+              <div
+                class="w-16 h-16 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-6"
+              >
+                <span class="material-symbols-outlined text-primary"
+                  >widgets</span
+                >
               </div>
               <h4 class="font-bold mb-2 font-headline">External Subcommands</h4>
-              <p class="text-sm text-on-surface-variant">Extend mq with custom subcommands by placing executables starting with <code class="text-primary">mq-</code> in <code class="text-primary">~/.mq/bin/</code>.</p>
+              <p class="text-sm text-on-surface-variant">
+                Extend mq with custom subcommands by placing executables
+                starting with <code class="text-primary">mq-</code> in
+                <code class="text-primary">~/.mq/bin/</code>.
+              </p>
             </div>
           </div>
         </div>
       </section>
 
-
       <!-- Examples / Interactive Demo Section -->
       <section id="examples" class="py-24">
         <div class="max-w-[1440px] mx-auto px-8">
           <div class="mb-16 text-center">
-            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">Try it Live</h2>
-            <p class="text-on-surface-variant">Run mq queries directly in your browser.</p>
+            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">
+              Try it Live
+            </h2>
+            <p class="text-on-surface-variant">
+              Run mq queries directly in your browser.
+            </p>
           </div>
 
-          <div class="border border-outline-variant/20 rounded-2xl overflow-hidden bg-surface-container-low/50">
+          <div
+            class="border border-outline-variant/20 rounded-2xl overflow-hidden bg-surface-container-low/50"
+          >
             <!-- Terminal Header -->
-            <div class="flex items-center justify-between px-4 py-3 bg-surface-container-low border-b border-outline-variant/20">
+            <div
+              class="flex items-center justify-between px-4 py-3 bg-surface-container-low border-b border-outline-variant/20"
+            >
               <div class="flex gap-1.5">
                 <div class="w-3 h-3 rounded-full bg-error/40"></div>
                 <div class="w-3 h-3 rounded-full bg-tertiary/40"></div>
                 <div class="w-3 h-3 rounded-full bg-primary/40"></div>
               </div>
-              <span class="text-xs text-slate-500 font-mono">mq interactive</span>
+              <span class="text-xs text-slate-500 font-mono"
+                >mq interactive</span
+              >
               <span class="text-xs text-slate-500">Press Enter to run</span>
             </div>
 
@@ -362,13 +637,25 @@
               <!-- Left: Query + Input -->
               <div class="border-r border-outline-variant/20 flex flex-col">
                 <!-- Query Pane -->
-                <div class="border-b border-outline-variant/20 flex-none" style="height: 120px;">
-                  <div class="flex items-center gap-2 px-3 py-2 bg-surface-container-low/50 border-b border-outline-variant/10">
-                    <span class="text-xs text-primary font-mono font-bold">1</span>
-                    <span class="text-xs text-slate-500 uppercase tracking-wider">query</span>
+                <div
+                  class="border-b border-outline-variant/20 flex-none"
+                  style="height: 120px"
+                >
+                  <div
+                    class="flex items-center gap-2 px-3 py-2 bg-surface-container-low/50 border-b border-outline-variant/10"
+                  >
+                    <span class="text-xs text-primary font-mono font-bold"
+                      >1</span
+                    >
+                    <span
+                      class="text-xs text-slate-500 uppercase tracking-wider"
+                      >query</span
+                    >
                   </div>
                   <div class="p-3 flex items-baseline gap-2 h-full">
-                    <span class="text-primary font-mono font-bold flex-shrink-0">mq&gt;</span>
+                    <span class="text-primary font-mono font-bold flex-shrink-0"
+                      >mq&gt;</span
+                    >
                     <textarea
                       id="queryInput"
                       class="demo-textarea"
@@ -379,22 +666,41 @@
                 </div>
                 <!-- Markdown Input Pane -->
                 <div class="flex-1 flex flex-col min-h-0">
-                  <div class="flex items-center gap-2 px-3 py-2 bg-surface-container-low/50 border-b border-outline-variant/10 flex-none">
-                    <span class="text-xs text-primary font-mono font-bold">2</span>
-                    <span class="text-xs text-slate-500 uppercase tracking-wider">markdown input</span>
+                  <div
+                    class="flex items-center gap-2 px-3 py-2 bg-surface-container-low/50 border-b border-outline-variant/10 flex-none"
+                  >
+                    <span class="text-xs text-primary font-mono font-bold"
+                      >2</span
+                    >
+                    <span
+                      class="text-xs text-slate-500 uppercase tracking-wider"
+                      >markdown input</span
+                    >
                   </div>
                   <div class="p-3 flex-1 min-h-0">
-                    <textarea id="inputMarkdown" class="demo-textarea"></textarea>
+                    <textarea
+                      id="inputMarkdown"
+                      class="demo-textarea"
+                    ></textarea>
                   </div>
                 </div>
               </div>
 
               <!-- Right: Output -->
               <div class="flex flex-col min-h-0">
-                <div class="flex items-center gap-2 px-3 py-2 bg-surface-container-low/50 border-b border-outline-variant/10 flex-none">
-                  <span class="text-xs text-primary font-mono font-bold">3</span>
-                  <span class="text-xs text-slate-500 uppercase tracking-wider">output</span>
-                  <span class="ml-auto px-2 py-0.5 bg-primary/20 text-primary text-[10px] rounded">LIVE</span>
+                <div
+                  class="flex items-center gap-2 px-3 py-2 bg-surface-container-low/50 border-b border-outline-variant/10 flex-none"
+                >
+                  <span class="text-xs text-primary font-mono font-bold"
+                    >3</span
+                  >
+                  <span class="text-xs text-slate-500 uppercase tracking-wider"
+                    >output</span
+                  >
+                  <span
+                    class="ml-auto px-2 py-0.5 bg-primary/20 text-primary text-[10px] rounded"
+                    >LIVE</span
+                  >
                 </div>
                 <div class="p-3 flex-1 min-h-0">
                   <div id="output" class="demo-output"></div>
@@ -407,23 +713,49 @@
     </main>
 
     <!-- Footer -->
-    <footer class="bg-[#1e293b] w-full py-16 border-t border-outline-variant/20">
-      <div class="max-w-7xl mx-auto px-8 flex flex-col md:flex-row justify-between items-center gap-8">
+    <footer
+      class="bg-[#1e293b] w-full py-16 border-t border-outline-variant/20"
+    >
+      <div
+        class="max-w-7xl mx-auto px-8 flex flex-col md:flex-row justify-between items-center gap-8"
+      >
         <div class="flex flex-col items-center md:items-start gap-2">
-          <span class="text-[#85d4ff] font-bold text-lg font-headline tracking-tighter">mq</span>
-          <p class="text-xs uppercase tracking-widest text-slate-500">© 2026 mq</p>
+          <span
+            class="text-[#85d4ff] font-bold text-lg font-headline tracking-tighter"
+            >mq</span
+          >
+          <p class="text-xs uppercase tracking-widest text-slate-500">
+            © 2026 mq
+          </p>
         </div>
         <div class="flex gap-10">
-          <a class="text-xs uppercase tracking-widest text-slate-500 hover:text-[#85d4ff] transition-colors" href="https://github.com/harehare/mq" target="_blank">GitHub</a>
-          <a class="text-xs uppercase tracking-widest text-slate-500 hover:text-[#85d4ff] transition-colors" href="https://mqlang.org/book/" target="_blank">Documentation</a>
-          <a class="text-xs uppercase tracking-widest text-slate-500 hover:text-[#85d4ff] transition-colors" href="https://github.com/harehare/mq/blob/main/LICENSE" target="_blank">MIT License</a>
+          <a
+            class="text-xs uppercase tracking-widest text-slate-500 hover:text-[#85d4ff] transition-colors"
+            href="https://github.com/harehare/mq"
+            target="_blank"
+            >GitHub</a
+          >
+          <a
+            class="text-xs uppercase tracking-widest text-slate-500 hover:text-[#85d4ff] transition-colors"
+            href="https://mqlang.org/book/"
+            target="_blank"
+            >Documentation</a
+          >
+          <a
+            class="text-xs uppercase tracking-widest text-slate-500 hover:text-[#85d4ff] transition-colors"
+            href="https://github.com/harehare/mq/blob/main/LICENSE"
+            target="_blank"
+            >MIT License</a
+          >
         </div>
       </div>
     </footer>
 
     <script>
       function copyCode(button) {
-        const code = button.previousElementSibling.innerText.replace(/\s+/g, " ").trim();
+        const code = button.previousElementSibling.innerText
+          .replace(/\s+/g, " ")
+          .trim();
         navigator.clipboard.writeText(code).then(() => {
           const originalIcon = button.textContent;
           button.textContent = "check";
@@ -512,12 +844,14 @@ More content.`;
         const input = inputMarkdown.value.trim();
 
         if (!query || !input) {
-          output.textContent = "Error: Please provide both query and input markdown.";
+          output.textContent =
+            "Error: Please provide both query and input markdown.";
           output.className = "demo-output demo-error";
           return;
         }
 
-        output.textContent = "Running query... Waiting for a response from the Web API.";
+        output.textContent =
+          "Running query... Waiting for a response from the Web API.";
         output.className = "demo-output demo-loading";
         isRunning = true;
 
