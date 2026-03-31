@@ -2353,6 +2353,18 @@ define_builtin!(_TOON_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
     }
 });
 
+define_builtin!(_TOML_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => {
+            let value: serde_json::Value =
+                toml::from_str(s).map_err(|e| Error::Runtime(format!("Failed to parse TOML: {}", e)))?;
+            Ok(value.into())
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
 define_builtin!(_XML_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
     match args.as_mut_slice() {
         [RuntimeValue::String(xml_str)] => {
@@ -2834,6 +2846,7 @@ const HASH_XML_PARSE: u64 = fnv1a_hash_64("_xml_parse");
 const HASH_JSON_PARSE: u64 = fnv1a_hash_64("_json_parse");
 const HASH_YAML_PARSE: u64 = fnv1a_hash_64("_yaml_parse");
 const HASH_TOON_PARSE: u64 = fnv1a_hash_64("_toon_parse");
+const HASH_TOML_PARSE: u64 = fnv1a_hash_64("_toml_parse");
 #[cfg(feature = "file-io")]
 const HASH_READ_FILE: u64 = fnv1a_hash_64("read_file");
 
@@ -2970,6 +2983,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_JSON_PARSE => Some(&_JSON_PARSE),
         HASH_YAML_PARSE => Some(&_YAML_PARSE),
         HASH_TOON_PARSE => Some(&_TOON_PARSE),
+        HASH_TOML_PARSE => Some(&_TOML_PARSE),
         #[cfg(feature = "file-io")]
         HASH_READ_FILE => Some(&READ_FILE),
         _ => None,
@@ -3392,6 +3406,13 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a TOON string into a data structure.",
             params: &["toon_string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_toml_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses a TOML string into a data structure.",
+            params: &["toml_string"],
         },
     );
 
@@ -5987,6 +6008,84 @@ mod tests {
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::simple_kv(
+        "name = \"Alice\"\nage = 30",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+            map.insert(Ident::new("age"), RuntimeValue::Number(30.into()));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::boolean(
+        "enabled = true\ndisabled = false",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("enabled"), RuntimeValue::Boolean(true));
+            map.insert(Ident::new("disabled"), RuntimeValue::Boolean(false));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::nested_table(
+        "[server]\nhost = \"localhost\"\nport = 8080",
+        {
+            let mut inner = BTreeMap::new();
+            inner.insert(Ident::new("host"), RuntimeValue::String("localhost".to_string()));
+            inner.insert(Ident::new("port"), RuntimeValue::Number(8080.into()));
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("server"), RuntimeValue::Dict(inner));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::array(
+        "tags = [\"rust\", \"toml\"]",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("tags"), RuntimeValue::Array(vec![
+                RuntimeValue::String("rust".to_string()),
+                RuntimeValue::String("toml".to_string()),
+            ]));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    fn test_toml_parse(#[case] toml: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("_toml_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(toml.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::invalid_toml("name = ")]
+    fn test_toml_parse_error(#[case] input: &str) {
+        let ident = Ident::new("_toml_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(input.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::invalid_type(RuntimeValue::Number(1.into()))]
+    fn test_toml_parse_invalid_type(#[case] input: RuntimeValue) {
+        let ident = Ident::new("_toml_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![input],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
     }
 
     #[rstest]
