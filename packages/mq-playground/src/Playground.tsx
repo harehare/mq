@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
+import "./vim.css";
 import * as mq from "mq-web";
 import { languages, editor, IPosition } from "monaco-editor";
 import LZString from "lz-string";
 import { FileTree } from "./components/FileTree";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { TabBar, Tab } from "./components/TabBar";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { fileSystem, FileNode, OPFSFileSystem } from "./utils/fileSystem";
@@ -18,7 +20,9 @@ import {
   VscLoading,
   VscWordWrap,
   VscMap,
+  VscSettingsGear,
 } from "react-icons/vsc";
+import { initVimMode } from "monaco-vim";
 import { EXAMPLE_CATEGORIES, EXAMPLES } from "./examples";
 
 type SharedData = {
@@ -40,8 +44,52 @@ const ACTIVE_TAB_ID_KEY = "mq-playground.active_tab_id";
 const SIDEBAR_WIDTH_KEY = "mq-playground.sidebar-width";
 const LEFT_RIGHT_SPLIT_KEY = "mq-playground.left-right-split";
 const TOP_BOTTOM_SPLIT_KEY = "mq-playground.top-bottom-split";
-const MINIMAP_ENABLED_KEY = "mq-playground.minimap-enabled";
-const WORD_WRAP_KEY = "mq-playground.word-wrap";
+const EDITOR_SETTINGS_KEY = "mq-playground.editor-settings";
+
+type EditorSettings = {
+  version: number;
+  minimapEnabled: boolean;
+  wordWrap: "on" | "off";
+  vimModeEnabled: boolean;
+  fontSize: number;
+  theme: "light" | "dark" | "system";
+  lineNumbers: "on" | "off";
+  tabSize: number;
+};
+
+const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
+  version: 1,
+  minimapEnabled: false,
+  wordWrap: "off",
+  vimModeEnabled: false,
+  fontSize: 12,
+  theme: "system",
+  lineNumbers: "on",
+  tabSize: 2,
+};
+
+function loadEditorSettings(): EditorSettings {
+  try {
+    const raw = localStorage.getItem(EDITOR_SETTINGS_KEY);
+    return raw
+      ? { ...DEFAULT_EDITOR_SETTINGS, ...JSON.parse(raw) }
+      : DEFAULT_EDITOR_SETTINGS;
+  } catch {
+    return DEFAULT_EDITOR_SETTINGS;
+  }
+}
+
+function saveEditorSettings(settings: Partial<EditorSettings>) {
+  try {
+    const current = loadEditorSettings();
+    localStorage.setItem(
+      EDITOR_SETTINGS_KEY,
+      JSON.stringify({ ...current, ...settings }),
+    );
+  } catch {
+    // ignore
+  }
+}
 
 export const Playground = () => {
   const [code, setCode] = useState<string | undefined>(
@@ -125,12 +173,25 @@ export const Playground = () => {
     const stored = Number(localStorage.getItem(TOP_BOTTOM_SPLIT_KEY));
     return stored > 0 ? stored : 50;
   });
+  const _initialSettings = loadEditorSettings();
   const [minimapEnabled, setMinimapEnabled] = useState(
-    localStorage.getItem(MINIMAP_ENABLED_KEY) === "true",
+    _initialSettings.minimapEnabled,
   );
   const [wordWrap, setWordWrap] = useState<"on" | "off">(
-    localStorage.getItem(WORD_WRAP_KEY) === "on" ? "on" : "off",
+    _initialSettings.wordWrap,
   );
+  const [lineNumbers, setLineNumbers] = useState<"on" | "off">(
+    _initialSettings.lineNumbers,
+  );
+  const [tabSize, setTabSize] = useState(_initialSettings.tabSize);
+  const [vimModeEnabled, setVimModeEnabled] = useState(
+    _initialSettings.vimModeEnabled,
+  );
+  const [fontSize, setFontSize] = useState(_initialSettings.fontSize);
+  const [theme, setTheme] = useState<"light" | "dark" | "system">(
+    _initialSettings.theme,
+  );
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [cursorPosition, setCursorPosition] = useState({
     line: 1,
     column: 1,
@@ -152,6 +213,10 @@ export const Playground = () => {
   });
   const hasInitialized = useRef(false);
   const enableTypeCheckRef = useRef(enableTypeCheck);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const vimModeRef = useRef<any>(null);
+  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const vimStatusBarRef = useRef<HTMLDivElement>(null);
 
   // Keep enableTypeCheckRef in sync with state
   useEffect(() => {
@@ -922,6 +987,24 @@ export const Playground = () => {
     );
   }, [isSidebarVisible]);
 
+  useEffect(() => {
+    saveEditorSettings({
+      vimModeEnabled,
+      fontSize,
+      theme,
+      lineNumbers,
+      tabSize,
+      minimapEnabled,
+      wordWrap,
+    });
+
+    if (theme === "system") {
+      document.documentElement.style.colorScheme = "";
+    } else {
+      document.documentElement.style.colorScheme = theme;
+    }
+  }, [vimModeEnabled, fontSize, theme, lineNumbers, tabSize, minimapEnabled, wordWrap]);
+
   // Add keyboard shortcut for save (Ctrl+S / Cmd+S)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -940,6 +1023,27 @@ export const Playground = () => {
   const toggleSidebar = useCallback(() => {
     setIsSidebarVisible((prev) => !prev);
   }, []);
+
+  useEffect(() => {
+    if (editorRef.current) {
+      if (vimModeEnabled) {
+        if (!vimModeRef.current) {
+          vimModeRef.current = initVimMode(
+            editorRef.current,
+            vimStatusBarRef.current,
+          );
+        }
+      } else {
+        if (vimModeRef.current) {
+          vimModeRef.current.dispose();
+          vimModeRef.current = null;
+          if (vimStatusBarRef.current) {
+            vimStatusBarRef.current.innerHTML = "";
+          }
+        }
+      }
+    }
+  }, [vimModeEnabled]);
 
   const handleSidebarResize = useCallback((delta: number) => {
     setSidebarWidth((prev) => {
@@ -980,28 +1084,14 @@ export const Playground = () => {
   }, []);
 
   const toggleMinimap = useCallback(() => {
-    setMinimapEnabled((prev) => {
-      const next = !prev;
-      localStorage.setItem(MINIMAP_ENABLED_KEY, String(next));
-      return next;
-    });
+    setMinimapEnabled((prev) => !prev);
   }, []);
 
   const toggleWordWrap = useCallback(() => {
-    setWordWrap((prev) => {
-      const next = prev === "on" ? "off" : "on";
-      localStorage.setItem(WORD_WRAP_KEY, next);
-      return next;
-    });
+    setWordWrap((prev) => (prev === "on" ? "off" : "on"));
   }, []);
 
   const beforeMount = (monaco: Monaco) => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const themeParam = urlParams.get("theme");
-    const isDarkMode = !themeParam
-      ? window.matchMedia("(prefers-color-scheme: dark)").matches
-      : themeParam === "dark";
-
     monaco.editor.addEditorAction({
       id: "run-script",
       label: "Run Script",
@@ -1313,50 +1403,64 @@ export const Playground = () => {
       includeLF: true,
     });
 
-    monaco.editor.defineTheme("mq-base", {
-      base: isDarkMode ? "vs-dark" : "vs",
+    const rules = (dark: boolean) => [
+      {
+        token: "comment",
+        foreground: dark ? "#6A9955" : "#008000",
+        fontStyle: "italic",
+      },
+      {
+        token: "keyword",
+        foreground: dark ? "#569CD6" : "#0000FF",
+        fontStyle: "bold",
+      },
+      { token: "function", foreground: dark ? "#DCDCAA" : "#795E26" },
+      { token: "variable", foreground: dark ? "#9CDCFE" : "#001080" },
+      { token: "property", foreground: dark ? "#9CDCFE" : "#001080" },
+      { token: "string", foreground: dark ? "#CE9178" : "#A31515" },
+      { token: "number", foreground: dark ? "#B5CEA8" : "#098658" },
+      {
+        token: "operator",
+        foreground: dark ? "#D4D4D4" : "#000000",
+        fontStyle: "bold",
+      },
+      { token: "delimiter", foreground: dark ? "#D4D4D4" : "#000000" },
+      { token: "identifier", foreground: dark ? "#D4D4D4" : "#000000" },
+    ];
+
+    monaco.editor.defineTheme("mq-dark", {
+      base: "vs-dark",
       inherit: true,
-      rules: [
-        {
-          token: "comment",
-          foreground: isDarkMode ? "#6A9955" : "#008000",
-          fontStyle: "italic",
-        },
-        {
-          token: "keyword",
-          foreground: isDarkMode ? "#569CD6" : "#0000FF",
-          fontStyle: "bold",
-        },
-        { token: "function", foreground: isDarkMode ? "#DCDCAA" : "#795E26" },
-        { token: "variable", foreground: isDarkMode ? "#9CDCFE" : "#001080" },
-        { token: "property", foreground: isDarkMode ? "#9CDCFE" : "#001080" },
-        { token: "string", foreground: isDarkMode ? "#CE9178" : "#A31515" },
-        { token: "number", foreground: isDarkMode ? "#B5CEA8" : "#098658" },
-        {
-          token: "operator",
-          foreground: isDarkMode ? "#D4D4D4" : "#000000",
-          fontStyle: "bold",
-        },
-        { token: "delimiter", foreground: isDarkMode ? "#D4D4D4" : "#000000" },
-        { token: "identifier", foreground: isDarkMode ? "#D4D4D4" : "#000000" },
-      ],
-      colors: isDarkMode
-        ? {
-            "editor.background": "#1E1E1E",
-            "editor.foreground": "#D4D4D4",
-            "editorLineNumber.foreground": "#858585",
-            "editor.lineHighlightBackground": "#2D2D30",
-            "editorCursor.foreground": "#A7A7A7",
-          }
-        : {
-            "editor.background": "#FFFFFF",
-            "editor.foreground": "#000000",
-            "editorLineNumber.foreground": "#237893",
-            "editor.lineHighlightBackground": "#F3F3F3",
-            "editorCursor.foreground": "#000000",
-          },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      rules: rules(true) as any,
+      colors: {
+        "editor.background": "#1E1E1E",
+        "editor.foreground": "#D4D4D4",
+        "editorLineNumber.foreground": "#858585",
+        "editor.lineHighlightBackground": "#2D2D30",
+        "editorCursor.foreground": "#A7A7A7",
+      },
+    });
+
+    monaco.editor.defineTheme("mq-light", {
+      base: "vs",
+      inherit: true,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      rules: rules(false) as any,
+      colors: {
+        "editor.background": "#FFFFFF",
+        "editor.foreground": "#000000",
+        "editorLineNumber.foreground": "#237893",
+        "editor.lineHighlightBackground": "#F3F3F3",
+        "editorCursor.foreground": "#000000",
+      },
     });
   };
+
+  const isDarkMode =
+    theme === "system"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : theme === "dark";
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -1410,6 +1514,13 @@ export const Playground = () => {
               marginRight: "8px",
             }}
           >
+            <button
+              className="header-icon-button"
+              onClick={() => setIsSettingsOpen(true)}
+              title="Settings"
+            >
+              <VscSettingsGear size={16} />
+            </button>
             <a
               href="https://github.com/harehare/mq"
               target="_blank"
@@ -1545,25 +1656,43 @@ export const Playground = () => {
                 onChange={setCode}
                 beforeMount={beforeMount}
                 onMount={(editor) => {
+                  editorRef.current = editor as editor.IStandaloneCodeEditor;
                   const disposable = editor.onDidChangeCursorPosition((e) => {
                     setCursorPosition({
                       line: e.position.lineNumber,
                       column: e.position.column,
                     });
                   });
-                  editor.onDidDispose(() => disposable.dispose());
+
+                  if (vimModeEnabled && !vimModeRef.current) {
+                    vimModeRef.current = initVimMode(
+                      editor,
+                      vimStatusBarRef.current,
+                    );
+                  }
+
+                  editor.onDidDispose(() => {
+                    disposable.dispose();
+                    if (vimModeRef.current) {
+                      vimModeRef.current.dispose();
+                      vimModeRef.current = null;
+                    }
+                    editorRef.current = null;
+                  });
                 }}
                 options={{
                   minimap: { enabled: minimapEnabled },
                   scrollBeyondLastLine: false,
-                  fontSize: 12,
+                  fontSize,
                   automaticLayout: true,
                   fontFamily:
                     "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
                   fontLigatures: true,
                   wordWrap,
+                  lineNumbers,
+                  tabSize,
                 }}
-                theme="mq-base"
+                theme={isDarkMode ? "mq-dark" : "mq-light"}
               />
             </div>
           </div>
@@ -1600,13 +1729,15 @@ export const Playground = () => {
                 options={{
                   minimap: { enabled: false },
                   scrollBeyondLastLine: false,
-                  fontSize: 12,
+                  fontSize,
                   automaticLayout: true,
                   fontFamily:
                     "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
                   fontLigatures: true,
+                  lineNumbers,
+                  tabSize,
                 }}
-                theme="mq-base"
+                theme={isDarkMode ? "mq-dark" : "mq-light"}
               />
             </div>
           </div>
@@ -1745,10 +1876,10 @@ export const Playground = () => {
                   domReadOnly: true,
                   minimap: { enabled: false },
                   scrollBeyondLastLine: false,
-                  fontSize: 12,
+                  fontSize,
                   automaticLayout: true,
                 }}
-                theme="mq-base"
+                theme={isDarkMode ? "mq-dark" : "mq-light"}
               />
             )}
             {activeTab === "ast" && (
@@ -1762,10 +1893,10 @@ export const Playground = () => {
                   domReadOnly: true,
                   minimap: { enabled: false },
                   scrollBeyondLastLine: false,
-                  fontSize: 12,
+                  fontSize,
                   automaticLayout: true,
                 }}
-                theme="mq-base"
+                theme={isDarkMode ? "mq-dark" : "mq-light"}
               />
             )}
           </div>
@@ -1775,6 +1906,16 @@ export const Playground = () => {
       {!isEmbed && (
         <footer className="playground-footer">
           <div className="footer-left">
+            <div
+              ref={vimStatusBarRef}
+              className="vim-status-bar"
+              style={{
+                display: vimModeEnabled ? "block" : "none",
+                minWidth: "100px",
+                fontFamily: "monospace",
+                fontSize: "11px",
+              }}
+            />
             {currentFilePath && (
               <>
                 <div className="footer-item">
@@ -1848,6 +1989,25 @@ export const Playground = () => {
           onCancel={() => setDeleteConfirmDialog(null)}
         />
       )}
+
+      <SettingsDialog
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        vimModeEnabled={vimModeEnabled}
+        onVimModeToggle={setVimModeEnabled}
+        fontSize={fontSize}
+        onFontSizeChange={setFontSize}
+        theme={theme}
+        onThemeChange={setTheme}
+        minimapEnabled={minimapEnabled}
+        onMinimapToggle={setMinimapEnabled}
+        wordWrap={wordWrap}
+        onWordWrapToggle={setWordWrap}
+        lineNumbers={lineNumbers}
+        onLineNumbersToggle={setLineNumbers}
+        tabSize={tabSize}
+        onTabSizeChange={setTabSize}
+      />
     </div>
   );
 };
