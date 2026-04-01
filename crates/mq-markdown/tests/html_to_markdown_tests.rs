@@ -591,7 +591,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::dl_ignore_comments_and_whitespace_nodes(
     "<dl>\n  <!-- comment --> <dt>Term</dt> \n <dd>Def</dd> </dl>",
     ConversionOptions::default(),
-    "**Term**\n  Def"
+    "<!-- comment -->\n**Term**\n  Def"
 )]
 #[case::ol_nested(
     "<ol><li>Parent 1<ol><li>Child A</li><li>Child B</li></ol></li><li>Parent 2</li></ol>",
@@ -1135,6 +1135,80 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     },
     "# Role Main Title\n\nRole main content"
 )]
+#[case::pre_with_code_and_text(
+    "<pre><code>code</code>\nand text</pre>",
+    ConversionOptions::default(),
+    "```\ncode\nand text\n```"
+)]
+#[case::pre_with_multiple_br(
+    "<pre>line1<br><br>line3</pre>",
+    ConversionOptions::default(),
+    "```\nline1\n\nline3\n```"
+)]
+#[case::table_alignment_left_style(
+    "<table><thead><tr><th style=\"text-align: left\">L</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| L |\n|:---|\n| 1 |"
+)]
+#[case::table_alignment_center_style(
+    "<table><thead><tr><th style=\"text-align: center\">C</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| C |\n|:---:|\n| 1 |"
+)]
+#[case::table_alignment_right_style(
+    "<table><thead><tr><th style=\"text-align: right\">R</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| R |\n|---:|\n| 1 |"
+)]
+#[case::table_header_td_only(
+    "<table><thead><tr><td>H1</td><td>H2</td></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| H1 | H2 |\n|---|---|\n| C1 | C2 |"
+)]
+#[case::dl_with_comment_and_whitespace(
+    "<dl><dt>Term</dt><!-- comment --><dd>Def</dd>   </dl>",
+    ConversionOptions::default(),
+    "**Term**\n<!-- comment -->\n  Def"
+)]
+#[case::dl_with_unexpected_element(
+    "<dl><dt>Term</dt><p>Unexpected</p><dd>Def</dd></dl>",
+    ConversionOptions::default(),
+    "**Term**\nUnexpected\n  Def"
+)]
+#[case::pre_with_code_only(
+    "<pre><code>only code</code></pre>",
+    ConversionOptions::default(),
+    "```\nonly code\n```"
+)]
+#[case::pre_with_br_only("<pre><br></pre>", ConversionOptions::default(), "```\n\n```")]
+#[case::table_alignment_mixed(
+    "<table><thead><tr><th style=\"text-align: left\">L</th><th align=\"center\">C</th><th style=\"text-align: right\">R</th><th>D</th></tr></thead><tbody><tr><td>1</td><td>2</td><td>3</td><td>4</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| L | C | R | D |\n|:---|:---:|---:|---|\n| 1 | 2 | 3 | 4 |"
+)]
+#[case::embedded_content_empty_title(
+    "<iframe src=\"https://example.com\" title=\"\"></iframe>",
+    ConversionOptions::default(),
+    "[Embedded Iframe](https://example.com)"
+)]
+#[case::list_with_empty_li_and_content(
+    "<ul><li></li><li>Content</li></ul>",
+    ConversionOptions::default(),
+    "* \n* Content"
+)]
+#[case::inline_nav_aside_noscript(
+    "<p>Text <nav>nav</nav> <aside>aside</aside> <noscript>noscript</noscript> End</p>",
+    ConversionOptions::default(),
+    "Text  End"
+)]
+#[case::span_in_paragraph("<p>Hello <span>world</span>!</p>", ConversionOptions::default(), "Hello world!")]
+#[case::consecutive_paragraphs("<p>P1</p><p>P2</p>", ConversionOptions::default(), "P1\n\nP2")]
+#[case::blockquote_spacing(
+    "<blockquote><p>Q</p></blockquote><p>P</p>",
+    ConversionOptions::default(),
+    "> Q\n\nP"
+)]
+#[case::pre_spacing("<pre>code</pre><p>P</p>", ConversionOptions::default(), "```\ncode\n```\n\nP")]
 fn test_html_to_markdown(#[case] html: &str, #[case] options: ConversionOptions, #[case] expected: &str) {
     assert_conversion_with_options(html, expected, options);
 }
@@ -1182,6 +1256,16 @@ fn test_smart_extraction_falls_back_to_full_document() {
     let html = r#"<html><body><div><p>Body content</p></div></body></html>"#;
     let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
     assert!(md.contains("Body content"));
+}
+
+#[test]
+fn test_html_comment_preserved() {
+    // This tests the parser's Comment handling
+    let html = "<p>Text</p><!-- Comment --><p>More</p>";
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("Text"));
+    assert!(md.contains("<!-- Comment -->"));
+    assert!(md.contains("More"));
 }
 
 // TODO: Add tests for headings with links, images etc. once those elements are supported.
