@@ -81,7 +81,7 @@ impl InputFormat {
             "md" | "markdown" => Self::Markdown,
             "mdx" => Self::Mdx,
             "html" | "htm" => Self::Html,
-            "txt" | "log" | "csv" | "psv" | "tsv" | "json" | "toml" | "yaml" | "yml" | "xml" => Self::Raw,
+            "txt" | "log" | "csv" | "psv" | "tsv" | "toon" | "json" | "toml" | "yaml" | "yml" | "xml" => Self::Raw,
             "jsonl" | "ndjson" => Self::Text,
             _ => Self::Markdown,
         }
