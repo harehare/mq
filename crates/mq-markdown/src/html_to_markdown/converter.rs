@@ -232,14 +232,9 @@ fn handle_blockquote_element(element: &HtmlElement, options: ConversionOptions) 
 
 fn handle_pre_element(element: &HtmlElement, _options: ConversionOptions) -> miette::Result<String> {
     let mut lang_specifier = String::new();
-    let mut content_nodes = &element.children;
-    let mut temp_nodes;
-    if let Some(HtmlNode::Element(code_element)) = element.children.first()
+    let text_content = if let Some(HtmlNode::Element(code_element)) = element.children.first()
         && code_element.tag_name == "code"
     {
-        temp_nodes = code_element.children.clone();
-        temp_nodes.extend(element.children.iter().skip(1).cloned());
-        content_nodes = &temp_nodes;
         if let Some(Some(class_attr)) = code_element.attributes.get("class") {
             for class_name in class_attr.split_whitespace() {
                 if let Some(lang) = class_name.strip_prefix("language-") {
@@ -251,12 +246,14 @@ fn handle_pre_element(element: &HtmlElement, _options: ConversionOptions) -> mie
                 }
             }
         }
-    }
+        let mut text = extract_text_from_pre_children(&code_element.children);
+        text.push_str(&extract_text_from_pre_children(&element.children[1..]));
+        text
+    } else {
+        extract_text_from_pre_children(&element.children)
+    };
 
-    let mut text_content = extract_text_from_pre_children(content_nodes);
-    if text_content.starts_with('\n') {
-        text_content.remove(0);
-    }
+    let text_content = text_content.strip_prefix('\n').unwrap_or(&text_content);
     Ok(format!(
         "```{}\n{}\n```",
         lang_specifier,
