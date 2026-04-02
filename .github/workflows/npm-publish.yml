@@ -21,6 +21,10 @@ jobs:
         uses: taiki-e/install-action@6ef672efc2b5aabc787a9e94baf4989aa02a97df # v2.70.3
         with:
           tool: wasm-pack
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          package_json_file: packages/mq-web/package.json
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
@@ -28,9 +32,9 @@ jobs:
           registry-url: "https://registry.npmjs.org"
       - name: Install dependencies
         working-directory: packages/mq-web
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Build
         run: just build-web
       - name: Publish to npm
         working-directory: packages/mq-web
-        run: npm publish --access public
+        run: pnpm publish --access public --no-git-checks

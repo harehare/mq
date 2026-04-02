@@ -50,7 +50,7 @@ build-wasm:
 # Build mq-web package
 [working-directory: 'packages/mq-web']
 build-web: build-wasm
-    npm run build
+    pnpm run build
 
 # Run formatting
 fmt:
