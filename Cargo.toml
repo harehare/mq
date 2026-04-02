@@ -63,7 +63,7 @@ miette = "7.6.0"
 mimalloc = "0.1.48"
 nom = "8.0.0"
 nom_locate = "5.0.0"
-opfs = "0.1.4"
+opfs = "0.2.0"
 percent-encoding = "2.3.2"
 proptest = "1.11"
 pyo3 = "0.28.2"
@@ -103,7 +103,7 @@ utoipa = "5.4"
 utoipa-swagger-ui = {version = "9", features = ["axum", "vendored"]}
 wasm-bindgen = "0.2.100"
 wasm-bindgen-futures = "0.4.55"
-wasm-bindgen-test = "0.3.64"
+wasm-bindgen-test = "0.3.65"
 yaml-rust2 = "0.11.0"
 
 [profile.release]
