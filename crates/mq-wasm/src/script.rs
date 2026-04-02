@@ -831,7 +831,7 @@ mod tests {
                 .expect("Failed to create writable");
 
             writer
-                .write_at_cursor_pos(module_content.as_bytes().to_vec())
+                .write_at_cursor_pos(module_content.as_bytes())
                 .await
                 .expect("Failed to write to file");
 
@@ -906,7 +906,7 @@ mod tests {
                 .unwrap_or_else(|_| panic!("Failed to create writable for {}", file_name));
 
             writer
-                .write_at_cursor_pos(content.as_bytes().to_vec())
+                .write_at_cursor_pos(content.as_bytes())
                 .await
                 .unwrap_or_else(|_| panic!("Failed to write to {}", file_name));
 
