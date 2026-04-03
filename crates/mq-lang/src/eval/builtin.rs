@@ -4429,6 +4429,10 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> RuntimeVa
             (_, mq_markdown::Node::List(mq_markdown::List { .. })) => true,
             _ => false,
         },
+        Selector::Task => matches!(
+            node,
+            mq_markdown::Node::List(mq_markdown::List { checked: Some(_), .. })
+        ),
         Selector::MdxJsEsm => node.is_mdx_js_esm(),
         Selector::Text => node.is_text(),
         Selector::Toml => node.is_toml(),
