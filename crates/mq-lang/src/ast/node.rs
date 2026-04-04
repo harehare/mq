@@ -165,9 +165,9 @@ impl Node {
                 let end = catch_expr.range(Shared::clone(&arena)).end;
                 Range { start, end }
             }
-            Expr::And(expr1, expr2) | Expr::Or(expr1, expr2) => {
-                let start = expr1.range(Shared::clone(&arena)).start;
-                let end = expr2.range(Shared::clone(&arena)).end;
+            Expr::And(exprs) | Expr::Or(exprs) => {
+                let start = exprs.first().unwrap().range(Shared::clone(&arena)).start;
+                let end = exprs.last().unwrap().range(Shared::clone(&arena)).end;
                 Range { start, end }
             }
             Expr::Break(Some(value_node)) => {
@@ -316,8 +316,8 @@ pub enum Expr {
     Loop(Program),
     Var(Pattern, Shared<Node>),
     Assign(IdentWithToken, Shared<Node>),
-    And(Shared<Node>, Shared<Node>),
-    Or(Shared<Node>, Shared<Node>),
+    And(Vec<Shared<Node>>),
+    Or(Vec<Shared<Node>>),
     Literal(Literal),
     Ident(IdentWithToken),
     InterpolatedString(Vec<StringSegment>),

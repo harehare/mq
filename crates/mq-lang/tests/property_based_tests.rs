@@ -135,11 +135,11 @@ mod strategies {
     }
 
     pub fn and_expr() -> impl Strategy<Value = Shared<AstNode>> {
-        (simple_expr(), simple_expr()).prop_map(|(left, right)| make_node(AstExpr::And(left, right)))
+        (simple_expr(), simple_expr()).prop_map(|(left, right)| make_node(AstExpr::And(vec![left, right])))
     }
 
     pub fn or_expr() -> impl Strategy<Value = Shared<AstNode>> {
-        (simple_expr(), simple_expr()).prop_map(|(left, right)| make_node(AstExpr::Or(left, right)))
+        (simple_expr(), simple_expr()).prop_map(|(left, right)| make_node(AstExpr::Or(vec![left, right])))
     }
 
     pub fn binary_op_expr() -> impl Strategy<Value = Shared<AstNode>> {
