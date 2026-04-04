@@ -166,9 +166,14 @@ impl Node {
                 Range { start, end }
             }
             Expr::And(exprs) | Expr::Or(exprs) => {
-                let start = exprs.first().unwrap().range(Shared::clone(&arena)).start;
-                let end = exprs.last().unwrap().range(Shared::clone(&arena)).end;
-                Range { start, end }
+                if let (Some(first), Some(last)) = (exprs.first(), exprs.last()) {
+                    Range {
+                        start: first.range(Shared::clone(&arena)).start,
+                        end: last.range(Shared::clone(&arena)).end,
+                    }
+                } else {
+                    arena[self.token_id].range
+                }
             }
             Expr::Break(Some(value_node)) => {
                 let start = arena[self.token_id].range.start;
