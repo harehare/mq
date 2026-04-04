@@ -131,8 +131,12 @@ pub enum Selector {
     MdxJsxFlowElement,
     /// Matches recursively all child nodes.
     Recursive,
-    /// Matches task list markdown node.
+    /// Matches a task list markdown node.
     Task,
+    /// Matches a task list markdown node with an unchecked status.
+    Todo,
+    /// Matches a task list markdown node with a checked status.
+    Done,
     /// Matches a specific attribute of a markdown node.
     Attr(AttrKind),
 }
@@ -296,6 +300,12 @@ impl TryFrom<&Token> for Selector {
                 // Task List
                 ".task" => Ok(Selector::Task),
 
+                // Todo List
+                ".todo" => Ok(Selector::Todo),
+
+                // Done List
+                ".done" => Ok(Selector::Done),
+
                 // TOML
                 ".toml" => Ok(Selector::Toml),
 
@@ -423,6 +433,8 @@ impl Display for Selector {
             Selector::MdxJsxFlowElement => write!(f, ".mdx_jsx_flow_element"),
             Selector::Recursive => write!(f, ".."),
             Selector::Task => write!(f, ".task"),
+            Selector::Todo => write!(f, ".todo"),
+            Selector::Done => write!(f, ".done"),
             Selector::Attr(attr) => write!(f, "{}", attr),
         }
     }
@@ -506,6 +518,8 @@ mod tests {
     #[case::list_with_index(".[1]", Selector::List(Some(1), None), ".[1]")]
     // Task List
     #[case::task(".task", Selector::Task, ".task")]
+    #[case::task(".todo", Selector::Todo, ".todo")]
+    #[case::task(".done", Selector::Done, ".done")]
     // TOML
     #[case::toml(".toml", Selector::Toml, ".toml")]
     // Strong

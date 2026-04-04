@@ -3332,6 +3332,30 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         },
     );
 
+    map.insert(
+        SmolStr::new(".task"),
+        BuiltinSelectorDoc {
+            description: "Selects a task list node.",
+            params: &[],
+        },
+    );
+
+    map.insert(
+        SmolStr::new(".todo"),
+        BuiltinSelectorDoc {
+            description: "Selects a todo item in the task list node.",
+            params: &[],
+        },
+    );
+
+    map.insert(
+        SmolStr::new(".done"),
+        BuiltinSelectorDoc {
+            description: "Selects a done item in the task list node.",
+            params: &[],
+        },
+    );
+
     map
 });
 
@@ -4433,6 +4457,20 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> RuntimeVa
             node,
             mq_markdown::Node::List(mq_markdown::List { checked: Some(_), .. })
         ),
+        Selector::Todo => matches!(
+            node,
+            mq_markdown::Node::List(mq_markdown::List {
+                checked: Some(false),
+                ..
+            })
+        ),
+        Selector::Done => matches!(
+            node,
+            mq_markdown::Node::List(mq_markdown::List {
+                checked: Some(true),
+                ..
+            })
+        ),
         Selector::MdxJsEsm => node.is_mdx_js_esm(),
         Selector::Text => node.is_text(),
         Selector::Toml => node.is_toml(),
@@ -4921,6 +4959,51 @@ mod tests {
         Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         Selector::List(None, None),
         true
+    )]
+    #[case::task_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Selector::Task,
+        true
+    )]
+    #[case::task_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
+        Selector::Task,
+        true
+    )]
+    #[case::task_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
+        Selector::Task,
+        false
+    )]
+    #[case::todo_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
+        Selector::Todo,
+        true
+    )]
+    #[case::todo_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Selector::Todo,
+        false
+    )]
+    #[case::todo_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
+        Selector::Todo,
+        false
+    )]
+    #[case::done_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Selector::Done,
+        true
+    )]
+    #[case::done_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
+        Selector::Done,
+        false
+    )]
+    #[case::done_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
+        Selector::Done,
+        false
     )]
     #[case::text(
         Node::Text(mq_markdown::Text { value: "test".into(), position: None }),
