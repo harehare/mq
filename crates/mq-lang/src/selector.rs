@@ -135,7 +135,7 @@ pub enum Selector {
     Task,
     /// Matches a task list markdown node with an unchecked status.
     Todo,
-    /// Matches a task list markdown node with an checked status.
+    /// Matches a task list markdown node with a checked status.
     Done,
     /// Matches a specific attribute of a markdown node.
     Attr(AttrKind),
