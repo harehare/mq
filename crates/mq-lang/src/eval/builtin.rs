@@ -288,7 +288,8 @@ define_builtin!(MD5, ParamNum::Fixed(1), |ident, _, mut args, _| {
                 })
             })
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => convert::sha256(&a.to_string()),
         _ => unreachable!(),
     }
 });
@@ -305,7 +306,8 @@ define_builtin!(SHA256, ParamNum::Fixed(1), |ident, _, mut args, _| {
                 })
             })
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => convert::sha256(&a.to_string()),
         _ => unreachable!(),
     }
 });

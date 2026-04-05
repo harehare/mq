@@ -138,7 +138,8 @@ impl Convert {
                         RuntimeValue::NONE
                     }
                 }
-                _ => RuntimeValue::NONE,
+                RuntimeValue::None => RuntimeValue::NONE,
+                _ => sha256(&input.to_string()).unwrap_or(RuntimeValue::NONE),
             },
             Convert::Sha256 => match input {
                 RuntimeValue::String(s) => sha256(s).unwrap_or(RuntimeValue::NONE),
@@ -149,7 +150,8 @@ impl Convert {
                         RuntimeValue::NONE
                     }
                 }
-                _ => RuntimeValue::NONE,
+                RuntimeValue::None => RuntimeValue::NONE,
+                _ => sha256(&input.to_string()).unwrap_or(RuntimeValue::NONE),
             },
             Convert::Markdown(kind) => self.convert_to_markdown(input, kind),
             Convert::Shell => {
