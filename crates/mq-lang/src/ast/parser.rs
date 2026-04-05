@@ -258,14 +258,34 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             lhs = match kind {
                 TokenKind::Equal => parser.create_assign(&lhs, rhs, operator_token_id, operator_token)?,
-                TokenKind::And => Shared::new(Node {
-                    token_id: operator_token_id,
-                    expr: Shared::new(Expr::And(lhs, rhs)),
-                }),
-                TokenKind::Or => Shared::new(Node {
-                    token_id: operator_token_id,
-                    expr: Shared::new(Expr::Or(lhs, rhs)),
-                }),
+                TokenKind::And => {
+                    let operands = match &*lhs.expr {
+                        Expr::And(existing) => {
+                            let mut ops = existing.clone();
+                            ops.push(rhs);
+                            ops
+                        }
+                        _ => vec![lhs, rhs],
+                    };
+                    Shared::new(Node {
+                        token_id: operator_token_id,
+                        expr: Shared::new(Expr::And(operands)),
+                    })
+                }
+                TokenKind::Or => {
+                    let operands = match &*lhs.expr {
+                        Expr::Or(existing) => {
+                            let mut ops = existing.clone();
+                            ops.push(rhs);
+                            ops
+                        }
+                        _ => vec![lhs, rhs],
+                    };
+                    Shared::new(Node {
+                        token_id: operator_token_id,
+                        expr: Shared::new(Expr::Or(operands)),
+                    })
+                }
                 TokenKind::PlusEqual => parser.create_compound_assign(
                     &lhs,
                     rhs,
@@ -5404,25 +5424,20 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::And(
+                    expr: Shared::new(Expr::And(vec![
                         Shared::new(Node {
-                            token_id: 1.into(),
-                            expr: Shared::new(Expr::And(
-                                Shared::new(Node {
-                                    token_id: 0.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
-                                }),
-                                Shared::new(Node {
-                                    token_id: 2.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
-                                }),
-                            )),
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
                         }),
                         Shared::new(Node {
                             token_id: 4.into(),
                             expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
                         }),
-                    )),
+                    ])),
                 })
             ]))]
     #[case::multiple_or_operators(
@@ -5437,25 +5452,20 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Or(
+                    expr: Shared::new(Expr::Or(vec![
                         Shared::new(Node {
-                            token_id: 1.into(),
-                            expr: Shared::new(Expr::Or(
-                                Shared::new(Node {
-                                    token_id: 0.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
-                                }),
-                                Shared::new(Node {
-                                    token_id: 2.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
-                                }),
-                            )),
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
                         }),
                         Shared::new(Node {
                             token_id: 4.into(),
                             expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("z", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("z")))))))),
                         }),
-                    )),
+                    ])),
                 })
             ]))]
     #[case::and_or_mixed(
@@ -5470,10 +5480,10 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Or(
+                    expr: Shared::new(Expr::Or(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::And(
+                            expr: Shared::new(Expr::And(vec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
                                     expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
@@ -5482,13 +5492,262 @@ mod tests {
                                     token_id: 2.into(),
                                     expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
                                 }),
-                            )),
+                            ])),
                         }),
                         Shared::new(Node {
                             token_id: 4.into(),
                             expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
                         }),
-                    )),
+                    ])),
+                })
+            ]))]
+    #[case::four_and_operators(
+            vec![
+                token(TokenKind::Ident(SmolStr::new("a"))),
+                token(TokenKind::And),
+                token(TokenKind::Ident(SmolStr::new("b"))),
+                token(TokenKind::And),
+                token(TokenKind::Ident(SmolStr::new("c"))),
+                token(TokenKind::And),
+                token(TokenKind::Ident(SmolStr::new("d"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 5.into(),
+                    expr: Shared::new(Expr::And(vec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 4.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 6.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d")))))))),
+                        }),
+                    ])),
+                })
+            ]))]
+    #[case::four_or_operators(
+            vec![
+                token(TokenKind::Ident(SmolStr::new("a"))),
+                token(TokenKind::Or),
+                token(TokenKind::Ident(SmolStr::new("b"))),
+                token(TokenKind::Or),
+                token(TokenKind::Ident(SmolStr::new("c"))),
+                token(TokenKind::Or),
+                token(TokenKind::Ident(SmolStr::new("d"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 5.into(),
+                    expr: Shared::new(Expr::Or(vec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 4.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 6.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d")))))))),
+                        }),
+                    ])),
+                })
+            ]))]
+    #[case::or_with_and_in_middle(
+            vec![
+                token(TokenKind::Ident(SmolStr::new("a"))),
+                token(TokenKind::Or),
+                token(TokenKind::Ident(SmolStr::new("b"))),
+                token(TokenKind::And),
+                token(TokenKind::Ident(SmolStr::new("c"))),
+                token(TokenKind::Or),
+                token(TokenKind::Ident(SmolStr::new("d"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 5.into(),
+                    expr: Shared::new(Expr::Or(vec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 3.into(),
+                            expr: Shared::new(Expr::And(vec![
+                                Shared::new(Node {
+                                    token_id: 2.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                                }),
+                                Shared::new(Node {
+                                    token_id: 4.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                                }),
+                            ])),
+                        }),
+                        Shared::new(Node {
+                            token_id: 6.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d")))))))),
+                        }),
+                    ])),
+                })
+            ]))]
+    #[case::and_or_and_mixed(
+            // a && b || c && d  =>  Or([And([a, b]), And([c, d])])
+            vec![
+                token(TokenKind::Ident(SmolStr::new("a"))),
+                token(TokenKind::And),
+                token(TokenKind::Ident(SmolStr::new("b"))),
+                token(TokenKind::Or),
+                token(TokenKind::Ident(SmolStr::new("c"))),
+                token(TokenKind::And),
+                token(TokenKind::Ident(SmolStr::new("d"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 3.into(),
+                    expr: Shared::new(Expr::Or(vec![
+                        Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::And(vec![
+                                Shared::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                                }),
+                                Shared::new(Node {
+                                    token_id: 2.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                                }),
+                            ])),
+                        }),
+                        Shared::new(Node {
+                            token_id: 5.into(),
+                            expr: Shared::new(Expr::And(vec![
+                                Shared::new(Node {
+                                    token_id: 4.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                                }),
+                                Shared::new(Node {
+                                    token_id: 6.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d")))))))),
+                                }),
+                            ])),
+                        }),
+                    ])),
+                })
+            ]))]
+    #[case::or_and_or_mixed(
+            // a || b && c || d  =>  Or([a, And([b, c]), d])
+            vec![
+                token(TokenKind::Ident(SmolStr::new("a"))),
+                token(TokenKind::Or),
+                token(TokenKind::Ident(SmolStr::new("b"))),
+                token(TokenKind::And),
+                token(TokenKind::Ident(SmolStr::new("c"))),
+                token(TokenKind::Or),
+                token(TokenKind::Ident(SmolStr::new("d"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 5.into(),
+                    expr: Shared::new(Expr::Or(vec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 3.into(),
+                            expr: Shared::new(Expr::And(vec![
+                                Shared::new(Node {
+                                    token_id: 2.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                                }),
+                                Shared::new(Node {
+                                    token_id: 4.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                                }),
+                            ])),
+                        }),
+                        Shared::new(Node {
+                            token_id: 6.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d")))))))),
+                        }),
+                    ])),
+                })
+            ]))]
+    #[case::and_and_or_and_and_mixed(
+            // a && b && c || d && e && f  =>  Or([And([a,b,c]), And([d,e,f])])
+            vec![
+                token(TokenKind::Ident(SmolStr::new("a"))),
+                token(TokenKind::And),
+                token(TokenKind::Ident(SmolStr::new("b"))),
+                token(TokenKind::And),
+                token(TokenKind::Ident(SmolStr::new("c"))),
+                token(TokenKind::Or),
+                token(TokenKind::Ident(SmolStr::new("d"))),
+                token(TokenKind::And),
+                token(TokenKind::Ident(SmolStr::new("e"))),
+                token(TokenKind::And),
+                token(TokenKind::Ident(SmolStr::new("f"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 5.into(),
+                    expr: Shared::new(Expr::Or(vec![
+                        Shared::new(Node {
+                            token_id: 3.into(),
+                            expr: Shared::new(Expr::And(vec![
+                                Shared::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                                }),
+                                Shared::new(Node {
+                                    token_id: 2.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                                }),
+                                Shared::new(Node {
+                                    token_id: 4.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                                }),
+                            ])),
+                        }),
+                        Shared::new(Node {
+                            token_id: 9.into(),
+                            expr: Shared::new(Expr::And(vec![
+                                Shared::new(Node {
+                                    token_id: 6.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d")))))))),
+                                }),
+                                Shared::new(Node {
+                                    token_id: 8.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("e", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("e")))))))),
+                                }),
+                                Shared::new(Node {
+                                    token_id: 10.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))))),
+                                }),
+                            ])),
+                        }),
+                    ])),
                 })
             ]))]
     #[case::range_simple(
@@ -5613,7 +5872,7 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 3.into(),
-                        expr: Shared::new(Expr::Or(
+                        expr: Shared::new(Expr::Or(vec![
                             Shared::new(Node {
                                 token_id: 1.into(),
                                 expr: Shared::new(Expr::Call(
@@ -5646,7 +5905,7 @@ mod tests {
                                     ],
                                 )),
                             }),
-                        )),
+                        ])),
                     })
                 ]))]
     #[case::not_simple(

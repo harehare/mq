@@ -232,20 +232,24 @@ impl Macro {
                     expr: Shared::new(Expr::Assign(ident.clone(), expanded_value)),
                 }))
             }
-            Expr::And(left, right) => {
-                let expanded_left = self.expand_node(left, evaluator)?;
-                let expanded_right = self.expand_node(right, evaluator)?;
+            Expr::And(operands) => {
+                let expanded = operands
+                    .iter()
+                    .map(|op| self.expand_node(op, evaluator))
+                    .collect::<Result<Vec<_>, _>>()?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::And(expanded_left, expanded_right)),
+                    expr: Shared::new(Expr::And(expanded)),
                 }))
             }
-            Expr::Or(left, right) => {
-                let expanded_left = self.expand_node(left, evaluator)?;
-                let expanded_right = self.expand_node(right, evaluator)?;
+            Expr::Or(operands) => {
+                let expanded = operands
+                    .iter()
+                    .map(|op| self.expand_node(op, evaluator))
+                    .collect::<Result<Vec<_>, _>>()?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Or(expanded_left, expanded_right)),
+                    expr: Shared::new(Expr::Or(expanded)),
                 }))
             }
             Expr::CallDynamic(callable, args) => {
@@ -633,20 +637,24 @@ impl Macro {
                     expr: Shared::new(Expr::Assign(ident.clone(), substituted_value)),
                 })
             }
-            Expr::And(left, right) => {
-                let substituted_left = self.substitute_node(left, substitutions);
-                let substituted_right = self.substitute_node(right, substitutions);
+            Expr::And(operands) => {
+                let substituted: Vec<_> = operands
+                    .iter()
+                    .map(|op| self.substitute_node(op, substitutions))
+                    .collect();
                 Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::And(substituted_left, substituted_right)),
+                    expr: Shared::new(Expr::And(substituted)),
                 })
             }
-            Expr::Or(left, right) => {
-                let substituted_left = self.substitute_node(left, substitutions);
-                let substituted_right = self.substitute_node(right, substitutions);
+            Expr::Or(operands) => {
+                let substituted: Vec<_> = operands
+                    .iter()
+                    .map(|op| self.substitute_node(op, substitutions))
+                    .collect();
                 Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Or(substituted_left, substituted_right)),
+                    expr: Shared::new(Expr::Or(substituted)),
                 })
             }
             Expr::CallDynamic(callable, args) => {
@@ -955,20 +963,24 @@ impl Macro {
                     expr: Shared::new(Expr::Assign(ident.clone(), substituted_value)),
                 })
             }
-            Expr::And(left, right) => {
-                let substituted_left = self.substitute_in_quote(left, substitutions);
-                let substituted_right = self.substitute_in_quote(right, substitutions);
+            Expr::And(operands) => {
+                let substituted: Vec<_> = operands
+                    .iter()
+                    .map(|op| self.substitute_in_quote(op, substitutions))
+                    .collect();
                 Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::And(substituted_left, substituted_right)),
+                    expr: Shared::new(Expr::And(substituted)),
                 })
             }
-            Expr::Or(left, right) => {
-                let substituted_left = self.substitute_in_quote(left, substitutions);
-                let substituted_right = self.substitute_in_quote(right, substitutions);
+            Expr::Or(operands) => {
+                let substituted: Vec<_> = operands
+                    .iter()
+                    .map(|op| self.substitute_in_quote(op, substitutions))
+                    .collect();
                 Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Or(substituted_left, substituted_right)),
+                    expr: Shared::new(Expr::Or(substituted)),
                 })
             }
             Expr::Match(value, arms) => {
