@@ -289,7 +289,7 @@ define_builtin!(MD5, ParamNum::Fixed(1), |ident, _, mut args, _| {
             })
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
-        [a] => convert::sha256(&a.to_string()),
+        [a] => convert::md5(&a.to_string()),
         _ => unreachable!(),
     }
 });

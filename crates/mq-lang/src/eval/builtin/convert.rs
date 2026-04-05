@@ -139,7 +139,7 @@ impl Convert {
                     }
                 }
                 RuntimeValue::None => RuntimeValue::NONE,
-                _ => sha256(&input.to_string()).unwrap_or(RuntimeValue::NONE),
+                _ => md5(&input.to_string()).unwrap_or(RuntimeValue::NONE),
             },
             Convert::Sha256 => match input {
                 RuntimeValue::String(s) => sha256(s).unwrap_or(RuntimeValue::NONE),
@@ -883,6 +883,18 @@ mod tests {
     #[case::empty_uri(Convert::UriEncode, RuntimeValue::String("".to_string()), "")]
     #[case::md5(Convert::Md5, RuntimeValue::String("hello".to_string()), "5d41402abc4b2a76b9719d911017c592")]
     #[case::sha256(Convert::Sha256, RuntimeValue::String("hello".to_string()), "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")]
+    #[case::md5_integer(Convert::Md5, RuntimeValue::Number(42.into()), "a1d0c6e83f027327d8461063f4ac58a6")]
+    #[case::sha256_integer(Convert::Sha256, RuntimeValue::Number(42.into()), "73475cb40a568e8da8a045ced110137e159f890ac4da883b6b17dc651b3a8049")]
+    #[case::md5_float(
+        Convert::Md5,
+        RuntimeValue::Number(crate::number::Number::from(1.5_f64)),
+        "6008647277c4454cecd97d33c069f0ca"
+    )]
+    #[case::sha256_float(
+        Convert::Sha256,
+        RuntimeValue::Number(crate::number::Number::from(1.5_f64)),
+        "9f29a130438b81170b92a42650f9a94291ecad60bd47af2a3886e75f7f728725"
+    )]
     fn test_convert_string_converts(#[case] convert: Convert, #[case] input: RuntimeValue, #[case] expected: &str) {
         let result = convert.convert(&input);
         assert_eq!(result, RuntimeValue::String(expected.to_string()));
