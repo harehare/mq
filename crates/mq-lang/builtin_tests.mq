@@ -80,6 +80,20 @@ def test_is_mdx():
   | assert_eq(result3, false)
 end
 
+def test_is_callout():
+  let result1 = do "> [!NOTE]\n> This is a note." | to_markdown() | first() | is_callout();
+  | assert_eq(result1, true)
+
+  | let result2 = do "> [!WARNING]\n> Watch out!" | to_markdown() | first() | is_callout();
+  | assert_eq(result2, true)
+
+  | let result3 = do "> Just a plain blockquote." | to_markdown() | first() | is_callout();
+  | assert_eq(result3, false)
+
+  | let result4 = is_callout("not a blockquote")
+  | assert_eq(result4, false)
+end
+
 # String manipulation tests
 def test_contains():
   let result1 = contains("hello world", "world")
@@ -658,6 +672,7 @@ end
   test_case("is_none", test_is_none),
   test_case("is_dict", test_is_dict),
   test_case("is_mdx", test_is_mdx),
+  test_case("is_callout", test_is_callout),
 
   # String manipulation
   test_case("contains", test_contains),
