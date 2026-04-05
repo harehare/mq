@@ -3,6 +3,7 @@ use crate::eval::builtin::Error;
 use crate::number::Number;
 use base64::prelude::*;
 use percent_encoding::{NON_ALPHANUMERIC, percent_decode, utf8_percent_encode};
+use sha2::Digest;
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +22,8 @@ pub(crate) enum Convert {
     Base64,
     Html,
     Markdown(ConvertKind),
+    Md5,
+    Sha256,
     Shell,
     Text,
     UriEncode,
@@ -59,6 +62,8 @@ impl TryFrom<&RuntimeValue> for Convert {
                 "h6" => Ok(Convert::Markdown(ConvertKind::Heading(6))),
 
                 "html" => Ok(Convert::Html),
+                "md5" => Ok(Convert::Md5),
+                "sha256" => Ok(Convert::Sha256),
                 "text" => Ok(Convert::Text),
                 "sh" => Ok(Convert::Shell),
                 "base64" => Ok(Convert::Base64),
@@ -123,6 +128,28 @@ impl Convert {
                     }
                 }
                 _ => url_decode(&input.to_string()).unwrap_or(RuntimeValue::NONE),
+            },
+            Convert::Md5 => match input {
+                RuntimeValue::String(s) => md5(s).unwrap_or(RuntimeValue::NONE),
+                RuntimeValue::Markdown(_, _) => {
+                    if let Some(md) = input.markdown_node() {
+                        md5(md.value().as_str()).unwrap_or(RuntimeValue::NONE)
+                    } else {
+                        RuntimeValue::NONE
+                    }
+                }
+                _ => RuntimeValue::NONE,
+            },
+            Convert::Sha256 => match input {
+                RuntimeValue::String(s) => sha256(s).unwrap_or(RuntimeValue::NONE),
+                RuntimeValue::Markdown(_, _) => {
+                    if let Some(md) = input.markdown_node() {
+                        sha256(md.value().as_str()).unwrap_or(RuntimeValue::NONE)
+                    } else {
+                        RuntimeValue::NONE
+                    }
+                }
+                _ => RuntimeValue::NONE,
             },
             Convert::Markdown(kind) => self.convert_to_markdown(input, kind),
             Convert::Shell => {
@@ -381,6 +408,33 @@ pub fn url_decode(input: &str) -> Result<RuntimeValue, Error> {
     ))
 }
 
+/// Compute MD5 hash and return lowercase hex string.
+///
+/// Note: MD5 is cryptographically broken and should not be used for security
+/// purposes. It is suitable for non-cryptographic use cases such as content
+/// fingerprinting and cache keys.
+#[inline(always)]
+pub fn md5(input: &str) -> Result<RuntimeValue, Error> {
+    let digest = md5::compute(input.as_bytes());
+    Ok(RuntimeValue::String(bytes_to_hex(&digest.0)))
+}
+
+/// Compute SHA-256 hash and return lowercase hex string.
+#[inline(always)]
+pub fn sha256(input: &str) -> Result<RuntimeValue, Error> {
+    let hash = sha2::Sha256::digest(input.as_bytes());
+    Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
+}
+
+#[inline(always)]
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    bytes.iter().fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
+        write!(s, "{b:02x}").unwrap();
+        s
+    })
+}
+
 /// Shell escape for safe use in shell commands
 #[inline(always)]
 pub fn shell_escape(input: &str) -> Result<RuntimeValue, Error> {
@@ -434,6 +488,8 @@ mod tests {
     #[case::h5_symbol(RuntimeValue::Symbol(Ident::new("h5")), Convert::Markdown(ConvertKind::Heading(5)))]
     #[case::h6_symbol(RuntimeValue::Symbol(Ident::new("h6")), Convert::Markdown(ConvertKind::Heading(6)))]
     #[case::html_symbol(RuntimeValue::Symbol(Ident::new("html")), Convert::Html)]
+    #[case::md5_symbol(RuntimeValue::Symbol(Ident::new("md5")), Convert::Md5)]
+    #[case::sha256_symbol(RuntimeValue::Symbol(Ident::new("sha256")), Convert::Sha256)]
     #[case::text_symbol(RuntimeValue::Symbol(Ident::new("text")), Convert::Text)]
     #[case::sh_symbol(RuntimeValue::Symbol(Ident::new("sh")), Convert::Shell)]
     #[case::h1_string(RuntimeValue::String("#".to_string()), Convert::Markdown(ConvertKind::Heading(1)))]
@@ -823,6 +879,8 @@ mod tests {
     #[case::empty_html(Convert::Html, RuntimeValue::String("".to_string()), "")]
     #[case::empty_text(Convert::Text, RuntimeValue::String("".to_string()), "")]
     #[case::empty_uri(Convert::UriEncode, RuntimeValue::String("".to_string()), "")]
+    #[case::md5(Convert::Md5, RuntimeValue::String("hello".to_string()), "5d41402abc4b2a76b9719d911017c592")]
+    #[case::sha256(Convert::Sha256, RuntimeValue::String("hello".to_string()), "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")]
     fn test_convert_string_converts(#[case] convert: Convert, #[case] input: RuntimeValue, #[case] expected: &str) {
         let result = convert.convert(&input);
         assert_eq!(result, RuntimeValue::String(expected.to_string()));
@@ -1024,5 +1082,30 @@ mod tests {
             Convert::Markdown(ConvertKind::Link(_)) => {}
             _ => panic!("Expected Markdown Link convert"),
         }
+    }
+
+    // Test MD5 hash
+    #[rstest]
+    #[case("", "d41d8cd98f00b204e9800998ecf8427e")]
+    #[case("hello", "5d41402abc4b2a76b9719d911017c592")]
+    #[case("hello world", "5eb63bbbe01eeed093cb22bb8f5acdc3")]
+    #[case("The quick brown fox jumps over the lazy dog", "9e107d9d372bb6826bd81d3542a419d6")]
+    fn test_md5(#[case] input: &str, #[case] expected: &str) {
+        let result = md5(input).unwrap();
+        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+    }
+
+    // Test SHA-256 hash
+    #[rstest]
+    #[case("", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")]
+    #[case("hello", "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")]
+    #[case("hello world", "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")]
+    #[case(
+        "The quick brown fox jumps over the lazy dog",
+        "d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592"
+    )]
+    fn test_sha256(#[case] input: &str, #[case] expected: &str) {
+        let result = sha256(input).unwrap();
+        assert_eq!(result, RuntimeValue::String(expected.to_string()));
     }
 }

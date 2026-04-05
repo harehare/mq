@@ -276,6 +276,40 @@ define_builtin!(
     }
 );
 
+define_builtin!(MD5, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::md5(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| {
+                convert::md5(md.value().as_str()).and_then(|h| match h {
+                    RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                    a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                })
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
+define_builtin!(SHA256, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::sha256(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| {
+                convert::sha256(md.value().as_str()).and_then(|h| match h {
+                    RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                    a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                })
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
 define_builtin!(
     MIN,
     ParamNum::Fixed(2),
@@ -2770,10 +2804,12 @@ const HASH_LEN: u64 = fnv1a_hash_64("len");
 const HASH_LT: u64 = fnv1a_hash_64(constants::builtins::LT);
 const HASH_LTE: u64 = fnv1a_hash_64(constants::builtins::LTE);
 const HASH_LTRIM: u64 = fnv1a_hash_64("ltrim");
+const HASH_MD5: u64 = fnv1a_hash_64("md5");
 const HASH_REGEX_MATCH: u64 = fnv1a_hash_64("regex_match");
 const HASH_RTRIM: u64 = fnv1a_hash_64("rtrim");
 const HASH_MAX: u64 = fnv1a_hash_64("max");
 const HASH_MIN: u64 = fnv1a_hash_64("min");
+const HASH_SHA256: u64 = fnv1a_hash_64("sha256");
 const HASH_NAN: u64 = fnv1a_hash_64("nan");
 const HASH_NEGATE: u64 = fnv1a_hash_64("negate");
 const HASH_MOD: u64 = fnv1a_hash_64(constants::builtins::MOD);
@@ -2907,9 +2943,11 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_LT => Some(&LT),
         HASH_LTE => Some(&LTE),
         HASH_LTRIM => Some(&LTRIM),
+        HASH_MD5 => Some(&MD5),
         HASH_REGEX_MATCH => Some(&REGEX_MATCH),
         HASH_MAX => Some(&MAX),
         HASH_MIN => Some(&MIN),
+        HASH_SHA256 => Some(&SHA256),
         HASH_NEGATE => Some(&NEGATE),
         HASH_MOD => Some(&MOD),
         HASH_MUL => Some(&MUL),
