@@ -21,36 +21,48 @@ Show
 
 Type `mq '.h' demo.md`
 Enter
-Sleep 1.5s
+Sleep 1s
 
 Type `mq '.h | select(contains("Filter"))' demo.md`
 Enter
-Sleep 1.5s
+Sleep 1s
 
 Type `mq 'nodes | .code | compact() | first()' example.html`
 Enter
-Sleep 1.5s
+Sleep 1s
 
 Type `mq '.h3' demo.md`
 Enter
-Sleep 1.5s
+Sleep 1s
 
 Type `mq 'select(.code.lang == "rust")' demo.md`
 Enter
-Sleep 1.5s
+Sleep 1s
 
 Type `mq 'select(.code.lang == "rust") | to_text()' demo.md`
 Enter
-Sleep 1.5s
+Sleep 1s
+
+Type `mq -A 'section::section("Introduction")' demo.md`
+Enter
+Sleep 1s
 
 Type `mq '.[]' demo.md`
 Enter
-Sleep 1.5s
+Sleep 1s
+
+Type `mq '.todo' demo.md`
+Enter
+Sleep 1s
+
+Type `mq '.done' demo.md`
+Enter
+Sleep 1s
 
 Type `mq '.[][]' demo.md`
 Enter
-Sleep 1.5s
+Sleep 1s
 
 Type `mq -U '.[1][1] | upcase()' demo.md`
 Enter
-Sleep 1.5s
+Sleep 1s
