@@ -1625,6 +1625,30 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_pattern(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+        let first = self.parse_single_pattern(leading_trivia)?;
+
+        // Check for or-pattern: p1 || p2 || ...
+        if !matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Or)) {
+            return Ok(first);
+        }
+
+        let mut children: Vec<Shared<Node>> = vec![first];
+        while matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Or)) {
+            children.push(self.next_node(|kind| matches!(kind, TokenKind::Or), NodeKind::Token)?);
+            let alt_leading_trivia = self.parse_leading_trivia();
+            children.push(self.parse_single_pattern(alt_leading_trivia)?);
+        }
+
+        Ok(Shared::new(Node {
+            kind: NodeKind::OrPattern,
+            token: None,
+            leading_trivia: Vec::new(),
+            trailing_trivia: Vec::new(),
+            children,
+        }))
+    }
+
+    fn parse_single_pattern(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = Shared::clone(self.peek_token()?);
 
         match &token.kind {

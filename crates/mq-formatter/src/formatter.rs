@@ -293,6 +293,7 @@ impl Formatter {
             mq_lang::CstNodeKind::Catch => self.format_catch(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Match => self.format_match(&node, indent_level_consider_new_line, indent_level),
             mq_lang::CstNodeKind::MatchArm => self.format_match_arm(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::OrPattern => self.format_or_pattern(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Pattern => self.format_pattern(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Token => self.append_token(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::DictEntry => self.format_dict_entry(&node, indent_level_consider_new_line),
@@ -1172,6 +1173,24 @@ impl Formatter {
 
             for child in &node.children {
                 self.format_node(mq_lang::Shared::clone(child), indent_level);
+            }
+        }
+    }
+
+    fn format_or_pattern(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        for child in &node.children {
+            match &child.kind {
+                mq_lang::CstNodeKind::Pattern | mq_lang::CstNodeKind::OrPattern => {
+                    self.format_pattern(&mq_lang::Shared::clone(child), indent_level);
+                }
+                mq_lang::CstNodeKind::Token => {
+                    if let Some(token) = &child.token
+                        && matches!(token.kind, mq_lang::TokenKind::Or)
+                    {
+                        self.output.push_str(" || ");
+                    }
+                }
+                _ => {}
             }
         }
     }

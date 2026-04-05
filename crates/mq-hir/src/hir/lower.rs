@@ -1339,6 +1339,32 @@ impl Hir {
         dict_key: Option<smol_str::SmolStr>,
     ) {
         if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::OrPattern,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: None,
+                kind: SymbolKind::Pattern { is_dict: false },
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+                insertion_order: 0,
+            });
+
+            for child in node.children_without_token() {
+                if matches!(
+                    child.kind,
+                    mq_lang::CstNodeKind::Pattern | mq_lang::CstNodeKind::OrPattern
+                ) {
+                    self.add_pattern_expr_inner(&child, source_id, scope_id, Some(symbol_id), false, None);
+                }
+            }
+            return;
+        }
+
+        if let mq_lang::CstNode {
             kind: mq_lang::CstNodeKind::Pattern,
             ..
         } = &**node
@@ -1546,7 +1572,10 @@ impl Hir {
             // Process pattern (first child after the pipe token)
             // The pattern introduces variables into the arm scope
             if let Some(pattern) = children.first()
-                && matches!(pattern.kind, mq_lang::CstNodeKind::Pattern)
+                && matches!(
+                    pattern.kind,
+                    mq_lang::CstNodeKind::Pattern | mq_lang::CstNodeKind::OrPattern
+                )
             {
                 self.add_pattern_expr(pattern, source_id, arm_scope_id, Some(symbol_id));
             }

@@ -1707,6 +1707,19 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern, SyntaxError> {
+        let first = self.parse_single_pattern()?;
+        if !matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Or)) {
+            return Ok(first);
+        }
+        let mut patterns = vec![first];
+        while matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Or)) {
+            self.tokens.next(); // consume ||
+            patterns.push(self.parse_single_pattern()?);
+        }
+        Ok(Pattern::Or(patterns))
+    }
+
+    fn parse_single_pattern(&mut self) -> Result<Pattern, SyntaxError> {
         let token = match self.tokens.next() {
             Some(t) => t,
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),

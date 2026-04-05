@@ -262,7 +262,8 @@ pub enum Pattern {
     Array(Vec<Pattern>),
     ArrayRest(Vec<Pattern>, IdentWithToken), // patterns before .., rest binding
     Dict(Vec<(IdentWithToken, Pattern)>),
-    Type(Ident), // :string, :number, etc.
+    Type(Ident),      // :string, :number, etc.
+    Or(Vec<Pattern>), // p1 || p2 || p3
 }
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]

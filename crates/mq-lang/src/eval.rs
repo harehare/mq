@@ -1423,6 +1423,15 @@ impl<T: ModuleResolver> Evaluator<T> {
                     Ok(None)
                 }
             }
+            Pattern::Or(patterns) => {
+                // Or pattern: match if any alternative matches
+                for pattern in patterns {
+                    if let Some(bindings) = self.match_pattern(value, pattern)? {
+                        return Ok(Some(bindings));
+                    }
+                }
+                Ok(None)
+            }
         }
     }
 

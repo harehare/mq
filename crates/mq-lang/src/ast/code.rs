@@ -387,6 +387,14 @@ fn format_pattern(pattern: &Pattern, buf: &mut String) {
         Pattern::Type(type_name) => {
             write!(buf, ":{}", type_name).unwrap();
         }
+        Pattern::Or(patterns) => {
+            for (i, p) in patterns.iter().enumerate() {
+                if i > 0 {
+                    buf.push_str(" || ");
+                }
+                format_pattern(p, buf);
+            }
+        }
     }
 }
 

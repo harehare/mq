@@ -114,6 +114,44 @@ end
 # => "Alice is 30 years old"
 ```
 
+## Or Patterns
+
+Match multiple patterns in a single arm using `||`:
+
+```mq
+match (x):
+  | 1 || 2 || 3: "small"
+  | 4 || 5: "medium"
+  | _: "other"
+end
+```
+
+Or patterns can combine any pattern types:
+
+```mq
+# Literal or patterns
+match (status):
+  | "ok" || "success": "all good"
+  | "error" || "fail" || "failure": "something went wrong"
+  | _: "unknown"
+end
+
+# Type or patterns
+match (value):
+  | :string || :number: "primitive"
+  | :array || :dict: "collection"
+  | _: "other"
+end
+
+# Mixed literal and type
+match (x):
+  | 0 || false || none: "falsy"
+  | _: "truthy"
+end
+```
+
+The first alternative that matches is used. The overall arm matches if **any** of the alternatives match.
+
 ## Variable Binding
 
 Bind the matched value to a variable:
@@ -266,5 +304,20 @@ def handle_response(response):
     | {status, error} if (eq(status, 404)): s"Not found: ${error}"
     | {status, error} if (eq(status, 500)): s"Server error: ${error}"
     | _: "Unknown response"
+  end
+```
+
+### Classifying HTTP Status Codes with Or Patterns
+
+```mq
+def classify_status(code):
+  match (code):
+    | 200 || 201 || 204: "success"
+    | 301 || 302 || 307 || 308: "redirect"
+    | 400 || 422: "client error"
+    | 401 || 403: "auth error"
+    | 404: "not found"
+    | 500 || 502 || 503: "server error"
+    | _: "unknown"
   end
 ```
