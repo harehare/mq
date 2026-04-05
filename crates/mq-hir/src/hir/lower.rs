@@ -1406,7 +1406,7 @@ impl Hir {
             let last_pattern_idx = if has_rest_element {
                 non_token_children
                     .iter()
-                    .rposition(|c| matches!(c.kind, mq_lang::CstNodeKind::Pattern))
+                    .rposition(|c| matches!(c.kind, mq_lang::CstNodeKind::Pattern | mq_lang::CstNodeKind::OrPattern))
             } else {
                 None
             };
@@ -1414,7 +1414,10 @@ impl Hir {
             let mut idx = 0;
             while idx < non_token_children.len() {
                 let child = &non_token_children[idx];
-                if matches!(child.kind, mq_lang::CstNodeKind::Pattern) {
+                if matches!(
+                    child.kind,
+                    mq_lang::CstNodeKind::Pattern | mq_lang::CstNodeKind::OrPattern
+                ) {
                     let child_is_rest = last_pattern_idx == Some(pattern_idx);
                     self.add_pattern_expr_inner(child, source_id, scope_id, Some(symbol_id), child_is_rest, None);
                     pattern_idx += 1;
@@ -1427,7 +1430,9 @@ impl Hir {
                         // the key name can be stored in the inner Pattern's `value` field,
                         // enabling constraint generation to map the binding to its field type.
                         let next = non_token_children.get(idx + 1);
-                        let next_is_pattern = next.is_some_and(|c| matches!(c.kind, mq_lang::CstNodeKind::Pattern));
+                        let next_is_pattern = next.is_some_and(|c| {
+                            matches!(c.kind, mq_lang::CstNodeKind::Pattern | mq_lang::CstNodeKind::OrPattern)
+                        });
                         if !next_is_pattern {
                             self.add_symbol(Symbol {
                                 value: child.name(),
