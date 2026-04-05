@@ -14,6 +14,8 @@ version = "0.5.24"
 [dependencies]
 base64 = {workspace = true}
 csv = {workspace = true}
+md5 = {workspace = true}
+sha2 = {workspace = true}
 chrono = {workspace = true}
 dirs = {workspace = true}
 itertools = {workspace = true}
