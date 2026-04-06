@@ -283,6 +283,7 @@ def describe(value):
     | {}: "empty object"
     | _: "dictionary"
   end
+end
 ```
 
 ### Extracting Data from Structures
@@ -305,6 +306,7 @@ def handle_response(response):
     | {status, error} if (eq(status, 500)): s"Server error: ${error}"
     | _: "Unknown response"
   end
+end
 ```
 
 ### Classifying HTTP Status Codes with Or Patterns
@@ -320,4 +322,6 @@ def classify_status(code):
     | 500 || 502 || 503: "server error"
     | _: "unknown"
   end
+end
 ```
+
