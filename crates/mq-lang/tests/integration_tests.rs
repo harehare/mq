@@ -2254,6 +2254,91 @@ fn engine() -> DefaultEngine {
 #[case::dict_symbol_access_unchanged("let d = {type: :section} | d[:type]",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::Symbol(Ident::new("section"))].into()))]
+// --- or-pattern integration tests ---
+#[case::match_or_number_first_alt(
+    r#"match(1) do | 1 || 2 || 3: "small" | _: "other" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("small".to_string())].into()))]
+#[case::match_or_number_second_alt(
+    r#"match(2) do | 1 || 2 || 3: "small" | _: "other" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("small".to_string())].into()))]
+#[case::match_or_number_third_alt(
+    r#"match(3) do | 1 || 2 || 3: "small" | _: "other" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("small".to_string())].into()))]
+#[case::match_or_number_no_match_wildcard(
+    r#"match(5) do | 1 || 2 || 3: "small" | _: "other" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+#[case::match_or_number_no_arm_matches(
+    r#"match(9) do | 1 || 2: "one or two" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::None].into()))]
+#[case::match_or_string_first_alt(
+    r#"match("a") do | "a" || "b": "letter" | _: "other" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("letter".to_string())].into()))]
+#[case::match_or_string_second_alt(
+    r#"match("b") do | "a" || "b": "letter" | _: "other" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("letter".to_string())].into()))]
+#[case::match_or_string_no_match(
+    r#"match("c") do | "a" || "b": "letter" | _: "other" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+#[case::match_or_bool_true(
+    r#"match(true) do | true || false: "bool" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("bool".to_string())].into()))]
+#[case::match_or_bool_false(
+    r#"match(false) do | true || false: "bool" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("bool".to_string())].into()))]
+#[case::match_or_none_literal(
+    r#"match(.) do | none || 1: "matched" | _: "other" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("matched".to_string())].into()))]
+#[case::match_or_type_string_matches(
+    r#"match("hello") do | :string || :bool: "str or bool" | :number: "number" | _: "other" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("str or bool".to_string())].into()))]
+#[case::match_or_type_number_matches(
+    r#"match(42) do | :string || :bool: "str or bool" | :number: "number" | _: "other" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("number".to_string())].into()))]
+#[case::match_or_type_no_match(
+    r#"match(42) do | :string || :bool: "str or bool" | _: "other" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+#[case::match_or_type_array_or_dict(
+    r#"match(array(1,2)) do | :array || :dict: "collection" | _: "other" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("collection".to_string())].into()))]
+#[case::match_or_piped_input_first_alt(
+    r#"match(.) do | 1 || 2: "one or two" | _: "other" end"#,
+    vec![RuntimeValue::Number(1.into())],
+    Ok(vec![RuntimeValue::String("one or two".to_string())].into()))]
+#[case::match_or_piped_input_second_alt(
+    r#"match(.) do | 1 || 2: "one or two" | _: "other" end"#,
+    vec![RuntimeValue::Number(2.into())],
+    Ok(vec![RuntimeValue::String("one or two".to_string())].into()))]
+#[case::match_or_piped_input_no_match(
+    r#"match(.) do | 1 || 2: "one or two" | _: "other" end"#,
+    vec![RuntimeValue::Number(3.into())],
+    Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+#[case::match_or_with_guard_passes(
+    r#"let x = 5 | match(x) do | 4 || 5 || 6 if (x > 4): "big" | _: "other" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("big".to_string())].into()))]
+#[case::match_or_with_guard_fails(
+    r#"let x = 4 | match(x) do | 4 || 5 || 6 if (x > 4): "big" | _: "other" end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+#[case::match_or_two_alts_with_ident_binding(
+    r#"match(3) do | 1 || 2: "small" | x: to_string(x) end"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("3".to_string())].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

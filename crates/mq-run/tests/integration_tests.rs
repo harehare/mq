@@ -176,26 +176,6 @@ In {year}, the snowfall was above average.
     "# title 42\n",
     Some("{\"level\": \"title\", \"num\": \"42\"}\n")
 )]
-#[case::match_or_pattern_number(
-    vec!["--unbuffered", "-I", "null", r#"match (1) do | 1 || 2 || 3: "small" | _: "other" end"#],
-    "",
-    Some("small\n")
-)]
-#[case::match_or_pattern_no_match(
-    vec!["--unbuffered", "-I", "null", r#"match (5) do | 1 || 2 || 3: "small" | _: "other" end"#],
-    "",
-    Some("other\n")
-)]
-#[case::match_or_pattern_string(
-    vec!["--unbuffered", "-I", "null", r#"match ("a") do | "a" || "b": "letter" | _: "other" end"#],
-    "",
-    Some("letter\n")
-)]
-#[case::match_or_pattern_type(
-    vec!["--unbuffered", "-I", "null", r#"match (42) do | :string || :bool: "not number" | :number: "number" | _: "other" end"#],
-    "",
-    Some("number\n")
-)]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,

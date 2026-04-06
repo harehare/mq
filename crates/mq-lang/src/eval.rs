@@ -1647,7 +1647,7 @@ mod tests {
     use std::f64::consts::PI;
     use std::vec;
 
-    use crate::ast::node::{Args, IdentWithToken, Param};
+    use crate::ast::node::{Args, IdentWithToken, MatchArm, Param};
     use crate::error::runtime::RuntimeError;
     use crate::eval::module::error::ModuleError;
     use crate::number::{INFINITE, NAN, Number};
@@ -6039,6 +6039,301 @@ mod tests {
                 ])
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "1".to_string(), position: None}), None)]))]
+    // --- or-pattern tests ---
+    #[case::match_or_first_alt_matches(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Or(vec![
+                        Pattern::Literal(ast::Literal::Number(1.into())),
+                        Pattern::Literal(ast::Literal::Number(2.into())),
+                    ]),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("matched".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("matched".to_string())])
+    )]
+    #[case::match_or_second_alt_matches(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Or(vec![
+                        Pattern::Literal(ast::Literal::Number(1.into())),
+                        Pattern::Literal(ast::Literal::Number(2.into())),
+                    ]),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("matched".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("matched".to_string())])
+    )]
+    #[case::match_or_no_alt_matches_falls_to_wildcard(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::Number(3.into()))),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Or(vec![
+                        Pattern::Literal(ast::Literal::Number(1.into())),
+                        Pattern::Literal(ast::Literal::Number(2.into())),
+                    ]),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("matched".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("other".to_string())])
+    )]
+    #[case::match_or_three_alts_middle_matches(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Or(vec![
+                        Pattern::Literal(ast::Literal::Number(1.into())),
+                        Pattern::Literal(ast::Literal::Number(2.into())),
+                        Pattern::Literal(ast::Literal::Number(3.into())),
+                    ]),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("matched".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("matched".to_string())])
+    )]
+    #[case::match_or_string_first_matches(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Or(vec![
+                        Pattern::Literal(ast::Literal::String("a".to_string())),
+                        Pattern::Literal(ast::Literal::String("b".to_string())),
+                    ]),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("matched".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("matched".to_string())])
+    )]
+    #[case::match_or_string_second_matches(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::String("b".to_string()))),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Or(vec![
+                        Pattern::Literal(ast::Literal::String("a".to_string())),
+                        Pattern::Literal(ast::Literal::String("b".to_string())),
+                    ]),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("matched".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("matched".to_string())])
+    )]
+    #[case::match_or_bool_true_matches(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Or(vec![
+                        Pattern::Literal(ast::Literal::Bool(true)),
+                        Pattern::Literal(ast::Literal::Bool(false)),
+                    ]),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("matched".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("matched".to_string())])
+    )]
+    #[case::match_or_none_literal_first_matches(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::None)),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Or(vec![
+                        Pattern::Literal(ast::Literal::None),
+                        Pattern::Literal(ast::Literal::Number(1.into())),
+                    ]),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("matched".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("matched".to_string())])
+    )]
+    #[case::match_or_type_string_matches(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::String("hello".to_string()))),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Or(vec![
+                        Pattern::Type(crate::Ident::new("string")),
+                        Pattern::Type(crate::Ident::new("number")),
+                    ]),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("string or number".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("string or number".to_string())])
+    )]
+    #[case::match_or_type_number_matches(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::Number(42.into()))),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Or(vec![
+                        Pattern::Type(crate::Ident::new("string")),
+                        Pattern::Type(crate::Ident::new("number")),
+                    ]),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("string or number".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("string or number".to_string())])
+    )]
+    #[case::match_or_type_no_match_falls_to_wildcard(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Or(vec![
+                        Pattern::Type(crate::Ident::new("string")),
+                        Pattern::Type(crate::Ident::new("number")),
+                    ]),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("string or number".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("other".to_string())])
+    )]
+    #[case::match_or_no_arm_matches_returns_none(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::Number(99.into()))),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Or(vec![
+                        Pattern::Literal(ast::Literal::Number(1.into())),
+                        Pattern::Literal(ast::Literal::Number(2.into())),
+                    ]),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("matched".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::NONE])
+    )]
+    #[case::match_or_with_guard_passes(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Or(vec![
+                        Pattern::Literal(ast::Literal::Number(1.into())),
+                        Pattern::Literal(ast::Literal::Number(2.into())),
+                    ]),
+                    guard: Some(ast_node(ast::Expr::Literal(ast::Literal::Bool(true)))),
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("matched".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("matched".to_string())])
+    )]
+    #[case::match_or_with_guard_fails(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Or(vec![
+                        Pattern::Literal(ast::Literal::Number(1.into())),
+                        Pattern::Literal(ast::Literal::Number(2.into())),
+                    ]),
+                    guard: Some(ast_node(ast::Expr::Literal(ast::Literal::Bool(false)))),
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("guarded".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("other".to_string())])
+    )]
     fn test_eval(
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
