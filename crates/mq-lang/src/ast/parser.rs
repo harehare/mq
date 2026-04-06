@@ -1707,6 +1707,19 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern, SyntaxError> {
+        let first = self.parse_single_pattern()?;
+        if !matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Or)) {
+            return Ok(first);
+        }
+        let mut patterns = vec![first];
+        while matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Or)) {
+            self.tokens.next(); // consume ||
+            patterns.push(self.parse_single_pattern()?);
+        }
+        Ok(Pattern::Or(patterns))
+    }
+
+    fn parse_single_pattern(&mut self) -> Result<Pattern, SyntaxError> {
         let token = match self.tokens.next() {
             Some(t) => t,
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
@@ -8196,6 +8209,271 @@ mod tests {
                                 expr: Shared::new(Expr::Literal(Literal::String("other".to_owned())))
                             })
                         }
+                    ]
+                ))
+            })
+        ]))]
+    // --- or-pattern parser tests ---
+    // Arena allocation order for match(x): COLON | pattern COLON body ...
+    //   id 0: Match, id 1: Ident("x"), id 2: Colon (consume_colon_or_do)
+    //   per arm: id N: Pipe, id N+1: Colon, id N+2: body literal
+    #[case::match_or_two_literal_numbers(
+        vec![
+            token(TokenKind::Match),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Pipe),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::Or),
+            token(TokenKind::NumberLiteral(2.into())),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("matched".to_owned())),
+            token(TokenKind::Pipe),
+            token(TokenKind::Ident(SmolStr::new("_"))),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("other".to_owned())),
+            token(TokenKind::End),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Match(
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                            range: Range::default(),
+                            kind: TokenKind::Ident(SmolStr::new("x")),
+                            module_id: 1.into()
+                        })))))
+                    }),
+                    smallvec![
+                        MatchArm {
+                            pattern: Pattern::Or(vec![
+                                Pattern::Literal(Literal::Number(1.into())),
+                                Pattern::Literal(Literal::Number(2.into())),
+                            ]),
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("matched".to_owned())))
+                            })
+                        },
+                        MatchArm {
+                            pattern: Pattern::Wildcard,
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 8.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("other".to_owned())))
+                            })
+                        },
+                    ]
+                ))
+            })
+        ]))]
+    #[case::match_or_string_literals(
+        vec![
+            token(TokenKind::Match),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Pipe),
+            token(TokenKind::StringLiteral("a".to_owned())),
+            token(TokenKind::Or),
+            token(TokenKind::StringLiteral("b".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("matched".to_owned())),
+            token(TokenKind::Pipe),
+            token(TokenKind::Ident(SmolStr::new("_"))),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("other".to_owned())),
+            token(TokenKind::End),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Match(
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                            range: Range::default(),
+                            kind: TokenKind::Ident(SmolStr::new("x")),
+                            module_id: 1.into()
+                        })))))
+                    }),
+                    smallvec![
+                        MatchArm {
+                            pattern: Pattern::Or(vec![
+                                Pattern::Literal(Literal::String("a".to_owned())),
+                                Pattern::Literal(Literal::String("b".to_owned())),
+                            ]),
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("matched".to_owned())))
+                            })
+                        },
+                        MatchArm {
+                            pattern: Pattern::Wildcard,
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 8.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("other".to_owned())))
+                            })
+                        },
+                    ]
+                ))
+            })
+        ]))]
+    #[case::match_or_type_patterns(
+        vec![
+            token(TokenKind::Match),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Pipe),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("string"))),
+            token(TokenKind::Or),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("number"))),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("str or num".to_owned())),
+            token(TokenKind::End),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Match(
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                            range: Range::default(),
+                            kind: TokenKind::Ident(SmolStr::new("x")),
+                            module_id: 1.into()
+                        })))))
+                    }),
+                    smallvec![
+                        MatchArm {
+                            pattern: Pattern::Or(vec![
+                                Pattern::Type(Ident::new("string")),
+                                Pattern::Type(Ident::new("number")),
+                            ]),
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("str or num".to_owned())))
+                            })
+                        },
+                    ]
+                ))
+            })
+        ]))]
+    #[case::match_or_three_alternatives(
+        vec![
+            token(TokenKind::Match),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Pipe),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::Or),
+            token(TokenKind::NumberLiteral(2.into())),
+            token(TokenKind::Or),
+            token(TokenKind::NumberLiteral(3.into())),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("matched".to_owned())),
+            token(TokenKind::Pipe),
+            token(TokenKind::Ident(SmolStr::new("_"))),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("other".to_owned())),
+            token(TokenKind::End),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Match(
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                            range: Range::default(),
+                            kind: TokenKind::Ident(SmolStr::new("x")),
+                            module_id: 1.into()
+                        })))))
+                    }),
+                    smallvec![
+                        MatchArm {
+                            pattern: Pattern::Or(vec![
+                                Pattern::Literal(Literal::Number(1.into())),
+                                Pattern::Literal(Literal::Number(2.into())),
+                                Pattern::Literal(Literal::Number(3.into())),
+                            ]),
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("matched".to_owned())))
+                            })
+                        },
+                        MatchArm {
+                            pattern: Pattern::Wildcard,
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 8.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("other".to_owned())))
+                            })
+                        },
+                    ]
+                ))
+            })
+        ]))]
+    #[case::match_or_bool_literals(
+        vec![
+            token(TokenKind::Match),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Pipe),
+            token(TokenKind::BoolLiteral(true)),
+            token(TokenKind::Or),
+            token(TokenKind::BoolLiteral(false)),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("bool".to_owned())),
+            token(TokenKind::End),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Match(
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                            range: Range::default(),
+                            kind: TokenKind::Ident(SmolStr::new("x")),
+                            module_id: 1.into()
+                        })))))
+                    }),
+                    smallvec![
+                        MatchArm {
+                            pattern: Pattern::Or(vec![
+                                Pattern::Literal(Literal::Bool(true)),
+                                Pattern::Literal(Literal::Bool(false)),
+                            ]),
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("bool".to_owned())))
+                            })
+                        },
                     ]
                 ))
             })

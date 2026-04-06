@@ -110,6 +110,7 @@ pub enum NodeKind {
     MatchArm,
     Module,
     Nodes,
+    OrPattern,
     Pattern,
     QualifiedAccess,
     Quote,
