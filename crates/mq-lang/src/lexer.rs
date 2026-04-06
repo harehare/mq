@@ -557,10 +557,37 @@ fn literals(input: Span) -> IResult<Span, Token> {
     alt((string_literal, interpolated_string, empty_string, number_literal)).parse(input)
 }
 
+/// Parses a selector token starting with `.`.
+///
+/// Handles both regular selectors (`.h`, `.p`, `.**`) and special-character
+/// selectors that cannot be parsed as identifiers, such as `.>` (blockquote)
+/// and `.^` (footnote).
+fn selector(input: Span) -> IResult<Span, Token> {
+    map(
+        recognize(pair(
+            tag(MARKDOWN),
+            alt((
+                tag(">"),
+                tag("^"),
+                recognize(many0(alt((alphanumeric1, tag("_"), tag("-"), tag("*"))))),
+            )),
+        )),
+        |span: Span| {
+            let module_id = span.extra;
+            Token {
+                range: span.into(),
+                kind: TokenKind::Selector(SmolStr::new(span.fragment())),
+                module_id,
+            }
+        },
+    )
+    .parse(input)
+}
+
 fn ident(input: Span) -> IResult<Span, Token> {
     map(
         recognize(pair(
-            alt((alpha1, tag("_"), tag(MARKDOWN))),
+            alt((alpha1, tag("_"))),
             many0(alt((alphanumeric1, tag("_"), tag("-"), tag("*")))),
         )),
         |span: Span| match *span.fragment() {
@@ -582,22 +609,11 @@ fn ident(input: Span) -> IResult<Span, Token> {
             }
             _ => {
                 let module_id = span.extra;
-                let fragment = span.fragment();
-
-                if fragment.starts_with(".") {
-                    let kind = TokenKind::Selector(SmolStr::new(span.fragment()));
-                    Token {
-                        range: span.into(),
-                        kind,
-                        module_id,
-                    }
-                } else {
-                    let kind = TokenKind::Ident(SmolStr::new(span.fragment()));
-                    Token {
-                        range: span.into(),
-                        kind,
-                        module_id,
-                    }
+                let kind = TokenKind::Ident(SmolStr::new(span.fragment()));
+                Token {
+                    range: span.into(),
+                    kind,
+                    module_id,
                 }
             }
         },
@@ -634,7 +650,17 @@ fn skip_whitespace_and_comments(input: Span) -> IResult<Span, ()> {
 }
 
 fn token(input: Span) -> IResult<Span, Token> {
-    alt((keywords, env, literals, binary_op, punctuations, unary_op, ident)).parse(input)
+    alt((
+        keywords,
+        env,
+        literals,
+        binary_op,
+        punctuations,
+        unary_op,
+        selector,
+        ident,
+    ))
+    .parse(input)
 }
 
 fn token_include_spaces(input: Span) -> IResult<Span, Token> {
@@ -649,6 +675,7 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
         binary_op,
         punctuations,
         unary_op,
+        selector,
         ident,
     ))
     .parse(input)
@@ -998,6 +1025,66 @@ mod tests {
                     },
                     Token {
                         range: Range { start: Position { line: 1, column: 9 }, end: Position { line: 1, column: 9 } },
+                        kind: TokenKind::Eof,
+                        module_id: 1.into(),
+                    }
+                ])
+            )]
+    #[case::selector_blockquote_alias(".>",
+            Options::default(),
+            Ok(vec![
+                    Token {
+                        range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 3 } },
+                        kind: TokenKind::Selector(SmolStr::new(".>")),
+                        module_id: 1.into(),
+                    },
+                    Token {
+                        range: Range { start: Position { line: 1, column: 3 }, end: Position { line: 1, column: 3 } },
+                        kind: TokenKind::Eof,
+                        module_id: 1.into(),
+                    }
+                ])
+            )]
+    #[case::selector_footnote_alias(".^",
+            Options::default(),
+            Ok(vec![
+                    Token {
+                        range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 3 } },
+                        kind: TokenKind::Selector(SmolStr::new(".^")),
+                        module_id: 1.into(),
+                    },
+                    Token {
+                        range: Range { start: Position { line: 1, column: 3 }, end: Position { line: 1, column: 3 } },
+                        kind: TokenKind::Eof,
+                        module_id: 1.into(),
+                    }
+                ])
+            )]
+    #[case::selector_blockquote_in_expression("select(.>)",
+            Options::default(),
+            Ok(vec![
+                    Token {
+                        range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 7 } },
+                        kind: TokenKind::Ident(SmolStr::new("select")),
+                        module_id: 1.into(),
+                    },
+                    Token {
+                        range: Range { start: Position { line: 1, column: 7 }, end: Position { line: 1, column: 8 } },
+                        kind: TokenKind::LParen,
+                        module_id: 1.into(),
+                    },
+                    Token {
+                        range: Range { start: Position { line: 1, column: 8 }, end: Position { line: 1, column: 10 } },
+                        kind: TokenKind::Selector(SmolStr::new(".>")),
+                        module_id: 1.into(),
+                    },
+                    Token {
+                        range: Range { start: Position { line: 1, column: 10 }, end: Position { line: 1, column: 11 } },
+                        kind: TokenKind::RParen,
+                        module_id: 1.into(),
+                    },
+                    Token {
+                        range: Range { start: Position { line: 1, column: 11 }, end: Position { line: 1, column: 11 } },
                         kind: TokenKind::Eof,
                         module_id: 1.into(),
                     }
