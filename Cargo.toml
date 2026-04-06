@@ -76,7 +76,7 @@ ropey = "1.6"
 rstest = "0.26.1"
 rustc-hash = "2.1.2"
 rustls = {version = "0.23", default-features = false, features = ["ring"]}
-rustyline = {version = "17.0.2", default-features = false}
+rustyline = {version = "18.0.0", default-features = false}
 scopeguard = "1.2.0"
 scraper = "0.26.0"
 serde = "1.0"
