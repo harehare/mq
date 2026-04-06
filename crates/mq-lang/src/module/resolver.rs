@@ -2,7 +2,13 @@ use std::{borrow::Cow, fs, path::PathBuf};
 
 use crate::module::error::ModuleError;
 
-const DEFAULT_PATHS: [&str; 4] = ["$HOME/.mq", "$ORIGIN/../lib/mq", "$ORIGIN/../lib", "$ORIGIN"];
+const DEFAULT_PATHS: [&str; 5] = [
+    "$HOME/.mq",
+    "$HOME/.config/mq",
+    "$ORIGIN/../lib/mq",
+    "$ORIGIN/../lib",
+    "$ORIGIN",
+];
 
 pub trait ModuleResolver: Clone + Default {
     fn resolve(&self, module_name: &str) -> Result<String, ModuleError>;
