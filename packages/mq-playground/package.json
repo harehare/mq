@@ -1,7 +1,7 @@
 {
   "name": "playground",
   "private": true,
-  "version": "0.5.23",
+  "version": "0.5.25",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,18 +13,21 @@
     "@monaco-editor/react": "^4.7.0",
     "lz-string": "^1.5.0",
     "monaco-editor": "^0.55.1",
-    "mq-web": "^0.5.23",
+    "monaco-vim": "^0.4.4",
+    "mq-web": "^0.5.25",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-icons": "^5.6.0"
   },
   "devDependencies": {
+    "@rolldown/plugin-babel": "^0.2.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
-    "baseline-browser-mapping": "^2.10.10",
-    "oxlint": "^1.56.0",
-    "typescript": "^5.9.3",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "baseline-browser-mapping": "^2.10.13",
+    "oxlint": "^1.58.0",
+    "typescript": "^6.0.2",
     "vite": "^8.0.1"
   },
   "packageManager": "pnpm@10.33.0"

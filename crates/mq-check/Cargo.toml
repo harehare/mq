@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-check"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.23"
+version = "0.5.25"
 
 [features]
 cli = ["dep:clap", "dep:colored", "dep:url"]

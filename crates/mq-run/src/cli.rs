@@ -64,7 +64,7 @@ const UNIX_EXECUTABLE_BITS: u32 = 0o111;
 /// - Text: Treats input as plain text.
 /// - Null: No input.
 /// - Raw: Treats all input as a single string, without parsing.
-#[derive(Clone, Debug, Default, clap::ValueEnum)]
+#[derive(Clone, Debug, Default, clap::ValueEnum, PartialEq)]
 enum InputFormat {
     #[default]
     Markdown,
@@ -73,6 +73,19 @@ enum InputFormat {
     Text,
     Null,
     Raw,
+}
+
+impl InputFormat {
+    fn from_extension(ext: &str) -> Self {
+        match ext.to_lowercase().as_str() {
+            "md" | "markdown" => Self::Markdown,
+            "mdx" => Self::Mdx,
+            "html" | "htm" => Self::Html,
+            "txt" | "log" | "csv" | "psv" | "tsv" | "toon" | "json" | "toml" | "yaml" | "yml" | "xml" => Self::Raw,
+            "jsonl" | "ndjson" => Self::Text,
+            _ => Self::Markdown,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, clap::ValueEnum)]
@@ -577,25 +590,13 @@ impl Cli {
             );
         }
 
-        let input = match self.input.input_format.as_ref().unwrap_or_else(|| {
+        let input = match self.input.input_format.as_ref().cloned().unwrap_or_else(|| {
             if let Some(file) = file {
-                match file
-                    .extension()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_lowercase()
-                    .as_str()
-                {
-                    "md" | "markdown" => &InputFormat::Markdown,
-                    "mdx" => &InputFormat::Mdx,
-                    "html" | "htm" => &InputFormat::Html,
-                    "txt" | "csv" | "tsv" | "json" | "toml" | "yaml" | "yml" | "xml" => &InputFormat::Raw,
-                    _ => &InputFormat::Markdown,
-                }
+                InputFormat::from_extension(&file.extension().unwrap_or_default().to_string_lossy())
             } else if io::stdin().is_terminal() {
-                &InputFormat::Null
+                InputFormat::Null
             } else {
-                &InputFormat::Markdown
+                InputFormat::Markdown
             }
         }) {
             InputFormat::Markdown => mq_lang::parse_markdown_input(content)?,
@@ -2123,5 +2124,29 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         Cli::collect_mq_commands_from_dir(&temp_dir, &mut seen);
         assert!(seen.is_empty(), "Files without mq- prefix should be ignored");
+    }
+
+    #[rstest]
+    #[case("md", InputFormat::Markdown)]
+    #[case("MD", InputFormat::Markdown)]
+    #[case("markdown", InputFormat::Markdown)]
+    #[case("mdx", InputFormat::Mdx)]
+    #[case("html", InputFormat::Html)]
+    #[case("htm", InputFormat::Html)]
+    #[case("txt", InputFormat::Raw)]
+    #[case("log", InputFormat::Raw)]
+    #[case("csv", InputFormat::Raw)]
+    #[case("psv", InputFormat::Raw)]
+    #[case("tsv", InputFormat::Raw)]
+    #[case("json", InputFormat::Raw)]
+    #[case("toml", InputFormat::Raw)]
+    #[case("yaml", InputFormat::Raw)]
+    #[case("yml", InputFormat::Raw)]
+    #[case("xml", InputFormat::Raw)]
+    #[case("jsonl", InputFormat::Text)]
+    #[case("ndjson", InputFormat::Text)]
+    #[case("unknown", InputFormat::Markdown)] // default fallback
+    fn test_from_extension(#[case] ext: &str, #[case] expected: InputFormat) {
+        assert_eq!(InputFormat::from_extension(ext), expected);
     }
 }

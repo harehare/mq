@@ -230,6 +230,12 @@ def is_mdx(mdx):
     is_mdx_js_esm(mdx)
 end
 
+# Checks if markdown is a callout block
+def is_callout(md):
+  let first_line = do to_text(md) | split("\n") | first();
+  | to_md_name(md) == "blockquote" && starts_with(first_line, "[!") && contains(first_line, "]") 
+end
+
 # Returns an array of length n filled with the given value.
 def fill(value, n):
   if (n < 0):

@@ -1,0 +1,106 @@
+.settings-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.settings-dialog {
+    background-color: light-dark(#ffffff, #1e1e1e);
+    color: light-dark(#2d3748, #e2e8f0);
+    border-radius: 8px;
+    width: 400px;
+    max-width: 90%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+}
+
+.settings-header {
+    padding: 16px;
+    border-bottom: 1px solid light-dark(#e2e8f0, #333);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.settings-header h3 {
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.settings-close-btn {
+    background: none;
+    border: none;
+    color: light-dark(#718096, #a0aec0);
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.settings-close-btn:hover {
+    background-color: light-dark(#edf2f7, #2d2d2d);
+    color: light-dark(#2d3748, #ffffff);
+}
+
+.settings-content {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.settings-section h4 {
+    margin: 0 0 12px 0;
+    font-size: 0.9rem;
+    color: var(--accent-blue);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.settings-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.settings-item label {
+    font-size: 0.95rem;
+}
+
+.settings-select {
+    padding: 6px 10px;
+    border-radius: 4px;
+    background-color: light-dark(#f7fafc, #2d2d30);
+    border: 1px solid light-dark(#cbd5e0, #3e3e42);
+    color: light-dark(#2d3748, #d4d4d4);
+}
+
+.font-size-control {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.font-size-control span {
+    font-size: 0.9rem;
+    width: 40px;
+    text-align: right;
+}
+
+input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}

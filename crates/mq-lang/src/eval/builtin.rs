@@ -276,6 +276,42 @@ define_builtin!(
     }
 );
 
+define_builtin!(MD5, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::md5(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| {
+                convert::md5(md.value().as_str()).and_then(|h| match h {
+                    RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                    a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                })
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => convert::md5(&a.to_string()),
+        _ => unreachable!(),
+    }
+});
+
+define_builtin!(SHA256, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::sha256(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| {
+                convert::sha256(md.value().as_str()).and_then(|h| match h {
+                    RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                    a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                })
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => convert::sha256(&a.to_string()),
+        _ => unreachable!(),
+    }
+});
+
 define_builtin!(
     MIN,
     ParamNum::Fixed(2),
@@ -2353,6 +2389,18 @@ define_builtin!(_TOON_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
     }
 });
 
+define_builtin!(_TOML_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => {
+            let value: serde_json::Value =
+                toml::from_str(s).map_err(|e| Error::Runtime(format!("Failed to parse TOML: {}", e)))?;
+            Ok(value.into())
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
 define_builtin!(_XML_PARSE, ParamNum::Fixed(1), |ident, _, mut args, _| {
     match args.as_mut_slice() {
         [RuntimeValue::String(xml_str)] => {
@@ -2758,10 +2806,12 @@ const HASH_LEN: u64 = fnv1a_hash_64("len");
 const HASH_LT: u64 = fnv1a_hash_64(constants::builtins::LT);
 const HASH_LTE: u64 = fnv1a_hash_64(constants::builtins::LTE);
 const HASH_LTRIM: u64 = fnv1a_hash_64("ltrim");
+const HASH_MD5: u64 = fnv1a_hash_64("md5");
 const HASH_REGEX_MATCH: u64 = fnv1a_hash_64("regex_match");
 const HASH_RTRIM: u64 = fnv1a_hash_64("rtrim");
 const HASH_MAX: u64 = fnv1a_hash_64("max");
 const HASH_MIN: u64 = fnv1a_hash_64("min");
+const HASH_SHA256: u64 = fnv1a_hash_64("sha256");
 const HASH_NAN: u64 = fnv1a_hash_64("nan");
 const HASH_NEGATE: u64 = fnv1a_hash_64("negate");
 const HASH_MOD: u64 = fnv1a_hash_64(constants::builtins::MOD);
@@ -2834,6 +2884,7 @@ const HASH_XML_PARSE: u64 = fnv1a_hash_64("_xml_parse");
 const HASH_JSON_PARSE: u64 = fnv1a_hash_64("_json_parse");
 const HASH_YAML_PARSE: u64 = fnv1a_hash_64("_yaml_parse");
 const HASH_TOON_PARSE: u64 = fnv1a_hash_64("_toon_parse");
+const HASH_TOML_PARSE: u64 = fnv1a_hash_64("_toml_parse");
 #[cfg(feature = "file-io")]
 const HASH_READ_FILE: u64 = fnv1a_hash_64("read_file");
 
@@ -2894,9 +2945,11 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_LT => Some(&LT),
         HASH_LTE => Some(&LTE),
         HASH_LTRIM => Some(&LTRIM),
+        HASH_MD5 => Some(&MD5),
         HASH_REGEX_MATCH => Some(&REGEX_MATCH),
         HASH_MAX => Some(&MAX),
         HASH_MIN => Some(&MIN),
+        HASH_SHA256 => Some(&SHA256),
         HASH_NEGATE => Some(&NEGATE),
         HASH_MOD => Some(&MOD),
         HASH_MUL => Some(&MUL),
@@ -2970,6 +3023,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_JSON_PARSE => Some(&_JSON_PARSE),
         HASH_YAML_PARSE => Some(&_YAML_PARSE),
         HASH_TOON_PARSE => Some(&_TOON_PARSE),
+        HASH_TOML_PARSE => Some(&_TOML_PARSE),
         #[cfg(feature = "file-io")]
         HASH_READ_FILE => Some(&READ_FILE),
         _ => None,
@@ -3318,6 +3372,30 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         },
     );
 
+    map.insert(
+        SmolStr::new(".task"),
+        BuiltinSelectorDoc {
+            description: "Selects a task list node.",
+            params: &[],
+        },
+    );
+
+    map.insert(
+        SmolStr::new(".todo"),
+        BuiltinSelectorDoc {
+            description: "Selects a todo item in the task list node.",
+            params: &[],
+        },
+    );
+
+    map.insert(
+        SmolStr::new(".done"),
+        BuiltinSelectorDoc {
+            description: "Selects a done item in the task list node.",
+            params: &[],
+        },
+    );
+
     map
 });
 
@@ -3392,6 +3470,13 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a TOON string into a data structure.",
             params: &["toon_string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_toml_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses a TOML string into a data structure.",
+            params: &["toml_string"],
         },
     );
 
@@ -4408,6 +4493,24 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> RuntimeVa
             (_, mq_markdown::Node::List(mq_markdown::List { .. })) => true,
             _ => false,
         },
+        Selector::Task => matches!(
+            node,
+            mq_markdown::Node::List(mq_markdown::List { checked: Some(_), .. })
+        ),
+        Selector::Todo => matches!(
+            node,
+            mq_markdown::Node::List(mq_markdown::List {
+                checked: Some(false),
+                ..
+            })
+        ),
+        Selector::Done => matches!(
+            node,
+            mq_markdown::Node::List(mq_markdown::List {
+                checked: Some(true),
+                ..
+            })
+        ),
         Selector::MdxJsEsm => node.is_mdx_js_esm(),
         Selector::Text => node.is_text(),
         Selector::Toml => node.is_toml(),
@@ -4896,6 +4999,51 @@ mod tests {
         Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         Selector::List(None, None),
         true
+    )]
+    #[case::task_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Selector::Task,
+        true
+    )]
+    #[case::task_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
+        Selector::Task,
+        true
+    )]
+    #[case::task_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
+        Selector::Task,
+        false
+    )]
+    #[case::todo_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
+        Selector::Todo,
+        true
+    )]
+    #[case::todo_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Selector::Todo,
+        false
+    )]
+    #[case::todo_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
+        Selector::Todo,
+        false
+    )]
+    #[case::done_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Selector::Done,
+        true
+    )]
+    #[case::done_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
+        Selector::Done,
+        false
+    )]
+    #[case::done_list(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
+        Selector::Done,
+        false
     )]
     #[case::text(
         Node::Text(mq_markdown::Text { value: "test".into(), position: None }),
@@ -5987,6 +6135,84 @@ mod tests {
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::simple_kv(
+        "name = \"Alice\"\nage = 30",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+            map.insert(Ident::new("age"), RuntimeValue::Number(30.into()));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::boolean(
+        "enabled = true\ndisabled = false",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("enabled"), RuntimeValue::Boolean(true));
+            map.insert(Ident::new("disabled"), RuntimeValue::Boolean(false));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::nested_table(
+        "[server]\nhost = \"localhost\"\nport = 8080",
+        {
+            let mut inner = BTreeMap::new();
+            inner.insert(Ident::new("host"), RuntimeValue::String("localhost".to_string()));
+            inner.insert(Ident::new("port"), RuntimeValue::Number(8080.into()));
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("server"), RuntimeValue::Dict(inner));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    #[case::array(
+        "tags = [\"rust\", \"toml\"]",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("tags"), RuntimeValue::Array(vec![
+                RuntimeValue::String("rust".to_string()),
+                RuntimeValue::String("toml".to_string()),
+            ]));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    fn test_toml_parse(#[case] toml: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("_toml_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(toml.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::invalid_toml("name = ")]
+    fn test_toml_parse_error(#[case] input: &str) {
+        let ident = Ident::new("_toml_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(input.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::invalid_type(RuntimeValue::Number(1.into()))]
+    fn test_toml_parse_invalid_type(#[case] input: RuntimeValue) {
+        let ident = Ident::new("_toml_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![input],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
     }
 
     #[rstest]

@@ -1,0 +1,8 @@
+.vim-status-bar {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.vim-status-bar .vim-notification {
+    padding-left: 10px;
+}

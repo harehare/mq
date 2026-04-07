@@ -45,7 +45,9 @@ body {
   border: none;
   color: var(--header-icon-color);
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 0;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -418,10 +420,6 @@ body {
 
 /* Mobile breakpoint - stacks vertically */
 @media (max-width: 768px) {
-
-  .header-icon-button {
-    padding: 4px;
-  }
 
   .footer-left {
     gap: 8px;

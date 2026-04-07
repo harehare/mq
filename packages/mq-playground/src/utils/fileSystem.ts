@@ -193,8 +193,7 @@ export class OPFSFileSystem {
       }
 
       throw new Error(
-        `Failed to rename from "${oldPath}" to "${newPath}": ${
-          error instanceof Error ? error.message : String(error)
+        `Failed to rename from "${oldPath}" to "${newPath}": ${error instanceof Error ? error.message : String(error)
         }`
       );
     }
@@ -258,7 +257,6 @@ export class OPFSFileSystem {
     }
 
     const result: FileNode[] = [];
-    // @ts-expect-error - TypeScript doesn't have the latest OPFS types
     for await (const entry of currentDir.values()) {
       const nodePath =
         path === "/" ? `/${entry.name}` : `${path}/${entry.name}`;

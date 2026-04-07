@@ -373,6 +373,16 @@ fn register_string(ctx: &mut InferenceContext) {
     register_unary(ctx, "slugify", Type::String, Type::String);
     // slugify: (string) -> string
     register_binary(ctx, "slugify", Type::String, Type::String, Type::String);
+
+    // md5: a -> string
+    let a = ctx.fresh_var();
+    register_unary(ctx, "md5", Type::Var(a), Type::String);
+    register_unary(ctx, "md5", Type::None, Type::None);
+
+    // sha256: a -> string
+    let a = ctx.fresh_var();
+    register_unary(ctx, "sha256", Type::Var(a), Type::String);
+    register_unary(ctx, "sha256", Type::None, Type::None);
 }
 
 /// Array functions: flatten, reverse, sort, uniq, compact, len, slice, insert, range, repeat

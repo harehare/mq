@@ -412,7 +412,7 @@ show_post_install() {
     echo ""
     echo -e "${BOLD}${CYAN}⚡ Quick Examples:${NC}"
     echo -e "  ${GREEN}▶${NC} ${CYAN}echo '# Hello World' | mq '.h'${NC}"
-    echo -e "  ${GREEN}▶${NC} ${CYAN}mq 'select(type == \"heading\")' README.md${NC}"
+    echo -e "  ${GREEN}▶${NC} ${CYAN}mq 'select(.code.lang == \"rust\")' README.md${NC}"
     if [[ "$INSTALL_DEBUG" == "true" ]]; then
         echo ""
         echo -e "${BOLD}${CYAN}🐛 Debug Mode:${NC}"

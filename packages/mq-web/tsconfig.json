@@ -16,7 +16,8 @@
     "sourceMap": true,
     "outDir": "dist",
     "rootDir": "src",
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src/**/*", "mq-wasm"],
   "exclude": ["node_modules", "dist"]

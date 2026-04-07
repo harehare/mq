@@ -165,10 +165,15 @@ impl Node {
                 let end = catch_expr.range(Shared::clone(&arena)).end;
                 Range { start, end }
             }
-            Expr::And(expr1, expr2) | Expr::Or(expr1, expr2) => {
-                let start = expr1.range(Shared::clone(&arena)).start;
-                let end = expr2.range(Shared::clone(&arena)).end;
-                Range { start, end }
+            Expr::And(exprs) | Expr::Or(exprs) => {
+                if let (Some(first), Some(last)) = (exprs.first(), exprs.last()) {
+                    Range {
+                        start: first.range(Shared::clone(&arena)).start,
+                        end: last.range(Shared::clone(&arena)).end,
+                    }
+                } else {
+                    arena[self.token_id].range
+                }
             }
             Expr::Break(Some(value_node)) => {
                 let start = arena[self.token_id].range.start;
@@ -257,7 +262,8 @@ pub enum Pattern {
     Array(Vec<Pattern>),
     ArrayRest(Vec<Pattern>, IdentWithToken), // patterns before .., rest binding
     Dict(Vec<(IdentWithToken, Pattern)>),
-    Type(Ident), // :string, :number, etc.
+    Type(Ident),      // :string, :number, etc.
+    Or(Vec<Pattern>), // p1 || p2 || p3
 }
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
@@ -316,8 +322,8 @@ pub enum Expr {
     Loop(Program),
     Var(Pattern, Shared<Node>),
     Assign(IdentWithToken, Shared<Node>),
-    And(Shared<Node>, Shared<Node>),
-    Or(Shared<Node>, Shared<Node>),
+    And(Vec<Shared<Node>>),
+    Or(Vec<Shared<Node>>),
     Literal(Literal),
     Ident(IdentWithToken),
     InterpolatedString(Vec<StringSegment>),

@@ -1,7 +1,7 @@
 {
   "name": "mq-web",
   "description": "A jq-like command-line tool for Markdown processing",
-  "version": "0.5.23",
+  "version": "0.5.25",
   "author": "harehare",
   "license": "MIT",
   "bugs": {
@@ -10,7 +10,7 @@
   "devDependencies": {
     "oxlint": "^1.31.0",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.2"
   },
   "files": [
     "dist"
@@ -35,6 +35,10 @@
     "dev": "tsup --watch",
     "type-check": "tsc --noEmit",
     "lint": "oxlint ."
+  },
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
   },
   "sideEffects": false,
   "type": "module",

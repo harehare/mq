@@ -80,6 +80,23 @@ def test_is_mdx():
   | assert_eq(result3, false)
 end
 
+def test_is_callout():
+  let result1 = do "> [!NOTE]\n> This is a note." | to_markdown() | first() | is_callout();
+  | assert_eq(result1, true)
+
+  | let result2 = do "> [!WARNING]\n> Watch out!" | to_markdown() | first() | is_callout();
+  | assert_eq(result2, true)
+
+  | let result3 = do "> [!WARNING] Watch out!" | to_markdown() | first() | is_callout();
+  | assert_eq(result3, true)
+
+  | let result4 = do "> Just a plain blockquote." | to_markdown() | first() | is_callout();
+  | assert_eq(result4, false)
+
+  | let result5 = is_callout("not a blockquote")
+  | assert_eq(result5, false)
+end
+
 # String manipulation tests
 def test_contains():
   let result1 = contains("hello world", "world")
@@ -555,7 +572,7 @@ end
 def test_percentile():
   # median of odd-length array
   let result1 = percentile([1, 2, 3, 4, 5], 0.5)
-  | assert_eq(result1, 3.0)
+  | assert_eq(result1, 3)
 
   # median of even-length array (linear interpolation)
   | let result2 = percentile([1, 2, 3, 4], 0.5)
@@ -563,11 +580,11 @@ def test_percentile():
 
   # 0th percentile = min
   | let result3 = percentile([3, 1, 4, 1, 5], 0)
-  | assert_eq(result3, 1.0)
+  | assert_eq(result3, 1)
 
   # 100th percentile = max
   | let result4 = percentile([3, 1, 4, 1, 5], 1)
-  | assert_eq(result4, 5.0)
+  | assert_eq(result4, 5)
 
   # 25th percentile
   | let result5 = percentile([1, 2, 3, 4], 0.25)
@@ -579,11 +596,11 @@ def test_percentile():
 
   # single element array
   | let result7 = percentile([42], 0.5)
-  | assert_eq(result7, 42.0)
+  | assert_eq(result7, 42)
 
   # unsorted input is handled correctly
   | let result8 = percentile([5, 1, 3], 0.5)
-  | assert_eq(result8, 3.0)
+  | assert_eq(result8, 3)
 
   # empty array returns None
   | let result9 = percentile([], 0.5)
@@ -658,6 +675,7 @@ end
   test_case("is_none", test_is_none),
   test_case("is_dict", test_is_dict),
   test_case("is_mdx", test_is_mdx),
+  test_case("is_callout", test_is_callout),
 
   # String manipulation
   test_case("contains", test_contains),

@@ -43,15 +43,21 @@ impl Node {
                 node.format_to_code(buf, indent);
                 buf.push(')');
             }
-            Expr::And(left, right) => {
-                left.format_to_code(buf, indent);
-                buf.push_str(" && ");
-                right.format_to_code(buf, indent);
+            Expr::And(operands) => {
+                for (i, op) in operands.iter().enumerate() {
+                    if i > 0 {
+                        buf.push_str(" && ");
+                    }
+                    op.format_to_code(buf, indent);
+                }
             }
-            Expr::Or(left, right) => {
-                left.format_to_code(buf, indent);
-                buf.push_str(" || ");
-                right.format_to_code(buf, indent);
+            Expr::Or(operands) => {
+                for (i, op) in operands.iter().enumerate() {
+                    if i > 0 {
+                        buf.push_str(" || ");
+                    }
+                    op.format_to_code(buf, indent);
+                }
             }
             Expr::Call(func, args) => {
                 write!(buf, "{}", func).unwrap();
@@ -381,6 +387,14 @@ fn format_pattern(pattern: &Pattern, buf: &mut String) {
         Pattern::Type(type_name) => {
             write!(buf, ":{}", type_name).unwrap();
         }
+        Pattern::Or(patterns) => {
+            for (i, p) in patterns.iter().enumerate() {
+                if i > 0 {
+                    buf.push_str(" || ");
+                }
+                format_pattern(p, buf);
+            }
+        }
     }
 }
 
@@ -447,18 +461,57 @@ mod tests {
 
     #[rstest]
     #[case::and(
-        Expr::And(
+        Expr::And(vec![
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
-            Shared::new(create_node(Expr::Ident(IdentWithToken::new("y"))))
-        ),
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("y")))),
+        ]),
         "x && y"
     )]
     #[case::or(
-        Expr::Or(
+        Expr::Or(vec![
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("a")))),
-            Shared::new(create_node(Expr::Ident(IdentWithToken::new("b"))))
-        ),
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("b")))),
+        ]),
         "a || b"
+    )]
+    #[case::and_three_operands(
+        Expr::And(vec![
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("y")))),
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("z")))),
+        ]),
+        "x && y && z"
+    )]
+    #[case::or_three_operands(
+        Expr::Or(vec![
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("a")))),
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("b")))),
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("c")))),
+        ]),
+        "a || b || c"
+    )]
+    #[case::or_with_nested_and(
+        // Or([And([a, b]), c])
+        Expr::Or(vec![
+            Shared::new(create_node(Expr::And(vec![
+                Shared::new(create_node(Expr::Ident(IdentWithToken::new("a")))),
+                Shared::new(create_node(Expr::Ident(IdentWithToken::new("b")))),
+            ]))),
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("c")))),
+        ]),
+        "a && b || c"
+    )]
+    #[case::or_with_and_in_middle(
+        // Or([a, And([b, c]), d])
+        Expr::Or(vec![
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("a")))),
+            Shared::new(create_node(Expr::And(vec![
+                Shared::new(create_node(Expr::Ident(IdentWithToken::new("b")))),
+                Shared::new(create_node(Expr::Ident(IdentWithToken::new("c")))),
+            ]))),
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("d")))),
+        ]),
+        "a || b && c || d"
     )]
     fn test_to_code_operators(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);

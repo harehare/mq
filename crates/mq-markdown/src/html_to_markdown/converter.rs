@@ -20,7 +20,11 @@ fn extract_text_from_pre_children(nodes: &[HtmlNode]) -> String {
             HtmlNode::Element(el) => {
                 text_content.push_str(&extract_text_from_pre_children(&el.children));
             }
-            HtmlNode::Comment(_) => {}
+            HtmlNode::Comment(comment) => {
+                text_content.push_str("<!--");
+                text_content.push_str(comment);
+                text_content.push_str("-->");
+            }
         }
     }
     text_content
@@ -228,11 +232,9 @@ fn handle_blockquote_element(element: &HtmlElement, options: ConversionOptions) 
 
 fn handle_pre_element(element: &HtmlElement, _options: ConversionOptions) -> miette::Result<String> {
     let mut lang_specifier = String::new();
-    let mut content_nodes = &element.children;
-    if let Some(HtmlNode::Element(code_element)) = element.children.first()
+    let text_content = if let Some(HtmlNode::Element(code_element)) = element.children.first()
         && code_element.tag_name == "code"
     {
-        content_nodes = &code_element.children;
         if let Some(Some(class_attr)) = code_element.attributes.get("class") {
             for class_name in class_attr.split_whitespace() {
                 if let Some(lang) = class_name.strip_prefix("language-") {
@@ -244,12 +246,14 @@ fn handle_pre_element(element: &HtmlElement, _options: ConversionOptions) -> mie
                 }
             }
         }
-    }
+        let mut text = extract_text_from_pre_children(&code_element.children);
+        text.push_str(&extract_text_from_pre_children(&element.children[1..]));
+        text
+    } else {
+        extract_text_from_pre_children(&element.children)
+    };
 
-    let mut text_content = extract_text_from_pre_children(content_nodes);
-    if text_content.starts_with('\n') {
-        text_content.remove(0);
-    }
+    let text_content = text_content.strip_prefix('\n').unwrap_or(&text_content);
     Ok(format!(
         "```{}\n{}\n```",
         lang_specifier,
@@ -278,7 +282,9 @@ fn handle_dl_element(element: &HtmlElement, options: ConversionOptions) -> miett
                 }
             }
             HtmlNode::Text(text) if text.trim().is_empty() => {}
-            HtmlNode::Comment(_) => {}
+            HtmlNode::Comment(comment) => {
+                dl_content_parts.push(format!("<!--{}-->", comment));
+            }
             _ => {
                 let unexpected_block = convert_nodes_to_markdown(std::slice::from_ref(child_node), options)?;
                 if !unexpected_block.is_empty() {
@@ -574,7 +580,9 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                     _ => parts.push(link_text),
                 }
             }
-            HtmlNode::Comment(_) => {}
+            HtmlNode::Comment(comment) => {
+                parts.push(format!("<!--{}-->", comment));
+            }
         }
     }
     Ok(parts.join("").to_string())
@@ -649,7 +657,9 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                     }
                 }
             }
-            HtmlNode::Comment(_) => {}
+            HtmlNode::Comment(comment) => {
+                markdown_blocks.push((format!("<!--{}-->", comment), false));
+            }
         }
     }
 

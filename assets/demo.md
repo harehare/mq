@@ -32,16 +32,22 @@ fn main() {
 - Written in Rust
 - Fast and efficient
 
+## TODO
+
+- [ ] Add more features
+- [x] Improve documentation
+- [ ] Optimize performance
+
 ## Tables
 
 mq can also process tables in markdown files:
 
 | Feature     | Description              | Status |
 | ----------- | ------------------------ | ------ |
-| Headers     | Filter headers by level  | ✅     |
-| Content     | Extract specific content | ✅     |
-| Tables      | Process markdown tables  | ✅     |
-| Code blocks | Handle code snippets     | ✅     |
+| Headers     | Filter headers by level  | ✅      |
+| Content     | Extract specific content | ✅      |
+| Tables      | Process markdown tables  | ✅      |
+| Code blocks | Handle code snippets     | ✅      |
 
 You can query and transform table data just like other markdown elements.
 
