@@ -965,6 +965,9 @@ fn register_markdown(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_unary(ctx, "to_mdx", Type::Var(a), Type::Markdown);
 
+    // string (HTML) -> array(markdown)
+    register_unary(ctx, "from_html", Type::String, Type::array(Type::Markdown));
+
     // markdown -> string functions
     register_many(
         ctx,
@@ -1838,6 +1841,7 @@ mod tests {
     // Markdown Conversion Functions
 
     #[rstest]
+    #[case::from_html("\"<h1>Hello</h1>\" | from_html()", true)]
     #[case::to_markdown("to_markdown(\"hello\")", true)]
     #[case::to_text("to_markdown(\"hello\") | to_text", true)]
     #[case::to_html("to_markdown(\"hello\") | to_html", true)]

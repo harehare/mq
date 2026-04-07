@@ -357,6 +357,23 @@ define_builtin!(
 );
 
 define_builtin!(
+    FROM_HTML,
+    ParamNum::Fixed(1),
+    |ident, _, mut args, _| match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => {
+            let markdown = mq_markdown::convert_html_to_markdown(s, mq_markdown::ConversionOptions::default())
+                .map_err(|e| Error::Runtime(format!("Failed to convert HTML: {}", e)))?;
+            Ok(RuntimeValue::Array(parse_markdown_input(&markdown).map_err(|e| {
+                Error::Runtime(format!("Failed to parse converted markdown: {}", e))
+            })?))
+        }
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+);
+
+define_builtin!(
     TO_HTML,
     ParamNum::Fixed(1),
     |ident, _, mut args, _| match args.as_mut_slice() {
@@ -2851,6 +2868,7 @@ const HASH_TO_DATE: u64 = fnv1a_hash_64("to_date");
 const HASH_TO_EM: u64 = fnv1a_hash_64("to_em");
 const HASH_TO_H: u64 = fnv1a_hash_64("to_h");
 const HASH_TO_HR: u64 = fnv1a_hash_64("to_hr");
+const HASH_FROM_HTML: u64 = fnv1a_hash_64("from_html");
 const HASH_TO_HTML: u64 = fnv1a_hash_64("to_html");
 const HASH_TO_IMAGE: u64 = fnv1a_hash_64("to_image");
 const HASH_TO_LINK: u64 = fnv1a_hash_64("to_link");
@@ -2990,6 +3008,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_TO_EM => Some(&TO_EM),
         HASH_TO_H => Some(&TO_H),
         HASH_TO_HR => Some(&TO_HR),
+        HASH_FROM_HTML => Some(&FROM_HTML),
         HASH_TO_HTML => Some(&TO_HTML),
         HASH_TO_IMAGE => Some(&TO_IMAGE),
         HASH_TO_LINK => Some(&TO_LINK),
@@ -3609,6 +3628,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the maximum of two values.",
             params: &["value1", "value2"],
+        },
+    );
+    map.insert(
+        SmolStr::new("from_html"),
+        BuiltinFunctionDoc {
+            description: "Converts the given HTML string to Markdown.",
+            params: &["html"],
         },
     );
     map.insert(
