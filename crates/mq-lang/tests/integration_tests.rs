@@ -2339,6 +2339,22 @@ fn engine() -> DefaultEngine {
     r#"match(3) do | 1 || 2: "small" | x: to_string(x) end"#,
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::String("3".to_string())].into()))]
+#[case::from_html_heading(
+    r#""<h1>Hello</h1>" | from_html() | first()"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        depth: 1,
+        values: vec!["Hello".to_string().into()],
+        position: None,
+    }), None)].into()))]
+#[case::from_html_paragraph(
+    r#""<p>Hello world</p>" | from_html() | first() | to_text()"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("Hello world".to_string())].into()))]
+#[case::from_html_empty(
+    r#""" | from_html()"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![])].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
