@@ -5,7 +5,7 @@ def _escape_string(str):
 end
 
 def _yaml_stringify_value(value, indent_level):
-  let indent = join(map(range(0, indent_level * 2), fn(_): " ";), "")
+  let indent = repeat(" ", indent_level * 2)
   | if (is_string(value)):
       if (contains(value, "\n") || contains(value, "\"") || contains(value, "'")):
         "\"" + _escape_string(value) + "\""
@@ -97,3 +97,9 @@ def yaml_to_json(data):
   else:
     "\"" + to_string(data) + "\""
 end
+
+# Converts a data structure to a YAML front matter string.
+def to_front_matter(data):
+  "---\n" + yaml_stringify(data) + "\n---"
+end
+
