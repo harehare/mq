@@ -13,6 +13,7 @@ use csv::ReaderBuilder;
 use itertools::Itertools;
 use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+use similar::{ChangeTag, TextDiff};
 use smol_str::SmolStr;
 use std::collections::BTreeMap;
 use std::io;
@@ -2743,6 +2744,146 @@ define_builtin!(SHIFT_RIGHT, ParamNum::Fixed(2), |_, _, mut args, _| {
     }
 });
 
+fn build_char_inline_diff(s1: &str, s2: &str) -> (Vec<RuntimeValue>, Vec<RuntimeValue>) {
+    let char_diff = TextDiff::from_chars(s1, s2);
+    let mut del_inline: Vec<RuntimeValue> = Vec::new();
+    let mut ins_inline: Vec<RuntimeValue> = Vec::new();
+    for c in char_diff.iter_all_changes() {
+        let val = RuntimeValue::String(c.value().to_string());
+        match c.tag() {
+            ChangeTag::Delete => {
+                let mut m = BTreeMap::new();
+                m.insert(Ident::new("tag"), RuntimeValue::String("delete".into()));
+                m.insert(Ident::new("value"), val);
+                del_inline.push(RuntimeValue::Dict(m));
+            }
+            ChangeTag::Insert => {
+                let mut m = BTreeMap::new();
+                m.insert(Ident::new("tag"), RuntimeValue::String("insert".into()));
+                m.insert(Ident::new("value"), val);
+                ins_inline.push(RuntimeValue::Dict(m));
+            }
+            ChangeTag::Equal => {
+                for inline in [&mut del_inline, &mut ins_inline] {
+                    let mut m = BTreeMap::new();
+                    m.insert(Ident::new("tag"), RuntimeValue::String("equal".into()));
+                    m.insert(Ident::new("value"), RuntimeValue::String(c.value().to_string()));
+                    inline.push(RuntimeValue::Dict(m));
+                }
+            }
+        }
+    }
+    (del_inline, ins_inline)
+}
+
+define_builtin!(_DIFF, ParamNum::Fixed(2), |_, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::Array(a1), RuntimeValue::Array(a2)] => {
+            let a1_debug: Vec<String> = a1.iter().map(|v| format!("{:?}", v)).collect();
+            let a2_debug: Vec<String> = a2.iter().map(|v| format!("{:?}", v)).collect();
+            let a1_slices: Vec<&str> = a1_debug.iter().map(|s| s.as_str()).collect();
+            let a2_slices: Vec<&str> = a2_debug.iter().map(|s| s.as_str()).collect();
+            let diff = TextDiff::from_slices(&a1_slices, &a2_slices);
+            let changes: Vec<_> = diff.iter_all_changes().collect();
+            let mut result = Vec::new();
+            let mut i = 0;
+            while i < changes.len() {
+                if changes[i].tag() == ChangeTag::Delete
+                    && i + 1 < changes.len()
+                    && changes[i + 1].tag() == ChangeTag::Insert
+                {
+                    let old_idx = changes[i].old_index().unwrap();
+                    let new_idx = changes[i + 1].new_index().unwrap();
+                    let old_val = &a1[old_idx];
+                    let new_val = &a2[new_idx];
+                    if let (RuntimeValue::String(s1), RuntimeValue::String(s2)) = (old_val, new_val) {
+                        let (del_inline, ins_inline) = build_char_inline_diff(s1.as_str(), s2.as_str());
+                        let mut del_map = BTreeMap::new();
+                        del_map.insert(Ident::new("tag"), RuntimeValue::String("delete".into()));
+                        del_map.insert(Ident::new("value"), old_val.clone());
+                        del_map.insert(Ident::new("inline"), RuntimeValue::Array(del_inline));
+                        result.push(RuntimeValue::Dict(del_map));
+                        let mut ins_map = BTreeMap::new();
+                        ins_map.insert(Ident::new("tag"), RuntimeValue::String("insert".into()));
+                        ins_map.insert(Ident::new("value"), new_val.clone());
+                        ins_map.insert(Ident::new("inline"), RuntimeValue::Array(ins_inline));
+                        result.push(RuntimeValue::Dict(ins_map));
+                    } else {
+                        let mut del_map = BTreeMap::new();
+                        del_map.insert(Ident::new("tag"), RuntimeValue::String("delete".into()));
+                        del_map.insert(Ident::new("value"), old_val.clone());
+                        result.push(RuntimeValue::Dict(del_map));
+                        let mut ins_map = BTreeMap::new();
+                        ins_map.insert(Ident::new("tag"), RuntimeValue::String("insert".into()));
+                        ins_map.insert(Ident::new("value"), new_val.clone());
+                        result.push(RuntimeValue::Dict(ins_map));
+                    }
+                    i += 2;
+                } else {
+                    let tag_str = match changes[i].tag() {
+                        ChangeTag::Equal => "equal",
+                        ChangeTag::Delete => "delete",
+                        ChangeTag::Insert => "insert",
+                    };
+                    let value = match changes[i].tag() {
+                        ChangeTag::Equal | ChangeTag::Delete => a1[changes[i].old_index().unwrap()].clone(),
+                        ChangeTag::Insert => a2[changes[i].new_index().unwrap()].clone(),
+                    };
+                    let mut map = BTreeMap::new();
+                    map.insert(Ident::new("tag"), RuntimeValue::String(tag_str.into()));
+                    map.insert(Ident::new("value"), value);
+                    result.push(RuntimeValue::Dict(map));
+                    i += 1;
+                }
+            }
+            Ok(RuntimeValue::Array(result))
+        }
+        [a1, a2] => {
+            let s1 = a1.to_string();
+            let s2 = a2.to_string();
+            let line_diff = TextDiff::from_lines(&s1, &s2);
+            let changes: Vec<_> = line_diff.iter_all_changes().collect();
+            let mut result = Vec::new();
+            let mut i = 0;
+            while i < changes.len() {
+                if changes[i].tag() == ChangeTag::Delete
+                    && i + 1 < changes.len()
+                    && changes[i + 1].tag() == ChangeTag::Insert
+                {
+                    let old_val = changes[i].value().trim_end_matches('\n');
+                    let new_val = changes[i + 1].value().trim_end_matches('\n');
+                    let (del_inline, ins_inline) = build_char_inline_diff(old_val, new_val);
+                    let mut del_map = BTreeMap::new();
+                    del_map.insert(Ident::new("tag"), RuntimeValue::String("delete".into()));
+                    del_map.insert(Ident::new("value"), RuntimeValue::String(old_val.to_string()));
+                    del_map.insert(Ident::new("inline"), RuntimeValue::Array(del_inline));
+                    result.push(RuntimeValue::Dict(del_map));
+                    let mut ins_map = BTreeMap::new();
+                    ins_map.insert(Ident::new("tag"), RuntimeValue::String("insert".into()));
+                    ins_map.insert(Ident::new("value"), RuntimeValue::String(new_val.to_string()));
+                    ins_map.insert(Ident::new("inline"), RuntimeValue::Array(ins_inline));
+                    result.push(RuntimeValue::Dict(ins_map));
+                    i += 2;
+                } else {
+                    let tag_str = match changes[i].tag() {
+                        ChangeTag::Equal => "equal",
+                        ChangeTag::Delete => "delete",
+                        ChangeTag::Insert => "insert",
+                    };
+                    let val = changes[i].value().trim_end_matches('\n').to_string();
+                    let mut map = BTreeMap::new();
+                    map.insert(Ident::new("tag"), RuntimeValue::String(tag_str.into()));
+                    map.insert(Ident::new("value"), RuntimeValue::String(val));
+                    result.push(RuntimeValue::Dict(map));
+                    i += 1;
+                }
+            }
+            Ok(RuntimeValue::Array(result))
+        }
+        _ => unreachable!(),
+    }
+});
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2789,6 +2930,7 @@ const HASH_COALESCE: u64 = fnv1a_hash_64("coalesce");
 const HASH_CONVERT: u64 = fnv1a_hash_64("convert");
 const HASH_DEL: u64 = fnv1a_hash_64("del");
 const HASH_DICT: u64 = fnv1a_hash_64(constants::builtins::DICT);
+const HASH_DIFF: u64 = fnv1a_hash_64("_diff");
 const HASH_DIV: u64 = fnv1a_hash_64(constants::builtins::DIV);
 const HASH_DOWNCASE: u64 = fnv1a_hash_64("downcase");
 const HASH_ENDS_WITH: u64 = fnv1a_hash_64("ends_with");
@@ -2931,6 +3073,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_CONVERT => Some(&CONVERT),
         HASH_DEL => Some(&DEL),
         HASH_DICT => Some(&DICT),
+        HASH_DIFF => Some(&_DIFF),
         HASH_DIV => Some(&DIV),
         HASH_DOWNCASE => Some(&DOWNCASE),
         HASH_ENDS_WITH => Some(&ENDS_WITH),
@@ -3496,6 +3639,13 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a TOML string into a data structure.",
             params: &["toml_string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_diff"),
+        BuiltinFunctionDoc {
+            description: "Internal function to compute the difference between two values, returning an array of changes.",
+            params: &["value1", "value2"],
         },
     );
 
@@ -6327,5 +6477,85 @@ mod tests {
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_diff_strings() {
+        let ident = Ident::new("_diff");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String("abc".into()), RuntimeValue::String("abc ".into())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+
+        assert!(result.is_ok());
+        if let Ok(RuntimeValue::Array(changes)) = result {
+            // line-level diff: delete "abc" + insert "abc " (replace pair)
+            assert_eq!(changes.len(), 2);
+            if let RuntimeValue::Dict(ref m) = changes[0] {
+                assert_eq!(m.get(&Ident::new("tag")), Some(&RuntimeValue::String("delete".into())));
+                assert_eq!(m.get(&Ident::new("value")), Some(&RuntimeValue::String("abc".into())));
+                assert!(m.contains_key(&Ident::new("inline")));
+            } else {
+                panic!("Expected Dict change");
+            }
+            if let RuntimeValue::Dict(ref m) = changes[1] {
+                assert_eq!(m.get(&Ident::new("tag")), Some(&RuntimeValue::String("insert".into())));
+                assert_eq!(m.get(&Ident::new("value")), Some(&RuntimeValue::String("abc ".into())));
+                // inline should show the trailing space as "insert"
+                if let Some(RuntimeValue::Array(inline)) = m.get(&Ident::new("inline")) {
+                    let last = inline.last().expect("inline should not be empty");
+                    if let RuntimeValue::Dict(lm) = last {
+                        assert_eq!(lm.get(&Ident::new("tag")), Some(&RuntimeValue::String("insert".into())));
+                        assert_eq!(lm.get(&Ident::new("value")), Some(&RuntimeValue::String(" ".into())));
+                    } else {
+                        panic!("Expected Dict in inline");
+                    }
+                } else {
+                    panic!("Expected inline Array");
+                }
+            } else {
+                panic!("Expected Dict change");
+            }
+        } else {
+            panic!("Expected Array result");
+        }
+    }
+
+    #[test]
+    fn test_diff_arrays() {
+        let ident = Ident::new("_diff");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![
+                RuntimeValue::Array(vec![RuntimeValue::Number(1.into())]),
+                RuntimeValue::Array(vec![RuntimeValue::Number(2.into())]),
+            ],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+
+        assert!(result.is_ok());
+        if let Ok(RuntimeValue::Array(changes)) = result {
+            assert_eq!(changes.len(), 2); // delete 1, insert 2
+            if let RuntimeValue::Dict(ref m) = changes[0] {
+                assert_eq!(m.get(&Ident::new("tag")), Some(&RuntimeValue::String("delete".into())));
+                assert_eq!(m.get(&Ident::new("value")), Some(&RuntimeValue::Number(1.into())));
+                // non-string elements have no inline field
+                assert!(!m.contains_key(&Ident::new("inline")));
+            } else {
+                panic!("Expected Dict change");
+            }
+            if let RuntimeValue::Dict(ref m) = changes[1] {
+                assert_eq!(m.get(&Ident::new("tag")), Some(&RuntimeValue::String("insert".into())));
+                assert_eq!(m.get(&Ident::new("value")), Some(&RuntimeValue::Number(2.into())));
+                assert!(!m.contains_key(&Ident::new("inline")));
+            } else {
+                panic!("Expected Dict change");
+            }
+        } else {
+            panic!("Expected Array result");
+        }
     }
 }

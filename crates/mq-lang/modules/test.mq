@@ -9,12 +9,70 @@ def assert(cond):
     {"error": true, "message": "Assertion failed: It is not true."}
 end
 
+# Renders inline diff parts for a delete line (shows equal + deleted chars, highlights deleted)
+def _render_inline_delete(inline):
+  join(foreach (part, inline):
+    let pv = gsub(gsub(part["value"], " ", "·"), "\n", "↵")
+    | if (part["tag"] == "delete"):
+        "\x1b[1;31m" + pv + "\x1b[0;31m"
+      elif (part["tag"] == "equal"):
+        "\x1b[31m" + pv + "\x1b[0;31m"
+      else:
+        ""
+  end, "")
+end
+
+# Renders inline diff parts for an insert line (shows equal + inserted chars, highlights inserted)
+def _render_inline_insert(inline):
+  join(foreach (part, inline):
+    let pv = gsub(gsub(part["value"], " ", "·"), "\n", "↵")
+    | if (part["tag"] == "insert"):
+        "\x1b[1;32m" + pv + "\x1b[0;32m"
+      elif (part["tag"] == "equal"):
+        "\x1b[32m" + pv + "\x1b[0;32m"
+      else:
+        ""
+  end, "")
+end
+
 # Verifies that two values are equal
 def assert_eq(actual, expected):
   if (actual == expected):
     self
   else:
-    {"error": true, "message": "Assertion failed: Expected " + to_string(expected) + "\n    but got " + to_string(actual)}
+    do
+      let is_array_diff = is_array(expected) && is_array(actual)
+      | let diff_res = _diff(expected, actual)
+      | let diff_lines = foreach (change, diff_res):
+              let tag = change["tag"]
+              | let value = change["value"]
+              | let text = if (is_string(value)):
+                              do
+                                let s = gsub(gsub(value, "\n", ""), " ", "·")
+                                | if (is_array_diff):
+                                    "\"" + s + "\""
+                                  else:
+                                    s
+                              end
+                            else:
+                              to_string(value)
+              | let rendered = if (contains(change, "inline") && not(is_array_diff)):
+                  if (tag == "delete"):
+                    _render_inline_delete(change["inline"])
+                  else:
+                    _render_inline_insert(change["inline"])
+                else:
+                  text
+              | if (tag == "insert"):
+                  "\x1b[32m    + \x1b[0m" + rendered + "\x1b[0m"
+                elif (tag == "delete"):
+                  "\x1b[31m    - \x1b[0m" + rendered + "\x1b[0m"
+                else:
+                  "      " + text
+            end
+      | let diff_str = join(diff_lines, "\n")
+      | {"error": true, "message": "\x1b[1mAssertion failed\x1b[0m\n\n" + diff_str}
+    end
 end
 
 # Verifies that two values are not equal
@@ -149,18 +207,24 @@ end
 
 # Executes multiple test functions
 def run_tests(tests):
-  let test_count = 0
-  | let failed_count = 0
-  | let final_test_count = len(tests)
+  let final_test_count = len(tests)
 
   # Print starting message
-  | let start_msg = "    Starting " + to_string(final_test_count) + " tests"
-  | let _ = print(start_msg)
+  | let _ = print("    Starting " + to_string(final_test_count) + " tests")
 
-  # Run tests and collect results
+  # Run each test and print result immediately
   | let test_results = foreach (test, tests):
       if (is_dict(test) && contains(test, "name") && contains(test, "func")):
-        _run_test(get(test, "name"), get(test, "func"))
+        do
+          let result = _run_test(get(test, "name"), get(test, "func"))
+          | let duration_str = _format_duration(result["duration"])
+          | let line = if (result["status"] == "passed"):
+              _succeed("        PASS") + " " + duration_str + " " + result["name"]
+            else:
+              _failed("        FAIL") + " " + duration_str + " " + result["name"]
+          | let _ = print(line)
+          | result
+        end
       else:
         error("Invalid test format: each test must be a dict with 'name' and 'func' keys")
     end
@@ -168,18 +232,6 @@ def run_tests(tests):
   | let final_failed_count = len(filter(test_results, fn(r): r["status"] == "failed";))
   | let passed_count = final_test_count - final_failed_count
   | let total_duration = fold(map(test_results, fn(r): r["duration"];), 0, fn(acc, d): acc + d;)
-
-  # Print each test result
-  | let results = foreach (result, test_results):
-      let name = result["name"]
-      | let status = result["status"]
-      | let duration_str = _format_duration(result["duration"])
-      | if (status == "passed"):
-          [_succeed("        PASS") + " " + duration_str + " " + name]
-        else:
-          [_failed("        FAIL") + " " + duration_str + " " + name]
-    end
-  | let _ = print(join(flatten(results), "\n"))
 
   # Print failures section if any
   | let _ = if (final_failed_count > 0):
@@ -216,3 +268,4 @@ def test_case(name, func):
     "func": func
   }
 end
+

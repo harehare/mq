@@ -318,8 +318,6 @@ mq -A 'section::sections() | section::by_level(2)' README.md
 mq -A 'section::sections() | section::by_level(1..2)' README.md
 ```
 
-For a comprehensive collection of examples, see the [Example Guide](https://mqlang.org/book/start/example).
-
 ### Composing Workflows with Subcommands
 
 `mq` subcommands are designed to work together via Unix pipes.
