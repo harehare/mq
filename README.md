@@ -13,12 +13,10 @@
 <h1 align="center">mq</h1>
 
 [![ci](https://github.com/harehare/mq/actions/workflows/ci.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/harehare/mq/graph/badge.svg?token=E4UD7Q9NC3)](https://codecov.io/gh/harehare/mq)
-[![CodSpeed Badge](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json?style=for-the-badge)](https://codspeed.io/harehare/mq)
 [![audit](https://github.com/harehare/mq/actions/workflows/audit.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/audit.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/harehare/mq)](https://github.com/harehare/mq/releases)
-[![Crates.io](https://img.shields.io/crates/v/mq-lang)](https://crates.io/crates/mq-lang)
-[![npm](https://img.shields.io/npm/v/mq-web)](https://www.npmjs.com/package/mq-web)
+[![crates.io](https://img.shields.io/crates/v/mq-lang)](https://crates.io/crates/mq-lang)
+[![codecov](https://codecov.io/gh/harehare/mq/graph/badge.svg?token=E4UD7Q9NC3)](https://codecov.io/gh/harehare/mq)
+[![codspeed badge](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json?style=for-the-badge)](https://codspeed.io/harehare/mq)
 
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
 It's written in Rust, allowing you to easily slice, filter, map, and transform structured data.
@@ -170,11 +168,16 @@ steps:
   - run: mq '.code' README.md
 ```
 
-## Web API
+## Web
 
-You can try mq without installing anything via the hosted REST API at `https://api.mqlang.org`.
+### Try it online
 
-The interactive API documentation (Swagger UI) is available at [`https://api.mqlang.org/docs`](https://api.mqlang.org/docs).
+The [Playground](https://mqlang.org/playground) lets you run mq queries in the browser with no install.
+The hosted REST API is available at `https://api.mqlang.org` ([Swagger UI](https://api.mqlang.org/docs)).
+
+### mq-web (npm)
+
+[mq-web](https://www.npmjs.com/package/mq-web) is the official WebAssembly build for browser and Node.js environments.
 
 ## Language Bindings
 
@@ -310,43 +313,7 @@ mq -A 'section::sections() | section::by_level(2)' README.md
 mq -A 'section::sections() | section::by_level(1..2)' README.md
 ```
 
-### Advanced Usage
-
-You can chain multiple operations to perform complex transformations:
-
-```sh
-# Generate a table of contents from headings
-mq '.h | let link = to_link("#" + to_text(self), to_text(self), "") | let level = .h.level | if (!is_none(level)): to_md_list(link, level)' docs/books/**/*.md
-
-# String interpolation
-mq 'let name = "Alice" | let age = 30 | s"Hello, my name is ${name} and I am ${age} years old."'
-
-# Merge multiple files with separators
-mq -S 's"\n${__FILE__}\n"' 'identity()' docs/books/**/**.md
-
-# Extract all code blocks from an HTML file
-mq '.code' example.html
-
-# Convert HTML to Markdown and filter headers
-mq 'select(.h1 || .h2)' example.html
-
-# Extract specific cell from a Markdown table
-mq '.[1][2] | to_text()' data.md
-
-# Extract frontmatter metadata from markdown files:
-import "yaml" | if (.yaml): yaml::yaml_parse() | get(:title)
-```
-
-### Using with markitdown
-
-You can combine `mq` with [markitdown](https://github.com/microsoft/markitdown) for even more powerful Markdown processing workflows:
-
-```sh
-# Extract code blocks from markdown
-markitdown https://github.com/harehare/mq | mq '.code'
-# Extract table from markdown
-markitdown test.xlsx | mq '.[][]'
-```
+For a comprehensive collection of examples, see the [Example Guide](https://mqlang.org/book/start/example).
 
 ### Composing Workflows with Subcommands
 
