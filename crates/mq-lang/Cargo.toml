@@ -38,6 +38,7 @@ thiserror = {workspace = true}
 url = {workspace = true}
 toon-format = { version = "0.4", default-features = false }
 quick-xml = "0.39.2"
+similar = "3.0.0"
 
 [features]
 ast-json = ["smallvec/serde", "smol_str/serde"]
