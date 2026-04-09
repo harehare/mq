@@ -64,7 +64,7 @@ impl Macro {
                 && self.macros.contains_key(&ident.name)
             {
                 // Expand macro call and add all resulting nodes
-                let expanded_nodes = self.expand_macro_call(ident.name, args, evaluator)?;
+                let expanded_nodes = self.expand_macro_call(ident.name, args, node.token_id, evaluator)?;
                 expanded_program.extend(expanded_nodes);
                 continue;
             }
@@ -127,7 +127,7 @@ impl Macro {
                 if self.macros.contains_key(&ident.name) {
                     // For nested macro calls, we need to expand and potentially return multiple nodes
                     // However, expand_node returns a single node, so we wrap them in a Block
-                    let expanded_nodes = self.expand_macro_call(ident.name, args, evaluator)?;
+                    let expanded_nodes = self.expand_macro_call(ident.name, args, node.token_id, evaluator)?;
                     match expanded_nodes.as_slice() {
                         [single] => Ok(Shared::clone(single)),
                         multiple => Ok(Shared::new(Node {
@@ -406,6 +406,7 @@ impl Macro {
         &mut self,
         name: Ident,
         args: &[Shared<Node>],
+        call_site_token_id: TokenId,
         evaluator: &mut E,
     ) -> Result<Vec<Shared<Node>>, RuntimeError> {
         if self.recursion_depth >= self.max_recursion {
@@ -433,7 +434,7 @@ impl Macro {
         // If one argument is missing, map the first parameter to Expr::Self_
         if params.len() == args.len() + 1 {
             let self_node = Shared::new(Node {
-                token_id: TokenId::new(1),
+                token_id: call_site_token_id,
                 expr: Shared::new(Expr::Self_),
             });
             substitutions.insert(params[0], self_node);
