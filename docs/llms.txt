@@ -1,0 +1,42 @@
+# mq
+
+> mq is a command-line tool that processes Markdown using a syntax similar to jq. Written in Rust, it allows you to easily slice, filter, map, and transform structured Markdown data. Especially useful for LLM workflows, documentation management, content analysis, and batch processing.
+
+## Docs
+
+- [Introduction](https://mqlang.org/book/): Overview, features, and why mq
+- [Install](https://mqlang.org/book/start/install): Installation via curl, Cargo, Homebrew, Docker, binaries, npm, PyPI
+- [CLI Reference](https://mqlang.org/book/reference/cli): All CLI flags, options, and subcommands
+- [Syntax](https://mqlang.org/book/reference/syntax): Language syntax overview
+- [Types and Values](https://mqlang.org/book/reference/types_and_values): Number, String, Symbol, Boolean, Array, Dict, Function
+- [Selectors](https://mqlang.org/book/reference/selectors): Select and access Markdown nodes (.h, .code, .link, .image, .list, etc.)
+- [Nodes](https://mqlang.org/book/reference/nodes): Access all Markdown nodes as a flat array
+- [Builtin Functions and Selectors](https://mqlang.org/book/reference/builtins): Complete reference for all built-in functions and selectors
+- [Operators](https://mqlang.org/book/reference/operators): Pipe |, shift << >>, conversion @, range .., and more
+- [Control Flow](https://mqlang.org/book/reference/control_flow): if/elif/else, while, foreach, loop, break, continue
+- [Conditionals](https://mqlang.org/book/reference/conditionals): and, or, not, &&, ||, !
+- [Comparisons](https://mqlang.org/book/reference/comparisons): ==, !=, >, >=, <, <=, =~ (regex match)
+- [Pattern Matching](https://mqlang.org/book/reference/pattern_matching): match expression with literal, type, array, dict, and guard patterns
+- [Variable Declarations](https://mqlang.org/book/reference/variables): let (immutable), var (mutable), destructuring
+- [Def Expression](https://mqlang.org/book/reference/def): Named function definitions with default parameters
+- [Fn Expression](https://mqlang.org/book/reference/fn): Anonymous lambda functions
+- [String Interpolation](https://mqlang.org/book/reference/string_interpolation): s"text ${expr}" syntax
+- [Assignment Operators](https://mqlang.org/book/reference/assignment_operators): =, |=, +=, -=, *=, /=, %=, //=
+- [Comments](https://mqlang.org/book/reference/comments): # doc-comments
+- [Self](https://mqlang.org/book/reference/self): self and . as the current value
+- [Try-Catch](https://mqlang.org/book/reference/try_catch): Error handling and ? operator
+- [Macros](https://mqlang.org/book/reference/macros): Compile-time code generation with quote/unquote
+- [Modules and Imports](https://mqlang.org/book/reference/modules_and_imports): module, import, include
+- [Environment Variables](https://mqlang.org/book/reference/env): __FILE__, __FILE_NAME__, __FILE_STEM__
+- [Example Queries](https://mqlang.org/book/start/example): Practical examples for headings, code blocks, tables, LLM workflows, and more
+- [Playground](https://mqlang.org/playground): Interactive browser playground
+- [TUI](https://mqlang.org/book/start/tui): Interactive terminal UI for querying Markdown
+- [MCP Server](https://mqlang.org/book/start/mcp): Model Context Protocol integration for AI applications
+
+## Optional
+
+- [Web Crawler](https://mqlang.org/book/start/crawler): mq-crawl for crawling and processing web content
+- [Debugger](https://mqlang.org/book/start/debugger): mq-dbg for debugging mq queries
+- [External Subcommands](https://mqlang.org/book/start/external_subcommands): Extend mq with external commands
+- [Syntax Highlighting](https://mqlang.org/book/start/syntax-highlighting): VSCode extension and Neovim plugin
+- [Development](https://mqlang.org/book/start/development): Contributing and building from source

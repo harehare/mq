@@ -1,0 +1,864 @@
+# mq - jq-like tool for Markdown processing
+
+mq is a command-line tool that processes Markdown using a syntax similar to jq.
+It's written in Rust, allowing you to easily slice, filter, map, and transform structured data.
+
+## Why mq?
+
+mq makes working with Markdown files as easy as jq makes working with JSON. It's especially useful for:
+
+- **LLM Workflows**: Efficiently manipulate and process Markdown used in LLM prompts and outputs
+- **Documentation Management**: Extract, transform, and organize content across multiple documentation files
+- **Content Analysis**: Quickly extract specific sections or patterns from Markdown documents
+- **Batch Processing**: Apply consistent transformations across multiple Markdown files
+
+## Features
+
+- **Slice and Filter**: Extract specific parts of your Markdown documents with ease.
+- **Map and Transform**: Apply transformations to your Markdown content.
+- **Command-line Interface**: Simple and intuitive CLI for quick operations.
+- **Extensibility**: Easily extendable with custom functions.
+- **Built-in support**: Filter and transform content with many built-in functions and selectors.
+- **REPL Support**: Interactive command-line REPL for testing and experimenting.
+- **IDE Support**: VSCode Extension and Language Server Protocol (LSP) support for custom function development.
+
+---
+
+# Install
+
+## Quick Install
+
+```bash
+curl -sSL https://mqlang.org/install.sh | bash
+# Install the debugger
+curl -sSL https://mqlang.org/install.sh | bash -s -- --with-debug
+```
+
+The installer will:
+- Download the latest mq binary for your platform
+- Install it to `~/.local/bin/`
+- Update your shell profile to add mq to your PATH
+
+## Cargo
+
+```sh
+cargo install mq-run
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.25
+cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
+cargo binstall mq-run@0.5.25
+```
+
+## Homebrew
+
+```sh
+brew install mq
+```
+
+## Docker
+
+```sh
+docker run --rm ghcr.io/harehare/mq:0.5.25
+```
+
+## npm
+
+```sh
+npm i mq-web
+```
+
+## Python
+
+```sh
+pip install markdown-query
+```
+
+---
+
+# CLI Reference
+
+```sh
+Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
+
+Commands:
+  repl  Start a REPL session for interactive query execution
+  fmt   Format mq files based on specified formatting options
+  help  Print this message or the help of the given subcommand(s)
+
+Options:
+  -A, --aggregate            Aggregate all input files into a single array
+  -f, --from-file            Load filter from the file
+  -I, --input-format         Set input format [markdown, mdx, html, text, null, raw]
+  -L, --directory            Search modules from the directory
+  -M, --module-names         Load additional modules from specified files
+  -m, --import-module-names  Import modules by name
+      --args <NAME> <VALUE>  Sets string that can be referenced at runtime
+      --rawfile <NAME> <FILE> Sets file contents that can be referenced at runtime
+      --stream               Enable streaming mode for large files
+  -F, --output-format        Set output format [default: markdown] [markdown, html, text, json, none]
+  -U, --update               Update the input markdown in-place
+      --unbuffered           Unbuffered output
+      --list-style           Set list style [dash, plus, star]
+      --link-title-style     Set link title style [double, single, paren]
+      --link-url-style       Set link URL style [none, angle]
+  -S, --separator <QUERY>    Insert separator between files
+  -o, --output <FILE>        Output to the specified file
+  -C, --color-output         Colorize markdown output
+      --list                 List all available subcommands
+  -P <PARALLEL_THRESHOLD>    Files before switching to parallel processing [default: 10]
+  -h, --help                 Print help
+  -V, --version              Print version
+```
+
+---
+
+# Types and Values
+
+## Values
+
+- `42` (a number)
+- `"Hello, world!"` (a string)
+- `:value` (a symbol)
+- `[1, 2, 3]`, `array(1, 2, 3)` (an array)
+- `{"a": 1, "b": 2}`, `dict(["a", 1], ["b", 2])` (a dictionary)
+- `true`, `false` (a boolean)
+- `None`
+
+## Types
+
+| Type         | Description                                          | Examples                                       |
+| ------------ | ---------------------------------------------------- | ---------------------------------------------- |
+| **Number**   | Numeric values                                       | `1`, `3.14`, `-42`                             |
+| **String**   | Sequences of characters, Unicode, escape sequences   | `"hello"`, `"😊"`, `"\u{1F600}"`               |
+| **Symbol**   | Immutable identifiers prefixed with `:`              | `:value`, `:success`, `:error`, `:ok`          |
+| **Boolean**  | Truth values                                         | `true`, `false`                                |
+| **Array**    | Ordered collections                                  | `[1, 2, 3]`, `array(1, 2, 3)`                  |
+| **Dict**     | Key-value mappings                                   | `{"a": 1}`, `dict(["a", 1])`                   |
+| **Function** | Executable code                                      | `def foo(): 42;`                               |
+
+## Array Access
+
+```mq
+let arr = [1, 2, 3, 4, 5]
+arr[0]     # => 1
+arr[1:4]   # => [2, 3, 4]
+```
+
+## Dictionary Access
+
+```mq
+let d = {"name": "Alice", "age": 30}
+d["name"]  # => "Alice"
+```
+
+## Environment Variables
+
+- `__FILE__`: Path to the file currently being processed
+- `__FILE_NAME__`: Name of the file without path
+- `__FILE_STEM__`: Filename without extension
+
+---
+
+# Selectors
+
+Selectors use the `.` prefix to select Markdown nodes.
+
+## Basic Selectors
+
+```mq
+.h       # All headings
+.h1      # h1 headings only
+.h2      # h2 headings only
+.code    # All code blocks
+.link    # All links
+.image   # All images
+.list    # All list items
+.text    # All text nodes
+.table   # All tables
+.yaml    # YAML frontmatter
+.toml    # TOML frontmatter
+```
+
+## Heading Attributes
+
+| Attribute        | Type    | Description              |
+| ---------------- | ------- | ------------------------ |
+| `depth`, `level` | Integer | The heading level (1-6)  |
+| `value`          | String  | The value of the heading |
+
+```mq
+.h.level  # => 1
+.h.value  # => "Hello World"
+```
+
+## Code Block Attributes
+
+| Attribute          | Type    | Description                   |
+| ------------------ | ------- | ----------------------------- |
+| `lang`, `language` | String  | The language of the code block|
+| `value`            | String  | The code content              |
+| `meta`             | String  | Metadata                      |
+| `fence`            | Boolean | Whether the block is fenced   |
+
+```mq
+.code.lang   # => "rust"
+.code.value  # => "fn main() {}"
+```
+
+## Link Attributes
+
+| Attribute | Type   | Description         |
+| --------- | ------ | ------------------- |
+| `url`     | String | The URL of the link |
+| `title`   | String | The link title      |
+| `value`   | String | The link text       |
+
+```mq
+.link.url    # => "https://example.com"
+.link.title  # => "Example Site"
+.link.value  # => "Example"
+```
+
+## Image Attributes
+
+| Attribute | Type   | Description              |
+| --------- | ------ | ------------------------ |
+| `url`     | String | The URL of the image     |
+| `alt`     | String | The alt text             |
+| `title`   | String | The title of the image   |
+
+## List Attributes
+
+| Attribute | Type    | Description                        |
+| --------- | ------- | ---------------------------------- |
+| `index`   | Integer | The index of the list item         |
+| `level`   | Integer | The nesting level                  |
+| `ordered` | Boolean | Whether the list is ordered        |
+| `checked` | Boolean | The checked state (task lists)     |
+| `value`   | String  | The text content                   |
+
+## Setting Attributes
+
+```mq
+.code | set_attr("lang", "javascript")
+.link | set_attr("url", "https://new-url.com")
+.h | set_attr("level", 2)
+```
+
+---
+
+# Nodes
+
+The `nodes` filter returns all Markdown nodes as a flat array:
+
+```mq
+nodes                          # All nodes as array
+nodes | select(.h)             # All headings
+nodes | map(upcase)            # Uppercase all nodes
+nodes | len()                  # Count nodes
+```
+
+---
+
+# Operators
+
+## Pipe Operator (`|`)
+
+Chains filter operations sequentially:
+
+```mq
+42 | add(1) | mul(2)
+# => 86
+```
+
+## Shift Operators (`<<`, `>>`)
+
+| Operand type     | `<<` behavior                              | `>>` behavior                             |
+| ---------------- | ------------------------------------------ | ----------------------------------------- |
+| Number           | Bitwise left shift                         | Bitwise right shift                       |
+| String           | Remove N chars from start                  | Remove N chars from end                   |
+| Array            | Append to end                              | Prepend to beginning                      |
+| Markdown Heading | Decrease depth (promote)                   | Increase depth (demote)                   |
+
+```mq
+1 << 2              # => 4
+"hello" << 2        # => "llo"
+"hello" >> 2        # => "hel"
+```
+
+## Conversion Operator (`@`)
+
+Converts a value to a different type or format:
+
+```mq
+"Hello" @ :h1       # => # Hello
+"Hello" @ :h2       # => ## Hello
+"note" @ ">"        # => > note
+"item" @ "-"        # => - item
+"old" @ "~~"        # => ~~old~~
+"mq" @ "https://mqlang.org"  # => [mq](https://mqlang.org)
+"hello" @ :base64   # => "aGVsbG8="
+"hello world" @ :uri  # => "hello%20world"
+```
+
+## Range Operator (`..`)
+
+Creates sequences of values:
+
+```mq
+1..5      # => [1, 2, 3, 4, 5]
+'a'..'e'  # => ["a", "b", "c", "d", "e"]
+5..1      # => [5, 4, 3, 2, 1]
+```
+
+---
+
+# Control Flow
+
+## If Expression
+
+```mq
+if (eq(x, 1)):
+  "one"
+elif (eq(x, 2)):
+  "two"
+else:
+  "other"
+```
+
+## While Expression
+
+```mq
+let x = 5 |
+while (x > 0):
+  let x = x - 1 | x
+end
+# => 0
+```
+
+Use `break: <expr>` to return a value:
+
+```mq
+var x = 10 |
+while (x > 0):
+  x = x - 1 |
+  if(eq(x, 3)):
+    break: "Found three!"
+  else:
+    x
+end
+```
+
+## Foreach Expression
+
+```mq
+let items = array(1, 2, 3) |
+foreach (x, items):
+   sub(x, 1)
+end
+# => array(0, 1, 2)
+```
+
+## Loop Expression
+
+```mq
+var x = 0 |
+loop:
+  x = x + 1 |
+  if(x > 5):
+    break
+  else:
+    x
+end
+# => 5
+```
+
+---
+
+# Conditionals
+
+```mq
+and(true, true)    # true
+true && false      # false
+or(true, false)    # true
+true || false      # true
+not(false)         # true
+!false             # true
+```
+
+---
+
+# Comparisons
+
+```mq
+1 == 1             # true
+2 > 1              # true
+"a" <= "b"         # true
+1 != 2             # true
+
+# Regex match
+"hello world" =~ "hello"          # true
+"hello world" =~ "^world"         # false
+"2024-01-15" =~ "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"  # true
+```
+
+---
+
+# Pattern Matching
+
+```mq
+match (value):
+  | 1: "one"
+  | 2: "two"
+  | _: "other"
+end
+
+# Type patterns
+match (value):
+  | :string: "is string"
+  | :number: "is number"
+  | :array: "is array"
+  | :dict: "is dict"
+  | :none: "is none"
+  | _: "other"
+end
+
+# Array patterns
+match (arr):
+  | []: "empty"
+  | [x]: x
+  | [head, ..tail]: head
+end
+
+# Dict patterns
+match (obj):
+  | {name, age}: s"${name} is ${age}"
+  | _: "unknown"
+end
+
+# Guards
+match (n):
+  | x if (x > 0): "positive"
+  | x if (x < 0): "negative"
+  | _: "zero"
+end
+
+# Or patterns
+match (x):
+  | 1 || 2 || 3: "small"
+  | 4 || 5: "medium"
+  | _: "other"
+end
+```
+
+---
+
+# Variable Declarations
+
+## Let (immutable)
+
+```mq
+let x = 42
+| let y = x + 1
+```
+
+## Var (mutable)
+
+```mq
+var counter = 0
+| counter = counter + 1
+# counter is now 1
+```
+
+## Destructuring
+
+```mq
+# Array destructuring
+let [a, b] = [1, 2] | a       # => 1
+let [head, ..tail] = [1, 2, 3] | tail  # => [2, 3]
+
+# Dict destructuring
+let {name, age} = {"name": "Alice", "age": 30} | name  # => "Alice"
+```
+
+---
+
+# Def Expression (Named Functions)
+
+```mq
+def double(x):
+  mul(x, 2);
+
+def greet(name, greeting="Hello"):
+  greeting + " " + name;
+
+greet("Alice")         # => "Hello Alice"
+greet("Bob", "Hi")    # => "Hi Bob"
+```
+
+---
+
+# Fn Expression (Anonymous Functions)
+
+```mq
+nodes | map(fn(x): add(x, "1");)
+
+# With default parameter
+let multiply = fn(x, factor=2): x * factor;
+multiply(10)      # => 20
+multiply(10, 3)   # => 30
+```
+
+---
+
+# String Interpolation
+
+```mq
+let name = "Alice"
+| let age = 30
+| s"Hello, my name is ${name} and I am ${age} years old."
+
+# Escape $ with $$
+let price = 25
+| s"The price is $$${price}"
+# => "The price is $25"
+```
+
+---
+
+# Assignment Operators
+
+| Operator | Description             | Example        |
+| -------- | ----------------------- | -------------- |
+| `=`      | Simple assignment       | `x = 10`       |
+| `\|=`    | Update in place         | `.code.value \|= "test"` |
+| `+=`     | Addition assignment     | `x += 5`       |
+| `-=`     | Subtraction assignment  | `x -= 3`       |
+| `*=`     | Multiplication          | `x *= 2`       |
+| `/=`     | Division                | `x /= 4`       |
+| `%=`     | Modulo                  | `x %= 5`       |
+| `//=`    | Floor division          | `x //= 3`      |
+
+---
+
+# Comments
+
+```mq
+# This is a doc-comment
+let value = add(2, 3);
+```
+
+---
+
+# Self
+
+`self` and `.` both refer to the current value being processed:
+
+```mq
+"hello" | upcase()
+"hello" | upcase(self)
+"hello" | upcase(.)
+# All equivalent
+```
+
+---
+
+# Try-Catch
+
+```mq
+# Basic error handling
+try: get("missing") catch: "default"
+
+# Error suppression (returns None on failure)
+get("missing")?
+
+# Chaining
+try: from_json() catch: self
+```
+
+---
+
+# Macros
+
+Compile-time code generation and transformation:
+
+```mq
+macro double(x): x + x
+| double(5)  # => 10
+
+macro max(a, b) do
+  if(a > b): a else: b
+end
+| max(10, 5)  # => 10
+
+# quote/unquote for metaprogramming
+macro make_expr(x) do
+  quote: unquote(x) + 1
+end
+| make_expr(5)  # => 6
+```
+
+---
+
+# Modules and Imports
+
+## Module (inline)
+
+```mq
+module math:
+  def add(a, b): a + b;
+  def mul(a, b): a * b;
+end
+
+| math::add(5, 3)  # => 8
+```
+
+## Import (from file, namespaced)
+
+```mq
+import "math"
+| math::add(10, 5)
+```
+
+## Include (from file, no namespace)
+
+```mq
+include "math"
+| add(2, 3)
+```
+
+---
+
+# Environment Variables
+
+```sh
+# Disable colored output
+NO_COLOR=1 mq -C '.h' README.md
+
+# Customize colors
+export MQ_COLORS="heading=1;31:code=34"
+mq -C '.h' README.md
+```
+
+Available color keys: `heading`, `code`, `code_inline`, `emphasis`, `strong`, `link`, `link_url`, `image`, `blockquote`, `delete`, `hr`, `html`, `frontmatter`, `list`, `table`, `math`
+
+---
+
+# Example Queries
+
+## Basic Element Selection
+
+```mq
+# All headings
+.h
+
+# Specific table row
+.[1][]
+
+# All code blocks except code
+select(!.code)
+
+# JavaScript code blocks only
+select(.code.lang == "js")
+
+# All code block languages
+.code.lang
+
+# All URLs from links
+.link.url
+```
+
+## Generate Table of Contents
+
+```mq
+.h
+| let link = to_link("#" + to_text(self), to_text(self), "")
+| let level = .h.depth
+| if (!is_none(level)): to_md_list(link, level - 1)
+```
+
+## Section Operations
+
+```bash
+# Extract section by title
+mq -A 'section::section("Installation")' README.md
+
+# Get section content without header
+mq -A 'section::section("Installation") | section::bodies() | first()' README.md
+
+# Filter by heading level
+mq -A 'section::sections() | section::by_level(2)' README.md
+
+# Generate table of contents
+mq -A 'section::sections() | section::toc()' README.md
+```
+
+## Table Operations
+
+```bash
+# Extract all tables
+mq -A 'import "table" | table::tables()' README.md
+
+# Add a row
+mq -A 'import "table" | table::tables() | first() | table::add_row(["Charlie", "35"])' README.md
+
+# Convert to CSV
+mq -A 'import "table" | table::tables() | first() | table::to_csv()' README.md
+```
+
+## Custom Functions
+
+```mq
+def snake_to_camel(x):
+  let words = split(x, "_")
+  | foreach (word, words):
+      let first_char = upcase(first(word))
+      | let rest_str = downcase(slice(word, 1, len(word)))
+      | s"${first_char}${rest_str}";
+  | join("")
+end
+| snake_to_camel("hello_world")
+# => "HelloWorld"
+```
+
+## Array Operations
+
+```mq
+map([1, 2, 3, 4, 5], fn(x): x + 1;)
+# => [2, 3, 4, 5, 6]
+
+filter([5, 15, 8, 20, 3], fn(x): x > 10;)
+# => [15, 20]
+
+fold([1, 2, 3, 4], 0, fn(acc, x): acc + x;)
+# => 10
+```
+
+## File Processing
+
+```bash
+# CSV to Markdown table
+mq 'include "csv" | csv_parse(true) | csv_to_markdown_table()' example.csv
+
+# Merge multiple files with separators
+mq -S 's"\n${__FILE__}\n"' 'identity()' docs/**/*.md
+
+# Process files in parallel
+mq -P 5 '.h1' docs/**/*.md
+```
+
+## LLM Workflows
+
+```mq
+# Extract first 10 sections with headings or code
+select(.h || .code) | self[:10]
+
+# Document statistics
+let headers = count_by(fn(x): x | select(.h);)
+| let paragraphs = count_by(fn(x): x | select(.text);)
+| let code_blocks = count_by(fn(x): x | select(.code);)
+| s"Headers: ${headers}, Paragraphs: ${paragraphs}, Code: ${code_blocks}"
+```
+
+---
+
+# Interactive TUI
+
+```sh
+mq tui file.md
+```
+
+## TUI Key Bindings
+
+| Key              | Action                     |
+| ---------------- | -------------------------- |
+| `:` (colon)      | Enter query mode           |
+| `Enter`          | Execute query              |
+| `Esc` / `q`      | Exit query mode / Exit app |
+| `↑`/`k`, `↓`/`j` | Navigate results          |
+| `d`              | Toggle detail view         |
+| `?` / `F1`       | Show help screen           |
+
+---
+
+# MCP Server
+
+The mq MCP server exposes four tools for AI applications:
+
+- `html_to_markdown` - Converts HTML to Markdown and applies mq queries
+- `extract_markdown` - Extracts content from Markdown using mq queries
+- `available_functions` - Lists available mq functions
+- `available_selectors` - Lists available mq selectors
+
+## Configuration
+
+### Claude Code
+
+```bash
+claude mcp add mq-mcp -- mq mcp
+```
+
+### Claude Desktop
+
+```json
+{
+  "mcpServers": {
+    "mq": {
+      "command": "/path/to/mq",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+## MCP Query Examples
+
+```
+.h1                            # Select all h1 headings
+select(.code.lang == "js")     # JavaScript code blocks
+.text                          # All text content
+select(.h1, .h2)               # h1 and h2 headings
+select(not(.code))             # Everything except code blocks
+```
+
+---
+
+# Web Crawler
+
+```bash
+# Basic crawl to stdout
+mq-crawl https://example.com
+
+# Save to directory
+mq-crawl -o ./output -d 2 https://example.com
+
+# Process with mq query
+mq-crawl -q '.h | select(contains("News"))' https://example.com
+
+# JavaScript-heavy sites with headless Chrome
+mq-crawl --headless https://spa-example.com
+
+# Limit crawl depth
+mq-crawl --depth 2 -c 3 https://example.com
+```
+
+---
+
+# External Subcommands
+
+Add executables named `mq-<name>` to `~/.local/bin/` or `PATH` to extend mq:
+
+```sh
+# List all subcommands (built-in and external)
+mq --list
+```
+
+Available external tools:
+- `mq-check` - Syntax and semantic checker
+- `mq-conv` - Convert file formats to Markdown
+- `mq-docs` - Documentation generator
+- `mq-edit` - Terminal Markdown editor
+- `mq-mcp` - MCP server for AI assistants
+- `mq-task` - Markdown-based task runner
+- `mq-tui` - Interactive TUI
+- `mq-update` - Update mq binary
+- `mq-view` - Markdown viewer
