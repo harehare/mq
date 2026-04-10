@@ -235,10 +235,10 @@ enum Commands {
 }
 
 impl Cli {
-    /// Get the path to the external commands directory (~/.mq/bin)
+    /// Get the path to the external commands directory (~/.local/bin)
     fn get_external_commands_dir() -> Option<PathBuf> {
         let home_dir = dirs::home_dir()?;
-        let mq_bin_dir = home_dir.join(".mq").join("bin");
+        let mq_bin_dir = home_dir.join(".local").join("bin");
         if mq_bin_dir.exists() && mq_bin_dir.is_dir() {
             Some(mq_bin_dir)
         } else {
@@ -246,11 +246,11 @@ impl Cli {
         }
     }
 
-    /// Find all external commands (mq-* files in ~/.mq/bin and PATH)
+    /// Find all external commands (mq-* files in ~/.local/bin and PATH)
     fn find_external_commands() -> Vec<String> {
         let mut seen = std::collections::HashSet::new();
 
-        // Search ~/.mq/bin first
+        // Search ~/.local/bin first
         if let Some(bin_dir) = Self::get_external_commands_dir() {
             Self::collect_mq_commands_from_dir(&bin_dir, &mut seen);
         }
