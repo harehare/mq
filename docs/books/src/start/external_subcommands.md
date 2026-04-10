@@ -1,19 +1,19 @@
 # External Subcommands
 
-You can extend `mq` with custom subcommands by placing executable files starting with `mq-` in `~/.mq/bin/` or anywhere in your `PATH`.
+You can extend `mq` with custom subcommands by placing executable files starting with `mq-` in `~/.local/bin/` or anywhere in your `PATH`.
 
 ## Creating a Custom Subcommand
 
-Create an executable file with the `mq-` prefix in `~/.mq/bin/` or a directory on your `PATH`:
+Create an executable file with the `mq-` prefix in `~/.local/bin/` or a directory on your `PATH`:
 
 ```sh
 # Create a custom subcommand
-cat > ~/.mq/bin/mq-hello << 'EOF'
+cat > ~/.local/bin/mq-hello << 'EOF'
 #!/bin/bash
 echo "Hello from mq-hello!"
 echo "Arguments: $@"
 EOF
-chmod +x ~/.mq/bin/mq-hello
+chmod +x ~/.local/bin/mq-hello
 
 # Use the custom subcommand
 mq hello world
@@ -25,7 +25,7 @@ mq hello world
 
 When you run `mq <subcommand>`, mq searches for an executable named `mq-<subcommand>` in the following order:
 
-1. `~/.mq/bin/` directory
+1. `~/.local/bin/` directory
 2. Directories in `PATH`
 
 The first match found is used.

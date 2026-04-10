@@ -37,7 +37,7 @@ curl -sSL https://mqlang.org/install_crawler.sh | bash
 
 The installer will:
 - Download the latest `mq-crawl` binary for your platform
-- Install it to `~/.mq/bin/`
+- Install it to `~/.local/bin/`
 - Verify the checksum of the downloaded binary
 - Update your shell profile to add `mq-crawl` to your PATH
 

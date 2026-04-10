@@ -393,7 +393,7 @@ impl Cli {
             output.push("".to_string());
             output.push(format!(
                 "{}",
-                "External subcommands (from ~/.mq/bin and PATH):".bold().yellow()
+                "External subcommands (from ~/.local/bin and PATH):".bold().yellow()
             ));
             for cmd in external_commands {
                 output.push(format!("  {}", cmd.bright_yellow()));
@@ -1149,7 +1149,7 @@ mod tests {
 
     #[test]
     fn test_find_external_commands() {
-        // find_external_commands searches ~/.mq/bin and PATH for mq-* files
+        // find_external_commands searches ~/.local/bin and PATH for mq-* files
         let commands = Cli::find_external_commands();
         // We can't assert specific commands, but we can check the function works
         assert!(commands.iter().all(|cmd| !cmd.is_empty()));
@@ -1160,7 +1160,7 @@ mod tests {
         // This test checks if the function returns a valid path or None
         let dir = Cli::get_external_commands_dir();
         if let Some(path) = dir {
-            assert!(path.ends_with(".mq/bin") || path.ends_with(".mq\\bin"));
+            assert!(path.ends_with(".local/bin") || path.ends_with(".local\\bin"));
         }
     }
 

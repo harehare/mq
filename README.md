@@ -337,7 +337,7 @@ Run `mq --list` to see all available subcommands (built-in and external).
 
 ## External Subcommands
 
-You can extend `mq` with custom subcommands by placing executable files starting with `mq-` in `~/.mq/bin/` or anywhere in your `PATH`.
+You can extend `mq` with custom subcommands by placing executable files starting with `mq-` in `~/.local/bin/` or anywhere in your `PATH`.
 This makes it easy to add your own tools and workflows to `mq` without modifying the core binary.
 
 ### External Tools
