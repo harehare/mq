@@ -55,7 +55,7 @@ jobs:
           mv target/${{ matrix.target }}/release/mq-check${{ matrix.ext }} target/${{ matrix.target }}/release/mq-check-${{ matrix.asset_name}}${{ matrix.ext }}
           mv target/${{ matrix.target }}/release/mq-crawl${{ matrix.ext }} target/${{ matrix.target }}/release/mq-crawl-${{ matrix.asset_name}}${{ matrix.ext }}
       - name: Upload artifact
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mq-${{ matrix.asset_name }}
           path: |
@@ -88,7 +88,7 @@ jobs:
           target: ${{ matrix.target }}
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
       - name: Install cargo-deb
-        uses: taiki-e/install-action@b8be7f5e140177087325943c4a8e169d01c59b3d # v2.75.3
+        uses: taiki-e/install-action@7a4939c09608b2a1986b484eca1d16fd0db8ebef # v2.75.5
         with:
           tool: cargo-deb
       - name: Install musl-tools
@@ -99,7 +99,7 @@ jobs:
       - name: Build deb package
         run: cargo deb -p mq-run --no-build --target ${{ matrix.target }} --output target/${{ matrix.target }}/debian/mq-${{ matrix.target }}.deb
       - name: Upload deb artifact
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mq-${{ matrix.target }}-deb
           path: target/${{ matrix.target }}/debian/*.deb
@@ -127,7 +127,7 @@ jobs:
           target: ${{ matrix.target }}
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
       - name: Install cargo-generate-rpm
-        uses: taiki-e/install-action@b8be7f5e140177087325943c4a8e169d01c59b3d # v2.75.3
+        uses: taiki-e/install-action@7a4939c09608b2a1986b484eca1d16fd0db8ebef # v2.75.5
         with:
           tool: cargo-generate-rpm
       - name: Install musl-tools
@@ -138,7 +138,7 @@ jobs:
       - name: Build rpm package
         run: cargo generate-rpm -p crates/mq-run --target ${{ matrix.target }} -o target/${{ matrix.target }}/generate-rpm/mq-${{ matrix.target }}.rpm
       - name: Upload rpm artifact
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mq-${{ matrix.target }}-rpm
           path: target/${{ matrix.target }}/generate-rpm/*.rpm
@@ -170,7 +170,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
       - name: Build and push Docker image
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
           push: true

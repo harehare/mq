@@ -18,7 +18,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
       - name: Install wasm-pack
-        uses: taiki-e/install-action@b8be7f5e140177087325943c4a8e169d01c59b3d # v2.75.3
+        uses: taiki-e/install-action@7a4939c09608b2a1986b484eca1d16fd0db8ebef # v2.75.5
         with:
           tool: wasm-pack
       - name: Setup pnpm
