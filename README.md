@@ -48,7 +48,7 @@ Since LLM inputs are primarily in Markdown format, mq provides efficient tools f
 - **REPL Support**: Interactive command-line REPL for testing and experimenting.
 - **IDE Support**: VSCode Extension and Language Server **Protocol** (LSP) support for custom function development.
 - **Debugger**: Includes an experimental debugger (`mq-dbg`) for inspecting and stepping through mq queries interactively.
-- **External Subcommands**: Extend mq with custom subcommands by placing executable files starting with `mq-` in `~/.mq/bin/`.
+- **External Subcommands**: Extend mq with custom subcommands by placing executable files starting with `mq-` in `~/.local/bin/`.
 
 ## Installation
 
@@ -61,7 +61,7 @@ curl -sSL https://mqlang.org/install.sh | bash
 The installer will:
 
 - Download the latest mq binary for your platform
-- Install it to `~/.mq/bin/`
+- Install it to `~/.local/bin/`
 - Update your shell profile to add mq to your PATH
 
 ### Cargo

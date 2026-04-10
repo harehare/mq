@@ -5,8 +5,7 @@ set -e
 # mq installation script
 
 readonly MQ_REPO="harehare/mq"
-readonly MQ_INSTALL_DIR="$HOME/.mq"
-readonly MQ_BIN_DIR="$MQ_INSTALL_DIR/bin"
+readonly MQ_BIN_DIR="${MQ_HOME:-${XDG_DATA_HOME:-$HOME/.local}/bin}"
 
 # Installation options
 INSTALL_DEBUG=false
