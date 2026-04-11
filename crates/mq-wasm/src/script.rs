@@ -1,9 +1,14 @@
-use futures::StreamExt;
 use itertools::Itertools;
-use opfs::{DirectoryHandle, FileHandle};
 use serde::{Deserialize, Serialize};
-use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
+use std::str::FromStr;
 use wasm_bindgen::prelude::*;
+
+#[cfg(feature = "opfs")]
+use futures::StreamExt;
+#[cfg(feature = "opfs")]
+use opfs::{DirectoryHandle, FileHandle};
+#[cfg(feature = "opfs")]
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_CUSTOM_SECTION: &'static str = r#"
@@ -208,29 +213,22 @@ impl From<ConversionOptions> for mq_markdown::ConversionOptions {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct WasmModuleResolver {
+    #[cfg(feature = "opfs")]
     /// Cache of preloaded module contents, keyed by module name
     cache: Rc<RefCell<HashMap<String, String>>>,
+    #[cfg(feature = "opfs")]
     /// Root directory handle for OPFS access
     root_dir: Rc<RefCell<Option<opfs::persistent::DirectoryHandle>>>,
+    #[cfg(feature = "opfs")]
     /// Flag indicating whether OPFS is available
     is_available: Rc<RefCell<bool>>,
 }
 
-impl Default for WasmModuleResolver {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl WasmModuleResolver {
     pub fn new() -> Self {
-        Self {
-            cache: Rc::new(RefCell::new(HashMap::new())),
-            root_dir: Rc::new(RefCell::new(None)),
-            is_available: Rc::new(RefCell::new(false)),
-        }
+        Self::default()
     }
 
     /// Initializes the OPFS root directory handle
@@ -238,6 +236,7 @@ impl WasmModuleResolver {
     /// If OPFS is not available, this method will silently fail and the resolver
     /// will operate as a NoOp resolver (only using manually added modules via `add_module`).
     pub async fn initialize(&self) {
+        #[cfg(feature = "opfs")]
         match opfs::persistent::app_specific_dir().await {
             Ok(root) => {
                 *self.root_dir.borrow_mut() = Some(root);
@@ -257,52 +256,55 @@ impl WasmModuleResolver {
     ///
     /// If OPFS is not available, this method returns immediately without error.
     pub async fn preload_modules(&self) {
-        // Skip if OPFS is not available
-        if !*self.is_available.borrow() {
-            return;
-        }
+        #[cfg(feature = "opfs")]
+        {
+            // Skip if OPFS is not available
+            if !*self.is_available.borrow() {
+                return;
+            }
 
-        let root = match self.root_dir.borrow().as_ref() {
-            Some(r) => r.clone(),
-            None => return, // Should not happen if is_available is true, but be defensive
-        };
-
-        let mut entries = match root.entries().await {
-            Ok(e) => e,
-            Err(_) => return, // Failed to get directory entries
-        };
-
-        while let Some(result) = entries.next().await {
-            let (name, entry) = match result {
-                Ok(e) => e,
-                Err(_) => continue, // Skip entries that fail to read
+            let root = match self.root_dir.borrow().as_ref() {
+                Some(r) => r.clone(),
+                None => return, // Should not happen if is_available is true, but be defensive
             };
 
-            match entry {
-                opfs::DirectoryEntry::File(file_handle) => {
-                    // Only process .mq files
-                    if !name.ends_with(".mq") {
+            let mut entries = match root.entries().await {
+                Ok(e) => e,
+                Err(_) => return, // Failed to get directory entries
+            };
+
+            while let Some(result) = entries.next().await {
+                let (name, entry) = match result {
+                    Ok(e) => e,
+                    Err(_) => continue, // Skip entries that fail to read
+                };
+
+                match entry {
+                    opfs::DirectoryEntry::File(file_handle) => {
+                        // Only process .mq files
+                        if !name.ends_with(".mq") {
+                            continue;
+                        }
+
+                        // Read file contents
+                        let data = match file_handle.read().await {
+                            Ok(d) => d,
+                            Err(_) => continue, // Skip files that fail to read
+                        };
+
+                        let contents = match String::from_utf8(data) {
+                            Ok(c) => c,
+                            Err(_) => continue, // Skip files that are not valid UTF-8
+                        };
+
+                        // Store with module name (without .mq extension)
+                        let module_name = name.strip_suffix(".mq").unwrap_or(&name);
+                        self.cache.borrow_mut().insert(module_name.to_string(), contents);
+                    }
+                    opfs::DirectoryEntry::Directory(_) => {
+                        // Skip directories for now
                         continue;
                     }
-
-                    // Read file contents
-                    let data = match file_handle.read().await {
-                        Ok(d) => d,
-                        Err(_) => continue, // Skip files that fail to read
-                    };
-
-                    let contents = match String::from_utf8(data) {
-                        Ok(c) => c,
-                        Err(_) => continue, // Skip files that are not valid UTF-8
-                    };
-
-                    // Store with module name (without .mq extension)
-                    let module_name = name.strip_suffix(".mq").unwrap_or(&name);
-                    self.cache.borrow_mut().insert(module_name.to_string(), contents);
-                }
-                opfs::DirectoryEntry::Directory(_) => {
-                    // Skip directories for now
-                    continue;
                 }
             }
         }
@@ -311,24 +313,32 @@ impl WasmModuleResolver {
     /// Manually adds a module to the cache
     ///
     /// This is useful for injecting module contents without using OPFS
-    pub fn add_module(&self, module_name: &str, content: String) {
-        self.cache.borrow_mut().insert(module_name.to_string(), content);
+    pub fn add_module(&self, _module_name: &str, _content: String) {
+        #[cfg(feature = "opfs")]
+        self.cache.borrow_mut().insert(_module_name.to_string(), _content);
     }
 
     /// Clears the module cache
     pub fn clear_cache(&self) {
+        #[cfg(feature = "opfs")]
         self.cache.borrow_mut().clear();
     }
 }
 
 impl mq_lang::ModuleResolver for WasmModuleResolver {
     fn resolve(&self, module_name: &str) -> Result<String, mq_lang::ModuleError> {
-        self.cache.borrow().get(module_name).cloned().ok_or_else(|| {
+        #[cfg(feature = "opfs")]
+        return self.cache.borrow().get(module_name).cloned().ok_or_else(|| {
             mq_lang::ModuleError::NotFound(std::borrow::Cow::Owned(format!(
                 "Module '{}' not found in cache. Use preload_modules() to load it first.",
                 module_name
             )))
-        })
+        });
+        #[cfg(not(feature = "opfs"))]
+        return Err(mq_lang::ModuleError::NotFound(std::borrow::Cow::Owned(format!(
+            "Module '{}' not found. Module resolution is not supported in this environment.",
+            module_name
+        ))));
     }
 
     fn get_path(&self, module_name: &str) -> Result<String, mq_lang::ModuleError> {
@@ -600,7 +610,6 @@ pub async fn defined_values(code: &str, module: Option<String>) -> Result<JsValu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mq_lang::ModuleResolver;
     use wasm_bindgen_test::*;
     wasm_bindgen_test_configure!(run_in_browser);
 
@@ -760,9 +769,14 @@ mod tests {
         resolver.add_module("test", "def foo(x): x | upcase();".to_string());
 
         // Should be able to resolve it
-        let result = resolver.resolve("test");
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "def foo(x): x | upcase();");
+        let result = mq_lang::ModuleResolver::resolve(&resolver, "test");
+        #[cfg(feature = "opfs")]
+        {
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), "def foo(x): x | upcase();");
+        }
+        #[cfg(not(feature = "opfs"))]
+        assert!(result.is_err());
     }
 
     #[allow(unused)]
@@ -771,7 +785,7 @@ mod tests {
         let resolver = WasmModuleResolver::new();
 
         // Should fail when module is not in cache
-        let result = resolver.resolve("nonexistent");
+        let result = mq_lang::ModuleResolver::resolve(&resolver, "nonexistent");
         assert!(result.is_err());
     }
 
@@ -782,15 +796,17 @@ mod tests {
 
         // Add a module
         resolver.add_module("test", "content".to_string());
-        assert!(resolver.resolve("test").is_ok());
+        #[cfg(feature = "opfs")]
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "test").is_ok());
 
         // Clear cache
         resolver.clear_cache();
 
         // Should no longer be resolvable
-        assert!(resolver.resolve("test").is_err());
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "test").is_err());
     }
 
+    #[cfg(feature = "opfs")]
     #[allow(unused)]
     #[wasm_bindgen_test]
     async fn test_opfs_create_and_import_module() {
@@ -842,8 +858,7 @@ mod tests {
         resolver.preload_modules().await;
 
         // Verify the module was loaded into cache
-        let resolved_content = resolver
-            .resolve("test_module")
+        let resolved_content = mq_lang::ModuleResolver::resolve(&resolver, "test_module")
             .expect("Module should be found in cache");
         assert_eq!(resolved_content, module_content);
 
@@ -868,6 +883,7 @@ mod tests {
         assert_eq!(output.join(""), "HELLO WORLD!");
     }
 
+    #[cfg(feature = "opfs")]
     #[allow(unused)]
     #[wasm_bindgen_test]
     async fn test_opfs_multiple_modules() {
@@ -920,8 +936,8 @@ mod tests {
         resolver.preload_modules().await;
 
         // Verify all modules are loaded
-        assert!(resolver.resolve("math").is_ok());
-        assert!(resolver.resolve("string").is_ok());
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "math").is_ok());
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "string").is_ok());
 
         // Test using multiple imported modules
         let code = r#"
