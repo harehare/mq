@@ -2551,6 +2551,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-test"
+version = "0.5.25"
+dependencies = [
+ "clap",
+ "glob",
+ "miette",
+ "mq-lang",
+]
+
+[[package]]
 name = "mq-wasm"
 version = "0.5.25"
 dependencies = [

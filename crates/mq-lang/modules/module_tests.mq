@@ -237,7 +237,7 @@ def test_section_filter_sections():
 end
 
 def test_section_map_sections():
-  let level_list = do test_sections | section::map_sections(fn(head, children): section::level(head););
+  let level_list = do test_sections | section::map_sections(fn(head, children): head.level;);
   | assert_eq(level_list, [1, 2, 1])
 end
 
@@ -474,6 +474,7 @@ end
   test_case("Section By Level H2", test_section_by_level_h2),
   test_case("Section By Level Range", test_section_by_level_range),
   test_case("Section By Level Empty", test_section_by_level_empty),
+  test_case("Section Map Sections", test_section_map_sections),
   # table
   test_case("Table Tables", test_table_tables),
   test_case("Table Tables Empty", test_table_tables_empty),
