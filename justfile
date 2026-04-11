@@ -52,6 +52,18 @@ build-wasm:
 build-web: build-wasm
     pnpm run build
 
+# Build mq-node package
+[working-directory: 'crates/mq-wasm']
+build-node-wasm:
+    wasm-pack build --release --target nodejs --out-dir ../../packages/mq-node/mq-wasm -- --no-default-features
+    rm ../../packages/mq-node/mq-wasm/README.md
+    rm ../../packages/mq-node/mq-wasm/package.json
+
+# Build mq-node package
+[working-directory: 'packages/mq-node']
+build-node: build-node-wasm
+    pnpm run build
+
 # Run formatting
 fmt:
     cargo fmt --all -- --check

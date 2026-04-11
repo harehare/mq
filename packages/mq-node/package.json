@@ -1,0 +1,52 @@
+{
+  "name": "mq-node",
+  "description": "A jq-like command-line tool for Markdown processing for Node.js",
+  "version": "0.5.25",
+  "author": "harehare",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/harehare/mq/issues"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "oxlint": "^1.31.0",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.2",
+    "vitest": "^3.0.0"
+  },
+  "files": [
+    "dist",
+    "mq-wasm"
+  ],
+  "homepage": "https://mqlang.org",
+  "keywords": [
+    "filter",
+    "jq",
+    "markdown",
+    "transform",
+    "wasm",
+    "webassembly",
+    "nodejs"
+  ],
+  "main": "dist/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/harehare/mq.git",
+    "directory": "packages/mq-node"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "type-check": "tsc --noEmit",
+    "lint": "oxlint .",
+    "test": "vitest run"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "sideEffects": false,
+  "types": "dist/index.d.ts"
+}
