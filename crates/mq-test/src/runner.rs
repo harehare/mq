@@ -103,9 +103,7 @@ impl TestRunner {
 
     /// Returns `true` if `trivia` contains a `# @test` annotation comment.
     fn has_test_annotation(trivia: &[CstTrivia]) -> bool {
-        trivia
-            .iter()
-            .any(|t| t.comment().is_some_and(|c| c.trim() == "@test"))
+        trivia.iter().any(|t| t.comment().is_some_and(|c| c.trim() == "@test"))
     }
 
     /// Append an auto-generated `run_tests([…])` call to the file content.
