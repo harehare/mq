@@ -7,9 +7,8 @@ export default defineConfig({
   clean: true,
   sourcemap: false,
   minify: true,
-  publicDir: "mq-wasm",
   platform: "node",
   splitting: false,
   bundle: true,
-  external: ["./mq_wasm"],
+  publicDir: "mq-wasm",
 });

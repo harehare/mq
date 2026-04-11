@@ -1,11 +1,11 @@
-import * as wasmImport from "./mq_wasm";
-import {
+import * as wasmImport from "./mq_wasm.js";
+import type {
   Options,
   Diagnostic,
   DefinedValue,
   InlayHint,
   ConversionOptions,
-} from "./mq_wasm";
+} from "./mq_wasm.js";
 
 // Type definitions for WASM module
 interface WasmModule {
@@ -40,7 +40,7 @@ const wasmModule: WasmModule = {
 };
 
 /**
- * Run an mq
+ * Run an mq script on Markdown content.
  */
 export async function run(
   code: string,
@@ -65,14 +65,14 @@ export async function toAst(code: string): Promise<string> {
 }
 
 /**
- * Format mq code
+ * Format mq code.
  */
 export async function format(code: string): Promise<string> {
   return await wasmModule.format(code);
 }
 
 /**
- * Get diagnostics for mq code
+ * Get diagnostics for mq code.
  */
 export async function diagnostics(
   code: string,
@@ -82,7 +82,7 @@ export async function diagnostics(
 }
 
 /**
- * Get inlay type hints for mq code
+ * Get inlay type hints for mq code.
  */
 export async function inlayHints(
   code: string,
@@ -91,7 +91,7 @@ export async function inlayHints(
 }
 
 /**
- * Get defined values from mq code
+ * Get defined values (functions, selectors, variables) from mq code.
  */
 export async function definedValues(
   code: string,
@@ -101,7 +101,7 @@ export async function definedValues(
 }
 
 /**
- * Converts HTML input to Markdown
+ * Convert HTML to Markdown.
  */
 export async function htmlToMarkdown(
   html: string,
@@ -111,7 +111,7 @@ export async function htmlToMarkdown(
 }
 
 /**
- * Markdown Input to HTML
+ * Convert Markdown to HTML.
  */
 export async function toHtml(markdownInput: string): Promise<string> {
   return await wasmModule.toHtml(markdownInput);
