@@ -1,11 +1,11 @@
-import * as wasmImport from "./mq-wasm/mq_wasm.js";
+import * as wasmImport from "./mq_wasm";
 import {
   Options,
   Diagnostic,
   DefinedValue,
   InlayHint,
   ConversionOptions,
-} from "./mq-wasm/mq_wasm.js";
+} from "./mq_wasm";
 
 // Type definitions for WASM module
 interface WasmModule {

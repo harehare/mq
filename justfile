@@ -53,13 +53,16 @@ build-web: build-wasm
     pnpm run build
 
 # Build mq-node package
+[working-directory: 'crates/mq-wasm']
 build-node-wasm:
-    cd crates/mq-wasm && wasm-pack build --release --target nodejs --out-dir ../../packages/mq-node/mq-wasm -- --no-default-features
-    rm packages/mq-node/mq-wasm/README.md
-    rm packages/mq-node/mq-wasm/package.json
+    wasm-pack build --release --target nodejs --out-dir ../../packages/mq-node/mq-wasm -- --no-default-features
+    rm ../../packages/mq-node/mq-wasm/README.md
+    rm ../../packages/mq-node/mq-wasm/package.json
 
+# Build mq-node package
+[working-directory: 'packages/mq-node']
 build-node: build-node-wasm
-    cd packages/mq-node && pnpm run build
+    pnpm run build
 
 # Run formatting
 fmt:

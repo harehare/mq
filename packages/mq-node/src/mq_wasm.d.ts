@@ -1,0 +1,1 @@
+../mq-wasm/mq_wasm.d.ts
