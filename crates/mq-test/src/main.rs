@@ -1,7 +1,7 @@
 mod runner;
 
 use clap::Parser;
-use std::path::PathBuf;
+use std::{path::PathBuf, process::ExitCode};
 
 #[derive(Parser, Debug)]
 #[command(name = "mq-test")]
@@ -20,11 +20,13 @@ struct Cli {
     files: Vec<PathBuf>,
 }
 
-fn main() {
+fn main() -> ExitCode {
     let cli = Cli::parse();
 
     if let Err(e) = runner::TestRunner::new(cli.files).run() {
         eprintln!("{e:?}");
-        std::process::exit(1);
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
     }
 }
