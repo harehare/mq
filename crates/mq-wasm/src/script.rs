@@ -858,8 +858,8 @@ mod tests {
         resolver.preload_modules().await;
 
         // Verify the module was loaded into cache
-        let resolved_content = mq_lang::ModuleResolver::resolve(&resolver, "test_module")
-            .expect("Module should be found in cache");
+        let resolved_content =
+            mq_lang::ModuleResolver::resolve(&resolver, "test_module").expect("Module should be found in cache");
         assert_eq!(resolved_content, module_content);
 
         // Test using the imported module in code execution
