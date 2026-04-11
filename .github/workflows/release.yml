@@ -54,6 +54,7 @@ jobs:
           mv target/${{ matrix.target }}/release/mq-lsp${{ matrix.ext }} target/${{ matrix.target }}/release/mq-lsp-${{ matrix.asset_name}}${{ matrix.ext }}
           mv target/${{ matrix.target }}/release/mq-check${{ matrix.ext }} target/${{ matrix.target }}/release/mq-check-${{ matrix.asset_name}}${{ matrix.ext }}
           mv target/${{ matrix.target }}/release/mq-crawl${{ matrix.ext }} target/${{ matrix.target }}/release/mq-crawl-${{ matrix.asset_name}}${{ matrix.ext }}
+          mv target/${{ matrix.target }}/release/mq-test${{ matrix.ext }} target/${{ matrix.target }}/release/mq-test-${{ matrix.asset_name}}${{ matrix.ext }}
       - name: Upload artifact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
@@ -64,6 +65,7 @@ jobs:
             target/${{ matrix.target }}/release/mq-lsp-${{ matrix.asset_name }}${{ matrix.ext }}
             target/${{ matrix.target }}/release/mq-check-${{ matrix.asset_name }}${{ matrix.ext }}
             target/${{ matrix.target }}/release/mq-crawl-${{ matrix.asset_name }}${{ matrix.ext }}
+            target/${{ matrix.target }}/release/mq-test-${{ matrix.asset_name }}${{ matrix.ext }}
           if-no-files-found: error
           retention-days: 1
 
