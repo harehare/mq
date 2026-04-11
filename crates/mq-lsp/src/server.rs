@@ -24,13 +24,24 @@ fn to_uri(uri: &Url) -> ls_types::Uri {
 }
 
 #[derive(Debug)]
+struct TypeInfo {
+    pub env: mq_check::TypeEnv,
+    pub errors: Vec<LspError>,
+}
+
+impl TypeInfo {
+    fn new(env: mq_check::TypeEnv, errors: Vec<LspError>) -> Self {
+        Self { env, errors }
+    }
+}
+
+#[derive(Debug)]
 struct Backend {
     client: Client,
     hir: Arc<RwLock<mq_hir::Hir>>,
     source_map: RwLock<BiMap<String, mq_hir::SourceId>>,
-    type_env_map: DashMap<String, mq_check::TypeEnv>,
-    error_map: DashMap<String, Vec<LspError>>,
-    text_map: DashMap<String, Arc<String>>,
+    type_map: DashMap<String, TypeInfo>,
+    incremental_parser_map: DashMap<String, mq_lang::IncrementalParser>,
     config: LspConfig,
 }
 
@@ -57,11 +68,18 @@ impl LanguageServer for Backend {
     }
 
     async fn did_change(&self, mut params: ls_types::DidChangeTextDocumentParams) {
-        self.on_change(
-            to_url(&params.text_document.uri),
-            std::mem::take(&mut params.content_changes[0].text),
-        )
-        .await
+        let Some(change) = params.content_changes.first_mut() else {
+            return;
+        };
+        let text = std::mem::take(&mut change.text);
+        let uri = to_url(&params.text_document.uri);
+        self.on_change(uri, text).await;
+        // Notify the client to re-request semantic tokens after the HIR has been
+        // updated.  Without this, clients that process `textDocument/didChange`
+        // and `textDocument/semanticTokens/full` concurrently (e.g. when a
+        // Copilot completion is accepted) may answer the tokens request from the
+        // stale HIR state and then never issue a follow-up request.
+        self.client.semantic_tokens_refresh().await.ok();
     }
 
     async fn did_save(&self, params: ls_types::DidSaveTextDocumentParams) {
@@ -72,9 +90,8 @@ impl LanguageServer for Backend {
         let uri_string = params.text_document.uri.to_string();
 
         // Remove error information for the closed file
-        self.error_map.remove(&uri_string);
-        self.text_map.remove(&uri_string);
-        self.type_env_map.remove(&uri_string);
+        self.incremental_parser_map.remove(&uri_string);
+        self.type_map.remove(&uri_string);
 
         // Remove from source map
         self.source_map.write().unwrap().remove_by_left(&uri_string);
@@ -152,7 +169,7 @@ impl LanguageServer for Backend {
         let position = params.text_document_position_params.position;
 
         let type_env = if self.config.enable_type_checking {
-            self.type_env_map.get(&url.to_string()).map(|e| e.clone())
+            self.type_map.get(&url.to_string()).map(|e| e.env.clone())
         } else {
             None
         };
@@ -165,7 +182,7 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
         let url = to_url(&params.text_document.uri);
-        let type_env = self.type_env_map.get(&url.to_string()).map(|e| e.clone());
+        let type_env = self.type_map.get(&url.to_string()).map(|e| e.env.clone());
         Ok(inlay_hints::response(
             Arc::clone(&self.hir),
             url,
@@ -201,15 +218,11 @@ impl LanguageServer for Backend {
         &self,
         params: ls_types::DocumentFormattingParams,
     ) -> jsonrpc::Result<Option<Vec<ls_types::TextEdit>>> {
-        if self
-            .error_map
-            .get(&params.text_document.uri.to_string())
-            .unwrap()
-            .iter()
-            .any(|e| matches!(e, LspError::SyntaxError(_)))
-        {
-            return Ok(None);
-        }
+        let uri_str = params.text_document.uri.to_string();
+        let text = match self.incremental_parser_map.get(&uri_str) {
+            Some(parser) if !parser.result().1.has_errors() => parser.source(),
+            _ => return Ok(None),
+        };
 
         // Handle work done progress
         let progress = if let Some(token) = params.work_done_progress_params.work_done_token.clone() {
@@ -224,8 +237,6 @@ impl LanguageServer for Backend {
         } else {
             None
         };
-
-        let text = Arc::clone(&self.text_map.get(&params.text_document.uri.to_string()).unwrap());
         let formatted_text = tokio::task::spawn_blocking(move || {
             mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
                 indent_width: 2,
@@ -255,16 +266,10 @@ impl LanguageServer for Backend {
         &self,
         params: DocumentRangeFormattingParams,
     ) -> jsonrpc::Result<Option<Vec<ls_types::TextEdit>>> {
-        if let Some(errors) = self.error_map.get(&params.text_document.uri.to_string())
-            && !(*errors).is_empty()
-        {
-            return Ok(None);
-        }
-
-        let text = if let Some(text) = self.text_map.get(&params.text_document.uri.to_string()) {
-            Arc::clone(&text)
-        } else {
-            return Ok(None);
+        let uri_str = params.text_document.uri.to_string();
+        let text = match self.incremental_parser_map.get(&uri_str) {
+            Some(parser) if !parser.result().1.has_errors() => parser.source(),
+            _ => return Ok(None),
         };
 
         // Handle work done progress
@@ -344,21 +349,23 @@ impl LanguageServer for Backend {
 
 impl Backend {
     async fn on_change(&self, uri: Url, text: String) {
-        let (nodes, errors) = if text.is_empty() {
+        let uri_string = uri.to_string();
+        let (nodes, cst_errors) = if text.is_empty() {
+            self.incremental_parser_map.remove(&uri_string);
             (Vec::new(), mq_lang::CstErrorReporter::default())
         } else {
-            mq_lang::parse_recovery(&text)
+            let entry = self.incremental_parser_map.entry(uri_string.clone());
+            let parser = entry
+                .and_modify(|p| {
+                    p.update(&text);
+                })
+                .or_insert_with(|| mq_lang::IncrementalParser::new(&text));
+            let (nodes, errors) = parser.result();
+            (nodes.to_vec(), errors.clone())
         };
         let (source_id, _) = self.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
-        let uri_string = uri.to_string();
-        let mut errors = errors
-            .error_ranges(&text)
-            .into_iter()
-            .map(|(message, range)| LspError::SyntaxError((message, range)))
-            .collect::<Vec<_>>();
-
-        if errors.is_empty() && self.config.enable_type_checking {
+        if !cst_errors.has_errors() && self.config.enable_type_checking {
             let hir_guard = self.hir.read().unwrap();
             let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options);
             let type_errors = checker.check(&hir_guard);
@@ -371,35 +378,50 @@ impl Backend {
                 .filter_map(|(_, symbol)| symbol.source.text_range)
                 .collect();
 
-            self.type_env_map
-                .insert(uri_string.clone(), checker.symbol_types().clone());
-            errors.extend(
-                type_errors
-                    .into_iter()
-                    .filter(|e| {
-                        e.location()
-                            .map(|range| source_locations.contains(&range))
-                            .unwrap_or(false)
-                    })
-                    .map(LspError::TypeError),
+            let lsp_errors: Vec<LspError> = type_errors
+                .into_iter()
+                .filter(|e| {
+                    e.location()
+                        .map(|range| source_locations.contains(&range))
+                        .unwrap_or(false)
+                })
+                .map(LspError::TypeError)
+                .collect();
+
+            self.type_map.insert(
+                uri_string.clone(),
+                TypeInfo::new(checker.symbol_types().clone(), lsp_errors),
             );
+        } else {
+            self.type_map.remove(&uri_string);
         }
 
-        self.source_map.write().unwrap().insert(uri_string.clone(), source_id);
-        self.text_map.insert(uri_string.clone(), text.into());
-        self.error_map.insert(uri_string, errors);
+        self.source_map.write().unwrap().insert(uri_string, source_id);
     }
 
     async fn diagnostics(&self, uri: Url, version: Option<i32>) {
         let uri_string = uri.to_string();
-
-        // Get errors for this specific file
-        let file_errors = self.error_map.get(&uri_string);
         let mut diagnostics = Vec::new();
 
-        // Add parsing errors if they exist
-        if let Some(errors) = file_errors {
-            diagnostics.extend(errors.iter().map(Into::into));
+        // Add syntax errors from incremental parser
+        if let Some(parser) = self.incremental_parser_map.get(&uri_string) {
+            let (_, cst_errors) = parser.result();
+            let text = parser.source();
+            let syntax_diagnostics: Vec<ls_types::Diagnostic> = cst_errors
+                .error_ranges(&text)
+                .into_iter()
+                .map(|(message, range)| {
+                    let lsp_error = LspError::SyntaxError((message, range));
+                    ls_types::Diagnostic::from(&lsp_error)
+                })
+                .collect();
+            diagnostics.extend(syntax_diagnostics);
+        }
+
+        // Add type errors
+        if let Some(type_info) = self.type_map.get(&uri_string) {
+            let errs: Vec<ls_types::Diagnostic> = type_info.errors.iter().map(Into::into).collect();
+            diagnostics.extend(errs);
         }
 
         {
@@ -532,9 +554,8 @@ pub async fn start(config: LspConfig) {
         client,
         hir: Arc::new(RwLock::new(mq_hir::Hir::new(config.module_paths.clone()))),
         source_map: RwLock::new(BiMap::new()),
-        type_env_map: DashMap::new(),
-        error_map: DashMap::new(),
-        text_map: DashMap::new(),
+        type_map: DashMap::new(),
+        incremental_parser_map: DashMap::new(),
         config,
     });
 
@@ -553,9 +574,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -584,7 +604,15 @@ mod tests {
                 .collect::<Vec<_>>()
                 .contains(&"main".into()),
         );
-        assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
+        assert!(
+            !backend
+                .incremental_parser_map
+                .get(&uri.to_string())
+                .unwrap()
+                .result()
+                .1
+                .has_errors()
+        );
     }
 
     #[tokio::test]
@@ -593,9 +621,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -603,16 +630,9 @@ mod tests {
         let uri = Url::parse("file:///test.mq").unwrap();
         let text = "def main():1;";
 
-        let (_, errors) = mq_lang::parse_recovery(text);
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
-        backend.error_map.insert(
-            uri.to_string(),
-            errors
-                .error_ranges(text)
-                .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
-                .collect(),
-        );
+        backend
+            .incremental_parser_map
+            .insert(uri.to_string(), mq_lang::IncrementalParser::new(text));
 
         let result = backend
             .formatting(ls_types::DocumentFormattingParams {
@@ -638,9 +658,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -668,9 +687,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -697,9 +715,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -725,9 +742,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -785,9 +801,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -823,9 +838,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -867,9 +881,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -902,8 +915,7 @@ mod tests {
             .await;
 
         // Check if content was updated
-        let text = backend.text_map.get(&uri.to_string());
-        assert!(text.is_some());
+        assert!(backend.incremental_parser_map.contains_key(&uri.to_string()));
     }
 
     #[tokio::test]
@@ -912,9 +924,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -934,8 +945,7 @@ mod tests {
             .await;
 
         // Verify data exists before close
-        assert!(backend.error_map.contains_key(&uri.to_string()));
-        assert!(backend.text_map.contains_key(&uri.to_string()));
+        assert!(backend.incremental_parser_map.contains_key(&uri.to_string()));
         assert!(backend.source_map.read().unwrap().contains_left(&uri.to_string()));
 
         // Close the file
@@ -948,8 +958,7 @@ mod tests {
             .await;
 
         // Verify data is cleaned up after close
-        assert!(!backend.error_map.contains_key(&uri.to_string()));
-        assert!(!backend.text_map.contains_key(&uri.to_string()));
+        assert!(!backend.incremental_parser_map.contains_key(&uri.to_string()));
         assert!(!backend.source_map.read().unwrap().contains_left(&uri.to_string()));
     }
 
@@ -959,9 +968,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -970,16 +978,9 @@ mod tests {
 
         // Setup some content with errors
         let text = "def main(): invalid_syntax";
-        let (_, errors) = mq_lang::parse_recovery(text);
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
-        backend.error_map.insert(
-            uri.to_string(),
-            errors
-                .error_ranges(text)
-                .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
-                .collect(),
-        );
+        backend
+            .incremental_parser_map
+            .insert(uri.to_string(), mq_lang::IncrementalParser::new(text));
 
         backend
             .source_map
@@ -1005,9 +1006,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1033,9 +1033,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1070,9 +1069,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1081,16 +1079,9 @@ mod tests {
 
         // Add content with parsing errors
         let text = "def main() 1;"; // Missing colon
-        let (_, errors) = mq_lang::parse_recovery(text);
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
-        backend.error_map.insert(
-            uri.to_string(),
-            errors
-                .error_ranges(text)
-                .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
-                .collect(),
-        );
+        backend
+            .incremental_parser_map
+            .insert(uri.to_string(), mq_lang::IncrementalParser::new(text));
 
         // We can't directly test client.publish_diagnostics was called with correct diagnostics,
         // but we can verify the code doesn't panic
@@ -1103,9 +1094,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1114,19 +1104,13 @@ mod tests {
 
         // Code with unused function
         let code = "def used_function(): 1; def unused_function(): 2; | used_function()";
-        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_lang::parse_recovery(code);
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
-        backend.error_map.insert(
-            uri.to_string(),
-            errors
-                .error_ranges(code)
-                .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
-                .collect(),
-        );
+        backend
+            .incremental_parser_map
+            .insert(uri.to_string(), mq_lang::IncrementalParser::new(code));
 
         // Check unused functions are detected
         {
@@ -1147,28 +1131,18 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
         let backend = service.inner();
         let uri = Url::parse("file:///test.mq").unwrap();
 
-        let text = "def main() 1;";
-        let _ = mq_lang::parse_recovery(text);
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
-        backend.error_map.insert(
-            uri.to_string(),
-            vec![LspError::SyntaxError((
-                "Syntax error".to_string(),
-                mq_lang::Range {
-                    start: mq_lang::Position { line: 1, column: 10 },
-                    end: mq_lang::Position { line: 1, column: 11 },
-                },
-            ))],
-        );
+        let text = "def add(x"; // incomplete def = parse error
+        backend
+            .incremental_parser_map
+            .insert(uri.to_string(), mq_lang::IncrementalParser::new(text));
 
         let result = backend
             .formatting(ls_types::DocumentFormattingParams {
@@ -1191,9 +1165,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1202,19 +1175,13 @@ mod tests {
 
         // Code with unreachable code after halt()
         let code = "def test(): halt(1) | let x = 42";
-        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_lang::parse_recovery(code);
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
-        backend.error_map.insert(
-            uri.to_string(),
-            errors
-                .error_ranges(code)
-                .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
-                .collect(),
-        );
+        backend
+            .incremental_parser_map
+            .insert(uri.to_string(), mq_lang::IncrementalParser::new(code));
 
         // Check unreachable code warnings are detected
         {
@@ -1242,13 +1209,14 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
         let backend = service.inner();
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend
+            .incremental_parser_map
+            .insert(uri.to_string(), mq_lang::IncrementalParser::new(text));
 
         let params = DocumentRangeFormattingParams {
             text_document: TextDocumentIdentifier {
@@ -1283,13 +1251,14 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
         let backend = service.inner();
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend
+            .incremental_parser_map
+            .insert(uri.to_string(), mq_lang::IncrementalParser::new(text));
 
         let params = DocumentRangeFormattingParams {
             text_document: TextDocumentIdentifier {
@@ -1318,27 +1287,18 @@ mod tests {
     #[tokio::test]
     async fn test_range_formatting_with_errors() {
         let uri = "file:///test3.md";
-        let text = "invalid mq";
         let (service, _) = LspService::new(|client| Backend {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::default(),
         });
         let backend = service.inner();
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
-        backend.error_map.insert(
+        backend.incremental_parser_map.insert(
             uri.to_string(),
-            vec![LspError::SyntaxError((
-                "Syntax error".to_string(),
-                mq_lang::Range {
-                    start: mq_lang::Position { line: 0, column: 0 },
-                    end: mq_lang::Position { line: 0, column: 10 },
-                },
-            ))],
+            mq_lang::IncrementalParser::new("def add(x"), // incomplete def = parse error
         );
 
         let params = DocumentRangeFormattingParams {
@@ -1388,9 +1348,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::new(vec![], false, mq_check::TypeCheckerOptions::default()),
         });
 
@@ -1399,19 +1358,13 @@ mod tests {
 
         // Code that would cause a type error (number + string)
         let code = r#"1 + "string""#;
-        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_lang::parse_recovery(code);
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
-        backend.error_map.insert(
-            uri.to_string(),
-            errors
-                .error_ranges(code)
-                .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
-                .collect(),
-        );
+        backend
+            .incremental_parser_map
+            .insert(uri.to_string(), mq_lang::IncrementalParser::new(code));
 
         // No type errors should be emitted since type checking is disabled
         // (diagnostics() calls publish_diagnostics internally, we just verify it doesn't panic)
@@ -1424,9 +1377,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions::default()),
         });
 
@@ -1435,21 +1387,23 @@ mod tests {
 
         // Valid code with no type errors
         let code = "def add(x, y): x + y;\n| add(1, 2)";
-        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_lang::parse_recovery(code);
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
-        backend.error_map.insert(
-            uri.to_string(),
-            errors
-                .error_ranges(code)
-                .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
-                .collect(),
-        );
+        backend
+            .incremental_parser_map
+            .insert(uri.to_string(), mq_lang::IncrementalParser::new(code));
 
-        assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
+        assert!(
+            !backend
+                .incremental_parser_map
+                .get(&uri.to_string())
+                .unwrap()
+                .result()
+                .1
+                .has_errors()
+        );
 
         // Should complete without panic
         backend.diagnostics(uri, None).await;
@@ -1461,9 +1415,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions::default()),
         });
 
@@ -1474,13 +1427,15 @@ mod tests {
         let code = "def add(x, y): x + y;\n| add(1)";
 
         // Exercise the full diagnostics pipeline: on_change should parse, type check,
-        // and populate error_map with type errors when there are no parse errors.
+        // and populate type_error_map with type errors when there are no parse errors.
         backend.on_change(uri.clone(), code.to_string()).await;
 
         let errors = backend
-            .error_map
+            .type_map
             .get(&uri.to_string())
-            .expect("expected diagnostics entry for URI");
+            .expect("expected type diagnostics entry for URI")
+            .errors
+            .clone();
 
         // Ensure that a type error is surfaced through the diagnostics pipeline.
         assert!(
@@ -1498,31 +1453,30 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions::default()),
         });
 
         let backend = service.inner();
         let uri = Url::parse("file:///test.mq").unwrap();
 
-        // Manually insert a parse error so type checking is skipped
-        let text = "def add(x, y): x + y;\n| add(1)";
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
-        backend.error_map.insert(
-            uri.to_string(),
-            vec![LspError::SyntaxError((
-                "Syntax error".to_string(),
-                mq_lang::Range {
-                    start: mq_lang::Position { line: 1, column: 1 },
-                    end: mq_lang::Position { line: 1, column: 5 },
-                },
-            ))],
-        );
+        // Insert a parser with parse errors so type checking is skipped
+        let text = "def add(x"; // incomplete def = parse error
+        backend
+            .incremental_parser_map
+            .insert(uri.to_string(), mq_lang::IncrementalParser::new(text));
 
         // Parse errors are present, so type checking should be skipped
-        assert!(!backend.error_map.get(&uri.to_string()).unwrap().is_empty());
+        assert!(
+            backend
+                .incremental_parser_map
+                .get(&uri.to_string())
+                .unwrap()
+                .result()
+                .1
+                .has_errors()
+        );
 
         // Should complete without panic; type checking branch is not entered
         backend.diagnostics(uri, None).await;
@@ -1534,9 +1488,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 true,
@@ -1552,21 +1505,23 @@ mod tests {
 
         // Homogeneous array — valid even with strict_array
         let code = "[1, 2, 3]";
-        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_lang::parse_recovery(code);
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
-        backend.error_map.insert(
-            uri.to_string(),
-            errors
-                .error_ranges(code)
-                .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
-                .collect(),
-        );
+        backend
+            .incremental_parser_map
+            .insert(uri.to_string(), mq_lang::IncrementalParser::new(code));
 
-        assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
+        assert!(
+            !backend
+                .incremental_parser_map
+                .get(&uri.to_string())
+                .unwrap()
+                .result()
+                .1
+                .has_errors()
+        );
 
         backend.diagnostics(uri, None).await;
     }
@@ -1577,9 +1532,8 @@ mod tests {
             client,
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
-            type_env_map: DashMap::new(),
-            error_map: DashMap::new(),
-            text_map: DashMap::new(),
+            type_map: DashMap::new(),
+            incremental_parser_map: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 true,
@@ -1595,21 +1549,23 @@ mod tests {
 
         // Heterogeneous array typed as tuple — valid with tuple mode
         let code = r#"[1, "hello", true]"#;
-        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_lang::parse_recovery(code);
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
-        backend.error_map.insert(
-            uri.to_string(),
-            errors
-                .error_ranges(code)
-                .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
-                .collect(),
-        );
+        backend
+            .incremental_parser_map
+            .insert(uri.to_string(), mq_lang::IncrementalParser::new(code));
 
-        assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
+        assert!(
+            !backend
+                .incremental_parser_map
+                .get(&uri.to_string())
+                .unwrap()
+                .result()
+                .1
+                .has_errors()
+        );
 
         backend.diagnostics(uri, None).await;
     }
