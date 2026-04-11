@@ -1,0 +1,21 @@
+[package]
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+categories = ["command-line-utilities", "text-processing"]
+description = "Test runner for mq"
+edition = "2024"
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query", "test"]
+license = "MIT"
+name = "mq-test"
+repository = "https://github.com/harehare/mq"
+version = "0.5.25"
+
+[dependencies]
+clap = {workspace = true, features = ["derive"]}
+glob = {workspace = true}
+miette = {workspace = true, features = ["fancy"]}
+mq-lang = {workspace = true, features = ["cst", "file-io"]}
+
+[[bin]]
+name = "mq-test"
+path = "src/main.rs"

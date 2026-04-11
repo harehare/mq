@@ -15,12 +15,14 @@ members = [
   "crates/mq-crawler",
   "editors/zed",
   "crates/mq-check",
+  "crates/mq-test",
 ]
 resolver = "3"
 
 [workspace.dependencies]
 # Internal crates
 mq-check = {path = "crates/mq-check", version = "0.5.25"}
+mq-test = {path = "crates/mq-test", version = "0.5.25"}
 mq-dap = {path = "crates/mq-dap", version = "0.5.25"}
 mq-formatter = {path = "crates/mq-formatter", version = "0.5.25"}
 mq-hir = {path = "crates/mq-hir", version = "0.5.25"}
@@ -52,6 +54,7 @@ divan = {version = "3.0.5", package = "codspeed-divan-compat"}
 ego-tree = "0.11.0"
 fantoccini = {version = "0.22.1", default-features = false, features = ["rustls-tls"]}
 futures = "0.3"
+glob = "0.3.3"
 httpmock = "0.8.2"
 itertools = "0.14.0"
 js-sys = "0.3.77"
