@@ -10,6 +10,8 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { TabBar, Tab } from "./components/TabBar";
 import { ResizeHandle } from "./components/ResizeHandle";
+import { ToastContainer, ToastItem } from "./components/Toast";
+import { ExamplesModal } from "./components/ExamplesModal";
 import { fileSystem, FileNode, OPFSFileSystem } from "./utils/fileSystem";
 import { isMobile, isDesktop } from "./utils/deviceDetection";
 import {
@@ -25,9 +27,12 @@ import {
   VscSymbolMethod,
   VscLinkExternal,
   VscCopy,
+  VscListUnordered,
+  VscError,
+  VscWarning,
 } from "react-icons/vsc";
 import { initVimMode } from "monaco-vim";
-import { EXAMPLE_CATEGORIES, EXAMPLES } from "./examples";
+import { EXAMPLES } from "./examples";
 
 type SharedData = {
   code: string;
@@ -196,6 +201,16 @@ export const Playground = () => {
     _initialSettings.theme,
   );
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isExamplesOpen, setIsExamplesOpen] = useState(false);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [diagnosticCounts, setDiagnosticCounts] = useState({
+    errors: 0,
+    warnings: 0,
+  });
+  const [tabCloseConfirm, setTabCloseConfirm] = useState<{
+    tabId: string;
+    filePath: string;
+  } | null>(null);
   const [cursorPosition, setCursorPosition] = useState({
     line: 1,
     column: 1,
@@ -392,6 +407,18 @@ export const Playground = () => {
 
   const [isFirstRun, setIsFirstRun] = useState(true);
 
+  const showToast = useCallback(
+    (message: string, type: ToastItem["type"] = "success") => {
+      const id = `toast-${Date.now()}`;
+      setToasts((prev) => [...prev, { id, message, type }]);
+    },
+    [],
+  );
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
   const handleRun = useCallback(async () => {
     setIsFirstRun(false);
 
@@ -487,10 +514,10 @@ export const Playground = () => {
     navigator.clipboard
       .writeText(url)
       .then(() => {
-        alert("Share URL copied to clipboard!");
+        showToast("Share URL copied to clipboard!", "success");
       })
       .catch(() => {
-        prompt("Copy this URL to share your playground:", url);
+        showToast("Failed to copy URL", "error");
       });
   }, [
     code,
@@ -500,26 +527,31 @@ export const Playground = () => {
     listStyle,
     linkUrlStyle,
     linkTitleStyle,
+    showToast,
   ]);
 
   const handleCopy = useCallback(() => {
-    if (code) {
-      const options = [
-        isUpdate ? "-U" : "",
-        inputFormat ? `-I ${inputFormat}` : "",
-        listStyle ? `--list-style ${listStyle}` : "",
-        linkUrlStyle ? `--link-url-style ${linkUrlStyle}` : "",
-        linkTitleStyle ? `--link-title-style ${linkTitleStyle}` : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      const script = `mq ${options} '${code}'`;
+    if (!code) return;
+    const options = [
+      isUpdate ? "-U" : "",
+      inputFormat ? `-I ${inputFormat}` : "",
+      listStyle ? `--list-style ${listStyle}` : "",
+      linkUrlStyle ? `--link-url-style ${linkUrlStyle}` : "",
+      linkTitleStyle ? `--link-title-style ${linkTitleStyle}` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const script = `mq ${options} '${code}'`;
 
-      navigator.clipboard.writeText(script).then(() => {
-        alert("Command copied to clipboard!");
+    navigator.clipboard
+      .writeText(script)
+      .then(() => {
+        showToast("Command copied to clipboard!", "success");
+      })
+      .catch(() => {
+        showToast("Failed to copy command", "error");
       });
-    }
-  }, [code, inputFormat, isUpdate, listStyle, linkUrlStyle, linkTitleStyle]);
+  }, [code, inputFormat, isUpdate, listStyle, linkUrlStyle, linkTitleStyle, showToast]);
 
   const handleChangeListStyle = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -627,19 +659,8 @@ export const Playground = () => {
     [tabs, activeTabId, currentFilePath, code],
   );
 
-  const handleTabClose = useCallback(
+  const closeTab = useCallback(
     (tabId: string) => {
-      const tab = tabs.find((t) => t.id === tabId);
-      if (!tab) return;
-
-      // Check if tab has unsaved changes
-      if (tab.isDirty) {
-        const shouldClose = window.confirm(
-          `"${tab.filePath}" has unsaved changes. Do you want to close it?`,
-        );
-        if (!shouldClose) return;
-      }
-
       const newTabs = tabs.filter((t) => t.id !== tabId);
       setTabs(newTabs);
 
@@ -658,6 +679,22 @@ export const Playground = () => {
       }
     },
     [tabs, activeTabId],
+  );
+
+  const handleTabClose = useCallback(
+    (tabId: string) => {
+      const tab = tabs.find((t) => t.id === tabId);
+      if (!tab) return;
+
+      // Check if tab has unsaved changes — show ConfirmDialog instead of window.confirm
+      if (tab.isDirty) {
+        setTabCloseConfirm({ tabId, filePath: tab.filePath });
+        return;
+      }
+
+      closeTab(tabId);
+    },
+    [tabs, closeTab],
   );
 
   const handleFileSelect = useCallback(
@@ -1143,18 +1180,23 @@ export const Playground = () => {
             model.getValue(),
             enableTypeCheckRef.current,
           );
-          monaco.editor.setModelMarkers(
-            model,
-            "mq",
-            errors.map((error: mq.Diagnostic) => ({
-              startLineNumber: error.startLine,
-              startColumn: error.startColumn,
-              endLineNumber: error.endLine,
-              endColumn: error.endColumn,
-              message: error.message,
-              severity: monaco.MarkerSeverity.Error,
-            })),
-          );
+          const markers = errors.map((error: mq.Diagnostic) => ({
+            startLineNumber: error.startLine,
+            startColumn: error.startColumn,
+            endLineNumber: error.endLine,
+            endColumn: error.endColumn,
+            message: error.message,
+            severity: monaco.MarkerSeverity.Error,
+          }));
+          monaco.editor.setModelMarkers(model, "mq", markers);
+          setDiagnosticCounts({
+            errors: markers.filter(
+              (m) => m.severity === monaco.MarkerSeverity.Error,
+            ).length,
+            warnings: markers.filter(
+              (m) => m.severity === monaco.MarkerSeverity.Warning,
+            ).length,
+          });
         }
       });
     });
@@ -1615,31 +1657,14 @@ export const Playground = () => {
             <div className="editor-header code">
               <h2>Code</h2>
               <div className="editor-actions">
-                <div>
-                  <select
-                    className="dropdown"
-                    onChange={(e) => {
-                      handleChangeExample(parseInt(e.target.value));
-                    }}
-                  >
-                    {EXAMPLE_CATEGORIES.map((category, categoryIndex) => (
-                      <optgroup key={categoryIndex} label={category.name}>
-                        {category.examples.map((example, exampleIndex) => {
-                          const globalIndex =
-                            EXAMPLE_CATEGORIES.slice(0, categoryIndex).reduce(
-                              (acc, cat) => acc + cat.examples.length,
-                              0,
-                            ) + exampleIndex;
-                          return (
-                            <option key={globalIndex} value={globalIndex}>
-                              {example.name}
-                            </option>
-                          );
-                        })}
-                      </optgroup>
-                    ))}
-                  </select>
-                </div>
+                <button
+                  className="button"
+                  onClick={() => setIsExamplesOpen(true)}
+                  title="Browse examples"
+                >
+                  <VscListUnordered size={14} />
+                  <span>Examples</span>
+                </button>
                 <button
                   className="button"
                   onClick={handleCopy}
@@ -1975,6 +2000,18 @@ export const Playground = () => {
             )}
           </div>
           <div className="footer-right">
+            {diagnosticCounts.errors > 0 && (
+              <span className="footer-diagnostic footer-diagnostic-error">
+                <VscError size={12} />
+                {diagnosticCounts.errors}
+              </span>
+            )}
+            {diagnosticCounts.warnings > 0 && (
+              <span className="footer-diagnostic footer-diagnostic-warning">
+                <VscWarning size={12} />
+                {diagnosticCounts.warnings}
+              </span>
+            )}
             <span className="cursor-position">
               Ln {cursorPosition.line}, Col {cursorPosition.column}
             </span>
@@ -2016,6 +2053,26 @@ export const Playground = () => {
         />
       )}
 
+      {tabCloseConfirm && (
+        <ConfirmDialog
+          title="Unsaved Changes"
+          message={`"${tabCloseConfirm.filePath}" has unsaved changes. Close anyway?`}
+          confirmLabel="Close"
+          cancelLabel="Cancel"
+          onConfirm={() => {
+            closeTab(tabCloseConfirm.tabId);
+            setTabCloseConfirm(null);
+          }}
+          onCancel={() => setTabCloseConfirm(null)}
+        />
+      )}
+
+      <ExamplesModal
+        isOpen={isExamplesOpen}
+        onClose={() => setIsExamplesOpen(false)}
+        onSelect={handleChangeExample}
+      />
+
       <SettingsDialog
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -2034,6 +2091,8 @@ export const Playground = () => {
         tabSize={tabSize}
         onTabSizeChange={setTabSize}
       />
+
+      <ToastContainer toasts={toasts} onClose={dismissToast} />
     </div>
   );
 };
