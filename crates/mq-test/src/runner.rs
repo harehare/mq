@@ -103,7 +103,9 @@ impl TestRunner {
 
     /// Returns `true` if `trivia` contains a `# @test` annotation comment.
     fn has_test_annotation(trivia: &[CstTrivia]) -> bool {
-        trivia.iter().any(|t| t.comment().is_some_and(|c| c.trim() == "@test"))
+        trivia
+            .iter()
+            .any(|t| t.comment().is_some_and(|c| c.trim() == "@test" || c.trim() == "[test]"))
     }
 
     /// Append an auto-generated `run_tests([…])` call to the file content.
@@ -127,47 +129,53 @@ impl TestRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn test_discover_test_prefix() {
-        let content = r#"
-def test_foo():
-  None
-end
-
-def helper():
-  None
-end
-
-def test_bar():
-  None
-end
-"#;
+    #[rstest]
+    #[case(
+        "def test_foo():\n  None\nend\n\ndef helper():\n  None\nend\n\ndef test_bar():\n  None\nend\n",
+        vec!["test_foo", "test_bar"]
+    )]
+    #[case(
+        "# @test\ndef my_check():\n  None\nend\n\ndef not_a_test():\n  None\nend\n",
+        vec!["my_check"]
+    )]
+    #[case(
+        "# [test]\ndef another_check():\n  None\nend\n",
+        vec!["another_check"]
+    )]
+    #[case(
+        "def test_first():\n  None\nend\n\n# @test\ndef annotated():\n  None\nend\n",
+        vec!["test_first", "annotated"]
+    )]
+    #[case("def helper():\n  None\nend\n", vec![])]
+    fn test_discover_test_functions(#[case] content: &str, #[case] expected: Vec<&str>) {
         let names = TestRunner::discover_test_functions(content);
-        assert_eq!(names, vec!["test_foo", "test_bar"]);
+        assert_eq!(names, expected);
     }
 
-    #[test]
-    fn test_discover_annotation() {
-        let content = "# @test\ndef my_check():\n  None\nend\n\ndef not_a_test():\n  None\nend\n";
-        let names = TestRunner::discover_test_functions(content);
-        assert_eq!(names, vec!["my_check"]);
-    }
-
-    #[test]
-    fn test_build_test_query_strips_prefix() {
-        let content = "include \"test\"\n|";
-        let names = vec!["test_foo".to_string(), "test_bar".to_string()];
+    #[rstest]
+    #[case(
+        "include \"test\"\n|",
+        vec!["test_foo".to_string(), "test_bar".to_string()],
+        vec![("foo", "test_foo"), ("bar", "test_bar")]
+    )]
+    #[case(
+        "include \"test\"\n|",
+        vec!["my_check".to_string()],
+        vec![("my_check", "my_check")]
+    )]
+    fn test_build_test_query(
+        #[case] content: &str,
+        #[case] names: Vec<String>,
+        #[case] expected_cases: Vec<(&str, &str)>,
+    ) {
         let query = TestRunner::build_test_query(content, &names);
-        assert!(query.contains("test_case(\"foo\", test_foo)"));
-        assert!(query.contains("test_case(\"bar\", test_bar)"));
-    }
-
-    #[test]
-    fn test_build_test_query_annotation_no_strip() {
-        let content = "include \"test\"\n|";
-        let names = vec!["my_check".to_string()];
-        let query = TestRunner::build_test_query(content, &names);
-        assert!(query.contains("test_case(\"my_check\", my_check)"));
+        for (display, func) in expected_cases {
+            assert!(
+                query.contains(&format!("test_case(\"{display}\", {func})")),
+                "expected test_case(\"{display}\", {func}) in query:\n{query}"
+            );
+        }
     }
 }
