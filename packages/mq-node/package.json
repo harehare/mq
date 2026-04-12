@@ -1,5 +1,5 @@
 {
-  "name": "mq-node",
+  "name": "@mqlang/node",
   "description": "A jq-like command-line tool for Markdown processing for Node.js",
   "version": "0.5.25",
   "author": "harehare",
@@ -33,6 +33,9 @@
     "type": "git",
     "url": "git+https://github.com/harehare/mq.git",
     "directory": "packages/mq-node"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsup",

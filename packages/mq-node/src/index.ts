@@ -1,5 +1,5 @@
 /**
- * mq-node - A jq-like command-line tool for Markdown processing for Node.js
+ * @mqlang/node - A jq-like command-line tool for Markdown processing for Node.js
  *
  * This package provides async/await support for using mq in Node.js environments.
  */
