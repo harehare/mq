@@ -186,13 +186,7 @@ The interactive API documentation is available at [Swagger UI](https://api.mqlan
 
 ## Language Bindings
 
-Language bindings are available for the following programming languages:
-
-- [mq_elixir](https://github.com/harehare/mq_elixir)
-- [mq-python](https://github.com/harehare/mq-python)
-- [mq-ruby](https://github.com/harehare/mq-ruby)
-- [mq-java](https://github.com/harehare/mq-java)
-- [mq-go](https://github.com/harehare/mq-go)
+Language bindings are available for Elixir, Python, Ruby, Java, and Go. See the [Language Bindings documentation](https://mqlang.org/book/start/language_bindings.html) for details.
 
 ## Usage
 
