@@ -21,6 +21,10 @@ import {
   VscWordWrap,
   VscMap,
   VscSettingsGear,
+  VscPlay,
+  VscSymbolMethod,
+  VscLinkExternal,
+  VscCopy,
 } from "react-icons/vsc";
 import { initVimMode } from "monaco-vim";
 import { EXAMPLE_CATEGORIES, EXAMPLES } from "./examples";
@@ -1003,7 +1007,15 @@ export const Playground = () => {
     } else {
       document.documentElement.style.colorScheme = theme;
     }
-  }, [vimModeEnabled, fontSize, theme, lineNumbers, tabSize, minimapEnabled, wordWrap]);
+  }, [
+    vimModeEnabled,
+    fontSize,
+    theme,
+    lineNumbers,
+    tabSize,
+    minimapEnabled,
+    wordWrap,
+  ]);
 
   // Add keyboard shortcut for save (Ctrl+S / Cmd+S)
   useEffect(() => {
@@ -1499,12 +1511,15 @@ export const Playground = () => {
             )}
             <a
               href="https://mqlang.org/"
-              style={{ textDecoration: "none", paddingTop: "4px" }}
+              style={{
+                textDecoration: "none",
+                paddingTop: "6px",
+              }}
               target="_blank"
             >
               <img src="./logo.svg" className="logo-icon" />
             </a>
-            <h1 style={{ color: "#67b8e3" }}>Playground</h1>
+            <h1 style={{ color: "#67b8e3" }}>mq</h1>
           </div>
           <div
             style={{
@@ -1609,42 +1624,37 @@ export const Playground = () => {
                     ))}
                   </select>
                 </div>
-                {currentFilePath && (
-                  <button
-                    className="button save-button"
-                    onClick={saveCurrentFile}
-                    disabled={saveStatus === "saved"}
-                    title={
-                      saveStatus === "saved"
-                        ? "No changes to save"
-                        : "Save file (Ctrl+S)"
-                    }
-                  >
-                    <span className="save-button-content">
-                      {saveStatus === "saving" ? (
-                        "Saving..."
-                      ) : saveStatus === "unsaved" ? (
-                        <>
-                          <div>Save</div>
-                          <div>*</div>
-                        </>
-                      ) : (
-                        "✓ Saved"
-                      )}
-                    </span>
-                  </button>
-                )}
-                <button className="button" onClick={handleCopy}>
-                  Copy
+                <button
+                  className="button"
+                  onClick={handleCopy}
+                  title="Copy command"
+                >
+                  <VscCopy size={14} />
+                  <span>Copy</span>
                 </button>
-                <button className="button" onClick={handleShare}>
-                  Share
+                <button
+                  className="button"
+                  onClick={handleShare}
+                  title="Share playground"
+                >
+                  <VscLinkExternal size={14} />
+                  <span>Share</span>
                 </button>
-                <button className="button format-button" onClick={handleFormat}>
-                  Format
+                <button
+                  className="button format-button"
+                  onClick={handleFormat}
+                  title="Format code"
+                >
+                  <VscSymbolMethod size={14} />
+                  <span>Format</span>
                 </button>
-                <button className="button run-button" onClick={handleRun}>
-                  ▶ Run
+                <button
+                  className="button run-button"
+                  onClick={handleRun}
+                  title="Run script (Ctrl+Enter)"
+                >
+                  <VscPlay size={14} color="rgb(76, 175, 80)" />
+                  <span>Run</span>
                 </button>
               </div>
             </div>

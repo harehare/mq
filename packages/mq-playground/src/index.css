@@ -252,13 +252,17 @@ body {
 
 .button {
   background-color: transparent;
-  color: #3182ce;
+  color: var(--primary-color);
   border: none;
-  padding: 4px 12px;
+  padding: 4px 8px;
   font-size: 0.875rem;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.2s;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 4px;
 }
 
 .run-button {
