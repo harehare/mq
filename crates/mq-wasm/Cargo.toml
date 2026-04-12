@@ -25,7 +25,7 @@ mq-hir = {workspace = true}
 mq-check = {workspace = true}
 mq-lang = {workspace = true, features = ["ast-json"]}
 mq-markdown = {workspace = true}
-opfs = {workspace = true}
+opfs = {workspace = true, optional = true}
 serde = {workspace = true, features = ["derive"]}
 serde-wasm-bindgen = {workspace = true}
 serde_json = {workspace = true}
@@ -34,6 +34,10 @@ wasm-bindgen-futures = {workspace = true}
 
 [dev-dependencies]
 wasm-bindgen-test = {workspace = true}
+
+[features]
+default = ["opfs"]
+opfs = ["dep:opfs"]
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ['-O4', '--enable-simd', '--enable-bulk-memory', '--enable-nontrapping-float-to-int']
