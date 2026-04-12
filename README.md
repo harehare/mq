@@ -176,7 +176,7 @@ The [Playground](https://mqlang.org/playground) lets you run mq queries in the b
 
 ### Web API
 
-You can try mq without installing anything via the hosted REST API at https://api.mqlang.org.
+You can try mq without installing anything via the hosted REST API at [https://api.mqlang.org](https://api.mqlang.org).
 
 The interactive API documentation is available at [Swagger UI](https://api.mqlang.org/docs).
 
