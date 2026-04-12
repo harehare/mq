@@ -371,8 +371,16 @@ export const Playground = () => {
 
     const themeParam = urlParams.get("theme");
     if (themeParam) {
-      document.documentElement.style.colorScheme =
-        themeParam === "dark" ? "dark" : "light";
+      const isDark = themeParam === "dark";
+      document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+      document.documentElement.style.setProperty(
+        "--lightningcss-light",
+        isDark ? " " : "initial"
+      );
+      document.documentElement.style.setProperty(
+        "--lightningcss-dark",
+        isDark ? "initial" : " "
+      );
     }
 
     // Update sidebar visibility from URL parameter if present
@@ -1004,8 +1012,16 @@ export const Playground = () => {
 
     if (theme === "system") {
       document.documentElement.style.colorScheme = "";
+      document.documentElement.style.removeProperty("--lightningcss-light");
+      document.documentElement.style.removeProperty("--lightningcss-dark");
+    } else if (theme === "dark") {
+      document.documentElement.style.colorScheme = "dark";
+      document.documentElement.style.setProperty("--lightningcss-light", " ");
+      document.documentElement.style.setProperty("--lightningcss-dark", "initial");
     } else {
-      document.documentElement.style.colorScheme = theme;
+      document.documentElement.style.colorScheme = "light";
+      document.documentElement.style.setProperty("--lightningcss-light", "initial");
+      document.documentElement.style.setProperty("--lightningcss-dark", " ");
     }
   }, [
     vimModeEnabled,
@@ -1519,7 +1535,7 @@ export const Playground = () => {
             >
               <img src="./logo.svg" className="logo-icon" />
             </a>
-            <h1 style={{ color: "#67b8e3" }}>mq</h1>
+            <h1 style={{ color: "var(--header-title-color)" }}>mq</h1>
           </div>
           <div
             style={{
