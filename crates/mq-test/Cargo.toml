@@ -16,6 +16,9 @@ glob = {workspace = true}
 miette = {workspace = true, features = ["fancy"]}
 mq-lang = {workspace = true, features = ["cst", "file-io"]}
 
+[dev-dependencies]
+rstest = {workspace = true}
+
 [[bin]]
 name = "mq-test"
 path = "src/main.rs"

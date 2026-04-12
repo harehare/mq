@@ -2558,6 +2558,7 @@ dependencies = [
  "glob",
  "miette",
  "mq-lang",
+ "rstest",
 ]
 
 [[package]]
