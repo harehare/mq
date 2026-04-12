@@ -11,6 +11,7 @@
   - [MCP](start/mcp.md)
   - [Debugger](start/debugger.md)
   - [External Subcommands](start/external_subcommands.md)
+  - [Language Bindings](start/language_bindings.md)
   - [Example](start/example.md)
 - [Reference](reference/index.md)
   - [CLI](reference/cli.md)
