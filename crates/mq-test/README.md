@@ -7,7 +7,7 @@ Standalone test runner for mq — auto-discovers and executes test functions in 
 `mq-test` discovers test functions in `.mq` files and runs them using the mq engine. A function is treated as a test if:
 
 - Its name starts with `test_`, **OR**
-- It is immediately preceded by a `# @test` annotation comment.
+- It is immediately preceded by a `# @test` or `#[test]` annotation comment.
 
 Test discovery uses the CST so both conventions are resolved accurately without any line-scanning heuristics.
 
@@ -47,7 +47,7 @@ end
 
 ### Annotation Convention
 
-Use the `# @test` comment immediately before a function to mark it as a test regardless of its name:
+Use the `# @test` or `#[test]` comment immediately before a function to mark it as a test regardless of its name:
 
 ```mq
 include "test"
@@ -56,6 +56,11 @@ include "test"
 # @test
 def check_string_len():
   assert_eq(len("hello"), 5)
+end
+
+#[test]
+def check_string_upcase():
+  assert_eq(upcase("hello"), "HELLO")
 end
 ```
 
@@ -90,6 +95,11 @@ end
 def verify_array_length():
   assert_eq(length([1, 2, 3]), 3)
 end
+
+#[test]
+def verify_string_empty():
+  assert_eq(length(""), 0)
+end
 ```
 
 ```bash
@@ -97,8 +107,9 @@ $ mq-test example.mq
 ✓ add
 ✓ string_upcase
 ✓ verify_array_length
+✓ verify_string_empty
 
-3 passed, 0 failed
+4 passed, 0 failed
 ```
 
 ## Development
