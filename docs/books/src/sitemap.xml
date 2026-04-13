@@ -6,15 +6,11 @@
     <loc>https://mqlang.org/playground</loc><priority>1.0</priority>
   </url>
   <url>
-    <loc>https://mqlang.org/book/</loc>
+    <loc>https://mqlang.org/book</loc>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://mqlang.org/book/</loc>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://mqlang.org/book/start/</loc>
+    <loc>https://mqlang.org/book/start</loc>
     <priority>1.0</priority>
   </url>
   <url>
@@ -62,7 +58,7 @@
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://mqlang.org/book/reference/</loc>
+    <loc>https://mqlang.org/book/reference</loc>
     <priority>1.0</priority>
   </url>
   <url>
@@ -150,7 +146,7 @@
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://mqlang.org/book/builtins.html</loc>
+    <loc>https://mqlang.org/book/builtins</loc>
     <priority>1.0</priority>
   </url>
 </urlset>
