@@ -15,8 +15,8 @@
     "monaco-editor": "^0.55.1",
     "monaco-vim": "^0.4.4",
     "mq-web": "^0.5.25",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
     "react-icons": "^5.6.0"
   },
   "devDependencies": {
@@ -25,10 +25,10 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "babel-plugin-react-compiler": "^1.0.0",
-    "baseline-browser-mapping": "^2.10.15",
-    "oxlint": "^1.58.0",
+    "baseline-browser-mapping": "^2.10.16",
+    "oxlint": "^1.59.0",
     "typescript": "^6.0.2",
-    "vite": "^8.0.1"
+    "vite": "^8.0.7"
   },
   "packageManager": "pnpm@10.33.0"
 }
