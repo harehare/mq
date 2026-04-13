@@ -1579,6 +1579,41 @@ pub(super) fn generate_symbol_constraints(
 
                 if !arm_children.is_empty() {
                     let mut arm_body_tys = Vec::new();
+                    // Collect concrete pattern types from all arms to build a union constraint
+                    // for the match expression.  We must not add one Equal per arm because that
+                    // would try to unify e.g. Array with String and produce a false type error.
+                    let mut all_pattern_tys: Vec<Type> = Vec::new();
+                    let mut has_wildcard_arm = false;
+
+                    // First pass: collect pattern types for the union constraint.
+                    for &arm_id in &arm_children {
+                        let arm_children_inner = get_children(children_index, arm_id);
+                        for &arm_child_id in arm_children_inner {
+                            if hir
+                                .symbol(arm_child_id)
+                                .is_some_and(|s| matches!(s.kind, SymbolKind::Pattern { .. }))
+                            {
+                                let pattern_ty = resolve_pattern_type(hir, arm_child_id, ctx, children_index);
+                                if pattern_ty.is_var() {
+                                    has_wildcard_arm = true;
+                                } else {
+                                    all_pattern_tys.push(pattern_ty);
+                                }
+                            }
+                        }
+                    }
+
+                    // Constrain the match expression to the union of all concrete pattern types,
+                    // but only when there is no wildcard arm (a wildcard arm means any type matches).
+                    if !has_wildcard_arm && !all_pattern_tys.is_empty() {
+                        let union_ty = Type::union(all_pattern_tys);
+                        ctx.add_constraint(Constraint::Equal(
+                            match_expr_ty.clone(),
+                            union_ty,
+                            range,
+                            ConstraintOrigin::General,
+                        ));
+                    }
 
                     for &arm_id in &arm_children {
                         let arm_children_inner = get_children(children_index, arm_id);
@@ -1592,12 +1627,6 @@ pub(super) fn generate_symbol_constraints(
                                 if matches!(arm_child_symbol.kind, SymbolKind::Pattern { .. }) {
                                     // Determine pattern type from its literal children
                                     let pattern_ty = resolve_pattern_type(hir, arm_child_id, ctx, children_index);
-                                    ctx.add_constraint(Constraint::Equal(
-                                        match_expr_ty.clone(),
-                                        pattern_ty.clone(),
-                                        range,
-                                        ConstraintOrigin::General,
-                                    ));
                                     // Keep the pattern type if it is concrete (not a wildcard Var)
                                     if !pattern_ty.is_var() {
                                         arm_pattern_ty = Some(pattern_ty);
