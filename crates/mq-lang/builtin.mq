@@ -233,7 +233,7 @@ end
 # Checks if markdown is a callout block
 def is_callout(md):
   let first_line = do to_text(md) | split("\n") | first();
-  | to_md_name(md) == "blockquote" && starts_with(first_line, "[!") && contains(first_line, "]") 
+  | to_md_name(md) == "blockquote" && starts_with(first_line, "[!") && contains(first_line, "]")
 end
 
 # Returns an array of length n filled with the given value.
@@ -644,4 +644,83 @@ def percentile(arr, p):
         else:
           sorted[lower_index] * (1 - weight) + sorted[upper_index] * weight
     end
+end
+
+# Splits an array into chunks of a specified size, returning an array of arrays.
+def chunks(v, size):
+  match (v):
+    | :array:
+      if (size <= 0):
+        error("size must be a positive integer")
+      else:
+        do
+          var result = []
+          | var i = 0
+          | while (i < len(v)):
+              result += [slice(v, i, i + size)]
+              | i += size
+            end
+          | result
+        end
+    | :string:
+      if (size <= 0):
+        error("size must be a positive integer")
+      else:
+        do
+          var result = []
+          | var i = 0
+          | while (i < len(v)):
+              result += [slice(v, i, i + size)]
+              | i += size
+            end
+          | result
+        end
+    | _: error("first argument must be an array or string")
+  end
+end
+
+# Splits an array into chunks based on the result of applying a function to each element, grouping consecutive elements with the same key together.
+def chunk_by(v, f):
+  match (v):
+    | :array: do
+        var result = []
+        | var current_chunk = []
+        | var i = 0
+        | while (i < len(v)):
+            let item = v[i]
+            | let key = f(item)
+            | if (is_empty(current_chunk) || key == f(first(current_chunk))):
+                current_chunk += [item]
+              else:
+                do
+                  result = result + [current_chunk]
+                  | current_chunk = [item]
+                end
+            | i += 1
+          end
+        | result += (if (!is_empty(current_chunk)): [current_chunk] else: [])
+        | result
+      end
+    | :string:
+      do
+        var result = []
+        | var current_chunk = ""
+        | var i = 0
+        | while (i < len(v)):
+            let char = v[i]
+            | let key = f(char)
+            | if (is_empty(current_chunk) || key == f(first(current_chunk))):
+                current_chunk += char
+              else:
+                do
+                  result += [current_chunk]
+                  | current_chunk = char
+                end
+            | i += 1
+          end
+        | result += (if (!is_empty(current_chunk)): [current_chunk] else: [])
+        | result
+      end
+    | _: error("first argument must be an array or string")
+  end
 end

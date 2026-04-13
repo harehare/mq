@@ -666,6 +666,34 @@ def test_slugify():
   | assert_eq(result3, "special-characters")
 end
 
+def test_chunks():
+  let result1 = chunks([1, 2, 3, 4, 5], 2)
+  | assert_eq(result1, [[1, 2], [3, 4], [5]])
+
+  | let result2 = chunks([1, 2, 3, 4], 3)
+  | assert_eq(result2, [[1, 2, 3], [4]])
+
+  | let result3 = chunks([], 2)
+  | assert_eq(result3, [])
+
+  | let result4 = chunks("123456", 2)
+  | assert_eq(result4, ["12", "34", "56"])
+end
+
+def test_chunk_by():
+  let result1 = chunk_by([1, 2, 3, 4, 5], fn(x): x % 2;)
+  | assert_eq(result1, [[1], [2], [3], [4], [5]])
+
+  | let result2 = chunk_by([1, 2, 3, 4], fn(x): x > 2;)
+  | assert_eq(result2, [[1, 2], [3, 4]])
+
+  | let result3 = chunk_by([], fn(x): x;)
+  | assert_eq(result3, [])
+
+  | let result4 = chunk_by("123456", fn(x): x == "1";)
+  | assert_eq(result4, ["1", "23456"])
+end
+
 | run_tests([
   # Type checking
   test_case("is_array", test_is_array),
@@ -723,6 +751,9 @@ end
   test_case("regex_match", test_regex_match),
 
   test_case("inspect", test_inspect),
+
+  test_case("chunks", test_chunks),
+  test_case("chunk_by", test_chunk_by),
 
   # macro
   test_case("tap", test_tap),
