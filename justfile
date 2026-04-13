@@ -60,7 +60,7 @@ build-node-wasm:
     rm ../../packages/mq-node/mq-wasm/package.json
 
 # Build @mqlang/node package
-[working-directory: 'packages/mq-nodejs']
+[working-directory: 'packages/node-mq']
 build-node: build-node-wasm
     pnpm run build
 
