@@ -1554,7 +1554,7 @@ export const Playground = () => {
       {!isEmbed && (
         <header className="playground-header">
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            {isOPFSSupported && isDesktop() && (
+            {isOPFSSupported && (
               <button
                 className="header-icon-button"
                 onClick={toggleSidebar}
@@ -1609,9 +1609,9 @@ export const Playground = () => {
       )}
 
       <div className="playground-content" ref={contentRef}>
-        {isOPFSSupported && isSidebarVisible && isDesktop() && (
+        {isOPFSSupported && isSidebarVisible && (
           <>
-            <div className="file-tree-panel" style={{ width: sidebarWidth }}>
+            <div className="file-tree-panel" style={isDesktop() ? { width: sidebarWidth } : undefined}>
               <FileTree
                 files={files}
                 onFileSelect={handleFileSelect}
@@ -1624,10 +1624,12 @@ export const Playground = () => {
                 selectedFile={selectedFile}
               />
             </div>
-            <ResizeHandle
-              direction="horizontal"
-              onResize={handleSidebarResize}
-            />
+            {isDesktop() && (
+              <ResizeHandle
+                direction="horizontal"
+                onResize={handleSidebarResize}
+              />
+            )}
           </>
         )}
         <div
@@ -1909,7 +1911,8 @@ export const Playground = () => {
                 )}
                 {activeTab === "ast" && (
                   <button className="button" onClick={handleGenerateAst}>
-                    Generate AST
+                    <VscSymbolMethod size={14} />
+                    <span>Generate AST</span>
                   </button>
                 )}
               </div>
