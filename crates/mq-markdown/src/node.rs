@@ -2450,10 +2450,27 @@ impl Node {
                 children,
                 ..
             }) => {
+                let converted: Vec<Node> = children.into_iter().flat_map(Self::from_mdast_node).collect();
+                // Flatten nested links that arise from GFM autolink literal parsing.
+                // When the link text is a bare URL (e.g. `[https://x](https://x)`),
+                // markdown-rs parses the inner text as another Link node with the same
+                // URL, which causes double-nesting on re-serialisation.  Unwrap any
+                // such inner link whose URL matches the outer one.
+                let values = converted
+                    .into_iter()
+                    .flat_map(|child| match child {
+                        Self::Link(Link {
+                            url: ref inner_url,
+                            ref values,
+                            ..
+                        }) if inner_url.0 == url => values.clone(),
+                        other => vec![other],
+                    })
+                    .collect();
                 vec![Self::Link(Link {
                     url: Url(url),
                     title: title.map(Title),
-                    values: children.into_iter().flat_map(Self::from_mdast_node).collect::<Vec<_>>(),
+                    values,
                     position: position.map(|p| p.clone().into()),
                 })]
             }

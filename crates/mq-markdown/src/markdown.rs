@@ -316,6 +316,12 @@ mod tests {
     )]
     #[case::excessive_blank_lines("# Title\n\n\n\nParagraph", 2, "# Title\n\nParagraph\n")]
     #[case::three_blank_lines("Para 1\n\n\n\n\nPara 2", 2, "Para 1\n\nPara 2\n")]
+    // GFM autolink literal: link text is the same URL — must not nest on round-trip
+    #[case::link_url_as_text(
+        "[https://example.com](https://example.com)",
+        1,
+        "[https://example.com](https://example.com)\n"
+    )]
     fn test_markdown_from_str(#[case] input: &str, #[case] expected_nodes: usize, #[case] expected_output: &str) {
         let md = input.parse::<Markdown>().unwrap();
         assert_eq!(md.nodes.len(), expected_nodes);
@@ -336,6 +342,19 @@ mod tests {
         let md = Markdown::from_mdx_str(input).unwrap();
         assert_eq!(md.nodes.len(), expected_nodes);
         assert_eq!(md.to_string(), expected_output);
+    }
+
+    /// Round-tripping a link whose text equals its URL must be idempotent.
+    /// Previously, GFM autolink literal parsing caused the URL text to be
+    /// wrapped in a second Link node, producing `[[url](url)](url)` after
+    /// the first serialisation and deeper nesting on every subsequent pass.
+    #[test]
+    fn test_link_url_as_text_is_idempotent() {
+        let input = "[https://example.com](https://example.com)";
+        let first = input.parse::<Markdown>().unwrap().to_string();
+        let second = first.parse::<Markdown>().unwrap().to_string();
+        assert_eq!(first, second, "round-trip must be idempotent");
+        assert_eq!(first, "[https://example.com](https://example.com)\n");
     }
 
     #[test]
