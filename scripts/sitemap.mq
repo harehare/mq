@@ -1,20 +1,26 @@
 # Generate sitemap.xml from mdbook SUMMARY.md
-def sitemap_item(item, base_url):
-  let path = do to_text(item) | replace(".md", "") | replace("index", "");
-  | let loc = add(base_url, path)
+def sitemap_item(path, base_url):
+  let path = do path | replace(".md", "") | replace(".html", "") | replace("index", "") | rtrimstr("/");
+  | let sep = if (is_empty(path)): "" else: "/"
+  | let loc = base_url + sep + path
   | s"  <url>
     <loc>${loc}</loc>
     <priority>1.0</priority>
-  </url>";
+  </url>"
+end
 
 def sitemap(items, base_url):
   let headers = [
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
     "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">",
-    "  <url>\n    <loc>https://mqlang.org</loc><priority>1.0</priority>  </url>",
-    "  <url>\n    <loc>https://mqlang.org/playground</loc><priority>1.0</priority>\n  </url>",
+    "  <url>\n    <loc>https://mqlang.org</loc>\n    <priority>1.0</priority>\n  </url>",
+    "  <url>\n    <loc>https://mqlang.org/playground</loc>\n    <priority>1.0</priority>\n  </url>",
   ]
   | let footer = "</urlset>"
-  | [headers, map(items, fn(item): sitemap_item(item, base_url);), footer]
+  | [headers,
+    do map(items, fn(item): to_text(item);) | filter(fn(item): !is_empty(item);) | uniq() | map(fn(path): sitemap_item(path, base_url););,
+    footer]
   | flatten()
-  | join("\n");
+  | join("\n")
+end
+
