@@ -493,6 +493,25 @@ body {
     padding: 3px 8px;
     font-size: 0.75rem;
   }
+
+  .button span {
+    display: none;
+  }
+
+  .button {
+    padding: 4px;
+    gap: 0;
+  }
+
+  .run-button {
+    padding: 4px 8px;
+  }
+
+  .file-tree-panel {
+    width: 100%;
+    height: 300px;
+    border-bottom: 1px solid var(--tree-border);
+  }
 }
 
 .dropdown {
