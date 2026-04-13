@@ -6,20 +6,20 @@
   <a href="https://mqlang.org/playground">Playground 🎮</a>
 </div>
 
-<h1 align="center">@mqlang/node</h1>
+<h1 align="center">mq-nodejs</h1>
 
 A Node.js package for running [mq](https://github.com/harehare/mq) (a jq-like command-line tool for Markdown processing) using WebAssembly.
 
 ## Installation
 
 ```bash
-npm install @mqlang/node
+npm install mq-nodejs
 ```
 
 ## Quick Start
 
 ```typescript
-import { run, format, htmlToMarkdown } from "@mqlang/node";
+import { run, format, htmlToMarkdown } from "mq-nodejs";
 
 // Transform markdown list style
 const markdown = `- First item
@@ -126,7 +126,7 @@ Returns: `Promise<string>` - The converted HTML content
 ### Extract and Transform Headings
 
 ```typescript
-import { run } from "@mqlang/node";
+import { run } from "mq-nodejs";
 
 const markdown = `# Main Title
 Some content here.
@@ -138,13 +138,13 @@ More content.
 Even more content.`;
 
 // Extract all headings
-const headings = await run(".[] | select(.h)", markdown);
+const headings = await run(".h", markdown);
 ```
 
 ### List Transformations
 
 ```typescript
-import { run } from "@mqlang/node";
+import { run } from "mq-nodejs";
 
 const markdown = `- Apple
 - Banana
@@ -166,7 +166,7 @@ const uppercase = await run(".[] | upcase()", markdown);
 ### HTML to Markdown Conversion
 
 ```typescript
-import { htmlToMarkdown } from "@mqlang/node";
+import { htmlToMarkdown } from "mq-nodejs";
 
 const html = `
 <article>
@@ -195,7 +195,7 @@ console.log(markdown);
 ### Error Handling
 
 ```typescript
-import { run, diagnostics } from "@mqlang/node";
+import { run, diagnostics } from "mq-nodejs";
 
 try {
   const result = await run("invalid syntax", "content");

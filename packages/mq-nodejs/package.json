@@ -1,7 +1,7 @@
 {
-  "name": "@mqlang/node",
+  "name": "mq-nodejs",
   "description": "A jq-like command-line tool for Markdown processing for Node.js",
-  "version": "0.5.25",
+  "version": "0.1.0",
   "author": "harehare",
   "license": "MIT",
   "bugs": {
@@ -15,8 +15,7 @@
     "vitest": "^3.0.0"
   },
   "files": [
-    "dist",
-    "mq-wasm"
+    "dist"
   ],
   "homepage": "https://mqlang.org",
   "keywords": [
@@ -32,7 +31,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/harehare/mq.git",
-    "directory": "packages/mq-node"
+    "directory": "packages/mq-nodejs"
   },
   "publishConfig": {
     "access": "public"
