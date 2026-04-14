@@ -217,6 +217,83 @@ fn test_match_exhaustiveness(#[case] code: &str, #[case] is_exhaustive: bool, #[
     );
 }
 
+// ── Type-label pattern tests ─────────────────────────────────────────────────
+
+#[test]
+fn test_match_type_label_array() {
+    // `:array:` arm should narrow the variable to Array inside the arm body
+    let result = check_types(
+        r#"def chunks(v, size):
+  match (v):
+    | :array: []
+    | _: []
+  end"#,
+    );
+    assert!(
+        result.is_empty(),
+        "`:array:` type-label pattern should not produce type errors: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_match_type_label_string() {
+    // `:string:` arm should narrow the variable to String inside the arm body
+    let result = check_types(
+        r#"def f(v):
+  match (v):
+    | :string: []
+    | _: []
+  end"#,
+    );
+    assert!(
+        result.is_empty(),
+        "`:string:` type-label pattern should not produce type errors: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_match_type_label_multi_arm() {
+    // Multiple type-label arms (`:array:` and `:string:`) should not conflict
+    let result = check_types(
+        r#"def f(v):
+  match (v):
+    | :array: []
+    | :string: []
+    | _: []
+  end"#,
+    );
+    assert!(
+        result.is_empty(),
+        "match with both `:array:` and `:string:` arms should not produce type errors: {:?}",
+        result
+    );
+}
+
+#[rstest]
+// Type-label patterns are exhaustive when a wildcard arm is present
+#[case::type_label_with_wildcard(
+    r#"match (42): | :number: 1 | _: 0 end"#,
+    true,
+    "type-label with wildcard is exhaustive"
+)]
+// Type-label patterns without wildcard are non-exhaustive
+#[case::type_label_no_wildcard(
+    r#"match (42): | :array: 1 | :string: 0 end"#,
+    false,
+    "type-label arms without wildcard — not exhaustive"
+)]
+fn test_match_exhaustiveness_type_label(#[case] code: &str, #[case] is_exhaustive: bool, #[case] description: &str) {
+    let result = check_types(code);
+    let has_exhaustiveness_error = result.iter().any(|e| matches!(e, TypeError::NonExhaustiveMatch { .. }));
+    assert_eq!(
+        !has_exhaustiveness_error, is_exhaustive,
+        "{}: errors={:?}",
+        description, result
+    );
+}
+
 // TODO: Enable when match is properly implemented in HIR
 // #[test]
 // fn test_match_union_with_arithmetic() {

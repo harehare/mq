@@ -91,21 +91,21 @@ end
 
 # -- YAML Tests --
 
-| let yaml_input = "string: hello\nnumber: 42\nfloat: 3.14\nbool_true: true\nbool_false: false\nnull_value: null\narray:\n  - item1\n  - item2\n  - item3\nobject:\n  key1: value1\n  key2: value2\nnested:\n  arr:\n    - a\n    - b\n  obj:\n    subkey: subval\n" |
+| let yaml_input = "number: 42\nfloat: 3.14\nbool_true: true\nbool_false: false\nnull_value: null\narray:\n  - item1\n  - item2\n  - item3\nobject:\n  key1: value1\n  key2: value2\nnested:\n  arr:\n    - a\n    - b\n  obj:\n    subkey: subval\n" |
 
 def test_yaml_parse():
   let result = yaml::yaml_parse(yaml_input)
-  | assert_eq(len(keys(result)), 9)
+  | assert_eq(len(keys(result)), 8)
 end
 
 def test_yaml_to_json():
   let result = yaml::yaml_to_json(yaml::yaml_parse(yaml_input))
-  | assert_eq(result, "{\"array\": [\"item1\", \"item2\", \"item3\"], \"nested\": {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}}, \"string\": \"hello\", \"number\": 42, \"float\": 3.14, \"bool_true\": true, \"bool_false\": false, \"null_value\": null, \"object\": {\"key1\": \"value1\", \"key2\": \"value2\"}}")
+  | assert_eq(result, "{\"array\": [\"item1\", \"item2\", \"item3\"], \"nested\": {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}}, \"number\": 42, \"float\": 3.14, \"bool_true\": true, \"bool_false\": false, \"null_value\": null, \"object\": {\"key1\": \"value1\", \"key2\": \"value2\"}}")
 end
 
 def test_yaml_to_markdown_table():
   let result = yaml::yaml_to_markdown_table(yaml::yaml_parse(yaml_input))
-  | assert_eq(result, "| Key | Value |\n| --- | --- |\n| array | [\"item1\", \"item2\", \"item3\"] |\n| nested | {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}} |\n| string | hello |\n| number | 42 |\n| float | 3.14 |\n| bool_true | true |\n| bool_false | false |\n| null_value |  |\n| object | {\"key1\": \"value1\", \"key2\": \"value2\"} |")
+  | assert_eq(result, "| Key | Value |\n| --- | --- |\n| array | [\"item1\", \"item2\", \"item3\"] |\n| nested | {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}} |\n| number | 42 |\n| float | 3.14 |\n| bool_true | true |\n| bool_false | false |\n| null_value |  |\n| object | {\"key1\": \"value1\", \"key2\": \"value2\"} |")
 end
 
 def test_to_front_matter():

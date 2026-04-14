@@ -323,7 +323,16 @@ pub(super) fn resolve_pattern_type(
                 SymbolKind::Number => return Type::Number,
                 SymbolKind::String => return Type::String,
                 SymbolKind::Boolean => return Type::Bool,
-                SymbolKind::Symbol => return Type::Symbol,
+                SymbolKind::Symbol => {
+                    // A Symbol child in a Pattern may be a type-label pattern (e.g. `:array:`,
+                    // `:string:`). If the value matches a known type name, return that type.
+                    // Otherwise fall back to Type::Symbol for a plain symbol pattern.
+                    let ty = child_symbol
+                        .value
+                        .as_deref()
+                        .and_then(|name| crate::narrowing::type_name_to_type(name, ctx));
+                    return ty.unwrap_or(Type::Symbol);
+                }
                 SymbolKind::None => return Type::None,
                 SymbolKind::Array => return ctx.get_or_create_symbol_type(child_id),
                 _ => {}
