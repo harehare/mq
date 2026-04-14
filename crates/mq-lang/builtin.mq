@@ -649,32 +649,28 @@ end
 # Splits an array into chunks of a specified size, returning an array of arrays.
 def chunks(v, size):
   match (v):
+    | :array if (size <= 0): error("size must be a positive integer")
     | :array:
-      if (size <= 0):
-        error("size must be a positive integer")
-      else:
-        do
-          var result = []
-          | var i = 0
-          | while (i < len(v)):
-              result += [slice(v, i, i + size)]
-              | i += size
-            end
-          | result
-        end
+      do
+        var result = []
+        | var i = 0
+        | while (i < len(v)):
+            result += [slice(v, i, i + size)]
+            | i += size
+          end
+        | result
+      end
+    | :string if (size <= 0): error("size must be a positive integer")
     | :string:
-      if (size <= 0):
-        error("size must be a positive integer")
-      else:
-        do
-          var result = []
-          | var i = 0
-          | while (i < len(v)):
-              result += [slice(v, i, i + size)]
-              | i += size
-            end
-          | result
-        end
+      do
+        var result = []
+        | var i = 0
+        | while (i < len(v)):
+            result += [slice(v, i, i + size)]
+            | i += size
+          end
+        | result
+      end
     | _: error("first argument must be an array or string")
   end
 end
@@ -682,7 +678,8 @@ end
 # Splits an array into chunks based on the result of applying a function to each element, grouping consecutive elements with the same key together.
 def chunk_by(v, f):
   match (v):
-    | :array: do
+    | :array:
+      do
         var result = []
         | var current_chunk = []
         | var i = 0
@@ -724,3 +721,4 @@ def chunk_by(v, f):
     | _: error("first argument must be an array or string")
   end
 end
+
