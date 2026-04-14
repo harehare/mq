@@ -55,9 +55,9 @@ build-web: build-wasm
 # Build @mqlang/node package
 [working-directory: 'crates/mq-wasm']
 build-node-wasm:
-    wasm-pack build --release --target nodejs --out-dir ../../packages/mq-node/mq-wasm -- --no-default-features
-    rm ../../packages/mq-node/mq-wasm/README.md
-    rm ../../packages/mq-node/mq-wasm/package.json
+    wasm-pack build --release --target nodejs --out-dir ../../packages/mq-nodejs/mq-wasm -- --no-default-features
+    rm ../../packages/mq-nodejs/mq-wasm/README.md
+    rm ../../packages/mq-nodejs/mq-wasm/package.json
 
 # Build @mqlang/node package
 [working-directory: 'packages/mq-nodejs']
