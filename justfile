@@ -69,8 +69,7 @@ fmt:
     cargo fmt --all -- --check
 
 test-mq:
-    cargo run -p mq-run --bin mq -- -f crates/mq-lang/builtin_tests.mq
-    cargo run -p mq-run --bin mq -- -f crates/mq-lang/modules/module_tests.mq
+    cargo run -p mq-test -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/module_tests.mq
 
 test-doc:
     cargo test --doc --workspace

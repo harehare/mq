@@ -2,7 +2,6 @@ include "test"
 
 |
 
-# Type checking tests
 def test_is_array():
   let result1 = is_array([1, 2, 3])
   | assert_eq(result1, true)
@@ -694,79 +693,3 @@ def test_chunk_by():
   | assert_eq(result4, ["1", "23456"])
 end
 
-| run_tests([
-  # Type checking
-  test_case("is_array", test_is_array),
-  test_case("is_bool", test_is_bool),
-  test_case("is_number", test_is_number),
-  test_case("is_string", test_is_string),
-  test_case("is_none", test_is_none),
-  test_case("is_dict", test_is_dict),
-  test_case("is_mdx", test_is_mdx),
-  test_case("is_callout", test_is_callout),
-
-  # String manipulation
-  test_case("contains", test_contains),
-  test_case("ltrimstr", test_ltrimstr),
-  test_case("rtrimstr", test_rtrimstr),
-  test_case("lpad", test_lpad),
-  test_case("rpad", test_rpad),
-  test_case("slugify", test_slugify),
-
-  # Collection operations
-  test_case("is_empty", test_is_empty),
-
-  # Selectors
-  test_case("select", test_select),
-  test_case("arrays", test_arrays),
-  test_case("booleans", test_booleans),
-  test_case("numbers", test_numbers),
-
-  # Array manipulation
-  test_case("map", test_map),
-  test_case("flat_map", test_flat_map),
-  test_case("filter", test_filter),
-  test_case("each", test_each),
-  test_case("first", test_first),
-  test_case("last", test_last),
-  test_case("second", test_second),
-  test_case("fill", test_fill),
-  test_case("skip", test_skip),
-  test_case("take", test_take),
-  test_case("find_index", test_find_index),
-  test_case("bsearch", test_bsearch),
-  test_case("skip_while", test_skip_while),
-  test_case("take_while", test_take_while),
-  test_case("group_by", test_group_by),
-  test_case("count_by", test_count_by),
-  test_case("any", test_any),
-  test_case("all", test_all),
-  test_case("in", test_in),
-  test_case("fold", test_fold),
-  test_case("unique_by", test_unique_by),
-  test_case("identity", test_identity),
-  test_case("transpose", test_transpose),
-
-  test_case("regex_test", test_regex_test),
-  test_case("regex_match", test_regex_match),
-
-  test_case("inspect", test_inspect),
-
-  test_case("chunks", test_chunks),
-  test_case("chunk_by", test_chunk_by),
-
-  # macro
-  test_case("tap", test_tap),
-  test_case("unless", test_unless),
-  test_case("pluck", test_pluck),
-  test_case("until", test_until),
-  test_case("compact_map", test_compact_map),
-  test_case("reject", test_reject),
-  test_case("partition", test_partition),
-  test_case("get_or", test_get_or),
-  test_case("times", test_times),
-  test_case("between", test_between),
-  test_case("sum_by", test_sum_by),
-  test_case("index_by", test_index_by),
-  test_case("percentile", test_percentile),
-])

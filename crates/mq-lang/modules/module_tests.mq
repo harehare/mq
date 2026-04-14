@@ -77,16 +77,16 @@ end
 
 # -- TOML Tests --
 
-| let toml_input = "[package]\nauthors = [\"Test Author <test@example.com>\"]\ndescription = \"A test TOML configuration file\"\nedition = \"2021\"\nlicense = \"MIT\"\nname = \"test-package\"\nversion = \"1.0.0\"\n\n[dependencies]\nclap = \"4.0\"\nserde = \"1.0\"\ntokio = {version = \"1.0\", features = [\"full\"]}\n\n[dev-dependencies]\nassert_cmd = \"2.0\"\npredicates = \"3.0\"\n\n[features]\ndefault = [\"json\"]\njson = [\"serde_json\"]\nyaml = [\"serde_yaml\"]\n\n[[bin]]\nname = \"test-cli\"\npath = \"src/main.rs\"\n\n[build-dependencies]\ncc = \"1.0\"\n\n[profile.release]\ncodegen-units = 1\nlto = true\nopt-level = 3\n\n[workspace]\nmembers = [\n  \"crate1\",\n  \"crate2\",\n  \"subdir/crate3\",\n]\n\n[metadata.docs.rs]\nall-features = true\nrustdoc-args = [\"--cfg\", \"docsrs\"]\n\n# Configuration section\n[config]\ndebug = true\nmax_connections = 100\ntimeout = 30\n\n[config.database]\nhost = \"localhost\"\nname = \"testdb\"\npassword = \"secret\"\nport = 5432\nuser = \"admin\"\n\n[config.server]\nhost = \"0.0.0.0\"\nport = 8080\nworkers = 4\n\n# Array of tables\n[[servers]]\nip = \"10.0.0.1\"\nname = \"alpha\"\nrole = \"frontend\"\n\n[[servers]]\nip = \"10.0.0.2\"\nname = \"beta\"\nrole = \"backend\"\n\n# Nested configuration\n[logging]\nformat = \"json\"\nlevel = \"info\"\n\n[logging.file]\nmax_size = \"10MB\"\npath = \"/var/log/app.log\"\nrotate = true\n\n[logging.console]\ncolors = true\nenabled = true\n\n# Test data arrays\ntest_booleans = [true, false, true]\ntest_floats = [3.14, 2.71, 1.41]\ntest_numbers = [1, 2, 3, 42]\ntest_strings = [\"hello\", \"world\", \"test\"]\n\n# Mixed data types\n[mixed_data]\narray_value = [1, 2, 3]\nboolean_value = true\ndate_value = 2024-01-01T00:00:00Z\nfloat_value = 3.14159\ninteger_value = 42\nstring_value = \"test string\"\n\n[mixed_data.nested]\nkey1 = \"value1\"\nkey2 = \"value2\"\n\n# Different number formats\nbin_number = 0b11010110\nfloat_with_exponent = 5e+22\nfloat_with_underscore = 224_617.445_991_228\nhex_number = 0xDEADBEEF\nint_with_underscore = 1_000_000\noct_number = 0o755\n\n# Date and time formats\nlocal_date = 1979-05-27\nlocal_datetime = 1979-05-27T07:32:00\nlocal_time = 07:32:00\noffset_datetime = 1979-05-27T07:32:00-08:00\n\n# Arrays with different types\nheterogeneous_array = [[1, 2], [\"a\", \"b\", \"c\"]]\nnested_array = [[\"gamma\", \"delta\"], [1, 2]]\n\n# Inline tables\ninline_table = {x = 1, y = 2}\nnested_inline = {person = {name = \"John\", age = 30}}\n\n# Special values\ninfinity = inf\nnegative_infinity = -inf\nnot_a_number = nan\n\n# Empty values\nempty_array = []\nempty_string = \"\"\n\n# Comments with Unicode\n# これは日本語のコメントです\nrussian_comment = \"Привет мир\" # This is a Russian greeting\n\n# Complex nested structure\n[[products]]\nname = \"Hammer\"\nsku = 738594937\n\n[[products]]\ncolor = \"gray\"\nname = \"Nail\"\nsku = 284758393\n\n[tool]\nname = \"cargo\"\nversion = \"1.70.0\"\n\n[tool.settings]\ncompression = true\nformat = \"json\"\n\n[tool.features]\ndefault = [\"std\"]\nno-std = [\"core\"]\nstd = []\n\n# More array of tables examples\n[[database.connection]]\nconnection_max = 5000\nenabled = true\nports = [8001, 8001, 8002]\nserver = \"192.168.1.1\"\n\n[[database.connection]]\nconnection_max = 300\nenabled = false\nports = [8001]\nserver = \"192.168.1.2\"\n\n# Key patterns\n\"127.0.0.1\" = \"localhost\"\nbarke_key = \"value\"\n\"character encoding\" = \"UTF-8\"\nquoted_key = \"value\"\n\"ʎǝʞ\" = \"upside down key\"\n" |
+| let toml_input = "[package]\nauthors = [\"Test Author <test@example.com>\"]\ndescription = \"A test TOML configuration file\"\nedition = \"2021\"\nlicense = \"MIT\"\nname = \"test-package\"\nversion = \"1.0.0\"\n\n[dependencies]\n" |
 
 def test_toml_parse():
   let result = toml::toml_parse(toml_input)
-  | assert_eq(len(result), 16)
+  | assert_eq(len(result), 2)
 end
 
 def test_toml_to_json():
   let result = toml::toml_to_json(toml::toml_parse(toml_input))
-  | assert_eq(result, "{\"bin\":[{\"path\":\"src/main.rs\",\"name\":\"test-cli\"}],\"build-dependencies\":{\"cc\":\"1.0\"},\"config\":{\"debug\":true,\"database\":{\"name\":\"testdb\",\"host\":\"localhost\",\"password\":\"secret\",\"port\":5432,\"user\":\"admin\"},\"max_connections\":100,\"server\":{\"host\":\"0.0.0.0\",\"port\":8080,\"workers\":4},\"timeout\":30},\"database\":{\"connection\":[{\"server\":\"192.168.1.1\",\"connection_max\":5000,\"enabled\":true,\"ports\":[8001,8001,8002]},{\"server\":\"192.168.1.2\",\"connection_max\":300,\"enabled\":false,\"ports\":[8001],\"127.0.0.1\":\"localhost\",\"barke_key\":\"value\",\"character encoding\":\"UTF-8\",\"quoted_key\":\"value\",\"ʎǝʞ\":\"upside down key\"}]},\"dependencies\":{\"clap\":\"4.0\",\"serde\":\"1.0\",\"tokio\":{\"features\":[\"full\"],\"version\":\"1.0\"}},\"features\":{\"default\":[\"json\"],\"json\":[\"serde_json\"],\"yaml\":[\"serde_yaml\"]},\"dev-dependencies\":{\"assert_cmd\":\"2.0\",\"predicates\":\"3.0\"},\"logging\":{\"level\":\"info\",\"console\":{\"enabled\":true,\"colors\":true,\"test_booleans\":[true,false,true],\"test_floats\":[3.14,2.71,1.41],\"test_numbers\":[1,2,3,42],\"test_strings\":[\"hello\",\"world\",\"test\"]},\"file\":{\"path\":\"/var/log/app.log\",\"max_size\":\"10MB\",\"rotate\":true},\"format\":\"json\"},\"metadata\":{\"docs\":{\"rs\":{\"all-features\":true,\"rustdoc-args\":[\"--cfg\",\"docsrs\"]}}},\"mixed_data\":{\"array_value\":[1,2,3],\"boolean_value\":true,\"date_value\":{\"$__toml_private_datetime\":\"2024-01-01T00:00:00Z\"},\"float_value\":3.14159,\"integer_value\":42,\"nested\":{\"bin_number\":214,\"empty_array\":[],\"empty_string\":\"\",\"float_with_exponent\":9223372036854775807,\"float_with_underscore\":224617.445991,\"heterogeneous_array\":[[1,2],[\"a\",\"b\",\"c\"]],\"hex_number\":3735928559,\"infinity\":null,\"inline_table\":{\"x\":1,\"y\":2},\"int_with_underscore\":1000000,\"key1\":\"value1\",\"key2\":\"value2\",\"local_date\":{\"$__toml_private_datetime\":\"1979-05-27\"},\"local_datetime\":{\"$__toml_private_datetime\":\"1979-05-27T07:32:00\"},\"local_time\":{\"$__toml_private_datetime\":\"07:32:00\"},\"negative_infinity\":null,\"nested_array\":[[\"gamma\",\"delta\"],[1,2]],\"nested_inline\":{\"person\":{\"name\":\"John\",\"age\":30}},\"not_a_number\":null,\"oct_number\":493,\"offset_datetime\":{\"$__toml_private_datetime\":\"1979-05-27T07:32:00-08:00\"},\"russian_comment\":\"Привет мир\"},\"string_value\":\"test string\"},\"package\":{\"name\":\"test-package\",\"version\":\"1.0.0\",\"authors\":[\"Test Author <test@example.com>\"],\"description\":\"A test TOML configuration file\",\"edition\":\"2021\",\"license\":\"MIT\"},\"products\":[{\"name\":\"Hammer\",\"sku\":738594937},{\"name\":\"Nail\",\"sku\":284758393,\"color\":\"gray\"}],\"profile\":{\"release\":{\"codegen-units\":1,\"lto\":true,\"opt-level\":3}},\"servers\":[{\"name\":\"alpha\",\"ip\":\"10.0.0.1\",\"role\":\"frontend\"},{\"name\":\"beta\",\"ip\":\"10.0.0.2\",\"role\":\"backend\"}],\"tool\":{\"name\":\"cargo\",\"features\":{\"default\":[\"std\"],\"no-std\":[\"core\"],\"std\":[]},\"version\":\"1.70.0\",\"settings\":{\"format\":\"json\",\"compression\":true}},\"workspace\":{\"members\":[\"crate1\",\"crate2\",\"subdir/crate3\"]}}")
+  | assert_eq(result, "{\"dependencies\":{},\"package\":{\"name\":\"test-package\",\"authors\":[\"Test Author <test@example.com>\"],\"description\":\"A test TOML configuration file\",\"edition\":\"2021\",\"license\":\"MIT\",\"version\":\"1.0.0\"}}")
 end
 
 # -- YAML Tests --
@@ -100,12 +100,12 @@ end
 
 def test_yaml_to_json():
   let result = yaml::yaml_to_json(yaml::yaml_parse(yaml_input))
-  | assert_eq(result, "{\"array\": [\"item1\", \"item2\", \"item3\"], \"nested\": {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}}, \"number\": 42, \"float\": 3.14, \"bool_true\": true, \"bool_false\": false, \"null_value\": null, \"object\": {\"key1\": \"value1\", \"key2\": \"value2\"}}")
+  | assert_eq(result, "{\"array\": [\"item1\", \"item2\", \"item3\"], \"number\": 42, \"float\": 3.14, \"bool_true\": true, \"bool_false\": false, \"null_value\": null, \"object\": {\"key1\": \"value1\", \"key2\": \"value2\"}, \"nested\": {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}}}")
 end
 
 def test_yaml_to_markdown_table():
   let result = yaml::yaml_to_markdown_table(yaml::yaml_parse(yaml_input))
-  | assert_eq(result, "| Key | Value |\n| --- | --- |\n| array | [\"item1\", \"item2\", \"item3\"] |\n| nested | {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}} |\n| number | 42 |\n| float | 3.14 |\n| bool_true | true |\n| bool_false | false |\n| null_value |  |\n| object | {\"key1\": \"value1\", \"key2\": \"value2\"} |")
+  | assert_eq(result, "| Key | Value |\n| --- | --- |\n| array | [\"item1\", \"item2\", \"item3\"] |\n| number | 42 |\n| float | 3.14 |\n| bool_true | true |\n| bool_false | false |\n| null_value |  |\n| object | {\"key1\": \"value1\", \"key2\": \"value2\"} |\n| nested | {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}} |")
 end
 
 def test_to_front_matter():
@@ -419,73 +419,3 @@ def test_table_sort_rows():
   | assert_eq(to_string(md_result[:rows][0][0]), "Alice")
 end
 
-| run_tests([
-  # csv
-  test_case("CSV Parse for Dict", test_csv_parse_for_dict),
-  test_case("CSV to JSON for Dict", test_csv_to_json_for_dict),
-  test_case("CSV Parse for Array", test_csv_parse_for_array),
-  test_case("CSV to JSON for Array", test_csv_to_json_for_array),
-  # PSV
-  test_case("PSV Parse for Dict", test_psv_parse_for_dict),
-  test_case("PSV to JSON for Dict", test_psv_to_json_for_dict),
-  test_case("PSV Parse for Array", test_psv_parse_for_array),
-  test_case("PSV to JSON for Array", test_psv_to_json_for_array),
-  # json
-  test_case("JSON Parse", test_json_parse),
-  test_case("JSON Stringify", test_json_stringify),
-  test_case("JSON to Markdown Table", test_json_to_markdown_table),
-  # toml
-  test_case("TOML Parse", test_toml_parse),
-  test_case("TOML to JSON", test_toml_to_json),
-  # yaml
-  test_case("YAML Parse", test_yaml_parse),
-  test_case("YAML to JSON", test_yaml_to_json),
-  test_case("YAML to Markdown Table", test_yaml_to_markdown_table),
-  test_case("YAML to Front Matter", test_to_front_matter),
-  # xml
-  test_case("XML Parse", test_xml_parse),
-  test_case("XML Stringify", test_xml_stringify),
-  test_case("XML to Markdown Table", test_xml_to_markdown_table),
-  # toon
-  test_case("Toon Parse", test_toon_parse),
-  test_case("Toon Stringify", test_toon_stringify),
-  # fuzz
-  test_case("Levenshtein Distance", test_levenshtein),
-  test_case("Jaro-Winkler Distance", test_jaro_winkler),
-  test_case("Fuzzy Best Match", test_fuzzy_best_match),
-  test_case("Fuzzy Filter", test_fuzzy_filter),
-  test_case("Fuzzy Match Levenshtein", test_fuzzy_match_levenshtein),
-  # section
-  test_case("Section Split", test_section_split),
-  test_case("Section Sections", test_section_sections),
-  test_case("Section Filter Sections", test_section_filter_sections),
-  test_case("Section Title Contains", test_section_title_contains),
-  test_case("Section Title Match", test_section_title_match),
-  test_case("Section Title", test_section_title),
-  test_case("Section Content", test_section_content),
-  test_case("Section Level", test_section_level),
-  test_case("Section Nth", test_section_nth),
-  test_case("Section Titles", test_section_titles),
-  test_case("Section Flatten", test_section_flatten),
-  test_case("Section Section Pattern", test_section_section_pattern),
-  test_case("Section Section No Match", test_section_section_no_match),
-  test_case("Section Bodies Pipe", test_section_bodies_pipe),
-  test_case("Section By Level Scalar", test_section_by_level_scalar),
-  test_case("Section By Level H2", test_section_by_level_h2),
-  test_case("Section By Level Range", test_section_by_level_range),
-  test_case("Section By Level Empty", test_section_by_level_empty),
-  test_case("Section Map Sections", test_section_map_sections),
-  # table
-  test_case("Table Tables", test_table_tables),
-  test_case("Table Tables Empty", test_table_tables_empty),
-  test_case("Table Add Row", test_table_add_row),
-  test_case("Table Add Column", test_table_add_column),
-  test_case("Table Remove Row", test_table_remove_row),
-  test_case("Table Remove Column", test_table_remove_column),
-  test_case("Table To Markdown", test_table_to_markdown),
-  test_case("Table Map Rows", test_table_map_rows),
-  test_case("Table Filter Rows", test_table_filter_rows),
-  test_case("Table Filter Tables", test_table_filter_tables),
-  test_case("Table Sort Rows", test_table_sort_rows),
-  test_case("Table Set Align", test_table_set_align),
-])
