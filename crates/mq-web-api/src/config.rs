@@ -115,16 +115,16 @@ impl Config {
             }
         }
 
-        if let Ok(endpoint) = env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
-            if !endpoint.is_empty() {
-                config.otel_endpoint = Some(endpoint);
-            }
+        if let Ok(endpoint) = env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+            && !endpoint.is_empty()
+        {
+            config.otel_endpoint = Some(endpoint);
         }
 
-        if let Ok(service_name) = env::var("OTEL_SERVICE_NAME") {
-            if !service_name.is_empty() {
-                config.otel_service_name = service_name;
-            }
+        if let Ok(service_name) = env::var("OTEL_SERVICE_NAME")
+            && !service_name.is_empty()
+        {
+            config.otel_service_name = service_name;
         }
 
         config
