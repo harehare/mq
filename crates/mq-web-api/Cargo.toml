@@ -15,12 +15,17 @@ version = "0.5.26"
 [features]
 default = ["use_mimalloc"]
 use_mimalloc = ["mimalloc"]
+otel = ["opentelemetry", "opentelemetry-otlp", "opentelemetry_sdk", "tracing-opentelemetry"]
 
 [dependencies]
 async-trait = {workspace = true}
 axum = {workspace = true}
 miette = {workspace = true}
 mimalloc = {workspace = true, features = ["v3"], optional = true}
+opentelemetry = {workspace = true, optional = true}
+opentelemetry-otlp = {workspace = true, optional = true}
+opentelemetry_sdk = {workspace = true, optional = true}
+tracing-opentelemetry = {workspace = true, optional = true}
 mq-check = {workspace = true}
 mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
