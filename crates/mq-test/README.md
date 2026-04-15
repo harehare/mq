@@ -102,16 +102,6 @@ def verify_string_empty():
 end
 ```
 
-```bash
-$ mq-test example.mq
-✓ add
-✓ string_upcase
-✓ verify_array_length
-✓ verify_string_empty
-
-4 passed, 0 failed
-```
-
 ## Development
 
 ### Running Tests
