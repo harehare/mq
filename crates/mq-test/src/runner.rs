@@ -3,7 +3,6 @@ use miette::IntoDiagnostic;
 use mq_lang::{CstNodeKind, CstTrivia};
 use std::fs;
 use std::path::{Path, PathBuf};
-
 /// Discovers and runs mq test functions from `.mq` files.
 ///
 /// A function is treated as a test if:
@@ -76,9 +75,18 @@ impl TestRunner {
     /// - Its `leading_trivia` contains a comment whose text (trimmed) is `@test`.
     fn discover_test_functions(content: &str) -> Vec<String> {
         let (nodes, _) = mq_lang::parse_recovery(content);
+        Self::discover_test_functions_in(&nodes)
+    }
+
+    fn discover_test_functions_in(nodes: &[mq_lang::Shared<mq_lang::CstNode>]) -> Vec<String> {
         let mut names = Vec::new();
 
-        for node in &nodes {
+        for node in nodes {
+            if node.kind == CstNodeKind::Module {
+                names.extend(Self::discover_test_functions_in(&node.children));
+                continue;
+            }
+
             if node.kind != CstNodeKind::Def {
                 continue;
             }
@@ -149,6 +157,10 @@ mod tests {
         vec!["test_first", "annotated"]
     )]
     #[case("def helper():\n  None\nend\n", vec![])]
+    #[case(
+        "module a:\n  def test_first():\n  None\nend\n\n# @test\ndef annotated():\n  None\nend\nend\n",
+        vec!["test_first", "annotated"]
+    )]
     fn test_discover_test_functions(#[case] content: &str, #[case] expected: Vec<&str>) {
         let names = TestRunner::discover_test_functions(content);
         assert_eq!(names, expected);
