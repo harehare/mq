@@ -808,13 +808,51 @@ define_builtin!(SLICE, ParamNum::Fixed(3), |ident, _, mut args, _| {
 
 define_builtin!(POW, ParamNum::Fixed(2), |ident, _, mut args, _| {
     match args.as_mut_slice() {
-        [RuntimeValue::Number(base), RuntimeValue::Number(exp)] => Ok(RuntimeValue::Number(
-            (base.value() as i64).pow(exp.value() as u32).into(),
-        )),
+        [RuntimeValue::Number(base), RuntimeValue::Number(exp)] => {
+            if exp.is_int() && exp.value() >= 0.0 {
+                Ok(RuntimeValue::Number(
+                    (base.value() as i64).pow(exp.value() as u32).into(),
+                ))
+            } else {
+                Ok(RuntimeValue::Number(base.value().powf(exp.value()).into()))
+            }
+        }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
+        _ => unreachable!(),
+    }
+});
+
+define_builtin!(LN, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().ln().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
+define_builtin!(LOG10, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().log10().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
+define_builtin!(SQRT, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().sqrt().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
+    }
+});
+
+define_builtin!(EXP, ParamNum::Fixed(1), |ident, _, mut args, _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().exp().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!(),
     }
 });
@@ -2937,6 +2975,7 @@ const HASH_ENDS_WITH: u64 = fnv1a_hash_64("ends_with");
 const HASH_ENTRIES: u64 = fnv1a_hash_64("entries");
 const HASH_EQ: u64 = fnv1a_hash_64(constants::builtins::EQ);
 const HASH_ERROR: u64 = fnv1a_hash_64("error");
+const HASH_EXP: u64 = fnv1a_hash_64("exp");
 const HASH_EXPLODE: u64 = fnv1a_hash_64("explode");
 const HASH_AST_GET_ARGS: u64 = fnv1a_hash_64("_ast_get_args");
 const HASH_AST_TO_CODE: u64 = fnv1a_hash_64("_ast_to_code");
@@ -2962,6 +3001,8 @@ const HASH_IS_REGEX_MATCH: u64 = fnv1a_hash_64("is_regex_match");
 const HASH_JOIN: u64 = fnv1a_hash_64("join");
 const HASH_KEYS: u64 = fnv1a_hash_64("keys");
 const HASH_LEN: u64 = fnv1a_hash_64("len");
+const HASH_LN: u64 = fnv1a_hash_64("ln");
+const HASH_LOG10: u64 = fnv1a_hash_64("log10");
 const HASH_LT: u64 = fnv1a_hash_64(constants::builtins::LT);
 const HASH_LTE: u64 = fnv1a_hash_64(constants::builtins::LTE);
 const HASH_LTRIM: u64 = fnv1a_hash_64("ltrim");
@@ -3000,6 +3041,7 @@ const HASH_SLICE: u64 = fnv1a_hash_64(constants::builtins::SLICE);
 const HASH_SORT: u64 = fnv1a_hash_64("sort");
 const HASH_SORT_BY_IMPL: u64 = fnv1a_hash_64("_sort_by_impl");
 const HASH_SPLIT: u64 = fnv1a_hash_64("split");
+const HASH_SQRT: u64 = fnv1a_hash_64("sqrt");
 const HASH_STARTS_WITH: u64 = fnv1a_hash_64("starts_with");
 const HASH_STDERR: u64 = fnv1a_hash_64("stderr");
 const HASH_SUB: u64 = fnv1a_hash_64(constants::builtins::SUB);
@@ -3080,6 +3122,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_ENTRIES => Some(&ENTRIES),
         HASH_EQ => Some(&EQ),
         HASH_ERROR => Some(&ERROR),
+        HASH_EXP => Some(&EXP),
         HASH_EXPLODE => Some(&EXPLODE),
         HASH_FLATTEN => Some(&FLATTEN),
         HASH_FLOOR => Some(&FLOOR),
@@ -3103,6 +3146,8 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_JOIN => Some(&JOIN),
         HASH_KEYS => Some(&KEYS),
         HASH_LEN => Some(&LEN),
+        HASH_LN => Some(&LN),
+        HASH_LOG10 => Some(&LOG10),
         HASH_LT => Some(&LT),
         HASH_LTE => Some(&LTE),
         HASH_LTRIM => Some(&LTRIM),
@@ -3141,6 +3186,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_SORT => Some(&SORT),
         HASH_SORT_BY_IMPL => Some(&_SORT_BY_IMPL),
         HASH_SPLIT => Some(&SPLIT),
+        HASH_SQRT => Some(&SQRT),
         HASH_STARTS_WITH => Some(&STARTS_WITH),
         HASH_STDERR => Some(&STDERR),
         HASH_SUB => Some(&SUB),
@@ -3676,6 +3722,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
+        SmolStr::new("exp"),
+        BuiltinFunctionDoc {
+            description: "Returns the exponential (e^x) of the given number.",
+            params: &["number"],
+        },
+    );
+    map.insert(
         SmolStr::new("assert"),
         BuiltinFunctionDoc {
             description: "Asserts that two values are equal, returns the value if true, otherwise raises an error.",
@@ -3701,6 +3754,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the type of the given value.",
             params: &["value"],
+        },
+    );
+    map.insert(
+        SmolStr::new("ln"),
+        BuiltinFunctionDoc {
+            description: "Returns the natural logarithm (base e) of the given number.",
+            params: &["number"],
+        },
+    );
+    map.insert(
+        SmolStr::new("log10"),
+        BuiltinFunctionDoc {
+            description: "Returns the base-10 logarithm of the given number.",
+            params: &["number"],
         },
     );
     map.insert(
@@ -4016,6 +4083,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Splits the given string by the specified separator.",
             params: &["string", "separator"],
+        },
+    );
+    map.insert(
+        SmolStr::new("sqrt"),
+        BuiltinFunctionDoc {
+            description: "Returns the square root of the given number.",
+            params: &["number"],
         },
     );
     map.insert(
