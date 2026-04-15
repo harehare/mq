@@ -4,6 +4,9 @@ use tower_http::trace::TraceLayer;
 use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
+#[cfg(feature = "otel")]
+static TRACER_PROVIDER: std::sync::OnceLock<opentelemetry_sdk::trace::SdkTracerProvider> = std::sync::OnceLock::new();
+
 use crate::{
     cleanup::CleanupService,
     config::{Config, LogFormat},
@@ -11,8 +14,61 @@ use crate::{
     routes::create_router,
 };
 
+/// Builds and installs a global tracing subscriber.
+///
+/// When the `otel` feature is enabled and `config.otel_endpoint` is set,
+/// an OTLP span exporter is attached so traces are forwarded to the
+/// configured OpenTelemetry collector.
 pub fn init_tracing(config: &Config) {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| config.log_level.clone().into());
+
+    #[cfg(feature = "otel")]
+    if let Some(ref endpoint) = config.otel_endpoint {
+        use opentelemetry::KeyValue;
+        use opentelemetry::trace::TracerProvider as _;
+        use opentelemetry_otlp::WithExportConfig;
+        use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
+
+        let exporter = opentelemetry_otlp::SpanExporter::builder()
+            .with_tonic()
+            .with_endpoint(endpoint)
+            .build()
+            .expect("Failed to build OTLP span exporter");
+
+        let resource = Resource::builder()
+            .with_attribute(KeyValue::new("service.name", config.otel_service_name.clone()))
+            .build();
+
+        let provider = SdkTracerProvider::builder()
+            .with_batch_exporter(exporter)
+            .with_resource(resource)
+            .build();
+
+        opentelemetry::global::set_tracer_provider(provider.clone());
+
+        // Store for graceful shutdown on server exit.
+        let _ = TRACER_PROVIDER.set(provider.clone());
+
+        // Create an otel layer per format branch to avoid type-inference conflicts
+        // between JsonFields and DefaultFields formatter types.
+        match config.log_format {
+            LogFormat::Json => {
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(fmt::layer().json())
+                    .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("mq-web-api")))
+                    .init();
+            }
+            LogFormat::Text => {
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(fmt::layer())
+                    .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("mq-web-api")))
+                    .init();
+            }
+        }
+        return;
+    }
 
     match config.log_format {
         LogFormat::Json => {
@@ -99,6 +155,11 @@ pub async fn start_server(config: Config) -> Result<(), Box<dyn std::error::Erro
         .expect("Failed to start server");
 
     info!("Shutting down mq-web-api server");
+
+    #[cfg(feature = "otel")]
+    if let Some(provider) = TRACER_PROVIDER.get() {
+        provider.shutdown().ok();
+    }
 
     Ok(())
 }

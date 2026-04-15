@@ -9,6 +9,10 @@ pub struct Config {
     pub log_format: LogFormat,
     pub cors_origins: Vec<String>,
     pub rate_limit: RateLimitConfig,
+    /// OTLP exporter endpoint (e.g. `http://localhost:4317`). Requires the `otel` feature.
+    pub otel_endpoint: Option<String>,
+    /// Service name reported to the OpenTelemetry collector.
+    pub otel_service_name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -26,6 +30,8 @@ impl Default for Config {
             log_format: LogFormat::Json,
             cors_origins: vec!["*".to_string()],
             rate_limit: RateLimitConfig::default(),
+            otel_endpoint: None,
+            otel_service_name: "mq-web-api".to_string(),
         }
     }
 }
@@ -107,6 +113,18 @@ impl Config {
                     cleanup_str, config.rate_limit.cleanup_interval_seconds
                 );
             }
+        }
+
+        if let Ok(endpoint) = env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+            && !endpoint.is_empty()
+        {
+            config.otel_endpoint = Some(endpoint);
+        }
+
+        if let Ok(service_name) = env::var("OTEL_SERVICE_NAME")
+            && !service_name.is_empty()
+        {
+            config.otel_service_name = service_name;
         }
 
         config
