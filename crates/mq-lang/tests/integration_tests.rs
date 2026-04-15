@@ -2355,6 +2355,18 @@ fn engine() -> DefaultEngine {
     r#""" | from_html()"#,
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::Array(vec![])].into()))]
+#[case::pow_integer("pow(2, 3)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(8.into())].into()),)]
+#[case::pow_zero_exp("pow(5, 0)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()),)]
+#[case::pow_negative_exp("pow(2, -1)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.5f64.into())].into()),)]
+#[case::pow_float_exp("pow(4, 0.5)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.0f64.into())].into()),)]
+#[case::sqrt_perfect_square("sqrt(4)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.0f64.into())].into()),)]
+#[case::sqrt_nine("sqrt(9)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.0f64.into())].into()),)]
+#[case::sqrt_one("sqrt(1)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.0f64.into())].into()),)]
+#[case::ln_one("ln(1)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.0f64.into())].into()),)]
+#[case::ln_e("ln(2.718281828459045)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.0f64.into())].into()),)]
+#[case::log10_one("log10(1)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.0f64.into())].into()),)]
+#[case::log10_hundred("log10(100)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.0f64.into())].into()),)]
+#[case::exp_zero("exp(0)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.0f64.into())].into()),)]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
