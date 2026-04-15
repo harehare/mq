@@ -14,7 +14,7 @@
 
 [![ci](https://github.com/harehare/mq/actions/workflows/ci.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/ci.yml)
 [![audit](https://github.com/harehare/mq/actions/workflows/audit.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/audit.yml)
-[![crates.io](https://img.shields.io/crates/v/mq-lang)](https://crates.io/crates/mq-lang)
+[![crates.io](https://img.shields.io/crates/v/mq-markdown)](https://crates.io/crates/mq-markdown)
 [![codecov](https://codecov.io/gh/harehare/mq/graph/badge.svg?token=E4UD7Q9NC3)](https://codecov.io/gh/harehare/mq)
 [![codspeed badge](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json?style=for-the-badge)](https://codspeed.io/harehare/mq)
 
@@ -107,44 +107,6 @@ brew install mq
 $ docker run --rm ghcr.io/harehare/mq:0.5.26
 ```
 
-### mq-lsp (Language Server)
-
-The mq Language Server provides IDE features like completion, hover, and diagnostics for mq query files.
-
-#### Quick Install
-
-```bash
-curl -sSL https://mqlang.org/install_lsp.sh | bash
-```
-
-#### Cargo
-
-```sh
-# Install from crates.io
-cargo install mq-lsp
-# Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-lsp --tag v0.5.26
-# Latest Development Version
-cargo install --git https://github.com/harehare/mq.git mq-lsp
-# Install using binstall
-cargo binstall mq-lsp@0.5.26
-```
-
-#### Binaries
-
-You can download pre-built binaries from the [GitHub releases page](https://github.com/harehare/mq/releases):
-
-```sh
-# macOS (Apple Silicon)
-curl -L https://github.com/harehare/mq/releases/download/v0.5.26/mq-lsp-aarch64-apple-darwin -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
-# Linux x86_64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.26/mq-lsp-x86_64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
-# Linux arm64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.26/mq-lsp-aarch64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
-# Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.26/mq-lsp-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq-lsp.exe"
-```
-
 ### Visual Studio Code Extension
 
 You can install the VSCode extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq).
@@ -208,8 +170,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -A, --aggregate
