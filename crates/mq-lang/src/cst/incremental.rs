@@ -4,7 +4,7 @@ use crate::{
     Lexer, Module, Shared, Token,
     cst::{
         node::Node,
-        parser::{ErrorReporter, Parser},
+        parser::{ErrorReporter, ParseWithRangesResult, Parser},
     },
     lexer,
 };
@@ -70,13 +70,18 @@ impl TextEdit {
 /// parser2.apply_edit(&edit2).unwrap();
 /// assert_eq!(parser2.source(), "\"世界\" | upcase()");
 /// ```
+#[derive(Debug)]
 pub struct IncrementalParser {
     source: Rope,
     tokens: Vec<Shared<Token>>,
     nodes: Vec<Shared<Node>>,
     /// Token index ranges `[start, end)` for each top-level node group.
-    /// Parallel to `nodes`: one entry per statement group.
     node_token_ranges: Vec<(usize, usize)>,
+    /// Node index ranges `[start, end)` for each top-level node group,
+    /// parallel to `node_token_ranges`. Used to splice the correct node
+    /// sub-slice during incremental updates (a group may contain more than
+    /// one node, e.g. an expression node followed by a Pipe or Eof node).
+    node_index_ranges: Vec<(usize, usize)>,
     errors: ErrorReporter,
 }
 
@@ -84,12 +89,18 @@ impl IncrementalParser {
     /// Creates a new `IncrementalParser` by doing a full parse of `source`.
     pub fn new(source: &str) -> Self {
         let tokens = Self::lex(source);
-        let (nodes, node_token_ranges, errors) = Self::parse_tokens(&tokens);
+        let ParseWithRangesResult {
+            nodes,
+            token_ranges: node_token_ranges,
+            node_ranges: node_index_ranges,
+            errors,
+        } = Self::parse_tokens(&tokens);
         Self {
             source: Rope::from_str(source),
             tokens,
             nodes,
             node_token_ranges,
+            node_index_ranges,
             errors,
         }
     }
@@ -164,7 +175,7 @@ impl IncrementalParser {
             .take_while(|(a, b)| tokens_same_kind(a, b))
             .count();
 
-        let old_suffix = self
+        let raw_suffix = self
             .tokens
             .iter()
             .rev()
@@ -172,72 +183,98 @@ impl IncrementalParser {
             .take_while(|(a, b)| tokens_same_kind(a, b))
             .count();
 
+        // Prevent the suffix from overlapping with the already-matched prefix.
+        // Without this clamp, tokens could be counted in both the prefix AND the
+        // suffix, causing the changed region to appear empty when it is not.
+        let old_suffix = raw_suffix.min(self.tokens.len().saturating_sub(prefix));
+        let new_suffix = raw_suffix.min(new_tokens.len().saturating_sub(prefix));
+
         let old_changed_end = self.tokens.len().saturating_sub(old_suffix);
-        let new_changed_end = new_tokens.len().saturating_sub(old_suffix);
+        let new_changed_end = new_tokens.len().saturating_sub(new_suffix);
 
         // Token structure is identical — just update the source rope.
-        if prefix >= old_changed_end && prefix >= new_changed_end {
+        // The token-count guard prevents a false early-return when an insertion
+        // or deletion creates a "symmetric" token pattern where the reversed
+        // suffix happens to match extra tokens beyond the true change boundary
+        // (e.g. `foo | bar` → `foo | foo | bar`).  If the counts differ the
+        // source has genuinely changed even though prefix + suffix cover both
+        // ends, so we must fall through to a proper re-parse.
+        if prefix >= old_changed_end && prefix >= new_changed_end && self.tokens.len() == new_tokens.len() {
             self.source = Rope::from_str(new_source);
             self.tokens = new_tokens;
             return (&self.nodes, &self.errors);
         }
 
-        // Identify the affected top-level node groups.
+        // Identify the first top-level node group touched by the edit.
+        // All groups from this index onward will be re-parsed (see below).
         let first_affected = self.node_token_ranges.partition_point(|&(_, end)| end <= prefix);
-        let last_affected = self
-            .node_token_ranges
-            .partition_point(|&(start, _)| start < old_changed_end);
 
-        // Fall back to a full parse when too many nodes are affected.
-        let total_nodes = self.nodes.len();
-        let affected_nodes = last_affected.saturating_sub(first_affected);
+        // Fall back to a full parse when too many node groups are affected.
+        // Because the partial path re-parses everything from `first_affected`
+        // onward, the effective affected count is `total_groups - first_affected`.
+        let total_groups = self.node_token_ranges.len();
+        let affected_groups = total_groups.saturating_sub(first_affected);
         let should_full_parse =
-            total_nodes == 0 || (affected_nodes as f64 / total_nodes as f64) >= FULL_PARSE_THRESHOLD;
+            total_groups == 0 || (affected_groups as f64 / total_groups as f64) >= FULL_PARSE_THRESHOLD;
 
         if should_full_parse {
             return self.full_parse(new_source, new_tokens);
         }
 
-        // Compute the token range in old tokens that the affected groups cover.
-        let reparse_old_start = self
+        // Compute the start token index for the first affected group.
+        // Tokens before this index are part of the unchanged prefix and their
+        // positions have not moved, so prefix nodes can be safely reused.
+        let reparse_new_start = self
             .node_token_ranges
             .get(first_affected)
             .map(|r| r.0)
             .unwrap_or(prefix);
-        let reparse_old_end = if last_affected > 0 {
-            self.node_token_ranges
-                .get(last_affected - 1)
-                .map(|r| r.1)
-                .unwrap_or(old_changed_end)
-        } else {
-            old_changed_end
-        };
 
-        // Compute the corresponding range in new tokens.
-        // Tokens before `reparse_old_start` are unchanged → same index in new.
-        let reparse_new_start = reparse_old_start;
-        let delta = new_tokens.len() as isize - self.tokens.len() as isize;
-        let reparse_new_end = ((reparse_old_end as isize) + delta).max(reparse_new_start as isize) as usize;
+        // Re-parse from the first affected group to the end of the file.
+        //
+        // Re-parsing the entire suffix (instead of only the directly-affected
+        // nodes) is required for correctness: nodes that survive unchanged in
+        // the suffix would otherwise keep `Shared<Token>` references to the
+        // *old* token objects whose `range` fields reflect pre-edit source
+        // positions.  After an insertion or deletion every suffix token shifts,
+        // so reusing those stale references produces wrong ranges for all LSP
+        // features (hover, diagnostics, completions, …).
+        //
+        // The prefix nodes (before `first_affected`) are still reused because
+        // no text before the edit point changes position.
+        let ParseWithRangesResult {
+            nodes: new_nodes,
+            token_ranges: new_token_ranges,
+            node_ranges: new_node_index_ranges,
+            ..
+        } = Self::parse_tokens_range(&new_tokens, reparse_new_start, new_tokens.len());
 
-        // Re-parse only the affected token slice.
-        let (new_nodes, new_ranges, _) = Self::parse_tokens_range(&new_tokens, reparse_new_start, reparse_new_end);
+        // Node index where re-parsed content should begin.
+        let node_splice_start = self
+            .node_index_ranges
+            .get(first_affected)
+            .map(|r| r.0)
+            .unwrap_or(self.nodes.len());
 
-        // Adjust suffix node-group token ranges by the net token delta.
-        for range in &mut self.node_token_ranges[last_affected..] {
-            range.0 = ((range.0 as isize) + delta) as usize;
-            range.1 = ((range.1 as isize) + delta) as usize;
-        }
+        // Adjust absolute node index ranges for newly-inserted groups.
+        let adjusted_new_node_ranges: Vec<(usize, usize)> = new_node_index_ranges
+            .into_iter()
+            .map(|(s, e)| (s + node_splice_start, e + node_splice_start))
+            .collect();
 
-        // Splice in the new nodes and ranges.
-        self.nodes.splice(first_affected..last_affected, new_nodes);
-        self.node_token_ranges.splice(first_affected..last_affected, new_ranges);
+        // Replace all nodes and group metadata from `first_affected` onward
+        // with the freshly parsed results.  The suffix is no longer kept so
+        // there is nothing to adjust for the old suffix token ranges.
+        self.nodes.splice(node_splice_start.., new_nodes);
+        self.node_token_ranges.splice(first_affected.., new_token_ranges);
+        self.node_index_ranges
+            .splice(first_affected.., adjusted_new_node_ranges);
 
         self.source = Rope::from_str(new_source);
         self.tokens = new_tokens;
 
         // Re-collect errors for the whole program after a structural change.
-        let (_, _, errors) = Self::parse_tokens(&self.tokens);
-        self.errors = errors;
+        self.errors = Self::parse_tokens(&self.tokens).errors;
 
         (&self.nodes, &self.errors)
     }
@@ -272,11 +309,17 @@ impl IncrementalParser {
 
     /// Performs a complete re-parse from `new_source` using `new_tokens`.
     fn full_parse(&mut self, new_source: &str, new_tokens: Vec<Shared<Token>>) -> (&[Shared<Node>], &ErrorReporter) {
-        let (nodes, node_token_ranges, errors) = Self::parse_tokens(&new_tokens);
+        let ParseWithRangesResult {
+            nodes,
+            token_ranges: node_token_ranges,
+            node_ranges: node_index_ranges,
+            errors,
+        } = Self::parse_tokens(&new_tokens);
         self.source = Rope::from_str(new_source);
         self.tokens = new_tokens;
         self.nodes = nodes;
         self.node_token_ranges = node_token_ranges;
+        self.node_index_ranges = node_index_ranges;
         self.errors = errors;
         (&self.nodes, &self.errors)
     }
@@ -293,31 +336,39 @@ impl IncrementalParser {
         .collect()
     }
 
-    fn parse_tokens(tokens: &[Shared<Token>]) -> (Vec<Shared<Node>>, Vec<(usize, usize)>, ErrorReporter) {
+    fn parse_tokens(tokens: &[Shared<Token>]) -> ParseWithRangesResult {
         let mut parser = Parser::new(tokens);
         parser.parse_with_ranges()
     }
 
     /// Parses the token sub-slice `tokens[start..end]` and returns nodes with
     /// absolute token index ranges (relative to the full `tokens` slice).
-    fn parse_tokens_range(
-        tokens: &[Shared<Token>],
-        start: usize,
-        end: usize,
-    ) -> (Vec<Shared<Node>>, Vec<(usize, usize)>, ErrorReporter) {
+    /// Node index ranges are returned sub-slice-relative (starting from 0).
+    fn parse_tokens_range(tokens: &[Shared<Token>], start: usize, end: usize) -> ParseWithRangesResult {
         let end = end.min(tokens.len());
         if start >= end {
-            return (Vec::new(), Vec::new(), ErrorReporter::default());
+            return ParseWithRangesResult::default();
         }
 
         let sub_slice = &tokens[start..end];
         let mut parser = Parser::new(sub_slice);
-        let (nodes, ranges, errors) = parser.parse_with_ranges();
+        let ParseWithRangesResult {
+            nodes,
+            token_ranges,
+            node_ranges,
+            errors,
+        } = parser.parse_with_ranges();
 
-        // Adjust ranges from sub-slice-relative to absolute token indices.
-        let adjusted: Vec<(usize, usize)> = ranges.into_iter().map(|(s, e)| (s + start, e + start)).collect();
+        // Adjust token ranges from sub-slice-relative to absolute token indices.
+        let token_ranges = token_ranges.into_iter().map(|(s, e)| (s + start, e + start)).collect();
 
-        (nodes, adjusted, errors)
+        // Node index ranges are kept sub-slice-relative (caller offsets them as needed).
+        ParseWithRangesResult {
+            nodes,
+            token_ranges,
+            node_ranges,
+            errors,
+        }
     }
 }
 
@@ -453,5 +504,698 @@ mod tests {
         let (nodes, errors) = parser.update("upcase()");
         assert!(!errors.has_errors());
         assert!(!nodes.is_empty());
+    }
+
+    /// Regression: inserting a new pipe-stage in the middle used to trigger the
+    /// early-return path because the reversed-suffix comparison matched tokens
+    /// "too far" (e.g. the trailing `foo` in old matched `foo` in the new middle
+    /// segment).  The fix adds a token-count guard to the early return.
+    #[test]
+    fn test_symmetric_insert_no_early_return() {
+        // `upcase() | upcase()` → insert another `upcase() | ` in the middle.
+        let old = "upcase() | upcase()";
+        let new = "upcase() | upcase() | upcase()";
+        let mut parser = IncrementalParser::new(old);
+        parser.update(new);
+        // All three call sites must be reflected in the CST.
+        assert_eq!(parser.source(), new);
+        let (nodes, errors) = parser.result();
+        assert!(!errors.has_errors());
+        assert!(!nodes.is_empty());
+        // The node count must match a fresh parse.
+        let fresh = IncrementalParser::new(new);
+        assert_eq!(nodes.len(), fresh.result().0.len());
+    }
+
+    /// Regression: after an edit, nodes that survived in the suffix kept
+    /// `Shared<Token>` references to old token objects with pre-edit positions.
+    /// The fix re-parses everything from the first affected group onward so
+    /// every surviving node holds a fresh token with correct range information.
+    #[test]
+    fn test_suffix_node_positions_updated_after_insert() {
+        // Two independent statements separated by a newline.
+        let old = "upcase()\ndowncase()";
+        // Prepend a new statement so the original two shift down one line.
+        let new = "ltrim()\nupcase()\ndowncase()";
+        let mut parser = IncrementalParser::new(old);
+        parser.update(new);
+
+        // Build a fresh reference parser from the new source.
+        let fresh = IncrementalParser::new(new);
+
+        // Compare every top-level node range between the incremental and fresh parsers.
+        let inc_nodes = parser.result().0;
+        let fresh_nodes = fresh.result().0;
+        assert_eq!(
+            inc_nodes.len(),
+            fresh_nodes.len(),
+            "incremental and fresh node counts differ"
+        );
+        for (i, (inc, ref_node)) in inc_nodes.iter().zip(fresh_nodes.iter()).enumerate() {
+            assert_eq!(
+                inc.range(),
+                ref_node.range(),
+                "node {i} range mismatch: incremental={:?} fresh={:?}",
+                inc.range(),
+                ref_node.range()
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod prop_tests {
+    use proptest::collection::vec;
+    use proptest::prelude::*;
+
+    use super::*;
+
+    /// Reconstructs the source text from a slice of CST nodes by walking the
+    /// node tree and concatenating trivia and token text in order.
+    ///
+    /// This mirrors how the lexer/parser consume tokens, so the result should
+    /// round-trip back to the original source for any well-formed input.
+    fn nodes_to_source(nodes: &[Shared<Node>]) -> String {
+        use crate::lexer::token::TokenKind;
+
+        fn node_text(node: &Node, out: &mut String) {
+            for trivia in &node.leading_trivia {
+                out.push_str(&trivia.to_string());
+            }
+            if let Some(token) = &node.token {
+                // `StringLiteral` stores only the inner value; re-add the quotes.
+                if let TokenKind::StringLiteral(s) = &token.kind {
+                    out.push('"');
+                    out.push_str(s);
+                    out.push('"');
+                } else {
+                    out.push_str(&token.kind.to_string());
+                }
+            }
+            for child in &node.children {
+                node_text(child, out);
+            }
+            for trivia in &node.trailing_trivia {
+                out.push_str(&trivia.to_string());
+            }
+        }
+
+        let mut out = String::new();
+        for node in nodes {
+            node_text(node, &mut out);
+        }
+        out
+    }
+
+    // Strategies
+    /// Generates a string literal value (the text *inside* the quotes), including
+    /// ASCII words, multibyte Japanese text, emoji, and Greek letters.
+    fn string_value() -> impl Strategy<Value = String> {
+        prop_oneof![
+            Just("hello"),
+            Just("world"),
+            Just("foo"),
+            Just("bar"),
+            // multibyte
+            Just("こんにちは"),
+            Just("世界"),
+            Just("日本語"),
+            Just("🦀"),
+            Just("αβγδ"),
+            Just("résumé"),
+            Just("中文"),
+            Just("한국어"),
+        ]
+        .prop_map(|s| s.to_string())
+    }
+
+    /// Generates a quoted string literal token, e.g. `"hello"` or `"こんにちは"`.
+    fn string_literal() -> impl Strategy<Value = String> {
+        string_value().prop_map(|s| format!("\"{}\"", s))
+    }
+
+    /// Generates one of the well-known zero-argument built-in function calls.
+    fn zero_arg_builtin() -> impl Strategy<Value = String> {
+        prop_oneof![
+            Just("upcase()"),
+            Just("downcase()"),
+            Just("ltrim()"),
+            Just("rtrim()"),
+            Just("length()"),
+            Just("to_number()"),
+            Just("to_string()"),
+            Just("keys()"),
+            Just("values()"),
+            Just("flatten()"),
+            Just("not()"),
+            Just("ascii_downcase()"),
+            Just("ascii_upcase()"),
+        ]
+        .prop_map(|s| s.to_string())
+    }
+
+    /// Generates built-in calls that take a single string argument, including
+    /// multibyte string arguments.
+    fn one_string_arg_builtin() -> impl Strategy<Value = String> {
+        (
+            prop_oneof![Just("starts_with"), Just("ends_with"), Just("contains"), Just("split"),],
+            string_literal(),
+        )
+            .prop_map(|(func, arg)| format!("{}({})", func, arg))
+    }
+
+    /// Generates built-in calls that take two string arguments.
+    fn two_string_arg_builtin() -> impl Strategy<Value = String> {
+        (string_literal(), string_literal()).prop_map(|(s1, s2)| format!("replace({}, {})", s1, s2))
+    }
+
+    /// Generates a `starts_with` or `ends_with` call with a multibyte argument.
+    fn multibyte_arg_builtin() -> impl Strategy<Value = String> {
+        (
+            prop_oneof![Just("starts_with"), Just("ends_with"), Just("contains"),],
+            prop_oneof![
+                Just("\"こんにちは\""),
+                Just("\"世界\""),
+                Just("\"🦀\""),
+                Just("\"αβγ\""),
+                Just("\"日本語\""),
+            ],
+        )
+            .prop_map(|(func, arg)| format!("{}({})", func, arg))
+    }
+
+    /// Generates any kind of single built-in call (zero-arg, one-arg, two-arg, multibyte).
+    fn builtin_call() -> impl Strategy<Value = String> {
+        prop_oneof![
+            3 => zero_arg_builtin(),
+            3 => one_string_arg_builtin(),
+            1 => two_string_arg_builtin(),
+            2 => multibyte_arg_builtin(),
+        ]
+    }
+
+    /// Generates a simple `def` expression with no parameters and an ASCII body,
+    /// e.g. `def greet(): upcase() end`.
+    fn def_expr() -> impl Strategy<Value = String> {
+        (
+            prop_oneof![Just("greet"), Just("process"), Just("transform"), Just("my_func"),],
+            zero_arg_builtin(),
+        )
+            .prop_map(|(name, body)| format!("def {}(): {} end", name, body))
+    }
+
+    /// Generates a `def` with a single string-arg body.
+    fn def_with_arg_expr() -> impl Strategy<Value = String> {
+        (
+            prop_oneof![Just("check"), Just("test_fn"), Just("my_check"),],
+            one_string_arg_builtin(),
+        )
+            .prop_map(|(name, body)| format!("def {}(): {} end", name, body))
+    }
+
+    /// Generates a simple `if` expression (condition is a builtin call that
+    /// returns a boolean, branch is another builtin call).
+    fn if_expr() -> impl Strategy<Value = String> {
+        (
+            prop_oneof![
+                Just("starts_with(\"a\")"),
+                Just("ends_with(\"z\")"),
+                Just("contains(\"x\")"),
+                Just("starts_with(\"こ\")"),
+                Just("ends_with(\"界\")"),
+            ],
+            zero_arg_builtin(),
+            zero_arg_builtin(),
+        )
+            .prop_map(|(cond, then_branch, else_branch)| {
+                format!("if ({}): {} else: {} end", cond, then_branch, else_branch)
+            })
+    }
+
+    /// Generates a pipe-chain of 1–4 built-in calls, e.g. `"upcase() | ltrim()"`.
+    fn pipe_chain() -> impl Strategy<Value = String> {
+        vec(builtin_call(), 1..=4).prop_map(|calls| calls.join(" | "))
+    }
+
+    /// Generates a program that may include def, if, and pipe expressions.
+    fn mixed_program() -> impl Strategy<Value = String> {
+        prop_oneof![
+            2 => pipe_chain(),
+            1 => def_expr(),
+            1 => def_with_arg_expr(),
+            1 => if_expr(),
+            // def followed by a pipe chain
+            1 => (def_expr(), pipe_chain())
+                .prop_map(|(d, p)| format!("{}\n| {}", d, p)),
+        ]
+    }
+
+    // source() always reflects the last source passed to update()
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_source_preserved_after_update(
+            src1 in pipe_chain(),
+            src2 in pipe_chain(),
+        ) {
+            let mut parser = IncrementalParser::new(&src1);
+            parser.update(&src2);
+            prop_assert_eq!(parser.source(), src2);
+        }
+    }
+
+    // multiple sequential updates: source() == the last one
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_multiple_updates_preserve_last_source(
+            s1 in pipe_chain(),
+            s2 in pipe_chain(),
+            s3 in pipe_chain(),
+        ) {
+            let mut parser = IncrementalParser::new(&s1);
+            parser.update(&s2);
+            parser.update(&s3);
+            prop_assert_eq!(parser.source(), s3);
+        }
+    }
+
+    // incremental update produces same node count as a fresh parse
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_incremental_node_count_matches_fresh(
+            src1 in pipe_chain(),
+            src2 in pipe_chain(),
+        ) {
+            let mut incremental = IncrementalParser::new(&src1);
+            let (inc_nodes, _) = incremental.update(&src2);
+            let inc_count = inc_nodes.len();
+
+            let fresh = IncrementalParser::new(&src2);
+            let (fresh_nodes, _) = fresh.result();
+            prop_assert_eq!(
+                inc_count,
+                fresh_nodes.len(),
+                "incremental node count {} != fresh parse node count {} for src={:?}",
+                inc_count,
+                fresh_nodes.len(),
+                src2,
+            );
+        }
+    }
+
+    // updating with the same source is idempotent
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_idempotent_update(src in pipe_chain()) {
+            let mut parser = IncrementalParser::new(&src);
+            let (nodes_first, _) = parser.result();
+            let count_first = nodes_first.len();
+
+            parser.update(&src);
+            let (nodes_second, _) = parser.result();
+            prop_assert_eq!(nodes_second.len(), count_first);
+            prop_assert_eq!(parser.source(), src);
+        }
+    }
+
+    // incremental parse never produces more errors than a fresh parse
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_incremental_error_status_matches_fresh(
+            src1 in pipe_chain(),
+            src2 in pipe_chain(),
+        ) {
+            let mut incremental = IncrementalParser::new(&src1);
+            let (_, inc_errors) = incremental.update(&src2);
+            let inc_has_errors = inc_errors.has_errors();
+
+            let fresh = IncrementalParser::new(&src2);
+            let (_, fresh_errors) = fresh.result();
+            prop_assert_eq!(
+                inc_has_errors,
+                fresh_errors.has_errors(),
+                "error mismatch after incremental update for src={:?}",
+                src2
+            );
+        }
+    }
+
+    // apply_edit (full replace) produces correct source
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_apply_edit_full_replace_source(
+            base in pipe_chain(),
+            replacement in pipe_chain(),
+        ) {
+            let mut parser = IncrementalParser::new(&base);
+            let char_len = parser.char_len();
+            let edit = TextEdit::new(0, char_len, replacement.clone());
+            let result = parser.apply_edit(&edit);
+            prop_assert!(result.is_ok(), "apply_edit failed: {:?}", result.err());
+            prop_assert_eq!(parser.source(), replacement);
+        }
+    }
+
+    // two sequential apply_edits: source reflects both
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_sequential_apply_edits(
+            base   in pipe_chain(),
+            mid    in pipe_chain(),
+            target in pipe_chain(),
+        ) {
+            let mut parser = IncrementalParser::new(&base);
+
+            // First edit: replace entire source with `mid`
+            let len1 = parser.char_len();
+            parser.apply_edit(&TextEdit::new(0, len1, mid)).unwrap();
+
+            // Second edit: replace entire source with `target`
+            let len2 = parser.char_len();
+            parser.apply_edit(&TextEdit::new(0, len2, target.clone())).unwrap();
+
+            prop_assert_eq!(parser.source(), target);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 8 – nodes_to_source round-trip for fresh parse
+    //
+    // Verifies that the CST faithfully preserves all token and trivia text so
+    // that reconstructing the source from nodes gives back the original string.
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_nodes_to_source_roundtrip(src in pipe_chain()) {
+            let parser = IncrementalParser::new(&src);
+            let (nodes, _) = parser.result();
+            let reconstructed = nodes_to_source(nodes);
+            prop_assert_eq!(
+                reconstructed,
+                src,
+                "nodes_to_source did not reproduce the original source"
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 9 – no panic on arbitrary (possibly invalid) source strings
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(300))]
+        #[test]
+        fn prop_no_panic_on_arbitrary_source(src in ".*") {
+            let mut parser = IncrementalParser::new(&src);
+            let _ = parser.result();
+            // update with another arbitrary string also must not panic
+            let _ = parser.update("");
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 10 – apply_edit with multibyte replacement: source is correct
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_apply_edit_multibyte_replacement(
+            base in pipe_chain(),
+            // Replace the whole source with a short multibyte string
+            insert in prop_oneof![
+                Just("こんにちは".to_string()),
+                Just("世界".to_string()),
+                Just("🦀".to_string()),
+                Just("αβγ".to_string()),
+            ],
+        ) {
+            let mut parser = IncrementalParser::new(&base);
+            let char_len = parser.char_len();
+            let edit = TextEdit::new(0, char_len, insert.clone());
+            let result = parser.apply_edit(&edit);
+            prop_assert!(result.is_ok());
+            prop_assert_eq!(parser.source(), insert);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 11 – builtin_call with multibyte string arguments: no parse error
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_multibyte_arg_builtin_no_error(src in multibyte_arg_builtin()) {
+            let parser = IncrementalParser::new(&src);
+            let (_, errors) = parser.result();
+            prop_assert!(
+                !errors.has_errors(),
+                "unexpected parse error for src={:?}",
+                src
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 12 – one_string_arg_builtin: no parse error
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_one_string_arg_builtin_no_error(src in one_string_arg_builtin()) {
+            let parser = IncrementalParser::new(&src);
+            let (_, errors) = parser.result();
+            prop_assert!(
+                !errors.has_errors(),
+                "unexpected parse error for src={:?}",
+                src
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 13 – two_string_arg_builtin: no parse error
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_two_string_arg_builtin_no_error(src in two_string_arg_builtin()) {
+            let parser = IncrementalParser::new(&src);
+            let (_, errors) = parser.result();
+            prop_assert!(
+                !errors.has_errors(),
+                "unexpected parse error for src={:?}",
+                src
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 14 – def_expr: no parse error, source preserved after update
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_def_expr_no_error(src in def_expr()) {
+            let parser = IncrementalParser::new(&src);
+            let (_, errors) = parser.result();
+            prop_assert!(
+                !errors.has_errors(),
+                "unexpected parse error for def src={:?}",
+                src
+            );
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_def_with_arg_no_error(src in def_with_arg_expr()) {
+            let parser = IncrementalParser::new(&src);
+            let (_, errors) = parser.result();
+            prop_assert!(
+                !errors.has_errors(),
+                "unexpected parse error for def-with-arg src={:?}",
+                src
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 15 – if_expr: no parse error
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_if_expr_no_error(src in if_expr()) {
+            let parser = IncrementalParser::new(&src);
+            let (_, errors) = parser.result();
+            prop_assert!(
+                !errors.has_errors(),
+                "unexpected parse error for if src={:?}",
+                src
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 16 – mixed_program: incremental node count matches fresh parse
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_mixed_program_incremental_matches_fresh(
+            src1 in mixed_program(),
+            src2 in mixed_program(),
+        ) {
+            let mut incremental = IncrementalParser::new(&src1);
+            let (inc_nodes, _) = incremental.update(&src2);
+            let inc_count = inc_nodes.len();
+
+            let fresh = IncrementalParser::new(&src2);
+            let (fresh_nodes, _) = fresh.result();
+            prop_assert_eq!(
+                inc_count,
+                fresh_nodes.len(),
+                "node count mismatch: incremental={} fresh={} src={:?}",
+                inc_count,
+                fresh_nodes.len(),
+                src2,
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 17 – mixed_program: error status matches fresh parse
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_mixed_program_error_status_matches_fresh(
+            src1 in mixed_program(),
+            src2 in mixed_program(),
+        ) {
+            let mut incremental = IncrementalParser::new(&src1);
+            let (_, inc_errors) = incremental.update(&src2);
+            let inc_has_errors = inc_errors.has_errors();
+
+            let fresh = IncrementalParser::new(&src2);
+            let (_, fresh_errors) = fresh.result();
+            prop_assert_eq!(
+                inc_has_errors,
+                fresh_errors.has_errors(),
+                "error status mismatch after incremental update for src={:?}",
+                src2,
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 18 – pipe_chain (with string args): nodes_to_source round-trip
+    //
+    // `nodes_to_source` faithfully reconstructs sources composed of built-in
+    // calls (including those with string arguments).  Structural expressions
+    // such as `def`/`if` are exercised in separate consistency properties.
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_pipe_chain_with_args_roundtrip(src in pipe_chain()) {
+            let parser = IncrementalParser::new(&src);
+            let (nodes, _) = parser.result();
+            let reconstructed = nodes_to_source(nodes);
+            prop_assert_eq!(
+                reconstructed,
+                src,
+                "nodes_to_source did not reproduce the original source"
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 19 – apply_edit with multibyte builtin-arg source: source correct
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_apply_edit_on_multibyte_arg_source(
+            base  in multibyte_arg_builtin(),
+            target in multibyte_arg_builtin(),
+        ) {
+            let mut parser = IncrementalParser::new(&base);
+            let char_len = parser.char_len();
+            let edit = TextEdit::new(0, char_len, target.clone());
+            let result = parser.apply_edit(&edit);
+            prop_assert!(result.is_ok(), "apply_edit failed: {:?}", result.err());
+            prop_assert_eq!(parser.source(), target);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 20 – partial edit inside a multibyte string argument
+    //
+    // Replaces only the inner string value of a `starts_with("X")` call while
+    // leaving the surrounding syntax intact.  Verifies that the source is correct
+    // and that the parser does not panic.
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_partial_edit_multibyte_string_arg(
+            prefix in prop_oneof![
+                Just("starts_with"),
+                Just("ends_with"),
+                Just("contains"),
+            ],
+            old_val in prop_oneof![
+                Just("hello"),
+                Just("world"),
+                Just("abc"),
+            ],
+            new_val in prop_oneof![
+                Just("こんにちは"),
+                Just("世界"),
+                Just("🦀"),
+                Just("αβγ"),
+                Just("日本語"),
+            ],
+        ) {
+            // Build e.g. `starts_with("hello")`
+            let src = format!("{}(\"{}\")", prefix, old_val);
+            let mut parser = IncrementalParser::new(&src);
+            let (_, errors) = parser.result();
+            prop_assert!(!errors.has_errors(), "initial parse error for src={:?}", src);
+
+            // Locate the char offsets of `old_val` inside the quotes.
+            // Layout: prefix ( " old_val " )
+            //          0..n   n  n+1  ...
+            let quote_start = parser.source().chars().position(|c| c == '"').unwrap() + 1;
+            let quote_end = quote_start + old_val.chars().count();
+
+            let edit = TextEdit::new(quote_start, quote_end, new_val);
+            let result = parser.apply_edit(&edit);
+            prop_assert!(result.is_ok(), "apply_edit failed: {:?}", result.err());
+
+            let expected = format!("{}(\"{}\")", prefix, new_val);
+            prop_assert_eq!(parser.source(), expected);
+        }
     }
 }
