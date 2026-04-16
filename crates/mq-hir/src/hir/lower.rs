@@ -214,9 +214,13 @@ impl Hir {
             | mq_lang::CstNodeKind::Continue => {
                 self.add_keyword(node, source_id, scope_id, parent);
             }
-
             mq_lang::CstNodeKind::Assign => {
                 self.add_assign_expr(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::Group => {
+                for child in node.children_without_token() {
+                    self.add_expr(&child, source_id, scope_id, parent);
+                }
             }
 
             _ => {}
