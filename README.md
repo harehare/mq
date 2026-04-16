@@ -111,6 +111,8 @@ $ docker run --rm ghcr.io/harehare/mq:0.5.26
 
 You can install the VSCode extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq).
 
+For VS Code compatible editors, it is also available on the [Open VSX Registry](https://open-vsx.org/extension/harehare/vscode-mq).
+
 ### Neovim
 
 You can install the Neovim plugin by following the instructions in the [mq.nvim README](https://github.com/harehare/mq/blob/main/editors/neovim/README.md).
