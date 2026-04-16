@@ -513,10 +513,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
         }
 
-        Ok(Shared::new(Node {
+        let paren_node = Shared::new(Node {
             token_id,
             expr: Shared::new(Expr::Paren(expr_node)),
-        }))
+        });
+
+        // Handle postfix operations: (expr)(args), (expr)[N], (expr)(args)[N], etc.
+        self.parse_postfix_ops(paren_node, lparen_token)
     }
 
     fn parse_not(&mut self, not_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
@@ -854,13 +857,16 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             ));
         }
 
-        Ok(Shared::new(Node {
+        let array_node = Shared::new(Node {
             token_id,
             expr: Shared::new(Expr::Call(
                 IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::clone(token))),
                 elements,
             )),
-        }))
+        });
+
+        // Handle postfix bracket access: [1,2,3][0], [1,2,3][0:2], etc.
+        self.parse_postfix_ops(array_node, token)
     }
 
     fn parse_all_nodes(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
@@ -1107,7 +1113,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                 // Check for bracket access after function call (e.g., foo()[0])
                 if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
-                    self.parse_bracket_access(call_node, ident_token)
+                    let result = self.parse_bracket_access(call_node, ident_token)?;
+                    self.parse_postfix_ops(result, ident_token)
                 } else if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Selector(_))) {
                     self.parse_attribute_access(call_node, token_id)
                 } else if Self::is_next_token_allowed(self.tokens.peek().map(|t| &t.kind)) {
@@ -1125,7 +1132,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     ))),
                 });
 
-                self.parse_bracket_access(ident_node, ident_token)
+                let result = self.parse_bracket_access(ident_node, ident_token)?;
+                self.parse_postfix_ops(result, ident_token)
             }
             token if Self::is_next_token_allowed(token) => Ok(Shared::new(Node {
                 token_id: self.token_arena.alloc(Shared::clone(ident_token)),
@@ -1343,15 +1351,40 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         };
 
         // Check for function call after bracket access (e.g., arr[0]() or arr[0][1]())
+        // and handle further postfix operations (e.g., arr[0]()[1])
         if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LParen)) {
             let args = self.parse_args()?;
-            Ok(Shared::new(Node {
+            let call_dynamic = Shared::new(Node {
                 token_id: self.token_arena.alloc(Shared::clone(original_token)),
                 expr: Shared::new(Expr::CallDynamic(final_result, args)),
-            }))
+            });
+            self.parse_postfix_ops(call_dynamic, original_token)
         } else {
             Ok(final_result)
         }
+    }
+
+    /// Parses postfix operations (dynamic calls and bracket access) after a primary expression.
+    /// Handles chains like `(expr)(args)[N]`, `expr[N](args)[M]`, etc.
+    fn parse_postfix_ops(
+        &mut self,
+        mut current: Shared<Node>,
+        original_token: &Shared<Token>,
+    ) -> Result<Shared<Node>, SyntaxError> {
+        loop {
+            if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LParen)) {
+                let args = self.parse_args()?;
+                current = Shared::new(Node {
+                    token_id: self.token_arena.alloc(Shared::clone(original_token)),
+                    expr: Shared::new(Expr::CallDynamic(current, args)),
+                });
+            } else if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
+                current = self.parse_bracket_access(current, original_token)?;
+            } else {
+                break;
+            }
+        }
+        Ok(current)
     }
 
     fn parse_def(&mut self, def_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
@@ -1448,10 +1481,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         let program = self.parse_program(false)?;
 
-        Ok(Shared::new(Node {
+        let fn_node = Shared::new(Node {
             token_id: fn_token_id,
             expr: Shared::new(Expr::Fn(params, program)),
-        }))
+        });
+
+        // Handle postfix operations: fn(...): ... end(args), fn(...): ... end(args)[N], etc.
+        self.parse_postfix_ops(fn_node, fn_token)
     }
 
     fn parse_while(&mut self, while_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
@@ -6378,6 +6414,164 @@ mod tests {
                             token_id: 3.into(),
                             expr: Shared::new(Expr::Literal(Literal::String("test".to_owned()))),
                         })
+                    ],
+                )),
+            })
+        ]))]
+    // Test group expr with index access: (x)[0] → get(Paren(x), 0)
+    #[case::group_expr_with_index_access(
+        vec![
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::RParen),
+            token(TokenKind::LBracket),
+            token(TokenKind::NumberLiteral(0.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Call(
+                    IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::LParen)))),
+                    smallvec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Paren(
+                                Shared::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                }),
+                            )),
+                        }),
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                        }),
+                    ],
+                )),
+            })
+        ]))]
+    // Test group expr with dynamic call: (x)("test") → CallDynamic(Paren(x), ["test"])
+    #[case::group_expr_with_dynamic_call(
+        vec![
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::RParen),
+            token(TokenKind::LParen),
+            token(TokenKind::StringLiteral("test".to_owned())),
+            token(TokenKind::RParen),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::CallDynamic(
+                    Shared::new(Node {
+                        token_id: 0.into(),
+                        expr: Shared::new(Expr::Paren(
+                            Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                            }),
+                        )),
+                    }),
+                    smallvec![
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Literal(Literal::String("test".to_owned()))),
+                        }),
+                    ],
+                )),
+            })
+        ]))]
+    // Test group expr with chained call then index: (f)("a")[0] → get(CallDynamic(Paren(f), ["a"]), 0)
+    #[case::group_expr_with_chained_call_and_index(
+        vec![
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("f"))),
+            token(TokenKind::RParen),
+            token(TokenKind::LParen),
+            token(TokenKind::StringLiteral("a".to_owned())),
+            token(TokenKind::RParen),
+            token(TokenKind::LBracket),
+            token(TokenKind::NumberLiteral(0.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Call(
+                    IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::LParen)))),
+                    smallvec![
+                        Shared::new(Node {
+                            token_id: 3.into(),
+                            expr: Shared::new(Expr::CallDynamic(
+                                Shared::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Shared::new(Expr::Paren(
+                                        Shared::new(Node {
+                                            token_id: 1.into(),
+                                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))))),
+                                        }),
+                                    )),
+                                }),
+                                smallvec![
+                                    Shared::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::String("a".to_owned()))),
+                                    }),
+                                ],
+                            )),
+                        }),
+                        Shared::new(Node {
+                            token_id: 4.into(),
+                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                        }),
+                    ],
+                )),
+            })
+        ]))]
+    // Test array literal with index access: [1,2][0] → get(array([1,2]), 0)
+    #[case::array_literal_with_index_access(
+        vec![
+            token(TokenKind::LBracket),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::Comma),
+            token(TokenKind::NumberLiteral(2.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::LBracket),
+            token(TokenKind::NumberLiteral(0.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Call(
+                    IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::LBracket)))),
+                    smallvec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Call(
+                                IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::new(token(TokenKind::LBracket)))),
+                                smallvec![
+                                    Shared::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                    }),
+                                ],
+                            )),
+                        }),
+                        Shared::new(Node {
+                            token_id: 3.into(),
+                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                        }),
                     ],
                 )),
             })
