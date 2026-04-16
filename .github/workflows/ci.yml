@@ -37,7 +37,7 @@ jobs:
           bins: docs
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Install tools
-        uses: taiki-e/install-action@0c7a94999971db56e9df89df226240aab222e776 # v2.75.14
+        uses: taiki-e/install-action@5939f3337e40968c39aa70f5ecb1417a92fb25a0 # v2.75.15
         with:
           tool: nextest,cargo-llvm-cov
       - name: Configure RUSTFLAGS for Windows
