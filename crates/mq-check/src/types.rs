@@ -485,7 +485,7 @@ impl Type {
                         count += 1;
                     }
                 }
-                let field_score = if count > 0 { total / count } else { 10 };
+                let field_score = total.checked_div(count).unwrap_or(10);
                 let rest_score = r1.match_score(r2).unwrap_or(10);
                 Some(field_score + rest_score + 20)
             }

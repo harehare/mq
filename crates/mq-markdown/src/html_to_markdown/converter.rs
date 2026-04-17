@@ -555,12 +555,10 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                                         parts.push("[ ] ".to_string());
                                     }
                                 }
-                                "text" | "number" | "button" | "url" | "email" => {
-                                    if element.attributes.contains_key("value") {
-                                        parts.push(
-                                            element.attributes.get("value").cloned().unwrap().unwrap_or_default(),
-                                        );
-                                    }
+                                "text" | "number" | "button" | "url" | "email"
+                                    if element.attributes.contains_key("value") =>
+                                {
+                                    parts.push(element.attributes.get("value").cloned().unwrap().unwrap_or_default());
                                 }
                                 _ => {}
                             }

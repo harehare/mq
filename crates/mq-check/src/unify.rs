@@ -129,12 +129,13 @@ pub fn unify(
         (Type::RowEmpty, Type::Dict(_, _)) | (Type::Dict(_, _), Type::RowEmpty) => {}
 
         // RowEmpty ↔ Record: closed row can absorb an empty record
-        (Type::RowEmpty, Type::Record(fields, rest)) | (Type::Record(fields, rest), Type::RowEmpty) => {
-            if fields.is_empty() {
-                unify(ctx, rest, &Type::RowEmpty, range, origin);
-            } else {
-                ctx.report_mismatch(t1, t2, range, origin);
-            }
+        (Type::RowEmpty, Type::Record(fields, rest)) | (Type::Record(fields, rest), Type::RowEmpty)
+            if fields.is_empty() =>
+        {
+            unify(ctx, rest, &Type::RowEmpty, range, origin);
+        }
+        (Type::RowEmpty, Type::Record(..)) | (Type::Record(..), Type::RowEmpty) => {
+            ctx.report_mismatch(t1, t2, range, origin);
         }
 
         // Record ↔ Record (row polymorphism)
