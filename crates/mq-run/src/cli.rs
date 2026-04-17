@@ -12,6 +12,9 @@ use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
 use std::{fs, path::PathBuf};
+use tabled::Table;
+use tabled::builder::Builder;
+use tabled::settings::Style;
 use which::which;
 
 #[derive(Parser, Debug, Default)]
@@ -95,6 +98,7 @@ enum OutputFormat {
     Html,
     Text,
     Json,
+    Table,
     None,
 }
 
@@ -827,6 +831,59 @@ impl Cli {
         }
     }
 
+    /// Converts a list of `RuntimeValue`s into a `tabled` `Table`.
+    ///
+    /// If all values are `Dict` with a consistent set of keys, each dict becomes
+    /// a row and the keys become column headers. Otherwise, a single-column
+    /// table labelled "value" is produced.
+    fn runtime_values_to_table(runtime_values: &[mq_lang::RuntimeValue]) -> Table {
+        let non_none: Vec<&mq_lang::RuntimeValue> = runtime_values.iter().filter(|v| !v.is_none()).collect();
+        let all_dicts = non_none.iter().all(|v| matches!(*v, mq_lang::RuntimeValue::Dict(_)));
+
+        if all_dicts && !non_none.is_empty() {
+            let headers: Vec<String> = if let mq_lang::RuntimeValue::Dict(map) = non_none[0] {
+                map.keys().map(|k| k.to_string()).collect()
+            } else {
+                vec![]
+            };
+
+            let consistent = non_none.iter().all(|v| {
+                if let mq_lang::RuntimeValue::Dict(map) = *v {
+                    let keys: Vec<String> = map.keys().map(|k| k.to_string()).collect();
+                    keys == headers
+                } else {
+                    false
+                }
+            });
+
+            if consistent && !headers.is_empty() {
+                let mut builder = Builder::default();
+                builder.push_record(headers.clone());
+                for value in &non_none {
+                    if let mq_lang::RuntimeValue::Dict(map) = *value {
+                        let row: Vec<String> = headers
+                            .iter()
+                            .map(|h| {
+                                map.get(&mq_lang::Ident::new(h.as_str()))
+                                    .map(|v| v.to_string())
+                                    .unwrap_or_default()
+                            })
+                            .collect();
+                        builder.push_record(row);
+                    }
+                }
+                return builder.build().with(Style::rounded()).to_owned();
+            }
+        }
+
+        let mut builder = Builder::default();
+        builder.push_record(["value"]);
+        for value in &non_none {
+            builder.push_record([value.to_string()]);
+        }
+        builder.build().with(Style::rounded()).to_owned()
+    }
+
     fn print(&self, runtime_values: mq_lang::RuntimeValues) -> miette::Result<()> {
         let stdout = io::stdout();
         let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
@@ -871,6 +928,10 @@ impl Cli {
             }
             OutputFormat::Json => {
                 Self::write_ignore_pipe(&mut handle, markdown.to_json()?.as_bytes())?;
+            }
+            OutputFormat::Table => {
+                let table = Self::runtime_values_to_table(runtime_values);
+                Self::write_ignore_pipe(&mut handle, format!("{}\n", table).as_bytes())?;
             }
             OutputFormat::None => {}
         }
@@ -958,7 +1019,12 @@ mod tests {
             }
         }
 
-        for format in [OutputFormat::Markdown, OutputFormat::Html, OutputFormat::Text] {
+        for format in [
+            OutputFormat::Markdown,
+            OutputFormat::Html,
+            OutputFormat::Text,
+            OutputFormat::Table,
+        ] {
             let cli = Cli {
                 input: InputArgs::default(),
                 output: OutputArgs {
@@ -1449,6 +1515,77 @@ mod tests {
         };
 
         assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_output_format_table_single_column() {
+        let (_, temp_file_path) = create_file("test_table.md", "# Test\n\nContent");
+        let (_, output_file) = create_file("test_table_output.md", "");
+        let temp_file_path_clone = temp_file_path.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Table,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(output_content.contains("value"), "Table should have value header");
+        assert!(output_content.contains("Test"), "Table should contain node text");
+        assert!(output_content.contains('|'), "Table should use markdown table format");
+    }
+
+    #[test]
+    fn test_output_format_table_dict() {
+        let (_, output_file) = create_file("test_table_dict_output.md", "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Table,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some(r#"{name: "Alice", age: "30"}"#.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(output_content.contains("name"), "Table should contain name column");
+        assert!(output_content.contains("age"), "Table should contain age column");
+        assert!(output_content.contains("Alice"), "Table should contain Alice");
+        assert!(output_content.contains("30"), "Table should contain 30");
     }
 
     #[test]
