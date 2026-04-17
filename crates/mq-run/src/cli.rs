@@ -889,7 +889,14 @@ impl Cli {
                     builder.push_record([
                         node.name().to_string(),
                         node.value().to_string(),
-                        node.position().map(|pos| pos.to_string()).unwrap_or_default(),
+                        node.position()
+                            .map(|pos| {
+                                format!(
+                                    "line {} column {} to line {} column {}",
+                                    pos.start.line, pos.start.column, pos.end.line, pos.end.column
+                                )
+                            })
+                            .unwrap_or_default(),
                     ]);
                 }
             }
