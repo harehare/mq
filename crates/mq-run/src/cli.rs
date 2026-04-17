@@ -876,6 +876,26 @@ impl Cli {
             }
         }
 
+        let all_md = non_none
+            .iter()
+            .all(|v| matches!(*v, mq_lang::RuntimeValue::Markdown(..)));
+
+        if all_md && !non_none.is_empty() {
+            let mut builder = Builder::default();
+            builder.push_record(["type", "value", "position"]);
+
+            for value in &non_none {
+                if let mq_lang::RuntimeValue::Markdown(node, _) = *value {
+                    builder.push_record([
+                        node.name().to_string(),
+                        node.value().to_string(),
+                        node.position().map(|pos| pos.to_string()).unwrap_or_default(),
+                    ]);
+                }
+            }
+            return builder.build().with(Style::rounded()).to_owned();
+        }
+
         let mut builder = Builder::default();
         builder.push_record(["value"]);
         for value in &non_none {
@@ -1550,7 +1570,6 @@ mod tests {
         let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
         assert!(output_content.contains("value"), "Table should have value header");
         assert!(output_content.contains("Test"), "Table should contain node text");
-        assert!(output_content.contains('|'), "Table should use markdown table format");
     }
 
     #[test]

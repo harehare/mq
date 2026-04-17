@@ -811,6 +811,16 @@ pub struct Position {
     pub end: Point,
 }
 
+impl Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "line {} column {} to line {} column {}",
+            self.start.line, self.start.column, self.end.line, self.end.column
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
