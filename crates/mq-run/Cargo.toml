@@ -33,6 +33,7 @@ rayon = {workspace = true}
 regex-lite = {workspace = true, optional = true}
 rustyline = {workspace = true, optional = true, default-features = false, features = ["custom-bindings", "with-file-history"]}
 strum = {workspace = true, features = ["derive"], optional = true}
+tabled = {workspace = true}
 url = {workspace = true}
 which = "8.0.2"
 
