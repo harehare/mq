@@ -7,24 +7,15 @@
 //! Markdown nodes with children are displayed with a nested children table.
 
 use mq_lang::RuntimeValue;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use tabled::Table;
 use tabled::builder::Builder;
-use tabled::settings::Style;
+use tabled::settings::object::Rows;
+use tabled::settings::themes::Colorization;
+use tabled::settings::{Color, Style};
 
 /// Converts a list of [`RuntimeValue`]s into a [`Table`].
-///
-/// Processing order:
-/// 1. **Array unwrap**: if there is exactly one non-None value and it is an
-///    `Array`, replace the candidate list with the array's items so each element
-///    becomes its own row.
-/// 2. **Dict mode**: if all candidates are `Dict`, collect a union of their keys
-///    as column headers. Nested values are rendered recursively via
-///    [`format_cell_value`], so nested dicts become embedded tables.
-/// 3. **Markdown mode**: all candidates are Markdown nodes → type/value/children/position
-///    columns. The `children` column shows a nested table when the node has children.
-/// 4. **Fallback**: single `value` column.
-pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue]) -> Table {
+pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue], color_output: bool) -> Table {
     let non_none: Vec<&RuntimeValue> = runtime_values.iter().filter(|v| !v.is_none()).collect();
 
     // Step 1 – unwrap a single top-level Array
@@ -65,7 +56,7 @@ pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue]) -> Table 
                     builder.push_record(row);
                 }
             }
-            return builder.build().with(Style::rounded()).to_owned();
+            return apply_color(builder.build().with(Style::rounded()).to_owned(), color_output);
         }
     }
 
@@ -85,24 +76,24 @@ pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue]) -> Table 
                     rows.push(vec!["children".to_string(), children_str]);
                 }
                 if let Some(pos) = node.position() {
-                    let start = RuntimeValue::Array(vec![
-                        RuntimeValue::String(pos.start.line.to_string()),
-                        RuntimeValue::String(pos.start.column.to_string()),
-                    ]);
-                    let end = RuntimeValue::Array(vec![
-                        RuntimeValue::String(pos.end.line.to_string()),
-                        RuntimeValue::String(pos.end.column.to_string()),
-                    ]);
-                    let mut pos_map = std::collections::BTreeMap::new();
-                    pos_map.insert(mq_lang::Ident::new("start"), start);
-                    pos_map.insert(mq_lang::Ident::new("end"), end);
+                    let mut start_map = BTreeMap::new();
+                    start_map.insert(mq_lang::Ident::new("line"), pos.start.line.to_string().into());
+                    start_map.insert(mq_lang::Ident::new("column"), pos.start.column.to_string().into());
+
+                    let mut end_map = BTreeMap::new();
+                    end_map.insert(mq_lang::Ident::new("line"), pos.end.line.to_string().into());
+                    end_map.insert(mq_lang::Ident::new("column"), pos.end.column.to_string().into());
+
+                    let mut pos_map = BTreeMap::new();
+                    pos_map.insert(mq_lang::Ident::new("start"), RuntimeValue::Dict(start_map));
+                    pos_map.insert(mq_lang::Ident::new("end"), RuntimeValue::Dict(end_map));
                     let pos_str = format_cell_value(&RuntimeValue::Dict(pos_map));
                     rows.push(vec!["position".to_string(), pos_str]);
                 }
-                builder.push_record([render_inner_table(&rows)]);
+                builder.push_record([build_nested_table(&rows)]);
             }
         }
-        return builder.build().with(Style::rounded()).to_owned();
+        return apply_color(builder.build().with(Style::rounded()).to_owned(), color_output);
     }
 
     // Step 4 – Fallback: single "value" column
@@ -111,14 +102,30 @@ pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue]) -> Table 
     for val in candidates.iter() {
         builder.push_record([val.to_string()]);
     }
-    builder.build().with(Style::rounded()).to_owned()
+    apply_color(builder.build().with(Style::rounded()).to_owned(), color_output)
+}
+
+/// Applies color settings to a table when `color_output` is enabled.
+fn apply_color(mut table: Table, color_output: bool) -> Table {
+    if color_output {
+        table.with(Colorization::exact([Color::BOLD | Color::FG_CYAN], Rows::first()));
+    }
+    table
+}
+
+/// Renders rows as a nested rounded table string using `tabled`.
+fn build_nested_table(rows: &[Vec<String>]) -> String {
+    if rows.is_empty() {
+        return String::new();
+    }
+    let mut builder = Builder::default();
+    for row in rows {
+        builder.push_record(row.iter().map(|s| s.as_str()));
+    }
+    builder.build().with(Style::rounded().remove_horizontals()).to_string()
 }
 
 /// Renders a Markdown node's children as a nested table string.
-///
-/// Returns an empty string when the node has no children. When children exist,
-/// each child becomes a row with two columns: `type` and a recursive
-/// `format_markdown_node` value (which itself may contain a nested table).
 fn format_markdown_children(node: &mq_markdown::Node) -> String {
     let children = node.children();
     if children.is_empty() {
@@ -128,14 +135,10 @@ fn format_markdown_children(node: &mq_markdown::Node) -> String {
         .iter()
         .map(|child| vec![child.name().to_string(), format_markdown_node(child)])
         .collect();
-    render_inner_table(&rows)
+    build_nested_table(&rows)
 }
 
 /// Formats a single Markdown node for display in a table cell.
-///
-/// - Nodes **without** children: returns `node.value()` (plain text).
-/// - Nodes **with** children: renders children recursively as a nested table
-///   (`type | value/children` rows).
 fn format_markdown_node(node: &mq_markdown::Node) -> String {
     let children = node.children();
     if children.is_empty() {
@@ -145,101 +148,11 @@ fn format_markdown_node(node: &mq_markdown::Node) -> String {
             .iter()
             .map(|child| vec![child.name().to_string(), format_markdown_node(child)])
             .collect();
-        render_inner_table(&rows)
+        build_nested_table(&rows)
     }
-}
-
-/// Renders rows as a rounded-style table string without going through `tabled`.
-///
-/// Using `tabled` for inner (nested) tables causes it to transform bottom-border
-/// characters (`╰`, `┴`, `╯`) into row-separator characters (`├`, `┼`, `┤`) when
-/// the rendered string is later used as a cell value in an outer `tabled` table.
-/// This custom renderer bypasses that transformation by constructing the string
-/// directly, so nested tables always display with correct rounded borders.
-fn render_inner_table(rows: &[Vec<String>]) -> String {
-    if rows.is_empty() {
-        return String::new();
-    }
-    let num_cols = rows[0].len();
-
-    // Split each cell into lines for height/width calculation
-    let cell_lines: Vec<Vec<Vec<&str>>> = rows
-        .iter()
-        .map(|row| row.iter().map(|c| c.lines().collect()).collect())
-        .collect();
-
-    // Column widths: max char count of any line in that column
-    let col_widths: Vec<usize> = (0..num_cols)
-        .map(|c| {
-            cell_lines
-                .iter()
-                .flat_map(|row| row[c].iter().map(|line| line.chars().count()))
-                .max()
-                .unwrap_or(0)
-                .max(1)
-        })
-        .collect();
-
-    // Row heights: max line count across all cells in each row
-    let row_heights: Vec<usize> = cell_lines
-        .iter()
-        .map(|row| row.iter().map(|cell| cell.len().max(1)).max().unwrap_or(1))
-        .collect();
-
-    let hline = |left: char, mid: char, right: char| -> String {
-        let mut s = String::new();
-        s.push(left);
-        for (c, &w) in col_widths.iter().enumerate() {
-            for _ in 0..(w + 2) {
-                s.push('─');
-            }
-            if c < num_cols - 1 {
-                s.push(mid);
-            } else {
-                s.push(right);
-            }
-        }
-        s
-    };
-
-    let mut lines: Vec<String> = Vec::new();
-    lines.push(hline('╭', '┬', '╮'));
-
-    for (r, row) in rows.iter().enumerate() {
-        let height = row_heights[r];
-        for line_idx in 0..height {
-            let mut s = String::from('│');
-            for (c, _) in row.iter().enumerate() {
-                let content = cell_lines[r][c].get(line_idx).copied().unwrap_or("");
-                let pad = col_widths[c].saturating_sub(content.chars().count());
-                s.push(' ');
-                s.push_str(content);
-                for _ in 0..pad {
-                    s.push(' ');
-                }
-                s.push(' ');
-                s.push('│');
-            }
-            lines.push(s);
-        }
-        if r < rows.len() - 1 {
-            lines.push(hline('├', '┼', '┤'));
-        }
-    }
-
-    lines.push(hline('╰', '┴', '╯'));
-    lines.join("\n")
 }
 
 /// Formats a [`RuntimeValue`] as a string suitable for a table cell.
-///
-/// - `Dict`: rendered as an embedded 2-column (key/value) rounded table.
-/// - `Array` of `Dict`s: rendered as an embedded multi-column rounded table.
-/// - `Array` of other values: rendered as an embedded single-column rounded table.
-/// - `Markdown`: rendered via [`format_markdown_node`] — shows value for leaf nodes,
-///   or a nested children table for nodes that have children.
-/// - `String`: raw value without surrounding quotes.
-/// - Everything else: [`Display`](std::fmt::Display) representation.
 fn format_cell_value(value: &RuntimeValue) -> String {
     match value {
         RuntimeValue::Dict(map) => {
@@ -250,7 +163,7 @@ fn format_cell_value(value: &RuntimeValue) -> String {
                 .iter()
                 .map(|(k, v)| vec![k.to_string(), format_cell_value(v)])
                 .collect();
-            render_inner_table(&rows)
+            build_nested_table(&rows)
         }
         RuntimeValue::Array(items) => {
             if items.is_empty() {
@@ -281,10 +194,10 @@ fn format_cell_value(value: &RuntimeValue) -> String {
                         table_rows.push(row);
                     }
                 }
-                render_inner_table(&table_rows)
+                build_nested_table(&table_rows)
             } else {
                 let rows: Vec<Vec<String>> = items.iter().map(|v| vec![format_cell_value(v)]).collect();
-                render_inner_table(&rows)
+                build_nested_table(&rows)
             }
         }
         RuntimeValue::Markdown(node, _) => format_markdown_node(node),
