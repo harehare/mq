@@ -12,9 +12,6 @@ use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
 use std::{fs, path::PathBuf};
-use tabled::Table;
-use tabled::builder::Builder;
-use tabled::settings::Style;
 use which::which;
 
 #[derive(Parser, Debug, Default)]
@@ -831,86 +828,6 @@ impl Cli {
         }
     }
 
-    /// Converts a list of `RuntimeValue`s into a `tabled` `Table`.
-    ///
-    /// If all values are `Dict` with a consistent set of keys, each dict becomes
-    /// a row and the keys become column headers. Otherwise, a single-column
-    /// table labelled "value" is produced.
-    fn runtime_values_to_table(runtime_values: &[mq_lang::RuntimeValue]) -> Table {
-        let non_none: Vec<&mq_lang::RuntimeValue> = runtime_values.iter().filter(|v| !v.is_none()).collect();
-        let all_dicts = non_none.iter().all(|v| matches!(*v, mq_lang::RuntimeValue::Dict(_)));
-
-        if all_dicts && !non_none.is_empty() {
-            let headers: Vec<String> = if let mq_lang::RuntimeValue::Dict(map) = non_none[0] {
-                map.keys().map(|k| k.to_string()).collect()
-            } else {
-                vec![]
-            };
-
-            let consistent = non_none.iter().all(|v| {
-                if let mq_lang::RuntimeValue::Dict(map) = *v {
-                    let keys: Vec<String> = map.keys().map(|k| k.to_string()).collect();
-                    keys == headers
-                } else {
-                    false
-                }
-            });
-
-            if consistent && !headers.is_empty() {
-                let mut builder = Builder::default();
-                builder.push_record(headers.clone());
-                for value in &non_none {
-                    if let mq_lang::RuntimeValue::Dict(map) = *value {
-                        let row: Vec<String> = headers
-                            .iter()
-                            .map(|h| {
-                                map.get(&mq_lang::Ident::new(h.as_str()))
-                                    .map(|v| v.to_string())
-                                    .unwrap_or_default()
-                            })
-                            .collect();
-                        builder.push_record(row);
-                    }
-                }
-                return builder.build().with(Style::rounded()).to_owned();
-            }
-        }
-
-        let all_md = non_none
-            .iter()
-            .all(|v| matches!(*v, mq_lang::RuntimeValue::Markdown(..)));
-
-        if all_md && !non_none.is_empty() {
-            let mut builder = Builder::default();
-            builder.push_record(["type", "value", "position"]);
-
-            for value in &non_none {
-                if let mq_lang::RuntimeValue::Markdown(node, _) = *value {
-                    builder.push_record([
-                        node.name().to_string(),
-                        node.value().to_string(),
-                        node.position()
-                            .map(|pos| {
-                                format!(
-                                    "line {} column {} to line {} column {}",
-                                    pos.start.line, pos.start.column, pos.end.line, pos.end.column
-                                )
-                            })
-                            .unwrap_or_default(),
-                    ]);
-                }
-            }
-            return builder.build().with(Style::rounded()).to_owned();
-        }
-
-        let mut builder = Builder::default();
-        builder.push_record(["value"]);
-        for value in &non_none {
-            builder.push_record([value.to_string()]);
-        }
-        builder.build().with(Style::rounded()).to_owned()
-    }
-
     fn print(&self, runtime_values: mq_lang::RuntimeValues) -> miette::Result<()> {
         let stdout = io::stdout();
         let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
@@ -957,7 +874,8 @@ impl Cli {
                 Self::write_ignore_pipe(&mut handle, markdown.to_json()?.as_bytes())?;
             }
             OutputFormat::Table => {
-                let table = Self::runtime_values_to_table(runtime_values);
+                let color = self.output.color_output && !Self::is_no_color();
+                let table = crate::table::runtime_values_to_table(runtime_values, color);
                 Self::write_ignore_pipe(&mut handle, format!("{}\n", table).as_bytes())?;
             }
             OutputFormat::None => {}
@@ -1612,6 +1530,119 @@ mod tests {
         assert!(output_content.contains("age"), "Table should contain age column");
         assert!(output_content.contains("Alice"), "Table should contain Alice");
         assert!(output_content.contains("30"), "Table should contain 30");
+    }
+
+    #[test]
+    fn test_output_format_table_nested_dict() {
+        let (_, output_file) = create_file("test_table_nested_dict_output.md", "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Table,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some(r#"{name: "Alice", addr: {city: "Tokyo", zip: "100"}}"#.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(output_content.contains("addr"), "Table should contain addr column");
+        assert!(output_content.contains("name"), "Table should contain name column");
+        assert!(output_content.contains("Alice"), "Table should contain Alice");
+        assert!(output_content.contains("city"), "Nested table should contain city key");
+        assert!(output_content.contains("Tokyo"), "Nested table should contain Tokyo");
+        assert!(output_content.contains("zip"), "Nested table should contain zip key");
+        assert!(output_content.contains("100"), "Nested table should contain 100");
+        assert!(!output_content.contains("addr.city"), "Dot notation must not appear");
+    }
+
+    #[test]
+    fn test_output_format_table_array_value() {
+        let (_, output_file) = create_file("test_table_array_value_output.md", "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Table,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some(r#"{name: "Alice", tags: ["a", "b"]}"#.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(output_content.contains("tags"), "Table should contain tags column");
+        assert!(output_content.contains('a'), "Nested table should contain a");
+        assert!(output_content.contains('b'), "Nested table should contain b");
+        assert!(output_content.contains("Alice"), "Table should contain Alice");
+        assert!(!output_content.contains(r#"["a""#), "Raw array repr must not appear");
+    }
+
+    #[test]
+    fn test_output_format_table_array_input() {
+        let (_, output_file) = create_file("test_table_array_input_output.md", "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Table,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some(r#"[{a: "1"}, {a: "2"}]"#.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(output_content.contains('a'), "Table should have column 'a'");
+        assert!(output_content.contains('1'), "Row 1 value should appear");
+        assert!(output_content.contains('2'), "Row 2 value should appear");
+        assert!(
+            !output_content.contains("value"),
+            "Should not fall back to 'value' column"
+        );
     }
 
     #[test]
