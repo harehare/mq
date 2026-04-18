@@ -10,6 +10,7 @@ use mq_lang::RuntimeValue;
 use std::collections::{BTreeMap, BTreeSet};
 use tabled::Table;
 use tabled::builder::Builder;
+use tabled::settings::location::Locator;
 use tabled::settings::object::Rows;
 use tabled::settings::themes::Colorization;
 use tabled::settings::{Color, Style};
@@ -18,7 +19,7 @@ use tabled::settings::{Color, Style};
 pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue], color_output: bool) -> Table {
     let non_none: Vec<&RuntimeValue> = runtime_values.iter().filter(|v| !v.is_none()).collect();
 
-    // Step 1 – unwrap a single top-level Array
+    // unwrap a single top-level Array
     let expanded: Option<Vec<&RuntimeValue>> = if let [RuntimeValue::Array(items)] = non_none.as_slice() {
         Some(items.iter().collect())
     } else {
@@ -26,7 +27,7 @@ pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue], color_out
     };
     let candidates: &[&RuntimeValue] = expanded.as_deref().unwrap_or(&non_none);
 
-    // Step 2 – Dict mode: direct keys as headers, nested values as embedded tables
+    // direct keys as headers, nested values as embedded tables
     let all_dicts = !candidates.is_empty() && candidates.iter().all(|v| matches!(*v, RuntimeValue::Dict(_)));
 
     if all_dicts {
@@ -60,13 +61,16 @@ pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue], color_out
         }
     }
 
-    // Step 3 – Markdown mode: type / value / children / position
     let all_md = !candidates.is_empty() && candidates.iter().all(|v| matches!(*v, RuntimeValue::Markdown(..)));
 
     if all_md {
         let mut builder = Builder::default();
         for val in candidates.iter() {
             if let RuntimeValue::Markdown(node, _) = *val {
+                if node.value().is_empty() {
+                    continue;
+                }
+
                 let mut rows: Vec<Vec<String>> = vec![
                     vec!["type".to_string(), node.name().to_string()],
                     vec!["value".to_string(), node.value().to_string()],
@@ -96,7 +100,6 @@ pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue], color_out
         return apply_color(builder.build().with(Style::rounded()).to_owned(), color_output);
     }
 
-    // Step 4 – Fallback: single "value" column
     let mut builder = Builder::default();
     builder.push_record(["value"]);
     for val in candidates.iter() {
@@ -108,7 +111,10 @@ pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue], color_out
 /// Applies color settings to a table when `color_output` is enabled.
 fn apply_color(mut table: Table, color_output: bool) -> Table {
     if color_output {
-        table.with(Colorization::exact([Color::BOLD | Color::FG_CYAN], Rows::first()));
+        table
+            .with(Colorization::exact([Color::BOLD | Color::FG_CYAN], Rows::first()))
+            .modify(Locator::content("true"), Color::FG_BLUE)
+            .modify(Locator::content("false"), Color::FG_BLUE);
     }
     table
 }
@@ -201,7 +207,6 @@ fn format_cell_value(value: &RuntimeValue) -> String {
             }
         }
         RuntimeValue::Markdown(node, _) => format_markdown_node(node),
-        RuntimeValue::String(s) => s.clone(),
         _ => value.to_string(),
     }
 }
