@@ -65,6 +65,9 @@ pkg-url = "{ disabled }"
 assets = [
   ["target/release/mq", "usr/bin/", "755"],
   ["../../README.md", "usr/share/doc/mq/README", "644"],
+  ["../../skills/processing-markdown/SKILL.md", "usr/share/mq/skills/processing-markdown/SKILL.md", "644"],
+  ["../../skills/processing-markdown/REFERENCE.md", "usr/share/mq/skills/processing-markdown/REFERENCE.md", "644"],
+  ["../../skills/processing-markdown/EXAMPLES.md", "usr/share/mq/skills/processing-markdown/EXAMPLES.md", "644"],
 ]
 copyright = "2024, Takahiro Sato <harehare1110@gmail.com>"
 extended-description = "mq is a jq-like command-line tool for Markdown processing. It allows you to easily slice, filter, map, and transform Markdown files."
@@ -77,4 +80,7 @@ section = "utils"
 assets = [
   {source = "target/release/mq", dest = "/usr/bin/mq", mode = "755"},
   {source = "../../README.md", dest = "/usr/share/doc/mq/README", mode = "644"},
+  {source = "../../skills/processing-markdown/SKILL.md", dest = "/usr/share/mq/skills/processing-markdown/SKILL.md", mode = "644"},
+  {source = "../../skills/processing-markdown/REFERENCE.md", dest = "/usr/share/mq/skills/processing-markdown/REFERENCE.md", mode = "644"},
+  {source = "../../skills/processing-markdown/EXAMPLES.md", dest = "/usr/share/mq/skills/processing-markdown/EXAMPLES.md", mode = "644"},
 ]
