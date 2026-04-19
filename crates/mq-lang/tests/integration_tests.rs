@@ -2367,6 +2367,96 @@ fn engine() -> DefaultEngine {
 #[case::log10_one("log10(1)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.0f64.into())].into()),)]
 #[case::log10_hundred("log10(100)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.0f64.into())].into()),)]
 #[case::exp_zero("exp(0)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.0f64.into())].into()),)]
+#[case::negate_simple("negate(1)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number((-1).into())].into()))]
+#[case::div_float("div(5, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.5.into())].into()))]
+#[case::gte_simple("gte(2, 1)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::lte_simple("lte(1, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::ne_simple("ne(1, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::csv_parse_simple(r##"_csv_parse("a,b\n1,2", ",", true)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![
+    RuntimeValue::Dict(BTreeMap::from([
+        (Ident::new("a"), RuntimeValue::String("1".to_string())),
+        (Ident::new("b"), RuntimeValue::String("2".to_string())),
+    ]))
+])].into()))]
+#[case::json_parse_simple(r##"_json_parse("{\"a\": 1}")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(BTreeMap::from([
+    (Ident::new("a"), RuntimeValue::Number(1.into())),
+]))].into()))]
+#[case::yaml_parse_simple(r##"_yaml_parse("a: 1")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(BTreeMap::from([
+    (Ident::new("a"), RuntimeValue::Number(1.into())),
+]))].into()))]
+#[case::toml_parse_simple(r##"_toml_parse("a = 1")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(BTreeMap::from([
+    (Ident::new("a"), RuntimeValue::Number(1.into())),
+]))].into()))]
+#[case::xml_parse_simple(r##"_xml_parse("<root>text</root>")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(BTreeMap::from([
+    (Ident::new("tag"), RuntimeValue::String("root".to_string())),
+    (Ident::new("attributes"), RuntimeValue::new_dict()),
+    (Ident::new("children"), RuntimeValue::Array(vec![])),
+    (Ident::new("text"), RuntimeValue::String("text".to_string())),
+]))].into()))]
+#[case::and_builtin("and(true, false)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
+#[case::or_builtin("or(false, true)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::coalesce_simple("coalesce(None, 1)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::compact_array("compact([1, None, 2])", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())])].into()))]
+#[case::uniq_array("uniq([1, 2, 1])", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())])].into()))]
+#[case::sort_array("sort([3, 1, 2])", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])].into()))]
+#[case::utf8bytelen_simple(r##"utf8bytelen("あ")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
+#[case::rindex_simple(r##"rindex("banana", "a")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
+#[case::explode_simple(r##"explode("abc")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(97.into()), RuntimeValue::Number(98.into()), RuntimeValue::Number(99.into())])].into()))]
+#[case::implode_simple(r##"implode([97, 98, 99])"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abc".to_string())].into()))]
+#[case::intern_simple(r##"intern("foo")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("foo".to_string())].into()))]
+#[case::nan_builtin("nan() | is_nan()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::infinite_builtin("infinite() > 0", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::to_md_text_simple(r##"to_md_text("hello")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello".to_string(), position: None}), None)].into()))]
+#[case::to_h_simple(r##"to_h("title", 1)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["title".to_string().into()], position: None}), None)].into()))]
+#[case::to_hr_simple("to_hr()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule{position: None}), None)].into()))]
+#[case::to_strong_simple(r##"to_strong("bold")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Strong{values: vec!["bold".to_string().into()], position: None}), None)].into()))]
+#[case::to_em_simple(r##"to_em("italic")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Emphasis{values: vec!["italic".to_string().into()], position: None}), None)].into()))]
+#[case::to_code_inline_simple(r##"to_code_inline("code")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::CodeInline(mq_markdown::CodeInline{value: "code".to_string().into(), position: None}), None)].into()))]
+#[case::get_title_simple(r##"to_markdown("[link](url 'title')") | first() | get_title()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("title".to_string())].into()))]
+#[case::get_url_simple(r##"to_markdown("[link](url)") | first() | get_url()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("url".to_string())].into()))]
+#[case::set_code_block_lang_simple(r##"to_markdown("```\ncode\n```") | first() | set_code_block_lang("rust") | .code.lang"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("rust".to_string())].into()))]
+#[case::set_list_ordered_simple(r##"to_markdown("- item") | first() | set_list_ordered(true) | .list.ordered"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::diff_simple(r##"_diff("abc", "abd") | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::get_markdown_position_simple(r##"to_markdown("# title") | first() | _get_markdown_position() | get("start_line")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::toon_parse_simple(r##"_toon_parse("a: 1")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(BTreeMap::from([
+    (Ident::new("a"), RuntimeValue::Number(1.into())),
+]))].into()))]
+#[case::capture_simple(r##"capture("abc123def", "(?P<num>\\d+)")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(BTreeMap::from([
+    (Ident::new("num"), RuntimeValue::String("123".to_string())),
+]))].into()))]
+#[case::is_debug_mode_simple("is_debug_mode()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(cfg!(feature = "debugger"))].into()))]
+#[case::set_check_simple(r##"to_markdown("- [ ] task") | first() | set_check(true) | .list.checked"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::stderr_simple(r##"stderr("test stderr")"##, vec![RuntimeValue::String("val".to_string())], Ok(vec![RuntimeValue::String("val".to_string())].into()))]
+#[case::to_image_simple(r##"to_image("url", "alt", "title")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "url".to_string(), alt: "alt".to_string(), title: Some("title".to_string()), position: None}), None)].into()))]
+#[case::to_link_simple(r##"to_link("url", "text", "title")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: mq_markdown::Url::new("url".to_string()), title: Some(mq_markdown::Title::new("title".to_string())), values: vec!["text".to_string().into()], position: None}), None)].into()))]
+#[case::to_math_simple(r##"to_math("E=mc^2")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Math(mq_markdown::Math{value: "E=mc^2".to_string(), position: None}), None)].into()))]
+#[case::to_math_inline_simple(r##"to_math_inline("E=mc^2")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::MathInline(mq_markdown::MathInline{value: "E=mc^2".to_string().into(), position: None}), None)].into()))]
+#[case::to_md_list_simple(r##"to_md_list("item", 1)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["item".to_string().into()], index: 0, ordered: false, level: 1, checked: None, position: None}), None)].into()))]
+#[case::to_md_table_row_simple(r##"to_md_table_row("a", "b")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{values: vec![
+    mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 0, column: 0, values: vec!["a".to_string().into()], position: None}),
+    mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 0, column: 1, values: vec!["b".to_string().into()], position: None}),
+], position: None}), None)].into()))]
+#[case::to_md_table_cell_simple(r##"to_md_table_cell("val", 1, 2)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 1, column: 2, values: vec!["val".to_string().into()], position: None}), None)].into()))]
+#[case::to_md_name_simple(r##"to_markdown("# title") | first() | to_md_name()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("h1".to_string())].into()))]
+#[case::entries_simple(r##"entries({"a": 1})"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::Number(1.into())])])].into()))]
+#[case::del_array_simple("del([1, 2, 3], 1)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into())])].into()))]
+#[case::index_string_simple(r##"index("hello", "e")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::set_ref_simple(r##"to_markdown("[link][id]\n\n[id]: url") | first() | set_ref("newlabel") | .link_ref.label"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("newlabel".to_string())].into()))]
+#[case::downcase_simple(r##"downcase("ABC")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abc".to_string())].into()))]
+#[case::gsub_simple(r##"gsub("a1b2", "\\d", "x")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("axbx".to_string())].into()))]
+#[case::regex_match_simple(r##"regex_match("a1b2", "\\d")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("1".to_string()), RuntimeValue::String("2".to_string())])].into()))]
+#[case::slice_simple(r##"slice("abcdef", 1, 4)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("bcd".to_string())].into()))]
+#[case::sort_by_impl_simple(r##"_sort_by_impl([[2, "b"], [1, "a"]])"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![
+    RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::String("a".to_string())]),
+    RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::String("b".to_string())]),
+])].into()))]
+#[case::selector_task(r##"to_markdown("- [ ] todo\n- [x] done") | .task | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::selector_todo(r##"to_markdown("- [ ] todo\n- [x] done") | .todo | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::selector_done(r##"to_markdown("- [ ] todo\n- [x] done") | .done | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::selector_mdx_jsx_flow(r##"to_mdx("<Component />") | .mdx_jsx_flow_element | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::selector_mdx_flow_expr(r##"to_mdx("{1 + 1}") | .mdx_flow_expression | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::selector_footnote(r##"to_markdown("[^1]: note\n\n# title") | .footnote | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::selector_definition(r##"to_markdown("[id]: url") | .definition | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
