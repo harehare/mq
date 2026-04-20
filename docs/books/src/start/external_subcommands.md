@@ -2,25 +2,6 @@
 
 You can extend `mq` with custom subcommands by placing executable files starting with `mq-` in `~/.local/bin/` or anywhere in your `PATH`.
 
-## Creating a Custom Subcommand
-
-Create an executable file with the `mq-` prefix in `~/.local/bin/` or a directory on your `PATH`:
-
-```sh
-# Create a custom subcommand
-cat > ~/.local/bin/mq-hello << 'EOF'
-#!/bin/bash
-echo "Hello from mq-hello!"
-echo "Arguments: $@"
-EOF
-chmod +x ~/.local/bin/mq-hello
-
-# Use the custom subcommand
-mq hello world
-# Output: Hello from mq-hello!
-#         Arguments: world
-```
-
 ## Command Resolution
 
 When you run `mq <subcommand>`, mq searches for an executable named `mq-<subcommand>` in the following order:
@@ -49,6 +30,7 @@ The following external tools are available to extend mq's functionality:
 - [mq-crawler](https://github.com/harehare/mq/blob/main/crates/mq-crawler/README.md) - A web crawler that extracts structured data from websites and outputs it in Markdown format.
 - [mq-docs](https://github.com/harehare/mq-docs) - A documentation generator for mq functions, macros, and selectors.
 - [mq-edit](https://github.com/harehare/mq-edit) - A terminal-based Markdown and code editor with WYSIWYG rendering and LSP support.
+- [mq-http](https://github.com/harehare/mq-http) - A lightweight HTTP server that executes mq scripts for each request.
 - [mq-lsp](https://github.com/harehare/mq/tree/main/crates/mq-lsp/README.md) - Language Server Protocol (LSP) implementation for mq query files, providing IDE features like completion, hover, and diagnostics.
 - [mq-mcp](https://github.com/harehare/mq-mcp) - Model Context Protocol (MCP) server implementation for AI assistants.
 - [mq-open](https://github.com/harehare/mq-open) - Graphical previewer for mq.
