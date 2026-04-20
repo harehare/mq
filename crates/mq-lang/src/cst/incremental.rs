@@ -1175,9 +1175,8 @@ mod prop_tests {
     /// Generates a `TextEdit` whose offsets are always valid for a source of
     /// `char_len` characters.
     fn text_edit_for(char_len: usize) -> impl Strategy<Value = TextEdit> {
-        (0..=char_len, 0..=char_len, replacement_text()).prop_map(|(a, b, text)| {
-            TextEdit::new(a.min(b), a.max(b), text)
-        })
+        (0..=char_len, 0..=char_len, replacement_text())
+            .prop_map(|(a, b, text)| TextEdit::new(a.min(b), a.max(b), text))
     }
 
     // ---------------------------------------------------------------------------
