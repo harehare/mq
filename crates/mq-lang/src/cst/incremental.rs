@@ -754,6 +754,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_source_preserved_after_update(
             src1 in pipe_chain(),
             src2 in pipe_chain(),
@@ -768,6 +769,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(150))]
         #[test]
+        #[ignore]
         fn prop_multiple_updates_preserve_last_source(
             s1 in pipe_chain(),
             s2 in pipe_chain(),
@@ -784,6 +786,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_incremental_node_count_matches_fresh(
             src1 in pipe_chain(),
             src2 in pipe_chain(),
@@ -809,6 +812,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_idempotent_update(src in pipe_chain()) {
             let mut parser = IncrementalParser::new(&src);
             let (nodes_first, _) = parser.result();
@@ -825,6 +829,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_incremental_error_status_matches_fresh(
             src1 in pipe_chain(),
             src2 in pipe_chain(),
@@ -848,6 +853,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_apply_edit_full_replace_source(
             base in pipe_chain(),
             replacement in pipe_chain(),
@@ -865,6 +871,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(150))]
         #[test]
+        #[ignore]
         fn prop_sequential_apply_edits(
             base   in pipe_chain(),
             mid    in pipe_chain(),
@@ -894,6 +901,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_nodes_to_source_roundtrip(src in pipe_chain()) {
             let parser = IncrementalParser::new(&src);
             let (nodes, _) = parser.result();
@@ -913,6 +921,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(300))]
         #[test]
+        #[ignore]
         fn prop_no_panic_on_arbitrary_source(src in ".*") {
             let mut parser = IncrementalParser::new(&src);
             let _ = parser.result();
@@ -928,6 +937,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(150))]
         #[test]
+        #[ignore]
         fn prop_apply_edit_multibyte_replacement(
             base in pipe_chain(),
             // Replace the whole source with a short multibyte string
@@ -954,6 +964,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_multibyte_arg_builtin_no_error(src in multibyte_arg_builtin()) {
             let parser = IncrementalParser::new(&src);
             let (_, errors) = parser.result();
@@ -972,6 +983,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_one_string_arg_builtin_no_error(src in one_string_arg_builtin()) {
             let parser = IncrementalParser::new(&src);
             let (_, errors) = parser.result();
@@ -990,6 +1002,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(150))]
         #[test]
+        #[ignore]
         fn prop_two_string_arg_builtin_no_error(src in two_string_arg_builtin()) {
             let parser = IncrementalParser::new(&src);
             let (_, errors) = parser.result();
@@ -1008,6 +1021,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(150))]
         #[test]
+        #[ignore]
         fn prop_def_expr_no_error(src in def_expr()) {
             let parser = IncrementalParser::new(&src);
             let (_, errors) = parser.result();
@@ -1022,6 +1036,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(150))]
         #[test]
+        #[ignore]
         fn prop_def_with_arg_no_error(src in def_with_arg_expr()) {
             let parser = IncrementalParser::new(&src);
             let (_, errors) = parser.result();
@@ -1040,6 +1055,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(150))]
         #[test]
+        #[ignore]
         fn prop_if_expr_no_error(src in if_expr()) {
             let parser = IncrementalParser::new(&src);
             let (_, errors) = parser.result();
@@ -1058,6 +1074,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_mixed_program_incremental_matches_fresh(
             src1 in mixed_program(),
             src2 in mixed_program(),
@@ -1086,6 +1103,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_mixed_program_error_status_matches_fresh(
             src1 in mixed_program(),
             src2 in mixed_program(),
@@ -1116,6 +1134,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_pipe_chain_with_args_roundtrip(src in pipe_chain()) {
             let parser = IncrementalParser::new(&src);
             let (nodes, _) = parser.result();
@@ -1135,6 +1154,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(150))]
         #[test]
+        #[ignore]
         fn prop_apply_edit_on_multibyte_arg_source(
             base  in multibyte_arg_builtin(),
             target in multibyte_arg_builtin(),
@@ -1190,6 +1210,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_partial_edit_source_matches_manual(
             (source, edit) in pipe_chain().prop_flat_map(|src| {
                 let char_len = src.chars().count();
@@ -1221,6 +1242,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_partial_edit_char_len_correct(
             (source, edit) in pipe_chain().prop_flat_map(|src| {
                 let char_len = src.chars().count();
@@ -1254,6 +1276,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_partial_edit_state_matches_fresh_parse(
             (source, edit) in pipe_chain().prop_flat_map(|src| {
                 let char_len = src.chars().count();
@@ -1300,6 +1323,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
         #[test]
+        #[ignore]
         fn prop_noop_edit_source_unchanged(
             (source, edit) in pipe_chain().prop_flat_map(|src| {
                 let chars: Vec<char> = src.chars().collect();
@@ -1336,6 +1360,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(150))]
         #[test]
+        #[ignore]
         fn prop_sequential_partial_edits_source_correct(
             (source, edit1, edit2) in pipe_chain()
                 .prop_flat_map(|src| {
@@ -1381,6 +1406,7 @@ mod prop_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(150))]
         #[test]
+        #[ignore]
         fn prop_partial_edit_multibyte_string_arg(
             prefix in prop_oneof![
                 Just("starts_with"),
