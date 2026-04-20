@@ -750,6 +750,8 @@ mod prop_tests {
         ]
     }
 
+    // NOTE: Property tests in this module are ignored by default because they can
+    // be long-running in CI. Run them explicitly with `cargo test -- --ignored`.
     // source() always reflects the last source passed to update()
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
