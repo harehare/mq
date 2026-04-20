@@ -1149,6 +1149,229 @@ mod prop_tests {
     }
 
     // ---------------------------------------------------------------------------
+    // Helpers for partial-edit property tests
+    // ---------------------------------------------------------------------------
+
+    /// Apply a `TextEdit` (character-offset) directly to a `&str`, producing the
+    /// expected post-edit `String` without going through `IncrementalParser`.
+    /// Used as the ground-truth in source-integrity property tests.
+    fn apply_edit_manually(source: &str, edit: &TextEdit) -> String {
+        let chars: Vec<char> = source.chars().collect();
+        let mut result: String = chars[..edit.start].iter().collect();
+        result.push_str(&edit.new_text);
+        result.extend(chars[edit.end..].iter());
+        result
+    }
+
+    /// Generates replacement text: ASCII fragments, multibyte strings, or empty.
+    fn replacement_text() -> impl Strategy<Value = String> {
+        prop_oneof![
+            Just(String::new()),
+            "[a-zA-Z0-9_ |()\"]{1,20}".prop_map(|s| s.to_string()),
+            string_value(),
+        ]
+    }
+
+    /// Generates a `TextEdit` whose offsets are always valid for a source of
+    /// `char_len` characters.
+    fn text_edit_for(char_len: usize) -> impl Strategy<Value = TextEdit> {
+        (0..=char_len, 0..=char_len, replacement_text()).prop_map(|(a, b, text)| {
+            TextEdit::new(a.min(b), a.max(b), text)
+        })
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 21 – partial edit: source() matches manual string edit
+    //
+    // For any well-formed mq source and any valid (possibly partial) TextEdit,
+    // `parser.source()` after `apply_edit` must equal the string you would
+    // produce by performing the same character-range replacement by hand.
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_partial_edit_source_matches_manual(
+            (source, edit) in pipe_chain().prop_flat_map(|src| {
+                let char_len = src.chars().count();
+                (Just(src), text_edit_for(char_len))
+            })
+        ) {
+            let expected = apply_edit_manually(&source, &edit);
+            let mut parser = IncrementalParser::new(&source);
+            parser
+                .apply_edit(&edit)
+                .expect("apply_edit must not fail for in-range offsets");
+            prop_assert_eq!(
+                parser.source(),
+                expected,
+                "source() mismatch after partial edit. source={:?}, edit={:?}",
+                source,
+                edit,
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 22 – partial edit: char_len() reflects the edit arithmetic
+    //
+    // After replacing chars `start..end` with `new_text`:
+    //   char_len() == original_len - (end - start) + new_text.chars().count()
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_partial_edit_char_len_correct(
+            (source, edit) in pipe_chain().prop_flat_map(|src| {
+                let char_len = src.chars().count();
+                (Just(src), text_edit_for(char_len))
+            })
+        ) {
+            let original_len = source.chars().count();
+            let expected_len =
+                original_len - (edit.end - edit.start) + edit.new_text.chars().count();
+            let mut parser = IncrementalParser::new(&source);
+            parser
+                .apply_edit(&edit)
+                .expect("apply_edit must not fail for in-range offsets");
+            prop_assert_eq!(
+                parser.char_len(),
+                expected_len,
+                "char_len() mismatch after partial edit. source={:?}, edit={:?}",
+                source,
+                edit,
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 23 – partial edit: incremental state matches a fresh parse
+    //
+    // After a partial edit the node count and error flag of the incremental parser
+    // must match those of `IncrementalParser::new(&expected_source)`.
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_partial_edit_state_matches_fresh_parse(
+            (source, edit) in pipe_chain().prop_flat_map(|src| {
+                let char_len = src.chars().count();
+                (Just(src), text_edit_for(char_len))
+            })
+        ) {
+            let expected_source = apply_edit_manually(&source, &edit);
+
+            let mut incremental = IncrementalParser::new(&source);
+            incremental
+                .apply_edit(&edit)
+                .expect("apply_edit must not fail for in-range offsets");
+
+            let fresh = IncrementalParser::new(&expected_source);
+            let (fresh_nodes, fresh_errors) = fresh.result();
+            let (inc_nodes, inc_errors) = incremental.result();
+
+            prop_assert_eq!(
+                inc_nodes.len(),
+                fresh_nodes.len(),
+                "node count mismatch. source={:?}, edit={:?}, expected={:?}",
+                source,
+                edit,
+                expected_source,
+            );
+            prop_assert_eq!(
+                inc_errors.has_errors(),
+                fresh_errors.has_errors(),
+                "error flag mismatch. source={:?}, edit={:?}, expected={:?}",
+                source,
+                edit,
+                expected_source,
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 24 – no-op edit: source() is unchanged
+    //
+    // Replacing any character range with the exact same text must leave
+    // `parser.source()` identical to the original.
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn prop_noop_edit_source_unchanged(
+            (source, edit) in pipe_chain().prop_flat_map(|src| {
+                let chars: Vec<char> = src.chars().collect();
+                let char_len = chars.len();
+                (0..=char_len, 0..=char_len).prop_map(move |(a, b)| {
+                    let start = a.min(b);
+                    let end   = a.max(b);
+                    let same: String = chars[start..end].iter().collect();
+                    (src.clone(), TextEdit::new(start, end, same))
+                })
+            })
+        ) {
+            let mut parser = IncrementalParser::new(&source);
+            parser
+                .apply_edit(&edit)
+                .expect("no-op edit must not fail");
+            prop_assert_eq!(
+                parser.source(),
+                source,
+                "no-op edit must not change source(). edit={:?}",
+                edit,
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Property 25 – two sequential partial edits: source() matches manual result
+    //
+    // `edit2` is generated from the intermediate source produced by `edit1`, so
+    // its offsets are always valid.  After both edits, `source()` must equal the
+    // result of applying them manually in the same order.
+    // ---------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(150))]
+        #[test]
+        fn prop_sequential_partial_edits_source_correct(
+            (source, edit1, edit2) in pipe_chain()
+                .prop_flat_map(|src| {
+                    let char_len = src.chars().count();
+                    (Just(src), text_edit_for(char_len))
+                })
+                .prop_flat_map(|(src, edit1)| {
+                    let intermediate = apply_edit_manually(&src, &edit1);
+                    let intermediate_len = intermediate.chars().count();
+                    (Just(src), Just(edit1), text_edit_for(intermediate_len))
+                })
+        ) {
+            let intermediate = apply_edit_manually(&source, &edit1);
+            let expected     = apply_edit_manually(&intermediate, &edit2);
+
+            let mut parser = IncrementalParser::new(&source);
+            parser
+                .apply_edit(&edit1)
+                .expect("first edit must not fail for in-range offsets");
+            parser
+                .apply_edit(&edit2)
+                .expect("second edit must not fail for in-range offsets");
+
+            prop_assert_eq!(
+                parser.source(),
+                expected,
+                "source mismatch after sequential edits. source={:?}, edit1={:?}, edit2={:?}",
+                source,
+                edit1,
+                edit2,
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
     // Property 20 – partial edit inside a multibyte string argument
     //
     // Replaces only the inner string value of a `starts_with("X")` call while
