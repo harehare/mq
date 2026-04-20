@@ -7,16 +7,17 @@
 //! Markdown nodes with children are displayed with a nested children table.
 
 use mq_lang::RuntimeValue;
+use mq_markdown::ColorTheme;
 use std::collections::{BTreeMap, BTreeSet};
 use tabled::Table;
 use tabled::builder::Builder;
 use tabled::settings::location::Locator;
-use tabled::settings::object::Rows;
-use tabled::settings::themes::Colorization;
-use tabled::settings::{Color, Style};
+use tabled::settings::object::{Rows, Segment};
+use tabled::settings::style::BorderColor;
+use tabled::settings::{Color, Modify, Style};
 
 /// Converts a list of [`RuntimeValue`]s into a [`Table`].
-pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue], color_output: bool) -> Table {
+pub(crate) fn runtime_values_to_table<'a>(runtime_values: &[RuntimeValue], theme: Option<&'a ColorTheme<'a>>) -> Table {
     let non_none: Vec<&RuntimeValue> = runtime_values.iter().filter(|v| !v.is_none()).collect();
 
     // unwrap a single top-level Array
@@ -50,14 +51,14 @@ pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue], color_out
                         .iter()
                         .map(|h| {
                             map.get(&mq_lang::Ident::new(h.as_str()))
-                                .map(format_cell_value)
+                                .map(|v| format_cell_value(v, theme))
                                 .unwrap_or_default()
                         })
                         .collect();
                     builder.push_record(row);
                 }
             }
-            return apply_color(builder.build().with(Style::rounded()).to_owned(), color_output);
+            return apply_color(builder.build().with(Style::rounded()).to_owned(), theme, true);
         }
     }
 
@@ -75,7 +76,7 @@ pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue], color_out
                     vec!["type".to_string(), node.name().to_string()],
                     vec!["value".to_string(), node.value().to_string()],
                 ];
-                let children_str = format_markdown_children(node);
+                let children_str = format_markdown_children(node, theme);
                 if !children_str.is_empty() {
                     rows.push(vec!["children".to_string(), children_str]);
                 }
@@ -91,13 +92,13 @@ pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue], color_out
                     let mut pos_map = BTreeMap::new();
                     pos_map.insert(mq_lang::Ident::new("start"), RuntimeValue::Dict(start_map));
                     pos_map.insert(mq_lang::Ident::new("end"), RuntimeValue::Dict(end_map));
-                    let pos_str = format_cell_value(&RuntimeValue::Dict(pos_map));
+                    let pos_str = format_cell_value(&RuntimeValue::Dict(pos_map), theme);
                     rows.push(vec!["position".to_string(), pos_str]);
                 }
-                builder.push_record([build_nested_table(&rows)]);
+                builder.push_record([build_nested_table(&rows, theme)]);
             }
         }
-        return apply_color(builder.build().with(Style::rounded()).to_owned(), color_output);
+        return apply_color(builder.build().with(Style::rounded()).to_owned(), theme, false);
     }
 
     let mut builder = Builder::default();
@@ -105,22 +106,50 @@ pub(crate) fn runtime_values_to_table(runtime_values: &[RuntimeValue], color_out
     for val in candidates.iter() {
         builder.push_record([val.to_string()]);
     }
-    apply_color(builder.build().with(Style::rounded()).to_owned(), color_output)
+    apply_color(builder.build().with(Style::rounded()).to_owned(), theme, true)
 }
 
-/// Applies color settings to a table when `color_output` is enabled.
-fn apply_color(mut table: Table, color_output: bool) -> Table {
-    if color_output {
-        table
-            .with(Colorization::exact([Color::BOLD | Color::FG_CYAN], Rows::first()))
-            .modify(Locator::content("true"), Color::FG_BLUE)
-            .modify(Locator::content("false"), Color::FG_BLUE);
+/// Converts a theme color pair `(prefix, suffix)` to a tabled [`Color`].
+fn pair_to_color(prefix: &str, suffix: &str) -> Color {
+    Color::new(prefix.to_string(), suffix.to_string())
+}
+
+/// Applies theme colors and border color to a table.
+/// `has_header` controls whether the first row is styled as a header.
+fn apply_color<'a>(mut table: Table, theme: Option<&'a ColorTheme<'a>>, has_header: bool) -> Table {
+    let Some(theme) = theme else {
+        return table;
+    };
+
+    let heading = pair_to_color(&theme.heading.0, &theme.heading.1);
+    let bool_color = pair_to_color(&theme.link_url.0, &theme.link_url.1);
+    let none_color = pair_to_color(&theme.horizontal_rule.0, &theme.horizontal_rule.1);
+    let border_color = pair_to_color(&theme.table_separator.0, &theme.table_separator.1);
+
+    table.modify(Segment::all(), BorderColor::filled(border_color));
+
+    if has_header {
+        table.with(Modify::new(Rows::first()).with(heading.clone()));
     }
+
+    table
+        .modify(Locator::content("true"), bool_color.clone())
+        .modify(Locator::content("false"), bool_color)
+        .modify(Locator::content("None"), none_color)
+        .modify(Locator::content("type"), heading.clone())
+        .modify(Locator::content("value"), heading.clone())
+        .modify(Locator::content("children"), heading.clone())
+        .modify(Locator::content("position"), heading.clone())
+        .modify(Locator::content("start"), heading.clone())
+        .modify(Locator::content("end"), heading.clone())
+        .modify(Locator::content("line"), heading.clone())
+        .modify(Locator::content("column"), heading);
+
     table
 }
 
 /// Renders rows as a nested rounded table string using `tabled`.
-fn build_nested_table(rows: &[Vec<String>]) -> String {
+fn build_nested_table<'a>(rows: &[Vec<String>], theme: Option<&'a ColorTheme<'a>>) -> String {
     if rows.is_empty() {
         return String::new();
     }
@@ -128,38 +157,43 @@ fn build_nested_table(rows: &[Vec<String>]) -> String {
     for row in rows {
         builder.push_record(row.iter().map(|s| s.as_str()));
     }
-    builder.build().with(Style::rounded().remove_horizontals()).to_string()
+    apply_color(
+        builder.build().with(Style::rounded().remove_horizontals()).to_owned(),
+        theme,
+        false,
+    )
+    .to_string()
 }
 
 /// Renders a Markdown node's children as a nested table string.
-fn format_markdown_children(node: &mq_markdown::Node) -> String {
+fn format_markdown_children<'a>(node: &mq_markdown::Node, theme: Option<&'a ColorTheme<'a>>) -> String {
     let children = node.children();
     if children.is_empty() {
         return String::new();
     }
     let rows: Vec<Vec<String>> = children
         .iter()
-        .map(|child| vec![child.name().to_string(), format_markdown_node(child)])
+        .map(|child| vec![child.name().to_string(), format_markdown_node(child, theme)])
         .collect();
-    build_nested_table(&rows)
+    build_nested_table(&rows, theme)
 }
 
 /// Formats a single Markdown node for display in a table cell.
-fn format_markdown_node(node: &mq_markdown::Node) -> String {
+fn format_markdown_node<'a>(node: &mq_markdown::Node, theme: Option<&'a ColorTheme<'a>>) -> String {
     let children = node.children();
     if children.is_empty() {
         node.value().to_string()
     } else {
         let rows: Vec<Vec<String>> = children
             .iter()
-            .map(|child| vec![child.name().to_string(), format_markdown_node(child)])
+            .map(|child| vec![child.name().to_string(), format_markdown_node(child, theme)])
             .collect();
-        build_nested_table(&rows)
+        build_nested_table(&rows, theme)
     }
 }
 
 /// Formats a [`RuntimeValue`] as a string suitable for a table cell.
-fn format_cell_value(value: &RuntimeValue) -> String {
+fn format_cell_value<'a>(value: &RuntimeValue, theme: Option<&'a ColorTheme<'a>>) -> String {
     match value {
         RuntimeValue::Dict(map) => {
             if map.is_empty() {
@@ -167,9 +201,9 @@ fn format_cell_value(value: &RuntimeValue) -> String {
             }
             let rows: Vec<Vec<String>> = map
                 .iter()
-                .map(|(k, v)| vec![k.to_string(), format_cell_value(v)])
+                .map(|(k, v)| vec![k.to_string(), format_cell_value(v, theme)])
                 .collect();
-            build_nested_table(&rows)
+            build_nested_table(&rows, theme)
         }
         RuntimeValue::Array(items) => {
             if items.is_empty() {
@@ -193,20 +227,20 @@ fn format_cell_value(value: &RuntimeValue) -> String {
                             .iter()
                             .map(|h| {
                                 map.get(&mq_lang::Ident::new(h.as_str()))
-                                    .map(format_cell_value)
+                                    .map(|v| format_cell_value(v, theme))
                                     .unwrap_or_default()
                             })
                             .collect();
                         table_rows.push(row);
                     }
                 }
-                build_nested_table(&table_rows)
+                build_nested_table(&table_rows, theme)
             } else {
-                let rows: Vec<Vec<String>> = items.iter().map(|v| vec![format_cell_value(v)]).collect();
-                build_nested_table(&rows)
+                let rows: Vec<Vec<String>> = items.iter().map(|v| vec![format_cell_value(v, theme)]).collect();
+                build_nested_table(&rows, theme)
             }
         }
-        RuntimeValue::Markdown(node, _) => format_markdown_node(node),
+        RuntimeValue::Markdown(node, _) => format_markdown_node(node, theme),
         _ => value.to_string(),
     }
 }
