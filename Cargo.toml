@@ -41,7 +41,7 @@ bimap = "0.6.3"
 cbindgen = "0.29.2"
 chromiumoxide = {version = "0.9", default-features = false}
 chrono = "0.4.44"
-clap = "4.6.0"
+clap = "4.6.1"
 colored = "3.1.1"
 crossbeam = "0.8.4"
 crossbeam-channel = "0.5.15"
