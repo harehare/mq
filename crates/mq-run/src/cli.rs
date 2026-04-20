@@ -874,8 +874,7 @@ impl Cli {
                 Self::write_ignore_pipe(&mut handle, markdown.to_json()?.as_bytes())?;
             }
             OutputFormat::Table => {
-                let theme = (self.output.color_output && !Self::is_no_color())
-                    .then(mq_markdown::ColorTheme::from_env);
+                let theme = (self.output.color_output && !Self::is_no_color()).then(mq_markdown::ColorTheme::from_env);
                 let table = crate::table::runtime_values_to_table(runtime_values, theme.as_ref());
                 Self::write_ignore_pipe(&mut handle, format!("{}\n", table).as_bytes())?;
             }

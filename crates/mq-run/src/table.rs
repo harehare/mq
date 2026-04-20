@@ -17,10 +17,7 @@ use tabled::settings::style::BorderColor;
 use tabled::settings::{Color, Modify, Style};
 
 /// Converts a list of [`RuntimeValue`]s into a [`Table`].
-pub(crate) fn runtime_values_to_table<'a>(
-    runtime_values: &[RuntimeValue],
-    theme: Option<&'a ColorTheme<'a>>,
-) -> Table {
+pub(crate) fn runtime_values_to_table<'a>(runtime_values: &[RuntimeValue], theme: Option<&'a ColorTheme<'a>>) -> Table {
     let non_none: Vec<&RuntimeValue> = runtime_values.iter().filter(|v| !v.is_none()).collect();
 
     // unwrap a single top-level Array
