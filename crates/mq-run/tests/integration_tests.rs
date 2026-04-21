@@ -201,10 +201,15 @@ In {year}, the snowfall was above average.
     "Intro.\n\n# title\n\nBody text.\n",
     Some("1-Intro.\n3:# title\n5-Body text.\n")
 )]
-#[case::grep_multiple_matches_separator(
+#[case::grep_multiple_matches_no_separator_when_adjacent(
     vec!["--unbuffered", "-F", "grep", "--after-context", "1", ".h"],
     "# h1\n\nParagraph.\n\n# h2\n\nEnd.\n",
-    Some("1:# h1\n3-Paragraph.\n--\n5:# h2\n7-End.\n")
+    Some("1:# h1\n3-Paragraph.\n5:# h2\n7-End.\n")
+)]
+#[case::grep_multiple_matches_separator(
+    vec!["--unbuffered", "-F", "grep", "--after-context", "1", ".h"],
+    "# h1\n\nP1.\n\nP2.\n\n# h2\n\nEnd.\n",
+    Some("1:# h1\n3-P1.\n--\n7:# h2\n9-End.\n")
 )]
 fn test_cli_commands(
     #[case] args: Vec<&str>,

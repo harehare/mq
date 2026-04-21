@@ -90,18 +90,7 @@ pub(crate) fn print_grep(
         ranges.sort_unstable_by_key(|r| r.0);
 
         // Merge overlapping or adjacent ranges.
-        let merged = ranges
-            .into_iter()
-            .fold(Vec::<(usize, usize)>::new(), |mut acc, (s, e)| {
-                if let Some(last) = acc.last_mut()
-                    && s <= last.1
-                {
-                    last.1 = last.1.max(e);
-                    return acc;
-                }
-                acc.push((s, e));
-                acc
-            });
+        let merged = merge_ranges(ranges);
 
         let mut first_group = true;
         for (start, end) in merged {
@@ -156,6 +145,23 @@ fn write_ignore_pipe<W: Write>(handle: &mut W, data: &[u8]) -> miette::Result<()
     }
 }
 
+/// Merges a sorted list of `(start, end)` index ranges, combining ranges that
+/// overlap or are directly adjacent (end + 1 == next start), matching `grep` behaviour.
+fn merge_ranges(ranges: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
+    ranges
+        .into_iter()
+        .fold(Vec::<(usize, usize)>::new(), |mut acc, (s, e)| {
+            if let Some(last) = acc.last_mut()
+                && s <= last.1 + 1
+            {
+                last.1 = last.1.max(e);
+                return acc;
+            }
+            acc.push((s, e));
+            acc
+        })
+}
+
 fn to_nodes(value: &mq_lang::RuntimeValue) -> Vec<mq_markdown::Node> {
     match value {
         mq_lang::RuntimeValue::Markdown(node, _) => vec![node.clone()],
@@ -196,5 +202,53 @@ mod tests {
     fn test_format_line_no_filename_no_line() {
         let result = format_line(&None, None, "plain", ":");
         assert_eq!(result, "plain\n");
+    }
+
+    // --- merge_ranges tests ---
+
+    #[test]
+    fn test_merge_ranges_empty() {
+        assert_eq!(merge_ranges(vec![]), vec![]);
+    }
+
+    #[test]
+    fn test_merge_ranges_single() {
+        assert_eq!(merge_ranges(vec![(2, 5)]), vec![(2, 5)]);
+    }
+
+    #[test]
+    fn test_merge_ranges_overlapping() {
+        // (0,3) and (2,5) overlap — should become (0,5)
+        assert_eq!(merge_ranges(vec![(0, 3), (2, 5)]), vec![(0, 5)]);
+    }
+
+    #[test]
+    fn test_merge_ranges_adjacent() {
+        // (0,1) and (2,3) are adjacent (end+1 == next start) — should merge into (0,3)
+        assert_eq!(merge_ranges(vec![(0, 1), (2, 3)]), vec![(0, 3)]);
+    }
+
+    #[test]
+    fn test_merge_ranges_non_adjacent() {
+        // (0,1) and (3,4) have a gap — should remain two separate groups
+        assert_eq!(merge_ranges(vec![(0, 1), (3, 4)]), vec![(0, 1), (3, 4)]);
+    }
+
+    #[test]
+    fn test_merge_ranges_multiple_adjacent_chain() {
+        // Three adjacent ranges should collapse into one
+        assert_eq!(merge_ranges(vec![(0, 1), (2, 3), (4, 5)]), vec![(0, 5)]);
+    }
+
+    #[test]
+    fn test_merge_ranges_mixed() {
+        // First two merge (adjacent), third is separate
+        assert_eq!(merge_ranges(vec![(0, 1), (2, 3), (5, 6)]), vec![(0, 3), (5, 6)]);
+    }
+
+    #[test]
+    fn test_merge_ranges_already_merged() {
+        // No-op when ranges are already fully merged
+        assert_eq!(merge_ranges(vec![(0, 10)]), vec![(0, 10)]);
     }
 }
