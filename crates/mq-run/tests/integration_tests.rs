@@ -35,7 +35,17 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     Some(r#"[
   {
     "type": "CodeInline",
-    "value": "inline code"
+    "value": "inline code",
+    "position": {
+      "start": {
+        "line": 1,
+        "column": 1
+      },
+      "end": {
+        "line": 1,
+        "column": 14
+      }
+    }
   }
 ]"#)
 )]

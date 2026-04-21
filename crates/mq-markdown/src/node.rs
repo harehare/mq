@@ -322,7 +322,6 @@ pub struct TableCell {
     pub values: Vec<Node>,
     pub column: usize,
     pub row: usize,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -334,7 +333,6 @@ pub struct TableCell {
 )]
 pub struct TableRow {
     pub values: Vec<Node>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -346,7 +344,6 @@ pub struct TableRow {
 )]
 pub struct TableAlign {
     pub align: Vec<TableAlignKind>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -369,7 +366,6 @@ pub struct Fragment {
 pub struct Code {
     pub value: String,
     pub lang: Option<String>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
     pub meta: Option<String>,
     pub fence: bool,
@@ -385,7 +381,6 @@ pub struct Image {
     pub alt: String,
     pub url: String,
     pub title: Option<String>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -399,7 +394,6 @@ pub struct ImageRef {
     pub alt: String,
     pub ident: String,
     pub label: Option<String>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -412,7 +406,6 @@ pub struct Link {
     pub url: Url,
     pub title: Option<Title>,
     pub values: Vec<Node>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -425,7 +418,6 @@ pub struct Link {
 pub struct FootnoteRef {
     pub ident: String,
     pub label: Option<String>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -438,7 +430,6 @@ pub struct FootnoteRef {
 pub struct Footnote {
     pub ident: String,
     pub values: Vec<Node>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -452,7 +443,6 @@ pub struct LinkRef {
     pub ident: String,
     pub label: Option<String>,
     pub values: Vec<Node>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -465,7 +455,6 @@ pub struct LinkRef {
 pub struct Heading {
     pub depth: u8,
     pub values: Vec<Node>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -476,7 +465,6 @@ pub struct Heading {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Definition {
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
     pub url: Url,
     pub title: Option<Title>,
@@ -491,7 +479,6 @@ pub struct Definition {
 )]
 pub struct Text {
     pub value: String,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -503,7 +490,6 @@ pub struct Text {
 )]
 pub struct Html {
     pub value: String,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -515,7 +501,6 @@ pub struct Html {
 )]
 pub struct Toml {
     pub value: String,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -527,7 +512,6 @@ pub struct Toml {
 )]
 pub struct Yaml {
     pub value: String,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -539,7 +523,6 @@ pub struct Yaml {
 )]
 pub struct CodeInline {
     pub value: SmolStr,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -551,7 +534,6 @@ pub struct CodeInline {
 )]
 pub struct MathInline {
     pub value: SmolStr,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -563,7 +545,6 @@ pub struct MathInline {
 )]
 pub struct Math {
     pub value: String,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -575,7 +556,6 @@ pub struct Math {
 )]
 pub struct MdxFlowExpression {
     pub value: SmolStr,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -587,7 +567,6 @@ pub struct MdxFlowExpression {
 )]
 pub struct MdxJsxFlowElement {
     pub children: Vec<Node>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
     pub name: Option<String>,
     pub attributes: Vec<MdxAttributeContent>,
@@ -634,7 +613,6 @@ pub enum MdxAttributeValue {
 )]
 pub struct MdxJsxTextElement {
     pub children: Vec<Node>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
     pub name: Option<SmolStr>,
     pub attributes: Vec<MdxAttributeContent>,
@@ -648,7 +626,6 @@ pub struct MdxJsxTextElement {
 )]
 pub struct MdxTextExpression {
     pub value: SmolStr,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -660,7 +637,6 @@ pub struct MdxTextExpression {
 )]
 pub struct MdxJsEsm {
     pub value: SmolStr,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -672,7 +648,6 @@ pub struct MdxJsEsm {
 )]
 pub struct Blockquote {
     pub values: Vec<Node>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -684,7 +659,6 @@ pub struct Blockquote {
 )]
 pub struct Delete {
     pub values: Vec<Node>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -696,7 +670,6 @@ pub struct Delete {
 )]
 pub struct Emphasis {
     pub values: Vec<Node>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -708,7 +681,6 @@ pub struct Emphasis {
 )]
 pub struct Strong {
     pub values: Vec<Node>,
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -719,7 +691,6 @@ pub struct Strong {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Break {
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -730,7 +701,6 @@ pub struct Break {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct HorizontalRule {
-    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -1446,6 +1416,8 @@ impl Node {
     fn _fragment_inner_nodes(node: &Node) -> Vec<Node> {
         if let Self::Fragment(fragment) = node {
             fragment.values.iter().flat_map(Self::_fragment_inner_nodes).collect()
+        } else if node.is_empty() {
+            Vec::new()
         } else {
             vec![node.clone()]
         }
