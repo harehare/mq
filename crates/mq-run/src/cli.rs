@@ -14,6 +14,8 @@ use std::str::FromStr;
 use std::{fs, path::PathBuf};
 use which::which;
 
+use crate::grep;
+
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
 #[command(author = env!("CARGO_PKG_AUTHORS"))]
@@ -96,6 +98,7 @@ enum OutputFormat {
     Text,
     Json,
     Table,
+    Grep,
     None,
 }
 
@@ -204,6 +207,29 @@ struct OutputArgs {
     /// Colorize markdown output
     #[arg(short = 'C', long = "color-output", default_value_t = false)]
     color_output: bool,
+
+    /// Show NUM nodes before each match. Only effective with -F grep.
+    #[clap(short = 'B', long, value_name = "NUM")]
+    before_context: Option<usize>,
+
+    /// Show NUM nodes after each match. Only effective with -F grep.
+    #[clap(long, value_name = "NUM")]
+    after_context: Option<usize>,
+
+    /// Show NUM nodes before and after each match. Only effective with -F grep.
+    #[clap(long, value_name = "NUM")]
+    context: Option<usize>,
+}
+
+impl OutputArgs {
+    /// Returns `(before, after)` node counts for grep context expansion.
+    /// `--context N` sets both sides; `--before-context` / `--after-context` override each side.
+    fn context_counts(&self) -> (usize, usize) {
+        let base = self.context.unwrap_or(0);
+        let before = self.before_context.unwrap_or(base);
+        let after = self.after_context.unwrap_or(base);
+        (before, after)
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -410,6 +436,16 @@ impl Cli {
             return self.list_commands();
         }
 
+        if (self.output.before_context.is_some()
+            || self.output.after_context.is_some()
+            || self.output.context.is_some())
+            && !matches!(self.output.output_format, OutputFormat::Grep)
+        {
+            return Err(miette!(
+                "--before-context, --after-context, and --context are only valid with -F grep"
+            ));
+        }
+
         // Check if query is actually an external subcommand
         // This handles the case where clap parses "mq test arg1" as query="test", files=["arg1"]
         if !self.input.from_file
@@ -608,6 +644,9 @@ impl Cli {
             InputFormat::Raw => mq_lang::raw_input(content),
         };
 
+        let is_grep = matches!(self.output.output_format, OutputFormat::Grep);
+        let original_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
+
         let runtime_values = if self.output.update {
             let results = engine.eval(query, input.clone().into_iter()).map_err(|e| *e)?;
             let current_values: mq_lang::RuntimeValues = input.clone().into();
@@ -631,7 +670,20 @@ impl Cli {
             self.print(separator)?;
         }
 
-        self.print(runtime_values)
+        if let Some(orig) = original_input {
+            let (before, after) = self.output.context_counts();
+            grep::print_grep(
+                runtime_values,
+                &orig,
+                file,
+                &self.output.output_file,
+                self.output.unbuffered,
+                before,
+                after,
+            )
+        } else {
+            self.print(runtime_values)
+        }
     }
 
     fn process_batch(&self) -> Result<(), miette::Error> {
@@ -878,6 +930,9 @@ impl Cli {
                 let table = crate::table::runtime_values_to_table(runtime_values, theme.as_ref());
                 Self::write_ignore_pipe(&mut handle, format!("{}\n", table).as_bytes())?;
             }
+            OutputFormat::Grep => {
+                Self::write_ignore_pipe(&mut handle, markdown.to_string().as_bytes())?;
+            }
             OutputFormat::None => {}
         }
 
@@ -891,6 +946,7 @@ impl Cli {
         Ok(())
     }
 }
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -969,6 +1025,7 @@ mod tests {
             OutputFormat::Html,
             OutputFormat::Text,
             OutputFormat::Table,
+            OutputFormat::Grep,
         ] {
             let cli = Cli {
                 input: InputArgs::default(),

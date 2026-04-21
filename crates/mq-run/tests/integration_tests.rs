@@ -176,6 +176,36 @@ In {year}, the snowfall was above average.
     "# title 42\n",
     Some("{\"level\": \"title\", \"num\": \"42\"}\n")
 )]
+#[case::grep_basic(
+    vec!["--unbuffered", "-F", "grep", ".h"],
+    "# title\n\nBody text.\n",
+    Some("1:# title\n")
+)]
+#[case::grep_no_empty_lines(
+    vec!["--unbuffered", "-F", "grep", "self"],
+    "# title\n\nBody text.\n",
+    Some("1:# title\n3:Body text.\n")
+)]
+#[case::grep_after_context(
+    vec!["--unbuffered", "-F", "grep", "--after-context", "1", ".h"],
+    "# title\n\nBody text.\n",
+    Some("1:# title\n3-Body text.\n")
+)]
+#[case::grep_before_context(
+    vec!["--unbuffered", "-F", "grep", "-B", "1", ".h"],
+    "Intro.\n\n# title\n\nBody text.\n",
+    Some("1-Intro.\n3:# title\n")
+)]
+#[case::grep_context_both(
+    vec!["--unbuffered", "-F", "grep", "--context", "1", ".h"],
+    "Intro.\n\n# title\n\nBody text.\n",
+    Some("1-Intro.\n3:# title\n5-Body text.\n")
+)]
+#[case::grep_multiple_matches_separator(
+    vec!["--unbuffered", "-F", "grep", "--after-context", "1", ".h"],
+    "# h1\n\nParagraph.\n\n# h2\n\nEnd.\n",
+    Some("1:# h1\n3-Paragraph.\n--\n5:# h2\n7-End.\n")
+)]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,
