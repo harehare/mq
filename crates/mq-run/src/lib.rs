@@ -43,6 +43,7 @@
 //! ```
 
 pub mod cli;
+pub(crate) mod grep;
 pub(crate) mod table;
 
 #[cfg(feature = "debugger")]
