@@ -2457,6 +2457,10 @@ fn engine() -> DefaultEngine {
 #[case::selector_mdx_flow_expr(r##"to_mdx("{1 + 1}") | .mdx_flow_expression | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 #[case::selector_footnote(r##"to_markdown("[^1]: note\n\n# title") | .footnote | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 #[case::selector_definition(r##"to_markdown("[id]: url") | .definition | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::selector_dict_empty_returns_none("{} | .h | is_none()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::TRUE].into()))]
+#[case::selector_dict_with_markdown_values(r##"{"docs": to_markdown("# Title\n\ntext")} | .h | is_dict()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::TRUE].into()))]
+#[case::selector_dict_preserves_type_key(r##"{"type": "mytype"} | .h | entries() | first() | last()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("mytype".to_string())].into()))]
+#[case::selector_array_of_dicts_preserves_dict(r##"array({"docs": to_markdown("# Title")}) | .h | first() | is_dict()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::TRUE].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
