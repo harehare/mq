@@ -308,6 +308,27 @@ def test_section_section_no_match():
   | assert_eq(secs, [])
 end
 
+def test_section_section_depth_h1():
+  let secs = do test_sections | section::section(., "Introduction", true);
+  | assert_eq(len(secs), 1)
+  | let s = first(secs)
+  | assert_eq(section::level(s), 1)
+  | assert(len(section::body(s)) > 1)
+end
+
+def test_section_section_depth_h2():
+  let secs = do test_sections | section::section(., "Advanced Topics", true);
+  | assert_eq(len(secs), 1)
+  | let s = first(secs)
+  | assert_eq(section::level(s), 2)
+end
+
+def test_section_section_depth_false_unchanged():
+  let secs_default = do test_sections | section::section("Introduction");
+  | let secs_depth = do test_sections | section::section(., "Introduction", false);
+  | assert_eq(len(secs_default), len(secs_depth))
+end
+
 def test_section_bodies_pipe():
   let body_list = do test_sections | section::section("Introduction") | section::bodies();
   | assert_eq(len(body_list), 1)
