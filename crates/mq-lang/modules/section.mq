@@ -1,8 +1,40 @@
 def _is_section(section): is_dict(section) && section[:type] == :section;
 
+def _h_level_num(md):
+  if (is_h1(md)): 1
+  elif (is_h2(md)): 2
+  elif (is_h3(md)): 3
+  elif (is_h4(md)): 4
+  elif (is_h5(md)): 5
+  elif (is_h6(md)): 6
+  else: 0
+end
+
 # Returns sections whose title contains the specified pattern.
-def section(md_nodes, pattern):
-  sections(md_nodes) | title_contains(pattern)
+# If depth is true, each section spans until the next header at the same or higher level.
+def section(md_nodes, pattern, depth = false):
+  if (depth):
+    if (is_empty(md_nodes)):
+      []
+    else:
+      do
+        let n = len(md_nodes)
+        | let match_indices = do foreach (i, range(n - 1)): if (is_h(md_nodes[i]) && contains(to_text(md_nodes[i]), pattern)): i; | compact();
+        | var result = []
+        | var i = 0
+        | while (i < len(match_indices)):
+            let start = match_indices[i]
+            | let lvl = _h_level_num(md_nodes[start])
+            | let boundaries = do foreach (j, range(n - 1)): if (is_h(md_nodes[j]) && _h_level_num(md_nodes[j]) <= lvl): j; | compact();
+            | let boundaries_with_end = boundaries + n
+            | let end_node = first(filter(boundaries_with_end, fn(b): b > start;))
+            | result += [{type: :section, header: md_nodes[start], children: md_nodes[start + 1:end_node]}]
+            | i += 1
+            | result
+          end
+      end
+  else:
+    sections(md_nodes) | title_contains(pattern)
 end
 
 # Splits markdown nodes into sections based on headers.
