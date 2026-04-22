@@ -385,6 +385,12 @@ impl RuntimeValue {
         matches!(self, RuntimeValue::Array(_))
     }
 
+    /// Returns `true` if this value is a dict.
+    #[inline(always)]
+    pub fn is_dict(&self) -> bool {
+        matches!(self, RuntimeValue::Dict(_))
+    }
+
     /// Returns `true` if this value is considered empty.
     ///
     /// Empty values include empty arrays, empty strings, empty markdown nodes,

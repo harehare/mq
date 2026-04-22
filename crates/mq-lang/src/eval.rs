@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 
 #[cfg(feature = "debugger")]
 use crate::DebuggerHandler;
@@ -733,11 +734,34 @@ impl<T: ModuleResolver> Evaluator<T> {
                             RuntimeValue::Array(arr) => arr,
                             other => vec![other],
                         },
+                        RuntimeValue::Dict(_) => {
+                            vec![Self::eval_selector_expr(value, ident)]
+                        }
                         _ => vec![RuntimeValue::NONE],
                     })
                     .collect::<Vec<_>>();
 
                 RuntimeValue::Array(values)
+            }
+            RuntimeValue::Dict(map) => {
+                let type_key = Ident::new("type");
+                let new_map: BTreeMap<_, _> = map
+                    .iter()
+                    .map(|(k, v)| {
+                        let new_v = if *k == type_key {
+                            v.clone()
+                        } else {
+                            Self::eval_selector_expr(v, ident)
+                        };
+                        (*k, new_v)
+                    })
+                    .collect();
+
+                if new_map.is_empty() {
+                    RuntimeValue::NONE
+                } else {
+                    RuntimeValue::Dict(new_map)
+                }
             }
             _ => RuntimeValue::NONE,
         }
