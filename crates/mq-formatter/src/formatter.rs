@@ -288,7 +288,9 @@ impl Formatter {
             | mq_lang::CstNodeKind::Do
             | mq_lang::CstNodeKind::Continue => self.format_keyword(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Break => self.format_break(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::Selector => self.format_selector(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Selector | mq_lang::CstNodeKind::SelfAttr => {
+                self.format_selector(&node, indent_level_consider_new_line)
+            }
             mq_lang::CstNodeKind::Try => self.format_try(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Catch => self.format_catch(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Match => self.format_match(&node, indent_level_consider_new_line, indent_level),
@@ -1391,7 +1393,7 @@ impl Formatter {
 
     fn format_selector(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Selector,
+            kind: mq_lang::CstNodeKind::Selector | mq_lang::CstNodeKind::SelfAttr,
             token: Some(token),
             children,
             ..
@@ -2021,6 +2023,8 @@ process();"#,
     #[case::range_operator_with_variables("x..y", "x..y")]
     #[case::range_operator_with_string(r#""1" .. "2""#, r#""1".."2""#)]
     #[case::selector_attr(".code.lang", ".code.lang")]
+    #[case::standalone_attr_selector(".lang", ".lang")]
+    #[case::standalone_attr_selector_value(".value", ".value")]
     #[case::env("let ENV = $env", "let ENV = $env")]
     #[case::mul("1 * 1", "1 * 1")]
     #[case::mul("1 / 1", "1 / 1")]

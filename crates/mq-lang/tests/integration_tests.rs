@@ -1461,6 +1461,22 @@ fn engine() -> DefaultEngine {
               value: "rust".to_string(),
               position: None,
             }), None)].into()))]
+#[case::standalone_attr_selector_lang(".lang",
+            vec![
+              RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{ lang: Some("rust".to_string()), meta: None, fence: true, value: "value".to_string(),  position: None }), None),
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "rust".to_string(),
+              position: None,
+            }), None)].into()))]
+#[case::standalone_attr_selector_set(".lang |= \"python\" | .lang",
+            vec![
+              RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{ lang: Some("rust".to_string()), meta: None, fence: true, value: "".to_string(),  position: None }), None),
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "python".to_string(),
+              position: None,
+            }), None)].into()))]
 #[case::recursive_selector_with_children("nodes | ..",
             vec![
               RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{

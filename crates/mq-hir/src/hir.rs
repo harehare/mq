@@ -354,6 +354,11 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::literal("42", "42", SymbolKind::Number)]
     #[case::selector(".h", ".h", SymbolKind::Selector(mq_lang::Selector::Heading(None)))]
     #[case::selector(".code.lang", ".code", SymbolKind::Selector(mq_lang::Selector::Code))]
+    #[case::standalone_attr_selector(
+        ".lang",
+        ".lang",
+        SymbolKind::Selector(mq_lang::Selector::Attr(mq_lang::AttrKind::Lang))
+    )]
     // Bracket selectors: .[n] → List, .[n][m] → Table
     #[case::selector_list_any(".[]", ".", SymbolKind::Selector(mq_lang::Selector::List(None, None)))]
     #[case::selector_list_index(".[1]", ".", SymbolKind::Selector(mq_lang::Selector::List(Some(1), None)))]

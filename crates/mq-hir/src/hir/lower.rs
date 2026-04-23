@@ -169,7 +169,7 @@ impl Hir {
             mq_lang::CstNodeKind::Literal => {
                 self.add_literal_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Selector => {
+            mq_lang::CstNodeKind::Selector | mq_lang::CstNodeKind::SelfAttr => {
                 self.add_selector_expr(node, source_id, scope_id, parent);
             }
             mq_lang::CstNodeKind::While => {
@@ -651,7 +651,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Selector,
+            kind: mq_lang::CstNodeKind::Selector | mq_lang::CstNodeKind::SelfAttr,
             ..
         } = &**node
             && let Some(selector) = selector_from_cst_node(node)
