@@ -116,6 +116,7 @@ pub enum NodeKind {
     Quote,
     Selector,
     Self_,
+    SelfAttr,
     Token,
     Try,
     Catch,

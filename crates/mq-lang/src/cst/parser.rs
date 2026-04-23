@@ -951,7 +951,12 @@ impl<'a> Parser<'a> {
             }
             TokenKind::DoubleDot => Ok(Shared::new(node)),
             _ => {
-                Selector::try_from(&**token).map_err(ParseError::UnknownSelector)?;
+                let selector = Selector::try_from(&**token).map_err(ParseError::UnknownSelector)?;
+
+                if selector.is_attribute_selector() {
+                    node.kind = NodeKind::SelfAttr;
+                    return Ok(Shared::new(node));
+                }
 
                 if let Some(attr_token) = self.peek()
                     && attr_token.is_selector()
@@ -3820,6 +3825,23 @@ mod tests {
                             children: Vec::new(),
                         }),
                     ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::standalone_attr_selector(
+        vec![
+            Shared::new(token(TokenKind::Selector(".lang".into()))),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::SelfAttr,
+                    token: Some(Shared::new(token(TokenKind::Selector(".lang".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
                 }),
             ],
             ErrorReporter::default()

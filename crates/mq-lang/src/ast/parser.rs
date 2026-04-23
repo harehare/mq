@@ -2414,6 +2414,33 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 } else {
                     let selector = Selector::try_from(&**token).map_err(SyntaxError::UnknownSelector)?;
 
+                    if selector.is_attribute_selector() {
+                        let token_id = self.token_arena.alloc(Shared::clone(token));
+                        let self_node = Shared::new(Node {
+                            token_id,
+                            expr: Shared::new(Expr::Self_),
+                        });
+                        let TokenKind::Selector(selector_str) = &token.kind else {
+                            unreachable!()
+                        };
+                        let attribute_name = selector_str[1..].to_string();
+                        let attr_literal = Shared::new(Node {
+                            token_id,
+                            expr: Shared::new(Expr::Literal(Literal::String(attribute_name))),
+                        });
+                        if self.is_next_token(|kind| matches!(kind, TokenKind::PipeEqual)) {
+                            self.tokens.next();
+                            return self.parse_set_attr_call_with_selector(self_node, attr_literal);
+                        }
+                        return Ok(Shared::new(Node {
+                            token_id,
+                            expr: Shared::new(Expr::Call(
+                                IdentWithToken::new_with_token(constants::builtins::ATTR, Some(Shared::clone(token))),
+                                smallvec![self_node, attr_literal],
+                            )),
+                        }));
+                    }
+
                     Ok(Shared::new(Node {
                         token_id: self.token_arena.alloc(Shared::clone(token)),
                         expr: Shared::new(Expr::Selector(selector)),
@@ -7897,6 +7924,47 @@ mod tests {
                         assert_eq!(value, "env_arg_value");
                     } else {
                         panic!("Expected String literal in argument, got {:?}", args[0].expr);
+                    }
+                } else {
+                    panic!("Expected Call expression, got {:?}", program[0].expr);
+                }
+            }
+            Err(err) => panic!("Parse error: {:?}", err),
+        }
+    }
+
+    #[rstest]
+    #[case::lang(".lang", "lang")]
+    #[case::value(".value", "value")]
+    #[case::depth(".depth", "depth")]
+    fn test_parse_standalone_attr_selector(#[case] selector: &str, #[case] attribute: &str) {
+        let mut arena = Arena::new(10);
+        let tokens = [
+            Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Selector(SmolStr::new(selector)),
+                module_id: 1.into(),
+            }),
+            Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }),
+        ];
+
+        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+
+        match result {
+            Ok(program) => {
+                assert_eq!(program.len(), 1);
+                if let Expr::Call(ident, args) = &*program[0].expr {
+                    assert_eq!(ident.name, "attr".into());
+                    assert_eq!(args.len(), 2);
+                    assert!(matches!(&*args[0].expr, Expr::Self_));
+                    if let Expr::Literal(Literal::String(attr_str)) = &*args[1].expr {
+                        assert_eq!(attr_str, attribute);
+                    } else {
+                        panic!("Expected String literal in second argument, got {:?}", args[1].expr);
                     }
                 } else {
                     panic!("Expected Call expression, got {:?}", program[0].expr);
