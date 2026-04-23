@@ -35,7 +35,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
   -F, --output-format <OUTPUT_FORMAT>
-          Set output format [default: markdown] [possible values: markdown, html, text, json, none]
+          Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, none]
   -U, --update
           Update the input markdown (aliases: -i, --in-place, --inplace)
       --unbuffered
@@ -52,6 +52,12 @@ Options:
           Output to the specified file
   -C, --color-output
           Colorize markdown output
+  -B, --before-context <NUM>
+          Show NUM nodes before each match. Only effective with -F grep
+      --after-context <NUM>
+          Show NUM nodes after each match. Only effective with -F grep
+      --context <NUM>
+          Show NUM nodes before and after each match. Only effective with -F grep
       --list
           List all available subcommands (built-in and external)
   -P <PARALLEL_THRESHOLD>
