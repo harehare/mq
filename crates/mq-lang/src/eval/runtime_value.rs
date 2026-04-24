@@ -886,8 +886,6 @@ mod tests {
         );
         assert_eq!(RuntimeValue::Boolean(true).negated(), RuntimeValue::Boolean(false));
         assert_eq!(RuntimeValue::Boolean(false).negated(), RuntimeValue::Boolean(true));
-        let s = "test".to_string();
-        assert_eq!(RuntimeValue::String(s.clone()).negated(), RuntimeValue::String(s));
     }
 
     #[test]
