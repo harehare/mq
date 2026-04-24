@@ -266,6 +266,7 @@ define_token_parser!(percent_equal, "%=", TokenKind::PercentEqual);
 define_token_parser!(double_slash_equal, "//=", TokenKind::DoubleSlashEqual);
 define_token_parser!(pipe_equal, "|=", TokenKind::PipeEqual);
 define_token_parser!(tilde_equal, "=~", TokenKind::TildeEqual);
+define_token_parser!(not_tilde_equal, "!~", TokenKind::NotTildeEqual);
 define_token_parser!(left_shift, "<<", TokenKind::LeftShift);
 define_token_parser!(right_shift, ">>", TokenKind::RightShift);
 define_token_parser!(convert_op, "@", TokenKind::Convert);
@@ -313,6 +314,7 @@ fn binary_op(input: Span) -> IResult<Span, Token> {
         left_shift,
         right_shift,
         tilde_equal,
+        not_tilde_equal,
         lte,
         gte,
         lt,

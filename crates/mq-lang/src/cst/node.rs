@@ -152,6 +152,7 @@ pub enum BinaryOp {
     PlusEqual,
     RangeOp,
     RegexMatch,
+    NotRegexMatch,
     LeftShift,
     RightShift,
 }
