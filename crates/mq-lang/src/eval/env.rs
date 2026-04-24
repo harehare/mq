@@ -57,7 +57,7 @@ impl EnvError {
 #[derive(Debug, Clone, Default)]
 pub struct Env {
     context: FxHashMap<Ident, RuntimeValue>,
-    mutable_vars: FxHashSet<Ident>,
+    mutable_vars: Option<FxHashSet<Ident>>,
     parent: Option<Weak<SharedCell<Env>>>,
 }
 
@@ -155,8 +155,8 @@ impl std::fmt::Display for Variable {
 impl Env {
     pub fn with_parent(parent: Weak<SharedCell<Env>>) -> Self {
         Self {
-            context: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
-            mutable_vars: FxHashSet::default(),
+            context: FxHashMap::with_capacity_and_hasher(4, FxBuildHasher),
+            mutable_vars: None,
             parent: Some(parent),
         }
     }
@@ -199,14 +199,14 @@ impl Env {
     #[inline(always)]
     pub fn define_mutable(&mut self, ident: Ident, runtime_value: RuntimeValue) {
         self.context.insert(ident, runtime_value);
-        self.mutable_vars.insert(ident);
+        self.mutable_vars.get_or_insert_with(FxHashSet::default).insert(ident);
     }
 
     /// Assigns a value to an existing mutable variable
     pub fn assign(&mut self, ident: Ident, runtime_value: RuntimeValue) -> Result<(), EnvError> {
         // Check if variable exists in current scope
         if self.context.contains_key(&ident) {
-            if self.mutable_vars.contains(&ident) {
+            if self.mutable_vars.as_ref().is_some_and(|s| s.contains(&ident)) {
                 self.context.insert(ident, runtime_value);
                 return Ok(());
             } else {
@@ -231,7 +231,7 @@ impl Env {
     pub fn is_mutable(&self, ident: Ident) -> bool {
         // Check if variable exists in current scope
         if self.context.contains_key(&ident) {
-            return self.mutable_vars.contains(&ident);
+            return self.mutable_vars.as_ref().is_some_and(|s| s.contains(&ident));
         }
 
         // Check parent scope
