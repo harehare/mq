@@ -1469,14 +1469,13 @@ impl<T: ModuleResolver> Evaluator<T> {
         env: &Shared<SharedCell<Env>>,
     ) -> EvalResult {
         #[cfg(not(feature = "sync"))]
-        let resolved = Shared::clone(env).borrow().resolve(ident);
+        let resolved = env.borrow().resolve(ident);
         #[cfg(feature = "sync")]
-        let resolved = Shared::clone(env).read().unwrap().resolve(ident);
+        let resolved = env.read().unwrap().resolve(ident);
 
-        if let Ok(fn_value) = resolved {
-            self.call_fn(&fn_value, node, ident, args, runtime_value, env)
-        } else {
-            self.eval_builtin(runtime_value, node, &ident, args, env)
+        match resolved {
+            Ok(fn_value) => self.call_fn(&fn_value, node, ident, args, runtime_value, env),
+            Err(_) => self.eval_builtin(runtime_value, node, &ident, args, env),
         }
     }
 

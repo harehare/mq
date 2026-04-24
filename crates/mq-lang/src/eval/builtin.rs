@@ -1,4 +1,6 @@
 pub mod convert;
+mod range;
+mod regex;
 
 use crate::arena::Arena;
 use crate::ast::{constants, node as ast};
@@ -11,26 +13,23 @@ use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
 use csv::ReaderBuilder;
 use itertools::Itertools;
-use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use similar::{ChangeTag, TextDiff};
 use smol_str::SmolStr;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::io;
 use std::process::exit;
-use std::{
-    sync::{LazyLock, Mutex},
-    vec,
-};
+use std::sync::LazyLock;
 use thiserror::Error;
 
+use self::range::{generate_char_range, generate_multi_char_range, generate_numeric_range};
+use self::regex::{capture_re, is_match_re, match_re, replace_re, split_re};
 use super::runtime_value::{self, RuntimeValue};
 use mq_markdown;
 
-static REGEX_CACHE: LazyLock<Mutex<FxHashMap<String, Regex>>> = LazyLock::new(|| Mutex::new(FxHashMap::default()));
-
 /// Maximum number of elements allowed in a generated range
-const MAX_RANGE_SIZE: usize = 1_000_000;
+pub(super) const MAX_RANGE_SIZE: usize = 1_000_000;
 const MAX_REPEAT_COUNT: usize = 1_000;
 
 type FunctionName = String;
@@ -149,7 +148,7 @@ define_builtin!(TYPE, ParamNum::Fixed(1), |_, _, args, _| match args.first() {
 });
 
 define_builtin!(ARRAY, ParamNum::Range(0, u8::MAX), |_, _, args, _| Ok(
-    RuntimeValue::Array(args.to_vec())
+    RuntimeValue::Array(args)
 ));
 
 define_builtin!(
@@ -1960,20 +1959,19 @@ define_builtin!(DICT, ParamNum::Range(0, u8::MAX), |_, _, args, _| {
         Ok(RuntimeValue::new_dict())
     } else {
         let mut dict = BTreeMap::default();
-
-        let entries = match args.as_slice() {
+        let entries: Cow<'_, [RuntimeValue]> = match args.as_slice() {
             [RuntimeValue::Array(entries)] => match entries.as_slice() {
-                [RuntimeValue::Array(_)] if args.len() == 1 => entries.clone(),
-                [RuntimeValue::Array(inner)] => inner.clone(),
+                [RuntimeValue::Array(_)] if args.len() == 1 => Cow::Borrowed(entries),
+                [RuntimeValue::Array(inner)] => Cow::Borrowed(inner),
                 [RuntimeValue::String(_), ..] | [RuntimeValue::Symbol(_), ..] => {
-                    vec![entries.clone().into()]
+                    Cow::Owned(vec![RuntimeValue::Array(entries.clone())])
                 }
-                _ => entries.clone(),
+                _ => Cow::Borrowed(entries),
             },
-            _ => args,
+            _ => Cow::Borrowed(args.as_slice()),
         };
 
-        for entry in entries {
+        for entry in entries.iter() {
             if let RuntimeValue::Array(arr) = entry {
                 match arr.as_slice() {
                     [RuntimeValue::Symbol(key), value] => {
@@ -4682,7 +4680,8 @@ pub fn eval_builtin(
             if f.num_params.is_valid(args_len) {
                 (f.func)(ident, runtime_value, args, env)
             } else if f.num_params.is_missing_one_params(args_len) {
-                let mut new_args: Args = vec![runtime_value.clone()];
+                let mut new_args = Args::with_capacity(args.len() + 1);
+                new_args.push(runtime_value.clone());
                 new_args.extend(args);
                 (f.func)(ident, runtime_value, new_args, env)
             } else {
@@ -4710,37 +4709,33 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> RuntimeVa
         Selector::Heading(depth) => node.is_heading(*depth),
         Selector::HorizontalRule => node.is_horizontal_rule(),
         Selector::Blockquote => node.is_blockquote(),
-        Selector::Table(row, column) => match (row, column, node.clone()) {
-            (
-                Some(row1),
-                Some(column1),
-                mq_markdown::Node::TableCell(mq_markdown::TableCell {
-                    column: column2,
-                    row: row2,
-                    ..
-                }),
-            ) => *row1 == row2 && *column1 == column2,
-            (Some(row1), None, mq_markdown::Node::TableCell(mq_markdown::TableCell { row: row2, .. })) => *row1 == row2,
-            (None, Some(column1), mq_markdown::Node::TableCell(mq_markdown::TableCell { column: column2, .. })) => {
-                *column1 == column2
-            }
-            (None, None, mq_markdown::Node::TableCell(_)) | (None, None, mq_markdown::Node::TableAlign(_)) => true,
+        Selector::Table(row, column) => match node {
+            mq_markdown::Node::TableCell(mq_markdown::TableCell {
+                column: column2,
+                row: row2,
+                ..
+            }) => match (row, column) {
+                (Some(r), Some(c)) => r == row2 && c == column2,
+                (Some(r), None) => r == row2,
+                (None, Some(c)) => c == column2,
+                (None, None) => true,
+            },
+            mq_markdown::Node::TableAlign(_) if row.is_none() && column.is_none() => true,
             _ => false,
         },
         Selector::TableAlign => node.is_table_align(),
         Selector::Html => node.is_html(),
         Selector::Footnote => node.is_footnote(),
         Selector::MdxJsxFlowElement => node.is_mdx_jsx_flow_element(),
-        Selector::List(index, checked) => match (index, node.clone()) {
-            (
-                Some(index),
-                mq_markdown::Node::List(mq_markdown::List {
-                    index: list_index,
-                    checked: list_checked,
-                    ..
-                }),
-            ) => *index == list_index && *checked == list_checked,
-            (_, mq_markdown::Node::List(mq_markdown::List { .. })) => true,
+        Selector::List(index, checked) => match node {
+            mq_markdown::Node::List(mq_markdown::List {
+                index: list_index,
+                checked: list_checked,
+                ..
+            }) => match index {
+                Some(i) => i == list_index && checked == list_checked,
+                None => true,
+            },
             _ => false,
         },
         Selector::Task => matches!(
@@ -4803,239 +4798,6 @@ fn eval_recursive_selector(node: &mq_markdown::Node) -> RuntimeValue {
             .map(|n| RuntimeValue::Markdown(n, None))
             .collect(),
     )
-}
-
-fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
-    let mut cache = REGEX_CACHE.lock().unwrap();
-    if let Some(re) = cache.get(pattern) {
-        let matches: Vec<RuntimeValue> = re
-            .find_iter(input)
-            .map(|m| RuntimeValue::String(m.as_str().to_string()))
-            .collect();
-        Ok(RuntimeValue::Array(matches))
-    } else if let Ok(re) = RegexBuilder::new(pattern).size_limit(1 << 20).build() {
-        cache.insert(pattern.to_string(), re.clone());
-        let matches: Vec<RuntimeValue> = re
-            .find_iter(input)
-            .map(|m| RuntimeValue::String(m.as_str().to_string()))
-            .collect();
-        Ok(RuntimeValue::Array(matches))
-    } else {
-        Err(Error::InvalidRegularExpression(pattern.to_string()))
-    }
-}
-
-fn is_match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
-    let mut cache = REGEX_CACHE.lock().unwrap();
-    if let Some(re) = cache.get(pattern) {
-        Ok(re.is_match(input).into())
-    } else if let Ok(re) = RegexBuilder::new(pattern).size_limit(1 << 20).build() {
-        cache.insert(pattern.to_string(), re.clone());
-        Ok(re.is_match(input).into())
-    } else {
-        Err(Error::InvalidRegularExpression(pattern.to_string()))
-    }
-}
-
-fn _capture_re(re: &Regex, input: &str) -> Result<RuntimeValue, Error> {
-    match (re.capture_names(), re.captures(input)) {
-        (names, Some(caps)) => {
-            let mut result = BTreeMap::new();
-            for name in names.flatten() {
-                if let Some(m) = caps.name(name) {
-                    result.insert(Ident::new(name), RuntimeValue::String(m.as_str().to_string()));
-                }
-            }
-            Ok(RuntimeValue::Dict(result))
-        }
-        _ => Ok(RuntimeValue::new_dict()),
-    }
-}
-
-fn capture_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
-    let mut cache = REGEX_CACHE.lock().unwrap();
-    if let Some(re) = cache.get(pattern) {
-        _capture_re(re, input)
-    } else if let Ok(re) = RegexBuilder::new(pattern).size_limit(1 << 20).build() {
-        cache.insert(pattern.to_string(), re.clone());
-        _capture_re(&re, input)
-    } else {
-        Err(Error::InvalidRegularExpression(pattern.to_string()))
-    }
-}
-
-fn replace_re(input: &str, pattern: &str, replacement: &str) -> Result<RuntimeValue, Error> {
-    let mut cache = REGEX_CACHE.lock().unwrap();
-    if let Some(re) = cache.get(pattern) {
-        Ok(re.replace_all(input, replacement).to_string().into())
-    } else if let Ok(re) = RegexBuilder::new(pattern).size_limit(1 << 20).build() {
-        cache.insert(pattern.to_string(), re.clone());
-        Ok(re.replace_all(input, replacement).to_string().into())
-    } else {
-        Err(Error::InvalidRegularExpression(pattern.to_string()))
-    }
-}
-
-#[inline(always)]
-fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
-    let mut cache = REGEX_CACHE.lock().unwrap();
-    if let Some(re) = cache.get(pattern) {
-        Ok(RuntimeValue::Array(
-            re.split(input).map(|s| s.to_owned().into()).collect::<Vec<_>>(),
-        ))
-    } else if let Ok(re) = Regex::new(pattern) {
-        cache.insert(pattern.to_string(), re.clone());
-        Ok(RuntimeValue::Array(
-            re.split(input).map(|s| s.to_owned().into()).collect::<Vec<_>>(),
-        ))
-    } else {
-        Err(Error::InvalidRegularExpression(pattern.to_string()))
-    }
-}
-
-fn generate_numeric_range(start: isize, end: isize, step: isize) -> Result<Vec<RuntimeValue>, Error> {
-    if step == 0 {
-        return Err(Error::Runtime("step for range must not be zero".to_string()));
-    }
-
-    // Calculate the size of the range to prevent capacity overflow
-    let range_size = if (step > 0 && end >= start) || (step < 0 && end <= start) {
-        let diff = (end as i128) - (start as i128);
-        let step_i128 = step as i128;
-        ((diff / step_i128).abs() + 1) as usize
-    } else {
-        0
-    };
-
-    if range_size > MAX_RANGE_SIZE {
-        return Err(Error::Runtime(format!(
-            "range size {} exceeds maximum allowed size of {}",
-            range_size, MAX_RANGE_SIZE
-        )));
-    }
-
-    let mut result = Vec::with_capacity(range_size);
-    let mut current = start;
-
-    if step > 0 {
-        while current <= end {
-            result.push(RuntimeValue::Number(current.into()));
-            current += step;
-        }
-    } else {
-        while current >= end {
-            result.push(RuntimeValue::Number(current.into()));
-            current += step;
-        }
-    }
-
-    Ok(result)
-}
-
-fn generate_char_range(start_char: char, end_char: char, step: Option<i32>) -> Result<Vec<RuntimeValue>, Error> {
-    let step = step.unwrap_or(if start_char <= end_char { 1 } else { -1 });
-
-    if step == 0 {
-        return Err(Error::Runtime("step for range must not be zero".to_string()));
-    }
-
-    // Calculate the size of the range to prevent capacity overflow
-    let range_size = if (step > 0 && end_char >= start_char) || (step < 0 && end_char <= start_char) {
-        let diff = (end_char as i64) - (start_char as i64);
-        let step_i64 = step as i64;
-        ((diff / step_i64).abs() + 1) as usize
-    } else {
-        0
-    };
-
-    if range_size > MAX_RANGE_SIZE {
-        return Err(Error::Runtime(format!(
-            "range size {} exceeds maximum allowed size of {}",
-            range_size, MAX_RANGE_SIZE
-        )));
-    }
-
-    let mut result = Vec::with_capacity(range_size);
-    let mut current = start_char as i32;
-    let end = end_char as i32;
-
-    if step > 0 {
-        while current <= end {
-            if let Some(ch) = char::from_u32(current as u32) {
-                result.push(RuntimeValue::String(ch.to_string()));
-            }
-            current += step;
-        }
-    } else {
-        while current >= end {
-            if let Some(ch) = char::from_u32(current as u32) {
-                result.push(RuntimeValue::String(ch.to_string()));
-            }
-            current += step;
-        }
-    }
-
-    Ok(result)
-}
-
-fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>, Error> {
-    if start.len() != end.len() {
-        return Err(Error::Runtime(
-            "String range requires strings of equal length".to_string(),
-        ));
-    }
-
-    let start_bytes = start.as_bytes();
-    let end_bytes = end.as_bytes();
-
-    // Calculate the approximate size of the range to prevent capacity overflow
-    let capacity_estimate = (end_bytes.iter().zip(start_bytes.iter()))
-        .map(|(e, s)| (e.max(s) - e.min(s)) as usize)
-        .try_fold(0usize, |acc, diff| {
-            // Prevent overflow during calculation
-            acc.checked_add(diff)
-                .ok_or_else(|| Error::Runtime(format!("range size exceeds maximum allowed size of {}", MAX_RANGE_SIZE)))
-        })?
-        + 1;
-
-    if capacity_estimate > MAX_RANGE_SIZE {
-        return Err(Error::Runtime(format!(
-            "range size {} exceeds maximum allowed size of {}",
-            capacity_estimate, MAX_RANGE_SIZE
-        )));
-    }
-
-    let mut result = Vec::with_capacity(capacity_estimate);
-    let mut current = start_bytes.to_vec();
-
-    loop {
-        if let Ok(s) = String::from_utf8(current.clone()) {
-            result.push(RuntimeValue::String(s));
-        }
-
-        if current.as_slice() == end_bytes {
-            break;
-        }
-
-        // Lexicographic increment
-        let mut carry = true;
-        for byte in current.iter_mut().rev() {
-            if carry {
-                if *byte < 255 {
-                    *byte += 1;
-                    carry = false;
-                } else {
-                    *byte = 0;
-                }
-            }
-        }
-
-        if carry || current.as_slice() > end_bytes {
-            break;
-        }
-    }
-
-    Ok(result)
 }
 
 fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
@@ -5129,7 +4891,7 @@ mod tests {
     #[rstest]
     #[case("div", vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(0.0.into())], Error::ZeroDivision)]
     #[case("unknown_func", vec![RuntimeValue::Number(1.0.into())], Error::NotDefined("unknown_func".to_string()))]
-    #[case("add", Vec::new(), Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
+    #[case("add", vec![], Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
     #[case("add", vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())],
         Error::InvalidTypes("add".to_string(), vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())]))]
     fn test_eval_builtin_errors(#[case] func_name: &str, #[case] args: Args, #[case] expected_error: Error) {
