@@ -499,6 +499,16 @@ define_builtin!(IS_REGEX_MATCH, ParamNum::Fixed(2), |ident, _, mut args, _| {
     }
 });
 
+define_builtin!(IS_NOT_REGEX_MATCH, ParamNum::Fixed(2), |_, _, args, env| {
+    eval_builtin(
+        &RuntimeValue::NONE,
+        &Ident::new(constants::builtins::IS_REGEX_MATCH),
+        args,
+        env,
+    )
+    .map(|result| result.negated())
+});
+
 define_builtin!(CAPTURE, ParamNum::Fixed(2), |ident, _, mut args, _| {
     match args.as_mut_slice() {
         [RuntimeValue::String(s), RuntimeValue::String(pattern)] => capture_re(s, pattern),
@@ -2996,6 +3006,7 @@ const HASH_INPUT: u64 = fnv1a_hash_64("input");
 const HASH_IS_DEBUG_MODE: u64 = fnv1a_hash_64("is_debug_mode");
 const HASH_IS_NAN: u64 = fnv1a_hash_64("is_nan");
 const HASH_IS_REGEX_MATCH: u64 = fnv1a_hash_64("is_regex_match");
+const HASH_IS_NOT_REGEX_MATCH: u64 = fnv1a_hash_64("is_not_regex_match");
 const HASH_JOIN: u64 = fnv1a_hash_64("join");
 const HASH_KEYS: u64 = fnv1a_hash_64("keys");
 const HASH_LEN: u64 = fnv1a_hash_64("len");
@@ -3139,6 +3150,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_IS_DEBUG_MODE => Some(&IS_DEBUG_MODE),
         HASH_IS_NAN => Some(&IS_NAN),
         HASH_IS_REGEX_MATCH => Some(&IS_REGEX_MATCH),
+        HASH_IS_NOT_REGEX_MATCH => Some(&IS_NOT_REGEX_MATCH),
         HASH_INSERT => Some(&INSERT),
         HASH_INPUT => Some(&INPUT),
         HASH_JOIN => Some(&JOIN),
@@ -3926,6 +3938,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         SmolStr::new("is_regex_match"),
         BuiltinFunctionDoc {
             description: "Checks if the given pattern matches the string.",
+            params: &["string", "pattern"],
+        },
+    );
+    map.insert(
+        SmolStr::new("is_not_regex_match"),
+        BuiltinFunctionDoc {
+            description: "Checks if the given pattern does not match the string.",
             params: &["string", "pattern"],
         },
     );

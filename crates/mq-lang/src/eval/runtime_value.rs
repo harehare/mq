@@ -527,6 +527,16 @@ impl RuntimeValue {
             }
         }
     }
+
+    /// Returns a new runtime value that is the logical negation of this value.
+    pub fn negated(&self) -> Self {
+        match self {
+            RuntimeValue::Boolean(b) => RuntimeValue::Boolean(!b),
+            RuntimeValue::Number(n) => RuntimeValue::Number((-n.value()).into()),
+            RuntimeValue::String(s) => RuntimeValue::String(s.chars().rev().collect()),
+            _ => self.clone(),
+        }
+    }
 }
 
 /// A collection of runtime values.
@@ -866,6 +876,18 @@ mod tests {
         map.insert(Ident::new("a"), RuntimeValue::String("alpha".to_string()));
         map.insert(Ident::new("b"), RuntimeValue::String("beta".to_string()));
         assert_eq!(RuntimeValue::Dict(map).len(), 2);
+    }
+
+    #[test]
+    fn test_negated() {
+        assert_eq!(
+            RuntimeValue::Number(Number::from(42.0)).negated(),
+            RuntimeValue::Number(Number::from(-42.0))
+        );
+        assert_eq!(RuntimeValue::Boolean(true).negated(), RuntimeValue::Boolean(false));
+        assert_eq!(RuntimeValue::Boolean(false).negated(), RuntimeValue::Boolean(true));
+        let s = "test".to_string();
+        assert_eq!(RuntimeValue::String(s.clone()).negated(), RuntimeValue::String(s));
     }
 
     #[test]
