@@ -2367,7 +2367,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         attr_token: Shared<Token>,
     ) -> Result<Shared<Node>, SyntaxError> {
         if let TokenKind::Selector(attr_selector) = &attr_token.kind {
-            let attribute = &attr_selector[1..]; // Skip the dot
             // Parse the base selector recursively
             let base_node = self.parse_selector_direct(token)?;
 
@@ -2378,6 +2377,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 return Err(SyntaxError::UnexpectedToken((*attr_token).clone()));
             }
 
+            let attribute = &attr_selector[1..]; // Skip the dot
             // Create the attribute string literal
             let attr_literal = Shared::new(Node {
                 token_id: self.token_arena.alloc(Shared::clone(token)),
@@ -2424,13 +2424,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             token_id,
                             expr: Shared::new(Expr::Self_),
                         });
-                        let TokenKind::Selector(selector_str) = &token.kind else {
-                            unreachable!()
-                        };
-                        let attribute_name = selector_str[1..].to_string();
                         let attr_literal = Shared::new(Node {
                             token_id,
-                            expr: Shared::new(Expr::Literal(Literal::String(attribute_name))),
+                            expr: Shared::new(Expr::Literal(Literal::String(selector.name()))),
                         });
                         if self.is_next_token(|kind| matches!(kind, TokenKind::PipeEqual)) {
                             self.tokens.next();
