@@ -86,3 +86,35 @@ This is equivalent to calling `is_regex_match(string, pattern)`.
 "2024-01-15" =~ "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
 # => true
 ```
+
+### Not Regex Match Operator
+
+The `!~` operator tests whether a string does not match a regular expression pattern. It returns `true` if the pattern does not match and `false` otherwise.
+
+#### Syntax
+
+```
+string !~ pattern
+```
+
+This is equivalent to calling `is_not_regex_match(string, pattern)`.
+
+#### Examples
+
+```mq
+# Basic not regex match
+"hello world" !~ "bye"
+# => true
+
+"hello world" !~ "hello"
+# => false
+
+# Match digits
+"abc" !~ "[0-9]+"
+# => true
+
+# Use in a conditional
+"foo bar" | if (. !~ "baz"): "not matched" else: "match"
+# => not matched
+```
+

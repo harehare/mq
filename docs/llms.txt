@@ -15,7 +15,7 @@
 - [Operators](https://mqlang.org/book/reference/operators): Pipe |, shift << >>, conversion @, range .., and more
 - [Control Flow](https://mqlang.org/book/reference/control_flow): if/elif/else, while, foreach, loop, break, continue
 - [Conditionals](https://mqlang.org/book/reference/conditionals): and, or, not, &&, ||, !
-- [Comparisons](https://mqlang.org/book/reference/comparisons): ==, !=, >, >=, <, <=, =~ (regex match)
+- [Comparisons](https://mqlang.org/book/reference/comparisons): ==, !=, >, >=, <, <=, =~ (regex match), !~ (not regex match)
 - [Pattern Matching](https://mqlang.org/book/reference/pattern_matching): match expression with literal, type, array, dict, and guard patterns
 - [Variable Declarations](https://mqlang.org/book/reference/variables): let (immutable), var (mutable), destructuring
 - [Def Expression](https://mqlang.org/book/reference/def): Named function definitions with default parameters
