@@ -4714,6 +4714,95 @@ pub fn eval_builtin(
     )
 }
 
+/// Collect numeric (u8) depth values from evaluated selector arguments.
+///
+/// Accepts `Number` values directly and flattens `Array` values recursively.
+fn collect_depth_values(args: &[RuntimeValue]) -> Vec<u8> {
+    args.iter()
+        .flat_map(|arg| match arg {
+            RuntimeValue::Number(n) => vec![n.value() as u8],
+            RuntimeValue::Array(arr) => arr
+                .iter()
+                .filter_map(|v| {
+                    if let RuntimeValue::Number(n) = v {
+                        Some(n.value() as u8)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            _ => vec![],
+        })
+        .collect()
+}
+
+/// Collect string values from evaluated selector arguments.
+///
+/// Accepts `String` values directly and flattens `Array` values.
+fn collect_string_values(args: &[RuntimeValue]) -> Vec<String> {
+    args.iter()
+        .flat_map(|arg| match arg {
+            RuntimeValue::String(s) => vec![s.clone()],
+            RuntimeValue::Array(arr) => arr
+                .iter()
+                .filter_map(|v| {
+                    if let RuntimeValue::String(s) = v {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            _ => vec![],
+        })
+        .collect()
+}
+
+/// Evaluates a selector with runtime arguments against a markdown node.
+///
+/// Supports filtered matching for selectors that accept arguments:
+/// - `Heading`: filters by depth using numeric or range args (e.g. `.h(1..2)`, `.h(1, 2)`)
+/// - `Code`: filters by language using string args (e.g. `.code("rust")`)
+/// - All other selectors fall back to [`eval_selector`].
+pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, args: &[RuntimeValue]) -> RuntimeValue {
+    if args.is_empty() {
+        return eval_selector(node, selector);
+    }
+
+    let is_match = match selector {
+        Selector::Heading(_) => {
+            let depths = collect_depth_values(args);
+            if depths.is_empty() {
+                return eval_selector(node, selector);
+            }
+            if let mq_markdown::Node::Heading(mq_markdown::Heading { depth, .. }) = node {
+                depths.contains(depth)
+            } else {
+                false
+            }
+        }
+        Selector::Code => {
+            let langs = collect_string_values(args);
+            if langs.is_empty() {
+                return eval_selector(node, selector);
+            }
+            if let mq_markdown::Node::Code(mq_markdown::Code { lang, .. }) = node {
+                let node_lang = lang.as_deref().unwrap_or("");
+                langs.iter().any(|l| l == node_lang)
+            } else {
+                false
+            }
+        }
+        _ => return eval_selector(node, selector),
+    };
+
+    if is_match {
+        RuntimeValue::Markdown(node.clone(), None)
+    } else {
+        RuntimeValue::NONE
+    }
+}
+
 pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> RuntimeValue {
     let is_match = match selector {
         Selector::Code => node.is_code(None),
@@ -6412,5 +6501,84 @@ mod tests {
         } else {
             panic!("Expected Array result");
         }
+    }
+
+    #[rstest]
+    #[case::single_number(vec![RuntimeValue::Number(1.into())], vec![1u8])]
+    #[case::multiple_numbers(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())], vec![1u8, 2u8])]
+    #[case::number_array(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())])], vec![1u8, 2u8])]
+    #[case::empty(vec![], vec![])]
+    #[case::ignores_strings(vec![RuntimeValue::String("x".into())], vec![])]
+    fn test_collect_depth_values(#[case] args: Vec<RuntimeValue>, #[case] expected: Vec<u8>) {
+        assert_eq!(collect_depth_values(&args), expected);
+    }
+
+    #[rstest]
+    #[case::single_string(vec![RuntimeValue::String("rust".into())], vec!["rust".to_string()])]
+    #[case::multiple_strings(vec![RuntimeValue::String("rust".into()), RuntimeValue::String("go".into())], vec!["rust".to_string(), "go".to_string()])]
+    #[case::string_array(vec![RuntimeValue::Array(vec![RuntimeValue::String("rust".into()), RuntimeValue::String("go".into())])], vec!["rust".to_string(), "go".to_string()])]
+    #[case::empty(vec![], vec![])]
+    #[case::ignores_numbers(vec![RuntimeValue::Number(1.into())], vec![])]
+    fn test_collect_string_values(#[case] args: Vec<RuntimeValue>, #[case] expected: Vec<String>) {
+        assert_eq!(collect_string_values(&args), expected);
+    }
+
+    #[rstest]
+    #[case::heading_depth_match(
+        Node::Heading(mq_markdown::Heading { depth: 1, values: vec![], position: None }),
+        Selector::Heading(None),
+        vec![RuntimeValue::Number(1.into())],
+        true
+    )]
+    #[case::heading_depth_no_match(
+        Node::Heading(mq_markdown::Heading { depth: 2, values: vec![], position: None }),
+        Selector::Heading(None),
+        vec![RuntimeValue::Number(1.into())],
+        false
+    )]
+    #[case::heading_multi_depth_match(
+        Node::Heading(mq_markdown::Heading { depth: 2, values: vec![], position: None }),
+        Selector::Heading(None),
+        vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())],
+        true
+    )]
+    #[case::heading_no_args_fallback(
+        Node::Heading(mq_markdown::Heading { depth: 1, values: vec![], position: None }),
+        Selector::Heading(None),
+        vec![],
+        true
+    )]
+    #[case::code_lang_match(
+        Node::Code(mq_markdown::Code { lang: Some("rust".to_string()), meta: None, value: "fn main() {}".to_string(), fence: true, position: None }),
+        Selector::Code,
+        vec![RuntimeValue::String("rust".into())],
+        true
+    )]
+    #[case::code_lang_no_match(
+        Node::Code(mq_markdown::Code { lang: Some("python".to_string()), meta: None, value: "pass".to_string(), fence: true, position: None }),
+        Selector::Code,
+        vec![RuntimeValue::String("rust".into())],
+        false
+    )]
+    #[case::code_no_args_fallback(
+        Node::Code(mq_markdown::Code { lang: None, meta: None, value: "".to_string(), fence: true, position: None }),
+        Selector::Code,
+        vec![],
+        true
+    )]
+    #[case::non_heading_node(
+        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Selector::Heading(None),
+        vec![RuntimeValue::Number(1.into())],
+        false
+    )]
+    fn test_eval_selector_with_args(
+        #[case] node: Node,
+        #[case] selector: Selector,
+        #[case] args: Vec<RuntimeValue>,
+        #[case] expected_match: bool,
+    ) {
+        let result = eval_selector_with_args(&node, &selector, &args);
+        assert_eq!(!result.is_none(), expected_match);
     }
 }

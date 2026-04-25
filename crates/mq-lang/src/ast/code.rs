@@ -28,6 +28,12 @@ impl Node {
             Expr::Selector(selector) => {
                 write!(buf, "{}", selector).unwrap();
             }
+            Expr::SelectorCall(selector, args) => {
+                write!(buf, "{}", selector).unwrap();
+                buf.push('(');
+                format_args(args, buf, indent);
+                buf.push(')');
+            }
             Expr::Break(None) => {
                 buf.push_str("break");
             }

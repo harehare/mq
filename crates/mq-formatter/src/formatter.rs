@@ -288,7 +288,7 @@ impl Formatter {
             | mq_lang::CstNodeKind::Do
             | mq_lang::CstNodeKind::Continue => self.format_keyword(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Break => self.format_break(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::Selector | mq_lang::CstNodeKind::SelfAttr => {
+            mq_lang::CstNodeKind::Selector | mq_lang::CstNodeKind::SelectorCall | mq_lang::CstNodeKind::SelfAttr => {
                 self.format_selector(&node, indent_level_consider_new_line)
             }
             mq_lang::CstNodeKind::Try => self.format_try(&node, indent_level_consider_new_line),
@@ -1393,7 +1393,7 @@ impl Formatter {
 
     fn format_selector(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Selector | mq_lang::CstNodeKind::SelfAttr,
+            kind: mq_lang::CstNodeKind::Selector | mq_lang::CstNodeKind::SelfAttr | mq_lang::CstNodeKind::SelectorCall,
             token: Some(token),
             children,
             ..
@@ -2785,6 +2785,10 @@ end
     #[case::index_assign("arr[0]=10", "arr[0] = 10")]
     #[case::index_assign_string_key("dict[\"key\"]=\"value\"", "dict[\"key\"] = \"value\"")]
     #[case::index_compound_assign("arr[0]+=1", "arr[0] += 1")]
+    #[case::selector_call_heading_single_arg(".h(1)", ".h(1)")]
+    #[case::selector_call_heading_multi_arg(".h(1,2)", ".h(1, 2)")]
+    #[case::selector_call_code_lang(".code(\"rust\")", ".code(\"rust\")")]
+    #[case::selector_call_pipe(".h(1)|.text()", ".h(1) | .text()")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

@@ -2,7 +2,7 @@ use crate::{
     Ident, Shared,
     ast::{
         Program, TokenId,
-        node::{AccessTarget, Expr, MatchArm, Node, StringSegment},
+        node::{AccessTarget, Args, Expr, MatchArm, Node, StringSegment},
     },
     error::runtime::RuntimeError,
     eval::runtime_value::RuntimeValue,
@@ -381,6 +381,16 @@ impl Macro {
             Expr::Macro(_, _, _) => {
                 // This should not happen in normal flow as we filter them out
                 Ok(Shared::clone(node))
+            }
+            Expr::SelectorCall(selector, args) => {
+                let expanded_args = args
+                    .iter()
+                    .map(|arg| self.expand_node(arg, evaluator))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::SelectorCall(selector.clone(), expanded_args.into())),
+                }))
             }
             // Leaf nodes and other expressions - no expansion needed, avoid cloning
             Expr::Literal(_)
@@ -773,6 +783,16 @@ impl Macro {
             // Unquote: Unwrap and return the substituted inner expression
             // Unquote should not appear in the final expanded code
             Expr::Unquote(inner) => self.substitute_node(inner, substitutions),
+            Expr::SelectorCall(selector, args) => {
+                let substituted_args: Args = args
+                    .iter()
+                    .map(|arg| self.substitute_node(arg, substitutions))
+                    .collect();
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::SelectorCall(selector.clone(), substituted_args)),
+                })
+            }
             // Leaf nodes and other expressions - no substitution needed
             Expr::Literal(_)
             | Expr::Selector(_)
@@ -1061,6 +1081,16 @@ impl Macro {
                 Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::QualifiedAccess(path.clone(), substituted_target)),
+                })
+            }
+            Expr::SelectorCall(selector, args) => {
+                let substituted_args: Vec<_> = args
+                    .iter()
+                    .map(|arg| self.substitute_in_quote(arg, substitutions))
+                    .collect();
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::SelectorCall(selector.clone(), substituted_args.into())),
                 })
             }
             // All other nodes (identifiers, literals, etc.) are not substituted in quote context
@@ -2732,5 +2762,43 @@ mod tests {
         } else {
             panic!("Expected Call expression, got {:?}", expanded[0].expr);
         }
+    }
+
+    #[test]
+    fn test_selector_call_in_macro_body_expands_without_error() {
+        let input = "macro h1(doc): doc | .h(1) | h1(.h)";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand program");
+
+        assert!(!expanded.is_empty(), "Expected non-empty expansion");
+        let has_selector_call = expanded
+            .iter()
+            .any(|node| matches!(&*node.expr, Expr::SelectorCall(_, _)));
+        assert!(has_selector_call, "Expected SelectorCall in expanded program");
+    }
+
+    #[test]
+    fn test_selector_call_substitute_arg_in_macro() {
+        let input = "macro filter_lang(sel, lang): sel(lang) | filter_lang(.code, \"rust\")";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let result = macro_expander.expand(&program, &mut MockMacroEvaluator);
+        // Expansion should succeed; selector-call substitution must not panic
+        assert!(result.is_ok(), "Expected successful expansion, got {:?}", result.err());
+    }
+
+    #[test]
+    fn test_selector_call_in_quote_context() {
+        let input = "macro wrap_selector(s): quote: s(1) | wrap_selector(.h)";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand(&program, &mut MockMacroEvaluator)
+            .expect("Failed to expand program");
+
+        assert!(!expanded.is_empty(), "Expected non-empty expansion from quote context");
     }
 }
