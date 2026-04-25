@@ -16,7 +16,7 @@ use crate::command_context::{Command, CommandContext, CommandOutput};
 fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
     let mut result = line.to_string();
 
-    let commands_pattern = r"^(/copy|/edit|/env|/help|/quit|/load|/vars|/version)\b";
+    let commands_pattern = r"^(/clear|/copy|/edit|/env|/help|/history|/quit|/load|/reset|/vars|/version)\b";
     if let Ok(re) = regex_lite::Regex::new(commands_pattern) {
         result = re
             .replace_all(&result, |caps: &regex_lite::Captures| {
@@ -64,9 +64,63 @@ fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
     Cow::Owned(result)
 }
 
+/// Format a markdown node with type-specific colors.
+fn format_markdown_node(node: &mq_markdown::Node) -> String {
+    let s = node.to_string();
+    match node {
+        mq_markdown::Node::Heading(_) => s.bold().bright_cyan().to_string(),
+        mq_markdown::Node::Code(_) => s.bright_yellow().to_string(),
+        mq_markdown::Node::CodeInline(_) => s.yellow().to_string(),
+        mq_markdown::Node::Link(_) | mq_markdown::Node::LinkRef(_) => s.bright_blue().to_string(),
+        mq_markdown::Node::Strong(_) => s.bold().to_string(),
+        mq_markdown::Node::Emphasis(_) => s.italic().to_string(),
+        _ => s,
+    }
+}
+
+/// Format a runtime value with type-appropriate colors.
+fn format_runtime_value(value: &mq_lang::RuntimeValue) -> Option<String> {
+    use mq_lang::RuntimeValue;
+    let s = match value {
+        RuntimeValue::None => return Some("None".dimmed().to_string()),
+        RuntimeValue::Number(n) => n.to_string().bright_magenta().to_string(),
+        RuntimeValue::Boolean(b) => b.to_string().bright_yellow().to_string(),
+        RuntimeValue::String(s) => format!("\"{}\"", s).bright_green().to_string(),
+        RuntimeValue::Markdown(node, _) => format_markdown_node(node),
+        _ => {
+            let s = value.to_string();
+            if s.is_empty() {
+                return None;
+            }
+            s
+        }
+    };
+    Some(s)
+}
+
 /// Get the appropriate prompt symbol based on character availability
 fn get_prompt() -> &'static str {
     if is_char_available() { "❯ " } else { "> " }
+}
+
+fn is_truecolor_supported() -> bool {
+    matches!(std::env::var("COLORTERM").as_deref(), Ok("truecolor") | Ok("24bit"))
+}
+
+fn logo_primary(s: &str) -> ColoredString {
+    if is_truecolor_supported() {
+        s.truecolor(133, 212, 255)
+    } else {
+        s.bright_cyan()
+    }
+}
+
+fn text_muted(s: &str) -> ColoredString {
+    if is_truecolor_supported() {
+        s.truecolor(148, 163, 184)
+    } else {
+        s.white()
+    }
 }
 
 /// Check if a Unicode character is available in the current environment
@@ -102,6 +156,8 @@ fn is_char_available() -> bool {
 pub struct MqLineHelper {
     command_context: Rc<RefCell<CommandContext>>,
     file_completer: FilenameCompleter,
+    /// Tracks whether the current input spans multiple lines (continuation mode).
+    is_continuation: Rc<RefCell<bool>>,
 }
 
 impl MqLineHelper {
@@ -109,17 +165,58 @@ impl MqLineHelper {
         Self {
             command_context,
             file_completer: FilenameCompleter::new(),
+            is_continuation: Rc::new(RefCell::new(false)),
         }
     }
 }
 
 impl Hinter for MqLineHelper {
     type Hint = String;
+
+    fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<String> {
+        // Update continuation state based on whether the buffer has newlines.
+        *self.is_continuation.borrow_mut() = line.contains('\n');
+
+        if pos < line.len() || line.is_empty() || line.starts_with('/') {
+            return None;
+        }
+
+        let (start, completions) = self.command_context.borrow().completions(line, pos);
+        let word = &line[start..pos];
+
+        // Completion hint takes priority when a single match extends the current word.
+        if !word.is_empty() && completions.len() == 1 && completions[0].name.len() > word.len() {
+            return Some(completions[0].name[word.len()..].to_string());
+        }
+
+        // Bracket closing hint: show the matching close bracket right after an open bracket.
+        if word.is_empty() {
+            let closing = match line.chars().last() {
+                Some('(') => Some(")"),
+                Some('[') => Some("]"),
+                Some('{') => Some("}"),
+                _ => None,
+            };
+            if let Some(c) = closing {
+                return Some(c.to_string());
+            }
+        }
+
+        None
+    }
 }
 
 impl Highlighter for MqLineHelper {
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
-        prompt.cyan().to_string().into()
+        if *self.is_continuation.borrow() {
+            "..  ".dimmed().to_string().into()
+        } else {
+            prompt.cyan().to_string().into()
+        }
+    }
+
+    fn highlight_hint<'h>(&self, hint: &'h str) -> std::borrow::Cow<'h, str> {
+        hint.dimmed().to_string().into()
     }
 
     fn highlight_char(&self, _line: &str, _pos: usize, _kind: CmdKind) -> bool {
@@ -158,9 +255,9 @@ impl Completer for MqLineHelper {
 
         let mut completions = matches
             .iter()
-            .map(|cmd| Pair {
-                display: cmd.clone(),
-                replacement: format!("{}{}", cmd, &line[pos..]),
+            .map(|item| Pair {
+                display: item.display.clone(),
+                replacement: format!("{}{}", item.name, &line[pos..]),
             })
             .collect::<Vec<_>>();
 
@@ -197,14 +294,13 @@ impl Repl {
     }
 
     fn print_welcome() {
+        let version = mq_lang::DefaultEngine::version();
+
         println!();
-        println!(
-            "  {}",
-            "mq - A jq-like command-line tool for Markdown processing".bright_cyan()
-        );
+        println!("  {} {}", logo_primary("mq").bold(), text_muted(&format!("v{version}")));
+        println!("  {}", text_muted("Query. Filter. Transform Markdown."));
         println!();
-        println!("  Welcome to mq. Start by typing commands or expressions.");
-        println!("  Type {} to see available commands.", "/help".bright_cyan());
+        println!("  Type {} to see available commands.", logo_primary("/help"));
         println!();
     }
 
@@ -261,20 +357,22 @@ impl Repl {
                     match self.command_context.borrow_mut().execute(&line) {
                         Ok(CommandOutput::String(s)) => println!("{}", s.join("\n")),
                         Ok(CommandOutput::Value(runtime_values)) => {
-                            let lines = runtime_values
-                                .iter()
-                                .filter_map(|runtime_value| {
-                                    if runtime_value.is_none() {
-                                        return Some("None".to_string());
-                                    }
-
-                                    let s = runtime_value.to_string();
-                                    if s.is_empty() { None } else { Some(s) }
-                                })
-                                .collect::<Vec<_>>();
-
+                            let lines: Vec<String> = runtime_values.iter().filter_map(format_runtime_value).collect();
                             if !lines.is_empty() {
                                 println!("{}", lines.join("\n"))
+                            }
+                        }
+                        Ok(CommandOutput::History) => {
+                            let entries: Vec<String> = editor
+                                .history()
+                                .iter()
+                                .enumerate()
+                                .map(|(i, entry)| format!("  {:>4}  {}", i + 1, entry.dimmed()))
+                                .collect();
+                            if entries.is_empty() {
+                                println!("  No history.");
+                            } else {
+                                println!("{}", entries.join("\n"));
                             }
                         }
                         Ok(CommandOutput::None) => (),
@@ -344,6 +442,35 @@ mod tests {
         // Test number highlighting
         let result = highlight_mq_syntax("42");
         assert!(result.contains("42"));
+    }
+
+    #[test]
+    fn test_format_runtime_value_number() {
+        let v = mq_lang::RuntimeValue::Number(42.into());
+        let s = format_runtime_value(&v).unwrap();
+        assert!(s.contains("42"));
+    }
+
+    #[test]
+    fn test_format_runtime_value_boolean() {
+        let v = mq_lang::RuntimeValue::Boolean(true);
+        let s = format_runtime_value(&v).unwrap();
+        assert!(s.contains("true"));
+    }
+
+    #[test]
+    fn test_format_runtime_value_string() {
+        let v = mq_lang::RuntimeValue::String("hello".to_string());
+        let s = format_runtime_value(&v).unwrap();
+        assert!(s.contains("hello"));
+        assert!(s.contains('"'));
+    }
+
+    #[test]
+    fn test_format_runtime_value_none() {
+        let v = mq_lang::RuntimeValue::None;
+        let s = format_runtime_value(&v).unwrap();
+        assert!(s.contains("None"));
     }
 
     #[test]

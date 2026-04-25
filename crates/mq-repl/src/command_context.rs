@@ -5,21 +5,34 @@ use arboard::Clipboard;
 use miette::{IntoDiagnostic, miette};
 use strum::IntoEnumIterator;
 
+/// A completion candidate with a display label and the name to insert.
+#[derive(Debug, Clone)]
+pub struct CompletionItem {
+    /// The actual text to insert.
+    pub name: String,
+    /// The label shown in the completion list (may include signature or description).
+    pub display: String,
+}
+
 #[derive(Debug, Clone)]
 pub enum CommandOutput {
     Value(Vec<mq_lang::RuntimeValue>),
     String(Vec<String>),
+    History,
     None,
 }
 
 #[derive(Debug, Clone, strum::EnumIter)]
 pub enum Command {
+    Clear,
     Copy,
     Edit,
     Env(String, String),
     Help,
+    History,
     Quit,
     LoadFile(String),
+    Reset,
     Vars,
     Eval(String),
     Version,
@@ -40,14 +53,15 @@ const KEYWORDS: &[&str] = &[
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Command::Clear => write!(f, "/clear"),
             Command::Copy => write!(f, "/copy"),
             Command::Edit => write!(f, "/edit"),
-            Command::Env(_, _) => {
-                write!(f, "/env")
-            }
+            Command::Env(_, _) => write!(f, "/env"),
             Command::Help => write!(f, "/help"),
+            Command::History => write!(f, "/history"),
             Command::Quit => write!(f, "/quit"),
             Command::LoadFile(_) => write!(f, "/load"),
+            Command::Reset => write!(f, "/reset"),
             Command::Vars => write!(f, "/vars"),
             Command::Eval(_) => write!(f, "/eval"),
             Command::Version => write!(f, "/version"),
@@ -59,14 +73,15 @@ impl fmt::Display for Command {
 impl Command {
     pub fn help(&self) -> String {
         match self {
+            Command::Clear => format!("{:<12}{}", "/clear", "Clear the terminal screen"),
             Command::Copy => format!("{:<12}{}", "/copy", "Copy the execution results to the clipboard"),
             Command::Edit => format!("{:<12}{}", "/edit", "Edit the current buffer in external editor"),
-            Command::Env(_, _) => {
-                format!("{:<12}{}", "/env", "Set environment variables (key value)")
-            }
+            Command::Env(_, _) => format!("{:<12}{}", "/env", "Set environment variables (key value)"),
             Command::Help => format!("{:<12}{}", "/help", "Print command help"),
+            Command::History => format!("{:<12}{}", "/history", "Show command history"),
             Command::Quit => format!("{:<12}{}", "/quit", "Quit evaluation and exit"),
             Command::LoadFile(_) => format!("{:<12}{}", "/load", "Load a markdown file"),
+            Command::Reset => format!("{:<12}{}", "/reset", "Reset REPL state (clear variables and input)"),
             Command::Vars => format!("{:<12}{}", "/vars", "List bound variables"),
             Command::Eval(_) => format!("{:<12}{}", "/eval", ""),
             Command::NotFound(_) => format!("{:<12}{}", "/not_found", ""),
@@ -78,12 +93,15 @@ impl Command {
 impl From<String> for Command {
     fn from(s: String) -> Self {
         match s.as_str().split_whitespace().collect::<Vec<&str>>().as_slice() {
+            ["/clear"] => Command::Clear,
             ["/copy"] => Command::Copy,
             ["/edit"] => Command::Edit,
             ["/env", name, value] => Command::Env(name.to_string(), value.to_string()),
             ["/help"] => Command::Help,
+            ["/history"] => Command::History,
             ["/quit"] => Command::Quit,
             ["/load", file_path] => Command::LoadFile(file_path.to_string()),
+            ["/reset"] => Command::Reset,
             ["/vars"] => Command::Vars,
             ["/version"] => Command::Version,
             _ if s.starts_with("/") => Command::NotFound(s),
@@ -95,6 +113,7 @@ impl From<String> for Command {
 pub struct CommandContext {
     pub(crate) engine: mq_lang::DefaultEngine,
     pub(crate) input: Vec<mq_lang::RuntimeValue>,
+    initial_input: Vec<mq_lang::RuntimeValue>,
     pub(crate) hir: mq_hir::Hir,
     pub(crate) source_id: mq_hir::SourceId,
     pub(crate) scope_id: mq_hir::ScopeId,
@@ -109,6 +128,7 @@ impl CommandContext {
 
         Self {
             engine,
+            initial_input: input.clone(),
             input,
             hir,
             source_id,
@@ -116,7 +136,7 @@ impl CommandContext {
         }
     }
 
-    pub fn completions(&self, line: &str, pos: usize) -> (usize, Vec<String>) {
+    pub fn completions(&self, line: &str, pos: usize) -> (usize, Vec<CompletionItem>) {
         let prefix = &line[..pos];
         let start = prefix
             .char_indices()
@@ -126,7 +146,7 @@ impl CommandContext {
             .unwrap_or(0);
         let word = &line[start..pos];
 
-        let mut matches = Vec::new();
+        let mut matches: Vec<CompletionItem> = Vec::new();
 
         if word.starts_with('/') {
             for cmd in Command::iter() {
@@ -135,34 +155,95 @@ impl CommandContext {
                 }
                 let cmd_str = cmd.to_string();
                 if cmd_str.starts_with(word) {
-                    matches.push(cmd_str);
+                    let description = cmd.help();
+                    let desc_part = description.trim_start_matches(&cmd_str).trim().to_string();
+                    matches.push(CompletionItem {
+                        name: cmd_str.clone(),
+                        display: if desc_part.is_empty() {
+                            cmd_str
+                        } else {
+                            format!("{:<12}{}", cmd_str, desc_part)
+                        },
+                    });
+                }
+            }
+        } else if word.starts_with('.') {
+            for (selector, doc) in mq_lang::BUILTIN_SELECTOR_DOC.iter() {
+                if selector.starts_with(word) {
+                    matches.push(CompletionItem {
+                        name: selector.to_string(),
+                        display: format!("{:<20}{}", selector, doc.description),
+                    });
                 }
             }
         } else {
+            let seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut seen_names = seen_names;
+
             for keyword in KEYWORDS {
                 if keyword.starts_with(word) {
-                    matches.push(keyword.to_string());
+                    matches.push(CompletionItem {
+                        name: keyword.to_string(),
+                        display: keyword.to_string(),
+                    });
+                    seen_names.insert(keyword.to_string());
                 }
             }
 
             for (_, symbol) in self.hir.symbols() {
                 if let Some(name) = &symbol.value {
-                    if name.starts_with('_') {
+                    if name.starts_with('_') || seen_names.contains(name.as_str()) {
                         continue;
                     }
-                    if name.starts_with(word) && !matches.contains(&name.to_string()) {
-                        matches.push(name.to_string());
+                    if name.starts_with(word) {
+                        let display = Self::builtin_display(name);
+                        seen_names.insert(name.to_string());
+                        matches.push(CompletionItem {
+                            name: name.to_string(),
+                            display,
+                        });
                     }
                 }
             }
         }
 
-        matches.sort();
+        matches.sort_by(|a, b| a.name.cmp(&b.name));
         (start, matches)
+    }
+
+    fn builtin_display(name: &str) -> String {
+        if let Some(doc) = mq_lang::BUILTIN_FUNCTION_DOC.get(name) {
+            if doc.params.is_empty() {
+                format!("{}()", name)
+            } else {
+                format!("{}({})", name, doc.params.join(", "))
+            }
+        } else {
+            name.to_string()
+        }
     }
 
     pub fn execute(&mut self, to_run: &str) -> miette::Result<CommandOutput> {
         match to_run.to_string().into() {
+            Command::Clear => {
+                print!("\x1b[2J\x1b[H");
+                let _ = std::io::stdout().flush();
+                Ok(CommandOutput::None)
+            }
+            Command::History => Ok(CommandOutput::History),
+            Command::Reset => {
+                let mut hir = mq_hir::Hir::default();
+                let (source_id, scope_id) = hir.add_new_source(None);
+                hir.add_builtin();
+                let mut engine = mq_lang::DefaultEngine::default();
+                engine.load_builtin_module();
+                self.hir = hir;
+                self.source_id = source_id;
+                self.scope_id = scope_id;
+                self.engine = engine;
+                self.input = self.initial_input.clone();
+                Ok(CommandOutput::None)
+            }
             Command::Copy => {
                 #[cfg(all(feature = "clipboard", not(target_os = "android")))]
                 {
@@ -352,10 +433,13 @@ mod tests {
 
     #[test]
     fn test_command_from_string() {
+        assert!(matches!(Command::from("/clear".to_string()), Command::Clear));
         assert!(matches!(Command::from("/copy".to_string()), Command::Copy));
         assert!(matches!(Command::from("/edit".to_string()), Command::Edit));
         assert!(matches!(Command::from("/help".to_string()), Command::Help));
+        assert!(matches!(Command::from("/history".to_string()), Command::History));
         assert!(matches!(Command::from("/quit".to_string()), Command::Quit));
+        assert!(matches!(Command::from("/reset".to_string()), Command::Reset));
         assert!(matches!(Command::from("/vars".to_string()), Command::Vars));
         assert!(matches!(Command::from("/version".to_string()), Command::Version));
 
@@ -381,10 +465,13 @@ mod tests {
 
     #[test]
     fn test_command_display() {
+        assert_eq!(format!("{}", Command::Clear), "/clear");
         assert_eq!(format!("{}", Command::Copy), "/copy");
         assert_eq!(format!("{}", Command::Edit), "/edit");
         assert_eq!(format!("{}", Command::Help), "/help");
+        assert_eq!(format!("{}", Command::History), "/history");
         assert_eq!(format!("{}", Command::Quit), "/quit");
+        assert_eq!(format!("{}", Command::Reset), "/reset");
         assert_eq!(format!("{}", Command::Vars), "/vars");
         assert_eq!(format!("{}", Command::Version), "/version");
         assert_eq!(format!("{}", Command::LoadFile("test.md".to_string())), "/load");
@@ -402,10 +489,13 @@ mod tests {
             assert!(!help.is_empty());
 
             match cmd {
+                Command::Clear => assert!(help.contains("/clear")),
                 Command::Copy => assert!(help.contains("/copy")),
                 Command::Edit => assert!(help.contains("/edit")),
                 Command::Help => assert!(help.contains("/help")),
+                Command::History => assert!(help.contains("/history")),
                 Command::Quit => assert!(help.contains("/quit")),
+                Command::Reset => assert!(help.contains("/reset")),
                 Command::Vars => assert!(help.contains("/vars")),
                 Command::Version => assert!(help.contains("/version")),
                 Command::LoadFile(_) => assert!(help.contains("/load")),
@@ -416,6 +506,10 @@ mod tests {
         }
     }
 
+    fn names(items: &[CompletionItem]) -> Vec<&str> {
+        items.iter().map(|i| i.name.as_str()).collect()
+    }
+
     #[test]
     fn test_completions_basic() {
         let engine = mq_lang::DefaultEngine::default();
@@ -423,7 +517,7 @@ mod tests {
 
         let (start, matches) = ctx.completions("ad", 2);
         assert_eq!(start, 0);
-        assert!(matches.contains(&"add".to_string()));
+        assert!(names(&matches).contains(&"add"));
     }
 
     #[test]
@@ -433,7 +527,7 @@ mod tests {
 
         let (start, matches) = ctx.completions("/he", 3);
         assert_eq!(start, 0);
-        assert!(matches.contains(&"/help".to_string()));
+        assert!(names(&matches).contains(&"/help"));
     }
 
     #[test]
@@ -443,7 +537,7 @@ mod tests {
 
         let (start, matches) = ctx.completions("let x = ad", 10);
         assert_eq!(start, 8);
-        assert!(matches.contains(&"add".to_string()));
+        assert!(names(&matches).contains(&"add"));
     }
 
     #[test]
@@ -452,7 +546,29 @@ mod tests {
         let ctx = CommandContext::new(engine, Vec::new());
 
         let (_, matches) = ctx.completions("_", 1);
-        assert!(matches.iter().all(|m| !m.starts_with('_')));
+        assert!(matches.iter().all(|m| !m.name.starts_with('_')));
+    }
+
+    #[test]
+    fn test_completions_selector() {
+        let engine = mq_lang::DefaultEngine::default();
+        let ctx = CommandContext::new(engine, Vec::new());
+
+        let (start, matches) = ctx.completions(".h1", 3);
+        assert_eq!(start, 0);
+        assert!(names(&matches).contains(&".h1"));
+    }
+
+    #[test]
+    fn test_completions_function_signature() {
+        let engine = mq_lang::DefaultEngine::default();
+        let ctx = CommandContext::new(engine, Vec::new());
+
+        let (_, matches) = ctx.completions("ad", 2);
+        let add_item = matches.iter().find(|i| i.name == "add");
+        assert!(add_item.is_some());
+        // add has params so display should include parentheses
+        assert!(add_item.unwrap().display.contains('('));
     }
 
     #[test]
