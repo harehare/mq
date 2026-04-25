@@ -180,6 +180,14 @@ impl Node {
                 let end = value_node.range(Shared::clone(&arena)).end;
                 Range { start, end }
             }
+            Expr::SelectorCall(_, args) => {
+                let start = arena[self.token_id].range.start;
+                let end = args
+                    .last()
+                    .map(|node| node.range(Shared::clone(&arena)).end)
+                    .unwrap_or_else(|| arena[self.token_id].range.end);
+                Range { start, end }
+            }
             Expr::Literal(_)
             | Expr::Ident(_)
             | Expr::Selector(_)
@@ -328,6 +336,10 @@ pub enum Expr {
     Ident(IdentWithToken),
     InterpolatedString(Vec<StringSegment>),
     Selector(Selector),
+    /// A selector with runtime-evaluated arguments for filtered matching.
+    ///
+    /// Supports `.h(1..2)`, `.h(1, 2)`, `.code("rust")`, etc.
+    SelectorCall(Selector, Args),
     While(Shared<Node>, Program),
     Foreach(IdentWithToken, Shared<Node>, Program),
     If(Branches),

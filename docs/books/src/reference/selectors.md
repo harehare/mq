@@ -12,6 +12,59 @@ Selectors use the `.` prefix to select markdown nodes. For example:
 .link    # Selects all link nodes
 ```
 
+## Selector Calls (Filtered Matching)
+
+Selectors can accept arguments to filter nodes by specific properties, using a function-call syntax:
+
+```mq
+.h(1)           # Selects only h1 headings
+.h(2, 3)        # Selects h2 and h3 headings
+.h(1..3)        # Selects h1, h2, and h3 headings (range)
+.code("rust")   # Selects only Rust code blocks
+```
+
+### Heading Depth Filtering
+
+Pass one or more numeric arguments to match headings at specific depths:
+
+```mq
+# Select only top-level headings
+.h(1)
+
+# Select h2 and h3 headings
+.h(2, 3)
+
+# Select h1 through h3 using a range
+.h(1..3)
+```
+
+### Code Language Filtering
+
+Pass a string argument to match code blocks with a specific language:
+
+```mq
+# Select only Rust code blocks
+.code("rust")
+
+# Select Python or JavaScript code blocks
+.code("python") | to_array | concat(.code("javascript"))
+```
+
+### Combining with Other Operations
+
+Selector calls can be combined with pipes and functions just like plain selectors:
+
+```mq
+# Extract content of all h2 headings
+.h(2) | .value
+
+# Count Rust code blocks
+.code("rust") | len()
+
+# Replace language of all TypeScript blocks
+.code("typescript") | set_attr("lang", "ts")
+```
+
 ## Attribute Access
 
 Once you've selected a node, you can access its attributes using dot notation. The available attributes depend on the node type.
@@ -199,6 +252,13 @@ Filter nodes based on attribute values:
 .code | filter(fn(c): c.lang == "rust";)
 ```
 
+The selector call syntax provides a more concise alternative for common cases:
+
+```mq
+.h(2)           # equivalent to: .h | filter(fn(h): h.level == 2;)
+.code("rust")   # equivalent to: .code | filter(fn(c): c.lang == "rust";)
+```
+
 ### Extract Code Languages
 
 ```mq
@@ -214,7 +274,11 @@ Filter nodes based on attribute values:
 ### Filter High-Level Headings
 
 ```mq
+# Using attribute comparison
 select(.h.level <= 2)
+
+# Using selector call for exact levels
+.h(1, 2)
 ```
 
 ## Setting Attributes

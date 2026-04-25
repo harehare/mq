@@ -250,6 +250,18 @@ Here's a basic example of how to use `mq`:
 # Extract all headings from a document
 mq '.h' README.md
 
+# Extract only h1 headings
+mq '.h(1)' README.md
+
+# Extract h1 and h2 headings
+mq '.h(1, 2)' README.md
+
+# Extract headings from level 1 to 3 using a range
+mq '.h(1..3)' README.md
+
+# Extract only Rust code blocks
+mq '.code("rust")' example.md
+
 # Extract code blocks containing "name"
 mq '.code | select(contains("name"))' example.md
 

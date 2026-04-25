@@ -115,6 +115,7 @@ pub enum NodeKind {
     QualifiedAccess,
     Quote,
     Selector,
+    SelectorCall,
     Self_,
     SelfAttr,
     Token,

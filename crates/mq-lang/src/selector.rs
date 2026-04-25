@@ -445,6 +445,11 @@ impl Selector {
     pub fn is_attribute_selector(&self) -> bool {
         matches!(self, Selector::Attr(_))
     }
+
+    /// Returns the selector as a string without a leading dot.
+    pub fn name(&self) -> String {
+        self.to_string().trim_start_matches('.').to_string()
+    }
 }
 
 #[cfg(test)]

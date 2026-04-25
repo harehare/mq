@@ -723,6 +723,55 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     #[inline(always)]
+    fn eval_selector_expr_with_args(
+        runtime_value: &RuntimeValue,
+        selector: &Selector,
+        args: &[RuntimeValue],
+    ) -> RuntimeValue {
+        match runtime_value {
+            RuntimeValue::Markdown(node_value, _) => builtin::eval_selector_with_args(node_value, selector, args),
+            RuntimeValue::Array(values) => {
+                let values = values
+                    .iter()
+                    .flat_map(|value| match value {
+                        RuntimeValue::Markdown(node_value, _) => {
+                            match builtin::eval_selector_with_args(node_value, selector, args) {
+                                RuntimeValue::Array(arr) => arr,
+                                other => vec![other],
+                            }
+                        }
+                        RuntimeValue::Dict(_) => {
+                            vec![Self::eval_selector_expr_with_args(value, selector, args)]
+                        }
+                        _ => vec![RuntimeValue::NONE],
+                    })
+                    .collect::<Vec<_>>();
+                RuntimeValue::Array(values)
+            }
+            RuntimeValue::Dict(map) => {
+                let type_key = Ident::new("type");
+                let new_map: BTreeMap<_, _> = map
+                    .iter()
+                    .map(|(k, v)| {
+                        let new_v = if *k == type_key {
+                            v.clone()
+                        } else {
+                            Self::eval_selector_expr_with_args(v, selector, args)
+                        };
+                        (*k, new_v)
+                    })
+                    .collect();
+                if new_map.is_empty() {
+                    RuntimeValue::NONE
+                } else {
+                    RuntimeValue::Dict(new_map)
+                }
+            }
+            _ => RuntimeValue::NONE,
+        }
+    }
+
+    #[inline(always)]
     fn eval_selector_expr(runtime_value: &RuntimeValue, ident: &Selector) -> RuntimeValue {
         match runtime_value {
             RuntimeValue::Markdown(node_value, _) => builtin::eval_selector(node_value, ident),
@@ -862,6 +911,17 @@ impl<T: ModuleResolver> Evaluator<T> {
 
         match &*node.expr {
             ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
+            ast::Expr::SelectorCall(selector, args) => {
+                let evaluated_args = args
+                    .iter()
+                    .map(|arg| self.eval_expr(runtime_value, arg, env))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Self::eval_selector_expr_with_args(
+                    runtime_value,
+                    selector,
+                    &evaluated_args,
+                ))
+            }
             ast::Expr::Call(ident, args) => {
                 #[cfg(feature = "debugger")]
                 if ident.name == constants::builtins::BREAKPOINT.into() {
@@ -3654,6 +3714,42 @@ mod tests {
             ast_node(ast::Expr::Selector(Selector::Text)),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Fragment(mq_markdown::Fragment { values: vec!["Heading 1".to_string().into()] }), None)]))]
+    // SelectorCall: .h(1) matches h1
+    #[case::selector_call_heading_exact_match(
+        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["H1".to_string().into()], position: None}), None)],
+        vec![ast_node(ast::Expr::SelectorCall(Selector::Heading(None), smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::Number(crate::number::Number::new(1.0)))),
+        ]))],
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["H1".to_string().into()], position: None}), None)]))]
+    // SelectorCall: .h(2) does not match a non-markdown value
+    #[case::selector_call_heading_no_match(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::SelectorCall(Selector::Heading(None), smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::Number(crate::number::Number::new(2.0)))),
+        ]))],
+        Ok(vec![RuntimeValue::NONE]))]
+    // SelectorCall: .h(1, 2) matches h2
+    #[case::selector_call_heading_multi_arg(
+        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 2, values: vec!["H2".to_string().into()], position: None}), None)],
+        vec![ast_node(ast::Expr::SelectorCall(Selector::Heading(None), smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::Number(crate::number::Number::new(1.0)))),
+            ast_node(ast::Expr::Literal(ast::Literal::Number(crate::number::Number::new(2.0)))),
+        ]))],
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 2, values: vec!["H2".to_string().into()], position: None}), None)]))]
+    // SelectorCall: .code("rust") matches rust code block
+    #[case::selector_call_code_lang_match(
+        vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{lang: Some("rust".to_string()), meta: None, value: "fn main() {}".to_string(), fence: true, position: None}), None)],
+        vec![ast_node(ast::Expr::SelectorCall(Selector::Code, smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::String("rust".to_string()))),
+        ]))],
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{lang: Some("rust".to_string()), meta: None, value: "fn main() {}".to_string(), fence: true, position: None}), None)]))]
+    // SelectorCall: .code("python") does not match a non-markdown value
+    #[case::selector_call_code_lang_no_match(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::SelectorCall(Selector::Code, smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::String("python".to_string()))),
+        ]))],
+        Ok(vec![RuntimeValue::NONE]))]
     #[case::to_md_table_row(vec![RuntimeValue::Array(vec![
             RuntimeValue::String("Cell 1".to_string()),
             RuntimeValue::String("Cell 2".to_string()),
