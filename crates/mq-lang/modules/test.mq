@@ -14,9 +14,9 @@ def _render_inline_delete(inline):
   join(foreach (part, inline):
     let pv = gsub(gsub(part["value"], " ", "·"), "\n", "↵")
     | if (part["tag"] == "delete"):
-        "\x1b[1;31m" + pv + "\x1b[0;31m"
+        pv
       elif (part["tag"] == "equal"):
-        "\x1b[31m" + pv + "\x1b[0;31m"
+        pv
       else:
         ""
   end, "")
@@ -27,9 +27,9 @@ def _render_inline_insert(inline):
   join(foreach (part, inline):
     let pv = gsub(gsub(part["value"], " ", "·"), "\n", "↵")
     | if (part["tag"] == "insert"):
-        "\x1b[1;32m" + pv + "\x1b[0;32m"
+        pv
       elif (part["tag"] == "equal"):
-        "\x1b[32m" + pv + "\x1b[0;32m"
+        pv
       else:
         ""
   end, "")
@@ -57,21 +57,21 @@ def assert_eq(actual, expected):
                             else:
                               to_string(value)
               | let rendered = if (contains(change, "inline") && not(is_array_diff)):
-                  if (tag == "delete"):
-                    _render_inline_delete(change["inline"])
-                  else:
-                    _render_inline_insert(change["inline"])
-                else:
-                  text
+                              if (tag == "delete"):
+                                _render_inline_delete(change["inline"])
+                              else:
+                                _render_inline_insert(change["inline"])
+                            else:
+                              text
               | if (tag == "insert"):
-                  "\x1b[32m    + \x1b[0m" + rendered + "\x1b[0m"
+                  "+ " + rendered
                 elif (tag == "delete"):
-                  "\x1b[31m    - \x1b[0m" + rendered + "\x1b[0m"
+                  "- " + rendered
                 else:
-                  "      " + text
+                  "  " + text
             end
       | let diff_str = join(diff_lines, "\n")
-      | {"error": true, "message": "\x1b[1mAssertion failed\x1b[0m\n\n" + diff_str}
+      | {"error": true, "message": "Assertion failed\n\n" + diff_str}
     end
 end
 
@@ -173,15 +173,7 @@ def _run_test(test_name, test_func):
       }
 end
 
-def _succeed(message):
-  "\x1b[32m" + message + "\x1b[0m"
-end
-
-def _failed(message):
-  "\x1b[31m" + message + "\x1b[0m"
-end
-
-# Formats duration in seconds with fixed width padding
+# Formats duration as X.XXXs
 def _format_duration(duration_ms):
   let duration_s = duration_ms / 1000
   | let duration_str = to_string(duration_s)
@@ -196,13 +188,7 @@ def _format_duration(duration_ms):
       duration_str + "0"
     else:
       duration_str
-  # Pad to fixed width: [   X.XXXs]
-  | let padding_needed = 8 - len(duration_str)
-  | let padding = if (padding_needed > 0):
-      repeat(" ", padding_needed)
-    else:
-      ""
-  | "[" + padding + duration_str + "s]"
+  | duration_str + "s"
 end
 
 # Executes multiple test functions
@@ -210,7 +196,12 @@ def run_tests(tests):
   let final_test_count = len(tests)
 
   # Print starting message
-  | let _ = print("    Starting " + to_string(final_test_count) + " tests")
+  | let file_name = try: TEST_FILE catch: ""
+  | let _ = do
+      print("# " + file_name + "\n\nStarting " + to_string(final_test_count) + " tests...\n")
+      | print("| Status | Duration | Test Name |")
+      | print("| :--- | :--- | :--- |")
+    end
 
   # Run each test and print result immediately
   | let test_results = foreach (test, tests):
@@ -218,11 +209,8 @@ def run_tests(tests):
         do
           let result = _run_test(get(test, "name"), get(test, "func"))
           | let duration_str = _format_duration(result["duration"])
-          | let line = if (result["status"] == "passed"):
-              _succeed("        PASS") + " " + duration_str + " " + result["name"]
-            else:
-              _failed("        FAIL") + " " + duration_str + " " + result["name"]
-          | let _ = print(line)
+          | let status_str = if (result["status"] == "passed"): "✅" else: "❌"
+          | let _ = print("| " + status_str + " | `" + duration_str + "` | " + result["name"] + " |")
           | result
         end
       else:
@@ -234,28 +222,37 @@ def run_tests(tests):
   | let total_duration = fold(map(test_results, fn(r): r["duration"];), 0, fn(acc, d): acc + d;)
 
   # Print failures section if any
-  | let _ = if (final_failed_count > 0):
+  | if (final_failed_count > 0):
       do
         let failures = filter(test_results, fn(r): r["status"] == "failed";)
-        | let failure_msgs = ["\n\x1b[1mFailures:\x1b[0m\n"]
-        | let failure_msgs = failure_msgs + foreach (failure, failures):
-                  ["---- " + failure["name"] + " ----", "    " + failure["error"], ""]
+        | print("\n## Failures\n")
+        | foreach (failure, failures):
+            print("### " + failure["name"] + "\n")
+            | let error_parts = split(failure["error"], "\n\n")
+            | let header = "❌ " + error_parts[0]
+            | let _ = print(header + "\n")
+            | let has_body = len(error_parts) > 1
+            | if (has_body):
+                do
+                  let body = join(skip(error_parts, 1), "\n")
+                  | print("```diff\n" + body + "\n```")
                 end
-        | print(join(flatten(failure_msgs), "\n"))
+              else:
+                None
+          end
       end
-    else:
-      self
 
   # Print summary
   | let summary_duration = _format_duration(total_duration)
-  | let summary = "\x1b[1m------------\x1b[0m"
-  | let summary = summary + "\n\x1b[1m     Summary " + summary_duration + " " + to_string(final_test_count) + " tests run: " + to_string(passed_count) + " passed"
-  | let summary = if (final_failed_count > 0):
-      summary + ", " + to_string(final_failed_count) + " failed"
-    else:
-      summary
-  | let summary = summary + "\x1b[0m"
-  | let _ = print(summary)
+  | let passed_str = "✅ " + to_string(passed_count)
+  | let failed_str = "❌ " + to_string(final_failed_count)
+  | let _ = do
+      print("\n## Summary\n")
+      | print("| Duration | Tests | Passed | Failed |")
+      | print("| :--- | :--- | :--- | :--- |")
+      | print("| `" + summary_duration + "` | " + to_string(final_test_count) + " | " + passed_str + " | " + failed_str + " |")
+      | print("\n---\n")
+    end
 
   # Exit with error code if tests failed
   | if (final_failed_count > 0): halt(1)
@@ -268,4 +265,5 @@ def test_case(name, func):
     "func": func
   }
 end
+
 

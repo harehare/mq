@@ -52,6 +52,7 @@ impl TestRunner {
             let query = Self::build_test_query(&content, &test_names);
             let mut engine = mq_lang::DefaultEngine::default();
             engine.load_builtin_module();
+            engine.define_string_value("TEST_FILE", file.to_string_lossy().as_ref());
 
             // Add the file's directory to the search path so relative `include`
             // statements in the test file resolve correctly.
