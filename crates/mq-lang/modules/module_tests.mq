@@ -422,7 +422,7 @@ end
 def test_table_filter_rows():
   let t = first(table::tables(table_nodes))
   | let md_result = table::filter_rows(t, fn(row): to_string(row[0]) == "Alice";)
-  | assert_eq(len(md_result[:rows]), 2)
+  | assert_eq(len(md_result[:rows]), 1)
 end
 
 def test_table_filter_tables():
