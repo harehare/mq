@@ -722,3 +722,6 @@ def chunk_by(v, f):
   end
 end
 
+# Returns a new function that takes the same arguments as the original function but with the first two arguments flipped.
+def flip(f, a, b): f(b, a);
+

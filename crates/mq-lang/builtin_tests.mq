@@ -693,3 +693,12 @@ def test_chunk_by():
   | assert_eq(result4, ["1", "23456"])
 end
 
+def test_flip():
+  let a = fn(a, b): a + b;
+  | let result1 = do a | flip(2, 3);
+  | assert_eq(result1, 5)
+
+  | let b = fn(a, b): a - b;
+  | let result2 = do b | flip(5, 2);
+  | assert_eq(result2, -3)
+end
