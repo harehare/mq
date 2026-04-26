@@ -100,7 +100,11 @@ impl Lexer {
                     });
                     Ok(tokens)
                 } else {
-                    Err(SyntaxError::UnexpectedEOFDetected(module_id))
+                    Err(SyntaxError::UnexpectedToken(Token {
+                        range: eof,
+                        kind: TokenKind::Eof,
+                        module_id,
+                    }))
                 }
             }
             Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => Err(SyntaxError::UnexpectedToken(Token {
@@ -124,6 +128,18 @@ fn unicode(input: Span) -> IResult<Span, char> {
                     char('}'),
                 ),
             ),
+            |span: Span| u32::from_str_radix(span.fragment(), 16),
+        ),
+        char::from_u32,
+    )
+    .parse(input)
+}
+
+/// Parses a 4-digit Unicode escape sequence `\uXXXX`.
+fn unicode4(input: Span) -> IResult<Span, char> {
+    map_opt(
+        map_res(
+            preceded(char('u'), take_while_m_n(4, 4, |c: char| c.is_ascii_hexdigit())),
             |span: Span| u32::from_str_radix(span.fragment(), 16),
         ),
         char::from_u32,
@@ -421,6 +437,7 @@ fn string_segment<'a>(input: Span<'a>) -> IResult<Span<'a>, StringSegment> {
                         value('}', char('}')),
                         hex_escape,
                         unicode,
+                        unicode4,
                     )),
                 )(span)?;
                 let (span, end) = position(span)?;
@@ -533,6 +550,7 @@ fn string_literal(input: Span) -> IResult<Span, Token> {
                     value('W', char('W')), // \W (non-word character)
                     hex_escape,
                     unicode,
+                    unicode4,
                 )),
             )),
         ),
@@ -822,7 +840,7 @@ mod tests {
           Token{range: Range { start: Position {line: 1, column: 46}, end: Position {line: 1, column: 46} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     #[case("\"test",
           Options::default(),
-          Err(SyntaxError::UnexpectedEOFDetected(1.into())))]
+          Err(SyntaxError::UnexpectedToken(Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 6} }, kind: TokenKind::Eof, module_id: 1.into()})))]
     #[case::new_line("and(\ncontains(\"test\"))",
             Options{include_spaces: true, ignore_errors: true},
             Ok(vec![
@@ -882,7 +900,7 @@ mod tests {
                 ))]
     #[case::error("\"test",
             Options{include_spaces: false, ignore_errors: false},
-            Err(SyntaxError::UnexpectedEOFDetected(1.into())))]
+            Err(SyntaxError::UnexpectedToken(Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 6} }, kind: TokenKind::Eof, module_id: 1.into()})))]
     #[case::error("s\"$$${test}$$\"",
             Options{include_spaces: false, ignore_errors: false},
             Ok(vec![Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 15} },
@@ -1290,6 +1308,54 @@ mod tests {
                           ]), module_id: 1.into()},
                    Token{range: Range { start: Position {line: 1, column: 14}, end: Position {line: 1, column: 14} }, kind: TokenKind::Eof, module_id: 1.into()}]
                 ))]
+    #[case::unicode4_hiragana("\"\\u3041\"",
+        Options::default(),
+        Ok(vec![
+            Token {
+                range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 9 } },
+                kind: TokenKind::StringLiteral("ぁ".to_string()),
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 1, column: 9 }, end: Position { line: 1, column: 9 } },
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }
+        ])
+    )]
+    #[case::unicode4_katakana("\"\\u30A1\"",
+        Options::default(),
+        Ok(vec![
+            Token {
+                range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 9 } },
+                kind: TokenKind::StringLiteral("ァ".to_string()),
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 1, column: 9 }, end: Position { line: 1, column: 9 } },
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }
+        ])
+    )]
+    #[case::unicode4_in_regex_char_class("\"[\\u3041-\\u3096]+\"",
+        Options::default(),
+        Ok(vec![
+            Token {
+                range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 19 } },
+                kind: TokenKind::StringLiteral("[ぁ-ゖ]+".to_string()),
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 1, column: 19 }, end: Position { line: 1, column: 19 } },
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }
+        ])
+    )]
+    #[case::unterminated_string_reports_position("\"unterminated",
+        Options::default(),
+        Err(SyntaxError::UnexpectedToken(Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 14} }, kind: TokenKind::Eof, module_id: 1.into()})))]
 
     fn test_parse(#[case] input: &str, #[case] options: Options, #[case] expected: Result<Vec<Token>, SyntaxError>) {
         assert_eq!(Lexer::new(options).tokenize(input, 1.into()), expected);

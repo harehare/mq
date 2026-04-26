@@ -5,7 +5,7 @@ use miette::{Diagnostic, SourceOffset, SourceSpan};
 use std::borrow::Cow;
 
 use crate::{
-    Module, ModuleLoader, ModuleResolver, Token,
+    Module, ModuleLoader, ModuleResolver, Token, TokenKind,
     error::{runtime::RuntimeError, syntax::SyntaxError},
     module::{self, error::ModuleError},
 };
@@ -176,6 +176,11 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::EnvNotFound(_, env)) => Some(Cow::Owned(format!(
                 "Environment variable '{env}' not found. Did you forget to set it?"
             ))),
+            InnerError::Syntax(SyntaxError::UnexpectedToken(token)) if token.kind == TokenKind::Eof => {
+                Some(Cow::Borrowed(
+                    "The source could not be fully parsed from this position. Check for unsupported escape sequences (use \\u{XXXX} for Unicode), invalid characters, or unterminated string literals.",
+                ))
+            }
             InnerError::Syntax(SyntaxError::UnexpectedToken(_)) => Some(Cow::Borrowed(
                 "This token is not valid here. Check for typos, missing operators, or misplaced punctuation.",
             )),
@@ -300,6 +305,13 @@ impl Diagnostic for Error {
             )),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::EnvNotFound(_, env))) => {
                 Some(Cow::Owned(format!("Environment variable '{env}' not found in module.")))
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedToken(token)))
+                if token.kind == TokenKind::Eof =>
+            {
+                Some(Cow::Borrowed(
+                    "The source could not be fully parsed from this position. Check for unsupported escape sequences (use \\u{XXXX} for Unicode), invalid characters, or unterminated string literals.",
+                ))
             }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedToken(_))) => Some(Cow::Borrowed(
                 "This token is not valid here. Check for typos, missing operators, or misplaced punctuation.",
