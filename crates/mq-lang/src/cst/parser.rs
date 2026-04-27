@@ -963,6 +963,17 @@ impl<'a> Parser<'a> {
                 if self.try_next_token(|kind| matches!(kind, TokenKind::LParen)) {
                     node.kind = NodeKind::SelectorCall;
                     node.children = self.parse_args()?;
+                    // Check for attribute access after SelectorCall: `.h(1).level`
+                    if let Some(peek_token) = self.peek()
+                        && peek_token.is_selector()
+                        && Selector::try_from(&**peek_token)
+                            .map(|s| s.is_attribute_selector())
+                            .unwrap_or(false)
+                    {
+                        let attr_child =
+                            self.next_node(|kind| matches!(kind, TokenKind::Selector(_)), NodeKind::Selector)?;
+                        node.children.push(attr_child);
+                    }
                     return Ok(Shared::new(node));
                 }
 

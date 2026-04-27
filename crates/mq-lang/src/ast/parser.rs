@@ -2360,16 +2360,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    /// Parse a selector with an attribute suffix and convert it to an attr() function call
-    fn parse_selector_with_attribute(
+    /// Build an attr() call given a pre-built base node and an attribute selector token.
+    fn build_attr_call_for_node(
         &mut self,
-        token: &Shared<Token>,
+        base_node: Shared<Node>,
         attr_token: Shared<Token>,
+        token: &Shared<Token>,
     ) -> Result<Shared<Node>, SyntaxError> {
         if let TokenKind::Selector(attr_selector) = &attr_token.kind {
-            // Parse the base selector recursively
-            let base_node = self.parse_selector_direct(token)?;
-
             if !Selector::try_from(&*attr_token)
                 .map_err(SyntaxError::UnknownSelector)?
                 .is_attribute_selector()
@@ -2378,7 +2376,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
 
             let attribute = &attr_selector[1..]; // Skip the dot
-            // Create the attribute string literal
             let attr_literal = Shared::new(Node {
                 token_id: self.token_arena.alloc(Shared::clone(token)),
                 expr: Shared::new(Expr::Literal(Literal::String(attribute.to_string()))),
@@ -2389,7 +2386,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 return self.parse_set_attr_call_with_selector(base_node, attr_literal);
             }
 
-            // Create the attr() function call
             Ok(Shared::new(Node {
                 token_id: self.token_arena.alloc(Shared::clone(token)),
                 expr: Shared::new(Expr::Call(
@@ -2400,6 +2396,16 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         } else {
             Err(SyntaxError::UnexpectedToken((**token).clone()))
         }
+    }
+
+    /// Parse a selector with an attribute suffix and convert it to an attr() function call
+    fn parse_selector_with_attribute(
+        &mut self,
+        token: &Shared<Token>,
+        attr_token: Shared<Token>,
+    ) -> Result<Shared<Node>, SyntaxError> {
+        let base_node = self.parse_selector_direct(token)?;
+        self.build_attr_call_for_node(base_node, attr_token, token)
     }
 
     /// Parse a selector without checking for attributes (to avoid infinite recursion)
@@ -2470,10 +2476,17 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             let selector = Selector::try_from(&**token).map_err(SyntaxError::UnknownSelector)?;
             if !selector.is_attribute_selector() {
                 let args = self.parse_args()?;
-                return Ok(Shared::new(Node {
+                let base_node = Shared::new(Node {
                     token_id: self.token_arena.alloc(Shared::clone(token)),
                     expr: Shared::new(Expr::SelectorCall(selector, args)),
-                }));
+                });
+                // Check for attribute access on SelectorCall: `.h(1).level`
+                if self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_)))
+                    && let Some(attr_token) = self.tokens.next()
+                {
+                    return self.build_attr_call_for_node(base_node, Shared::clone(attr_token), token);
+                }
+                return Ok(base_node);
             }
         }
 
@@ -3905,6 +3918,76 @@ mod tests {
                     token_id: 0.into(),
                     expr: Shared::new(Expr::Literal(Literal::String("rust".to_owned()))),
                 })],
+            )),
+        })]))]
+    #[case::selector_call_with_attribute(
+        vec![
+            token(TokenKind::Selector(SmolStr::new(".h"))),
+            token(TokenKind::LParen),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::RParen),
+            token(TokenKind::Selector(SmolStr::new(".level"))),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![Shared::new(Node {
+            // attr() Call: arg literal id=0, SelectorCall id=1, attr_literal id=2, Call id=3
+            token_id: 3.into(),
+            expr: Shared::new(Expr::Call(
+                IdentWithToken::new_with_token(
+                    constants::builtins::ATTR,
+                    Some(Shared::new(token(TokenKind::Selector(SmolStr::new(".h"))))),
+                ),
+                smallvec![
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::SelectorCall(
+                            Selector::Heading(None),
+                            smallvec![Shared::new(Node {
+                                token_id: 0.into(),
+                                expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                            })],
+                        )),
+                    }),
+                    Shared::new(Node {
+                        token_id: 2.into(),
+                        expr: Shared::new(Expr::Literal(Literal::String("level".to_owned()))),
+                    }),
+                ],
+            )),
+        })]))]
+    #[case::selector_call_code_with_lang_attribute(
+        vec![
+            token(TokenKind::Selector(SmolStr::new(".code"))),
+            token(TokenKind::LParen),
+            token(TokenKind::StringLiteral("rust".to_owned())),
+            token(TokenKind::RParen),
+            token(TokenKind::Selector(SmolStr::new(".lang"))),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![Shared::new(Node {
+            // attr() Call: arg literal id=0, SelectorCall id=1, attr_literal id=2, Call id=3
+            token_id: 3.into(),
+            expr: Shared::new(Expr::Call(
+                IdentWithToken::new_with_token(
+                    constants::builtins::ATTR,
+                    Some(Shared::new(token(TokenKind::Selector(SmolStr::new(".code"))))),
+                ),
+                smallvec![
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::SelectorCall(
+                            Selector::Code,
+                            smallvec![Shared::new(Node {
+                                token_id: 0.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("rust".to_owned()))),
+                            })],
+                        )),
+                    }),
+                    Shared::new(Node {
+                        token_id: 2.into(),
+                        expr: Shared::new(Expr::Literal(Literal::String("lang".to_owned()))),
+                    }),
+                ],
             )),
         })]))]
     #[case::table_selector(
