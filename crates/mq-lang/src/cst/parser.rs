@@ -963,6 +963,17 @@ impl<'a> Parser<'a> {
                 if self.try_next_token(|kind| matches!(kind, TokenKind::LParen)) {
                     node.kind = NodeKind::SelectorCall;
                     node.children = self.parse_args()?;
+                    // Check for attribute access after SelectorCall: `.h(1).level`
+                    if let Some(peek_token) = self.peek()
+                        && peek_token.is_selector()
+                        && Selector::try_from(&**peek_token)
+                            .map_err(ParseError::UnknownSelector)?
+                            .is_attribute_selector()
+                    {
+                        let attr_child =
+                            self.next_node(|kind| matches!(kind, TokenKind::Selector(_)), NodeKind::Selector)?;
+                        node.children.push(attr_child);
+                    }
                     return Ok(Shared::new(node));
                 }
 
@@ -9772,6 +9783,64 @@ mod tests {
                         Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::selector_call_with_attribute(
+        vec![
+            Shared::new(token(TokenKind::Selector(".h".into()))),
+            Shared::new(token(TokenKind::LParen)),
+            Shared::new(token(TokenKind::NumberLiteral(1.into()))),
+            Shared::new(token(TokenKind::RParen)),
+            Shared::new(token(TokenKind::Selector(".depth".into()))),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::SelectorCall,
+                    token: Some(Shared::new(token(TokenKind::Selector(".h".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Selector,
+                            token: Some(Shared::new(token(TokenKind::Selector(".depth".into())))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),

@@ -2477,6 +2477,8 @@ fn engine() -> DefaultEngine {
 #[case::selector_dict_with_markdown_values(r##"{"docs": to_markdown("# Title\n\ntext")} | .h | is_dict()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::TRUE].into()))]
 #[case::selector_dict_preserves_type_key(r##"{"type": "mytype"} | .h | entries() | first() | last()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("mytype".to_string())].into()))]
 #[case::selector_array_of_dicts_preserves_dict(r##"array({"docs": to_markdown("# Title")}) | .h | first() | is_dict()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::TRUE].into()))]
+#[case::selector_call_h(r##"to_markdown("# h1\n\n## h2\n\ntest") | .h(2).depth | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::selector_call_code_lang(r##"to_markdown("```rust\ncode\n```") | .code("rust").lang | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("rust".to_string())].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
