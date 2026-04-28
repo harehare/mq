@@ -4776,6 +4776,11 @@ fn collect_string_values(args: &[RuntimeValue]) -> Vec<String> {
 /// Supports filtered matching for selectors that accept arguments:
 /// - `Heading`: filters by depth using numeric or range args (e.g. `.h(1..2)`, `.h(1, 2)`)
 /// - `Code`: filters by language using string args (e.g. `.code("rust")`)
+/// - `List`: filters by list item index using a numeric arg (e.g. `.[v]` where `v` evaluates to an index)
+/// - `Table`: filters table cells by positional args where `args[0]` is the row and `args[1]` is the
+///   column; a `None`/[`RuntimeValue::None`] value in either position acts as a wildcard matching any
+///   row or column respectively (e.g. `.[v][]` matches row `v` of any column, `.[][v]` matches column
+///   `v` of any row)
 /// - All other selectors fall back to [`eval_selector`].
 pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, args: &[RuntimeValue]) -> RuntimeValue {
     if args.is_empty() {
