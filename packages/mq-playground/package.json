@@ -25,10 +25,10 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "babel-plugin-react-compiler": "^1.0.0",
-    "baseline-browser-mapping": "^2.10.20",
-    "oxlint": "^1.60.0",
+    "baseline-browser-mapping": "^2.10.21",
+    "oxlint": "^1.61.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.8"
+    "vite": "^8.0.9"
   },
   "packageManager": "pnpm@10.33.0"
 }
