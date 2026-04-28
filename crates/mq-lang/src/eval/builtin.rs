@@ -8,7 +8,7 @@ use crate::error::runtime::RuntimeError;
 use crate::eval::builtin::convert::Convert;
 use crate::eval::env::{self, Env};
 use crate::ident::all_symbols;
-use crate::number;
+use crate::number::{self};
 use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
 use csv::ReaderBuilder;
@@ -4714,9 +4714,6 @@ pub fn eval_builtin(
     )
 }
 
-/// Collect numeric (u8) depth values from evaluated selector arguments.
-///
-/// Accepts `Number` values directly and flattens `Array` values recursively.
 fn collect_depth_values(args: &[RuntimeValue]) -> Vec<u8> {
     args.iter()
         .flat_map(|arg| match arg {
@@ -4736,9 +4733,25 @@ fn collect_depth_values(args: &[RuntimeValue]) -> Vec<u8> {
         .collect()
 }
 
-/// Collect string values from evaluated selector arguments.
-///
-/// Accepts `String` values directly and flattens `Array` values.
+fn collect_runtime_values(args: &[RuntimeValue]) -> Vec<RuntimeValue> {
+    args.iter()
+        .flat_map(|arg| match arg {
+            RuntimeValue::Number(n) => vec![(*n).into()],
+            RuntimeValue::Array(arr) => arr
+                .iter()
+                .filter_map(|v| {
+                    if let RuntimeValue::Number(n) = v {
+                        Some((*n).into())
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            _ => vec![],
+        })
+        .collect()
+}
+
 fn collect_string_values(args: &[RuntimeValue]) -> Vec<String> {
     args.iter()
         .flat_map(|arg| match arg {
@@ -4772,9 +4785,11 @@ pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, ar
     let is_match = match selector {
         Selector::Heading(_) => {
             let depths = collect_depth_values(args);
+
             if depths.is_empty() {
                 return eval_selector(node, selector);
             }
+
             if let mq_markdown::Node::Heading(mq_markdown::Heading { depth, .. }) = node {
                 depths.contains(depth)
             } else {
@@ -4783,14 +4798,51 @@ pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, ar
         }
         Selector::Code => {
             let langs = collect_string_values(args);
+
             if langs.is_empty() {
                 return eval_selector(node, selector);
             }
+
             if let mq_markdown::Node::Code(mq_markdown::Code { lang, .. }) = node {
                 let node_lang = lang.as_deref().unwrap_or("");
                 langs.iter().any(|l| l == node_lang)
             } else {
                 false
+            }
+        }
+        Selector::List(..) => {
+            let indices = collect_runtime_values(args);
+
+            if indices.is_empty() {
+                return eval_selector(node, selector);
+            }
+
+            if let mq_markdown::Node::List(mq_markdown::List { index: list_index, .. }) = node {
+                indices.iter().any(|i| match i {
+                    RuntimeValue::Number(n) => *list_index == n.value() as usize,
+                    _ => false,
+                })
+            } else {
+                false
+            }
+        }
+        Selector::Table(..) => {
+            if args.is_empty() {
+                return eval_selector(node, selector);
+            }
+
+            match node {
+                mq_markdown::Node::TableCell(mq_markdown::TableCell { column, row, .. }) => {
+                    let matches_pos = |spec: Option<&RuntimeValue>, actual: usize| -> bool {
+                        match spec {
+                            None | Some(RuntimeValue::None) => true,
+                            Some(RuntimeValue::Number(n)) => actual == n.value() as usize,
+                            _ => false,
+                        }
+                    };
+                    matches_pos(args.first(), *row) && matches_pos(args.get(1), *column)
+                }
+                _ => false,
             }
         }
         _ => return eval_selector(node, selector),
@@ -6570,6 +6622,72 @@ mod tests {
         Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
         Selector::Heading(None),
         vec![RuntimeValue::Number(1.into())],
+        false
+    )]
+    #[case::list_index_match(
+        Node::List(mq_markdown::List { index: 2, level: 0, checked: None, ordered: false, values: vec![], position: None }),
+        Selector::List(None, None),
+        vec![RuntimeValue::Number(2.into())],
+        true
+    )]
+    #[case::list_index_no_match(
+        Node::List(mq_markdown::List { index: 0, level: 0, checked: None, ordered: false, values: vec![], position: None }),
+        Selector::List(None, None),
+        vec![RuntimeValue::Number(1.into())],
+        false
+    )]
+    #[case::list_multi_index_match(
+        Node::List(mq_markdown::List { index: 3, level: 0, checked: None, ordered: false, values: vec![], position: None }),
+        Selector::List(None, None),
+        vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into())],
+        true
+    )]
+    #[case::list_no_args_fallback(
+        Node::List(mq_markdown::List { index: 0, level: 0, checked: None, ordered: false, values: vec![], position: None }),
+        Selector::List(None, None),
+        vec![],
+        true
+    )]
+    #[case::list_non_list_node(
+        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Selector::List(None, None),
+        vec![RuntimeValue::Number(0.into())],
+        false
+    )]
+    #[case::table_row_match(
+        Node::TableCell(mq_markdown::TableCell { column: 0, row: 1, values: vec![], position: None }),
+        Selector::Table(None, None),
+        vec![RuntimeValue::Number(1.into())],
+        true
+    )]
+    #[case::table_row_no_match(
+        Node::TableCell(mq_markdown::TableCell { column: 0, row: 0, values: vec![], position: None }),
+        Selector::Table(None, None),
+        vec![RuntimeValue::Number(1.into())],
+        false
+    )]
+    #[case::table_row_and_col_match(
+        Node::TableCell(mq_markdown::TableCell { column: 2, row: 1, values: vec![], position: None }),
+        Selector::Table(None, None),
+        vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())],
+        true
+    )]
+    #[case::table_row_and_col_no_match(
+        Node::TableCell(mq_markdown::TableCell { column: 0, row: 1, values: vec![], position: None }),
+        Selector::Table(None, None),
+        vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())],
+        false
+    )]
+    #[case::table_no_args_fallback(
+        Node::TableCell(mq_markdown::TableCell { column: 0, row: 0, values: vec![], position: None }),
+        Selector::Table(None, None),
+        vec![],
+        true
+    )]
+    #[case::table_non_table_node(
+        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Selector::Table(None, None),
+        vec![RuntimeValue::Number(0.into())],
         false
     )]
     fn test_eval_selector_with_args(

@@ -2479,6 +2479,9 @@ fn engine() -> DefaultEngine {
 #[case::selector_array_of_dicts_preserves_dict(r##"array({"docs": to_markdown("# Title")}) | .h | first() | is_dict()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::TRUE].into()))]
 #[case::selector_call_h(r##"to_markdown("# h1\n\n## h2\n\ntest") | .h(2).depth | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::selector_call_code_lang(r##"to_markdown("```rust\ncode\n```") | .code("rust").lang | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("rust".to_string())].into()))]
+#[case::selector_bracket_variable_list(r##"let v = 1 | to_markdown("- a\n- b\n- c") | .[v] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("- b".to_string())].into()))]
+#[case::selector_bracket_variable_table_row(r##"let v = 1 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[v][] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("c".to_string())].into()))]
+#[case::selector_bracket_variable_table_col(r##"let v = 1 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[][v] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("b".to_string())].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
