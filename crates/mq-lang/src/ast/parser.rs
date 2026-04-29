@@ -2580,7 +2580,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             Some(t) => Shared::clone(t),
             None => return Err(SyntaxError::InsufficientTokens((*bracket_token).clone())),
         };
-        let node = self.parse_primary_expr(&expr_token)?;
+        let node = self.parse_expr(&expr_token)?;
         self.next_token(|kind| matches!(kind, TokenKind::RBracket))?;
         Ok(Some(node))
     }

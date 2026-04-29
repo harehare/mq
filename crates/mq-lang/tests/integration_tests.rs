@@ -2482,6 +2482,8 @@ fn engine() -> DefaultEngine {
 #[case::selector_bracket_variable_list(r##"let v = 1 | to_markdown("- a\n- b\n- c") | .[v] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("- b".to_string())].into()))]
 #[case::selector_bracket_variable_table_row(r##"let v = 1 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[v][] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("c".to_string())].into()))]
 #[case::selector_bracket_variable_table_col(r##"let v = 1 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[][v] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("b".to_string())].into()))]
+#[case::selector_bracket_expr_list(r##"let v = 0 | to_markdown("- a\n- b\n- c") | .[v + 1] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("- b".to_string())].into()))]
+#[case::selector_bracket_expr_table_col(r##"let v = 0 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[][v + 1] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("b".to_string())].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
