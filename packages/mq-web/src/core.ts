@@ -3,6 +3,7 @@ import init, {
   Diagnostic,
   DefinedValue,
   InlayHint,
+  HoverResult,
   ConversionOptions,
 } from "./mq_wasm";
 
@@ -16,6 +17,11 @@ interface WasmModule {
     enableTypeCheck?: boolean,
   ) => Promise<readonly Diagnostic[]>;
   inlayHints: (code: string) => Promise<readonly InlayHint[]>;
+  hover: (
+    code: string,
+    line: number,
+    column: number,
+  ) => Promise<HoverResult | null>;
   definedValues: (
     code: string,
     module?: string,
@@ -45,6 +51,7 @@ async function initWasm(): Promise<WasmModule> {
         format: wasmImport.format,
         diagnostics: wasmImport.diagnostics,
         inlayHints: wasmImport.inlayHints,
+        hover: wasmImport.hover,
         definedValues: wasmImport.definedValues,
         htmlToMarkdown: wasmImport.htmlToMarkdown,
         toHtml: wasmImport.toHtml,
@@ -122,6 +129,20 @@ export async function definedValues(
 ): Promise<ReadonlyArray<DefinedValue>> {
   const wasm = await initWasm();
   return await wasm.definedValues(code, module);
+}
+
+/**
+ * Get hover information for the symbol at the given position (1-based line and column).
+ *
+ * Returns `null` when no symbol exists at the position.
+ */
+export async function hover(
+  code: string,
+  line: number,
+  column: number,
+): Promise<HoverResult | null> {
+  const wasm = await initWasm();
+  return await wasm.hover(code, line, column);
 }
 
 /**
