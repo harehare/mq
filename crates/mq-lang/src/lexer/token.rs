@@ -46,6 +46,7 @@ pub struct Token {
 /// TokenKind variants are sorted alphabetically for maintainability.
 pub enum TokenKind {
     And,
+    Arrow,
     Convert,
     Asterisk,
     BoolLiteral(bool),
@@ -156,6 +157,7 @@ impl Display for TokenKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match &self {
             TokenKind::And => write!(f, "&&"),
+            TokenKind::Arrow => write!(f, "->"),
             TokenKind::Convert => write!(f, "@"),
             TokenKind::Or => write!(f, "||"),
             TokenKind::Not => write!(f, "!"),
@@ -258,5 +260,14 @@ mod tests {
     #[case(StringSegment::Expr(SmolStr::new(""), Range::default()), "${}")]
     fn string_segment_display_works(#[case] segment: StringSegment, #[case] expected: &str) {
         assert_eq!(segment.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case(TokenKind::Arrow, "->")]
+    #[case(TokenKind::Fn, "fn")]
+    #[case(TokenKind::Minus, "-")]
+    #[case(TokenKind::Gt, ">")]
+    fn token_kind_arrow_display(#[case] kind: TokenKind, #[case] expected: &str) {
+        assert_eq!(kind.to_string(), expected);
     }
 }

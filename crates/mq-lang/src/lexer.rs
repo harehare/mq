@@ -286,6 +286,7 @@ define_token_parser!(not_tilde_equal, "!~", TokenKind::NotTildeEqual);
 define_token_parser!(left_shift, "<<", TokenKind::LeftShift);
 define_token_parser!(right_shift, ">>", TokenKind::RightShift);
 define_token_parser!(convert_op, "@", TokenKind::Convert);
+define_token_parser!(arrow, "->", TokenKind::Arrow);
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
@@ -306,6 +307,10 @@ fn punctuations(input: Span) -> IResult<Span, Token> {
         pipe,
     ))
     .parse(input)
+}
+
+fn lambda_op(input: Span) -> IResult<Span, Token> {
+    alt((arrow,)).parse(input)
 }
 
 fn assignment_op(input: Span) -> IResult<Span, Token> {
@@ -674,6 +679,7 @@ fn token(input: Span) -> IResult<Span, Token> {
         keywords,
         env,
         literals,
+        lambda_op,
         binary_op,
         punctuations,
         unary_op,
@@ -692,6 +698,7 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
         keywords,
         env,
         literals,
+        lambda_op,
         binary_op,
         punctuations,
         unary_op,
@@ -1356,6 +1363,31 @@ mod tests {
     #[case::unterminated_string_reports_position("\"unterminated",
         Options::default(),
         Err(SyntaxError::UnexpectedToken(Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 14} }, kind: TokenKind::Eof, module_id: 1.into()})))]
+    #[case::arrow("->",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::Arrow, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 3} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::arrow_in_expression("map(->(x):upcase;)",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 4} }, kind: TokenKind::Ident(SmolStr::new("map")), module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 5} }, kind: TokenKind::LParen, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 7} }, kind: TokenKind::Arrow, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 8} }, kind: TokenKind::LParen, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 8}, end: Position {line: 1, column: 9} }, kind: TokenKind::Ident(SmolStr::new("x")), module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 9}, end: Position {line: 1, column: 10} }, kind: TokenKind::RParen, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 10}, end: Position {line: 1, column: 11} }, kind: TokenKind::Colon, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 11}, end: Position {line: 1, column: 17} }, kind: TokenKind::Ident(SmolStr::new("upcase")), module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 17}, end: Position {line: 1, column: 18} }, kind: TokenKind::SemiColon, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 18}, end: Position {line: 1, column: 19} }, kind: TokenKind::RParen, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 19}, end: Position {line: 1, column: 19} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::arrow_not_minus("- >",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 2} }, kind: TokenKind::Minus, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 4} }, kind: TokenKind::Gt, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 4} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
 
     fn test_parse(#[case] input: &str, #[case] options: Options, #[case] expected: Result<Vec<Token>, SyntaxError>) {
         assert_eq!(Lexer::new(options).tokenize(input, 1.into()), expected);
