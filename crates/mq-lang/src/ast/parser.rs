@@ -374,7 +374,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Def => self.parse_def(token),
             TokenKind::Macro => self.parse_macro(token),
             TokenKind::Do => self.parse_block(token),
-            TokenKind::Fn => self.parse_fn(token),
+            TokenKind::Fn | TokenKind::Arrow => self.parse_fn(token),
             TokenKind::While => self.parse_while(token),
             TokenKind::Loop => self.parse_loop(token),
             TokenKind::Foreach => self.parse_foreach(token),
@@ -7810,6 +7810,113 @@ mod tests {
             token(TokenKind::Ident(SmolStr::new("args"))),
         ],
         Err(SyntaxError::MacroParametersCannotBeVariadic(Token{range: Range::default(), kind: TokenKind::Macro, module_id: 1.into()})))]
+    #[case::arrow_simple(
+        vec![
+            token(TokenKind::Arrow),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("result".to_owned())),
+            token(TokenKind::SemiColon),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Fn(
+                    SmallVec::new(),
+                    vec![
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Literal(Literal::String("result".to_owned()))),
+                        })
+                    ],
+                )),
+            })
+        ]))]
+    #[case::arrow_with_args(
+        vec![
+            token(TokenKind::Arrow),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::Comma),
+            token(TokenKind::Ident(SmolStr::new("y"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("contains"))),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::Comma),
+            token(TokenKind::Ident(SmolStr::new("y"))),
+            token(TokenKind::RParen),
+            token(TokenKind::SemiColon),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Fn(
+                    smallvec![
+                        Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
+                        Param::new(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
+                    ],
+                    vec![
+                        Shared::new(Node {
+                            token_id: 4.into(),
+                            expr: Shared::new(Expr::Call(
+                                IdentWithToken::new_with_token("contains", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("contains")))))),
+                                smallvec![
+                                    Shared::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 3.into(),
+                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
+                                    }),
+                                ],
+                            )),
+                        })
+                    ],
+                )),
+            })
+        ]))]
+    #[case::arrow_nested_in_call(
+        vec![
+            token(TokenKind::Ident(SmolStr::new("apply"))),
+            token(TokenKind::LParen),
+            token(TokenKind::Arrow),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("processed".to_owned())),
+            token(TokenKind::SemiColon),
+            token(TokenKind::RParen),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 4.into(),
+                expr: Shared::new(Expr::Call(
+                    IdentWithToken::new_with_token("apply", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("apply")))))),
+                    smallvec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Fn(
+                                smallvec![
+                                  Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
+                                ],
+                                vec![
+                                    Shared::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::String("processed".to_owned()))),
+                                    })
+                                ],
+                            )),
+                        })
+                    ],
+                )),
+            })
+        ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, SyntaxError>) {
         let mut arena = Arena::new(10);
         let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();

@@ -2789,6 +2789,19 @@ end
     #[case::selector_call_heading_multi_arg(".h(1,2)", ".h(1, 2)")]
     #[case::selector_call_code_lang(".code(\"rust\")", ".code(\"rust\")")]
     #[case::selector_call_pipe(".h(1)|.text()", ".h(1) | .text()")]
+    #[case::arrow_simple("->(): program;", "->(): program;")]
+    #[case::arrow_multiline(
+        "->(arg1,arg2):
+        program;",
+        "->(arg1, arg2):
+  program;
+"
+    )]
+    #[case::arrow_as_call_arg("map( ->():program;)", "map(->(): program;)")]
+    #[case::arrow_as_call_arg_single_line("map(->(): program;)", "map(->(): program;)")]
+    #[case::arrow_as_call_arg_with_other_args("map(->(): program;, 1, \"test\")", "map(->(): program;, 1, \"test\")")]
+    #[case::nested_arrow_as_call_arg("outer(map(->(): inner();))", "outer(map(->(): inner();))")]
+    #[case::arrow_end("->(): test end", "->(): test end")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
