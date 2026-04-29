@@ -46,7 +46,7 @@ fn format_hover_content(
 ) -> String {
     let mut sections: Vec<String> = Vec::new();
 
-    sections.push(format!("## `{}` — {}", name, kind_label));
+    sections.push(format!("### `{}` — {}", name, kind_label));
     sections.push(format!("```mq\n{}\n```", signature));
 
     if deprecated {
