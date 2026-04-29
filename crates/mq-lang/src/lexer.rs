@@ -309,6 +309,10 @@ fn punctuations(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
+fn lambda_op(input: Span) -> IResult<Span, Token> {
+    alt((arrow,)).parse(input)
+}
+
 fn assignment_op(input: Span) -> IResult<Span, Token> {
     alt((
         plus_equal,
@@ -354,7 +358,7 @@ fn unary_op(input: Span) -> IResult<Span, Token> {
 fn control_keywords(input: Span) -> IResult<Span, Token> {
     alt((
         break_, catch_, continue_, def, do_, elif, else_, end, fn_, foreach, if_, let_, loop_, macro_, match_, quote_,
-        try_, unquote_, var, while_, arrow,
+        try_, unquote_, var, while_,
     ))
     .parse(input)
 }
@@ -675,6 +679,7 @@ fn token(input: Span) -> IResult<Span, Token> {
         keywords,
         env,
         literals,
+        lambda_op,
         binary_op,
         punctuations,
         unary_op,
@@ -693,6 +698,7 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
         keywords,
         env,
         literals,
+        lambda_op,
         binary_op,
         punctuations,
         unary_op,
