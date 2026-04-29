@@ -41,4 +41,4 @@ pub use error::{HirError, HirWarning};
 pub use hir::Hir;
 pub use scope::{Scope, ScopeId, ScopeKind};
 pub use source::{Source, SourceId, SourceInfo};
-pub use symbol::{Doc, Symbol, SymbolId, SymbolKind};
+pub use symbol::{Doc, ParamInfo, Symbol, SymbolId, SymbolKind};

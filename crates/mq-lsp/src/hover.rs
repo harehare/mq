@@ -19,7 +19,7 @@ fn is_deprecated_marker(text: &str) -> bool {
 ///
 /// For example `"deprecated: use foo instead"` returns `Some("use foo instead")`.
 fn extract_deprecated_message(text: &str) -> Option<String> {
-    let after_colon = text.trim().splitn(2, ':').nth(1)?.trim();
+    let after_colon = text.trim().split_once(':')?.1.trim();
     if after_colon.is_empty() {
         None
     } else {
@@ -27,16 +27,26 @@ fn extract_deprecated_message(text: &str) -> Option<String> {
     }
 }
 
-/// Builds a Markdown hover string from a pre-formatted signature, doc comments, and
-/// deprecation status.
+/// Builds a Markdown hover string from a kind label, name, signature, doc comments,
+/// deprecation status, and optional parameter list.
 ///
 /// The layout is:
-/// - A fenced `mq` code block containing the signature
+/// - A heading with the symbol name and kind (e.g. `## \`len\` — function`)
+/// - A fenced `mq` code block containing the full signature
 /// - An optional blockquote deprecation notice (when `deprecated` is `true`)
 /// - An optional `---` separator followed by non-deprecated doc lines
-fn format_hover_content(signature: &str, docs: &[mq_hir::Doc], deprecated: bool) -> String {
+/// - An optional `### Parameters` section listing each parameter
+fn format_hover_content(
+    kind_label: &str,
+    name: &str,
+    signature: &str,
+    docs: &[mq_hir::Doc],
+    deprecated: bool,
+    params: &[mq_hir::ParamInfo],
+) -> String {
     let mut sections: Vec<String> = Vec::new();
 
+    sections.push(format!("## `{}` — {}", name, kind_label));
     sections.push(format!("```mq\n{}\n```", signature));
 
     if deprecated {
@@ -63,6 +73,23 @@ fn format_hover_content(signature: &str, docs: &[mq_hir::Doc], deprecated: bool)
         sections.push(doc_text);
     }
 
+    if !params.is_empty() {
+        let param_items = params
+            .iter()
+            .map(|p| {
+                if p.is_variadic {
+                    format!("- `*{}` *(variadic)*", p.name)
+                } else if p.has_default {
+                    format!("- `{}` *(optional)*", p.name)
+                } else {
+                    format!("- `{}`", p.name)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        sections.push(format!("### Parameters\n{}", param_items));
+    }
+
     sections.join("\n\n")
 }
 
@@ -87,27 +114,34 @@ pub fn response(
                 | mq_hir::SymbolKind::PatternVariable { .. } => {
                     let deprecated = symbol.is_deprecated();
                     let type_scheme = type_env.as_ref().and_then(|env| env.get(&symbol_id));
+                    let name = symbol.value.as_deref().unwrap_or_default();
 
-                    let signature = match &symbol.kind {
+                    let (kind_label, signature, params) = match &symbol.kind {
                         mq_hir::SymbolKind::Function(args) | mq_hir::SymbolKind::Macro(args) => {
+                            let kind_label = if matches!(symbol.kind, mq_hir::SymbolKind::Function(_)) {
+                                "function"
+                            } else {
+                                "macro"
+                            };
                             let type_annotation = type_scheme.map(|s| format!(": {}", s.ty)).unwrap_or_default();
-                            format!(
+                            let sig = format!(
                                 "{}({}){}",
-                                symbol.value.as_deref().unwrap_or_default(),
+                                name,
                                 args.iter().map(|p| p.to_string()).join(", "),
                                 type_annotation
-                            )
+                            );
+                            (kind_label, sig, args.clone())
                         }
                         _ => {
                             let type_annotation = type_scheme.map(|s| format!(": {}", s.ty)).unwrap_or_default();
-                            format!("{}{}", symbol.value.as_deref().unwrap_or_default(), type_annotation)
+                            ("variable", format!("{}{}", name, type_annotation), Vec::new())
                         }
                     };
 
                     Some(Hover {
                         contents: HoverContents::Markup(MarkupContent {
                             kind: MarkupKind::Markdown,
-                            value: format_hover_content(&signature, &symbol.doc, deprecated),
+                            value: format_hover_content(kind_label, name, &signature, &symbol.doc, deprecated, &params),
                         }),
                         range: symbol.source.text_range.map(|text_range| {
                             Range::new(
@@ -165,14 +199,16 @@ mod tests {
     #[test]
     fn test_format_hover_content_no_docs() {
         let docs: Vec<mq_hir::Doc> = vec![];
-        let result = format_hover_content("func()", &docs, false);
-        assert_eq!(result, "```mq\nfunc()\n```");
+        let result = format_hover_content("function", "func", "func()", &docs, false, &[]);
+        assert!(result.contains("## `func` — function"));
+        assert!(result.contains("```mq\nfunc()\n```"));
     }
 
     #[test]
     fn test_format_hover_content_with_docs() {
         let docs: Vec<mq_hir::Doc> = vec![(Default::default(), "Returns a value.".to_string())];
-        let result = format_hover_content("func()", &docs, false);
+        let result = format_hover_content("function", "func", "func()", &docs, false, &[]);
+        assert!(result.contains("## `func` — function"));
         assert!(result.contains("```mq\nfunc()\n```"));
         assert!(result.contains("---"));
         assert!(result.contains("Returns a value."));
@@ -181,7 +217,7 @@ mod tests {
     #[test]
     fn test_format_hover_content_deprecated_only() {
         let docs: Vec<mq_hir::Doc> = vec![(Default::default(), "deprecated: use bar instead".to_string())];
-        let result = format_hover_content("func()", &docs, true);
+        let result = format_hover_content("function", "func", "func()", &docs, true, &[]);
         assert!(result.contains("> ⚠️ **Deprecated**: use bar instead"));
         // The deprecated line itself should NOT appear again in the doc section
         assert!(
@@ -196,7 +232,7 @@ mod tests {
             (Default::default(), "deprecated: use bar instead".to_string()),
             (Default::default(), "Some extra context.".to_string()),
         ];
-        let result = format_hover_content("func()", &docs, true);
+        let result = format_hover_content("function", "func", "func()", &docs, true, &[]);
         assert!(result.contains("> ⚠️ **Deprecated**: use bar instead"));
         assert!(result.contains("---"));
         assert!(result.contains("Some extra context."));
@@ -208,8 +244,31 @@ mod tests {
     fn test_format_hover_content_doc_mentioning_deprecated() {
         // A doc line that merely mentions "deprecated" is NOT filtered
         let docs: Vec<mq_hir::Doc> = vec![(Default::default(), "Replaces the deprecated foo API.".to_string())];
-        let result = format_hover_content("func()", &docs, false);
+        let result = format_hover_content("function", "func", "func()", &docs, false, &[]);
         assert!(result.contains("Replaces the deprecated foo API."));
+    }
+
+    #[test]
+    fn test_format_hover_content_with_params() {
+        let docs: Vec<mq_hir::Doc> = vec![];
+        let params = vec![
+            mq_hir::ParamInfo::from("a"),
+            mq_hir::ParamInfo {
+                name: "b".into(),
+                has_default: true,
+                is_variadic: false,
+            },
+            mq_hir::ParamInfo {
+                name: "rest".into(),
+                has_default: false,
+                is_variadic: true,
+            },
+        ];
+        let result = format_hover_content("function", "func", "func(a, b, *rest)", &docs, false, &params);
+        assert!(result.contains("### Parameters"));
+        assert!(result.contains("- `a`"));
+        assert!(result.contains("- `b` *(optional)*"));
+        assert!(result.contains("- `*rest` *(variadic)*"));
     }
 
     // --- integration tests via response() ---
@@ -228,6 +287,7 @@ mod tests {
 
         if let HoverContents::Markup(content) = hover.contents {
             assert_eq!(content.kind, MarkupKind::Markdown);
+            assert!(content.value.contains("## `func1` — function"));
             assert!(content.value.contains("func1()"));
             assert!(content.value.contains("```mq"));
         } else {
@@ -249,7 +309,7 @@ mod tests {
 
         if let HoverContents::Markup(content) = hover.contents {
             assert_eq!(content.kind, MarkupKind::Markdown);
-            assert!(content.value.contains("val"));
+            assert!(content.value.contains("## `val` — variable"));
             assert!(content.value.contains("```mq"));
         } else {
             panic!("Expected markup content");
@@ -292,6 +352,10 @@ mod tests {
         if let ls_types::HoverContents::Markup(content) = hover.contents {
             assert_eq!(content.kind, ls_types::MarkupKind::Markdown);
             assert!(
+                content.value.contains("## `len` — function"),
+                "Should contain heading with kind"
+            );
+            assert!(
                 content.value.contains("len(value)"),
                 "Should contain function signature"
             );
@@ -323,6 +387,10 @@ def old_func(x): x + 1;"#;
 
         if let ls_types::HoverContents::Markup(content) = hover.contents {
             assert_eq!(content.kind, ls_types::MarkupKind::Markdown);
+            assert!(
+                content.value.contains("## `old_func` — function"),
+                "Should contain heading with kind"
+            );
             assert!(
                 content.value.contains("⚠️ **Deprecated**"),
                 "Should contain deprecated blockquote marker"
@@ -362,7 +430,7 @@ def old_func(x): x + 1;"#;
 
         if let HoverContents::Markup(content) = hover.contents {
             assert_eq!(content.kind, MarkupKind::Markdown);
-            assert!(content.value.contains("val"));
+            assert!(content.value.contains("## `val` — variable"));
             assert!(content.value.contains(":"), "Should contain type annotation");
         } else {
             panic!("Expected markup content");
