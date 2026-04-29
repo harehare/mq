@@ -626,7 +626,7 @@ fn is_deprecated_marker(text: &str) -> bool {
 
 /// Extracts the human-readable message from a deprecation marker line, if any.
 fn extract_deprecated_message(text: &str) -> Option<String> {
-    let after_colon = text.trim().splitn(2, ':').nth(1)?.trim();
+    let after_colon = text.trim().split_once(':')?.1.trim();
     if after_colon.is_empty() {
         None
     } else {
