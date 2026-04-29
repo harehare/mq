@@ -35,6 +35,10 @@ export interface InlayHint {
   label: string,
 }
 
+export interface HoverResult {
+  content: string;
+}
+
 export interface Options {
     isUpdate: boolean,
     inputFormat: 'markdown' | 'text' | 'mdx' | 'html' | 'null' | 'raw' | null,
@@ -45,6 +49,7 @@ export interface Options {
 
 export function definedValues(code: string, module?: string): Promise<ReadonlyArray<DefinedValue>>;
 export function diagnostics(code: string, enableTypeCheck?: boolean): Promise<ReadonlyArray<Diagnostic>>;
+export function hover(code: string, line: number, column: number): Promise<HoverResult | null>;
 export function inlayHints(code: string): Promise<ReadonlyArray<InlayHint>>;
 export function run(code: string, content: string, options: Options): Promise<string>;
 "#;
@@ -82,6 +87,12 @@ pub struct InlayHint {
     line: u32,
     column: u32,
     label: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverResult {
+    content: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -605,6 +616,101 @@ pub async fn defined_values(code: &str, module: Option<String>) -> Result<JsValu
         .collect::<Vec<_>>();
 
     Ok(serde_wasm_bindgen::to_value(&symbols).unwrap())
+}
+
+/// Returns `true` if a doc line is a deprecation marker.
+fn is_deprecated_marker(text: &str) -> bool {
+    let lower = text.trim().to_lowercase();
+    lower == "deprecated" || lower.starts_with("deprecated:") || lower.starts_with("deprecated ")
+}
+
+/// Extracts the human-readable message from a deprecation marker line, if any.
+fn extract_deprecated_message(text: &str) -> Option<String> {
+    let after_colon = text.trim().split_once(':')?.1.trim();
+    if after_colon.is_empty() {
+        None
+    } else {
+        Some(after_colon.to_string())
+    }
+}
+
+/// Builds a Markdown hover string from a pre-formatted signature, doc comments, and
+/// deprecation status.
+fn format_hover_content(signature: &str, docs: &[mq_hir::Doc], deprecated: bool) -> String {
+    let mut sections: Vec<String> = Vec::new();
+
+    sections.push(format!("```mq\n{}\n```", signature));
+
+    if deprecated {
+        let dep_msg = docs
+            .iter()
+            .find(|(_, text)| is_deprecated_marker(text))
+            .and_then(|(_, text)| extract_deprecated_message(text));
+
+        match dep_msg {
+            Some(msg) => sections.push(format!("> ⚠️ **Deprecated**: {}", msg)),
+            None => sections.push("> ⚠️ **Deprecated**".to_string()),
+        }
+    }
+
+    let doc_text = docs
+        .iter()
+        .filter(|(_, text)| !is_deprecated_marker(text))
+        .map(|(_, text)| text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if !doc_text.trim().is_empty() {
+        sections.push("---".to_string());
+        sections.push(doc_text);
+    }
+
+    sections.join("\n\n")
+}
+
+/// Returns hover information (Markdown content) for the symbol at `line`/`column` (1-based).
+///
+/// Returns `null` if no symbol is found at the given position.
+#[wasm_bindgen(js_name=hover, skip_typescript)]
+pub async fn hover(code: &str, line: u32, column: u32) -> JsValue {
+    let mut hir = mq_hir::Hir::default();
+    let (source_id, _) = hir.add_code(None, code);
+
+    let mut checker = mq_check::TypeChecker::default();
+    let _ = checker.check(&hir);
+    let type_env = checker.symbol_types();
+
+    let pos = mq_lang::Position::new(line, column as usize);
+    let Some((symbol_id, symbol)) = hir.find_symbol_in_position(source_id, pos) else {
+        return JsValue::NULL;
+    };
+
+    let deprecated = symbol.is_deprecated();
+    let type_scheme = type_env.get(&symbol_id);
+
+    let signature = match &symbol.kind {
+        mq_hir::SymbolKind::Function(args) | mq_hir::SymbolKind::Macro(args) => {
+            let type_annotation = type_scheme.map(|s| format!(": {}", s.ty)).unwrap_or_default();
+            format!(
+                "{}({}){}",
+                symbol.value.as_deref().unwrap_or_default(),
+                args.iter().map(|p| p.to_string()).join(", "),
+                type_annotation
+            )
+        }
+        mq_hir::SymbolKind::Variable
+        | mq_hir::SymbolKind::DestructuringBinding
+        | mq_hir::SymbolKind::PatternVariable { .. } => {
+            let type_annotation = type_scheme.map(|s| format!(": {}", s.ty)).unwrap_or_default();
+            format!("{}{}", symbol.value.as_deref().unwrap_or_default(), type_annotation)
+        }
+        _ => return JsValue::NULL,
+    };
+
+    let result = HoverResult {
+        content: format_hover_content(&signature, &symbol.doc, deprecated),
+    };
+    serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
 }
 
 #[cfg(test)]
