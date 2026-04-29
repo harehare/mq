@@ -1453,6 +1453,20 @@ export const Playground = () => {
       },
     });
 
+    monaco.languages.registerHoverProvider("mq", {
+      provideHover: async (model: editor.ITextModel, position: IPosition) => {
+        const result = await mq.hover(
+          model.getValue(),
+          position.lineNumber,
+          position.column,
+        );
+        if (!result) return null;
+        return {
+          contents: [{ value: result.content, isTrusted: true, supportThemeIcons: true }],
+        };
+      },
+    });
+
     monaco.languages.registerInlayHintsProvider("mq", {
       provideInlayHints: async (model: editor.ITextModel) => {
         if (!enableTypeCheckRef.current) {
