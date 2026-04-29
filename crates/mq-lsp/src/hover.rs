@@ -90,7 +90,6 @@ fn format_hover_content(
         sections.push(format!("### Parameters\n{}", param_items));
     }
 
-
     sections.join("\n\n")
 }
 
@@ -271,7 +270,6 @@ mod tests {
         assert!(result.contains("- `b` *(optional)*"));
         assert!(result.contains("- `*rest` *(variadic)*"));
     }
-
 
     // --- integration tests via response() ---
 

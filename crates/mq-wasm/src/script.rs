@@ -702,11 +702,7 @@ pub async fn hover(code: &str, line: u32, column: u32) -> JsValue {
         | mq_hir::SymbolKind::DestructuringBinding
         | mq_hir::SymbolKind::PatternVariable { .. } => {
             let type_annotation = type_scheme.map(|s| format!(": {}", s.ty)).unwrap_or_default();
-            format!(
-                "{}{}",
-                symbol.value.as_deref().unwrap_or_default(),
-                type_annotation
-            )
+            format!("{}{}", symbol.value.as_deref().unwrap_or_default(), type_annotation)
         }
         _ => return JsValue::NULL,
     };
