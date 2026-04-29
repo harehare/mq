@@ -138,6 +138,28 @@ pub fn response(
                         }
                     };
 
+                    let signature = match &symbol.kind {
+                        mq_hir::SymbolKind::Function(args) | mq_hir::SymbolKind::Macro(args) => {
+                            let type_annotation =
+                                type_scheme.map(|s| format!(": {}", s.ty)).unwrap_or_default();
+                            format!(
+                                "{}({}){}",
+                                symbol.value.as_deref().unwrap_or_default(),
+                                args.iter().map(|p| p.to_string()).join(", "),
+                                type_annotation
+                            )
+                        }
+                        _ => {
+                            let type_annotation =
+                                type_scheme.map(|s| format!(": {}", s.ty)).unwrap_or_default();
+                            format!(
+                                "{}{}",
+                                symbol.value.as_deref().unwrap_or_default(),
+                                type_annotation
+                            )
+                        }
+                    };
+
                     Some(Hover {
                         contents: HoverContents::Markup(MarkupContent {
                             kind: MarkupKind::Markdown,
