@@ -1,7 +1,7 @@
 #!/bin/bash
 
-export MQ_PREV_VERSION="0.5.26"
-export MQ_VERSION="0.5.27"
+export MQ_PREV_VERSION="0.5.27"
+export MQ_VERSION="0.5.28"
 export README="../README.md"
 export INSTALL_DOC="../docs/books/src/start/install.md"
 
