@@ -84,9 +84,18 @@ function loadEditorSettings(): EditorSettings {
     const stored = JSON.parse(raw) as Partial<EditorSettings>;
     // Migrate from version 1: reset theme to mq default
     if (!stored.version || stored.version < 2) {
-      return { ...DEFAULT_EDITOR_SETTINGS, ...stored, theme: "mq" };
+      return {
+        ...DEFAULT_EDITOR_SETTINGS,
+        ...stored,
+        theme: "mq",
+        version: DEFAULT_EDITOR_SETTINGS.version,
+      };
     }
-    return { ...DEFAULT_EDITOR_SETTINGS, ...stored };
+    return {
+      ...DEFAULT_EDITOR_SETTINGS,
+      ...stored,
+      version: DEFAULT_EDITOR_SETTINGS.version,
+    };
   } catch {
     return DEFAULT_EDITOR_SETTINGS;
   }
@@ -97,7 +106,11 @@ function saveEditorSettings(settings: Partial<EditorSettings>) {
     const current = loadEditorSettings();
     localStorage.setItem(
       EDITOR_SETTINGS_KEY,
-      JSON.stringify({ ...current, ...settings }),
+      JSON.stringify({
+        ...current,
+        ...settings,
+        version: DEFAULT_EDITOR_SETTINGS.version,
+      }),
     );
   } catch {
     // ignore
