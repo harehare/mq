@@ -30,6 +30,7 @@ mq-lsp = {path = "crates/mq-lsp", version = "0.5.27"}
 mq-markdown = {path = "crates/mq-markdown", version = "0.5.27"}
 mq-repl = {path = "crates/mq-repl", version = "0.5.27"}
 mq-test = {path = "crates/mq-test", version = "0.5.27"}
+
 # External dependencies
 arbitrary = {version = "1.4.2", features = ["derive"]}
 arboard = {version = "3.6.1", default-features = false}

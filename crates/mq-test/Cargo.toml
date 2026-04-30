@@ -22,3 +22,8 @@ rstest = {workspace = true}
 [[bin]]
 name = "mq-test"
 path = "src/main.rs"
+
+[package.metadata.binstall]
+pkg-fmt = "bin"
+pkg-url = "{ repo }/releases/download/v{ version }/{ bin }-{ target }{ binary-ext }"
+disabled-strategies = ["quick-install"]
