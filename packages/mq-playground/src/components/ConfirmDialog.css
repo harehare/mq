@@ -82,3 +82,43 @@
 .confirm-dialog-button:active {
   transform: translateY(1px);
 }
+
+/* ── mq theme ─────────────────────────────────────────────────── */
+[data-theme="mq"] .confirm-dialog {
+  background-color: #1e293b;
+  border-color: #4a5568;
+}
+
+[data-theme="mq"] .confirm-dialog-header {
+  border-bottom-color: #4a5568;
+}
+
+[data-theme="mq"] .confirm-dialog-header h3 {
+  color: #e2e8f0;
+}
+
+[data-theme="mq"] .confirm-dialog-body p {
+  color: #94a3b8;
+}
+
+[data-theme="mq"] .confirm-dialog-footer {
+  border-top-color: #4a5568;
+}
+
+[data-theme="mq"] .confirm-dialog-button.cancel {
+  background-color: #2a3444;
+  color: #e2e8f0;
+}
+
+[data-theme="mq"] .confirm-dialog-button.cancel:hover {
+  background-color: #32404f;
+}
+
+[data-theme="mq"] .confirm-dialog-button.confirm {
+  background-color: #67b8e3;
+  color: #1e293b;
+}
+
+[data-theme="mq"] .confirm-dialog-button.confirm:hover {
+  background-color: #85d4ff;
+}
