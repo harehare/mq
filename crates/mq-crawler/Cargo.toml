@@ -37,6 +37,11 @@ doc = false
 name = "mq-crawl"
 path = "src/main.rs"
 
+[package.metadata.binstall]
+pkg-fmt = "bin"
+pkg-url = "{ repo }/releases/download/v{ version }/{ bin }-{ target }{ binary-ext }"
+disabled-strategies = ["quick-install"]
+
 [dev-dependencies]
 httpmock = {workspace = true}
 rstest = {workspace = true}
