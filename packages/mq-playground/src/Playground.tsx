@@ -61,18 +61,18 @@ type EditorSettings = {
   wordWrap: "on" | "off";
   vimModeEnabled: boolean;
   fontSize: number;
-  theme: "light" | "dark" | "system";
+  theme: "light" | "dark" | "system" | "mq";
   lineNumbers: "on" | "off";
   tabSize: number;
 };
 
 const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
-  version: 1,
+  version: 2,
   minimapEnabled: false,
   wordWrap: "off",
   vimModeEnabled: false,
   fontSize: 12,
-  theme: "system",
+  theme: "mq",
   lineNumbers: "on",
   tabSize: 2,
 };
@@ -80,9 +80,13 @@ const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
 function loadEditorSettings(): EditorSettings {
   try {
     const raw = localStorage.getItem(EDITOR_SETTINGS_KEY);
-    return raw
-      ? { ...DEFAULT_EDITOR_SETTINGS, ...JSON.parse(raw) }
-      : DEFAULT_EDITOR_SETTINGS;
+    if (!raw) return DEFAULT_EDITOR_SETTINGS;
+    const stored = JSON.parse(raw) as Partial<EditorSettings>;
+    // Migrate from version 1: reset theme to mq default
+    if (!stored.version || stored.version < 2) {
+      return { ...DEFAULT_EDITOR_SETTINGS, ...stored, theme: "mq" };
+    }
+    return { ...DEFAULT_EDITOR_SETTINGS, ...stored };
   } catch {
     return DEFAULT_EDITOR_SETTINGS;
   }
@@ -197,7 +201,7 @@ export const Playground = () => {
     _initialSettings.vimModeEnabled,
   );
   const [fontSize, setFontSize] = useState(_initialSettings.fontSize);
-  const [theme, setTheme] = useState<"light" | "dark" | "system">(
+  const [theme, setTheme] = useState<"light" | "dark" | "system" | "mq">(
     _initialSettings.theme,
   );
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -386,15 +390,20 @@ export const Playground = () => {
 
     const themeParam = urlParams.get("theme");
     if (themeParam) {
-      const isDark = themeParam === "dark";
+      const isDark = themeParam === "dark" || themeParam === "mq";
       document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+      if (themeParam === "mq") {
+        document.documentElement.setAttribute("data-theme", "mq");
+      } else {
+        document.documentElement.removeAttribute("data-theme");
+      }
       document.documentElement.style.setProperty(
         "--lightningcss-light",
-        isDark ? " " : "initial"
+        isDark ? " " : "initial",
       );
       document.documentElement.style.setProperty(
         "--lightningcss-dark",
-        isDark ? "initial" : " "
+        isDark ? "initial" : " ",
       );
     }
 
@@ -551,7 +560,15 @@ export const Playground = () => {
       .catch(() => {
         showToast("Failed to copy command", "error");
       });
-  }, [code, inputFormat, isUpdate, listStyle, linkUrlStyle, linkTitleStyle, showToast]);
+  }, [
+    code,
+    inputFormat,
+    isUpdate,
+    listStyle,
+    linkUrlStyle,
+    linkTitleStyle,
+    showToast,
+  ]);
 
   const handleChangeListStyle = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -1049,15 +1066,32 @@ export const Playground = () => {
 
     if (theme === "system") {
       document.documentElement.style.colorScheme = "";
+      document.documentElement.removeAttribute("data-theme");
       document.documentElement.style.removeProperty("--lightningcss-light");
       document.documentElement.style.removeProperty("--lightningcss-dark");
     } else if (theme === "dark") {
       document.documentElement.style.colorScheme = "dark";
+      document.documentElement.removeAttribute("data-theme");
       document.documentElement.style.setProperty("--lightningcss-light", " ");
-      document.documentElement.style.setProperty("--lightningcss-dark", "initial");
+      document.documentElement.style.setProperty(
+        "--lightningcss-dark",
+        "initial",
+      );
+    } else if (theme === "mq") {
+      document.documentElement.style.colorScheme = "dark";
+      document.documentElement.setAttribute("data-theme", "mq");
+      document.documentElement.style.setProperty("--lightningcss-light", " ");
+      document.documentElement.style.setProperty(
+        "--lightningcss-dark",
+        "initial",
+      );
     } else {
       document.documentElement.style.colorScheme = "light";
-      document.documentElement.style.setProperty("--lightningcss-light", "initial");
+      document.documentElement.removeAttribute("data-theme");
+      document.documentElement.style.setProperty(
+        "--lightningcss-light",
+        "initial",
+      );
       document.documentElement.style.setProperty("--lightningcss-dark", " ");
     }
   }, [
@@ -1525,12 +1559,44 @@ export const Playground = () => {
         "editorCursor.foreground": "#000000",
       },
     });
+
+    monaco.editor.defineTheme("mq-branded", {
+      base: "vs-dark",
+      inherit: true,
+      rules: [
+        { token: "comment", foreground: "#4a5568", fontStyle: "italic" },
+        { token: "keyword", foreground: "#67b8e3", fontStyle: "bold" },
+        { token: "function", foreground: "#85d4ff" },
+        { token: "variable", foreground: "#e2e8f0" },
+        { token: "property", foreground: "#e2e8f0" },
+        { token: "string", foreground: "#a8d5f5" },
+        { token: "number", foreground: "#b8d4e8" },
+        { token: "operator", foreground: "#94a3b8", fontStyle: "bold" },
+        { token: "delimiter", foreground: "#94a3b8" },
+        { token: "identifier", foreground: "#e2e8f0" },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ] as any,
+      colors: {
+        "editor.background": "#1e293b",
+        "editor.foreground": "#e2e8f0",
+        "editorLineNumber.foreground": "#4a5568",
+        "editor.lineHighlightBackground": "#2a3444",
+        "editorCursor.foreground": "#67b8e3",
+        "editorIndentGuide.background1": "#2a3444",
+        "editorIndentGuide.activeBackground1": "#4a5568",
+        "editor.selectionBackground": "#32404f",
+        "editor.inactiveSelectionBackground": "#2a3444",
+      },
+    });
   };
 
   const isDarkMode =
     theme === "system"
       ? window.matchMedia("(prefers-color-scheme: dark)").matches
-      : theme === "dark";
+      : theme === "dark" || theme === "mq";
+
+  const monacoTheme =
+    theme === "mq" ? "mq-branded" : isDarkMode ? "mq-dark" : "mq-light";
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -1611,7 +1677,10 @@ export const Playground = () => {
       <div className="playground-content" ref={contentRef}>
         {isOPFSSupported && isSidebarVisible && (
           <>
-            <div className="file-tree-panel" style={isDesktop() ? { width: sidebarWidth } : undefined}>
+            <div
+              className="file-tree-panel"
+              style={isDesktop() ? { width: sidebarWidth } : undefined}
+            >
               <FileTree
                 files={files}
                 onFileSelect={handleFileSelect}
@@ -1745,7 +1814,7 @@ export const Playground = () => {
                   lineNumbers,
                   tabSize,
                 }}
-                theme={isDarkMode ? "mq-dark" : "mq-light"}
+                theme={monacoTheme}
               />
             </div>
           </div>
@@ -1790,7 +1859,7 @@ export const Playground = () => {
                   lineNumbers,
                   tabSize,
                 }}
-                theme={isDarkMode ? "mq-dark" : "mq-light"}
+                theme={monacoTheme}
               />
             </div>
           </div>
@@ -1933,7 +2002,7 @@ export const Playground = () => {
                   fontSize,
                   automaticLayout: true,
                 }}
-                theme={isDarkMode ? "mq-dark" : "mq-light"}
+                theme={monacoTheme}
               />
             )}
             {activeTab === "ast" && (
@@ -1950,7 +2019,7 @@ export const Playground = () => {
                   fontSize,
                   automaticLayout: true,
                 }}
-                theme={isDarkMode ? "mq-dark" : "mq-light"}
+                theme={monacoTheme}
               />
             )}
           </div>

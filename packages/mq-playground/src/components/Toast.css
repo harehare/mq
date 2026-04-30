@@ -75,3 +75,22 @@
     transform: translateY(0);
   }
 }
+
+/* ── mq theme ─────────────────────────────────────────────────── */
+[data-theme="mq"] .toast-success {
+  background-color: #1a3a2a;
+  color: #68d391;
+  border-color: #2d6a4f;
+}
+
+[data-theme="mq"] .toast-error {
+  background-color: #3a1a1a;
+  color: #fc8181;
+  border-color: #6a2d2d;
+}
+
+[data-theme="mq"] .toast-info {
+  background-color: #1e2a38;
+  color: #67b8e3;
+  border-color: #2d4a6a;
+}

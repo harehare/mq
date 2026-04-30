@@ -8,8 +8,8 @@ type SettingsDialogProps = {
   onVimModeToggle: (enabled: boolean) => void;
   fontSize: number;
   onFontSizeChange: (size: number) => void;
-  theme: "light" | "dark" | "system";
-  onThemeChange: (theme: "light" | "dark" | "system") => void;
+  theme: "light" | "dark" | "system" | "mq";
+  onThemeChange: (theme: "light" | "dark" | "system" | "mq") => void;
   minimapEnabled: boolean;
   onMinimapToggle: (enabled: boolean) => void;
   wordWrap: "on" | "off";
@@ -129,9 +129,10 @@ export const SettingsDialog = ({
                 className="settings-select"
                 value={theme}
                 onChange={(e) =>
-                  onThemeChange(e.target.value as "light" | "dark" | "system")
+                  onThemeChange(e.target.value as "light" | "dark" | "system" | "mq")
                 }
               >
+                <option value="mq">mq</option>
                 <option value="system">System</option>
                 <option value="light">Light</option>
                 <option value="dark">Dark</option>
