@@ -25,7 +25,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "babel-plugin-react-compiler": "^1.0.0",
-    "baseline-browser-mapping": "^2.10.21",
+    "baseline-browser-mapping": "^2.10.22",
     "oxlint": "^1.61.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.9"
