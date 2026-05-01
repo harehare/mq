@@ -1,3 +1,6 @@
+use crate::grep;
+use crate::module_info::FunctionInfo;
+use crate::module_info::standard_module_functions;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use glob::glob;
@@ -12,9 +15,9 @@ use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
 use std::{fs, path::PathBuf};
+use tabled::builder::Builder;
+use tabled::settings::Style;
 use which::which;
-
-use crate::grep;
 
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
@@ -28,7 +31,11 @@ use crate::grep;
     ## To start a REPL session:\n\
     mq repl\n\n\
     ## To format mq file:\n\
-    mq fmt --check file.mq")]
+    mq fmt --check file.mq\n\n\
+    ## To list available built-in modules and their functions:\n\
+    mq modules\n\n\
+    ## To import a built-in module and use its functions:\n\
+    mq -m section 'section(., \"Introduction\")' file.md")]
 #[command(
     about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
     long_about = None
@@ -232,10 +239,27 @@ impl OutputArgs {
     }
 }
 
+#[derive(Debug, Clone, Default, clap::ValueEnum)]
+enum ModulesFormat {
+    /// Colored text output (default)
+    #[default]
+    Text,
+    /// GitHub-flavored Markdown table
+    Markdown,
+    /// Terminal ASCII table
+    Table,
+}
+
 #[derive(Debug, Subcommand)]
 enum Commands {
     /// Start a REPL session for interactive query execution
     Repl,
+    /// List available built-in modules and their functions
+    Modules {
+        /// Output format for the module listing
+        #[arg(short = 'F', long, value_enum, default_value_t)]
+        format: ModulesFormat,
+    },
     /// Format mq files based on specified formatting options.
     Fmt {
         /// Number of spaces for indentation
@@ -398,6 +422,100 @@ impl Cli {
         Ok(())
     }
 
+    fn format_function_signature(info: &FunctionInfo) -> String {
+        let params: Vec<String> = info
+            .params
+            .iter()
+            .map(|p| {
+                let name = if p.is_variadic {
+                    format!("*{}", p.name)
+                } else {
+                    p.name.clone()
+                };
+                match &p.default {
+                    Some(default) => format!("{} = {}", name, default),
+                    None => name,
+                }
+            })
+            .collect();
+        format!("{}({})", info.name, params.join(", "))
+    }
+
+    fn list_module_functions(&self, format: &ModulesFormat) -> miette::Result<()> {
+        let modules = standard_module_functions();
+        match format {
+            ModulesFormat::Text => Self::print_modules_text(&modules),
+            ModulesFormat::Markdown => Self::print_modules_markdown(&modules),
+            ModulesFormat::Table => Self::print_modules_table(&modules),
+        }
+        Ok(())
+    }
+
+    fn print_modules_text(modules: &[(String, Vec<FunctionInfo>)]) {
+        let mut output = vec![
+            format!("{}", "Available built-in modules:".bold().cyan()),
+            format!(
+                "Import with {} or load with {}",
+                "-m <module>".green(),
+                "-M <module>".green()
+            ),
+            "".to_string(),
+        ];
+
+        for (name, functions) in modules {
+            output.push(format!("{}:", name.bold().yellow()));
+            if functions.is_empty() {
+                output.push("  (no public functions)".to_string());
+            } else {
+                for func in functions {
+                    if let Some(doc) = &func.doc {
+                        for line in doc.lines() {
+                            output.push(format!("  {}", line.bright_black()));
+                        }
+                    }
+                    output.push(format!("  {}", Self::format_function_signature(func).bright_cyan()));
+                    output.push("".to_string());
+                }
+            }
+            output.push("".to_string());
+        }
+
+        print!("{}", output.join("\n"));
+    }
+
+    fn print_modules_markdown(modules: &[(String, Vec<FunctionInfo>)]) {
+        println!("| Module | Function | Description |");
+        println!("|--------|----------|-------------|");
+        for (name, functions) in modules {
+            for func in functions {
+                let sig = Self::format_function_signature(func);
+                let desc = func.doc.as_deref().and_then(|d| d.lines().next()).unwrap_or("");
+                println!("| {} | `{}` | {} |", name, sig, desc);
+            }
+        }
+    }
+
+    fn print_modules_table(modules: &[(String, Vec<FunctionInfo>)]) {
+        let mut builder = Builder::default();
+        builder.push_record(["Module", "Function", "Description"]);
+
+        for (name, functions) in modules {
+            for func in functions {
+                let sig = Self::format_function_signature(func);
+                let desc = func
+                    .doc
+                    .as_deref()
+                    .and_then(|d| d.lines().next())
+                    .unwrap_or("")
+                    .to_string();
+                builder.push_record([name.as_str(), sig.as_str(), desc.as_str()]);
+            }
+        }
+
+        let table = builder.build().with(Style::rounded()).to_string();
+        println!("{}", table);
+    }
+
     /// List all available subcommands (built-in and external)
     fn list_commands(&self) -> miette::Result<()> {
         let mut output = vec![
@@ -484,6 +602,7 @@ impl Cli {
 
         match &self.commands {
             Some(Commands::Repl) => mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]).run(),
+            Some(Commands::Modules { format }) => self.list_module_functions(format),
             None if self.query.is_none() => {
                 mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]).run()
             }
@@ -2062,6 +2181,17 @@ mod tests {
         };
 
         assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_modules_command() {
+        for format in [ModulesFormat::Text, ModulesFormat::Markdown, ModulesFormat::Table] {
+            let cli = Cli {
+                commands: Some(Commands::Modules { format }),
+                ..Cli::default()
+            };
+            assert!(cli.run().is_ok());
+        }
     }
 
     #[test]
