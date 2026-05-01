@@ -230,7 +230,8 @@ impl Diagnostic for Error {
                 "The provided string is not valid Base64. Check your input.",
             )),
             InnerError::Runtime(RuntimeError::NotDefined(_, name)) => Some(Cow::Owned(format!(
-                "'{name}' is not defined. Did you forget to declare it?"
+                "'{name}' is not defined. Did you forget to declare it? \
+                 If this is a module function, import it with `-m <module>` or run `mq modules` to see available built-in modules."
             ))),
             InnerError::Runtime(RuntimeError::DateTimeFormatError(_, _)) => Some(Cow::Borrowed(
                 "Invalid date/time format. Please check your format string.",

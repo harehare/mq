@@ -85,8 +85,9 @@ pub use ident::Ident;
 pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
 pub use module::{
-    BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, error::ModuleError,
-    resolver::LocalFsModuleResolver, resolver::ModuleResolver, resolver::module_name,
+    BUILTIN_FILE as BUILTIN_MODULE_FILE, FunctionInfo, Module, ModuleId, ModuleLoader, ParamInfo, STANDARD_MODULES,
+    error::ModuleError, resolver::LocalFsModuleResolver, resolver::ModuleResolver, resolver::module_name,
+    standard_module_functions,
 };
 pub use range::{Position, Range};
 pub use selector::{AttrKind, Selector};
