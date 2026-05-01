@@ -1,4 +1,6 @@
 use crate::grep;
+use crate::module_info::FunctionInfo;
+use crate::module_info::standard_module_functions;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use glob::glob;
@@ -420,7 +422,7 @@ impl Cli {
         Ok(())
     }
 
-    fn format_function_signature(info: &mq_lang::FunctionInfo) -> String {
+    fn format_function_signature(info: &FunctionInfo) -> String {
         let params: Vec<String> = info
             .params
             .iter()
@@ -440,7 +442,7 @@ impl Cli {
     }
 
     fn list_module_functions(&self, format: &ModulesFormat) -> miette::Result<()> {
-        let modules = mq_lang::standard_module_functions();
+        let modules = standard_module_functions();
         match format {
             ModulesFormat::Text => Self::print_modules_text(&modules),
             ModulesFormat::Markdown => Self::print_modules_markdown(&modules),
@@ -449,7 +451,7 @@ impl Cli {
         Ok(())
     }
 
-    fn print_modules_text(modules: &[(String, Vec<mq_lang::FunctionInfo>)]) {
+    fn print_modules_text(modules: &[(String, Vec<FunctionInfo>)]) {
         let mut output = vec![
             format!("{}", "Available built-in modules:".bold().cyan()),
             format!(
@@ -481,7 +483,7 @@ impl Cli {
         print!("{}", output.join("\n"));
     }
 
-    fn print_modules_markdown(modules: &[(String, Vec<mq_lang::FunctionInfo>)]) {
+    fn print_modules_markdown(modules: &[(String, Vec<FunctionInfo>)]) {
         println!("| Module | Function | Description |");
         println!("|--------|----------|-------------|");
         for (name, functions) in modules {
@@ -493,7 +495,7 @@ impl Cli {
         }
     }
 
-    fn print_modules_table(modules: &[(String, Vec<mq_lang::FunctionInfo>)]) {
+    fn print_modules_table(modules: &[(String, Vec<FunctionInfo>)]) {
         let mut builder = Builder::default();
         builder.push_record(["Module", "Function", "Description"]);
 

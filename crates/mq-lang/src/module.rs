@@ -2,7 +2,7 @@ pub mod error;
 pub mod resolver;
 
 use crate::{
-    Arena, ArenaId, Program, Shared, SharedCell, TokenArena,
+    Arena, ArenaId, Program, Shared, TokenArena,
     ast::{node as ast, parser::Parser},
     lexer::{self, Lexer},
     module::{
@@ -77,117 +77,15 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
 
 pub const BUILTIN_FILE: &str = include_str!("../builtin.mq");
 
-/// Information about a single parameter of a module function.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ParamInfo {
-    /// Parameter name.
-    pub name: String,
-    /// Rendered default value, if any.
-    pub default: Option<String>,
-    /// Whether the parameter is variadic (`*name`).
-    pub is_variadic: bool,
-}
-
-/// Information about a public function exported by a standard module.
-#[derive(Debug, Clone, PartialEq)]
-pub struct FunctionInfo {
-    /// Function name.
-    pub name: String,
-    /// Ordered list of parameters.
-    pub params: Vec<ParamInfo>,
-    /// Doc comment lines joined by `\n`, extracted from the source.
-    pub doc: Option<String>,
-}
-
-/// Render an AST expression node as a short source string for display purposes.
-fn render_default(node: &ast::Node) -> String {
-    match &*node.expr {
-        ast::Expr::Literal(lit) => match lit {
-            ast::Literal::String(s) => format!("\"{}\"", s),
-            ast::Literal::Number(n) => n.to_string(),
-            ast::Literal::Bool(b) => b.to_string(),
-            ast::Literal::None => "none".to_string(),
-            ast::Literal::Symbol(i) => format!(":{}", i),
-        },
-        ast::Expr::Ident(ident) => ident.name.to_string(),
-        _ => "...".to_string(),
-    }
-}
-
-/// Scan `source` and build a map of `function_name -> doc_comment`.
+/// Load a single standard module by name and return its parsed AST representation.
 ///
-/// Comment lines (`# ...`) immediately preceding a `def name(` line are collected.
-/// Blank lines reset the buffer; any other content also resets it.
-fn extract_doc_comments(source: &str) -> rustc_hash::FxHashMap<String, String> {
-    let mut map = rustc_hash::FxHashMap::default();
-    let mut comment_lines: Vec<String> = Vec::new();
-
-    for line in source.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix('#') {
-            comment_lines.push(rest.trim_start().to_string());
-        } else if let Some(rest) = trimmed.strip_prefix("def ") {
-            if let Some(name) = rest.split('(').next().map(str::trim)
-                && !comment_lines.is_empty()
-            {
-                map.insert(name.to_string(), comment_lines.join("\n"));
-            }
-            comment_lines.clear();
-        } else {
-            comment_lines.clear();
-        }
-    }
-
-    map
-}
-
-/// Returns information about all public functions of each standard module, sorted by module name.
-///
-/// Each entry is `(module_name, vec_of_function_info)`.
-/// Private functions (names starting with `_`) are excluded.
-pub fn standard_module_functions() -> Vec<(String, Vec<FunctionInfo>)> {
-    let mut result: Vec<(String, Vec<FunctionInfo>)> = STANDARD_MODULES
-        .iter()
-        .filter_map(|(name, content_fn)| {
-            let content = content_fn();
-            let doc_map = extract_doc_comments(content);
-            let token_arena: TokenArena = Shared::new(SharedCell::new(Arena::new(64)));
-            let mut loader = ModuleLoader::<LocalFsModuleResolver>::default();
-            loader.load(name.as_str(), content, token_arena).ok().map(|module| {
-                let functions: Vec<FunctionInfo> = module
-                    .functions
-                    .iter()
-                    .filter_map(|node| {
-                        if let ast::Expr::Def(ident, params, _) = &*node.expr {
-                            let fname = ident.name.to_string();
-                            if fname.starts_with('_') {
-                                return None;
-                            }
-                            let param_infos = params
-                                .iter()
-                                .map(|p| ParamInfo {
-                                    name: p.ident.name.to_string(),
-                                    default: p.default.as_ref().map(|d| render_default(d)),
-                                    is_variadic: p.is_variadic,
-                                })
-                                .collect();
-                            let doc = doc_map.get(&fname).cloned();
-                            Some(FunctionInfo {
-                                name: fname,
-                                params: param_infos,
-                                doc,
-                            })
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                (name.to_string(), functions)
-            })
-        })
-        .collect();
-    result.sort_by(|a, b| a.0.cmp(&b.0));
-    result
+/// Returns `None` if the module name is not found in [`STANDARD_MODULES`].
+pub fn load_standard_module(name: &str) -> Option<Module> {
+    use crate::SharedCell;
+    let content = STANDARD_MODULES.get(name).map(|f| f())?;
+    let token_arena: TokenArena = Shared::new(SharedCell::new(Arena::new(64)));
+    let mut loader = ModuleLoader::<LocalFsModuleResolver>::default();
+    loader.load(name, content, token_arena).ok()
 }
 
 impl<T: ModuleResolver> ModuleLoader<T> {
