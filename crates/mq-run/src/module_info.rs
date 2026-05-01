@@ -28,17 +28,7 @@ pub struct FunctionInfo {
 }
 
 fn render_default(node: &mq_lang::AstNode) -> String {
-    match &*node.expr {
-        mq_lang::AstExpr::Literal(lit) => match lit {
-            mq_lang::AstLiteral::String(s) => format!("\"{}\"", s),
-            mq_lang::AstLiteral::Number(n) => n.to_string(),
-            mq_lang::AstLiteral::Bool(b) => b.to_string(),
-            mq_lang::AstLiteral::None => "none".to_string(),
-            mq_lang::AstLiteral::Symbol(i) => format!(":{}", i),
-        },
-        mq_lang::AstExpr::Ident(ident) => ident.name.to_string(),
-        _ => "...".to_string(),
-    }
+    node.to_code()
 }
 
 fn extract_doc_comments(source: &str) -> FxHashMap<String, String> {
