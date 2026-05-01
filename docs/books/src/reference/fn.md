@@ -9,14 +9,26 @@ These functions can be passed as arguments to other functions, assigned to varia
 fn(parameters): program;
 ```
 
+The `->` syntax is a shorthand alias for `fn` and can be used interchangeably:
+
+```
+->(parameters): program;
+```
+
 ## Examples
 
 ```mq
 # Basic Anonymous Function
 nodes | map(fn(x): add(x, "1");)
 
+# Using Arrow Syntax
+nodes | map(->(x): add(x, "1");)
+
 # Using Anonymous Functions as Callbacks
 nodes | .[] | sort_by(fn(x): to_text(x);)
+
+# Using Arrow Syntax as Callbacks
+nodes | .[] | sort_by(->(x): to_text(x);)
 ```
 
 ## Default Parameters
@@ -27,6 +39,9 @@ Anonymous functions also support default parameter values, just like named funct
 
 ```mq
 fn(param1, param2=default_value): program;
+
+# Arrow syntax equivalent
+->(param1, param2=default_value): program;
 ```
 
 ### Examples
@@ -34,6 +49,9 @@ fn(param1, param2=default_value): program;
 ```mq
 # Anonymous function with default parameter
 let multiply = fn(x, factor=2): x * factor;
+
+# Arrow syntax equivalent
+let multiply = ->(x, factor=2): x * factor;
 
 # Using default value
 multiply(10)
@@ -45,6 +63,9 @@ multiply(10, 3)
 
 # Using in callbacks
 [1, 2] | map(fn(x, prefix="Item: "): prefix + to_text(x);)
+
+# Arrow syntax in callbacks
+[1, 2] | map(->(x, prefix="Item: "): prefix + to_text(x);)
 ```
 
 ### Rules
