@@ -31,7 +31,7 @@ import {
   VscError,
   VscWarning,
 } from "react-icons/vsc";
-import { initVimMode } from "monaco-vim";
+import { initVimMode, VimMode } from "monaco-vim";
 import { EXAMPLES } from "./examples";
 
 type SharedData = {
@@ -253,6 +253,10 @@ export const Playground = () => {
   const vimModeRef = useRef<any>(null);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const vimStatusBarRef = useRef<HTMLDivElement>(null);
+  // Refs to allow vim Ex commands to access the latest callbacks without re-registering
+  const saveCurrentFileRef = useRef<() => Promise<void>>(async () => {});
+  const activeTabIdRef = useRef<string | null>(null);
+  const handleTabCloseRef = useRef<(tabId: string) => void>(() => {});
 
   // Keep enableTypeCheckRef in sync with state
   useEffect(() => {
@@ -1037,6 +1041,50 @@ export const Playground = () => {
       setSaveStatus("unsaved");
     }
   }, [currentFilePath, code, activeTabId]);
+
+  // Keep vim-accessible refs in sync with latest callbacks and state
+  useEffect(() => {
+    saveCurrentFileRef.current = saveCurrentFile;
+  }, [saveCurrentFile]);
+
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
+
+  useEffect(() => {
+    handleTabCloseRef.current = handleTabClose;
+  }, [handleTabClose]);
+
+  // Register vim Ex commands once on mount
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const Vim = (VimMode as any).Vim;
+    if (!Vim) return;
+
+    Vim.defineEx("write", "w", () => {
+      saveCurrentFileRef.current();
+    });
+
+    Vim.defineEx("wq", "wq", () => {
+      saveCurrentFileRef.current().then(() => {
+        if (activeTabIdRef.current) {
+          handleTabCloseRef.current(activeTabIdRef.current);
+        }
+      });
+    });
+
+    Vim.defineEx("quit", "q", () => {
+      if (activeTabIdRef.current) {
+        handleTabCloseRef.current(activeTabIdRef.current);
+      }
+    });
+
+    Vim.defineEx("qall", "qa", () => {
+      if (activeTabIdRef.current) {
+        handleTabCloseRef.current(activeTabIdRef.current);
+      }
+    });
+  }, []);
 
   // Track unsaved changes and update tab content and dirty state
   useEffect(() => {
