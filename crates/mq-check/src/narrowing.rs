@@ -592,6 +592,22 @@ fn compute_narrowed_type(ctx: &InferenceContext, entry: &NarrowingEntry) -> Opti
 /// multiple types at different call sites), so the type checker's inferred
 /// concrete type for a parameter reflects only the observed usage and should
 /// not be used to declare predicate checks on parameters as dead.
+/// Returns `true` when a `Variable` symbol's initializer is a literal value
+/// (Number, String, Bool, None). Variables initialized from calls or expressions
+/// may hold different types at runtime, so dead-code detection is skipped for them.
+fn variable_initialized_from_literal(hir: &Hir, def_id: SymbolId) -> bool {
+    for (_, sym) in hir.symbols() {
+        if sym.parent != Some(def_id) {
+            continue;
+        }
+        return matches!(
+            sym.kind,
+            SymbolKind::Number | SymbolKind::String | SymbolKind::Boolean | SymbolKind::None
+        );
+    }
+    false
+}
+
 fn detect_dead_then_branch(
     ctx: &InferenceContext,
     entry: &NarrowingEntry,
@@ -602,14 +618,13 @@ fn detect_dead_then_branch(
         return None;
     }
 
-    // Skip parameters — they are polymorphic; the inferred concrete type only
-    // reflects observed usage and must not cause predicate checks to be flagged
-    // as dead code.
-    if hir
-        .symbol(entry.def_id)
-        .is_some_and(|s| matches!(s.kind, SymbolKind::Parameter))
-    {
-        return None;
+    let sym = hir.symbol(entry.def_id)?;
+    match sym.kind {
+        SymbolKind::Parameter => return None,
+        SymbolKind::Variable if !variable_initialized_from_literal(hir, entry.def_id) => {
+            return None;
+        }
+        _ => {}
     }
 
     let var_ty = ctx.get_symbol_type(entry.def_id)?;
