@@ -26,7 +26,7 @@ miette = {workspace = true, features = ["fancy"]}
 mimalloc = {workspace = true, features = ["v3"], optional = true}
 mq-dap = {workspace = true, optional = true}
 mq-formatter = {workspace = true}
-mq-lang = {workspace = true, features = ["file-io", "cst"]}
+mq-lang = {workspace = true, features = ["file-io"]}
 mq-markdown = {workspace = true, features = ["json", "html-to-markdown", "color"]}
 mq-repl = {workspace = true}
 rayon = {workspace = true}
@@ -36,7 +36,6 @@ strum = {workspace = true, features = ["derive"], optional = true}
 tabled = {workspace = true}
 url = {workspace = true}
 which = "8.0.2"
-rustc-hash = {workspace = true}
 
 [dev-dependencies]
 assert_cmd = {workspace = true}

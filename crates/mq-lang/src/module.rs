@@ -77,17 +77,6 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
 
 pub const BUILTIN_FILE: &str = include_str!("../builtin.mq");
 
-/// Load a single standard module by name and return its parsed AST representation.
-///
-/// Returns `None` if the module name is not found in [`STANDARD_MODULES`].
-pub fn load_standard_module(name: &str) -> Option<Module> {
-    use crate::SharedCell;
-    let content = STANDARD_MODULES.get(name).map(|f| f())?;
-    let token_arena: TokenArena = Shared::new(SharedCell::new(Arena::new(64)));
-    let mut loader = ModuleLoader::<LocalFsModuleResolver>::default();
-    loader.load(name, content, token_arena).ok()
-}
-
 impl<T: ModuleResolver> ModuleLoader<T> {
     pub fn new(resolver: T) -> Self {
         let mut loaded_modules = Arena::new(10);
