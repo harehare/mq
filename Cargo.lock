@@ -2378,7 +2378,6 @@ version = "0.5.28"
 dependencies = [
  "clap",
  "colored 3.1.1",
- "itertools",
  "miette",
  "mq-hir",
  "mq-lang",
@@ -2450,7 +2449,6 @@ dependencies = [
  "codspeed-divan-compat",
  "mq-lang",
  "rstest",
- "rustc-hash",
 ]
 
 [[package]]
@@ -2523,7 +2521,6 @@ dependencies = [
  "clap",
  "dashmap",
  "itertools",
- "miette",
  "mq-check",
  "mq-formatter",
  "mq-hir",
@@ -2532,7 +2529,6 @@ dependencies = [
  "rustc-hash",
  "serde_json",
  "tokio",
- "tokio-macros",
  "tower-lsp-server",
  "url",
 ]
@@ -2561,7 +2557,6 @@ dependencies = [
  "arboard",
  "colored 3.1.1",
  "dirs 6.0.0",
- "itertools",
  "miette",
  "mq-hir",
  "mq-lang",
@@ -2581,11 +2576,9 @@ dependencies = [
  "clap",
  "colored 3.1.1",
  "dirs 6.0.0",
- "glob",
  "miette",
  "mimalloc",
  "mq-dap",
- "mq-formatter",
  "mq-lang",
  "mq-markdown",
  "mq-repl",
@@ -2596,7 +2589,6 @@ dependencies = [
  "scopeguard",
  "strum",
  "tabled",
- "url",
  "which",
 ]
 
@@ -2636,7 +2628,6 @@ dependencies = [
 name = "mq-web-api"
 version = "0.5.28"
 dependencies = [
- "async-trait",
  "axum",
  "miette",
  "mimalloc",
@@ -6046,7 +6037,6 @@ dependencies = [
 name = "zed-mq"
 version = "0.1.0"
 dependencies = [
- "serde_json",
  "zed_extension_api",
 ]
 

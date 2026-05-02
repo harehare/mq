@@ -1,6 +1,5 @@
 use clap::{Parser, Subcommand};
 use colored::Colorize;
-use glob::glob;
 use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::DefaultEngine;
@@ -26,9 +25,7 @@ use crate::grep;
     ## To read query from file:\n\
     mq -f 'file' file.md\n\n\
     ## To start a REPL session:\n\
-    mq repl\n\n\
-    ## To format mq file:\n\
-    mq fmt --check file.mq")]
+    mq repl\n")]
 #[command(
     about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
     long_about = None
@@ -236,26 +233,6 @@ impl OutputArgs {
 enum Commands {
     /// Start a REPL session for interactive query execution
     Repl,
-    /// Format mq files based on specified formatting options.
-    Fmt {
-        /// Number of spaces for indentation
-        #[arg(short, long, default_value_t = 2)]
-        indent_width: usize,
-        /// Check if files are formatted without modifying them
-        #[arg(short, long)]
-        check: bool,
-        /// Sort imports
-        #[arg(long, default_value_t = false)]
-        sort_imports: bool,
-        /// Sort functions
-        #[arg(long, default_value_t = false)]
-        sort_functions: bool,
-        /// Sort fields
-        #[arg(long, default_value_t = false)]
-        sort_fields: bool,
-        /// Path to the mq file to format
-        files: Option<Vec<PathBuf>>,
-    },
     /// Start a debug adapter for mq
     #[cfg(feature = "debugger")]
     Dap,
@@ -406,10 +383,6 @@ impl Cli {
                 "  {} - Start a REPL session for interactive query execution",
                 "repl".green()
             ),
-            format!(
-                "  {} - Format mq files based on specified formatting options",
-                "fmt".green()
-            ),
         ];
 
         #[cfg(feature = "debugger")]
@@ -486,47 +459,6 @@ impl Cli {
             Some(Commands::Repl) => mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]).run(),
             None if self.query.is_none() => {
                 mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]).run()
-            }
-            Some(Commands::Fmt {
-                indent_width,
-                check,
-                files,
-                sort_imports,
-                sort_fields,
-                sort_functions,
-            }) => {
-                let mut formatter = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
-                    indent_width: *indent_width,
-                    sort_imports: *sort_imports,
-                    sort_fields: *sort_fields,
-                    sort_functions: *sort_functions,
-                }));
-                let files = match files {
-                    Some(f) => f,
-                    None => &glob("./**/*.mq")
-                        .into_diagnostic()?
-                        .collect::<Result<Vec<_>, _>>()
-                        .into_diagnostic()?,
-                };
-
-                for file in files {
-                    if !file.exists() {
-                        return Err(miette!("File not found: {}", file.display()));
-                    }
-
-                    let content = fs::read_to_string(file).into_diagnostic()?;
-                    let formatted = formatter
-                        .format(&content)
-                        .map_err(|e| miette!("{}: {e}", file.display()))?;
-
-                    if *check && formatted != content {
-                        return Err(miette!("The input is not formatted"));
-                    } else if formatted != content {
-                        fs::write(file, formatted).into_diagnostic()?;
-                    }
-                }
-
-                Ok(())
             }
             #[cfg(feature = "debugger")]
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
@@ -1091,66 +1023,6 @@ mod tests {
             commands: None,
             query: Some("self".to_string()),
             files: Some(vec![temp_file_path.clone()]),
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_ok());
-    }
-
-    #[test]
-    fn test_cli_fmt_command() {
-        let (_, temp_file_path) = create_file("test1.mq", "def math(): 42;");
-        let temp_file_path_clone = temp_file_path.clone();
-
-        defer! {
-            if temp_file_path_clone.exists() {
-                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
-            }
-        }
-
-        let cli = Cli {
-            input: InputArgs::default(),
-            output: OutputArgs::default(),
-            commands: Some(Commands::Fmt {
-                indent_width: 2,
-                check: false,
-                files: Some(vec![temp_file_path.clone()]),
-                sort_functions: false,
-                sort_fields: false,
-                sort_imports: false,
-            }),
-            query: None,
-            files: Some(vec![temp_file_path]),
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_ok());
-    }
-
-    #[test]
-    fn test_cli_fmt_command_with_check() {
-        let (_, temp_file_path) = create_file("test2.mq", "def math(): 42;");
-        let temp_file_path_clone = temp_file_path.clone();
-
-        defer! {
-            if temp_file_path_clone.exists() {
-                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
-            }
-        }
-
-        let cli = Cli {
-            input: InputArgs::default(),
-            output: OutputArgs::default(),
-            commands: Some(Commands::Fmt {
-                indent_width: 2,
-                check: true,
-                files: Some(vec![temp_file_path.clone()]),
-                sort_functions: false,
-                sort_fields: false,
-                sort_imports: false,
-            }),
-            query: None,
-            files: Some(vec![temp_file_path]),
             ..Cli::default()
         };
 
@@ -1981,57 +1853,6 @@ mod tests {
         };
 
         assert!(cli.run().is_ok());
-    }
-
-    #[test]
-    fn test_fmt_file_not_found() {
-        let cli = Cli {
-            input: InputArgs::default(),
-            output: OutputArgs::default(),
-            commands: Some(Commands::Fmt {
-                indent_width: 2,
-                check: false,
-                files: Some(vec![PathBuf::from("nonexistent.mq")]),
-                sort_functions: false,
-                sort_fields: false,
-                sort_imports: false,
-            }),
-            query: None,
-            files: None,
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_err());
-    }
-
-    #[test]
-    fn test_fmt_check_unformatted_file() {
-        let (_, temp_file) = create_file("test_unformatted.mq", "def   math():    42;");
-        let temp_file_clone = temp_file.clone();
-
-        defer! {
-            if temp_file_clone.exists() {
-                std::fs::remove_file(&temp_file_clone).ok();
-            }
-        }
-
-        let cli = Cli {
-            input: InputArgs::default(),
-            output: OutputArgs::default(),
-            commands: Some(Commands::Fmt {
-                indent_width: 2,
-                check: true,
-                files: Some(vec![temp_file]),
-                sort_functions: false,
-                sort_fields: false,
-                sort_imports: false,
-            }),
-            query: None,
-            files: None,
-            ..Cli::default()
-        };
-
-        assert!(cli.run().is_err());
     }
 
     #[test]

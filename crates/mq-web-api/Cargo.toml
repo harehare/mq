@@ -18,7 +18,6 @@ use_mimalloc = ["mimalloc"]
 otel = ["opentelemetry", "opentelemetry-otlp", "opentelemetry_sdk", "tracing-opentelemetry"]
 
 [dependencies]
-async-trait = {workspace = true}
 axum = {workspace = true}
 miette = {workspace = true}
 mimalloc = {workspace = true, features = ["v3"], optional = true}
