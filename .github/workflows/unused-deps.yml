@@ -1,0 +1,14 @@
+name: Unused Dependencies
+
+on:
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  detect-unused-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Machete
+        uses: bnjbvr/cargo-machete@5cab879e5357f06fb126e7e53048e2f11620f856 # main
