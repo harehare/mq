@@ -48,8 +48,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         // Initial check for invalid starting tokens in a program.
         match self.tokens.peek() {
             Some(token) => match &token.kind {
-                TokenKind::Pipe | TokenKind::SemiColon | TokenKind::End => {
+                TokenKind::Pipe | TokenKind::SemiColon => {
                     return Err(SyntaxError::UnexpectedToken((***token).clone()));
+                }
+                TokenKind::End => {
+                    return Err(SyntaxError::UnmatchedEnd((***token).clone()));
                 }
                 _ => {}
             },
@@ -64,11 +67,16 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     // Semicolons and 'end' keyword terminate sub-programs (e.g., in 'def', 'fn').
                     // In the root program, after a semicolon or 'end', the parser checks if the next token is EOF.
                     // If the next token is not EOF, it returns an error for the unexpected token.
-                    if root && let Some(token) = self.tokens.peek() {
-                        if let TokenKind::Eof = &token.kind {
-                            break;
-                        } else {
-                            return Err(SyntaxError::UnexpectedToken((***token).clone()));
+                    if root {
+                        match self.tokens.peek() {
+                            Some(next_token) if !matches!(next_token.kind, TokenKind::Eof) => {
+                                if matches!(token.kind, TokenKind::End) {
+                                    return Err(SyntaxError::UnmatchedEnd((**token).clone()));
+                                } else {
+                                    return Err(SyntaxError::UnexpectedToken((***next_token).clone()));
+                                }
+                            }
+                            _ => break,
                         }
                     }
                     // For non-root programs (e.g. function bodies), a semicolon/end explicitly ends the program.
@@ -3042,6 +3050,46 @@ mod tests {
                 )),
             }),
         ]))]
+    #[case::unmatched_end_at_root(
+        // `end` at root level followed by non-EOF: def foo: if (.): . end end | foo
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(SmolStr::new("foo"))),
+            token(TokenKind::Colon),
+            token(TokenKind::If),
+            token(TokenKind::LParen),
+            token(TokenKind::Selector(SmolStr::new("."))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Selector(SmolStr::new("."))),
+            token(TokenKind::End),    // closes def body
+            token(TokenKind::End),    // unmatched – no open block
+            token(TokenKind::Pipe),   // something after (like `| foo`)
+            token(TokenKind::Ident(SmolStr::new("foo"))),
+            token(TokenKind::Eof),
+        ],
+        Err(SyntaxError::UnmatchedEnd(token(TokenKind::End))))]
+    #[case::unmatched_end_standalone_if(
+        // `end` after a standalone single-line if (no open block): if (.): . end end
+        vec![
+            token(TokenKind::If),
+            token(TokenKind::LParen),
+            token(TokenKind::Selector(SmolStr::new("."))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Selector(SmolStr::new("."))),
+            token(TokenKind::End),    // unmatched
+            token(TokenKind::End),
+            token(TokenKind::Eof),
+        ],
+        Err(SyntaxError::UnmatchedEnd(token(TokenKind::End))))]
+    #[case::unmatched_end_at_start(
+        // `end` as the very first token at root level
+        vec![
+            token(TokenKind::End),
+            token(TokenKind::Eof),
+        ],
+        Err(SyntaxError::UnmatchedEnd(token(TokenKind::End))))]
     #[case::let_1(
             vec![
                 token(TokenKind::Let),

@@ -14,4 +14,6 @@ pub enum ParseError {
     ExpectedClosingBracket(Shared<Token>),
     #[error(transparent)]
     UnknownSelector(selector::UnknownSelector),
+    #[error("Unexpected `end` keyword — no open block to close")]
+    UnmatchedEnd(Shared<Token>),
 }
