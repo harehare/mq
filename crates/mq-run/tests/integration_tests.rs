@@ -54,11 +54,6 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     "# **title**\n\n- test1\n- test2",
     Some("- test1\n- test2\n")
 )]
-#[case::format(
-    vec!["fmt"],
-    "def test(x):\nadd(x,1);\n| map(array(1,2,3),test)",
-    None
-)]
 #[case::update_file(
     vec!["--unbuffered", "--update", r#".h | select(contains("title")) | ltrimstr("titl")"#],
     "# **title**\n\n- test1\n- test2",

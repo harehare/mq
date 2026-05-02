@@ -14,7 +14,6 @@ version = "0.5.28"
 [dependencies]
 colored = {workspace = true}
 dirs = {workspace = true}
-itertools = {workspace = true}
 miette = {workspace = true}
 mq-hir = {workspace = true}
 mq-lang = {workspace = true}
