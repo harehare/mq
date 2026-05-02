@@ -1240,8 +1240,8 @@ pub(super) fn generate_symbol_constraints(
                 }
 
                 if all_string_keys {
-                    // Closed record: all field keys are statically known
-                    let record_ty = Type::record(fields, Type::RowEmpty);
+                    let row_var = ctx.fresh_var();
+                    let record_ty = Type::record(fields, Type::Var(row_var));
                     ctx.set_symbol_type(symbol_id, record_ty);
                 } else {
                     // Fallback: dynamic keys → use Dict type

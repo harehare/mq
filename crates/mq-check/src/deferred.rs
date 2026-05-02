@@ -18,6 +18,37 @@ use crate::{
     unify, walk_ancestors,
 };
 
+/// Looks up `field` in a Record type, following row variables through the substitution map.
+///
+/// Returns `Some(field_type)` when found, or `None` when the field is absent and
+/// the row chain ends with `RowEmpty` or a still-free `Var` (no further extension
+/// was ever unified into this record, so the field is genuinely missing).
+fn find_record_field<'a>(ctx: &'a InferenceContext, ty: &'a types::Type, field: &str) -> Option<types::Type> {
+    match ty {
+        types::Type::Record(fields, rest) => {
+            if let Some(ft) = fields.get(field) {
+                return Some(ft.clone());
+            }
+            let resolved = ctx.resolve_type(rest);
+            find_record_field(ctx, &resolved, field)
+        }
+        _ => None,
+    }
+}
+
+/// Returns `true` when the row chain ends with `RowEmpty` or a free type variable,
+/// meaning no further fields can appear — the record is effectively closed.
+fn record_row_is_closed(ctx: &InferenceContext, ty: &types::Type) -> bool {
+    match ty {
+        types::Type::Record(_, rest) => {
+            let resolved = ctx.resolve_type(rest);
+            record_row_is_closed(ctx, &resolved)
+        }
+        types::Type::RowEmpty | types::Type::Var(_) => true,
+        _ => false,
+    }
+}
+
 /// Resolves deferred record field accesses after the first round of unification.
 ///
 /// For each deferred bracket access `v[:key]`, resolves the variable's type
@@ -31,25 +62,17 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
 
     let mut resolved_any = false;
     for access in &accesses {
-        // Resolve the variable's type (should now be Record after unification)
         let var_ty = match ctx.get_symbol_type(access.def_id).cloned() {
             Some(ty) => ctx.resolve_type(&ty),
             None => continue,
         };
 
-        if let types::Type::Record(fields, rest) = &var_ty {
-            if let Some(field_ty) = fields.get(&access.field_name) {
-                // Bind the bracket access expression's type to the field type
+        if let types::Type::Record(..) = &var_ty {
+            if let Some(field_ty) = find_record_field(ctx, &var_ty, &access.field_name) {
                 let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
-                ctx.add_constraint(Constraint::Equal(
-                    call_ty,
-                    field_ty.clone(),
-                    None,
-                    ConstraintOrigin::General,
-                ));
+                ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
                 resolved_any = true;
-            } else if matches!(rest.as_ref(), types::Type::RowEmpty) {
-                // Field not found in closed record — report error
+            } else if record_row_is_closed(ctx, &var_ty) {
                 ctx.add_error(TypeError::UndefinedField {
                     field: access.field_name.clone(),
                     record_ty: var_ty.display_renumbered(),
