@@ -2592,7 +2592,6 @@ dependencies = [
  "rayon",
  "regex-lite",
  "rstest",
- "rustc-hash",
  "rustyline",
  "scopeguard",
  "strum",
