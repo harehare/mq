@@ -65,6 +65,7 @@ impl ErrorReporter {
                     ParseError::InsufficientTokens(token) => &token.range,
                     ParseError::ExpectedClosingBracket(token) => &token.range,
                     ParseError::UnknownSelector(selector::UnknownSelector(token)) => &token.range,
+                    ParseError::UnmatchedEnd(token) => &token.range,
                     ParseError::UnexpectedEOFDetected => return std::cmp::Ordering::Greater,
                 };
 
@@ -73,6 +74,7 @@ impl ErrorReporter {
                     ParseError::InsufficientTokens(token) => &token.range,
                     ParseError::ExpectedClosingBracket(token) => &token.range,
                     ParseError::UnknownSelector(selector::UnknownSelector(token)) => &token.range,
+                    ParseError::UnmatchedEnd(token) => &token.range,
                     ParseError::UnexpectedEOFDetected => return std::cmp::Ordering::Less,
                 };
 
@@ -101,6 +103,7 @@ impl ErrorReporter {
                         ParseError::InsufficientTokens(token) => token.range,
                         ParseError::ExpectedClosingBracket(token) => token.range,
                         ParseError::UnknownSelector(selector::UnknownSelector(token)) => token.range,
+                        ParseError::UnmatchedEnd(token) => token.range,
                         ParseError::UnexpectedEOFDetected => Range {
                             start: Position {
                                 line: text.lines().count() as u32,
@@ -265,16 +268,14 @@ impl<'a> Parser<'a> {
                     continue;
                 }
                 TokenKind::SemiColon | TokenKind::End => {
+                    let is_end = matches!(token.kind, TokenKind::End);
+                    let end_or_semi_token = Shared::clone(&token);
                     self.pos += 1;
                     let trailing_trivia = self.parse_trailing_trivia();
 
                     nodes.push(Shared::new(Node {
-                        kind: if matches!(token.kind, TokenKind::End) {
-                            NodeKind::End
-                        } else {
-                            NodeKind::Token
-                        },
-                        token: Some(Shared::clone(&token)),
+                        kind: if is_end { NodeKind::End } else { NodeKind::Token },
+                        token: Some(Shared::clone(&end_or_semi_token)),
                         leading_trivia,
                         trailing_trivia,
                         children: Vec::new(),
@@ -283,25 +284,25 @@ impl<'a> Parser<'a> {
                     if root {
                         leading_trivia = self.parse_leading_trivia();
 
-                        if let Some(token) = self.peek() {
-                            let token = Shared::clone(token);
-                            if matches!(token.kind, TokenKind::Eof) {
+                        if let Some(next_token) = self.peek() {
+                            let next_token = Shared::clone(next_token);
+                            if matches!(next_token.kind, TokenKind::Eof) {
                                 self.pos += 1;
 
                                 nodes.push(Shared::new(Node {
                                     kind: NodeKind::Eof,
-                                    token: Some(token),
+                                    token: Some(next_token),
                                     leading_trivia,
                                     trailing_trivia: Vec::new(),
                                     children: Vec::new(),
                                 }));
                                 ranges.push((stmt_start, self.pos));
                                 break;
-                            } else if matches!(token.kind, TokenKind::Pipe) {
+                            } else if matches!(next_token.kind, TokenKind::Pipe) {
                                 self.pos += 1;
                                 nodes.push(Shared::new(Node {
                                     kind: NodeKind::Token,
-                                    token: Some(token),
+                                    token: Some(next_token),
                                     leading_trivia,
                                     trailing_trivia: self.parse_trailing_trivia(),
                                     children: Vec::new(),
@@ -309,8 +310,10 @@ impl<'a> Parser<'a> {
                                 ranges.push((stmt_start, self.pos));
                                 leading_trivia = self.parse_leading_trivia();
                                 continue;
+                            } else if is_end {
+                                self.errors.report(ParseError::UnmatchedEnd(end_or_semi_token));
                             } else {
-                                self.errors.report(ParseError::UnexpectedToken(token));
+                                self.errors.report(ParseError::UnexpectedToken(next_token));
                             }
                         }
                         ranges.push((stmt_start, self.pos));
@@ -10081,11 +10084,99 @@ mod tests {
             ErrorReporter::default()
         )
     )]
+    #[case::unmatched_end_at_root(
+        // `. end end eof` — the first `end` closes a root statement, the second `end` has no
+        // matching open block and should produce `UnmatchedEnd` pointing at the first `end`.
+        vec![
+            Shared::new(token(TokenKind::Selector(".".into()))),
+            Shared::new(token(TokenKind::End)),
+            Shared::new(token(TokenKind::End)),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Self_,
+                    token: Some(Shared::new(token(TokenKind::Selector(".".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::End,
+                    token: Some(Shared::new(token(TokenKind::End))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::with_error(vec![ParseError::UnmatchedEnd(Shared::new(token(TokenKind::End)))], 100)
+        )
+    )]
+    #[case::unmatched_end_at_root_pipe_follows(
+        // `. end end | ident eof` — mirrors the real-world `def foo: if (.): . end end | foo`
+        // scenario where the extra `end` should be flagged, not the pipe after it.
+        vec![
+            Shared::new(token(TokenKind::Selector(".".into()))),
+            Shared::new(token(TokenKind::End)),
+            Shared::new(token(TokenKind::End)),
+            Shared::new(token(TokenKind::Pipe)),
+            Shared::new(token(TokenKind::Ident("foo".into()))),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Self_,
+                    token: Some(Shared::new(token(TokenKind::Selector(".".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::End,
+                    token: Some(Shared::new(token(TokenKind::End))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::with_error(vec![ParseError::UnmatchedEnd(Shared::new(token(TokenKind::End)))], 100)
+        )
+    )]
 
     fn test_parse(#[case] input: Vec<Shared<Token>>, #[case] expected: (Vec<Shared<Node>>, ErrorReporter)) {
         let (nodes, errors) = Parser::new(&input).parse();
         assert_eq!(errors, expected.1);
         assert_eq!(nodes, expected.0);
+    }
+
+    #[test]
+    fn test_unmatched_end_error_message() {
+        // Verify the error message text for `UnmatchedEnd`.
+        let err = ParseError::UnmatchedEnd(Shared::new(token(TokenKind::End)));
+        assert_eq!(err.to_string(), "Unexpected `end` keyword — no open block to close");
+    }
+
+    #[test]
+    fn test_unmatched_end_error_ranges() {
+        // Verify that `error_ranges` correctly extracts the range from an `UnmatchedEnd` error.
+        let end_token = Shared::new(Token {
+            range: Range {
+                start: Position { line: 1, column: 20 },
+                end: Position { line: 1, column: 23 },
+            },
+            kind: TokenKind::End,
+            module_id: 1.into(),
+        });
+        let mut reporter = ErrorReporter::new(100);
+        reporter.report(ParseError::UnmatchedEnd(Shared::clone(&end_token)));
+
+        let ranges = reporter.error_ranges("def foo: if (.): . end end");
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(ranges[0].1.start.line, 1);
+        assert_eq!(ranges[0].1.start.column, 20);
+        assert!(ranges[0].0.contains("end"));
     }
 
     #[test]

@@ -57,6 +57,9 @@ pub enum SyntaxError {
     /// The Token is the keyword or operator that required an expression to follow.
     #[error("Expected an expression after `{}` but reached end of file", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
     UnexpectedEOFAfterToken(Token),
+    /// An `end` keyword was encountered without a matching block opener.
+    #[error("Unexpected `end` keyword — no open block to close")]
+    UnmatchedEnd(Token),
 }
 
 impl SyntaxError {
@@ -79,6 +82,7 @@ impl SyntaxError {
             SyntaxError::MultipleVariadicParameters(token) => Some(token),
             SyntaxError::MacroParametersCannotBeVariadic(token) => Some(token),
             SyntaxError::UnexpectedEOFAfterToken(token) => Some(token),
+            SyntaxError::UnmatchedEnd(token) => Some(token),
         }
     }
 }
