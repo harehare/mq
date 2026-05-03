@@ -2488,6 +2488,7 @@ dependencies = [
  "itertools",
  "md5",
  "miette",
+ "mq-macros",
  "mq-markdown",
  "nom 8.0.0",
  "nom_locate",
@@ -2531,6 +2532,15 @@ dependencies = [
  "tokio",
  "tower-lsp-server",
  "url",
+]
+
+[[package]]
+name = "mq-macros"
+version = "0.5.28"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
