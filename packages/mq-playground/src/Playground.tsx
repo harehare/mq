@@ -254,9 +254,9 @@ export const Playground = () => {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const vimStatusBarRef = useRef<HTMLDivElement>(null);
   // Refs to allow vim Ex commands to access the latest callbacks without re-registering
-  const saveCurrentFileRef = useRef<() => Promise<void>>(async () => {});
+  const saveCurrentFileRef = useRef<() => Promise<void>>(async () => { });
   const activeTabIdRef = useRef<string | null>(null);
-  const handleTabCloseRef = useRef<(tabId: string) => void>(() => {});
+  const handleTabCloseRef = useRef<(tabId: string) => void>(() => { });
 
   // Keep enableTypeCheckRef in sync with state
   useEffect(() => {
@@ -448,7 +448,7 @@ export const Playground = () => {
   const handleRun = useCallback(async () => {
     setIsFirstRun(false);
 
-    if (!code || !markdown) {
+    if (!code) {
       return;
     }
     setResult(isFirstRun ? "Initializing..." : "Running...");
@@ -459,7 +459,7 @@ export const Playground = () => {
 
     try {
       setResult(
-        await mq.run(code, markdown, {
+        await mq.run(code, markdown ?? "", {
           isUpdate,
           inputFormat,
           listStyle,
@@ -668,11 +668,11 @@ export const Playground = () => {
               prev.map((tab) =>
                 tab.id === activeTabId
                   ? {
-                      ...tab,
-                      content: code,
-                      savedContent: code,
-                      isDirty: false,
-                    }
+                    ...tab,
+                    content: code,
+                    savedContent: code,
+                    isDirty: false,
+                  }
                   : tab,
               ),
             );
@@ -768,8 +768,7 @@ export const Playground = () => {
       } catch (error) {
         console.error("Failed to create file:", error);
         alert(
-          `Failed to create file: ${
-            error instanceof Error ? error.message : String(error)
+          `Failed to create file: ${error instanceof Error ? error.message : String(error)
           }`,
         );
       }
@@ -794,8 +793,7 @@ export const Playground = () => {
       } catch (error) {
         console.error("Failed to create folder:", error);
         alert(
-          `Failed to create folder: ${
-            error instanceof Error ? error.message : String(error)
+          `Failed to create folder: ${error instanceof Error ? error.message : String(error)
           }`,
         );
       }
@@ -929,8 +927,7 @@ export const Playground = () => {
       } catch (error) {
         console.error("Failed to rename:", error);
         alert(
-          `Failed to rename: ${
-            error instanceof Error ? error.message : String(error)
+          `Failed to rename: ${error instanceof Error ? error.message : String(error)
           }`,
         );
         // Reload files to ensure UI is in sync
@@ -1009,8 +1006,7 @@ export const Playground = () => {
       } catch (error) {
         console.error("Failed to move:", error);
         alert(
-          `Failed to move: ${
-            error instanceof Error ? error.message : String(error)
+          `Failed to move: ${error instanceof Error ? error.message : String(error)
           }`,
         );
         // Reload files to ensure UI is in sync
@@ -1327,11 +1323,10 @@ export const Playground = () => {
                       : monaco.languages.CompletionItemKind.Property,
               insertText:
                 value.valueType === "Function"
-                  ? `${value.name}(${
-                      value.args
-                        ?.map((name: string, i: number) => `$\{${i}:${name}}`)
-                        .join(", ") || ""
-                    })`
+                  ? `${value.name}(${value.args
+                    ?.map((name: string, i: number) => `$\{${i}:${name}}`)
+                    .join(", ") || ""
+                  })`
                   : value.name,
               insertTextRules:
                 monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
@@ -1523,7 +1518,9 @@ export const Playground = () => {
         );
         if (!result) return null;
         return {
-          contents: [{ value: result.content, isTrusted: true, supportThemeIcons: true }],
+          contents: [
+            { value: result.content, isTrusted: true, supportThemeIcons: true },
+          ],
         };
       },
     });
@@ -1531,7 +1528,7 @@ export const Playground = () => {
     monaco.languages.registerInlayHintsProvider("mq", {
       provideInlayHints: async (model: editor.ITextModel) => {
         if (!enableTypeCheckRef.current) {
-          return { hints: [], dispose: () => {} };
+          return { hints: [], dispose: () => { } };
         }
         const hints = await mq.inlayHints(model.getValue());
         return {
@@ -1543,7 +1540,7 @@ export const Playground = () => {
             label: hint.label,
             kind: monaco.languages.InlayHintKind.Type,
           })),
-          dispose: () => {},
+          dispose: () => { },
         };
       },
     });
@@ -1782,9 +1779,9 @@ export const Playground = () => {
           style={
             isDesktop()
               ? {
-                  width: `calc((100% - ${isOPFSSupported && isSidebarVisible ? sidebarWidth + 4 : 0}px) * ${leftRightSplit / 100})`,
-                  flex: "none",
-                }
+                width: `calc((100% - ${isOPFSSupported && isSidebarVisible ? sidebarWidth + 4 : 0}px) * ${leftRightSplit / 100})`,
+                flex: "none",
+              }
               : undefined
           }
         >
