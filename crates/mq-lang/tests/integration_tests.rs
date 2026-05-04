@@ -2484,6 +2484,42 @@ fn engine() -> DefaultEngine {
 #[case::selector_bracket_variable_table_col(r##"let v = 1 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[][v] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("b".to_string())].into()))]
 #[case::selector_bracket_expr_list(r##"let v = 0 | to_markdown("- a\n- b\n- c") | .[v + 1] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("- b".to_string())].into()))]
 #[case::selector_bracket_expr_table_col(r##"let v = 0 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[][v + 1] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("b".to_string())].into()))]
+#[case::module_inline_function("
+    module math:
+        def mysum(a, b): a + b;
+    end
+    | math::mysum(1, 2)
+    ",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(3.into())].into()))]
+#[case::module_inline_let("
+    module constants:
+        let pi = 314
+    end
+    | constants::pi
+    ",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(314.into())].into()))]
+#[case::module_hoisting("
+    def call_math(): math::mysum(10, 5);
+    | call_math()
+    | module math:
+        def mysum(a, b): a + b;
+    end
+    ",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(15.into())].into()))]
+#[case::module_extension("
+    module math:
+        def mysum(a, b): a + b;
+    end
+    module math:
+        def mymul(a, b): a * b;
+    end
+    | math::mysum(2, 3) + math::mymul(2, 3)
+    ",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(11.into())].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
