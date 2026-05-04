@@ -235,6 +235,10 @@ impl<T: ModuleResolver> Evaluator<T> {
                         self.eval_import(module_path.to_owned(), &Shared::clone(&self.env))
                             .map_err(|e| e.into_inner_error())?;
                     }
+                    ast::Expr::Module(ident, program) => {
+                        self.eval_module(&RuntimeValue::NONE, ident, program, &Shared::clone(&self.env))
+                            .map_err(|e| e.into_inner_error())?;
+                    }
                     _ => nodes.push(Shared::clone(node)),
                 };
 
@@ -525,12 +529,12 @@ impl<T: ModuleResolver> Evaluator<T> {
     ) -> EvalResult {
         let module_name_to_use = &ident.name.as_str();
 
-        if let Ok(value) = resolve(module_name_to_use, env) {
-            return Ok(value);
-        }
-
-        // Create a new environment for the module exports
-        let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+        let module_env = if let Ok(RuntimeValue::Module(module_env)) = resolve(module_name_to_use, env) {
+            Shared::clone(module_env.exports())
+        } else {
+            // Create a new environment for the module exports
+            Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))))
+        };
 
         for node in program {
             match &*node.expr {
