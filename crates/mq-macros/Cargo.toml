@@ -1,0 +1,17 @@
+[package]
+name = "mq-macros"
+version = "0.5.28"
+edition = "2024"
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+description = "Procedural macros for mq builtin function registration"
+homepage = "https://mqlang.org/"
+license = "MIT"
+repository = "https://github.com/harehare/mq"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }

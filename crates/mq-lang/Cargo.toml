@@ -12,6 +12,7 @@ repository = "https://github.com/harehare/mq"
 version = "0.5.28"
 
 [dependencies]
+mq-macros = {workspace = true}
 base64 = {workspace = true}
 csv = {workspace = true}
 md5 = {workspace = true}
