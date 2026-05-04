@@ -172,6 +172,14 @@ pub unsafe extern "C" fn mq_eval(
         }
     };
 
+    if input_c.is_null() {
+        return MqResult {
+            values: ptr::null_mut(),
+            values_len: 0,
+            error_msg: to_c_string("Input pointer is null".to_string()),
+        };
+    }
+
     let input_str = match unsafe { c_str_to_rust_str_slice(input_c) } {
         Ok(s) => s,
         Err(_) => {
@@ -182,6 +190,14 @@ pub unsafe extern "C" fn mq_eval(
             };
         }
     };
+
+    if input_format_c.is_null() {
+        return MqResult {
+            values: ptr::null_mut(),
+            values_len: 0,
+            error_msg: to_c_string("Input format pointer is null".to_string()),
+        };
+    }
 
     let input_format_str = match unsafe { c_str_to_rust_str_slice(input_format_c) } {
         Ok(s) => s.to_lowercase(),

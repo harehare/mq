@@ -139,6 +139,8 @@ pub enum Selector {
     Done,
     /// Matches a specific attribute of a markdown node.
     Attr(AttrKind),
+    /// Matches a specific property of a dict or array.
+    Property(String),
 }
 
 /// Represents an attribute that can be accessed from markdown nodes.
@@ -377,7 +379,17 @@ impl TryFrom<&Token> for Selector {
                 // Attribute selectors - MDX
                 ".name" => Ok(Selector::Attr(AttrKind::Name)),
 
-                _ => parse_bracket_selector(s).ok_or_else(|| UnknownSelector(token.clone())),
+                s => {
+                    if let Some(sel) = parse_bracket_selector(s) {
+                        return Ok(sel);
+                    }
+                    let key = s.strip_prefix('.').unwrap_or("");
+                    if key.is_empty() {
+                        Err(UnknownSelector(token.clone()))
+                    } else {
+                        Ok(Selector::Property(key.to_string()))
+                    }
+                }
             }
         } else {
             Err(UnknownSelector(token.clone()))
@@ -436,6 +448,7 @@ impl Display for Selector {
             Selector::Todo => write!(f, ".todo"),
             Selector::Done => write!(f, ".done"),
             Selector::Attr(attr) => write!(f, "{}", attr),
+            Selector::Property(property) => write!(f, ".{}", property),
         }
     }
 }
@@ -580,6 +593,10 @@ mod tests {
     #[case::attr_align(".align", Selector::Attr(AttrKind::Align), ".align")]
     // Attribute selectors - MDX
     #[case::attr_name(".name", Selector::Attr(AttrKind::Name), ".name")]
+    // Property selectors (dict key access)
+    #[case::property_key(".mykey", Selector::Property("mykey".to_string()), ".mykey")]
+    #[case::property_key_underscore(".my_key", Selector::Property("my_key".to_string()), ".my_key")]
+    #[case::property_key_unknown(".unknown", Selector::Property("unknown".to_string()), ".unknown")]
     fn test_selector_try_from_and_display(
         #[case] input: &str,
         #[case] expected_selector: Selector,
@@ -602,9 +619,9 @@ mod tests {
     }
 
     #[test]
-    fn test_selector_try_from_unknown() {
+    fn test_selector_try_from_invalid() {
         let token = Token {
-            kind: TokenKind::Selector(SmolStr::new(".unknown")),
+            kind: TokenKind::Selector(SmolStr::new(".")),
             range: Range {
                 start: Position::new(0, 0),
                 end: Position::new(0, 0),

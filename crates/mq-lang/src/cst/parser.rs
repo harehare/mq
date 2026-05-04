@@ -7848,13 +7848,21 @@ mod tests {
             ErrorReporter::default()
         )
     )]
-    #[case::selector_non_existing(
+    #[case::selector_property(
         vec![
             Shared::new(token(TokenKind::Selector(".notfound".into()))),
         ],
         (
-            vec![],
-            ErrorReporter::with_error(vec![ParseError::UnexpectedEOFDetected, ParseError::UnknownSelector(selector::UnknownSelector(token(TokenKind::Selector(".notfound".into()))))], 100)
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Selector,
+                    token: Some(Shared::new(token(TokenKind::Selector(".notfound".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
         )
     )]
     #[case::call_with_selector_attribute(

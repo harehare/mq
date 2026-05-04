@@ -775,20 +775,43 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
     }
 
-    #[inline(always)]
-    fn eval_selector_expr(runtime_value: &RuntimeValue, ident: &Selector) -> RuntimeValue {
+    fn eval_property_selector_expr(runtime_value: &RuntimeValue, property_name: &str) -> RuntimeValue {
         match runtime_value {
-            RuntimeValue::Markdown(node_value, _) => builtin::eval_selector(node_value, ident),
+            RuntimeValue::Array(values) => {
+                let values = values
+                    .iter()
+                    .map(|value| match value {
+                        RuntimeValue::Dict(_) => Self::eval_property_selector_expr(value, property_name),
+                        _ => RuntimeValue::NONE,
+                    })
+                    .collect::<Vec<_>>();
+                RuntimeValue::Array(values)
+            }
+            RuntimeValue::Dict(map) => map
+                .get(&Ident::new(property_name))
+                .cloned()
+                .unwrap_or(RuntimeValue::NONE),
+            _ => RuntimeValue::NONE,
+        }
+    }
+
+    fn eval_selector_expr(runtime_value: &RuntimeValue, selector: &Selector) -> RuntimeValue {
+        if let Selector::Property(property_name) = selector {
+            return Self::eval_property_selector_expr(runtime_value, property_name);
+        }
+
+        match runtime_value {
+            RuntimeValue::Markdown(node_value, _) => builtin::eval_selector(node_value, selector),
             RuntimeValue::Array(values) => {
                 let values = values
                     .iter()
                     .flat_map(|value| match value {
-                        RuntimeValue::Markdown(node_value, _) => match builtin::eval_selector(node_value, ident) {
+                        RuntimeValue::Markdown(node_value, _) => match builtin::eval_selector(node_value, selector) {
                             RuntimeValue::Array(arr) => arr,
                             other => vec![other],
                         },
                         RuntimeValue::Dict(_) => {
-                            vec![Self::eval_selector_expr(value, ident)]
+                            vec![Self::eval_selector_expr(value, selector)]
                         }
                         _ => vec![RuntimeValue::NONE],
                     })
@@ -804,7 +827,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                         let new_v = if *k == type_key {
                             v.clone()
                         } else {
-                            Self::eval_selector_expr(v, ident)
+                            Self::eval_selector_expr(v, selector)
                         };
                         (*k, new_v)
                     })

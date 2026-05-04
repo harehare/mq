@@ -4845,6 +4845,7 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> RuntimeVa
         Selector::Definition => node.is_definition(),
         Selector::Attr(_) => false, // Attribute selectors don't match nodes directly
         Selector::Recursive => return eval_recursive_selector(node),
+        Selector::Property(_) => false,
     };
 
     if is_match {
