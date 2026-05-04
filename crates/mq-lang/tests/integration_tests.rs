@@ -2520,6 +2520,14 @@ fn engine() -> DefaultEngine {
     ",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::Number(11.into())].into()))]
+// partial: explicitly create a partial function with the first arg pre-filled
+#[case::partial_basic("def f(a, b, c): c; | let p = partial(f, 10) | p(42)", vec![RuntimeValue::Number(5.into())], Ok(vec![RuntimeValue::Number(42.into())].into()))]
+// partial: the pre-filled arg is accessible in the body of the partial function
+#[case::partial_captured_arg("def f(a, b, c): a; | let p = partial(f, 42) | p(99, 1)", vec![RuntimeValue::Number(5.into())], Ok(vec![RuntimeValue::Number(42.into())].into()))]
+// partial: pre-fill multiple args and verify they combine correctly in the final call
+#[case::partial_multiple_args("def f(a, b, c): a + b + c; | let p = partial(f, 10, 20) | p(30)", vec![RuntimeValue::Number(5.into())], Ok(vec![RuntimeValue::Number(60.into())].into()))]
+// partial: 2-param function can be partially applied — the scenario that triggered the redesign
+#[case::partial_two_param("def plus(a, b): a + b; | let plus10 = partial(plus, 10) | plus10(5)", vec![RuntimeValue::Number(0.into())], Ok(vec![RuntimeValue::Number(15.into())].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

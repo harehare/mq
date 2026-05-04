@@ -1611,7 +1611,6 @@ impl<T: ModuleResolver> Evaluator<T> {
             let new_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(fn_env))));
             let has_variadic = params.iter().any(|p| p.is_variadic);
             let required_params = params.iter().filter(|p| p.default.is_none() && !p.is_variadic).count();
-
             let arg_count = args.len();
             let param_count = params.len();
 
@@ -1634,6 +1633,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             } else if arg_count + 1 >= required_params && arg_count < param_count {
                 true
             } else {
+                // arg_count > param_count: too many arguments
                 return Err(RuntimeError::InvalidNumberOfArguments {
                     token: (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
                     name: ident.to_string(),

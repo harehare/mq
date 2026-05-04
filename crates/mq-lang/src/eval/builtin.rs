@@ -89,6 +89,44 @@ impl BuiltinFunction {
         BuiltinFunction { name, num_params, func }
     }
 }
+#[mq_macros::mq_fn(name = "partial", params = Range(1, u8::MAX))]
+fn partial_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    if args.is_empty() {
+        return Err(Error::InvalidNumberOfArguments(ident.to_string(), 1, 0));
+    }
+    let fn_value = args.remove(0);
+    let provided = args;
+
+    match fn_value {
+        RuntimeValue::Function(params, program, fn_env) => {
+            if provided.len() >= params.len() {
+                return Err(Error::InvalidNumberOfArguments(
+                    ident.to_string(),
+                    params.len() as u8,
+                    provided.len() as u8 + 1,
+                ));
+            }
+            let partial_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(&fn_env))));
+            let mut remaining = crate::ast::node::Params::new();
+            for (i, param) in params.iter().enumerate() {
+                if i < provided.len() {
+                    #[cfg(not(feature = "sync"))]
+                    partial_env.borrow_mut().define(param.ident.name, provided[i].clone());
+                    #[cfg(feature = "sync")]
+                    partial_env
+                        .write()
+                        .unwrap()
+                        .define(param.ident.name, provided[i].clone());
+                } else {
+                    remaining.push(param.clone());
+                }
+            }
+            Ok(RuntimeValue::Function(remaining, program, partial_env))
+        }
+        other => Err(Error::InvalidTypes(ident.to_string(), vec![other])),
+    }
+}
+
 #[mq_macros::mq_fn(name = "halt", params = Fixed(1))]
 fn halt_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -2983,6 +3021,7 @@ pub fn get_builtin_functions(name: &Ident) -> Option<&'static BuiltinFunction> {
 }
 
 mq_macros::builtin_dispatch! {
+    PARTIAL,
     HALT,
     ERROR,
     PRINT,
