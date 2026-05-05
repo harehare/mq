@@ -208,11 +208,7 @@ impl Hinter for MqLineHelper {
 
 impl Highlighter for MqLineHelper {
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
-        if *self.is_continuation.borrow() {
-            "..  ".dimmed().to_string().into()
-        } else {
-            prompt.cyan().to_string().into()
-        }
+        prompt.cyan().to_string().into()
     }
 
     fn highlight_hint<'h>(&self, hint: &'h str) -> std::borrow::Cow<'h, str> {
