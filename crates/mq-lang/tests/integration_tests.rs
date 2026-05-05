@@ -2538,6 +2538,12 @@ fn engine() -> DefaultEngine {
 #[case::property_selector_quoted_space(r#"."my key""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("my key"), RuntimeValue::String("val".to_string())); RuntimeValue::Dict(d)}], Ok(vec![RuntimeValue::String("val".to_string())].into()))]
 // property selector: missing key returns None
 #[case::property_selector_quoted_missing(r#"."h1""#, vec![{let d = std::collections::BTreeMap::new(); RuntimeValue::Dict(d)}], Ok(vec![RuntimeValue::None].into()))]
+// nested property selector: .a.b accesses {"a": {"b": 1}}
+#[case::property_selector_nested(r#".a.b"#, vec![{let mut outer = std::collections::BTreeMap::new(); let mut inner = std::collections::BTreeMap::new(); inner.insert(Ident::new("b"), RuntimeValue::Number(1.into())); outer.insert(Ident::new("a"), RuntimeValue::Dict(inner)); RuntimeValue::Dict(outer)}], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+// nested property selector: .a.b.c accesses three levels deep
+#[case::property_selector_nested_three(r#".a.b.c"#, vec![{let mut outer = std::collections::BTreeMap::new(); let mut mid = std::collections::BTreeMap::new(); let mut inner = std::collections::BTreeMap::new(); inner.insert(Ident::new("c"), RuntimeValue::Number(42.into())); mid.insert(Ident::new("b"), RuntimeValue::Dict(inner)); outer.insert(Ident::new("a"), RuntimeValue::Dict(mid)); RuntimeValue::Dict(outer)}], Ok(vec![RuntimeValue::Number(42.into())].into()))]
+// nested property selector: missing intermediate key returns None
+#[case::property_selector_nested_missing(r#".a.b"#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("a"), RuntimeValue::Number(1.into())); RuntimeValue::Dict(d)}], Ok(vec![RuntimeValue::None].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

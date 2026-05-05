@@ -2467,6 +2467,19 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn parse_selector(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+        // Handle chained property access: .a.b.c → Block([Selector(Property("a")), ...])
+        if let TokenKind::Selector(_) = &token.kind
+            && matches!(Selector::try_from(&**token), Ok(Selector::Property(_)))
+        {
+            let next_is_property = self
+                .tokens
+                .peek()
+                .is_some_and(|t| matches!(Selector::try_from(&***t), Ok(Selector::Property(_))));
+            if next_is_property {
+                return self.parse_chained_property_selectors(token);
+            }
+        }
+
         if self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_)))
             && let Some(attr_token) = self.tokens.next()
         {
@@ -2496,6 +2509,35 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
 
         self.parse_selector_direct(token)
+    }
+
+    fn parse_chained_property_selectors(&mut self, first_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+        let first_sel = Selector::try_from(&**first_token).map_err(SyntaxError::UnknownSelector)?;
+        let mut nodes: Program = vec![Shared::new(Node {
+            token_id: self.token_arena.alloc(Shared::clone(first_token)),
+            expr: Shared::new(Expr::Selector(first_sel)),
+        })];
+
+        while self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_))) {
+            let next_is_property = self
+                .tokens
+                .peek()
+                .is_some_and(|t| matches!(Selector::try_from(&***t), Ok(Selector::Property(_))));
+            if !next_is_property {
+                break;
+            }
+            let next_token = self.tokens.next().unwrap();
+            let sel = Selector::try_from(&**next_token).map_err(SyntaxError::UnknownSelector)?;
+            nodes.push(Shared::new(Node {
+                token_id: self.token_arena.alloc(Shared::clone(next_token)),
+                expr: Shared::new(Expr::Selector(sel)),
+            }));
+        }
+
+        Ok(Shared::new(Node {
+            token_id: self.token_arena.alloc(Shared::clone(first_token)),
+            expr: Shared::new(Expr::Block(nodes)),
+        }))
     }
 
     // Parses arguments for table or list item selectors like `.[index1][index2]` (for tables) or `.[index1]` (for lists).
