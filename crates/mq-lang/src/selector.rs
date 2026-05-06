@@ -412,16 +412,11 @@ impl TryFrom<&Token> for Selector {
                     if let Some(sel) = parse_bracket_selector(s) {
                         return Ok(sel);
                     }
-                    // Quoted property selector: ."key" allows using reserved selector names as dict keys
+                    // Quoted property selector: ."key" is the only way to access dict keys
                     if let Some(quoted) = s.strip_prefix(".\"").and_then(|r| r.strip_suffix('"')) {
                         return Ok(Selector::Property(unescape_property_key(quoted)));
                     }
-                    let key = s.strip_prefix('.').unwrap_or("");
-                    if key.is_empty() {
-                        Err(UnknownSelector(token.clone()))
-                    } else {
-                        Ok(Selector::Property(key.to_string()))
-                    }
+                    Err(UnknownSelector(token.clone()))
                 }
             }
         } else {
@@ -626,11 +621,7 @@ mod tests {
     #[case::attr_align(".align", Selector::Attr(AttrKind::Align), ".align")]
     // Attribute selectors - MDX
     #[case::attr_name(".name", Selector::Attr(AttrKind::Name), ".name")]
-    // Property selectors: bare form (.key)
-    #[case::property_key(".mykey", Selector::Property("mykey".to_string()), ".\"mykey\"")]
-    #[case::property_key_underscore(".my_key", Selector::Property("my_key".to_string()), ".\"my_key\"")]
-    #[case::property_key_unknown(".unknown", Selector::Property("unknown".to_string()), ".\"unknown\"")]
-    // Property selectors: quoted form (."key") – allows reserved selector names as dict keys
+    // Property selectors: quoted form (."key") – the only way to access dict keys
     #[case::property_quoted_h1(".\"h1\"", Selector::Property("h1".to_string()), ".\"h1\"")]
     #[case::property_quoted_url(".\"url\"", Selector::Property("url".to_string()), ".\"url\"")]
     #[case::property_quoted_with_space(".\"my key\"", Selector::Property("my key".to_string()), ".\"my key\"")]
@@ -658,10 +649,15 @@ mod tests {
         assert_eq!(selector.to_string(), expected_display);
     }
 
-    #[test]
-    fn test_selector_try_from_invalid() {
+    #[rstest]
+    #[case(".")]
+    #[case(".mykey")]
+    #[case(".my_key")]
+    #[case(".unknown")]
+    #[case(".hedaing")]
+    fn test_selector_try_from_invalid(#[case] input: &str) {
         let token = Token {
-            kind: TokenKind::Selector(SmolStr::new(".")),
+            kind: TokenKind::Selector(SmolStr::new(input)),
             range: Range {
                 start: Position::new(0, 0),
                 end: Position::new(0, 0),
