@@ -132,7 +132,7 @@ fn halt_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
     match args.as_mut_slice() {
         [RuntimeValue::Number(exit_code)] => exit(exit_code.value() as i32),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("halt should always receive exactly one argument"),
     }
 }
 
@@ -141,7 +141,7 @@ fn error_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
     match args.as_mut_slice() {
         [RuntimeValue::String(message)] => Err(Error::UserDefined(message.to_string())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("error should always receive exactly one argument"),
     }
 }
 
@@ -152,7 +152,7 @@ fn print_impl(_: &Ident, current_value: &RuntimeValue, args: Args, _: &SharedEnv
             println!("{}", a);
             Ok(current_value.clone())
         }
-        _ => unreachable!(),
+        _ => unreachable!("print should always receive exactly one argument"),
     }
 }
 
@@ -163,7 +163,7 @@ fn stderr_impl(_: &Ident, current_value: &RuntimeValue, args: Args, _: &SharedEn
             eprintln!("{}", a);
             Ok(current_value.clone())
         }
-        _ => unreachable!(),
+        _ => unreachable!("stderr should always receive exactly one argument"),
     }
 }
 
@@ -185,7 +185,7 @@ fn flatten_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
     match args.as_mut_slice() {
         [RuntimeValue::Array(arrays)] => Ok(convert::flatten(std::mem::take(arrays)).into()),
         [a] => Ok(std::mem::take(a)),
-        _ => unreachable!(),
+        _ => unreachable!("flatten should always receive exactly one argument"),
     }
 }
 
@@ -193,7 +193,7 @@ fn flatten_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 fn convert_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
         [input, convert_value] => Convert::try_from(convert_value).map(|convert| convert.convert(input)),
-        _ => unreachable!(),
+        _ => unreachable!("convert should always receive exactly two arguments"),
     }
 }
 
@@ -203,7 +203,7 @@ fn from_date_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
         [RuntimeValue::String(date_str)] => convert::from_date(date_str),
         [RuntimeValue::Markdown(node_value, _)] => convert::from_date(node_value.value().as_str()),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("from_date should always receive exactly one argument"),
     }
 }
 
@@ -215,7 +215,7 @@ fn to_date_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("to_date should always receive exactly two arguments"),
     }
 }
 
@@ -244,7 +244,7 @@ fn base64_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
             })
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("base64 should always receive exactly one argument"),
     }
 }
 
@@ -262,7 +262,7 @@ fn base64d_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             })
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("base64d should always receive exactly one argument"),
     }
 }
 
@@ -280,7 +280,7 @@ fn base64url_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
             })
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("base64url should always receive exactly one argument"),
     }
 }
 
@@ -298,7 +298,7 @@ fn base64urld_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             })
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("base64urld should always receive exactly one argument"),
     }
 }
 
@@ -317,7 +317,7 @@ fn md5_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => convert::md5(&a.to_string()),
-        _ => unreachable!(),
+        _ => unreachable!("md5 should always receive exactly one argument"),
     }
 }
 
@@ -336,7 +336,7 @@ fn sha256_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => convert::sha256(&a.to_string()),
-        _ => unreachable!(),
+        _ => unreachable!("sha256 should always receive exactly one argument"),
     }
 }
 
@@ -351,7 +351,7 @@ fn min_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("min should always receive exactly two arguments"),
     }
 }
 
@@ -366,7 +366,7 @@ fn max_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("max should always receive exactly two arguments"),
     }
 }
 
@@ -382,7 +382,7 @@ fn from_html_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
         }
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("from_html should always receive exactly one argument"),
     }
 }
 
@@ -390,7 +390,7 @@ fn from_html_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
 fn to_html_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [a] => convert::to_html(a).map_err(|_| Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("to_html should always receive exactly one argument"),
     }
 }
 
@@ -403,7 +403,7 @@ fn to_markdown_string_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEn
 fn to_string_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.first() {
         Some(value) => convert::to_string(value),
-        None => unreachable!(),
+        None => unreachable!("to_string should always receive exactly one argument"),
     }
 }
 
@@ -431,7 +431,7 @@ fn url_encode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             })
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [a] => convert::url_encode(&a.to_string()),
-        _ => unreachable!(),
+        _ => unreachable!("url_encode should always receive exactly one argument"),
     }
 }
 
@@ -439,7 +439,7 @@ fn url_encode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
 fn to_text_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.first() {
         Some(value) => convert::to_text(value),
-        None => unreachable!(),
+        None => unreachable!("to_text should always receive exactly one argument"),
     }
 }
 
@@ -462,7 +462,7 @@ fn ends_with_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, env: &SharedE
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("ends_with should always receive exactly two arguments"),
     }
 }
 
@@ -485,7 +485,7 @@ fn starts_with_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, env: &Share
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("starts_with should always receive exactly two arguments"),
     }
 }
 
@@ -502,7 +502,7 @@ fn regex_match_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("regex_match should always receive exactly two arguments"),
     }
 }
 
@@ -519,7 +519,7 @@ fn is_regex_match_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Shar
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("is_regex_match should always receive exactly two arguments"),
     }
 }
 
@@ -547,7 +547,7 @@ fn capture_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("capture should always receive exactly two arguments"),
     }
 }
 
@@ -584,7 +584,7 @@ fn gsub_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("gsub should always receive exactly three arguments"),
     }
 }
 
@@ -609,7 +609,7 @@ fn replace_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("replace should always receive exactly three arguments"),
     }
 }
 
@@ -621,7 +621,7 @@ fn repeat_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("repeat should always receive exactly two arguments"),
     }
 }
 
@@ -644,7 +644,7 @@ fn explode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
                 .unwrap_or_default(),
         )),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("explode should always receive exactly one argument"),
     }
 }
 
@@ -662,7 +662,7 @@ fn implode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             Ok(result.into())
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("implode should always receive exactly one argument"),
     }
 }
 
@@ -676,7 +676,7 @@ fn trim_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("trim should always receive exactly one argument"),
     }
 }
 
@@ -690,7 +690,7 @@ fn ltrim_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("ltrim should always receive exactly one argument"),
     }
 }
 
@@ -704,7 +704,7 @@ fn rtrim_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("rtrim should always receive exactly one argument"),
     }
 }
 
@@ -718,7 +718,7 @@ fn upcase_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
         [RuntimeValue::String(s)] => Ok(s.to_uppercase().into()),
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("upcase should always receive exactly one argument"),
     }
 }
 
@@ -735,7 +735,7 @@ fn update_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Re
         [RuntimeValue::Markdown(node_value, _), RuntimeValue::String(s)] => Ok(node_value.with_value(s).into()),
         [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
         [_, a] => Ok(std::mem::take(a)),
-        _ => unreachable!(),
+        _ => unreachable!("update should always receive exactly two arguments"),
     }
 }
 
@@ -833,7 +833,7 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("slice should always receive exactly three arguments"),
     }
 }
 
@@ -853,7 +853,7 @@ fn pow_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("pow should always receive exactly two arguments"),
     }
 }
 
@@ -862,7 +862,7 @@ fn ln_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Re
     match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().ln().into())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("ln should always receive exactly one argument"),
     }
 }
 
@@ -871,7 +871,7 @@ fn log10_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
     match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().log10().into())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("log10 should always receive exactly one argument"),
     }
 }
 
@@ -880,7 +880,7 @@ fn sqrt_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
     match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().sqrt().into())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("sqrt should always receive exactly one argument"),
     }
 }
 
@@ -889,7 +889,7 @@ fn exp_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
     match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().exp().into())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("exp should always receive exactly one argument"),
     }
 }
 
@@ -917,7 +917,7 @@ fn index_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("index should always receive exactly two arguments"),
     }
 }
 
@@ -930,7 +930,7 @@ fn len_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Ru
             .map(|md| Ok(RuntimeValue::Number(md.value().chars().count().into())))
             .unwrap_or_else(|| Ok(RuntimeValue::Number(0.into()))),
         [a] => Ok(RuntimeValue::Number(a.len().into())),
-        _ => unreachable!(),
+        _ => unreachable!("len should always receive exactly one argument"),
     }
 }
 
@@ -938,7 +938,7 @@ fn len_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Ru
 fn utf8bytelen_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
         [a] => Ok(RuntimeValue::Number(a.len().into())),
-        _ => unreachable!(),
+        _ => unreachable!("utf8bytelen should always receive exactly one argument"),
     }
 }
 
@@ -969,7 +969,7 @@ fn rindex_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("rindex should always receive exactly two arguments"),
     }
 }
 
@@ -1060,7 +1060,7 @@ fn del_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("del should always receive exactly two arguments"),
     }
 }
 
@@ -1072,7 +1072,7 @@ fn join_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("join should always receive exactly two arguments"),
     }
 }
 
@@ -1086,7 +1086,7 @@ fn reverse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
         }
         [RuntimeValue::String(s)] => Ok(s.chars().rev().collect::<String>().into()),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("reverse should always receive exactly one argument"),
     }
 }
 
@@ -1110,7 +1110,7 @@ fn sort_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
             Ok(RuntimeValue::Array(vec))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("sort should always receive exactly one argument"),
     }
 }
 
@@ -1125,7 +1125,7 @@ fn _sort_by_impl_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Share
                     .unwrap()
                     .partial_cmp(a2.first().unwrap())
                     .unwrap_or(std::cmp::Ordering::Equal),
-                _ => unreachable!(),
+                _ => unreachable!("_sort_by_impl should only be called with an array of arrays"),
             });
             let vec = vec
                 .into_iter()
@@ -1141,14 +1141,14 @@ fn _sort_by_impl_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Share
                             RuntimeValue::Array(arr)
                         }
                     }
-                    _ => unreachable!(),
+                    _ => unreachable!("_sort_by_impl should only be called with an array of arrays"),
                 })
                 .collect();
 
             Ok(RuntimeValue::Array(vec))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("_sort_by_impl should always receive exactly one argument"),
     }
 }
 
@@ -1162,7 +1162,7 @@ fn compact_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
                 .collect::<Vec<_>>(),
         )),
         [a] => Ok(std::mem::take(a)),
-        _ => unreachable!(),
+        _ => unreachable!("compact should always receive exactly one argument"),
     }
 }
 
@@ -1209,7 +1209,7 @@ fn split_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("split should always receive exactly two arguments"),
     }
 }
 
@@ -1223,7 +1223,7 @@ fn uniq_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
             Ok(RuntimeValue::Array(vec))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("uniq should always receive exactly one argument"),
     }
 }
 
@@ -1232,7 +1232,7 @@ fn ceil_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
     match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().ceil().into())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("ceil should always receive exactly one argument"),
     }
 }
 
@@ -1241,7 +1241,7 @@ fn floor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
     match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().floor().into())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("floor should always receive exactly one argument"),
     }
 }
 
@@ -1250,7 +1250,7 @@ fn round_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
     match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().round().into())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("round should always receive exactly one argument"),
     }
 }
 
@@ -1259,7 +1259,7 @@ fn trunc_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
     match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().trunc().into())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("trunc should always receive exactly one argument"),
     }
 }
 
@@ -1268,7 +1268,7 @@ fn abs_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
     match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().abs().into())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("abs should always receive exactly one argument"),
     }
 }
 
@@ -1276,7 +1276,7 @@ fn abs_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 fn eq_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
         [a, b] => Ok((a == b).into()),
-        _ => unreachable!(),
+        _ => unreachable!("eq should always receive exactly two arguments"),
     }
 }
 
@@ -1284,7 +1284,7 @@ fn eq_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Run
 fn ne_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
         [a, b] => Ok((a != b).into()),
-        _ => unreachable!(),
+        _ => unreachable!("ne should always receive exactly two arguments"),
     }
 }
 
@@ -1297,7 +1297,7 @@ fn gt_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Run
         [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 > b2).into()),
         [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => Ok((n1 > n2).into()),
         [_, _] => Ok(RuntimeValue::FALSE),
-        _ => unreachable!(),
+        _ => unreachable!("gt should always receive exactly two arguments"),
     }
 }
 
@@ -1310,7 +1310,7 @@ fn gte_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Ru
         [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 >= b2).into()),
         [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => Ok((n1 >= n2).into()),
         [_, _] => Ok(RuntimeValue::FALSE),
-        _ => unreachable!(),
+        _ => unreachable!("gte should always receive exactly two arguments"),
     }
 }
 
@@ -1323,7 +1323,7 @@ fn lt_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Run
         [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 < b2).into()),
         [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => Ok((n1 < n2).into()),
         [_, _] => Ok(RuntimeValue::FALSE),
-        _ => unreachable!(),
+        _ => unreachable!("lt should always receive exactly two arguments"),
     }
 }
 
@@ -1336,7 +1336,7 @@ fn lte_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Ru
         [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 <= b2).into()),
         [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => Ok((n1 <= n2).into()),
         [_, _] => Ok(RuntimeValue::FALSE),
-        _ => unreachable!(),
+        _ => unreachable!("lte should always receive exactly two arguments"),
     }
 }
 
@@ -1418,7 +1418,7 @@ fn add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("add should always receive exactly two arguments"),
     }
 }
 
@@ -1433,7 +1433,7 @@ fn sub_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Resul
                 vec![std::mem::take(a), std::mem::take(b)],
             )),
         },
-        _ => unreachable!(),
+        _ => unreachable!("sub should always receive exactly two arguments"),
     }
 }
 
@@ -1455,7 +1455,7 @@ fn div_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Resul
                 vec![std::mem::take(a), std::mem::take(b)],
             )),
         },
-        _ => unreachable!(),
+        _ => unreachable!("div should always receive exactly two arguments"),
     }
 }
 
@@ -1484,7 +1484,7 @@ fn mul_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Resul
                                     vec![std::mem::take(&mut args[0]), std::mem::take(&mut args[1])],
                                 )),
                             },
-                            _ => unreachable!(),
+                            _ => unreachable!("mul should always receive exactly two arguments"),
                         }
                     })
                     .collect();
@@ -1506,7 +1506,7 @@ fn mul_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Resul
             (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
             _ => Ok(RuntimeValue::Number(0.into())),
         },
-        _ => unreachable!(),
+        _ => unreachable!("mul should always receive exactly two arguments"),
     }
 }
 
@@ -1521,7 +1521,7 @@ fn mod_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Resul
                 vec![std::mem::take(a), std::mem::take(b)],
             )),
         },
-        _ => unreachable!(),
+        _ => unreachable!("mod should always receive exactly two arguments"),
     }
 }
 
@@ -1553,7 +1553,7 @@ fn or_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Run
 fn not_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
         [a] => Ok((!a.is_truthy()).into()),
-        _ => unreachable!(),
+        _ => unreachable!("not should always receive exactly one argument"),
     }
 }
 
@@ -1580,7 +1580,7 @@ fn attr_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Resu
             .collect::<Vec<_>>()
             .into()),
         [a, ..] => Ok(std::mem::take(a)),
-        _ => unreachable!(),
+        _ => unreachable!("attr should always receive at least two arguments"),
     }
 }
 
@@ -1619,7 +1619,7 @@ fn set_attr_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
             Ok(RuntimeValue::Markdown(new_node, selector.take()))
         }
         [a, ..] => Ok(std::mem::take(a)),
-        _ => unreachable!(),
+        _ => unreachable!("set_attr should always receive at least three arguments"),
     }
 }
 
@@ -1897,7 +1897,7 @@ fn to_md_table_cell_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &Shared
             "table_cell".to_string(),
             vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("to_md_table_cell should always receive exactly three arguments"),
     }
 }
 
@@ -1916,7 +1916,7 @@ fn get_title_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
                 .unwrap_or_else(|| Ok(RuntimeValue::NONE))
         }
         [_] => Ok(RuntimeValue::NONE),
-        _ => unreachable!(),
+        _ => unreachable!("get_title should always receive exactly one argument"),
     }
 }
 
@@ -2112,7 +2112,7 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("get should always receive exactly two arguments"),
     }
 }
 
@@ -2156,7 +2156,7 @@ fn set_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("set should always receive exactly three arguments"),
     }
 }
 
@@ -2172,7 +2172,7 @@ fn keys_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
         }
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("keys should always receive exactly one argument"),
     }
 }
 
@@ -2185,7 +2185,7 @@ fn values_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
         }
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("values should always receive exactly one argument"),
     }
 }
 
@@ -2201,7 +2201,7 @@ fn entries_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
         }
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("entries should always receive exactly one argument"),
     }
 }
 
@@ -2247,7 +2247,7 @@ fn insert_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("insert should always receive exactly three arguments"),
     }
 }
 
@@ -2256,7 +2256,7 @@ fn negate_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(-(*n))),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("negate should always receive exactly one argument"),
     }
 }
 
@@ -2265,7 +2265,7 @@ fn intern_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Re
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => Ok(RuntimeValue::String(Ident::new(s).as_str())),
         [a] => Ok(RuntimeValue::String(Ident::new(&a.to_string()).as_str())),
-        _ => unreachable!(),
+        _ => unreachable!("intern should always receive exactly one argument"),
     }
 }
 
@@ -2279,7 +2279,7 @@ fn is_nan_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Re
     match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Boolean(n.is_nan())),
         [_] => Ok(RuntimeValue::FALSE),
-        _ => unreachable!(),
+        _ => unreachable!("is_nan should always receive exactly one argument"),
     }
 }
 
@@ -2298,7 +2298,7 @@ fn coalesce_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
                 Ok(std::mem::take(a))
             }
         }
-        _ => unreachable!(),
+        _ => unreachable!("coalesce should always receive exactly two arguments"),
     }
 }
 
@@ -2332,7 +2332,7 @@ fn to_markdown_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
             })?))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("to_markdown should always receive exactly one argument"),
     }
 }
 
@@ -2343,7 +2343,7 @@ fn to_mdx_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
             parse_mdx_input(s).map_err(|e| Error::Runtime(format!("Failed to parse mdx: {}", e)))?,
         )),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("to_mdx should always receive exactly one argument"),
     }
 }
 
@@ -2368,7 +2368,7 @@ fn _get_markdown_position_impl(
             })
             .unwrap_or(Ok(RuntimeValue::NONE)),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("_get_markdown_position should always receive exactly one argument"),
     }
 }
 
@@ -2413,7 +2413,7 @@ fn _csv_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                 vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
             ));
         }
-        _ => unreachable!(),
+        _ => unreachable!("_csv_parse should receive between 1 and 3 arguments"),
     };
 
     let mut reader = ReaderBuilder::new()
@@ -2466,7 +2466,7 @@ fn _json_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
             Ok(value.into())
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("_json_parse should always receive exactly one argument"),
     }
 }
 
@@ -2482,7 +2482,7 @@ fn _yaml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
             }
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("_yaml_parse should always receive exactly one argument"),
     }
 }
 
@@ -2496,7 +2496,7 @@ fn _toon_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
         .map_err(|e| Error::Runtime(format!("Failed to parse TOON: {}", e)))?
         .into()),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("_toon_parse should always receive exactly one argument"),
     }
 }
 
@@ -2509,7 +2509,7 @@ fn _toml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
             Ok(value.into())
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("_toml_parse should always receive exactly one argument"),
     }
 }
 
@@ -2643,7 +2643,7 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             Ok(root.unwrap_or(RuntimeValue::NONE))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("_xml_parse should always receive exactly one argument"),
     }
 }
 
@@ -2687,7 +2687,7 @@ fn set_variable_impl(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("set_variable should always receive exactly two arguments"),
     }
 }
 
@@ -2720,7 +2720,7 @@ fn get_variable_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, env: &Shar
             }
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("get_variable should always receive exactly one argument"),
     }
 }
 
@@ -2796,7 +2796,7 @@ fn shift_left_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
             constants::builtins::SHIFT_LEFT.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("shift_left should always receive exactly two arguments"),
     }
 }
 
@@ -2843,7 +2843,7 @@ fn shift_right_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             constants::builtins::SHIFT_RIGHT.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!(),
+        _ => unreachable!("shift_right should always receive exactly two arguments"),
     }
 }
 
@@ -2984,7 +2984,7 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
             }
             Ok(RuntimeValue::Array(result))
         }
-        _ => unreachable!(),
+        _ => unreachable!("_diff should receive exactly two arguments, both arrays or both non-arrays"),
     }
 }
 
@@ -2997,7 +2997,7 @@ fn read_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
             Err(e) => Err(Error::Runtime(format!("Failed to read file {}: {}", path, e))),
         },
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!(),
+        _ => unreachable!("read_file should always receive exactly one argument"),
     }
 }
 

@@ -89,7 +89,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::Nodes => {
                     return Err(SyntaxError::UnexpectedToken((**token).clone()));
                 }
-                TokenKind::NewLine | TokenKind::Tab(_) | TokenKind::Whitespace(_) => unreachable!(),
+                TokenKind::NewLine | TokenKind::Tab(_) | TokenKind::Whitespace(_) => {
+                    unreachable!("parse_program should have filtered out whitespace tokens")
+                }
                 _ => {
                     let ast = self.parse_expr(token)?;
                     asts.push(ast);
@@ -156,7 +158,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::LeftShift => constants::builtins::SHIFT_LEFT,
             TokenKind::RightShift => constants::builtins::SHIFT_RIGHT,
             TokenKind::Convert => constants::builtins::CONVERT,
-            _ => unreachable!(),
+            _ => unreachable!("binary_op_function_name called with non-binary operator"),
         }
     }
 

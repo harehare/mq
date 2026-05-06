@@ -317,7 +317,7 @@ impl Hir {
                         mq_lang::TokenKind::NumberLiteral(_) => SymbolKind::Number,
                         mq_lang::TokenKind::BoolLiteral(_) => SymbolKind::Boolean,
                         mq_lang::TokenKind::None => SymbolKind::None,
-                        _ => unreachable!(),
+                        _ => unreachable!("Literal nodes should only have string, number, boolean, or none tokens"),
                     },
                     source: SourceInfo::new(Some(source_id), Some(node.range())),
                     scope: scope_id,
@@ -893,7 +893,7 @@ impl Hir {
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
             });
         } else {
-            unreachable!()
+            unreachable!("add_foreach_expr should only be called on Foreach nodes");
         }
     }
 
@@ -983,7 +983,7 @@ impl Hir {
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
             });
         } else {
-            unreachable!()
+            unreachable!("add_def_expr should only be called on Def nodes");
         }
     }
 
@@ -1064,7 +1064,7 @@ impl Hir {
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
             });
         } else {
-            unreachable!()
+            unreachable!("add_macro_expr should only be called on Macro nodes");
         }
     }
 
@@ -1096,7 +1096,7 @@ impl Hir {
                 self.add_expr(child, source_id, scope_id, parent);
             });
         } else {
-            unreachable!()
+            unreachable!("add_macro_call_expr should only be called on MacroCall nodes");
         }
     }
 
@@ -1182,7 +1182,7 @@ impl Hir {
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
             });
         } else {
-            unreachable!()
+            unreachable!("add_fn_expr should only be called on Fn nodes");
         }
     }
 
@@ -1229,7 +1229,7 @@ impl Hir {
 
                     self.add_expr(value_node, source_id, scope_id, Some(key_symbol_id));
                 } else {
-                    unreachable!()
+                    unreachable!("Dict entry does not have expected structure of key ':' value");
                 }
             }
         }
