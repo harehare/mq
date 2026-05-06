@@ -2528,9 +2528,7 @@ fn engine() -> DefaultEngine {
 #[case::partial_multiple_args("def f(a, b, c): a + b + c; | let p = partial(f, 10, 20) | p(30)", vec![RuntimeValue::Number(5.into())], Ok(vec![RuntimeValue::Number(60.into())].into()))]
 // partial: 2-param function can be partially applied — the scenario that triggered the redesign
 #[case::partial_two_param("def plus(a, b): a + b; | let plus10 = partial(plus, 10) | plus10(5)", vec![RuntimeValue::Number(0.into())], Ok(vec![RuntimeValue::Number(15.into())].into()))]
-// property selector: bare form (.key) for non-reserved names
-#[case::property_selector_bare(r#".score"#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("score"), RuntimeValue::Number(42.into())); RuntimeValue::Dict(d)}], Ok(vec![RuntimeValue::Number(42.into())].into()))]
-// property selector: quoted form (."key") for reserved selector names
+// property selector: quoted form (."key") is the only way to access dict keys
 #[case::property_selector_quoted_h1(r#"."h1""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("h1"), RuntimeValue::String("title".to_string())); RuntimeValue::Dict(d)}], Ok(vec![RuntimeValue::String("title".to_string())].into()))]
 #[case::property_selector_quoted_url(r#"."url""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("url"), RuntimeValue::String("https://example.com".to_string())); RuntimeValue::Dict(d)}], Ok(vec![RuntimeValue::String("https://example.com".to_string())].into()))]
 #[case::property_selector_quoted_text(r#"."text""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("text"), RuntimeValue::String("hello".to_string())); RuntimeValue::Dict(d)}], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
@@ -2538,12 +2536,12 @@ fn engine() -> DefaultEngine {
 #[case::property_selector_quoted_space(r#"."my key""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("my key"), RuntimeValue::String("val".to_string())); RuntimeValue::Dict(d)}], Ok(vec![RuntimeValue::String("val".to_string())].into()))]
 // property selector: missing key returns None
 #[case::property_selector_quoted_missing(r#"."h1""#, vec![{let d = std::collections::BTreeMap::new(); RuntimeValue::Dict(d)}], Ok(vec![RuntimeValue::None].into()))]
-// nested property selector: .a.b accesses {"a": {"b": 1}}
-#[case::property_selector_nested(r#".a.b"#, vec![{let mut outer = std::collections::BTreeMap::new(); let mut inner = std::collections::BTreeMap::new(); inner.insert(Ident::new("b"), RuntimeValue::Number(1.into())); outer.insert(Ident::new("a"), RuntimeValue::Dict(inner)); RuntimeValue::Dict(outer)}], Ok(vec![RuntimeValue::Number(1.into())].into()))]
-// nested property selector: .a.b.c accesses three levels deep
-#[case::property_selector_nested_three(r#".a.b.c"#, vec![{let mut outer = std::collections::BTreeMap::new(); let mut mid = std::collections::BTreeMap::new(); let mut inner = std::collections::BTreeMap::new(); inner.insert(Ident::new("c"), RuntimeValue::Number(42.into())); mid.insert(Ident::new("b"), RuntimeValue::Dict(inner)); outer.insert(Ident::new("a"), RuntimeValue::Dict(mid)); RuntimeValue::Dict(outer)}], Ok(vec![RuntimeValue::Number(42.into())].into()))]
+// nested property selector: ."a"."b" accesses {"a": {"b": 1}}
+#[case::property_selector_nested(r#"."a"."b""#, vec![{let mut outer = std::collections::BTreeMap::new(); let mut inner = std::collections::BTreeMap::new(); inner.insert(Ident::new("b"), RuntimeValue::Number(1.into())); outer.insert(Ident::new("a"), RuntimeValue::Dict(inner)); RuntimeValue::Dict(outer)}], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+// nested property selector: ."a"."b"."c" accesses three levels deep
+#[case::property_selector_nested_three(r#"."a"."b"."c""#, vec![{let mut outer = std::collections::BTreeMap::new(); let mut mid = std::collections::BTreeMap::new(); let mut inner = std::collections::BTreeMap::new(); inner.insert(Ident::new("c"), RuntimeValue::Number(42.into())); mid.insert(Ident::new("b"), RuntimeValue::Dict(inner)); outer.insert(Ident::new("a"), RuntimeValue::Dict(mid)); RuntimeValue::Dict(outer)}], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // nested property selector: missing intermediate key returns None
-#[case::property_selector_nested_missing(r#".a.b"#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("a"), RuntimeValue::Number(1.into())); RuntimeValue::Dict(d)}], Ok(vec![RuntimeValue::None].into()))]
+#[case::property_selector_nested_missing(r#"."a"."b""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("a"), RuntimeValue::Number(1.into())); RuntimeValue::Dict(d)}], Ok(vec![RuntimeValue::None].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

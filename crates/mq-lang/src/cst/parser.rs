@@ -7875,13 +7875,13 @@ mod tests {
     )]
     #[case::selector_property(
         vec![
-            Shared::new(token(TokenKind::Selector(".notfound".into()))),
+            Shared::new(token(TokenKind::Selector(".\"notfound\"".into()))),
         ],
         (
             vec![
                 Shared::new(Node {
                     kind: NodeKind::Selector,
-                    token: Some(Shared::new(token(TokenKind::Selector(".notfound".into())))),
+                    token: Some(Shared::new(token(TokenKind::Selector(".\"notfound\"".into())))),
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: Vec::new(),
@@ -7892,35 +7892,35 @@ mod tests {
     )]
     #[case::selector_property_chained(
         vec![
-            Shared::new(token(TokenKind::Selector(".a".into()))),
-            Shared::new(token(TokenKind::Selector(".b".into()))),
-            Shared::new(token(TokenKind::Selector(".c".into()))),
+            Shared::new(token(TokenKind::Selector(".\"a\"".into()))),
+            Shared::new(token(TokenKind::Selector(".\"b\"".into()))),
+            Shared::new(token(TokenKind::Selector(".\"c\"".into()))),
         ],
         (
             vec![
                 Shared::new(Node {
                     kind: NodeKind::Block,
-                    token: Some(Shared::new(token(TokenKind::Selector(".a".into())))),
+                    token: Some(Shared::new(token(TokenKind::Selector(".\"a\"".into())))),
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: vec![
                         Shared::new(Node {
                             kind: NodeKind::Selector,
-                            token: Some(Shared::new(token(TokenKind::Selector(".a".into())))),
+                            token: Some(Shared::new(token(TokenKind::Selector(".\"a\"".into())))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
                         }),
                         Shared::new(Node {
                             kind: NodeKind::Selector,
-                            token: Some(Shared::new(token(TokenKind::Selector(".b".into())))),
+                            token: Some(Shared::new(token(TokenKind::Selector(".\"b\"".into())))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
                         }),
                         Shared::new(Node {
                             kind: NodeKind::Selector,
-                            token: Some(Shared::new(token(TokenKind::Selector(".c".into())))),
+                            token: Some(Shared::new(token(TokenKind::Selector(".\"c\"".into())))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
@@ -7933,27 +7933,27 @@ mod tests {
     )]
     #[case::selector_property_chained_two(
         vec![
-            Shared::new(token(TokenKind::Selector(".foo".into()))),
-            Shared::new(token(TokenKind::Selector(".bar".into()))),
+            Shared::new(token(TokenKind::Selector(".\"foo\"".into()))),
+            Shared::new(token(TokenKind::Selector(".\"bar\"".into()))),
         ],
         (
             vec![
                 Shared::new(Node {
                     kind: NodeKind::Block,
-                    token: Some(Shared::new(token(TokenKind::Selector(".foo".into())))),
+                    token: Some(Shared::new(token(TokenKind::Selector(".\"foo\"".into())))),
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: vec![
                         Shared::new(Node {
                             kind: NodeKind::Selector,
-                            token: Some(Shared::new(token(TokenKind::Selector(".foo".into())))),
+                            token: Some(Shared::new(token(TokenKind::Selector(".\"foo\"".into())))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
                         }),
                         Shared::new(Node {
                             kind: NodeKind::Selector,
-                            token: Some(Shared::new(token(TokenKind::Selector(".bar".into())))),
+                            token: Some(Shared::new(token(TokenKind::Selector(".\"bar\"".into())))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
