@@ -34,5 +34,6 @@
     - [Variable Declarations](reference/variables.md)
     - [Self](reference/self.md)
     - [String Interpolation](reference/string_interpolation.md)
+    - [Selectors](reference/selectors.md)
     - [Nodes](reference/nodes.md)
   - [Builtin selectors and functions](builtins.html)

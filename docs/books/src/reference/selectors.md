@@ -347,6 +347,5 @@ Note: Not all attributes are settable. Refer to the implementation in `mq-markdo
 
 ## See Also
 
-- [Builtin selectors](builtin_selectors.md) - Complete list of available selectors
-- [Builtin functions](builtin_functions.md) - Functions to use with selectors
+- [Builtin selectors and functions](../builtins.html) - Complete list of available selectors and functions
 - [Nodes](nodes.md) - Details about markdown node types
