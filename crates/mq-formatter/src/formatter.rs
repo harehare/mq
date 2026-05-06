@@ -469,7 +469,7 @@ impl Formatter {
                         self.output.push_str(&token.to_string());
                         self.output.push(' ');
                     }
-                    _ => unreachable!(),
+                    _ => unreachable!("Expected BinaryOp or Assign node"),
                 }
 
                 let indent_level = if right.has_new_line() {
@@ -480,7 +480,7 @@ impl Formatter {
 
                 self.format_node(right, indent_level);
             }
-            _ => unreachable!(),
+            _ => unreachable!("Expected BinaryOp node with two children"),
         }
     }
 
@@ -502,7 +502,7 @@ impl Formatter {
                 }
             }
         } else {
-            unreachable!();
+            unreachable!("Expected UnaryOp node");
         }
     }
 

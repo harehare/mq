@@ -112,7 +112,11 @@ impl Lexer {
                 kind: TokenKind::Eof,
                 module_id,
             })),
-            _ => unreachable!(),
+            Err(_) => Err(SyntaxError::UnexpectedToken(Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id,
+            })),
         }
     }
 }
