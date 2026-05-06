@@ -56,6 +56,35 @@ impl UnknownSelector {
     }
 }
 
+/// Unescapes `\"` and `\\` sequences in a quoted property key.
+fn unescape_property_key(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(next) = chars.next() {
+                result.push(next);
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// Escapes `"` and `\` characters in a property key for display as `."key"`.
+fn escape_property_key(key: &str) -> String {
+    let mut result = String::with_capacity(key.len() + 2);
+    for c in key.chars() {
+        match c {
+            '"' => result.push_str("\\\""),
+            '\\' => result.push_str("\\\\"),
+            _ => result.push(c),
+        }
+    }
+    result
+}
+
 /// A selector for matching specific types of markdown nodes.
 ///
 /// Selectors are used to query and filter markdown documents, similar to CSS selectors
@@ -139,6 +168,8 @@ pub enum Selector {
     Done,
     /// Matches a specific attribute of a markdown node.
     Attr(AttrKind),
+    /// Matches a specific property of a dict or array.
+    Property(String),
 }
 
 /// Represents an attribute that can be accessed from markdown nodes.
@@ -377,7 +408,21 @@ impl TryFrom<&Token> for Selector {
                 // Attribute selectors - MDX
                 ".name" => Ok(Selector::Attr(AttrKind::Name)),
 
-                _ => parse_bracket_selector(s).ok_or_else(|| UnknownSelector(token.clone())),
+                s => {
+                    if let Some(sel) = parse_bracket_selector(s) {
+                        return Ok(sel);
+                    }
+                    // Quoted property selector: ."key" allows using reserved selector names as dict keys
+                    if let Some(quoted) = s.strip_prefix(".\"").and_then(|r| r.strip_suffix('"')) {
+                        return Ok(Selector::Property(unescape_property_key(quoted)));
+                    }
+                    let key = s.strip_prefix('.').unwrap_or("");
+                    if key.is_empty() {
+                        Err(UnknownSelector(token.clone()))
+                    } else {
+                        Ok(Selector::Property(key.to_string()))
+                    }
+                }
             }
         } else {
             Err(UnknownSelector(token.clone()))
@@ -436,6 +481,7 @@ impl Display for Selector {
             Selector::Todo => write!(f, ".todo"),
             Selector::Done => write!(f, ".done"),
             Selector::Attr(attr) => write!(f, "{}", attr),
+            Selector::Property(property) => write!(f, ".\"{}\"", escape_property_key(property)),
         }
     }
 }
@@ -580,6 +626,17 @@ mod tests {
     #[case::attr_align(".align", Selector::Attr(AttrKind::Align), ".align")]
     // Attribute selectors - MDX
     #[case::attr_name(".name", Selector::Attr(AttrKind::Name), ".name")]
+    // Property selectors: bare form (.key)
+    #[case::property_key(".mykey", Selector::Property("mykey".to_string()), ".\"mykey\"")]
+    #[case::property_key_underscore(".my_key", Selector::Property("my_key".to_string()), ".\"my_key\"")]
+    #[case::property_key_unknown(".unknown", Selector::Property("unknown".to_string()), ".\"unknown\"")]
+    // Property selectors: quoted form (."key") – allows reserved selector names as dict keys
+    #[case::property_quoted_h1(".\"h1\"", Selector::Property("h1".to_string()), ".\"h1\"")]
+    #[case::property_quoted_url(".\"url\"", Selector::Property("url".to_string()), ".\"url\"")]
+    #[case::property_quoted_with_space(".\"my key\"", Selector::Property("my key".to_string()), ".\"my key\"")]
+    #[case::property_quoted_escaped_quote(".\"my\\\"key\"", Selector::Property("my\"key".to_string()), ".\"my\\\"key\"")]
+    #[case::property_quoted_escaped_backslash(".\"my\\\\key\"", Selector::Property("my\\key".to_string()), ".\"my\\\\key\"")]
+    #[case::property_quoted_empty(".\"\"", Selector::Property("".to_string()), ".\"\"")]
     fn test_selector_try_from_and_display(
         #[case] input: &str,
         #[case] expected_selector: Selector,
@@ -602,9 +659,9 @@ mod tests {
     }
 
     #[test]
-    fn test_selector_try_from_unknown() {
+    fn test_selector_try_from_invalid() {
         let token = Token {
-            kind: TokenKind::Selector(SmolStr::new(".unknown")),
+            kind: TokenKind::Selector(SmolStr::new(".")),
             range: Range {
                 start: Position::new(0, 0),
                 end: Position::new(0, 0),

@@ -212,6 +212,57 @@ Text, HTML, YAML, TOML, Math nodes support:
 | --------- | ------ | ---------------- | ------------- |
 | `value`   | String | The text content | `.text.value` |
 
+## Property Selector (Dict Key Access)
+
+Property selectors access values from dict (object) values using dot notation. They work on both single dicts and arrays of dicts.
+
+### Bare Form
+
+Use `.key` to access a dict key by name:
+
+```mq
+# Input dict: {"name": "Alice", "age": 30}
+
+.name   # Returns: "Alice"
+.age    # Returns: 30
+```
+
+### Quoted Form
+
+Use `."key"` to access keys that contain spaces, special characters, or conflict with reserved selector names:
+
+```mq
+# Input dict: {"h1": "title", "my key": "value"}
+
+."h1"       # Returns: "title"  (avoids conflict with .h1 heading selector)
+."my key"   # Returns: "value"  (key with space)
+."url"      # Returns: the "url" key value (avoids conflict with .url attribute)
+```
+
+Escape sequences inside quoted keys: `\"` for a literal `"` and `\\` for a literal `\`.
+
+### Arrays of Dicts
+
+When applied to an array of dicts, the property selector maps over each element:
+
+```mq
+# Input: [{"name": "Alice"}, {"name": "Bob"}, {"name": "Charlie"}]
+
+.name   # Returns: ["Alice", "Bob", "Charlie"]
+```
+
+Non-dict elements in the array return `none`.
+
+### Missing Keys
+
+Accessing a key that doesn't exist returns `none`:
+
+```mq
+# Input dict: {"name": "Alice"}
+
+.age    # Returns: none
+```
+
 ## Combining Selectors with Functions
 
 You can combine selectors with functions like `select()`, `map()`, and `filter()` for powerful transformations:

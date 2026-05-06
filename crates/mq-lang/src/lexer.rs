@@ -8,7 +8,7 @@ use nom::{
     IResult,
     branch::alt,
     bytes::complete::{escaped_transform, tag, take_while_m_n},
-    character::complete::{alpha1, alphanumeric1, char, multispace0, none_of},
+    character::complete::{alpha1, alphanumeric1, anychar, char, multispace0, none_of},
     combinator::{map, map_opt, map_res, recognize, value},
     multi::{many0, many1},
     sequence::{delimited, pair, preceded},
@@ -594,6 +594,14 @@ fn selector(input: Span) -> IResult<Span, Token> {
             alt((
                 tag(">"),
                 tag("^"),
+                // Quoted property selector: ."key" or ."key with spaces"
+                recognize(pair(
+                    char('"'),
+                    pair(
+                        many0(alt((recognize(pair(char('\\'), anychar)), recognize(none_of("\"\\"))))),
+                        char('"'),
+                    ),
+                )),
                 recognize(many0(alt((alphanumeric1, tag("_"), tag("-"), tag("*"))))),
             )),
         )),
