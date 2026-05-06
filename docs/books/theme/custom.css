@@ -231,16 +231,20 @@ pre {
 
 /* inline code only — not code inside pre */
 :not(pre)>code {
+    display: inline;
     font-family: "Consolas", "Monaco", "Courier New", monospace;
     background-color: var(--quote-bg);
     color: var(--inline-code-color);
     border-radius: 4px;
     padding: 2px 6px;
+    white-space: normal;
 }
 
 .navy :not(pre)>code {
+    display: inline;
     background-color: var(--mq-code-bg-inline);
     color: var(--mq-accent-bright);
+    white-space: normal;
 }
 
 pre code {
@@ -380,6 +384,15 @@ table tbody tr:hover {
     border-radius: 6px;
 }
 
+/* Override: inline code must stay inline even in navy theme */
+.navy :not(pre) > .hljs {
+    display: inline;
+    overflow-x: initial;
+    background: var(--mq-code-bg-inline) !important;
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
+}
+
 .light .hljs,
 html:not(.js) .hljs {
     display: block;
@@ -388,6 +401,16 @@ html:not(.js) .hljs {
     color: #1e293b;
     padding: 1rem;
     border-radius: 6px;
+}
+
+/* Override: inline code must stay inline even in light theme */
+.light :not(pre) > .hljs,
+html:not(.js) :not(pre) > .hljs {
+    display: inline;
+    overflow-x: initial;
+    background: var(--quote-bg) !important;
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
 }
 
 /* Navy dark syntax */
