@@ -1,29 +1,30 @@
-def crate_version():
-  if (ne("[workspace.package]") && ne("[package]") && starts_with("[")):
+def crate_version(line):
+  if (line != "[workspace.package]" && line != "[package]" && starts_with(line, "[")):
     s"
-${self}"
-  elif (starts_with("version = ")):
+${line}"
+  elif (starts_with(line, "version = ")):
     s"version = \"${version}\""
-  else: self
+  else: line
 end
 
-def npm_version():
-  if (starts_with(trim(), "\"version\": ")):
+def npm_version(line):
+  if (starts_with(trim(line), "\"version\": ")):
     s"  \"version\": \"${version}\","
-  else: self
+  else: line
 end
 
-def py_version():
-  if (ne("[project]") && starts_with("[")):
+def py_version(line):
+  if (line != "[project]" && starts_with(line, "[")):
     s"
-${self}"
-  elif (starts_with("version = ")):
+${line}"
+  elif (starts_with(line, "version = ")):
     s"version = \"${version}\""
-  else: self
+  else: line
 end
 
-def crates_version():
-  replace(s"path = \"crates/mq-lang\", version = \"${prev_version}\"", s"path = \"crates/mq-lang\", version = \"${version}\"")
+def crates_version(line):
+  line
+  | replace(s"path = \"crates/mq-lang\", version = \"${prev_version}\"", s"path = \"crates/mq-lang\", version = \"${version}\"")
   | replace(s"path = \"crates/mq-hir\", version = \"${prev_version}\"", s"path = \"crates/mq-hir\", version = \"${version}\"")
   | replace(s"path = \"crates/mq-formatter\", version = \"${prev_version}\"", s"path = \"crates/mq-formatter\", version = \"${version}\"")
   | replace(s"path = \"crates/mq-markdown\", version = \"${prev_version}\"", s"path = \"crates/mq-markdown\", version = \"${version}\"")
@@ -32,8 +33,9 @@ def crates_version():
   | replace(s"path = \"crates/mq-dap\", version = \"${prev_version}\"", s"path = \"crates/mq-dap\", version = \"${version}\"")
   | replace(s"path = \"crates/mq-check\", version = \"${prev_version}\"", s"path = \"crates/mq-check\", version = \"${version}\"")
   | replace(s"path = \"crates/mq-test\", version = \"${prev_version}\"", s"path = \"crates/mq-test\", version = \"${version}\"")
+  | replace(s"path = \"crates/mq-macros\", version = \"${prev_version}\"", s"path = \"crates/mq-macros\", version = \"${version}\"")
 end
 
-def code_block_version(version):
-  .code | gsub("[0-9]+.[0-9]+.[0-9]+", version)
+def code_block_version(line, version):
+  line | .code | gsub("[0-9]+.[0-9]+.[0-9]+", version)
 end
