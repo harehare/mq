@@ -29,13 +29,11 @@ The left side specifies what to update using a selector, and the right side is t
 ### Examples
 
 ```mq
-# Update a code block
-.code.value |= "test" | to_text()
-# => test
+# Change the language of all code blocks to rust
+.code.lang |= "rust"
 
-# Update a header level
-.h.depth |= 3 | .h.depth
-# => 3
+# Update a heading level
+.h.depth |= 2
 ```
 
 ## Compound Assignment Operators

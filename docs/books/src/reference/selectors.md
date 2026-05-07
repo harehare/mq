@@ -62,7 +62,7 @@ Selector calls can be combined with pipes and functions just like plain selector
 .code("rust") | len()
 
 # Replace language of all TypeScript blocks
-.code("typescript") | set_attr("lang", "ts")
+.code("typescript").lang |= "ts"
 ```
 
 ## Attribute Access
@@ -330,20 +330,26 @@ select(.h.level <= 2)
 
 ## Setting Attributes
 
-You can also modify node attributes using the `set_attr()` function:
+You can modify node attributes using the update operator (`|=`):
 
 ```mq
 # Change code block language
-.code | set_attr("lang", "javascript")
+.code.lang |= "rust"
 
 # Update link URL
-.link | set_attr("url", "https://new-url.com")
+.link.url |= "https://new-url.com"
 
 # Update heading level
-.h | set_attr("level", 2)
+.h.depth |= 2
 ```
 
-Note: Not all attributes are settable. Refer to the implementation in `mq-markdown/src/node.rs` for details on which attributes can be modified.
+The `set_attr()` function is an alternative that takes the attribute name as a string:
+
+```mq
+.code | set_attr("lang", "rust")
+.link | set_attr("url", "https://new-url.com")
+.h | set_attr("level", 2)
+```
 
 ## See Also
 
