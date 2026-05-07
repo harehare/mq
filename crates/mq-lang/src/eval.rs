@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
 
 #[cfg(feature = "debugger")]
 use crate::DebuggerHandler;
@@ -40,6 +41,9 @@ pub mod runtime_value;
 
 use env::Env;
 use runtime_value::RuntimeValue;
+
+static TYPE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("type"));
+static DYNAMIC_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("<dynamic>"));
 
 /// Control flow signals for internal evaluation.
 ///
@@ -753,11 +757,10 @@ impl<T: ModuleResolver> Evaluator<T> {
                 RuntimeValue::Array(values)
             }
             RuntimeValue::Dict(map) => {
-                let type_key = Ident::new("type");
                 let new_map: BTreeMap<_, _> = map
                     .iter()
                     .map(|(k, v)| {
-                        let new_v = if *k == type_key {
+                        let new_v = if *k == *TYPE_IDENT {
                             v.clone()
                         } else {
                             Self::eval_selector_expr_with_args(v, selector, args)
@@ -820,11 +823,10 @@ impl<T: ModuleResolver> Evaluator<T> {
                 RuntimeValue::Array(values)
             }
             RuntimeValue::Dict(map) => {
-                let type_key = Ident::new("type");
                 let new_map: BTreeMap<_, _> = map
                     .iter()
                     .map(|(k, v)| {
-                        let new_v = if *k == type_key {
+                        let new_v = if *k == *TYPE_IDENT {
                             v.clone()
                         } else {
                             Self::eval_selector_expr(v, selector)
@@ -1594,7 +1596,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         self.call_fn(
             &fn_value,
             Shared::clone(callable),
-            Ident::new("<dynamic>"),
+            *DYNAMIC_IDENT,
             args,
             runtime_value,
             env,
