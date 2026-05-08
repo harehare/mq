@@ -2446,7 +2446,10 @@ dependencies = [
 name = "mq-formatter"
 version = "0.5.28"
 dependencies = [
+ "clap",
  "codspeed-divan-compat",
+ "glob",
+ "miette",
  "mq-lang",
  "rstest",
 ]
