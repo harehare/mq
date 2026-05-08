@@ -168,7 +168,6 @@ Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 
 Commands:
   repl  Start a REPL session for interactive query execution
-  fmt   Format mq files based on specified formatting options
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
@@ -237,9 +236,6 @@ mq -f 'file' file.md
 
 ## To start a REPL session:
 mq repl
-
-## To format mq file:
-mq fmt --check file.mq
 ```
 
 </details>
