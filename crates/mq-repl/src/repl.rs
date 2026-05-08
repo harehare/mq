@@ -1,5 +1,7 @@
+use crate::command_context::{Command, CommandContext, CommandOutput};
 use colored::*;
 use miette::IntoDiagnostic;
+use mq_lang::RuntimeValue;
 use rustyline::{
     At, Cmd, CompletionType, Config, Context, EditMode, Editor, Helper, KeyCode, KeyEvent, Modifiers, Movement, Word,
     completion::{Completer, FilenameCompleter, Pair},
@@ -9,8 +11,6 @@ use rustyline::{
     validate::{ValidationContext, ValidationResult, Validator},
 };
 use std::{borrow::Cow, cell::RefCell, fs, rc::Rc};
-
-use crate::command_context::{Command, CommandContext, CommandOutput};
 
 /// Highlight mq syntax with keywords and commands
 fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
@@ -80,7 +80,10 @@ fn format_markdown_node(node: &mq_markdown::Node) -> String {
 
 /// Format a runtime value with type-appropriate colors.
 fn format_runtime_value(value: &mq_lang::RuntimeValue) -> Option<String> {
-    use mq_lang::RuntimeValue;
+    if value.is_empty() {
+        return None;
+    }
+
     let s = match value {
         RuntimeValue::None => return Some("None".dimmed().to_string()),
         RuntimeValue::Number(n) => n.to_string().bright_magenta().to_string(),
@@ -351,7 +354,11 @@ impl Repl {
                     editor.add_history_entry(&line).unwrap();
 
                     match self.command_context.borrow_mut().execute(&line) {
-                        Ok(CommandOutput::String(s)) => println!("{}", s.join("\n")),
+                        Ok(CommandOutput::String(s)) => {
+                            if !s.is_empty() {
+                                println!("{}", s.join("\n"))
+                            }
+                        }
                         Ok(CommandOutput::Value(runtime_values)) => {
                             let lines: Vec<String> = runtime_values.iter().filter_map(format_runtime_value).collect();
                             if !lines.is_empty() {
