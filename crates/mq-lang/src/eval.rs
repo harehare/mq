@@ -264,7 +264,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                         define(
                             &self.env,
                             ident.name,
-                            RuntimeValue::Function(params.clone(), program.clone(), Shared::clone(&self.env)),
+                            RuntimeValue::Function(Box::new(params.clone()), program.clone(), Shared::clone(&self.env)),
                         );
                     }
                     _ => nodes.push(Shared::clone(node)),
@@ -402,7 +402,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 define(
                     env,
                     ident.name,
-                    RuntimeValue::Function(params.clone(), program.clone(), Shared::clone(env)),
+                    RuntimeValue::Function(Box::new(params.clone()), program.clone(), Shared::clone(env)),
                 );
             }
         }
@@ -549,7 +549,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     define(
                         &module_env,
                         ident.name,
-                        RuntimeValue::Function(params.clone(), program.clone(), Shared::clone(&module_env)),
+                        RuntimeValue::Function(Box::new(params.clone()), program.clone(), Shared::clone(&module_env)),
                     );
                 }
                 ast::Expr::Let(pattern, rhs) => {
@@ -973,13 +973,13 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Expr::CallDynamic(callable, args) => self.eval_call_dynamic(runtime_value, callable, args, env),
             ast::Expr::If(condition) => self.eval_if(runtime_value, condition, env),
             ast::Expr::Def(ident, params, program) => {
-                let function = RuntimeValue::Function(params.clone(), program.clone(), Shared::clone(env));
+                let function = RuntimeValue::Function(Box::new(params.clone()), program.clone(), Shared::clone(env));
                 define(env, ident.name, function.clone());
                 Ok(function)
             }
             ast::Expr::Macro(_, _, _) => self.eval_macro(node),
             ast::Expr::Fn(params, program) => Ok(RuntimeValue::Function(
-                params.clone(),
+                Box::new(params.clone()),
                 program.clone(),
                 Shared::clone(env),
             )),

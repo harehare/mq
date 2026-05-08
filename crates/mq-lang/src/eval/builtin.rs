@@ -121,7 +121,7 @@ fn partial_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
                     remaining.push(param.clone());
                 }
             }
-            Ok(RuntimeValue::Function(remaining, program, partial_env))
+            Ok(RuntimeValue::Function(Box::new(remaining), program, partial_env))
         }
         other => Err(Error::InvalidTypes(ident.to_string(), vec![other])),
     }

@@ -92,7 +92,7 @@ pub enum RuntimeValue {
     /// A markdown node with an optional selector for indexing.
     Markdown(Node, Option<Selector>),
     /// A user-defined function with parameters, body (program), and captured environment.
-    Function(AstParams, Program, Shared<SharedCell<Env>>),
+    Function(Box<AstParams>, Program, Shared<SharedCell<Env>>),
     /// A built-in native function identified by name.
     NativeFunction(Ident),
     /// A dictionary mapping identifiers to runtime values.
@@ -752,7 +752,7 @@ mod tests {
         assert_eq!(RuntimeValue::None.name(), "None");
         assert_eq!(
             RuntimeValue::Function(
-                SmallVec::new(),
+                Box::new(SmallVec::new()),
                 Vec::new(),
                 Shared::new(SharedCell::new(Env::default()))
             )
@@ -812,7 +812,7 @@ mod tests {
         assert!(RuntimeValue::NativeFunction(Ident::new("name")).is_truthy());
         assert!(
             RuntimeValue::Function(
-                SmallVec::new(),
+                Box::new(SmallVec::new()),
                 Vec::new(),
                 Shared::new(SharedCell::new(Env::default()))
             )
@@ -844,11 +844,11 @@ mod tests {
         assert!(RuntimeValue::Boolean(false) < RuntimeValue::Boolean(true));
         assert!(
             RuntimeValue::Function(
-                SmallVec::new(),
+                Box::new(SmallVec::new()),
                 Vec::new(),
                 Shared::new(SharedCell::new(Env::default()))
             ) < RuntimeValue::Function(
-                smallvec![Param::new(IdentWithToken::new("test"))],
+                Box::new(smallvec![Param::new(IdentWithToken::new("test"))]),
                 Vec::new(),
                 Shared::new(SharedCell::new(Env::default()))
             )
@@ -904,7 +904,7 @@ mod tests {
         assert_eq!(format!("{:?}", markdown), "test markdown");
 
         let function = RuntimeValue::Function(
-            SmallVec::new(),
+            Box::new(SmallVec::new()),
             Vec::new(),
             Shared::new(SharedCell::new(Env::default())),
         );
