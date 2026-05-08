@@ -301,7 +301,7 @@ fn engine() -> DefaultEngine {
       Ok(vec![RuntimeValue::FALSE].into()))]
 #[case::test3("select(contains(\"hello\"))",
       vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None}))],
-      Ok(vec![RuntimeValue::Markdown(Box::new(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None})), None )].into()))]
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None}))].into()))]
 #[case::first("first(array(1, 2, 3))",
       vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])],
       Ok(vec![RuntimeValue::Number(1.into())].into()))]
