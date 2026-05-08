@@ -152,6 +152,32 @@ impl std::fmt::Display for Variable {
     }
 }
 
+macro_rules! borrow_env {
+    ($cell:expr) => {{
+        #[cfg(not(feature = "sync"))]
+        {
+            $cell.borrow()
+        }
+        #[cfg(feature = "sync")]
+        {
+            $cell.read().unwrap()
+        }
+    }};
+}
+
+macro_rules! borrow_env_mut {
+    ($cell:expr) => {{
+        #[cfg(not(feature = "sync"))]
+        {
+            $cell.borrow_mut()
+        }
+        #[cfg(feature = "sync")]
+        {
+            $cell.write().unwrap()
+        }
+    }};
+}
+
 impl Env {
     pub fn with_parent(parent: Weak<SharedCell<Env>>) -> Self {
         Self {
@@ -172,26 +198,25 @@ impl Env {
 
     #[inline(always)]
     pub fn resolve(&self, ident: Ident) -> Result<RuntimeValue, EnvError> {
-        match self.context.get(&ident) {
-            Some(o) => Ok(o.clone()),
-            None => match self.parent.as_ref().and_then(|parent| parent.upgrade()) {
-                Some(ref parent_env) => {
-                    #[cfg(not(feature = "sync"))]
-                    let env = parent_env.borrow();
-                    #[cfg(feature = "sync")]
-                    let env = parent_env.read().unwrap();
+        if let Some(o) = self.context.get(&ident) {
+            return Ok(o.clone());
+        }
 
-                    env.resolve(ident)
-                }
-                None => {
-                    // Use optimized string-based builtin lookup
-                    if ident.resolve_with(builtin::get_builtin_functions_by_str).is_some() {
-                        Ok(RuntimeValue::NativeFunction(ident))
-                    } else {
-                        Err(EnvError::InvalidDefinition(ident.to_string()))
-                    }
-                }
-            },
+        let mut current_parent = self.parent.as_ref().and_then(|p| p.upgrade());
+
+        while let Some(parent_cell) = current_parent {
+            let parent_env = borrow_env!(parent_cell);
+
+            if let Some(o) = parent_env.context.get(&ident) {
+                return Ok(o.clone());
+            }
+            current_parent = parent_env.parent.as_ref().and_then(|p| p.upgrade());
+        }
+
+        if ident.resolve_with(builtin::get_builtin_functions_by_str).is_some() {
+            Ok(RuntimeValue::NativeFunction(ident))
+        } else {
+            Err(EnvError::InvalidDefinition(ident.to_string()))
         }
     }
 
@@ -204,7 +229,6 @@ impl Env {
 
     /// Assigns a value to an existing mutable variable
     pub fn assign(&mut self, ident: Ident, runtime_value: RuntimeValue) -> Result<(), EnvError> {
-        // Check if variable exists in current scope
         if self.context.contains_key(&ident) {
             if self.mutable_vars.as_ref().is_some_and(|s| s.contains(&ident)) {
                 self.context.insert(ident, runtime_value);
@@ -214,38 +238,51 @@ impl Env {
             }
         }
 
-        // Try to assign in parent scope
-        match self.parent.as_ref().and_then(|parent| parent.upgrade()) {
-            Some(ref parent_env) => {
-                #[cfg(not(feature = "sync"))]
-                parent_env.borrow_mut().assign(ident, runtime_value)?;
-                #[cfg(feature = "sync")]
-                parent_env.write().unwrap().assign(ident, runtime_value)?;
-                Ok(())
+        let mut current_parent = self.parent.as_ref().and_then(|p| p.upgrade());
+
+        while let Some(parent_cell) = current_parent {
+            let has_key;
+            let is_mutable;
+            let next_parent;
+            {
+                let parent_env = borrow_env!(parent_cell);
+                has_key = parent_env.context.contains_key(&ident);
+                is_mutable = has_key && parent_env.mutable_vars.as_ref().is_some_and(|s| s.contains(&ident));
+                next_parent = parent_env.parent.as_ref().and_then(|p| p.upgrade());
             }
-            None => Err(EnvError::UndefinedVariable(ident.to_string())),
+
+            if has_key {
+                if is_mutable {
+                    borrow_env_mut!(parent_cell).context.insert(ident, runtime_value);
+                    return Ok(());
+                } else {
+                    return Err(EnvError::AssignToImmutable(ident.to_string()));
+                }
+            }
+            current_parent = next_parent;
         }
+
+        Err(EnvError::UndefinedVariable(ident.to_string()))
     }
 
     /// Checks if a variable is mutable
     pub fn is_mutable(&self, ident: Ident) -> bool {
-        // Check if variable exists in current scope
         if self.context.contains_key(&ident) {
             return self.mutable_vars.as_ref().is_some_and(|s| s.contains(&ident));
         }
 
-        // Check parent scope
-        self.parent
-            .as_ref()
-            .and_then(|parent| parent.upgrade())
-            .map(|parent_env| {
-                #[cfg(not(feature = "sync"))]
-                let result = parent_env.borrow().is_mutable(ident);
-                #[cfg(feature = "sync")]
-                let result = parent_env.read().unwrap().is_mutable(ident);
-                result
-            })
-            .unwrap_or(false)
+        let mut current_parent = self.parent.as_ref().and_then(|p| p.upgrade());
+
+        while let Some(parent_cell) = current_parent {
+            let parent_env = borrow_env!(parent_cell);
+
+            if parent_env.context.contains_key(&ident) {
+                return parent_env.mutable_vars.as_ref().is_some_and(|s| s.contains(&ident));
+            }
+            current_parent = parent_env.parent.as_ref().and_then(|p| p.upgrade());
+        }
+
+        false
     }
 
     #[cfg(feature = "debugger")]
@@ -278,11 +315,7 @@ impl Env {
                 .collect(),
             Some(parent_weak) => {
                 if let Some(parent_env) = parent_weak.upgrade() {
-                    #[cfg(not(feature = "sync"))]
-                    let parent_ref = parent_env.borrow();
-                    #[cfg(feature = "sync")]
-                    let parent_ref = parent_env.read().unwrap();
-
+                    let parent_ref = borrow_env!(parent_env);
                     parent_ref.get_global_variables()
                 } else {
                     // If parent is dropped, treat as root
