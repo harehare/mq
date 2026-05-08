@@ -778,7 +778,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
     }
 
-    fn eval_property_selector_expr(runtime_value: &RuntimeValue, property_name: &str) -> RuntimeValue {
+    fn eval_property_selector_expr(runtime_value: &RuntimeValue, property_name: &Ident) -> RuntimeValue {
         match runtime_value {
             RuntimeValue::Array(values) => {
                 let values = values
@@ -790,10 +790,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     .collect::<Vec<_>>();
                 RuntimeValue::Array(values)
             }
-            RuntimeValue::Dict(map) => map
-                .get(&Ident::new(property_name))
-                .cloned()
-                .unwrap_or(RuntimeValue::NONE),
+            RuntimeValue::Dict(map) => map.get(property_name).cloned().unwrap_or(RuntimeValue::NONE),
             _ => RuntimeValue::NONE,
         }
     }
