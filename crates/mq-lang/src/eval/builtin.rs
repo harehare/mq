@@ -2020,10 +2020,7 @@ fn set_ref_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
                 _ => {}
             }
 
-            Ok(RuntimeValue::Markdown(
-                Box::new(std::mem::take(node)),
-                std::mem::take(selector),
-            ))
+            Ok(RuntimeValue::Markdown(std::mem::take(node), std::mem::take(selector)))
         }
         [a, ..] => Ok(std::mem::take(a)),
         _ => Ok(RuntimeValue::NONE),

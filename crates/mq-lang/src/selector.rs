@@ -4,7 +4,7 @@ use std::fmt::{self, Display, Formatter};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{Token, TokenKind};
+use crate::{Ident, Token, TokenKind};
 
 /// Error type returned when an unknown selector is encountered during parsing.
 #[derive(Error, Clone, Debug, PartialOrd, Eq, Ord, PartialEq)]
@@ -169,7 +169,7 @@ pub enum Selector {
     /// Matches a specific attribute of a markdown node.
     Attr(AttrKind),
     /// Matches a specific property of a dict or array.
-    Property(String),
+    Property(Ident),
 }
 
 /// Represents an attribute that can be accessed from markdown nodes.
@@ -414,7 +414,7 @@ impl TryFrom<&Token> for Selector {
                     }
                     // Quoted property selector: ."key" is the only way to access dict keys
                     if let Some(quoted) = s.strip_prefix(".\"").and_then(|r| r.strip_suffix('"')) {
-                        return Ok(Selector::Property(unescape_property_key(quoted)));
+                        return Ok(Selector::Property(Ident::new(&unescape_property_key(quoted))));
                     }
                     Err(UnknownSelector(token.clone()))
                 }
@@ -476,7 +476,7 @@ impl Display for Selector {
             Selector::Todo => write!(f, ".todo"),
             Selector::Done => write!(f, ".done"),
             Selector::Attr(attr) => write!(f, "{}", attr),
-            Selector::Property(property) => write!(f, ".\"{}\"", escape_property_key(property)),
+            Selector::Property(property) => write!(f, ".\"{}\"", escape_property_key(&property.as_str())),
         }
     }
 }
@@ -622,12 +622,12 @@ mod tests {
     // Attribute selectors - MDX
     #[case::attr_name(".name", Selector::Attr(AttrKind::Name), ".name")]
     // Property selectors: quoted form (."key") – the only way to access dict keys
-    #[case::property_quoted_h1(".\"h1\"", Selector::Property("h1".to_string()), ".\"h1\"")]
-    #[case::property_quoted_url(".\"url\"", Selector::Property("url".to_string()), ".\"url\"")]
-    #[case::property_quoted_with_space(".\"my key\"", Selector::Property("my key".to_string()), ".\"my key\"")]
-    #[case::property_quoted_escaped_quote(".\"my\\\"key\"", Selector::Property("my\"key".to_string()), ".\"my\\\"key\"")]
-    #[case::property_quoted_escaped_backslash(".\"my\\\\key\"", Selector::Property("my\\key".to_string()), ".\"my\\\\key\"")]
-    #[case::property_quoted_empty(".\"\"", Selector::Property("".to_string()), ".\"\"")]
+    #[case::property_quoted_h1(".\"h1\"", Selector::Property("h1".into()), ".\"h1\"")]
+    #[case::property_quoted_url(".\"url\"", Selector::Property("url".into()), ".\"url\"")]
+    #[case::property_quoted_with_space(".\"my key\"", Selector::Property("my key".into()), ".\"my key\"")]
+    #[case::property_quoted_escaped_quote(".\"my\\\"key\"", Selector::Property("my\"key".into()), ".\"my\\\"key\"")]
+    #[case::property_quoted_escaped_backslash(".\"my\\\\key\"", Selector::Property("my\\key".into()), ".\"my\\\\key\"")]
+    #[case::property_quoted_empty(".\"\"", Selector::Property("".into()), ".\"\"")]
     fn test_selector_try_from_and_display(
         #[case] input: &str,
         #[case] expected_selector: Selector,
