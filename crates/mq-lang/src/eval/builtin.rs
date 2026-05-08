@@ -1592,7 +1592,7 @@ fn set_attr_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
             RuntimeValue::String(attr),
             value,
         ] => {
-            let mut new_node = std::mem::replace(node, Box::new(mq_markdown::Node::Empty));
+            let mut new_node = std::mem::take(node);
             let value = match value {
                 RuntimeValue::String(s) => mq_markdown::AttrValue::String(s.to_string()),
                 RuntimeValue::Number(n) => {
@@ -2135,7 +2135,7 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
                 idx as usize
             };
             Ok(RuntimeValue::Markdown(
-                std::mem::replace(node, Box::new(mq_markdown::Node::Empty)),
+                std::mem::take(node),
                 Some(runtime_value::Selector::Index(real_idx)),
             ))
         }
@@ -2817,10 +2817,7 @@ fn shift_left_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
                 heading.depth = heading.depth.saturating_sub(shift_amount).max(1);
                 Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
             } else {
-                Ok(RuntimeValue::Markdown(
-                    std::mem::replace(node, Box::new(mq_markdown::Node::Empty)),
-                    selector.take(),
-                ))
+                Ok(RuntimeValue::Markdown(std::mem::take(node), selector.take()))
             }
         }
         [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
@@ -2864,10 +2861,7 @@ fn shift_right_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
                 }
                 Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
             } else {
-                Ok(RuntimeValue::Markdown(
-                    std::mem::replace(node, Box::new(mq_markdown::Node::Empty)),
-                    selector.take(),
-                ))
+                Ok(RuntimeValue::Markdown(std::mem::take(node), selector.take()))
             }
         }
         [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
