@@ -704,7 +704,7 @@ pub struct HorizontalRule {
     pub position: Option<Position>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
@@ -743,6 +743,7 @@ pub enum Node {
     MdxJsEsm(MdxJsEsm),
     Text(Text),
     Fragment(Fragment),
+    #[default]
     Empty,
 }
 

@@ -2019,9 +2019,10 @@ fn set_ref_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
                 }
                 _ => {}
             }
+
             Ok(RuntimeValue::Markdown(
-                std::mem::replace(node, Box::new(mq_markdown::Node::Empty)),
-                selector.take(),
+                Box::new(std::mem::take(node)),
+                std::mem::take(selector),
             ))
         }
         [a, ..] => Ok(std::mem::take(a)),
