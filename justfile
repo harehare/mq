@@ -27,6 +27,7 @@ build:
     cargo build --release -p mq-run --bin mq-dbg --features="debugger"
     cargo build --release -p mq-lsp -p mq-crawler -p mq-test
     cargo build --release -p mq-check --features="cli"
+    cargo build --release -p mq-formatter
 
 # Build for a specific target architecture
 build-target target:
@@ -34,6 +35,7 @@ build-target target:
     cargo build --release --target {{target}} -p mq-run --bin mq-dbg --features="debugger"
     cargo build --release --target {{target}} -p mq-lsp -p mq-crawler -p mq-test
     cargo build --release --target {{target}} -p mq-check --features="cli"
+    cargo build --release --target {{target}} -p mq-formatter
 
 # Build benchmarks with codspeed
 [working-directory: 'crates/mq-lang']

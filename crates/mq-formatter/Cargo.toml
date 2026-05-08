@@ -12,12 +12,19 @@ repository = "https://github.com/harehare/mq"
 version = "0.5.28"
 
 [dependencies]
+clap = {workspace = true, features = ["derive"]}
+glob = "0.3.3"
+miette = {workspace = true, features = ["fancy"]}
 mq-lang = {workspace = true, features = ["cst"]}
 
 [dev-dependencies]
-rstest = {workspace = true}
 divan = {workspace = true}
+rstest = {workspace = true}
 
 [[bench]]
 harness = false
 name = "benchmark"
+
+[[bin]]
+name = "mq-fmt"
+path = "src/main.rs"
