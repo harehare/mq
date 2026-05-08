@@ -4522,6 +4522,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &["value", "shift_amount"],
         },
     );
+    map.insert(
+        SmolStr::new("partial"),
+        BuiltinFunctionDoc {
+            description: "Creates a new function by partially applying the given arguments to the specified function.",
+            params: &["function", "arg1", "arg2", "..."],
+        },
+    );
 
     map
 });
