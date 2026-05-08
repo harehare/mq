@@ -472,8 +472,7 @@ mod tests {
     #[test]
     fn test_format_runtime_value_none() {
         let v = mq_lang::RuntimeValue::None;
-        let s = format_runtime_value(&v).unwrap();
-        assert!(s.contains("None"));
+        assert!(format_runtime_value(&v).is_none());
     }
 
     #[test]
