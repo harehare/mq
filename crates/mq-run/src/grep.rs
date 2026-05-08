@@ -164,7 +164,7 @@ fn merge_ranges(ranges: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
 
 fn to_nodes(value: &mq_lang::RuntimeValue) -> Vec<mq_markdown::Node> {
     match value {
-        mq_lang::RuntimeValue::Markdown(node, _) => vec![node.clone()],
+        mq_lang::RuntimeValue::Markdown(node, _) => vec![(**node).clone()],
         mq_lang::RuntimeValue::Array(items) => items.iter().flat_map(to_nodes).collect(),
         _ => vec![value.to_string().into()],
     }

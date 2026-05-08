@@ -90,7 +90,7 @@ pub enum RuntimeValue {
     /// An array of runtime values.
     Array(Vec<RuntimeValue>),
     /// A markdown node with an optional selector for indexing.
-    Markdown(Node, Option<Selector>),
+    Markdown(Box<Node>, Option<Selector>),
     /// A user-defined function with parameters, body (program), and captured environment.
     Function(Box<AstParams>, Program, Shared<SharedCell<Env>>),
     /// A built-in native function identified by name.
@@ -129,7 +129,7 @@ impl PartialEq for RuntimeValue {
 
 impl From<Node> for RuntimeValue {
     fn from(node: Node) -> Self {
-        RuntimeValue::Markdown(node, None)
+        RuntimeValue::new_markdown(node)
     }
 }
 
@@ -342,6 +342,11 @@ impl RuntimeValue {
         RuntimeValue::Dict(BTreeMap::new())
     }
 
+    /// Creates a new markdown runtime value from the given node.
+    pub fn new_markdown(node: Node) -> RuntimeValue {
+        RuntimeValue::Markdown(Box::new(node), None)
+    }
+
     /// Returns the type name of this runtime value as a string.
     #[inline(always)]
     pub fn name(&self) -> &str {
@@ -462,7 +467,7 @@ impl RuntimeValue {
     pub fn markdown_node(&self) -> Option<Node> {
         match self {
             RuntimeValue::Markdown(n, Some(Selector::Index(i))) => n.find_at_index(*i),
-            RuntimeValue::Markdown(n, _) => Some(n.clone()),
+            RuntimeValue::Markdown(n, _) => Some((**n).clone()),
             _ => None,
         }
     }
@@ -474,9 +479,11 @@ impl RuntimeValue {
     pub fn update_markdown_value(&self, value: &str) -> RuntimeValue {
         match self {
             RuntimeValue::Markdown(n, Some(Selector::Index(i))) => {
-                RuntimeValue::Markdown(n.with_children_value(value, *i), Some(Selector::Index(*i)))
+                RuntimeValue::Markdown(Box::new(n.with_children_value(value, *i)), Some(Selector::Index(*i)))
             }
-            RuntimeValue::Markdown(n, selector) => RuntimeValue::Markdown(n.with_value(value), selector.clone()),
+            RuntimeValue::Markdown(n, selector) => {
+                RuntimeValue::Markdown(Box::new(n.with_value(value)), selector.clone())
+            }
             _ => RuntimeValue::NONE,
         }
     }
@@ -623,7 +630,7 @@ impl RuntimeValues {
                         RuntimeValue::Markdown(node, _) => {
                             if node.is_fragment() {
                                 if let RuntimeValue::Markdown(mut current_node, selector) = current_value {
-                                    current_node.apply_fragment(node.clone());
+                                    current_node.apply_fragment((**node).clone());
                                     RuntimeValue::Markdown(current_node, selector)
                                 } else {
                                     updated_value
@@ -632,14 +639,10 @@ impl RuntimeValues {
                                 updated_value
                             }
                         }
-                        RuntimeValue::String(s) => RuntimeValue::Markdown(node.clone().with_value(s), None),
-                        RuntimeValue::Symbol(i) => RuntimeValue::Markdown(node.clone().with_value(&i.as_str()), None),
-                        RuntimeValue::Boolean(b) => {
-                            RuntimeValue::Markdown(node.clone().with_value(b.to_string().as_str()), None)
-                        }
-                        RuntimeValue::Number(n) => {
-                            RuntimeValue::Markdown(node.clone().with_value(n.to_string().as_str()), None)
-                        }
+                        RuntimeValue::String(s) => RuntimeValue::new_markdown(node.with_value(s)),
+                        RuntimeValue::Symbol(i) => RuntimeValue::new_markdown(node.with_value(&i.as_str())),
+                        RuntimeValue::Boolean(b) => RuntimeValue::new_markdown(node.with_value(b.to_string().as_str())),
+                        RuntimeValue::Number(n) => RuntimeValue::new_markdown(node.with_value(n.to_string().as_str())),
                         RuntimeValue::Array(array) => RuntimeValue::Array(
                             array
                                 .iter()
@@ -648,7 +651,7 @@ impl RuntimeValues {
                                         None
                                     } else {
                                         Some(RuntimeValue::Markdown(
-                                            node.clone().with_value(o.to_string().as_str()),
+                                            Box::new(node.with_value(o.to_string().as_str())),
                                             None,
                                         ))
                                     }
@@ -661,7 +664,7 @@ impl RuntimeValues {
                                 if !v.is_none() && !v.is_empty() {
                                     new_dict.insert(
                                         *k,
-                                        RuntimeValue::Markdown(node.clone().with_value(v.to_string().as_str()), None),
+                                        RuntimeValue::new_markdown(node.with_value(v.to_string().as_str())),
                                     );
                                 }
                             }
@@ -765,10 +768,10 @@ mod tests {
         );
         assert_eq!(
             RuntimeValue::Markdown(
-                mq_markdown::Node::Text(mq_markdown::Text {
+                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "".to_string(),
                     position: None
-                }),
+                })),
                 None
             )
             .name(),
@@ -789,20 +792,20 @@ mod tests {
         assert!(!RuntimeValue::Array(Vec::new()).is_truthy());
         assert!(
             RuntimeValue::Markdown(
-                mq_markdown::Node::Text(mq_markdown::Text {
+                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "".to_string(),
                     position: None
-                }),
+                })),
                 None
             )
             .is_truthy()
         );
         assert!(
             !RuntimeValue::Markdown(
-                mq_markdown::Node::Text(mq_markdown::Text {
+                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "".to_string(),
                     position: None
-                }),
+                })),
                 Some(Selector::Index(1))
             )
             .is_truthy()
@@ -828,16 +831,16 @@ mod tests {
         assert!(RuntimeValue::Array(Vec::new()) < RuntimeValue::Array(vec!["a".to_string().into()]));
         assert!(
             RuntimeValue::Markdown(
-                mq_markdown::Node::Text(mq_markdown::Text {
+                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "test".to_string(),
                     position: None
-                }),
+                })),
                 None
             ) < RuntimeValue::Markdown(
-                mq_markdown::Node::Text(mq_markdown::Text {
+                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "test2".to_string(),
                     position: None
-                }),
+                })),
                 None
             )
         );
@@ -863,10 +866,10 @@ mod tests {
         assert_eq!(RuntimeValue::Array(vec![RuntimeValue::None]).len(), 1);
         assert_eq!(
             RuntimeValue::Markdown(
-                mq_markdown::Node::Text(mq_markdown::Text {
+                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "a".to_string(),
                     position: None
-                }),
+                })),
                 None
             )
             .len(),
@@ -900,7 +903,7 @@ mod tests {
             value: "test markdown".to_string(),
             position: None,
         });
-        let markdown = RuntimeValue::Markdown(node, None);
+        let markdown = RuntimeValue::new_markdown(node);
         assert_eq!(format!("{:?}", markdown), "test markdown");
 
         let function = RuntimeValue::Function(
@@ -921,7 +924,7 @@ mod tests {
 
     #[test]
     fn test_runtime_value_markdown() {
-        let markdown = RuntimeValue::Markdown("test markdown".to_string().into(), None);
+        let markdown = RuntimeValue::new_markdown("test markdown".to_string().into());
         assert_eq!(markdown.markdown_node().unwrap().value(), "test markdown");
 
         let updated = markdown.update_markdown_value("updated markdown");
@@ -950,7 +953,7 @@ mod tests {
             position: None,
         });
 
-        let markdown_with_selector = RuntimeValue::Markdown(parent.clone(), Some(Selector::Index(1)));
+        let markdown_with_selector = RuntimeValue::Markdown(Box::new(parent.clone()), Some(Selector::Index(1)));
 
         let selected = markdown_with_selector.markdown_node();
         assert!(selected.is_some());

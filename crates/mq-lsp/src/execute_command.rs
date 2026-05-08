@@ -95,7 +95,7 @@ fn execute(code: &str, input: &str, input_format: Option<&str>) -> jsonrpc::Resu
                 values
                     .into_iter()
                     .map(|value| match value {
-                        mq_lang::RuntimeValue::Markdown(node, _) => node.clone(),
+                        mq_lang::RuntimeValue::Markdown(node, _) => *node,
                         _ => value.to_string().into(),
                     })
                     .collect(),

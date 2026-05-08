@@ -254,7 +254,7 @@ fn execute_query(request: ApiRequest) -> miette::Result<QueryApiResponse> {
 
 fn collect_markdown_nodes(value: &mq_lang::RuntimeValue, nodes: &mut Vec<mq_markdown::Node>) {
     match value {
-        mq_lang::RuntimeValue::Markdown(node, _) => nodes.push(node.clone()),
+        mq_lang::RuntimeValue::Markdown(node, _) => nodes.push((**node).clone()),
         mq_lang::RuntimeValue::Array(items) => {
             for item in items {
                 collect_markdown_nodes(item, nodes);
@@ -309,7 +309,7 @@ fn expand_typed_dict(
 
 fn runtime_value_to_nodes(runtime_value: &mq_lang::RuntimeValue) -> Vec<mq_markdown::Node> {
     match runtime_value {
-        mq_lang::RuntimeValue::Markdown(node, _) => vec![node.clone()],
+        mq_lang::RuntimeValue::Markdown(node, _) => vec![(**node).clone()],
         mq_lang::RuntimeValue::Dict(map) => {
             expand_typed_dict(map).unwrap_or_else(|| vec![runtime_value.to_string().into()])
         }

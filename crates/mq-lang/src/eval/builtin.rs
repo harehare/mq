@@ -1592,7 +1592,7 @@ fn set_attr_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
             RuntimeValue::String(attr),
             value,
         ] => {
-            let mut new_node = std::mem::replace(node, mq_markdown::Node::Empty);
+            let mut new_node = std::mem::replace(node, Box::new(mq_markdown::Node::Empty));
             let value = match value {
                 RuntimeValue::String(s) => mq_markdown::AttrValue::String(s.to_string()),
                 RuntimeValue::Number(n) => {
@@ -1608,7 +1608,10 @@ fn set_attr_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
                     return Err(Error::InvalidTypes(
                         "set_attr".to_string(),
                         vec![
-                            RuntimeValue::Markdown(std::mem::replace(node, mq_markdown::Node::Empty), selector.take()),
+                            RuntimeValue::Markdown(
+                                std::mem::replace(node, Box::new(mq_markdown::Node::Empty)),
+                                selector.take(),
+                            ),
                             RuntimeValue::String(attr.clone()),
                             std::mem::take(value),
                         ],
@@ -1759,14 +1762,20 @@ fn to_md_name_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Re
 #[mq_macros::mq_fn(name = "set_list_ordered", params = Fixed(2))]
 fn set_list_ordered_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [
-            RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
-            RuntimeValue::Boolean(ordered),
-        ] => Ok(mq_markdown::Node::List(mq_markdown::List {
-            ordered: *ordered,
-            ..std::mem::take(list)
-        })
-        .into()),
+        [RuntimeValue::Markdown(node, _), RuntimeValue::Boolean(ordered)]
+            if matches!(**node, mq_markdown::Node::List(_)) =>
+        {
+            let ordered = *ordered;
+            if let mq_markdown::Node::List(list) = &mut **node {
+                Ok(mq_markdown::Node::List(mq_markdown::List {
+                    ordered,
+                    ..std::mem::take(list)
+                })
+                .into())
+            } else {
+                unreachable!()
+            }
+        }
         [a, ..] => Ok(std::mem::take(a)),
         _ => Ok(RuntimeValue::NONE),
     }
@@ -1876,7 +1885,10 @@ fn to_md_table_row_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) 
         .collect::<Vec<_>>();
 
     Ok(RuntimeValue::Markdown(
-        mq_markdown::Node::TableRow(mq_markdown::TableRow { values, position: None }),
+        Box::new(mq_markdown::Node::TableRow(mq_markdown::TableRow {
+            values,
+            position: None,
+        })),
         None,
     ))
 }
@@ -1885,12 +1897,12 @@ fn to_md_table_row_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) 
 fn to_md_table_cell_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [value, RuntimeValue::Number(row), RuntimeValue::Number(column)] => Ok(RuntimeValue::Markdown(
-            mq_markdown::Node::TableCell(mq_markdown::TableCell {
+            Box::new(mq_markdown::Node::TableCell(mq_markdown::TableCell {
                 row: row.value() as usize,
                 column: column.value() as usize,
                 values: vec![value.to_string().into()],
                 position: None,
-            }),
+            })),
             None,
         )),
         [a, b, c] => Err(Error::InvalidTypes(
@@ -1904,16 +1916,25 @@ fn to_md_table_cell_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &Shared
 #[mq_macros::mq_fn(name = "get_title", params = Fixed(1))]
 fn get_title_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [
-            RuntimeValue::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition { title, .. }), _)
-            | RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link { title, .. }), _),
-        ] => std::mem::take(title)
-            .map(|t| Ok(RuntimeValue::String(t.to_value())))
-            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-        [RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image { title, .. }), _)] => {
-            std::mem::take(title)
-                .map(|t| Ok(RuntimeValue::String(t)))
-                .unwrap_or_else(|| Ok(RuntimeValue::NONE))
+        [RuntimeValue::Markdown(node, _)]
+            if matches!(**node, mq_markdown::Node::Definition(_) | mq_markdown::Node::Link(_)) =>
+        {
+            match &mut **node {
+                mq_markdown::Node::Definition(mq_markdown::Definition { title, .. })
+                | mq_markdown::Node::Link(mq_markdown::Link { title, .. }) => std::mem::take(title)
+                    .map(|t| Ok(RuntimeValue::String(t.to_value())))
+                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                _ => unreachable!(),
+            }
+        }
+        [RuntimeValue::Markdown(node, _)] if matches!(**node, mq_markdown::Node::Image(_)) => {
+            if let mq_markdown::Node::Image(mq_markdown::Image { title, .. }) = &mut **node {
+                std::mem::take(title)
+                    .map(|t| Ok(RuntimeValue::String(t)))
+                    .unwrap_or_else(|| Ok(RuntimeValue::NONE))
+            } else {
+                unreachable!()
+            }
         }
         [_] => Ok(RuntimeValue::NONE),
         _ => unreachable!("get_title should always receive exactly one argument"),
@@ -1923,9 +1944,12 @@ fn get_title_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
 #[mq_macros::mq_fn(name = "get_url", params = Fixed(1))]
 fn get_url_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
-        [RuntimeValue::Markdown(mq_markdown::Node::Definition(def), _)] => Ok(def.url.as_str().into()),
-        [RuntimeValue::Markdown(mq_markdown::Node::Link(link), _)] => Ok(link.url.as_str().into()),
-        [RuntimeValue::Markdown(mq_markdown::Node::Image(image), _)] => Ok(image.url.to_owned().into()),
+        [RuntimeValue::Markdown(node, _)] => match &**node {
+            mq_markdown::Node::Definition(def) => Ok(def.url.as_str().into()),
+            mq_markdown::Node::Link(link) => Ok(link.url.as_str().into()),
+            mq_markdown::Node::Image(image) => Ok(image.url.to_owned().into()),
+            _ => Ok(RuntimeValue::NONE),
+        },
         _ => Ok(RuntimeValue::NONE),
     }
 }
@@ -1933,14 +1957,20 @@ fn get_url_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Resul
 #[mq_macros::mq_fn(name = "set_check", params = Fixed(2))]
 fn set_check_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [
-            RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
-            RuntimeValue::Boolean(checked),
-        ] => Ok(mq_markdown::Node::List(mq_markdown::List {
-            checked: Some(*checked),
-            ..std::mem::take(list)
-        })
-        .into()),
+        [RuntimeValue::Markdown(node, _), RuntimeValue::Boolean(checked)]
+            if matches!(**node, mq_markdown::Node::List(_)) =>
+        {
+            let checked = *checked;
+            if let mq_markdown::Node::List(list) = &mut **node {
+                Ok(mq_markdown::Node::List(mq_markdown::List {
+                    checked: Some(checked),
+                    ..std::mem::take(list)
+                })
+                .into())
+            } else {
+                unreachable!()
+            }
+        }
         [a, ..] => Ok(std::mem::take(a)),
         _ => Ok(RuntimeValue::NONE),
     }
@@ -1949,50 +1979,54 @@ fn set_check_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
 #[mq_macros::mq_fn(name = "set_ref", params = Fixed(2))]
 fn set_ref_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [
-            RuntimeValue::Markdown(mq_markdown::Node::Definition(def), _),
-            RuntimeValue::String(s),
-        ] => Ok(mq_markdown::Node::Definition(mq_markdown::Definition {
-            label: Some(s.to_owned()),
-            ..std::mem::take(def)
-        })
-        .into()),
-        [
-            RuntimeValue::Markdown(mq_markdown::Node::ImageRef(image_ref), _),
-            RuntimeValue::String(s),
-        ] => Ok(mq_markdown::Node::ImageRef(mq_markdown::ImageRef {
-            label: if s == &image_ref.ident {
-                None
-            } else {
-                Some(s.to_owned())
-            },
-            ..std::mem::take(image_ref)
-        })
-        .into()),
-        [
-            RuntimeValue::Markdown(mq_markdown::Node::LinkRef(link_ref), _),
-            RuntimeValue::String(s),
-        ] => Ok(mq_markdown::Node::LinkRef(mq_markdown::LinkRef {
-            label: if s == &link_ref.ident { None } else { Some(s.to_owned()) },
-            ..std::mem::take(link_ref)
-        })
-        .into()),
-        [
-            RuntimeValue::Markdown(mq_markdown::Node::Footnote(footnote), _),
-            RuntimeValue::String(s),
-        ] => Ok(mq_markdown::Node::Footnote(mq_markdown::Footnote {
-            ident: s.to_owned(),
-            ..std::mem::take(footnote)
-        })
-        .into()),
-        [
-            RuntimeValue::Markdown(mq_markdown::Node::FootnoteRef(footnote_ref), _),
-            RuntimeValue::String(s),
-        ] => Ok(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef {
-            label: Some(s.to_owned()),
-            ..std::mem::take(footnote_ref)
-        })
-        .into()),
+        [RuntimeValue::Markdown(node, selector), RuntimeValue::String(s)] => {
+            match &mut **node {
+                mq_markdown::Node::Definition(def) => {
+                    return Ok(mq_markdown::Node::Definition(mq_markdown::Definition {
+                        label: Some(s.to_owned()),
+                        ..std::mem::take(def)
+                    })
+                    .into());
+                }
+                mq_markdown::Node::ImageRef(image_ref) => {
+                    return Ok(mq_markdown::Node::ImageRef(mq_markdown::ImageRef {
+                        label: if s == &image_ref.ident {
+                            None
+                        } else {
+                            Some(s.to_owned())
+                        },
+                        ..std::mem::take(image_ref)
+                    })
+                    .into());
+                }
+                mq_markdown::Node::LinkRef(link_ref) => {
+                    return Ok(mq_markdown::Node::LinkRef(mq_markdown::LinkRef {
+                        label: if s == &link_ref.ident { None } else { Some(s.to_owned()) },
+                        ..std::mem::take(link_ref)
+                    })
+                    .into());
+                }
+                mq_markdown::Node::Footnote(footnote) => {
+                    return Ok(mq_markdown::Node::Footnote(mq_markdown::Footnote {
+                        ident: s.to_owned(),
+                        ..std::mem::take(footnote)
+                    })
+                    .into());
+                }
+                mq_markdown::Node::FootnoteRef(footnote_ref) => {
+                    return Ok(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef {
+                        label: Some(s.to_owned()),
+                        ..std::mem::take(footnote_ref)
+                    })
+                    .into());
+                }
+                _ => {}
+            }
+            Ok(RuntimeValue::Markdown(
+                std::mem::replace(node, Box::new(mq_markdown::Node::Empty)),
+                selector.take(),
+            ))
+        }
         [a, ..] => Ok(std::mem::take(a)),
         _ => Ok(RuntimeValue::NONE),
     }
@@ -2001,17 +2035,17 @@ fn set_ref_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 #[mq_macros::mq_fn(name = "set_code_block_lang", params = Fixed(2))]
 fn set_code_block_lang_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [
-            RuntimeValue::Markdown(mq_markdown::Node::Code(code), _),
-            RuntimeValue::String(lang),
-        ] => {
-            let mut new_code = std::mem::take(code);
-            new_code.lang = if lang.is_empty() {
-                None
+        [RuntimeValue::Markdown(node, _), RuntimeValue::String(lang)]
+            if matches!(**node, mq_markdown::Node::Code(_)) =>
+        {
+            if let mq_markdown::Node::Code(code) = &mut **node {
+                let lang = std::mem::take(lang);
+                let mut new_code = std::mem::take(code);
+                new_code.lang = if lang.is_empty() { None } else { Some(lang) };
+                Ok(mq_markdown::Node::Code(new_code).into())
             } else {
-                Some(std::mem::take(lang))
-            };
-            Ok(mq_markdown::Node::Code(new_code).into())
+                unreachable!()
+            }
         }
         [a, ..] => Ok(std::mem::take(a)),
         _ => Ok(RuntimeValue::NONE),
@@ -2103,7 +2137,7 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
                 idx as usize
             };
             Ok(RuntimeValue::Markdown(
-                std::mem::replace(node, mq_markdown::Node::Empty),
+                std::mem::replace(node, Box::new(mq_markdown::Node::Empty)),
                 Some(runtime_value::Selector::Index(real_idx)),
             ))
         }
@@ -2779,14 +2813,14 @@ fn shift_left_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
             Ok(RuntimeValue::Array(std::mem::take(arr)))
         }
         [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
-            if let mq_markdown::Node::Heading(heading) = node {
+            if let mq_markdown::Node::Heading(heading) = &mut **node {
                 let shift_amount = n.to_int().max(0).min(u8::MAX as i64) as u8;
 
                 heading.depth = heading.depth.saturating_sub(shift_amount).max(1);
                 Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
             } else {
                 Ok(RuntimeValue::Markdown(
-                    std::mem::replace(node, mq_markdown::Node::Empty),
+                    std::mem::replace(node, Box::new(mq_markdown::Node::Empty)),
                     selector.take(),
                 ))
             }
@@ -2824,7 +2858,7 @@ fn shift_right_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             Ok(RuntimeValue::Array(std::mem::take(arr)))
         }
         [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
-            if let mq_markdown::Node::Heading(heading) = node {
+            if let mq_markdown::Node::Heading(heading) = &mut **node {
                 let shift_amount = n.to_int().max(0).min(u8::MAX as i64) as u8;
 
                 if heading.depth + shift_amount <= 6 {
@@ -2833,7 +2867,7 @@ fn shift_right_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
                 Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
             } else {
                 Ok(RuntimeValue::Markdown(
-                    std::mem::replace(node, mq_markdown::Node::Empty),
+                    std::mem::replace(node, Box::new(mq_markdown::Node::Empty)),
                     selector.take(),
                 ))
             }
@@ -4764,7 +4798,7 @@ pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, ar
     };
 
     if is_match {
-        RuntimeValue::Markdown(node.clone(), None)
+        RuntimeValue::new_markdown(node.clone())
     } else {
         RuntimeValue::NONE
     }
@@ -4849,7 +4883,7 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> RuntimeVa
     };
 
     if is_match {
-        RuntimeValue::Markdown(node.clone(), None)
+        RuntimeValue::new_markdown(node.clone())
     } else {
         RuntimeValue::NONE
     }
@@ -4871,7 +4905,7 @@ fn eval_recursive_selector(node: &mq_markdown::Node) -> RuntimeValue {
     RuntimeValue::Array(
         extract_recursive_node(node)
             .into_iter()
-            .map(|n| RuntimeValue::Markdown(n, None))
+            .map(RuntimeValue::new_markdown)
             .collect(),
     )
 }
@@ -5245,19 +5279,19 @@ mod tests {
             result,
             RuntimeValue::Array(vec![
                 RuntimeValue::Markdown(
-                    Node::Text(mq_markdown::Text {
+                    Box::new(Node::Text(mq_markdown::Text {
                         value: "hello".into(),
                         position: None,
-                    }),
+                    })),
                     None
                 ),
                 RuntimeValue::Markdown(
-                    Node::Link(mq_markdown::Link {
+                    Box::new(Node::Link(mq_markdown::Link {
                         url: mq_markdown::Url::new("url".into()),
                         title: None,
                         values: Vec::new(),
                         position: None,
-                    }),
+                    })),
                     None
                 ),
             ])
@@ -5293,8 +5327,8 @@ mod tests {
         assert_eq!(
             result,
             RuntimeValue::Array(vec![
-                RuntimeValue::Markdown(inner_text, None),
-                RuntimeValue::Markdown(heading, None),
+                RuntimeValue::new_markdown(inner_text),
+                RuntimeValue::new_markdown(heading),
             ])
         );
     }

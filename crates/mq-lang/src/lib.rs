@@ -262,10 +262,10 @@ mod tests {
                 )
                 .unwrap(),
             vec![RuntimeValue::Markdown(
-                mq_markdown::Node::Text(mq_markdown::Text {
+                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "Hello,world!".to_string(),
                     position: None
-                },),
+                },)),
                 None
             )]
             .into()
@@ -383,7 +383,7 @@ mod tests {
                     .unwrap()
                     .iter()
                     .map(|value| match value {
-                        RuntimeValue::Markdown(node, _) => node.clone(),
+                        RuntimeValue::Markdown(node, _) => (**node).clone(),
                         _ => value.to_string().into(),
                     })
                     .collect()

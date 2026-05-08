@@ -404,7 +404,7 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
                 values
                     .into_iter()
                     .map(|runtime_value| match runtime_value {
-                        mq_lang::RuntimeValue::Markdown(node, _) => node.clone(),
+                        mq_lang::RuntimeValue::Markdown(node, _) => *node,
                         _ => runtime_value.to_string().into(),
                     })
                     .collect(),
