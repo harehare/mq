@@ -1608,10 +1608,7 @@ fn set_attr_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
                     return Err(Error::InvalidTypes(
                         "set_attr".to_string(),
                         vec![
-                            RuntimeValue::Markdown(
-                                std::mem::replace(node, Box::new(mq_markdown::Node::Empty)),
-                                selector.take(),
-                            ),
+                            RuntimeValue::Markdown(new_node, selector.take()),
                             RuntimeValue::String(attr.clone()),
                             std::mem::take(value),
                         ],
