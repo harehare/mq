@@ -721,7 +721,7 @@ impl Cli {
     /// within are returned as a flat list.
     fn collect_markdown_nodes(value: &mq_lang::RuntimeValue, nodes: &mut Vec<mq_markdown::Node>) {
         match value {
-            mq_lang::RuntimeValue::Markdown(node, _) => nodes.push(node.clone()),
+            mq_lang::RuntimeValue::Markdown(node, _) => nodes.push((**node).clone()),
             mq_lang::RuntimeValue::Array(items) => {
                 for item in items {
                     Self::collect_markdown_nodes(item, nodes);
@@ -790,7 +790,7 @@ impl Cli {
     /// dicts are also expanded and flattened.
     fn runtime_value_to_nodes(runtime_value: &mq_lang::RuntimeValue) -> Vec<mq_markdown::Node> {
         match runtime_value {
-            mq_lang::RuntimeValue::Markdown(node, _) => vec![node.clone()],
+            mq_lang::RuntimeValue::Markdown(node, _) => vec![(**node).clone()],
             mq_lang::RuntimeValue::Dict(map) => {
                 Self::expand_typed_dict(map).unwrap_or_else(|| vec![runtime_value.to_string().into()])
             }

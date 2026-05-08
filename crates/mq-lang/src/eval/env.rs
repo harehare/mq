@@ -453,7 +453,11 @@ mod tests {
         env.define(Ident::new("bar"), RuntimeValue::Boolean(true));
         env.define(
             Ident::new("func"),
-            RuntimeValue::Function(smallvec![], vec![], Shared::new(SharedCell::new(Env::default()))),
+            RuntimeValue::Function(
+                Box::new(smallvec![]),
+                vec![],
+                Shared::new(SharedCell::new(Env::default())),
+            ),
         );
         env.define(Ident::new("native"), RuntimeValue::NativeFunction(Ident::new("native")));
         // Only non-function, non-native should be returned

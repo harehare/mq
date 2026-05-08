@@ -300,8 +300,8 @@ fn engine() -> DefaultEngine {
       vec![RuntimeValue::String("helloWorld".to_string())],
       Ok(vec![RuntimeValue::FALSE].into()))]
 #[case::test3("select(contains(\"hello\"))",
-      vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None}), None)],
-      Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None}), None )].into()))]
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None}))],
+      Ok(vec![RuntimeValue::Markdown(Box::new(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None})), None )].into()))]
 #[case::first("first(array(1, 2, 3))",
       vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])],
       Ok(vec![RuntimeValue::Number(1.into())].into()))]
@@ -365,71 +365,71 @@ fn engine() -> DefaultEngine {
         vec![RuntimeValue::String("Hello".into())],
              Ok(vec!["Hello World!".to_string().into()].into()))]
 #[case::matches_url("matches_url(\"https://github.com\")",
-      vec![RuntimeValue::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition { position: None, url: mq_markdown::Url::new("https://github.com".to_string()), title: None, ident: "ident".to_string(), label: None }), None)],
-      Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }), None)].into()))]
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::Definition(mq_markdown::Definition { position: None, url: mq_markdown::Url::new("https://github.com".to_string()), title: None, ident: "ident".to_string(), label: None }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
 #[case::matches_url("matches_url(\"https://github.com\")",
-      vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ position: None, url: mq_markdown::Url::new("https://github.com".to_string()), title: None, values: Vec::new()}), None)],
-      Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }), None)].into()))]
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{ position: None, url: mq_markdown::Url::new("https://github.com".to_string()), title: None, values: Vec::new()}))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
 #[case::matches_url("matches_url(\"https://github.com\")",
-      vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), position: None, url: "https://github.com".to_string(), title: None }), None)],
-      Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }), None)].into()))]
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), position: None, url: "https://github.com".to_string(), title: None }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
 #[case::matches_url("matches_url(\"https://gitlab.com\")",
       vec![RuntimeValue::String("https://gitlab.com".to_string())],
       Ok(vec![RuntimeValue::FALSE].into()))]
 #[case::nest(".link | update(\"test\")",
-      vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![
            mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("url".to_string()), title: None, values: Vec::new(), position: None }),
            mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), url: "url".to_string(), title: None, position: None })
-      ], position: None, depth: 1 }), None)],
-      Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("test".to_string()), title: None, values: Vec::new(), position: None }), None)].into()))]
+      ], position: None, depth: 1 }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("test".to_string()), title: None, values: Vec::new(), position: None }))].into()))]
 #[case::selector("nodes | .h",
       vec![
-        RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: 1 }), None),
+        RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: 1 })),
         RuntimeValue::String("test".to_string()),
       ],
       Ok(vec![
-        RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: 1 }), None),
+        RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: 1 })),
         RuntimeValue::NONE
       ].into()))]
 #[case::selector("nodes | .h",
       vec![
-        RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }), None),
+        RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })),
         RuntimeValue::String("test".to_string()),
       ],
       Ok(vec![RuntimeValue::NONE, RuntimeValue::NONE].into()))]
 #[case::sort_by("sort_by(get_title)",
       vec![RuntimeValue::Array(vec![
-          RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang1".to_string()), title: Some(mq_markdown::Title::new("2".to_string())), values: vec![
+          RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang1".to_string()), title: Some(mq_markdown::Title::new("2".to_string())), values: vec![
             mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
-          ], position: None }), None),
-          RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang2".to_string()), title: Some(mq_markdown::Title::new("1".to_string())), values: vec![
+          ], position: None })),
+          RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang2".to_string()), title: Some(mq_markdown::Title::new("1".to_string())), values: vec![
             mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
-          ], position: None }), None),
+          ], position: None })),
       ])],
       Ok(vec![RuntimeValue::Array(vec![
-          RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang2".to_string()), title: Some(mq_markdown::Title::new("1".to_string())), values: vec![
+          RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang2".to_string()), title: Some(mq_markdown::Title::new("1".to_string())), values: vec![
             mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
-          ], position: None }), None),
-          RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang1".to_string()), title: Some(mq_markdown::Title::new("2".to_string())), values: vec![
+          ], position: None })),
+          RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang1".to_string()), title: Some(mq_markdown::Title::new("2".to_string())), values: vec![
             mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
-          ], position: None }), None),
+          ], position: None })),
       ])].into()))]
 #[case::sort_by("sort_by(get_url)",
       vec![RuntimeValue::Array(vec![
-          RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang2".to_string()), title: Some(mq_markdown::Title::new("1".to_string())), values: vec![
+          RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang2".to_string()), title: Some(mq_markdown::Title::new("1".to_string())), values: vec![
             mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
-          ], position: None }), None),
-          RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang1".to_string()), title: Some(mq_markdown::Title::new("2".to_string())), values: vec![
+          ], position: None })),
+          RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang1".to_string()), title: Some(mq_markdown::Title::new("2".to_string())), values: vec![
             mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
-          ], position: None }), None),
+          ], position: None })),
       ])],
       Ok(vec![RuntimeValue::Array(vec![
-          RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang1".to_string()), title: Some(mq_markdown::Title::new("2".to_string())), values: vec![
+          RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang1".to_string()), title: Some(mq_markdown::Title::new("2".to_string())), values: vec![
             mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
-          ], position: None }), None),
-          RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang2".to_string()), title: Some(mq_markdown::Title::new("1".to_string())), values: vec![
+          ], position: None })),
+          RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang2".to_string()), title: Some(mq_markdown::Title::new("1".to_string())), values: vec![
             mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
-          ], position: None }), None),
+          ], position: None })),
       ])].into()))]
 #[case::sort_by(r#"def sort_test(v): if (eq(v, "3")): "1" elif (eq(v, "1")): "3" else: v; sort_by(sort_test)"#,
       vec![RuntimeValue::Array(vec![
@@ -867,444 +867,444 @@ fn engine() -> DefaultEngine {
                 dict.into()
               }].into()))]
 #[case::is_h_true("is_h()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
             depth: 1,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
             position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h_false("is_h()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h1_true("is_h1()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
             depth: 1,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
             position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h1_false("is_h1()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
           depth: 2,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h1_false("is_h1()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h2_true("is_h2()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
             depth: 2,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
             position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h2_false("is_h2()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
           depth: 3,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h2_false("is_h2()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h3_true("is_h3()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
             depth: 3,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
             position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h3_false("is_h3()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
           depth: 4,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h3_false("is_h3()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h4_true("is_h4()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
             depth: 4,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
             position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h4_false("is_h4()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
           depth: 5,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h4_false("is_h4()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h5_true("is_h5()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
             depth: 5,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
             position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h5_false("is_h5()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
           depth: 4,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h5_false("is_h5()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h6_true("is_h6()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
             depth: 6,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
             position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h6_false("is_h6()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
           depth: 5,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_h6_false("is_h6()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_em_true("is_em()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Emphasis {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Emphasis(mq_markdown::Emphasis {
           values: vec![],
           position: None,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "true".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_em_false("is_em()",
-        vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+        }))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
           position: None,
-        }), None)].into()))]
+        }))].into()))]
 #[case::is_html_true("is_html()",
-          vec![RuntimeValue::Markdown(mq_markdown::Node::Html(mq_markdown::Html {
+          vec![RuntimeValue::new_markdown(mq_markdown::Node::Html(mq_markdown::Html {
               value: "<b>bold</b>".to_string(),
               position: None,
-          }), None)],
-          Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          }))],
+          Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "true".to_string(),
               position: None,
-          }), None)].into()))]
+          }))].into()))]
 #[case::is_html_false("is_html()",
-          vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "not html".to_string(),
               position: None,
-          }), None)],
-          Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          }))],
+          Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "false".to_string(),
               position: None,
-          }), None)].into()))]
+          }))].into()))]
 #[case::is_yaml_true("is_yaml()",
-          vec![RuntimeValue::Markdown(mq_markdown::Node::Yaml(mq_markdown::Yaml {
+          vec![RuntimeValue::new_markdown(mq_markdown::Node::Yaml(mq_markdown::Yaml {
             value: "---\nkey: value\n".to_string(),
             position: None,
-          }), None)],
-          Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          }))],
+          Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
             position: None,
-          }), None)].into()))]
+          }))].into()))]
 #[case::is_yaml_false("is_yaml()",
-          vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "not yaml".to_string(),
             position: None,
-          }), None)],
-          Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          }))],
+          Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "false".to_string(),
             position: None,
-          }), None)].into()))]
+          }))].into()))]
 #[case::is_toml_true("is_toml()",
-          vec![RuntimeValue::Markdown(mq_markdown::Node::Toml(mq_markdown::Toml {
+          vec![RuntimeValue::new_markdown(mq_markdown::Node::Toml(mq_markdown::Toml {
             value: "[section]\nkey = \"value\"\n".to_string(),
             position: None,
-          }), None)],
-          Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          }))],
+          Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
             position: None,
-          }), None)].into()))]
+          }))].into()))]
 #[case::is_toml_false("is_toml()",
-          vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "not toml".to_string(),
             position: None,
-          }), None)],
-          Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          }))],
+          Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "false".to_string(),
             position: None,
-          }), None)].into()))]
+          }))].into()))]
 #[case::is_code_true("is_code()",
-          vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code {
+          vec![RuntimeValue::new_markdown(mq_markdown::Node::Code(mq_markdown::Code {
             value: "let x = 1;".to_string(),
             position: None,
             fence: true,
             meta: None,
             lang: Some("rust".to_string()),
-          }), None)],
-          Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          }))],
+          Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
             position: None,
-          }), None)].into()))]
+          }))].into()))]
 #[case::is_code_false("is_code()",
-          vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "not code".to_string(),
             position: None,
-          }), None)],
-          Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          }))],
+          Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "false".to_string(),
             position: None,
-          }), None)].into()))]
+          }))].into()))]
 #[case::is_text_true("is_text()",
-          vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "sample".to_string(),
             position: None,
-          }), None)],
-          Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          }))],
+          Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
             position: None,
-          }), None)].into()))]
+          }))].into()))]
 #[case::is_text_false("is_text()",
-          vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+          vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
             depth: 1,
-          }), None)],
-          Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          }))],
+          Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "false".to_string(),
             position: None,
-          }), None)].into()))]
+          }))].into()))]
 #[case::is_list_true("is_list()",
-            vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List {
               values: vec![],
               position: None,
               ordered: false,
               level: 1,
               index: 1,
               checked: Some(false),
-            }), None)],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            }))],
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "true".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::is_list_false("is_list()",
-            vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "not a list".to_string(),
               position: None,
-            }), None)],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            }))],
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "false".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::is_mdx_flow_expression_true("is_mdx_flow_expression()",
-            vec![RuntimeValue::Markdown(mq_markdown::Node::MdxFlowExpression(mq_markdown::MdxFlowExpression {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::MdxFlowExpression(mq_markdown::MdxFlowExpression {
               value: "1 + 2".into(),
               position: None,
-            }), None)],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            }))],
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "true".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::is_mdx_flow_expression_false("is_mdx_flow_expression()",
-            vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "not mdx".to_string(),
               position: None,
-            }), None)],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            }))],
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "false".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::is_mdx_jsx_flow_element_true("is_mdx_jsx_flow_element()",
-            vec![RuntimeValue::Markdown(mq_markdown::Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement {
               name: Some("Component".to_string()),
               attributes: vec![],
               children: vec![],
               position: None,
-            }), None)],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            }))],
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "true".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::is_mdx_jsx_flow_element_false("is_mdx_jsx_flow_element()",
-            vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "not jsx".to_string(),
               position: None,
-            }), None)],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            }))],
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "false".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::is_mdx_jsx_text_element_true("is_mdx_jsx_text_element()",
-            vec![RuntimeValue::Markdown(mq_markdown::Node::MdxJsxTextElement(mq_markdown::MdxJsxTextElement {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::MdxJsxTextElement(mq_markdown::MdxJsxTextElement {
               name: Some("InlineComponent".into()),
               attributes: vec![],
               children: vec![],
               position: None,
-            }), None)],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            }))],
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "true".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::is_mdx_jsx_text_element_false("is_mdx_jsx_text_element()",
-            vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "not jsx text".to_string(),
               position: None,
-            }), None)],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            }))],
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "false".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::is_mdx_text_expression_true("is_mdx_text_expression()",
-            vec![RuntimeValue::Markdown(mq_markdown::Node::MdxTextExpression(mq_markdown::MdxTextExpression {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::MdxTextExpression(mq_markdown::MdxTextExpression {
               value: "foo + bar".into(),
               position: None,
-            }), None)],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            }))],
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "true".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::is_mdx_text_expression_false("is_mdx_text_expression()",
-            vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "not mdx text expr".to_string(),
               position: None,
-            }), None)],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            }))],
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "false".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::is_mdx_js_esm_true("is_mdx_js_esm()",
-            vec![RuntimeValue::Markdown(mq_markdown::Node::MdxJsEsm(mq_markdown::MdxJsEsm {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::MdxJsEsm(mq_markdown::MdxJsEsm {
               value: "export const foo = 1;".into(),
               position: None,
-            }), None)],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            }))],
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "true".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::is_mdx_js_esm_false("is_mdx_js_esm()",
-            vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "not esm".to_string(),
               position: None,
-            }), None)],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            }))],
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "false".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::is_mdx_true("is_mdx()",
-            vec![RuntimeValue::Markdown(mq_markdown::Node::MdxFlowExpression(mq_markdown::MdxFlowExpression {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::MdxFlowExpression(mq_markdown::MdxFlowExpression {
               value: "1 + 2".into(),
               position: None,
-            }), None)],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            }))],
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "true".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::is_mdx_false("is_mdx()",
-            vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "not mdx".to_string(),
               position: None,
-            }), None)],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            }))],
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "false".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::any_true("
               any([1, 2, 3], fn(x): x == 2;)",
               vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])],
@@ -1455,51 +1455,51 @@ fn engine() -> DefaultEngine {
             Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::selector_attr(".code.lang",
             vec![
-              RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{ lang: Some("rust".to_string()), meta: None, fence: true, value: "value".to_string(),  position: None }), None),
+              RuntimeValue::new_markdown(mq_markdown::Node::Code(mq_markdown::Code{ lang: Some("rust".to_string()), meta: None, fence: true, value: "value".to_string(),  position: None })),
             ],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "rust".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::standalone_attr_selector_lang(".lang",
             vec![
-              RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{ lang: Some("rust".to_string()), meta: None, fence: true, value: "value".to_string(),  position: None }), None),
+              RuntimeValue::new_markdown(mq_markdown::Node::Code(mq_markdown::Code{ lang: Some("rust".to_string()), meta: None, fence: true, value: "value".to_string(),  position: None })),
             ],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "rust".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::standalone_attr_selector_set(".lang |= \"python\" | .lang",
             vec![
-              RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{ lang: Some("rust".to_string()), meta: None, fence: true, value: "".to_string(),  position: None }), None),
+              RuntimeValue::new_markdown(mq_markdown::Node::Code(mq_markdown::Code{ lang: Some("rust".to_string()), meta: None, fence: true, value: "".to_string(),  position: None })),
             ],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
               value: "python".to_string(),
               position: None,
-            }), None)].into()))]
+            }))].into()))]
 #[case::recursive_selector_with_children("nodes | ..",
             vec![
-              RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{
+              RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{
                   values: vec![
                       mq_markdown::Node::Text(mq_markdown::Text { value: "hello".to_string(), position: None }),
                       mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("url".to_string()), title: None, values: Vec::new(), position: None }),
                   ],
                   position: None,
                   depth: 1,
-              }), None),
+              })),
             ],
             Ok(vec![
-              RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello".to_string(), position: None }), None),
-              RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("url".to_string()), title: None, values: Vec::new(), position: None }), None),
+              RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello".to_string(), position: None })),
+              RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("url".to_string()), title: None, values: Vec::new(), position: None })),
             ].into()))]
 #[case::recursive_selector_leaf_node("nodes | ..",
             vec![
-              RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "leaf".to_string(), position: None }), None),
+              RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "leaf".to_string(), position: None })),
             ],
             Ok(vec![].into()))]
 #[case::recursive_selector_nested("nodes | ..",
             vec![
-              RuntimeValue::Markdown(mq_markdown::Node::Blockquote(mq_markdown::Blockquote{
+              RuntimeValue::new_markdown(mq_markdown::Node::Blockquote(mq_markdown::Blockquote{
                   values: vec![
                       mq_markdown::Node::Heading(mq_markdown::Heading{
                           values: vec![
@@ -1510,31 +1510,31 @@ fn engine() -> DefaultEngine {
                       }),
                   ],
                   position: None,
-              }), None),
+              })),
             ],
             Ok(vec![
-              RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "nested".to_string(), position: None }), None),
-              RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{
+              RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "nested".to_string(), position: None })),
+              RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{
                   values: vec![
                       mq_markdown::Node::Text(mq_markdown::Text { value: "nested".to_string(), position: None }),
                   ],
                   position: None,
                   depth: 2,
-              }), None),
+              })),
             ].into()))]
 #[case::recursive_selector_pipe_filter("nodes | .. | filter(fn(x): select(x, .text);)",
             vec![
-              RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{
+              RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{
                   values: vec![
                       mq_markdown::Node::Text(mq_markdown::Text { value: "hello".to_string(), position: None }),
                       mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("url".to_string()), title: None, values: Vec::new(), position: None }),
                   ],
                   position: None,
                   depth: 1,
-              }), None),
+              })),
             ],
             Ok(vec![
-              RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello".to_string(), position: None }), None),
+              RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello".to_string(), position: None })),
             ].into()))]
 #[case::do_block_simple("
     do
@@ -2032,8 +2032,8 @@ fn engine() -> DefaultEngine {
     vec![RuntimeValue::None],
     Ok(vec![false.into()].into()))]
 #[case::is_regex_match_markdown(r#"is_regex_match(., "hello")"#,
-    vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello world".to_string(), position: None }), None)],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }), None)].into()))]
+    vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello world".to_string(), position: None }))],
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
 #[case::regex_op(r#""test1" =~ "[a-z0-9]+""#,
     vec![RuntimeValue::None],
     Ok(vec![true.into()].into()))]
@@ -2047,11 +2047,11 @@ fn engine() -> DefaultEngine {
     vec![RuntimeValue::None],
     Ok(vec![false.into()].into()))]
 #[case::regex_markdown_match(r#". =~ "hello""#,
-    vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello world".to_string(), position: None }), None)],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }), None)].into()))]
+    vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello world".to_string(), position: None }))],
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
 #[case::regex_markdown_non_match(r#". =~ "foo""#,
-    vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello world".to_string(), position: None }), None)],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "false".to_string() }), None)].into()))]
+    vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello world".to_string(), position: None }))],
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "false".to_string() }))].into()))]
 #[case::regex_in_if(r#""test" | if (. =~ "test"): true else: false"#,
     vec![RuntimeValue::None],
     Ok(vec![true.into()].into()))]
@@ -2063,46 +2063,46 @@ fn engine() -> DefaultEngine {
 #[case::shift_right_array_operator("2 >> [1]", vec![RuntimeValue::None], Ok(vec![vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(1.into())].into()].into()),)]
 #[case::shift_right_header_level_h1("to_markdown(\"# Heading 1\") | first() | shift_right(1)",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
         depth: 2,
         values: vec!["Heading 1".to_string().into()],
         position: None
-    }), None)].into()))]
+    }))].into()))]
 #[case::shift_right_header_level_h1_operator("let md = do to_markdown(\"# Heading 1\") | first(); | md >> 1",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
         depth: 2,
         values: vec!["Heading 1".to_string().into()],
         position: None
-    }), None)].into()))]
+    }))].into()))]
 #[case::shift_right_header_level_h6("to_markdown(\"###### Heading 6\") | first() | shift_right(1)",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
         depth: 6,
         values: vec!["Heading 6".to_string().into()],
         position: None
-    }), None)].into()))]
+    }))].into()))]
 #[case::shift_left_header_level_h2("to_markdown(\"## Heading 2\") | first() | shift_left(1)",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
         depth: 1,
         values: vec!["Heading 2".to_string().into()],
         position: None
-    }), None)].into()))]
+    }))].into()))]
 #[case::shift_left_header_level_h2_via_binding("let md = do to_markdown(\"## Heading 2\") | first(); | md << 1",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
         depth: 1,
         values: vec!["Heading 2".to_string().into()],
         position: None
-    }), None)].into()))]
+    }))].into()))]
 #[case::shift_left_header_level_h1("to_markdown(\"# Heading 1\") | first() | shift_left(1)",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
         depth: 1,
         values: vec!["Heading 1".to_string().into()],
         position: None
-    }), None)].into()))]
+    }))].into()))]
 #[case::shift_left_string_basic("\"abcdef\" | shift_left(2)",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::String("cdef".to_string())].into()))]
@@ -2117,39 +2117,39 @@ fn engine() -> DefaultEngine {
     Ok(vec![RuntimeValue::String("".to_string())].into()))]
 #[case::convert_string_to_h1_function("convert(\"Hello\", :h1)",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
         depth: 1,
         values: vec!["Hello".to_string().into()],
         position: None,
-    }), None)].into()))]
+    }))].into()))]
 #[case::convert_string_to_h1_operator("\"Hello\" @ :h1",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
         depth: 1,
         values: vec!["Hello".to_string().into()],
         position: None,
-    }), None)].into()))]
+    }))].into()))]
 #[case::convert_string_to_h2_operator("\"Hello\" @ :h2",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
         depth: 2,
         values: vec!["Hello".to_string().into()],
         position: None,
-    }), None)].into()))]
+    }))].into()))]
 #[case::convert_string_to_h1_via_string_operator("\"Hello\" @ \"#\"",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
         depth: 1,
         values: vec!["Hello".to_string().into()],
         position: None,
-    }), None)].into()))]
+    }))].into()))]
 #[case::convert_string_to_h2_via_string_operator("\"Hello\" @ \"##\"",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
         depth: 2,
         values: vec!["Hello".to_string().into()],
         position: None,
-    }), None)].into()))]
+    }))].into()))]
 #[case::convert_string_to_base64_operator("\"text\" @ :base64",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::String("dGV4dA==".to_string())].into()))]
@@ -2164,37 +2164,37 @@ fn engine() -> DefaultEngine {
     Ok(vec![RuntimeValue::String("'hello world'".to_string())].into()))]
 #[case::convert_string_to_blockquote_operator("\"Hello\" @ \">\"",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Blockquote(mq_markdown::Blockquote {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Blockquote(mq_markdown::Blockquote {
         values: vec!["Hello".to_string().into()],
         position: None,
-    }), None)].into()))]
+    }))].into()))]
 #[case::convert_string_to_list_item_operator("\"Hello\" @ \"-\"",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List {
         values: vec!["Hello".to_string().into()],
         index: 0,
         ordered: false,
         level: 1,
         checked: None,
         position: None,
-    }), None)].into()))]
+    }))].into()))]
 #[case::convert_string_to_strikethrough_operator("\"Hello\" @ \"~~\"",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Delete(mq_markdown::Delete {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Delete(mq_markdown::Delete {
         values: vec!["Hello".to_string().into()],
         position: None,
-    }), None)].into()))]
+    }))].into()))]
 #[case::convert_string_to_strong_operator("\"Hello\" @ \"**\"",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Strong {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Strong(mq_markdown::Strong {
         values: vec!["Hello".to_string().into()],
         position: None,
-    }), None)].into()))]
+    }))].into()))]
 #[case::convert_string_to_horizontal_rule_operator("\"Hello\" @ \"--\"",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
         position: None,
-    }), None)].into()))]
+    }))].into()))]
 #[case::skip_while_basic("skip_while([1,2,3,4,5], fn(x): x < 3;)",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::Array(vec![
@@ -2358,11 +2358,11 @@ fn engine() -> DefaultEngine {
 #[case::from_html_heading(
     r#""<h1>Hello</h1>" | from_html() | first()"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
         depth: 1,
         values: vec!["Hello".to_string().into()],
         position: None,
-    }), None)].into()))]
+    }))].into()))]
 #[case::from_html_paragraph(
     r#""<p>Hello world</p>" | from_html() | first() | to_text()"#,
     vec![RuntimeValue::None],
@@ -2422,12 +2422,12 @@ fn engine() -> DefaultEngine {
 #[case::intern_simple(r##"intern("foo")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("foo".to_string())].into()))]
 #[case::nan_builtin("nan() | is_nan()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::infinite_builtin("infinite() > 0", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
-#[case::to_md_text_simple(r##"to_md_text("hello")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello".to_string(), position: None}), None)].into()))]
-#[case::to_h_simple(r##"to_h("title", 1)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["title".to_string().into()], position: None}), None)].into()))]
-#[case::to_hr_simple("to_hr()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule{position: None}), None)].into()))]
-#[case::to_strong_simple(r##"to_strong("bold")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Strong{values: vec!["bold".to_string().into()], position: None}), None)].into()))]
-#[case::to_em_simple(r##"to_em("italic")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Emphasis{values: vec!["italic".to_string().into()], position: None}), None)].into()))]
-#[case::to_code_inline_simple(r##"to_code_inline("code")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::CodeInline(mq_markdown::CodeInline{value: "code".to_string().into(), position: None}), None)].into()))]
+#[case::to_md_text_simple(r##"to_md_text("hello")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello".to_string(), position: None}))].into()))]
+#[case::to_h_simple(r##"to_h("title", 1)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["title".to_string().into()], position: None}))].into()))]
+#[case::to_hr_simple("to_hr()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule{position: None}))].into()))]
+#[case::to_strong_simple(r##"to_strong("bold")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Strong(mq_markdown::Strong{values: vec!["bold".to_string().into()], position: None}))].into()))]
+#[case::to_em_simple(r##"to_em("italic")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Emphasis(mq_markdown::Emphasis{values: vec!["italic".to_string().into()], position: None}))].into()))]
+#[case::to_code_inline_simple(r##"to_code_inline("code")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::CodeInline(mq_markdown::CodeInline{value: "code".to_string().into(), position: None}))].into()))]
 #[case::get_title_simple(r##"to_markdown("[link](url 'title')") | first() | get_title()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("title".to_string())].into()))]
 #[case::get_url_simple(r##"to_markdown("[link](url)") | first() | get_url()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("url".to_string())].into()))]
 #[case::set_code_block_lang_simple(r##"to_markdown("```\ncode\n```") | first() | set_code_block_lang("rust") | .code.lang"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("rust".to_string())].into()))]
@@ -2443,16 +2443,16 @@ fn engine() -> DefaultEngine {
 #[case::is_debug_mode_simple("is_debug_mode()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(cfg!(feature = "debugger"))].into()))]
 #[case::set_check_simple(r##"to_markdown("- [ ] task") | first() | set_check(true) | .list.checked"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::stderr_simple(r##"stderr("test stderr")"##, vec![RuntimeValue::String("val".to_string())], Ok(vec![RuntimeValue::String("val".to_string())].into()))]
-#[case::to_image_simple(r##"to_image("url", "alt", "title")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "url".to_string(), alt: "alt".to_string(), title: Some("title".to_string()), position: None}), None)].into()))]
-#[case::to_link_simple(r##"to_link("url", "text", "title")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: mq_markdown::Url::new("url".to_string()), title: Some(mq_markdown::Title::new("title".to_string())), values: vec!["text".to_string().into()], position: None}), None)].into()))]
-#[case::to_math_simple(r##"to_math("E=mc^2")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Math(mq_markdown::Math{value: "E=mc^2".to_string(), position: None}), None)].into()))]
-#[case::to_math_inline_simple(r##"to_math_inline("E=mc^2")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::MathInline(mq_markdown::MathInline{value: "E=mc^2".to_string().into(), position: None}), None)].into()))]
-#[case::to_md_list_simple(r##"to_md_list("item", 1)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["item".to_string().into()], index: 0, ordered: false, level: 1, checked: None, position: None}), None)].into()))]
-#[case::to_md_table_row_simple(r##"to_md_table_row("a", "b")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{values: vec![
+#[case::to_image_simple(r##"to_image("url", "alt", "title")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "url".to_string(), alt: "alt".to_string(), title: Some("title".to_string()), position: None}))].into()))]
+#[case::to_link_simple(r##"to_link("url", "text", "title")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{url: mq_markdown::Url::new("url".to_string()), title: Some(mq_markdown::Title::new("title".to_string())), values: vec!["text".to_string().into()], position: None}))].into()))]
+#[case::to_math_simple(r##"to_math("E=mc^2")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Math(mq_markdown::Math{value: "E=mc^2".to_string(), position: None}))].into()))]
+#[case::to_math_inline_simple(r##"to_math_inline("E=mc^2")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::MathInline(mq_markdown::MathInline{value: "E=mc^2".to_string().into(), position: None}))].into()))]
+#[case::to_md_list_simple(r##"to_md_list("item", 1)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["item".to_string().into()], index: 0, ordered: false, level: 1, checked: None, position: None}))].into()))]
+#[case::to_md_table_row_simple(r##"to_md_table_row("a", "b")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{values: vec![
     mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 0, column: 0, values: vec!["a".to_string().into()], position: None}),
     mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 0, column: 1, values: vec!["b".to_string().into()], position: None}),
-], position: None}), None)].into()))]
-#[case::to_md_table_cell_simple(r##"to_md_table_cell("val", 1, 2)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 1, column: 2, values: vec!["val".to_string().into()], position: None}), None)].into()))]
+], position: None}))].into()))]
+#[case::to_md_table_cell_simple(r##"to_md_table_cell("val", 1, 2)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 1, column: 2, values: vec!["val".to_string().into()], position: None}))].into()))]
 #[case::to_md_name_simple(r##"to_markdown("# title") | first() | to_md_name()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("h1".to_string())].into()))]
 #[case::entries_simple(r##"entries({"a": 1})"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::Number(1.into())])])].into()))]
 #[case::del_array_simple("del([1, 2, 3], 1)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into())])].into()))]

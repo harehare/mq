@@ -175,56 +175,58 @@ impl Convert {
 
         match kind {
             ConvertKind::Heading(depth) => RuntimeValue::Markdown(
-                mq_markdown::Node::Heading(mq_markdown::Heading {
+                Box::new(mq_markdown::Node::Heading(mq_markdown::Heading {
                     depth: *depth,
                     values: vec![text.into()],
                     position: None,
-                }),
+                })),
                 None,
             ),
             ConvertKind::Blockquote => RuntimeValue::Markdown(
-                mq_markdown::Node::Blockquote(mq_markdown::Blockquote {
+                Box::new(mq_markdown::Node::Blockquote(mq_markdown::Blockquote {
                     values: vec![text.into()],
                     position: None,
-                }),
+                })),
                 None,
             ),
             ConvertKind::ListItem => RuntimeValue::Markdown(
-                mq_markdown::Node::List(mq_markdown::List {
+                Box::new(mq_markdown::Node::List(mq_markdown::List {
                     values: vec![text.into()],
                     index: 0,
                     ordered: false,
                     level: 1,
                     checked: None,
                     position: None,
-                }),
+                })),
                 None,
             ),
             ConvertKind::Link(url) => RuntimeValue::Markdown(
-                mq_markdown::Node::Link(mq_markdown::Link {
+                Box::new(mq_markdown::Node::Link(mq_markdown::Link {
                     url: mq_markdown::Url::new(url.to_string()),
                     values: vec![text.into()],
                     title: None,
                     position: None,
-                }),
+                })),
                 None,
             ),
             ConvertKind::Strikethrough => RuntimeValue::Markdown(
-                mq_markdown::Node::Delete(mq_markdown::Delete {
+                Box::new(mq_markdown::Node::Delete(mq_markdown::Delete {
                     values: vec![text.into()],
                     position: None,
-                }),
+                })),
                 None,
             ),
             ConvertKind::Strong => RuntimeValue::Markdown(
-                mq_markdown::Node::Strong(mq_markdown::Strong {
+                Box::new(mq_markdown::Node::Strong(mq_markdown::Strong {
                     values: vec![text.into()],
                     position: None,
-                }),
+                })),
                 None,
             ),
             ConvertKind::HorizontalRule => RuntimeValue::Markdown(
-                mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+                Box::new(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
+                    position: None,
+                })),
                 None,
             ),
         }
@@ -250,7 +252,7 @@ pub fn to_markdown_string(args: Vec<RuntimeValue>) -> Result<RuntimeValue, Error
     Ok(mq_markdown::Markdown::new(
         args.iter()
             .flat_map(|arg| match arg {
-                RuntimeValue::Markdown(node, _) => vec![node.clone()],
+                RuntimeValue::Markdown(node, _) => vec![(**node).clone()],
                 a => vec![a.to_string().into()],
             })
             .collect(),
@@ -960,13 +962,14 @@ mod tests {
         let input = RuntimeValue::String("Test".to_string());
         let result = convert.convert(&input);
 
-        match result {
-            RuntimeValue::Markdown(mq_markdown::Node::Heading(heading), _) => {
-                assert_eq!(heading.depth, depth);
-                assert_eq!(heading.values.len(), 1);
-            }
-            _ => panic!("Expected Markdown Heading with depth {}", depth),
-        }
+        let RuntimeValue::Markdown(node, _) = result else {
+            panic!("Expected Markdown Heading with depth {}", depth)
+        };
+        let mq_markdown::Node::Heading(heading) = *node else {
+            panic!("Expected Heading node")
+        };
+        assert_eq!(heading.depth, depth);
+        assert_eq!(heading.values.len(), 1);
     }
 
     // Test convert::convert for Markdown blockquote
@@ -976,12 +979,13 @@ mod tests {
         let input = RuntimeValue::String("Important note".to_string());
         let result = convert.convert(&input);
 
-        match result {
-            RuntimeValue::Markdown(mq_markdown::Node::Blockquote(blockquote), _) => {
-                assert_eq!(blockquote.values.len(), 1);
-            }
-            _ => panic!("Expected Markdown Blockquote"),
-        }
+        let RuntimeValue::Markdown(node, _) = result else {
+            panic!("Expected Markdown Blockquote")
+        };
+        let mq_markdown::Node::Blockquote(blockquote) = *node else {
+            panic!("Expected Blockquote node")
+        };
+        assert_eq!(blockquote.values.len(), 1);
     }
 
     // Test convert::convert for Markdown list item
@@ -991,14 +995,15 @@ mod tests {
         let input = RuntimeValue::String("Item text".to_string());
         let result = convert.convert(&input);
 
-        match result {
-            RuntimeValue::Markdown(mq_markdown::Node::List(list), _) => {
-                assert!(!list.ordered);
-                assert_eq!(list.level, 1);
-                assert_eq!(list.values.len(), 1);
-            }
-            _ => panic!("Expected Markdown List"),
-        }
+        let RuntimeValue::Markdown(node, _) = result else {
+            panic!("Expected Markdown List")
+        };
+        let mq_markdown::Node::List(list) = *node else {
+            panic!("Expected List node")
+        };
+        assert!(!list.ordered);
+        assert_eq!(list.level, 1);
+        assert_eq!(list.values.len(), 1);
     }
 
     // Test convert::convert for Markdown link
@@ -1009,13 +1014,14 @@ mod tests {
         let input = RuntimeValue::String("Click here".to_string());
         let result = convert.convert(&input);
 
-        match result {
-            RuntimeValue::Markdown(mq_markdown::Node::Link(link), _) => {
-                assert_eq!(link.url.as_str(), "https://example.com/");
-                assert_eq!(link.values.len(), 1);
-            }
-            _ => panic!("Expected Markdown Link"),
-        }
+        let RuntimeValue::Markdown(node, _) = result else {
+            panic!("Expected Markdown Link")
+        };
+        let mq_markdown::Node::Link(link) = *node else {
+            panic!("Expected Link node")
+        };
+        assert_eq!(link.url.as_str(), "https://example.com/");
+        assert_eq!(link.values.len(), 1);
     }
 
     // Test convert::convert for Markdown strikethrough
@@ -1025,12 +1031,13 @@ mod tests {
         let input = RuntimeValue::String("Deleted text".to_string());
         let result = convert.convert(&input);
 
-        match result {
-            RuntimeValue::Markdown(mq_markdown::Node::Delete(delete), _) => {
-                assert_eq!(delete.values.len(), 1);
-            }
-            _ => panic!("Expected Markdown Delete"),
-        }
+        let RuntimeValue::Markdown(node, _) = result else {
+            panic!("Expected Markdown Delete")
+        };
+        let mq_markdown::Node::Delete(delete) = *node else {
+            panic!("Expected Delete node")
+        };
+        assert_eq!(delete.values.len(), 1);
     }
 
     // Test convert with None input
@@ -1057,17 +1064,18 @@ mod tests {
             value: "test".to_string(),
             position: None,
         });
-        let input = RuntimeValue::Markdown(markdown_node, None);
+        let input = RuntimeValue::new_markdown(markdown_node);
         let convert = Convert::Markdown(ConvertKind::Heading(2));
 
         let result = convert.convert(&input);
 
-        match result {
-            RuntimeValue::Markdown(mq_markdown::Node::Heading(heading), _) => {
-                assert_eq!(heading.depth, 2);
-            }
-            _ => panic!("Expected Markdown Heading"),
-        }
+        let RuntimeValue::Markdown(node, _) = result else {
+            panic!("Expected Markdown Heading")
+        };
+        let mq_markdown::Node::Heading(heading) = *node else {
+            panic!("Expected Heading node")
+        };
+        assert_eq!(heading.depth, 2);
     }
 
     // Test convert with number input
@@ -1077,13 +1085,14 @@ mod tests {
         let input = RuntimeValue::Number(42.into());
         let result = convert.convert(&input);
 
-        match result {
-            RuntimeValue::Markdown(mq_markdown::Node::Heading(heading), _) => {
-                assert_eq!(heading.depth, 1);
-                assert_eq!(heading.values.len(), 1);
-            }
-            _ => panic!("Expected Markdown Heading"),
-        }
+        let RuntimeValue::Markdown(node, _) = result else {
+            panic!("Expected Markdown Heading")
+        };
+        let mq_markdown::Node::Heading(heading) = *node else {
+            panic!("Expected Heading node")
+        };
+        assert_eq!(heading.depth, 1);
+        assert_eq!(heading.values.len(), 1);
     }
 
     // Test convert::try_from with URL
