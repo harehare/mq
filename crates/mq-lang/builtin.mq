@@ -725,3 +725,6 @@ end
 # Returns a new function that takes the same arguments as the original function but with the first two arguments flipped.
 def flip(f, a, b): f(b, a);
 
+# Returns the sum of the elements in an array after applying a transformation function to each element.
+def sum(arr): sum_by(arr, identity);
+
