@@ -747,3 +747,25 @@ def geomean(arr):
     end
 end
 
+# Returns the n-grams of an array, which are contiguous subarrays of length n.
+def ngram(s, n):
+  if (n <= 0):
+    error("n must be a positive integer")
+  elif (len(s) < n):
+    []
+  else:
+    match (s):
+      | :string:
+        do
+          var result = []
+          | var i = 0
+          | while (i <= len(s) - n):
+              result += [s[i:i + n]]
+              | i += 1
+            end
+          | result
+        end
+      | _: error("first argument must be an array or string")
+    end
+end
+

@@ -735,3 +735,15 @@ def test_geomean():
   | let result3 = geomean([2, 8])
   | assert_eq(result3, 4)
 end
+
+def test_ngram():
+  let result1 = ngram("hello", 2)
+  | assert_eq(result1, ["he", "el", "ll", "lo"])
+
+  | let result2 = ngram("test", 3)
+  | assert_eq(result2, ["tes", "est"])
+
+  | let result3 = ngram("abc", 4)
+  | assert_eq(result3, [])
+end
+
