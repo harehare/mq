@@ -713,3 +713,25 @@ def test_sum():
   | let result3 = sum([42])
   | assert_eq(result3, 42)
 end
+
+def test_mean():
+  let result1 = mean([1, 2, 3, 4, 5])
+  | assert_eq(result1, 3)
+
+  | let result2 = mean([])
+  | assert_eq(result2, None)
+
+  | let result3 = mean([10, 20])
+  | assert_eq(result3, 15)
+end
+
+def test_geomean():
+  let result1 = geomean([1, 2, 4])
+  | assert_eq(round(result1 * 100) / 100, 2)
+
+  | let result2 = geomean([])
+  | assert_eq(result2, None)
+
+  | let result3 = geomean([2, 8])
+  | assert_eq(result3, 4)
+end

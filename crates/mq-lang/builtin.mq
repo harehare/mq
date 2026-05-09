@@ -728,3 +728,22 @@ def flip(f, a, b): f(b, a);
 # Returns the sum of the elements in an array after applying a transformation function to each element.
 def sum(arr): sum_by(arr, identity);
 
+# Returns the average (mean) of an array of numbers, or None if the array is empty.
+def mean(arr):
+  if (is_empty(arr)):
+    None
+  else:
+    sum(arr) / len(arr)
+end
+
+# Returns the median of an array of numbers, or None if the array is empty.
+def geomean(arr):
+  if (is_empty(arr)):
+    None
+  else:
+    do
+      let product = fold(arr, 1, ->(acc, x): acc * x;)
+      | pow(product, 1 / len(arr))
+    end
+end
+
