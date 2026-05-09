@@ -76,9 +76,15 @@
       ],
     };
 
+    const KEYWORD_ALTERNATION =
+      "def|do|let|if|elif|else|end|while|foreach|self|nodes|match|fn|break|continue|include|import|module|var|macro|quote|unquote|loop|try|catch";
+
     const FUNCTION_CALL = {
       className: "title.function.invoke",
-      begin: "\\b[a-zA-Z_][a-zA-Z0-9_]*\\s*\\(",
+      begin:
+        "(?!(?:" +
+        KEYWORD_ALTERNATION +
+        ")\\b)\\b[a-zA-Z_][a-zA-Z0-9_]*\\s*\\(",
       returnBegin: true,
       contains: [
         {
