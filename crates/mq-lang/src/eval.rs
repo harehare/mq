@@ -447,11 +447,67 @@ impl<T: ModuleResolver> Evaluator<T> {
         let mut value = runtime_value;
         for expr in program {
             match self.eval_expr(&value, expr, &env) {
-                Ok(v) => value = v,
+                Ok(new_value) => {
+                    value = self.maybe_auto_call_pipeline_ident(new_value, &value, expr, &env)?;
+                }
                 Err(e) => return Err(e),
             }
         }
         Ok(value)
+    }
+
+    #[inline(always)]
+    fn auto_call_ident(expr: &Shared<ast::Node>) -> Option<Ident> {
+        match &*expr.expr {
+            ast::Expr::Ident(ident) => Some(ident.name),
+            ast::Expr::QualifiedAccess(_, ast::AccessTarget::Ident(ident)) => Some(ident.name),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn maybe_auto_call_pipeline_ident(
+        &mut self,
+        value: RuntimeValue,
+        runtime_value: &RuntimeValue,
+        expr: &Shared<ast::Node>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> EvalResult {
+        match &value {
+            RuntimeValue::Function(params, _, _) => {
+                let Some(ident) = Self::auto_call_ident(expr) else {
+                    return Ok(value);
+                };
+
+                let required_params = params
+                    .iter()
+                    .filter(|p| p.default.is_none() && !p.is_variadic)
+                    .take(2)
+                    .count();
+                if required_params > 1 {
+                    return Ok(value);
+                }
+
+                self.call_fn(
+                    &value,
+                    Shared::clone(expr),
+                    ident,
+                    &ast::Args::new(),
+                    runtime_value,
+                    env,
+                )
+            }
+            RuntimeValue::NativeFunction(native_ident) => {
+                let can_auto_call = builtin::get_builtin_functions(native_ident)
+                    .is_some_and(|f| f.num_params.is_valid(0) || f.num_params.is_missing_one_params(0));
+                if !can_auto_call || Self::auto_call_ident(expr).is_none() {
+                    return Ok(value);
+                }
+
+                self.eval_builtin(runtime_value, Shared::clone(expr), native_ident, &ast::Args::new(), env)
+            }
+            _ => Ok(value),
+        }
     }
 
     #[inline(always)]
@@ -6585,6 +6641,107 @@ mod tests {
                 .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
             Ok(vec![RuntimeValue::Number(42.into())])
         );
+    }
+
+    /// Builds an AST program that imports `module_name` and accesses `member_name`
+    /// via a bare `QualifiedAccess(_, AccessTarget::Ident)` (i.e. without parentheses).
+    fn make_paren_free_qa_program(module_name: &str, member_name: &str) -> Program {
+        vec![
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::Import(ast::Literal::String(module_name.to_string()))),
+            }),
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::QualifiedAccess(
+                    vec![IdentWithToken::new(module_name)],
+                    ast::AccessTarget::Ident(IdentWithToken::new(member_name)),
+                )),
+            }),
+        ]
+    }
+
+    /// Parameterised tests for paren-free calls via `QualifiedAccess`.
+    ///
+    /// Verifies that:
+    ///   - 0-arg functions are called immediately.
+    ///   - 1-arg functions receive the current pipeline value.
+    ///   - 1-required + 1-default functions behave like 1-arg.
+    ///   - Non-function module members are returned as-is.
+    #[rstest]
+    // 0-arg user-defined function: called immediately, returns its body.
+    #[case::zero_arg_user_fn(
+        "qa_pf_zero_arg",
+        r#"def greet(): "Hello!";"#,
+        "greet",
+        RuntimeValue::String("ignored".to_string()),
+        Ok(vec![RuntimeValue::String("Hello!".to_string())])
+    )]
+    // 1-arg user-defined function: pipeline value (5) is bound to the parameter.
+    #[case::one_arg_user_fn(
+        "qa_pf_one_arg",
+        r#"def double(x): x * 2;"#,
+        "double",
+        RuntimeValue::Number(5.into()),
+        Ok(vec![RuntimeValue::Number(10.into())])
+    )]
+    // 1 required + 1 default param: ≤1 required, so pipeline value (10) is bound.
+    #[case::one_required_one_default(
+        "qa_pf_one_default",
+        r#"def inc(x, step = 1): x + step;"#,
+        "inc",
+        RuntimeValue::Number(10.into()),
+        Ok(vec![RuntimeValue::Number(11.into())])
+    )]
+    // Non-function module constant: returned unchanged (no auto-call).
+    #[case::non_function_constant(
+        "qa_pf_non_fn",
+        r#"let answer = 42"#,
+        "answer",
+        RuntimeValue::String("ignored".to_string()),
+        Ok(vec![RuntimeValue::Number(42.into())])
+    )]
+    fn test_import_qualified_access_paren_free(
+        token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+        #[case] module_name: &str,
+        #[case] module_content: &str,
+        #[case] member_name: &str,
+        #[case] input: RuntimeValue,
+        #[case] expected: Result<Vec<RuntimeValue>, InnerError>,
+    ) {
+        let (temp_dir, temp_file_path) = create_file(&format!("{module_name}.mq"), module_content);
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let program = make_paren_free_qa_program(module_name, member_name);
+        assert_eq!(
+            Evaluator::new(loader, token_arena).eval(&program, vec![input].into_iter()),
+            expected
+        );
+    }
+
+    /// A 2-arg function accessed via QualifiedAccess must NOT be auto-called;
+    /// the function value itself should be the pipeline output.
+    #[rstest]
+    fn test_import_qualified_access_paren_free_skips_multi_arg(token_arena: Shared<SharedCell<Arena<Shared<Token>>>>) {
+        let (temp_dir, temp_file_path) = create_file("qa_pf_multi_skip.mq", r#"def add(a, b): a + b;"#);
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let program = make_paren_free_qa_program("qa_pf_multi_skip", "add");
+        let result =
+            Evaluator::new(loader, token_arena).eval(&program, vec![RuntimeValue::Number(1.into())].into_iter());
+        assert!(matches!(result, Ok(ref v) if matches!(v[0], RuntimeValue::Function(_, _, _))));
     }
 
     #[test]

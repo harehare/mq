@@ -2542,6 +2542,36 @@ fn engine() -> DefaultEngine {
 #[case::property_selector_nested_three(r#"."a"."b"."c""#, vec![{let mut outer = std::collections::BTreeMap::new(); let mut mid = std::collections::BTreeMap::new(); let mut inner = std::collections::BTreeMap::new(); inner.insert(Ident::new("c"), RuntimeValue::Number(42.into())); mid.insert(Ident::new("b"), RuntimeValue::Dict(inner)); outer.insert(Ident::new("a"), RuntimeValue::Dict(mid)); RuntimeValue::Dict(outer)}], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // nested property selector: missing intermediate key returns None
 #[case::property_selector_nested_missing(r#"."a"."b""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("a"), RuntimeValue::Number(1.into())); RuntimeValue::Dict(d)}], Ok(vec![RuntimeValue::None].into()))]
+// paren-free calls: 0-arg user-defined function called without parentheses
+#[case::paren_free_zero_arg_user_fn("def greet(): \"Hello!\"; | greet", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("Hello!".to_string())].into()))]
+// paren-free calls: 1-arg user-defined function called without parentheses uses current value
+#[case::paren_free_one_arg_user_fn("def double(x): x * 2; | double", vec![RuntimeValue::Number(5.into())], Ok(vec![RuntimeValue::Number(10.into())].into()))]
+// paren-free calls: 1-arg function with 1 default param — pipeline value bound to required param
+#[case::paren_free_one_required_one_default("def inc(x, step = 1): x + step; | inc", vec![RuntimeValue::Number(10.into())], Ok(vec![RuntimeValue::Number(11.into())].into()))]
+// paren-free calls: 1-arg builtin (len) called without parentheses uses the current pipeline value implicitly
+#[case::paren_free_zero_arg_builtin("compact([1, None, 2]) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
+// paren-free calls: 1-arg builtin (to_string) called without parentheses uses current value
+#[case::paren_free_one_arg_builtin_to_string("42 | to_string", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("42".to_string())].into()))]
+// paren-free calls: upcase builtin
+#[case::paren_free_builtin_upcase("\"hello\" | upcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("HELLO".to_string())].into()))]
+// paren-free calls: downcase builtin
+#[case::paren_free_builtin_downcase("\"HELLO\" | downcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
+// paren-free calls: trim builtin
+#[case::paren_free_builtin_trim("\"  hello  \" | trim", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
+// paren-free calls: to_number builtin
+#[case::paren_free_builtin_to_number("\"42\" | to_number", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
+// paren-free calls: chained builtin paren-free calls
+#[case::paren_free_builtin_chained("\"  HELLO  \" | trim | downcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
+// paren-free calls: chained pipeline with multiple paren-free user functions
+#[case::paren_free_chained_user_fns("def double(x): x * 2; | def inc(x): x + 1; | 5 | double | inc", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(11.into())].into()))]
+// paren-free calls: mix of paren-free user fn and builtin in one pipeline
+#[case::paren_free_mixed_user_and_builtin("def double(x): x * 2; | 21 | double | to_string", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("42".to_string())].into()))]
+// paren-free calls: variable access still works correctly (not auto-called)
+#[case::paren_free_variable_not_called("let x = 42 | x", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
+// paren-free calls: passing function as value to map still works (no spurious auto-call)
+#[case::paren_free_fn_as_value_preserved("map([\"a\", \"b\"], upcase)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("A".to_string()), RuntimeValue::String("B".to_string())])].into()))]
+// paren-free calls: passing user-defined function as value to map (no spurious auto-call)
+#[case::paren_free_user_fn_as_value_preserved("def double(x): x * 2; | map([1, 2, 3], double)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(6.into())])].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
