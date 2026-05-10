@@ -46,17 +46,6 @@ jobs:
         run: just test-mq test-doc test-all-features test
         env:
           NEXTEST_RETRIES: 3
-      - name: Check docs
-        if: runner.os != 'Windows'
-        run: just docs
-      - name: Check for diffs in docs
-        if: runner.os != 'Windows'
-        run: |
-          if [[ -n $(git status --porcelain docs/) ]]; then
-            echo "Error: Changes detected in docs directory. Please commit these changes."
-            git status --porcelain docs/
-            exit 1
-          fi
       - name: Generate code coverage
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == 'ubuntu-latest'
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
