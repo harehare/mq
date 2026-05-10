@@ -79,9 +79,11 @@ test-doc:
 test-all-features:
     cargo nextest run --workspace --all-features
 
+test:
+    cargo nextest run --workspace --all-features
+
 # Run formatting, linting and all tests
-test: fmt lint test-mq test-doc test-all-features
-    cargo nextest run --workspace
+test-all: fmt lint test-mq test-doc test-all-features test
 
 # Run tests with code coverage reporting
 test-cov:
