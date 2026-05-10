@@ -157,12 +157,12 @@ This only applies in **pipeline position** (as a pipeline step). When a function
 ```mq
 # 0-arg function: called without parentheses
 def greet(): "Hello!";
-greet           # equivalent to greet()
+| greet # equivalent to greet()
 # Output: "Hello!"
 
 # 1-arg function: current value is passed implicitly
 def double(x): x * 2;
-5 | double      # equivalent to 5 | double(5), i.e., double(5)
+| 5 | double      # equivalent to 5 | double(5), i.e., double(5)
 # Output: 10
 
 # Builtin functions also support paren-free calls
@@ -176,4 +176,3 @@ def double(x): x * 2;
 map(["a", "b"], upcase)   # upcase is NOT auto-called here; it's passed as a callback
 # Output: ["A", "B"]
 ```
-
