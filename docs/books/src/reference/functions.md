@@ -144,3 +144,36 @@ multiply(10, 3)
 - Parameters with default values must come after parameters without default values
 - Default values are evaluated when the function is called, not when it is defined
 - Default values can be any valid expression
+
+## Parenthesis-Free Calls
+
+Functions with 0 or 1 required parameters can be called without parentheses when used as pipeline steps.
+
+- A **0-argument function** invoked without `()` is called with no explicit arguments.
+- A **1-argument function** invoked without `()` receives the current pipeline value as its implicit argument.
+
+This only applies in **pipeline position** (as a pipeline step). When a function is passed as a value to another function (e.g., `map(arr, f)`), no auto-call occurs and the function reference is preserved.
+
+```mq
+# 0-arg function: called without parentheses
+def greet(): "Hello!";
+greet           # equivalent to greet()
+# Output: "Hello!"
+
+# 1-arg function: current value is passed implicitly
+def double(x): x * 2;
+5 | double      # equivalent to 5 | double(5), i.e., double(5)
+# Output: 10
+
+# Builtin functions also support paren-free calls
+"hello world" | upcase    # equivalent to upcase("hello world")
+# Output: "HELLO WORLD"
+
+[1, None, 2] | compact | len  # chained paren-free calls
+# Output: 2
+
+# Function references are preserved when passed as arguments
+map(["a", "b"], upcase)   # upcase is NOT auto-called here; it's passed as a callback
+# Output: ["A", "B"]
+```
+
