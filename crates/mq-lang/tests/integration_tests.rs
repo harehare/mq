@@ -2548,7 +2548,7 @@ fn engine() -> DefaultEngine {
 #[case::paren_free_one_arg_user_fn("def double(x): x * 2; | double", vec![RuntimeValue::Number(5.into())], Ok(vec![RuntimeValue::Number(10.into())].into()))]
 // paren-free calls: 1-arg function with 1 default param — pipeline value bound to required param
 #[case::paren_free_one_required_one_default("def inc(x, step = 1): x + step; | inc", vec![RuntimeValue::Number(10.into())], Ok(vec![RuntimeValue::Number(11.into())].into()))]
-// paren-free calls: 0-arg builtin (len) called without parentheses
+// paren-free calls: 1-arg builtin (len) called without parentheses uses the current pipeline value implicitly
 #[case::paren_free_zero_arg_builtin("compact([1, None, 2]) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 // paren-free calls: 1-arg builtin (to_string) called without parentheses uses current value
 #[case::paren_free_one_arg_builtin_to_string("42 | to_string", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("42".to_string())].into()))]
