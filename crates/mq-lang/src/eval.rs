@@ -475,6 +475,10 @@ impl<T: ModuleResolver> Evaluator<T> {
     ) -> EvalResult {
         match &value {
             RuntimeValue::Function(params, _, _) => {
+                let Some(ident) = Self::auto_call_ident(expr) else {
+                    return Ok(value);
+                };
+
                 let required_params = params
                     .iter()
                     .filter(|p| p.default.is_none() && !p.is_variadic)
@@ -483,21 +487,24 @@ impl<T: ModuleResolver> Evaluator<T> {
                 if required_params > 1 {
                     return Ok(value);
                 }
-                let Some(ident) = Self::auto_call_ident(expr) else {
-                    return Ok(value);
-                };
-                let empty_args = ast::Args::new();
-                self.call_fn(&value, Shared::clone(expr), ident, &empty_args, runtime_value, env)
+
+                self.call_fn(
+                    &value,
+                    Shared::clone(expr),
+                    ident,
+                    &ast::Args::new(),
+                    runtime_value,
+                    env,
+                )
             }
             RuntimeValue::NativeFunction(native_ident) => {
-                let native_ident = *native_ident;
-                let can_auto_call = builtin::get_builtin_functions(&native_ident)
+                let can_auto_call = builtin::get_builtin_functions(native_ident)
                     .is_some_and(|f| f.num_params.is_valid(0) || f.num_params.is_missing_one_params(0));
                 if !can_auto_call || Self::auto_call_ident(expr).is_none() {
                     return Ok(value);
                 }
-                let empty_args = ast::Args::new();
-                self.eval_builtin(runtime_value, Shared::clone(expr), &native_ident, &empty_args, env)
+
+                self.eval_builtin(runtime_value, Shared::clone(expr), native_ident, &ast::Args::new(), env)
             }
             _ => Ok(value),
         }
