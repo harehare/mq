@@ -18,6 +18,9 @@ type SettingsDialogProps = {
   onLineNumbersToggle: (lineNumbers: "on" | "off") => void;
   tabSize: number;
   onTabSizeChange: (size: number) => void;
+  shareMode: "current" | "all";
+  onShareModeChange: (mode: "current" | "all") => void;
+  isOPFSSupported: boolean;
 };
 
 export const SettingsDialog = ({
@@ -37,6 +40,9 @@ export const SettingsDialog = ({
   onLineNumbersToggle,
   tabSize,
   onTabSizeChange,
+  shareMode,
+  onShareModeChange,
+  isOPFSSupported,
 }: SettingsDialogProps) => {
   if (!isOpen) return null;
 
@@ -129,7 +135,9 @@ export const SettingsDialog = ({
                 className="settings-select"
                 value={theme}
                 onChange={(e) =>
-                  onThemeChange(e.target.value as "light" | "dark" | "system" | "mq")
+                  onThemeChange(
+                    e.target.value as "light" | "dark" | "system" | "mq",
+                  )
                 }
               >
                 <option value="mq">mq</option>
@@ -139,6 +147,25 @@ export const SettingsDialog = ({
               </select>
             </div>
           </div>
+          {isOPFSSupported && (
+            <div className="settings-section">
+              <h4>Share</h4>
+              <div className="settings-item">
+                <label htmlFor="share-mode">Share Mode</label>
+                <select
+                  id="share-mode"
+                  className="settings-select"
+                  value={shareMode}
+                  onChange={(e) =>
+                    onShareModeChange(e.target.value as "current" | "all")
+                  }
+                >
+                  <option value="current">Current File</option>
+                  <option value="all">All Files</option>
+                </select>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
