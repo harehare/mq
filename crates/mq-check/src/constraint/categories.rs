@@ -60,6 +60,7 @@ pub(super) fn categorize_symbols(hir: &Hir) -> SymbolCategories {
             // Pass 1: literals, variables, parameters, function/macro definitions
             SymbolKind::Number
             | SymbolKind::String
+            | SymbolKind::InterpolatedString
             | SymbolKind::Boolean
             | SymbolKind::Symbol
             | SymbolKind::None
