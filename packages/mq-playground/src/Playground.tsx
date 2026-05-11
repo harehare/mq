@@ -40,6 +40,25 @@ type SharedData = {
   options: mq.Options;
 };
 
+type AllFilesSharedData = {
+  type: "all-files";
+  files: Array<{ path: string; content: string }>;
+  options: mq.Options;
+  activeFile?: string;
+};
+
+const getAllFilesFlat = (nodes: FileNode[]): FileNode[] => {
+  const result: FileNode[] = [];
+  for (const node of nodes) {
+    if (node.type === "file") {
+      result.push(node);
+    } else if (node.children) {
+      result.push(...getAllFilesFlat(node.children));
+    }
+  }
+  return result;
+};
+
 const CODE_KEY = "mq-playground.code";
 const MARKDOWN_KEY = "mq-playground.markdown";
 const IS_UPDATE_KEY = "mq-playground.is_update";
@@ -64,6 +83,7 @@ type EditorSettings = {
   theme: "light" | "dark" | "system" | "mq";
   lineNumbers: "on" | "off";
   tabSize: number;
+  shareMode: "current" | "all";
 };
 
 const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
@@ -75,6 +95,7 @@ const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
   theme: "mq",
   lineNumbers: "on",
   tabSize: 2,
+  shareMode: "current",
 };
 
 function loadEditorSettings(): EditorSettings {
@@ -217,6 +238,9 @@ export const Playground = () => {
   const [theme, setTheme] = useState<"light" | "dark" | "system" | "mq">(
     _initialSettings.theme,
   );
+  const [shareMode, setShareMode] = useState<"current" | "all">(
+    _initialSettings.shareMode,
+  );
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isExamplesOpen, setIsExamplesOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -313,6 +337,46 @@ export const Playground = () => {
         await fileSystem.initialize();
         await loadFiles();
 
+        // Handle all-files share restoration from URL hash
+        if (window.location.hash) {
+          try {
+            const compressed = window.location.hash.substring(1);
+            const decompressed =
+              LZString.decompressFromEncodedURIComponent(compressed);
+            if (decompressed) {
+              const parsedData = JSON.parse(decompressed);
+              if (
+                parsedData.type === "all-files" &&
+                Array.isArray(parsedData.files)
+              ) {
+                for (const file of parsedData.files as {
+                  path: string;
+                  content: string;
+                }[]) {
+                  await fileSystem.writeFile(file.path, file.content);
+                }
+                await loadFiles();
+                const options = parsedData.options || {};
+                setIsUpdate(!!options.isUpdate);
+                setInputFormat(options.inputFormat || null);
+                setListStyle(options.listStyle || null);
+                setLinkUrlStyle(options.linkUrlStyle || null);
+                setLinkTitleStyle(options.linkTitleStyle || null);
+                const activeFilePath =
+                  parsedData.activeFile || parsedData.files[0]?.path;
+                if (activeFilePath) {
+                  const content = await fileSystem.readFile(activeFilePath);
+                  openOrSwitchToTab(activeFilePath, content);
+                  setSelectedFile(activeFilePath);
+                }
+                return;
+              }
+            }
+          } catch (e) {
+            console.error("Failed to restore all-files share:", e);
+          }
+        }
+
         // Get initial tabs and activeTabId from localStorage
         const savedTabs = localStorage.getItem(TABS_KEY);
         const initialTabs = savedTabs ? JSON.parse(savedTabs) : [];
@@ -373,28 +437,32 @@ export const Playground = () => {
           LZString.decompressFromEncodedURIComponent(compressed);
         if (decompressed) {
           const parsedData = JSON.parse(decompressed);
-          const options = parsedData.options || {};
-          const data: SharedData = {
-            code: typeof parsedData.code === "string" ? parsedData.code : "",
-            markdown:
-              typeof parsedData.markdown === "string"
-                ? parsedData.markdown
-                : "",
-            options: {
-              isUpdate: !!options.isUpdate,
-              inputFormat: options.inputFormat || null,
-              listStyle: options.listStyle,
-              linkUrlStyle: options.linkUrlStyle || null,
-              linkTitleStyle: options.linkTitleStyle || null,
-            },
-          };
-          setCode(data.code);
-          setMarkdown(data.markdown);
-          setIsUpdate(data.options.isUpdate === true);
-          setInputFormat(data.options.inputFormat);
-          setListStyle(data.options.listStyle);
-          setLinkUrlStyle(data.options.linkUrlStyle);
-          setLinkTitleStyle(data.options.linkTitleStyle);
+          // all-files shares are restored inside initFileSystem after OPFS init
+          if (parsedData.type !== "all-files") {
+            const options = parsedData.options || {};
+            const data: SharedData = {
+              code:
+                typeof parsedData.code === "string" ? parsedData.code : "",
+              markdown:
+                typeof parsedData.markdown === "string"
+                  ? parsedData.markdown
+                  : "",
+              options: {
+                isUpdate: !!options.isUpdate,
+                inputFormat: options.inputFormat || null,
+                listStyle: options.listStyle,
+                linkUrlStyle: options.linkUrlStyle || null,
+                linkTitleStyle: options.linkTitleStyle || null,
+              },
+            };
+            setCode(data.code);
+            setMarkdown(data.markdown);
+            setIsUpdate(data.options.isUpdate === true);
+            setInputFormat(data.options.inputFormat);
+            setListStyle(data.options.listStyle);
+            setLinkUrlStyle(data.options.linkUrlStyle);
+            setLinkTitleStyle(data.options.linkTitleStyle);
+          }
         }
       } catch {
         alert("Failed to load shared playground");
@@ -519,18 +587,47 @@ export const Playground = () => {
     setInputFormat(selected.format);
   }, []);
 
-  const handleShare = useCallback(() => {
-    const shareData: SharedData = {
-      code: code || "",
-      markdown: markdown || "",
-      options: {
-        isUpdate: isUpdate || false,
-        inputFormat: inputFormat || null,
-        listStyle: listStyle || null,
-        linkUrlStyle: linkUrlStyle || null,
-        linkTitleStyle: linkTitleStyle || null,
-      },
+  const handleShare = useCallback(async () => {
+    const options: mq.Options = {
+      isUpdate: isUpdate || false,
+      inputFormat: inputFormat || null,
+      listStyle: listStyle || null,
+      linkUrlStyle: linkUrlStyle || null,
+      linkTitleStyle: linkTitleStyle || null,
     };
+
+    let shareData: SharedData | AllFilesSharedData;
+
+    if (shareMode === "all" && isOPFSSupported && files.length > 0) {
+      try {
+        const flatFiles = getAllFilesFlat(files);
+        const filesData = await Promise.all(
+          flatFiles.map(async (file) => ({
+            path: file.path,
+            content:
+              file.path === currentFilePath && code !== undefined
+                ? code
+                : await fileSystem.readFile(file.path),
+          })),
+        );
+        shareData = {
+          type: "all-files",
+          files: filesData,
+          options,
+          activeFile: currentFilePath || undefined,
+        };
+      } catch {
+        showToast("Failed to share files", "error");
+        return;
+      }
+    } else {
+      shareData = {
+        code: code || "",
+        markdown: markdown || "",
+        options,
+      };
+    }
+
     const compressed = LZString.compressToEncodedURIComponent(
       JSON.stringify(shareData),
     );
@@ -546,6 +643,9 @@ export const Playground = () => {
         showToast("Failed to copy URL", "error");
       });
   }, [
+    shareMode,
+    isOPFSSupported,
+    files,
     code,
     markdown,
     inputFormat,
@@ -553,6 +653,7 @@ export const Playground = () => {
     listStyle,
     linkUrlStyle,
     linkTitleStyle,
+    currentFilePath,
     showToast,
   ]);
 
@@ -1119,6 +1220,7 @@ export const Playground = () => {
       tabSize,
       minimapEnabled,
       wordWrap,
+      shareMode,
     });
 
     if (theme === "system") {
@@ -1159,6 +1261,7 @@ export const Playground = () => {
     tabSize,
     minimapEnabled,
     wordWrap,
+    shareMode,
   ]);
 
   // Add keyboard shortcut for save (Ctrl+S / Cmd+S)
@@ -2236,6 +2339,9 @@ export const Playground = () => {
         onLineNumbersToggle={setLineNumbers}
         tabSize={tabSize}
         onTabSizeChange={setTabSize}
+        shareMode={shareMode}
+        onShareModeChange={setShareMode}
+        isOPFSSupported={isOPFSSupported}
       />
 
       <ToastContainer toasts={toasts} onClose={dismissToast} />
