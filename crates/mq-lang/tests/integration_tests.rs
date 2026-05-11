@@ -1714,6 +1714,18 @@ fn engine() -> DefaultEngine {
                 RuntimeValue::Dict(d)
             },
         ])].into()))]
+#[case::array_index_first("[1, 2, 3] | .[0]",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::array_index_middle("[1, 2, 3] | .[1]",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::array_index_last("[1, 2, 3] | .[2]",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Number(3.into())].into()))]
+#[case::array_index_out_of_bounds("[1, 2, 3] | .[5]",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::NONE].into()))]
 #[case::array_mul_decimal("[2,1]*0.2",
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![RuntimeValue::Array(vec![

@@ -795,6 +795,9 @@ impl<T: ModuleResolver> Evaluator<T> {
         match runtime_value {
             RuntimeValue::Markdown(node_value, _) => builtin::eval_selector_with_args(node_value, selector, args),
             RuntimeValue::Array(values) => {
+                if let Selector::List(Some(idx), None) = selector {
+                    return values.get(*idx).cloned().unwrap_or(RuntimeValue::NONE);
+                }
                 let values = values
                     .iter()
                     .flat_map(|value| match value {
@@ -862,6 +865,9 @@ impl<T: ModuleResolver> Evaluator<T> {
         match runtime_value {
             RuntimeValue::Markdown(node_value, _) => builtin::eval_selector(node_value, selector),
             RuntimeValue::Array(values) => {
+                if let Selector::List(Some(idx), None) = selector {
+                    return values.get(*idx).cloned().unwrap_or(RuntimeValue::NONE);
+                }
                 let values = values
                     .iter()
                     .flat_map(|value| match value {
