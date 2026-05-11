@@ -1852,7 +1852,7 @@ export const Playground = () => {
       )}
 
       <div className="playground-content" ref={contentRef}>
-        {isOPFSSupported && isSidebarVisible && (
+        {isOPFSSupported && isSidebarVisible && !isEmbed && (
           <>
             <div
               className="file-tree-panel"
@@ -1894,7 +1894,7 @@ export const Playground = () => {
             className="editor-container"
             style={isDesktop() ? { height: `${topBottomSplit}%` } : undefined}
           >
-            {tabs.length > 0 && (
+            {!isEmbed && tabs.length > 0 && (
               <TabBar
                 tabs={tabs}
                 activeTabId={activeTabId}
