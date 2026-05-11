@@ -1679,6 +1679,41 @@ fn engine() -> DefaultEngine {
 #[case::empty_array_iterator_expand("[]*.[]",
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![RuntimeValue::Number(0.into())].into()))]
+#[case::array_iter_numbers("[1, 2, 3] | .[]",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(3.into()),
+        ])].into()))]
+#[case::array_iter_strings(r#"["a", "b", "c"] | .[]"#,
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("a".to_string()),
+            RuntimeValue::String("b".to_string()),
+            RuntimeValue::String("c".to_string()),
+        ])].into()))]
+#[case::dict_iter_values(r#"{"a": 1, "b": 2, "c": 3} | .[]"#,
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(3.into()),
+        ])].into()))]
+#[case::array_of_dicts_iter(r#"[{"a": 1}, {"b": 2}] | .[]"#,
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Array(vec![
+            {
+                let mut d = BTreeMap::new();
+                d.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
+                RuntimeValue::Dict(d)
+            },
+            {
+                let mut d = BTreeMap::new();
+                d.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
+                RuntimeValue::Dict(d)
+            },
+        ])].into()))]
 #[case::array_mul_decimal("[2,1]*0.2",
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![RuntimeValue::Array(vec![
