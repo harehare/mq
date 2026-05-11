@@ -346,6 +346,19 @@ impl Hir {
                 ..
             } = &**token
         {
+            // Wrap all segments under a single InterpolatedString symbol so that
+            // the parent node (e.g. a Call) sees one argument per s-string, not
+            // one child per text/expr segment.
+            let interp_id = self.add_symbol(Symbol {
+                value: None,
+                kind: SymbolKind::InterpolatedString,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+                insertion_order: 0,
+            });
+
             segments.iter().for_each(|segment| match segment {
                 mq_lang::StringSegment::Text(text, range) => {
                     self.add_symbol(Symbol {
@@ -354,7 +367,7 @@ impl Hir {
                         source: SourceInfo::new(Some(source_id), Some(*range)),
                         scope: scope_id,
                         doc: node.comments(),
-                        parent,
+                        parent: Some(interp_id),
                         insertion_order: 0,
                     });
                 }
@@ -365,7 +378,7 @@ impl Hir {
                         source: SourceInfo::new(Some(source_id), Some(*range)),
                         scope: scope_id,
                         doc: node.comments(),
-                        parent,
+                        parent: Some(interp_id),
                         insertion_order: 0,
                     });
                 }

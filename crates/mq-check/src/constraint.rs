@@ -188,7 +188,7 @@ pub(super) fn generate_symbol_constraints(
             let ty = Type::Number;
             ctx.set_symbol_type(symbol_id, ty);
         }
-        SymbolKind::String => {
+        SymbolKind::String | SymbolKind::InterpolatedString => {
             let ty = Type::String;
             ctx.set_symbol_type(symbol_id, ty);
         }

@@ -74,6 +74,8 @@ pub enum SymbolKind {
     Ident,
     If,
     Include(SourceId),
+    /// A template string literal (`s"...${expr}..."`).
+    InterpolatedString,
     Keyword,
     Loop,
     Macro(Params),

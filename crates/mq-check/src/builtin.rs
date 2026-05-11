@@ -1583,6 +1583,8 @@ mod tests {
     #[case::split_wrong_sep("split(\"hello\", 42)", false)] // separator must be string
     #[case::join_wrong_sep("join([\"a\", \"b\"], 42)", false)] // separator must be string
     #[case::replace_wrong_sep("replace(\"hello\", 42, \"r\")", false)] // wrong separator type
+    #[case::replace_too_few_args("replace(\"hello\", \"l\")", false)] // missing replacement arg
+    #[case::replace_too_many_args("replace(\"hello\", \"l\", \"r\", \"extra\")", false)] // too many args
     #[case::gsub_wrong_first("gsub(42, \"l\", \"r\")", false)] // expects string first arg
     #[case::starts_with_num_sep("starts_with(\"hello\", 42)", false)] // expects string prefix
     #[case::ends_with_num_sep("ends_with(\"hello\", 42)", false)] // expects string suffix
@@ -1645,6 +1647,11 @@ mod tests {
     #[case::piped_replace("\"hello\" | replace(\"l\", \"r\")", true)]
     #[case::piped_gsub("\"hello\" | gsub(\"l\", \"r\")", true)]
     #[case::piped_gsub_variable_arg("def slugify(s, separator = \"-\"): s | gsub(\"[^a-z0-9]+\", separator) end", true)] // regression: default param used in gsub should not produce false error
+    #[case::replace_sstring_args("def f(x, v): x | replace(s\"old${v}\", s\"new${v}\") end", true)] // s-string args should not expand segments as separate arguments
+    #[case::replace_chained_sstring(
+        "def f(line, prev, ver): line | replace(s\"version = \\\"${prev}\\\"\", s\"version = \\\"${ver}\\\"\") | replace(s\"old${prev}\", s\"new${ver}\") end",
+        true
+    )] // chained replace with s-string args
     #[case::piped_slice("[1, 2, 3, 4] | slice(1, 3)", true)]
     #[case::piped_repeat("\"x\" | repeat(3)", true)]
     #[case::piped_join_wrong_type("42 | join(\",\")", false)] // number piped to join (expects array)

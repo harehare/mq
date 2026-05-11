@@ -178,7 +178,7 @@ pub(crate) fn type_name_to_type(name: &str, ctx: &mut InferenceContext) -> Optio
 /// maps unambiguously to a single `Type` (String, Number, Bool, Symbol, None).
 pub(crate) fn literal_symbol_type(hir: &Hir, lit_id: SymbolId) -> Option<Type> {
     match hir.symbol(lit_id)?.kind {
-        SymbolKind::String => Some(Type::String),
+        SymbolKind::String | SymbolKind::InterpolatedString => Some(Type::String),
         SymbolKind::Number => Some(Type::Number),
         SymbolKind::Boolean => Some(Type::Bool),
         SymbolKind::Symbol => Some(Type::Symbol),
