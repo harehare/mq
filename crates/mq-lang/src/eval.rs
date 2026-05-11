@@ -795,6 +795,9 @@ impl<T: ModuleResolver> Evaluator<T> {
         match runtime_value {
             RuntimeValue::Markdown(node_value, _) => builtin::eval_selector_with_args(node_value, selector, args),
             RuntimeValue::Array(values) => {
+                if let Selector::List(Some(idx), None) = selector {
+                    return values.get(*idx).cloned().unwrap_or(RuntimeValue::NONE);
+                }
                 let values = values
                     .iter()
                     .flat_map(|value| match value {
@@ -803,6 +806,9 @@ impl<T: ModuleResolver> Evaluator<T> {
                                 RuntimeValue::Array(arr) => arr,
                                 other => vec![other],
                             }
+                        }
+                        _ if matches!(selector, Selector::List(None, None)) && args.is_empty() => {
+                            vec![value.clone()]
                         }
                         RuntimeValue::Dict(_) => {
                             vec![Self::eval_selector_expr_with_args(value, selector, args)]
@@ -859,6 +865,9 @@ impl<T: ModuleResolver> Evaluator<T> {
         match runtime_value {
             RuntimeValue::Markdown(node_value, _) => builtin::eval_selector(node_value, selector),
             RuntimeValue::Array(values) => {
+                if let Selector::List(Some(idx), None) = selector {
+                    return values.get(*idx).cloned().unwrap_or(RuntimeValue::NONE);
+                }
                 let values = values
                     .iter()
                     .flat_map(|value| match value {
@@ -866,6 +875,9 @@ impl<T: ModuleResolver> Evaluator<T> {
                             RuntimeValue::Array(arr) => arr,
                             other => vec![other],
                         },
+                        _ if matches!(selector, Selector::List(None, None)) => {
+                            vec![value.clone()]
+                        }
                         RuntimeValue::Dict(_) => {
                             vec![Self::eval_selector_expr(value, selector)]
                         }
@@ -876,6 +888,9 @@ impl<T: ModuleResolver> Evaluator<T> {
                 RuntimeValue::Array(values)
             }
             RuntimeValue::Dict(map) => {
+                if matches!(selector, Selector::List(None, None)) {
+                    return RuntimeValue::Array(map.values().cloned().collect());
+                }
                 let new_map: BTreeMap<_, _> = map
                     .iter()
                     .map(|(k, v)| {
