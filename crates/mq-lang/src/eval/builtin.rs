@@ -4790,6 +4790,24 @@ pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, ar
                 _ => false,
             }
         }
+        Selector::Slice(..) => {
+            let get_bound = |v: Option<&RuntimeValue>| -> Option<isize> {
+                match v {
+                    Some(RuntimeValue::Number(n)) => Some(n.value() as isize),
+                    _ => None,
+                }
+            };
+            let start = get_bound(args.first()).map(|s| s.max(0) as usize).unwrap_or(0);
+            let end = get_bound(args.get(1))
+                .map(|e| if e >= 0 { e as usize } else { usize::MAX })
+                .unwrap_or(usize::MAX);
+            match node {
+                mq_markdown::Node::List(mq_markdown::List { index: list_index, .. }) => {
+                    *list_index >= start && *list_index < end
+                }
+                _ => false,
+            }
+        }
         _ => return eval_selector(node, selector),
     };
 
@@ -4798,6 +4816,20 @@ pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, ar
     } else {
         RuntimeValue::NONE
     }
+}
+
+pub fn eval_array_slice(values: &[RuntimeValue], start: Option<isize>, end: Option<isize>) -> RuntimeValue {
+    let len = values.len() as isize;
+    let start_idx = resolve_slice_index(start.unwrap_or(0), len);
+    let end_idx = resolve_slice_index(end.unwrap_or(len), len);
+    if start_idx >= end_idx {
+        return RuntimeValue::EMPTY_ARRAY;
+    }
+    RuntimeValue::Array(values[start_idx..end_idx].to_vec())
+}
+
+fn resolve_slice_index(idx: isize, len: isize) -> usize {
+    if idx < 0 { (len + idx).max(0) as usize } else { idx.min(len) as usize }
 }
 
 pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> RuntimeValue {
@@ -4873,6 +4905,16 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> RuntimeVa
         Selector::Math => node.is_math(),
         Selector::MdxFlowExpression => node.is_mdx_flow_expression(),
         Selector::Definition => node.is_definition(),
+        Selector::Slice(start, end) => match node {
+            mq_markdown::Node::List(mq_markdown::List { index: list_index, .. }) => {
+                let start_idx = start.map(|s| s.max(0) as usize).unwrap_or(0);
+                let end_idx = end
+                    .map(|e| if e >= 0 { e as usize } else { usize::MAX })
+                    .unwrap_or(usize::MAX);
+                *list_index >= start_idx && *list_index < end_idx
+            }
+            _ => false,
+        },
         Selector::Attr(_) => false, // Attribute selectors don't match nodes directly
         Selector::Recursive => return eval_recursive_selector(node),
         Selector::Property(_) => false,

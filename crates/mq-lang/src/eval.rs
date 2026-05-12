@@ -798,6 +798,15 @@ impl<T: ModuleResolver> Evaluator<T> {
                 if let Selector::List(Some(idx), None) = selector {
                     return values.get(*idx).cloned().unwrap_or(RuntimeValue::NONE);
                 }
+                if matches!(selector, Selector::Slice(..)) {
+                    let get_bound = |v: Option<&RuntimeValue>| -> Option<isize> {
+                        match v {
+                            Some(RuntimeValue::Number(n)) => Some(n.value() as isize),
+                            _ => None,
+                        }
+                    };
+                    return builtin::eval_array_slice(values, get_bound(args.first()), get_bound(args.get(1)));
+                }
                 let values = values
                     .iter()
                     .flat_map(|value| match value {
@@ -867,6 +876,9 @@ impl<T: ModuleResolver> Evaluator<T> {
             RuntimeValue::Array(values) => {
                 if let Selector::List(Some(idx), None) = selector {
                     return values.get(*idx).cloned().unwrap_or(RuntimeValue::NONE);
+                }
+                if let Selector::Slice(start, end) = selector {
+                    return builtin::eval_array_slice(values, *start, *end);
                 }
                 let values = values
                     .iter()

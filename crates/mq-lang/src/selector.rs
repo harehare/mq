@@ -11,12 +11,39 @@ use crate::{Ident, Token, TokenKind};
 #[error("Unknown selector `{0}`")]
 pub struct UnknownSelector(pub Token);
 
-/// Parses a bracket-based selector string like `.[n]` (List) or `.[n][m]` (Table).
+fn is_valid_isize_str(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    let digits = if s.starts_with('-') { &s[1..] } else { s };
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Parses a bracket-based selector string like `.[n]` (List), `.[n][m]` (Table),
+/// or `.[x:y]` (Slice).
 ///
 /// Returns `Some(Selector)` if the string matches, `None` otherwise.
 fn parse_bracket_selector(s: &str) -> Option<Selector> {
     let inner = s.strip_prefix(".[")?;
     let (first, rest) = inner.split_once(']')?;
+
+    // ".[x:y]", ".[x:]", ".[:y]", ".[:]" → Slice
+    if let Some(colon_pos) = first.find(':') {
+        if !rest.is_empty() {
+            return None;
+        }
+        let start_str = &first[..colon_pos];
+        let end_str = &first[colon_pos + 1..];
+        if !start_str.is_empty() && !is_valid_isize_str(start_str) {
+            return None;
+        }
+        if !end_str.is_empty() && !is_valid_isize_str(end_str) {
+            return None;
+        }
+        let start = if start_str.is_empty() { None } else { Some(start_str.parse::<isize>().ok()?) };
+        let end = if end_str.is_empty() { None } else { Some(end_str.parse::<isize>().ok()?) };
+        return Some(Selector::Slice(start, end));
+    }
 
     if !first.is_empty() && !first.bytes().all(|b| b.is_ascii_digit()) {
         return None;
@@ -100,6 +127,12 @@ pub enum Selector {
     ///
     /// The first `Option<usize>` specifies an item index, the second `Option<bool>` indicates ordered/unordered.
     List(Option<usize>, Option<bool>),
+    /// Matches a slice of elements by index range.
+    ///
+    /// The first `Option<isize>` is the start index (inclusive, defaults to 0).
+    /// The second `Option<isize>` is the end index (exclusive, defaults to len).
+    /// Negative indices count from the end for arrays.
+    Slice(Option<isize>, Option<isize>),
     /// Matches TOML frontmatter blocks.
     Toml,
     /// Matches YAML frontmatter blocks.
@@ -442,6 +475,10 @@ impl Display for Selector {
             Selector::List(Some(idx), None) => write!(f, ".[{}]", idx),
             Selector::List(Some(idx), _) => write!(f, ".[{}]", idx),
             Selector::List(None, _) => write!(f, ".[]"),
+            Selector::Slice(None, None) => write!(f, ".[:]"),
+            Selector::Slice(Some(start), None) => write!(f, ".[{}:]", start),
+            Selector::Slice(None, Some(end)) => write!(f, ".[:{}]", end),
+            Selector::Slice(Some(start), Some(end)) => write!(f, ".[{}:{}]", start, end),
             Selector::Toml => write!(f, ".toml"),
             Selector::Yaml => write!(f, ".yaml"),
             Selector::Break => write!(f, ".break"),
@@ -588,6 +625,13 @@ mod tests {
     #[case::table_row_any(".[1][]", Selector::Table(Some(1), None), ".[1][]")]
     #[case::table_row_col(".[1][2]", Selector::Table(Some(1), Some(2)), ".[1][2]")]
     #[case::table_any_col(".[][2]", Selector::Table(None, Some(2)), ".[][2]")]
+    // Slice selectors
+    #[case::slice_both(".[1:3]", Selector::Slice(Some(1), Some(3)), ".[1:3]")]
+    #[case::slice_start_only(".[2:]", Selector::Slice(Some(2), None), ".[2:]")]
+    #[case::slice_end_only(".[:3]", Selector::Slice(None, Some(3)), ".[:3]")]
+    #[case::slice_all(".[:]", Selector::Slice(None, None), ".[:]")]
+    #[case::slice_negative_start(".[-1:3]", Selector::Slice(Some(-1), Some(3)), ".[-1:3]")]
+    #[case::slice_negative_both(".[-2:-1]", Selector::Slice(Some(-2), Some(-1)), ".[-2:-1]")]
     // Table Align
     #[case::table_align(".table_align", Selector::TableAlign, ".table_align")]
     // Recursive

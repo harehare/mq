@@ -2531,6 +2531,39 @@ fn engine() -> DefaultEngine {
 #[case::selector_bracket_variable_table_col(r##"let v = 1 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[][v] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("b".to_string())].into()))]
 #[case::selector_bracket_expr_list(r##"let v = 0 | to_markdown("- a\n- b\n- c") | .[v + 1] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("- b".to_string())].into()))]
 #[case::selector_bracket_expr_table_col(r##"let v = 0 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[][v + 1] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("b".to_string())].into()))]
+// Slice selector: .[x:y] on arrays
+#[case::selector_slice_array_both("[1, 2, 3, 4, 5] | .[1:3]",
+        vec![RuntimeValue::None],
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])].into()))]
+#[case::selector_slice_array_start_only("[1, 2, 3, 4, 5] | .[3:]",
+        vec![RuntimeValue::None],
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(4.into()), RuntimeValue::Number(5.into())])].into()))]
+#[case::selector_slice_array_end_only("[1, 2, 3, 4, 5] | .[:2]",
+        vec![RuntimeValue::None],
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())])].into()))]
+#[case::selector_slice_array_all("[1, 2, 3] | .[:]",
+        vec![RuntimeValue::None],
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])].into()))]
+#[case::selector_slice_array_negative("[1, 2, 3, 4, 5] | .[-2:]",
+        vec![RuntimeValue::None],
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(4.into()), RuntimeValue::Number(5.into())])].into()))]
+#[case::selector_slice_array_out_of_bounds("[1, 2, 3] | .[5:10]",
+        vec![RuntimeValue::None],
+        Ok(vec![RuntimeValue::EMPTY_ARRAY].into()))]
+// Slice selector: .[x:y] on arrays of markdown nodes (from to_markdown)
+#[case::selector_slice_list_range(r##"to_markdown("- a\n- b\n- c\n- d") | .[1:3] | len()"##,
+        vec![RuntimeValue::None],
+        Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::selector_slice_list_end_only(r##"to_markdown("- a\n- b\n- c") | .[:2] | len()"##,
+        vec![RuntimeValue::None],
+        Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::selector_slice_list_start_only(r##"to_markdown("- a\n- b\n- c") | .[1:] | len()"##,
+        vec![RuntimeValue::None],
+        Ok(vec![RuntimeValue::Number(2.into())].into()))]
+// Slice on markdown array after iteration: filter list items by index range
+#[case::selector_slice_markdown_node_filter(r##"to_markdown("- a\n- b\n- c\n- d") | .[] | .[1:3] | compact() | len()"##,
+        vec![RuntimeValue::None],
+        Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::module_inline_function("
     module math:
         def mysum(a, b): a + b;

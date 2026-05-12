@@ -1022,7 +1022,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parses a single bracket index `[N]` for selector expressions, pushing tokens onto `children`.
+    /// Parses a bracket index or slice `[N]`, `[N:M]`, `[N:]`, `[:M]`, `[:]` for selector
+    /// expressions, pushing tokens onto `children`.
     fn parse_selector_bracket(&mut self, children: &mut Vec<Shared<Node>>) -> Result<(), ParseError> {
         children.push(self.next_node(|kind| matches!(kind, TokenKind::LBracket), NodeKind::Token)?);
 
@@ -1033,6 +1034,24 @@ impl<'a> Parser<'a> {
         }
 
         let token = self.peek_token()?;
+
+        // Handle slice colon: [N:M], [N:], [:M], [:]
+        if token.kind == TokenKind::Colon {
+            children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+            let token = self.peek_token()?;
+            if matches!(token.kind, TokenKind::NumberLiteral(_)) {
+                children.push(self.next_node(|kind| matches!(kind, TokenKind::NumberLiteral(_)), NodeKind::Literal)?);
+            }
+
+            let token = self.peek_token()?;
+            if token.kind == TokenKind::RBracket {
+                children.push(self.next_node(|kind| matches!(kind, TokenKind::RBracket), NodeKind::Token)?);
+            } else {
+                return Err(ParseError::UnexpectedToken(Shared::clone(token)));
+            }
+            return Ok(());
+        }
 
         if token.kind == TokenKind::RBracket {
             children.push(self.next_node(|kind| matches!(kind, TokenKind::RBracket), NodeKind::Token)?);

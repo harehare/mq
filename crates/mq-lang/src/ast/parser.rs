@@ -17,6 +17,12 @@ use super::{Program, TokenId};
 
 type IfExpr = (Option<Shared<Node>>, Shared<Node>);
 
+enum SelectorBracketContent {
+    Empty,
+    Single(Shared<Node>),
+    Slice(Option<Shared<Node>>, Option<Shared<Node>>),
+}
+
 static GET_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::from(constants::builtins::GET));
 
 pub struct Parser<'a, 'alloc> {
@@ -2544,7 +2550,57 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     // Parses arguments for table or list item selectors like `.[index1][index2]` (for tables) or `.[index1]` (for lists).
     fn parse_selector_table_args(&mut self, token: Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let first = self.parse_bracket_expr()?;
+        let first = self.parse_selector_bracket_content()?;
+
+        // Handle slice: .[x:y], .[x:], .[:y], .[:]
+        if let SelectorBracketContent::Slice(start, end) = first {
+            let is_dynamic_node = |opt: &Option<Shared<Node>>| {
+                opt.as_ref()
+                    .is_some_and(|n| !matches!(&*n.expr, Expr::Literal(Literal::Number(_))))
+            };
+            let is_dynamic = is_dynamic_node(&start) || is_dynamic_node(&end);
+
+            if is_dynamic {
+                let make_none_node = |token_arena: &mut Arena<Shared<Token>>, token: &Shared<Token>| Shared::new(Node {
+                    token_id: token_arena.alloc(Shared::clone(token)),
+                    expr: Shared::new(Expr::Literal(Literal::None)),
+                });
+                let start_node = start.unwrap_or_else(|| make_none_node(self.token_arena, &token));
+                let end_node = end.unwrap_or_else(|| make_none_node(self.token_arena, &token));
+                return Ok(Shared::new(Node {
+                    token_id: self.token_arena.alloc(Shared::clone(&token)),
+                    expr: Shared::new(Expr::SelectorCall(
+                        Selector::Slice(None, None),
+                        smallvec![start_node, end_node],
+                    )),
+                }));
+            }
+
+            let static_isize = |opt: Option<Shared<Node>>| -> Option<isize> {
+                opt.and_then(|n| {
+                    if let Expr::Literal(Literal::Number(num)) = &*n.expr {
+                        Some(num.value() as isize)
+                    } else {
+                        None
+                    }
+                })
+            };
+            return Ok(Shared::new(Node {
+                token_id: self.token_arena.alloc(Shared::clone(&token)),
+                expr: Shared::new(Expr::Selector(Selector::Slice(
+                    static_isize(start),
+                    static_isize(end),
+                ))),
+            }));
+        }
+
+        // Convert to Option<Shared<Node>> for existing List/Table logic
+        let first_opt = match first {
+            SelectorBracketContent::Empty => None,
+            SelectorBracketContent::Single(n) => Some(n),
+            SelectorBracketContent::Slice(..) => unreachable!(),
+        };
+
         let has_second = self.is_next_token(|kind| matches!(kind, TokenKind::LBracket));
         let second = if has_second {
             Some(self.parse_bracket_expr()?)
@@ -2556,7 +2612,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             opt.as_ref()
                 .is_some_and(|n| !matches!(&*n.expr, Expr::Literal(Literal::Number(_))))
         };
-        let has_dynamic = is_dynamic_node(&first) || second.as_ref().is_some_and(is_dynamic_node);
+        let has_dynamic = is_dynamic_node(&first_opt) || second.as_ref().is_some_and(is_dynamic_node);
         let has_explicit_args = self.is_next_token(|kind| matches!(kind, TokenKind::LParen));
 
         if has_dynamic || has_explicit_args {
@@ -2570,13 +2626,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             let mut args: Args = SmallVec::new();
 
             // .[][v]: insert None as row placeholder so args[0]=row, args[1]=col positional encoding holds.
-            if is_table && first.is_none() && second.as_ref().is_some_and(|s| s.is_some()) {
+            if is_table && first_opt.is_none() && second.as_ref().is_some_and(|s| s.is_some()) {
                 let placeholder_token_id = self.token_arena.alloc(Shared::clone(&token));
                 args.push(Shared::new(Node {
                     token_id: placeholder_token_id,
                     expr: Shared::new(Expr::Literal(Literal::None)),
                 }));
-            } else if let Some(node) = first {
+            } else if let Some(node) = first_opt {
                 args.push(node);
             }
 
@@ -2603,7 +2659,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
             })
         };
-        let i1 = static_index(first);
+        let i1 = static_index(first_opt);
         let selector = match second {
             None => Selector::List(i1, None),
             Some(opt) => Selector::Table(i1, static_index(opt)),
@@ -2614,6 +2670,63 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             token_id,
             expr: Shared::new(Expr::Selector(selector)),
         }))
+    }
+
+    fn parse_selector_bracket_content(&mut self) -> Result<SelectorBracketContent, SyntaxError> {
+        let bracket_token = match self.tokens.peek() {
+            Some(t) => Shared::clone(t),
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+        };
+        self.next_token(|kind| matches!(kind, TokenKind::LBracket))?;
+
+        // Empty: []
+        if self.is_next_token(|kind| matches!(kind, TokenKind::RBracket)) {
+            self.tokens.next();
+            return Ok(SelectorBracketContent::Empty);
+        }
+
+        // [:end] or [:]
+        if self.is_next_token(|kind| matches!(kind, TokenKind::Colon)) {
+            self.tokens.next(); // consume ':'
+            if self.is_next_token(|kind| matches!(kind, TokenKind::RBracket)) {
+                self.tokens.next();
+                return Ok(SelectorBracketContent::Slice(None, None));
+            }
+            let end_tok = match self.tokens.next() {
+                Some(t) => Shared::clone(t),
+                None => return Err(SyntaxError::InsufficientTokens((*bracket_token).clone())),
+            };
+            let end_node = self.parse_expr(&end_tok)?;
+            self.next_token(|kind| matches!(kind, TokenKind::RBracket))?;
+            return Ok(SelectorBracketContent::Slice(None, Some(end_node)));
+        }
+
+        // Parse first expression
+        let first_tok = match self.tokens.next() {
+            Some(t) => Shared::clone(t),
+            None => return Err(SyntaxError::InsufficientTokens((*bracket_token).clone())),
+        };
+        let first_node = self.parse_expr(&first_tok)?;
+
+        // [start:] or [start:end]
+        if self.is_next_token(|kind| matches!(kind, TokenKind::Colon)) {
+            self.tokens.next(); // consume ':'
+            if self.is_next_token(|kind| matches!(kind, TokenKind::RBracket)) {
+                self.tokens.next();
+                return Ok(SelectorBracketContent::Slice(Some(first_node), None));
+            }
+            let end_tok = match self.tokens.next() {
+                Some(t) => Shared::clone(t),
+                None => return Err(SyntaxError::InsufficientTokens((*bracket_token).clone())),
+            };
+            let end_node = self.parse_expr(&end_tok)?;
+            self.next_token(|kind| matches!(kind, TokenKind::RBracket))?;
+            return Ok(SelectorBracketContent::Slice(Some(first_node), Some(end_node)));
+        }
+
+        // Single: [expr]
+        self.next_token(|kind| matches!(kind, TokenKind::RBracket))?;
+        Ok(SelectorBracketContent::Single(first_node))
     }
 
     fn parse_bracket_expr(&mut self) -> Result<Option<Shared<Node>>, SyntaxError> {

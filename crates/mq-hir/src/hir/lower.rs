@@ -12,10 +12,9 @@ use crate::{
 
 /// Constructs a [`mq_lang::Selector`] from a CST selector node.
 ///
-/// For bracket-based selectors (e.g., `.[n]`, `.[n][m]`), the CST node has
+/// For bracket-based selectors (e.g., `.[n]`, `.[n][m]`, `.[x:y]`), the CST node has
 /// `token = Selector(".")` with bracket tokens and optional number literals as
-/// children. This function inspects all children to determine bracket count and
-/// indices, then returns the appropriate `List` or `Table` selector variant.
+/// children. This function inspects all children to determine the selector kind.
 ///
 /// For all other selectors the token value is passed directly to
 /// [`mq_lang::Selector::try_from`].
@@ -24,6 +23,48 @@ fn selector_from_cst_node(node: &mq_lang::CstNode) -> Option<mq_lang::Selector> 
 
     if !matches!(&token.kind, TokenKind::Selector(s) if s == ".") {
         return mq_lang::Selector::try_from(&**token).ok();
+    }
+
+    // First pass: check if this is a slice selector (Colon inside the first bracket pair).
+    let mut in_bracket = false;
+    let mut first_bracket = true;
+    let mut has_slice = false;
+    for child in &node.children {
+        let Some(tok) = child.token.as_ref() else { continue };
+        match &tok.kind {
+            TokenKind::LBracket => {
+                in_bracket = true;
+            }
+            TokenKind::RBracket => {
+                in_bracket = false;
+                first_bracket = false;
+            }
+            TokenKind::Colon if in_bracket && first_bracket => {
+                has_slice = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    if has_slice {
+        // Extract start and end indices from the first bracket pair.
+        let mut state = 0u8; // 0 = before colon, 1 = after colon
+        let mut start: Option<isize> = None;
+        let mut end: Option<isize> = None;
+        for child in &node.children {
+            let Some(tok) = child.token.as_ref() else { continue };
+            match &tok.kind {
+                TokenKind::LBracket | TokenKind::RBracket => {}
+                TokenKind::Colon => { state = 1; }
+                TokenKind::NumberLiteral(n) if n.is_int() => {
+                    let val = n.to_int() as isize;
+                    if state == 0 { start = Some(val); } else { end = Some(val); }
+                }
+                _ => {}
+            }
+        }
+        return Some(mq_lang::Selector::Slice(start, end));
     }
 
     // Bracket-based selector: walk all children to count bracket pairs and
