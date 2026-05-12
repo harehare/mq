@@ -748,23 +748,11 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             RuntimeValue::Number(end),
         ] => {
             let chars: Vec<char> = s.chars().collect();
-            let len = chars.len();
-            let start = start.value() as isize;
-            let end = end.value() as isize;
+            let len = chars.len() as isize;
+            let real_start = resolve_slice_index(start.value() as isize, len);
+            let real_end = resolve_slice_index(end.value() as isize, len);
 
-            let real_start = if start < 0 {
-                (len as isize + start).max(0) as usize
-            } else {
-                (start as usize).min(len)
-            };
-
-            let real_end = if end < 0 {
-                (len as isize + end).max(0) as usize
-            } else {
-                (end as usize).min(len)
-            };
-
-            if real_start >= len || real_end <= real_start {
+            if real_start >= real_end {
                 return Ok("".into());
             }
 
@@ -775,28 +763,7 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             RuntimeValue::Array(arrays),
             RuntimeValue::Number(start),
             RuntimeValue::Number(end),
-        ] => {
-            let len = arrays.len();
-            let start = start.value() as isize;
-            let end = end.value() as isize;
-
-            let real_start = if start < 0 {
-                (len as isize + start).max(0) as usize
-            } else {
-                (start as usize).min(len)
-            };
-            let real_end = if end < 0 {
-                (len as isize + end).max(0) as usize
-            } else {
-                (end as usize).min(len)
-            };
-
-            if real_start >= len || real_end <= real_start {
-                return Ok(RuntimeValue::EMPTY_ARRAY);
-            }
-
-            Ok(RuntimeValue::Array(arrays[real_start..real_end].to_vec()))
-        }
+        ] => Ok(eval_array_slice(arrays, Some(start.value() as isize), Some(end.value() as isize))),
         [
             node @ RuntimeValue::Markdown(_, _),
             RuntimeValue::Number(start),
@@ -805,22 +772,11 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             .markdown_node()
             .map(|md| {
                 let chars: Vec<char> = md.value().chars().collect();
-                let len = chars.len();
-                let start = start.value() as isize;
-                let end = end.value() as isize;
+                let len = chars.len() as isize;
+                let real_start = resolve_slice_index(start.value() as isize, len);
+                let real_end = resolve_slice_index(end.value() as isize, len);
 
-                let real_start = if start < 0 {
-                    (len as isize + start).max(0) as usize
-                } else {
-                    (start as usize).min(len)
-                };
-                let real_end = if end < 0 {
-                    (len as isize + end).max(0) as usize
-                } else {
-                    (end as usize).min(len)
-                };
-
-                if real_start >= len || real_end <= real_start {
+                if real_start >= real_end {
                     return Ok(node.update_markdown_value(""));
                 }
 

@@ -2550,14 +2550,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     // Parses arguments for table or list item selectors like `.[index1][index2]` (for tables) or `.[index1]` (for lists).
     fn parse_selector_table_args(&mut self, token: Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+        let is_dynamic_node = |opt: &Option<Shared<Node>>| {
+            opt.as_ref()
+                .is_some_and(|n| !matches!(&*n.expr, Expr::Literal(Literal::Number(_))))
+        };
+
         let first = self.parse_selector_bracket_content()?;
 
-        // Handle slice: .[x:y], .[x:], .[:y], .[:]
         if let SelectorBracketContent::Slice(start, end) = first {
-            let is_dynamic_node = |opt: &Option<Shared<Node>>| {
-                opt.as_ref()
-                    .is_some_and(|n| !matches!(&*n.expr, Expr::Literal(Literal::Number(_))))
-            };
             let is_dynamic = is_dynamic_node(&start) || is_dynamic_node(&end);
 
             if is_dynamic {
@@ -2594,7 +2594,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }));
         }
 
-        // Convert to Option<Shared<Node>> for existing List/Table logic
         let first_opt = match first {
             SelectorBracketContent::Empty => None,
             SelectorBracketContent::Single(n) => Some(n),
@@ -2608,10 +2607,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None
         };
 
-        let is_dynamic_node = |opt: &Option<Shared<Node>>| {
-            opt.as_ref()
-                .is_some_and(|n| !matches!(&*n.expr, Expr::Literal(Literal::Number(_))))
-        };
         let has_dynamic = is_dynamic_node(&first_opt) || second.as_ref().is_some_and(is_dynamic_node);
         let has_explicit_args = self.is_next_token(|kind| matches!(kind, TokenKind::LParen));
 
@@ -2679,15 +2674,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         };
         self.next_token(|kind| matches!(kind, TokenKind::LBracket))?;
 
-        // Empty: []
         if self.is_next_token(|kind| matches!(kind, TokenKind::RBracket)) {
             self.tokens.next();
             return Ok(SelectorBracketContent::Empty);
         }
 
-        // [:end] or [:]
         if self.is_next_token(|kind| matches!(kind, TokenKind::Colon)) {
-            self.tokens.next(); // consume ':'
+            self.tokens.next();
             if self.is_next_token(|kind| matches!(kind, TokenKind::RBracket)) {
                 self.tokens.next();
                 return Ok(SelectorBracketContent::Slice(None, None));
@@ -2701,16 +2694,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             return Ok(SelectorBracketContent::Slice(None, Some(end_node)));
         }
 
-        // Parse first expression
         let first_tok = match self.tokens.next() {
             Some(t) => Shared::clone(t),
             None => return Err(SyntaxError::InsufficientTokens((*bracket_token).clone())),
         };
         let first_node = self.parse_expr(&first_tok)?;
 
-        // [start:] or [start:end]
         if self.is_next_token(|kind| matches!(kind, TokenKind::Colon)) {
-            self.tokens.next(); // consume ':'
+            self.tokens.next();
             if self.is_next_token(|kind| matches!(kind, TokenKind::RBracket)) {
                 self.tokens.next();
                 return Ok(SelectorBracketContent::Slice(Some(first_node), None));
@@ -2724,7 +2715,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             return Ok(SelectorBracketContent::Slice(Some(first_node), Some(end_node)));
         }
 
-        // Single: [expr]
         self.next_token(|kind| matches!(kind, TokenKind::RBracket))?;
         Ok(SelectorBracketContent::Single(first_node))
     }

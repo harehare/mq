@@ -25,59 +25,18 @@ fn selector_from_cst_node(node: &mq_lang::CstNode) -> Option<mq_lang::Selector> 
         return mq_lang::Selector::try_from(&**token).ok();
     }
 
-    // First pass: check if this is a slice selector (Colon inside the first bracket pair).
     let mut in_bracket = false;
-    let mut first_bracket = true;
-    let mut has_slice = false;
-    for child in &node.children {
-        let Some(tok) = child.token.as_ref() else { continue };
-        match &tok.kind {
-            TokenKind::LBracket => {
-                in_bracket = true;
-            }
-            TokenKind::RBracket => {
-                in_bracket = false;
-                first_bracket = false;
-            }
-            TokenKind::Colon if in_bracket && first_bracket => {
-                has_slice = true;
-                break;
-            }
-            _ => {}
-        }
-    }
-
-    if has_slice {
-        // Extract start and end indices from the first bracket pair.
-        let mut state = 0u8; // 0 = before colon, 1 = after colon
-        let mut start: Option<isize> = None;
-        let mut end: Option<isize> = None;
-        for child in &node.children {
-            let Some(tok) = child.token.as_ref() else { continue };
-            match &tok.kind {
-                TokenKind::LBracket | TokenKind::RBracket => {}
-                TokenKind::Colon => { state = 1; }
-                TokenKind::NumberLiteral(n) if n.is_int() => {
-                    let val = n.to_int() as isize;
-                    if state == 0 { start = Some(val); } else { end = Some(val); }
-                }
-                _ => {}
-            }
-        }
-        return Some(mq_lang::Selector::Slice(start, end));
-    }
-
-    // Bracket-based selector: walk all children to count bracket pairs and
-    // collect the optional number literal inside each pair.
+    let mut first_bracket_done = false;
+    let mut after_colon = false;
+    let mut is_slice = false;
+    let mut slice_start: Option<isize> = None;
+    let mut slice_end: Option<isize> = None;
     let mut bracket_pairs: u32 = 0;
     let mut indices: Vec<Option<usize>> = Vec::with_capacity(2);
-    let mut in_bracket = false;
     let mut bracket_has_number = false;
 
     for child in &node.children {
-        let Some(tok) = child.token.as_ref() else {
-            continue;
-        };
+        let Some(tok) = child.token.as_ref() else { continue };
         match &tok.kind {
             TokenKind::LBracket => {
                 in_bracket = true;
@@ -85,22 +44,36 @@ fn selector_from_cst_node(node: &mq_lang::CstNode) -> Option<mq_lang::Selector> 
                 bracket_pairs += 1;
             }
             TokenKind::RBracket => {
-                if in_bracket && !bracket_has_number {
+                if in_bracket && !bracket_has_number && !is_slice {
                     indices.push(None);
                 }
                 in_bracket = false;
+                first_bracket_done = true;
+            }
+            TokenKind::Colon if in_bracket && !first_bracket_done => {
+                is_slice = true;
+                after_colon = true;
+                // Transfer any index collected before the colon to slice_start.
+                slice_start = indices.pop().flatten().map(|i| i as isize);
             }
             TokenKind::NumberLiteral(n) if in_bracket => {
-                let idx = if n.is_int() && n.value() >= 0.0 {
-                    Some(n.to_int() as usize)
-                } else {
-                    None
-                };
-                indices.push(idx);
-                bracket_has_number = true;
+                if is_slice && !first_bracket_done {
+                    if n.is_int() {
+                        let val = n.to_int() as isize;
+                        if !after_colon { slice_start = Some(val); } else { slice_end = Some(val); }
+                    }
+                } else if !is_slice {
+                    let idx = if n.is_int() && n.value() >= 0.0 { Some(n.to_int() as usize) } else { None };
+                    indices.push(idx);
+                    bracket_has_number = true;
+                }
             }
             _ => {}
         }
+    }
+
+    if is_slice {
+        return Some(mq_lang::Selector::Slice(slice_start, slice_end));
     }
 
     match bracket_pairs {
