@@ -14,7 +14,9 @@ version = "0.5.29"
 [dependencies]
 mq-macros = {workspace = true}
 base64 = {workspace = true}
+ciborium = {workspace = true}
 csv = {workspace = true}
+hcl-rs = {workspace = true}
 md5 = {workspace = true}
 sha2 = {workspace = true}
 chrono = {workspace = true}

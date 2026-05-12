@@ -1,0 +1,6 @@
+# CBOR Implementation in mq
+
+# Parses a base64-encoded CBOR string and returns the corresponding data structure.
+def cbor_parse(input):
+  _cbor_parse(trim(to_string(input)))
+end

@@ -11,6 +11,7 @@ use crate::ident::all_symbols;
 use crate::number::{self};
 use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
+use base64::Engine;
 use csv::ReaderBuilder;
 use itertools::Itertools;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
@@ -2542,6 +2543,66 @@ fn _toml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+#[mq_macros::mq_fn(name = "_cbor_parse", params = Fixed(1))]
+fn _cbor_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(s.as_bytes())
+                .map_err(|e| Error::Runtime(format!("Failed to decode base64: {}", e)))?;
+            let value: ciborium::Value =
+                ciborium::from_reader(bytes.as_slice()).map_err(|e| Error::Runtime(format!("Failed to parse CBOR: {}", e)))?;
+            cbor_value_to_runtime(value)
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("_cbor_parse should always receive exactly one argument"),
+    }
+}
+
+fn cbor_value_to_runtime(value: ciborium::Value) -> Result<RuntimeValue, Error> {
+    match value {
+        ciborium::Value::Null => Ok(RuntimeValue::NONE),
+        ciborium::Value::Bool(b) => Ok(RuntimeValue::Boolean(b)),
+        ciborium::Value::Integer(i) => {
+            let n: i128 = i.into();
+            Ok(RuntimeValue::Number(crate::number::Number::from(n as f64)))
+        }
+        ciborium::Value::Float(f) => Ok(RuntimeValue::Number(crate::number::Number::from(f))),
+        ciborium::Value::Text(s) => Ok(RuntimeValue::String(s)),
+        ciborium::Value::Bytes(b) => Ok(RuntimeValue::String(base64::engine::general_purpose::STANDARD.encode(&b))),
+        ciborium::Value::Array(arr) => {
+            let items: Result<Vec<_>, _> = arr.into_iter().map(cbor_value_to_runtime).collect();
+            Ok(RuntimeValue::Array(items?))
+        }
+        ciborium::Value::Map(pairs) => {
+            let mut map = BTreeMap::new();
+            for (k, v) in pairs {
+                let key = match k {
+                    ciborium::Value::Text(s) => Ident::new(&s),
+                    other => Ident::new(&format!("{:?}", other)),
+                };
+                map.insert(key, cbor_value_to_runtime(v)?);
+            }
+            Ok(RuntimeValue::Dict(map))
+        }
+        ciborium::Value::Tag(_, inner) => cbor_value_to_runtime(*inner),
+        _ => Ok(RuntimeValue::NONE),
+    }
+}
+
+#[mq_macros::mq_fn(name = "_hcl_parse", params = Fixed(1))]
+fn _hcl_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => {
+            let value: serde_json::Value =
+                hcl::from_str(s).map_err(|e| Error::Runtime(format!("Failed to parse HCL: {}", e)))?;
+            Ok(value.into())
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("_hcl_parse should always receive exactly one argument"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "_xml_parse", params = Fixed(1))]
 fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -3173,6 +3234,8 @@ mq_macros::builtin_dispatch! {
     _YAML_PARSE,
     _TOON_PARSE,
     _TOML_PARSE,
+    _CBOR_PARSE,
+    _HCL_PARSE,
     _XML_PARSE,
     SET_VARIABLE,
     GET_VARIABLE,
@@ -3628,6 +3691,20 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a TOML string into a data structure.",
             params: &["toml_string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_cbor_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses a base64-encoded CBOR string into a data structure.",
+            params: &["base64_string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_hcl_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses an HCL string into a data structure.",
+            params: &["hcl_string"],
         },
     );
     map.insert(
@@ -6324,6 +6401,94 @@ mod tests {
     #[case::invalid_type(RuntimeValue::Number(1.into()))]
     fn test_toml_parse_invalid_type(#[case] input: RuntimeValue) {
         let ident = Ident::new("_toml_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![input],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::simple_map(
+        // {"name": "Alice", "age": 30}
+        "omRuYW1lZUFsaWNlY2FnZRge",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+            map.insert(Ident::new("age"), RuntimeValue::Number(30.into()));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    fn test_cbor_parse(#[case] input: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("_cbor_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(input.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::invalid_base64("not-valid-base64!!!")]
+    #[case::invalid_cbor("aGVsbG8=")]
+    fn test_cbor_parse_error(#[case] input: &str) {
+        let ident = Ident::new("_cbor_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(input.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::invalid_type(RuntimeValue::Number(1.into()))]
+    fn test_cbor_parse_invalid_type(#[case] input: RuntimeValue) {
+        let ident = Ident::new("_cbor_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![input],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::simple_block(
+        r#"resource "aws_instance" "example" { ami = "abc-123" }"#,
+        {
+            let mut instance = BTreeMap::new();
+            instance.insert(Ident::new("ami"), RuntimeValue::String("abc-123".to_string()));
+            let mut example = BTreeMap::new();
+            example.insert(Ident::new("example"), RuntimeValue::Dict(instance));
+            let mut resource = BTreeMap::new();
+            resource.insert(Ident::new("aws_instance"), RuntimeValue::Dict(example));
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("resource"), RuntimeValue::Dict(resource));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    fn test_hcl_parse(#[case] input: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("_hcl_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(input.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::invalid_type(RuntimeValue::Number(1.into()))]
+    fn test_hcl_parse_invalid_type(#[case] input: RuntimeValue) {
+        let ident = Ident::new("_hcl_parse");
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,

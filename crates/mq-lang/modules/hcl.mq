@@ -1,0 +1,6 @@
+# HCL Implementation in mq
+
+# Parses an HCL string and returns the corresponding data structure.
+def hcl_parse(input):
+  _hcl_parse(to_string(input))
+end
