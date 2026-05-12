@@ -43,5 +43,5 @@ opfs = ["dep:opfs"]
 wasm-opt = ['-O4', '--enable-simd', '--enable-bulk-memory', '--enable-nontrapping-float-to-int']
 
 [package.metadata.cargo-machete]
-ignored = ["wasm-bindgen-futures", "hcl-rs"]
+ignored = ["wasm-bindgen-futures"]
 

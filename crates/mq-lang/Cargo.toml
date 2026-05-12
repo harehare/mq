@@ -61,3 +61,7 @@ scopeguard = {workspace = true}
 [[bench]]
 harness = false
 name = "benchmark"
+
+[package.metadata.cargo-machete]
+ignored = ["hcl-rs"]
+
