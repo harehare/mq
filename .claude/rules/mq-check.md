@@ -25,7 +25,7 @@ Static type checker and type inference engine for mq programs, implemented using
 - Build/run: `cargo run -p mq-check --features cli -- <file.mq>` (omit file to read from stdin)
 - CLI flags: `--show-types` (print inferred types), `--strict-array` (reject mixed-type arrays), `--no-builtins` (skip builtin preloading, use when checking `builtin.mq` itself)
 - Debug: `DUMP_HIR=1 cargo run -p mq-check --features cli -- <file.mq>` dumps HIR to stderr
-- Tests: `just test` or `cargo test -p mq-check`
+- Tests: `just test-all` or `cargo test -p mq-check`
 
 ## Coding Rules
 

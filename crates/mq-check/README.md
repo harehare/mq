@@ -125,7 +125,7 @@ echo '[1, "hello"]' | mq-check --strict-array
 ### Running Tests
 
 ```bash
-just test
+just test-all
 ```
 
 ### Building
