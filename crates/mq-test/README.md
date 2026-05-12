@@ -68,12 +68,12 @@ end
 
 Tests use the built-in `assert_eq` and related helpers from the `test` module:
 
-| Function                   | Description                             |
-| -------------------------- | --------------------------------------- |
-| `assert_eq(actual, expect)` | Fails if `actual != expect`            |
-| `assert(cond)`              | Fails if `cond` is not `true`          |
-| `test_case(name, fn)`       | Registers a named test case            |
-| `run_tests(cases)`          | Runs all registered test cases         |
+| Function                    | Description                    |
+| --------------------------- | ------------------------------ |
+| `assert_eq(actual, expect)` | Fails if `actual != expect`    |
+| `assert(cond)`              | Fails if `cond` is not `true`  |
+| `test_case(name, fn)`       | Registers a named test case    |
+| `run_tests(cases)`          | Runs all registered test cases |
 
 The runner automatically generates a `run_tests([...])` call from all discovered test functions — test files do not need to maintain a manual list.
 
@@ -107,7 +107,7 @@ end
 ### Running Tests
 
 ```bash
-just test
+just test-all
 ```
 
 ### Building
@@ -119,4 +119,3 @@ cargo build -p mq-test
 ## License
 
 MIT
-

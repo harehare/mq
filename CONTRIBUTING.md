@@ -38,7 +38,7 @@ Before contributing, please:
 4. Run tests to ensure everything is working:
 
    ```bash
-   just test
+   just test-all
    ```
 
 ## Code Style and Standards
@@ -66,7 +66,7 @@ Before contributing, please:
 **Always run the full test suite before submitting changes:**
 
 ```bash
-just test
+just test-all
 ```
 
 ### Test Guidelines
@@ -90,7 +90,7 @@ just test-cov
 
 ### Before Submitting
 
-1. **Ensure tests pass**: Run `just test` and fix any failures
+1. **Ensure tests pass**: Run `just test-all` and fix any failures
 2. **Update documentation**: Add or update documentation for new features
 3. **Follow commit conventions**: Use clear, descriptive commit messages
 

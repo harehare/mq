@@ -38,7 +38,7 @@ Here are some useful commands to help you during development:
 just run '.code'
 
 # Run formatting, linting and all tests
-just test
+just test-all
 
 # Run formatter and linter
 just lint
