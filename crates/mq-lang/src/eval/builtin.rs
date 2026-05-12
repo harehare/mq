@@ -2549,7 +2549,7 @@ fn _cbor_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
         [RuntimeValue::String(s)] => {
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(s.as_bytes())
-                .map_err(|_| Error::InvalidBase64String(s.to_string()))?;
+                .map_err(|e| Error::Runtime(format!("Failed to decode base64: {}", e)))?;
             let value: ciborium::Value = ciborium::from_reader(bytes.as_slice())
                 .map_err(|e| Error::Runtime(format!("Failed to parse CBOR: {}", e)))?;
             cbor_value_to_runtime(value)
@@ -2597,7 +2597,7 @@ fn _hcl_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => {
             let value: serde_json::Value =
-                hcl_rs::from_str(s).map_err(|e| Error::Runtime(format!("Failed to parse HCL: {}", e)))?;
+                hcl::from_str(s).map_err(|e| Error::Runtime(format!("Failed to parse HCL: {}", e)))?;
             Ok(value.into())
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
