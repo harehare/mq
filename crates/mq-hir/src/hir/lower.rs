@@ -60,10 +60,18 @@ fn selector_from_cst_node(node: &mq_lang::CstNode) -> Option<mq_lang::Selector> 
                 if is_slice && !first_bracket_done {
                     if n.is_int() {
                         let val = n.to_int() as isize;
-                        if !after_colon { slice_start = Some(val); } else { slice_end = Some(val); }
+                        if !after_colon {
+                            slice_start = Some(val);
+                        } else {
+                            slice_end = Some(val);
+                        }
                     }
                 } else if !is_slice {
-                    let idx = if n.is_int() && n.value() >= 0.0 { Some(n.to_int() as usize) } else { None };
+                    let idx = if n.is_int() && n.value() >= 0.0 {
+                        Some(n.to_int() as usize)
+                    } else {
+                        None
+                    };
                     indices.push(idx);
                     bracket_has_number = true;
                 }

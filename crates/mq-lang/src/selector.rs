@@ -15,7 +15,11 @@ fn is_valid_isize_str(s: &str) -> bool {
     if s.is_empty() {
         return false;
     }
-    let digits = if s.starts_with('-') { &s[1..] } else { s };
+    let digits = if let Some(stripped) = s.strip_prefix('-') {
+        stripped
+    } else {
+        s
+    };
     !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
@@ -40,8 +44,16 @@ fn parse_bracket_selector(s: &str) -> Option<Selector> {
         if !end_str.is_empty() && !is_valid_isize_str(end_str) {
             return None;
         }
-        let start = if start_str.is_empty() { None } else { Some(start_str.parse::<isize>().ok()?) };
-        let end = if end_str.is_empty() { None } else { Some(end_str.parse::<isize>().ok()?) };
+        let start = if start_str.is_empty() {
+            None
+        } else {
+            Some(start_str.parse::<isize>().ok()?)
+        };
+        let end = if end_str.is_empty() {
+            None
+        } else {
+            Some(end_str.parse::<isize>().ok()?)
+        };
         return Some(Selector::Slice(start, end));
     }
 

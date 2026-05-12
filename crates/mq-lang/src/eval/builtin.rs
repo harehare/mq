@@ -763,7 +763,11 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             RuntimeValue::Array(arrays),
             RuntimeValue::Number(start),
             RuntimeValue::Number(end),
-        ] => Ok(eval_array_slice(arrays, Some(start.value() as isize), Some(end.value() as isize))),
+        ] => Ok(eval_array_slice(
+            arrays,
+            Some(start.value() as isize),
+            Some(end.value() as isize),
+        )),
         [
             node @ RuntimeValue::Markdown(_, _),
             RuntimeValue::Number(start),
@@ -4785,7 +4789,11 @@ pub fn eval_array_slice(values: &[RuntimeValue], start: Option<isize>, end: Opti
 }
 
 fn resolve_slice_index(idx: isize, len: isize) -> usize {
-    if idx < 0 { (len + idx).max(0) as usize } else { idx.min(len) as usize }
+    if idx < 0 {
+        (len + idx).max(0) as usize
+    } else {
+        idx.min(len) as usize
+    }
 }
 
 pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> RuntimeValue {

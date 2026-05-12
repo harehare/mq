@@ -2561,10 +2561,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             let is_dynamic = is_dynamic_node(&start) || is_dynamic_node(&end);
 
             if is_dynamic {
-                let make_none_node = |token_arena: &mut Arena<Shared<Token>>, token: &Shared<Token>| Shared::new(Node {
-                    token_id: token_arena.alloc(Shared::clone(token)),
-                    expr: Shared::new(Expr::Literal(Literal::None)),
-                });
+                let make_none_node = |token_arena: &mut Arena<Shared<Token>>, token: &Shared<Token>| {
+                    Shared::new(Node {
+                        token_id: token_arena.alloc(Shared::clone(token)),
+                        expr: Shared::new(Expr::Literal(Literal::None)),
+                    })
+                };
                 let start_node = start.unwrap_or_else(|| make_none_node(self.token_arena, &token));
                 let end_node = end.unwrap_or_else(|| make_none_node(self.token_arena, &token));
                 return Ok(Shared::new(Node {
@@ -2587,10 +2589,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             };
             return Ok(Shared::new(Node {
                 token_id: self.token_arena.alloc(Shared::clone(&token)),
-                expr: Shared::new(Expr::Selector(Selector::Slice(
-                    static_isize(start),
-                    static_isize(end),
-                ))),
+                expr: Shared::new(Expr::Selector(Selector::Slice(static_isize(start), static_isize(end)))),
             }));
         }
 
