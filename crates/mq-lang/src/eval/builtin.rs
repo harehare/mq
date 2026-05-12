@@ -2550,8 +2550,8 @@ fn _cbor_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(s.as_bytes())
                 .map_err(|e| Error::Runtime(format!("Failed to decode base64: {}", e)))?;
-            let value: ciborium::Value =
-                ciborium::from_reader(bytes.as_slice()).map_err(|e| Error::Runtime(format!("Failed to parse CBOR: {}", e)))?;
+            let value: ciborium::Value = ciborium::from_reader(bytes.as_slice())
+                .map_err(|e| Error::Runtime(format!("Failed to parse CBOR: {}", e)))?;
             cbor_value_to_runtime(value)
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
@@ -2569,7 +2569,9 @@ fn cbor_value_to_runtime(value: ciborium::Value) -> Result<RuntimeValue, Error> 
         }
         ciborium::Value::Float(f) => Ok(RuntimeValue::Number(crate::number::Number::from(f))),
         ciborium::Value::Text(s) => Ok(RuntimeValue::String(s)),
-        ciborium::Value::Bytes(b) => Ok(RuntimeValue::String(base64::engine::general_purpose::STANDARD.encode(&b))),
+        ciborium::Value::Bytes(b) => Ok(RuntimeValue::String(
+            base64::engine::general_purpose::STANDARD.encode(&b),
+        )),
         ciborium::Value::Array(arr) => {
             let items: Result<Vec<_>, _> = arr.into_iter().map(cbor_value_to_runtime).collect();
             Ok(RuntimeValue::Array(items?))
