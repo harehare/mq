@@ -423,10 +423,24 @@ pub fn md5(input: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(bytes_to_hex(&digest.0)))
 }
 
+/// Compute MD5 hash of raw bytes and return lowercase hex string.
+#[inline(always)]
+pub fn md5_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
+    let digest = md5::compute(input);
+    Ok(RuntimeValue::String(bytes_to_hex(&digest.0)))
+}
+
 /// Compute SHA-256 hash and return lowercase hex string.
 #[inline(always)]
 pub fn sha256(input: &str) -> Result<RuntimeValue, Error> {
     let hash = sha2::Sha256::digest(input.as_bytes());
+    Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
+}
+
+/// Compute SHA-256 hash of raw bytes and return lowercase hex string.
+#[inline(always)]
+pub fn sha256_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
+    let hash = sha2::Sha256::digest(input);
     Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
 }
 
@@ -1129,6 +1143,23 @@ mod tests {
     )]
     fn test_sha256(#[case] input: &str, #[case] expected: &str) {
         let result = sha256(input).unwrap();
+        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+    }
+
+    #[rstest]
+    #[case(b"" as &[u8], "d41d8cd98f00b204e9800998ecf8427e")]
+    #[case(b"hello", "5d41402abc4b2a76b9719d911017c592")]
+    #[case(b"hello world", "5eb63bbbe01eeed093cb22bb8f5acdc3")]
+    fn test_md5_bytes(#[case] input: &[u8], #[case] expected: &str) {
+        let result = md5_bytes(input).unwrap();
+        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+    }
+
+    #[rstest]
+    #[case(b"" as &[u8], "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")]
+    #[case(b"hello", "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")]
+    fn test_sha256_bytes(#[case] input: &[u8], #[case] expected: &str) {
+        let result = sha256_bytes(input).unwrap();
         assert_eq!(result, RuntimeValue::String(expected.to_string()));
     }
 }

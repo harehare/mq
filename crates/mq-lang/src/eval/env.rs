@@ -131,6 +131,11 @@ impl Variable {
                 value: format!("module/{}", m.len()),
                 type_field: "module".to_string(),
             },
+            RuntimeValue::Bytes(b) => Variable {
+                name: ident.to_string(),
+                value: format!("bytes({})", b.len()),
+                type_field: "bytes".to_string(),
+            },
             RuntimeValue::None => Variable {
                 name: ident.to_string(),
                 value: "None".to_string(),

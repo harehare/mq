@@ -235,6 +235,9 @@ fn now_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<Runti
 fn base64_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => convert::base64(s),
+        [RuntimeValue::Bytes(b)] => Ok(RuntimeValue::String(
+            base64::engine::general_purpose::STANDARD.encode(b.as_slice()),
+        )),
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
             .map(|md| {
@@ -307,6 +310,7 @@ fn base64urld_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
 fn md5_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => convert::md5(s),
+        [RuntimeValue::Bytes(b)] => convert::md5_bytes(b),
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
             .map(|md| {
@@ -326,6 +330,7 @@ fn md5_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 fn sha256_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => convert::sha256(s),
+        [RuntimeValue::Bytes(b)] => convert::sha256_bytes(b),
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
             .map(|md| {
@@ -829,6 +834,21 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
                 Ok(node.update_markdown_value(&sub))
             })
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [
+            RuntimeValue::Bytes(b),
+            RuntimeValue::Number(start),
+            RuntimeValue::Number(end),
+        ] => {
+            let len = b.len();
+            let start = start.value() as isize;
+            let end = end.value() as isize;
+            let real_start = if start < 0 { (len as isize + start).max(0) as usize } else { (start as usize).min(len) };
+            let real_end = if end < 0 { (len as isize + end).max(0) as usize } else { (end as usize).min(len) };
+            if real_start >= len || real_end <= real_start {
+                return Ok(RuntimeValue::Bytes(vec![]));
+            }
+            Ok(RuntimeValue::Bytes(b[real_start..real_end].to_vec()))
+        }
         [RuntimeValue::None, RuntimeValue::Number(_), RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
         [a, b, c] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -1086,6 +1106,11 @@ fn reverse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             Ok(RuntimeValue::Array(vec))
         }
         [RuntimeValue::String(s)] => Ok(s.chars().rev().collect::<String>().into()),
+        [RuntimeValue::Bytes(b)] => {
+            let mut v = std::mem::take(b);
+            v.reverse();
+            Ok(RuntimeValue::Bytes(v))
+        }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("reverse should always receive exactly one argument"),
     }
@@ -1372,6 +1397,11 @@ fn add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             })
             .unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 + *n2).into()),
+        [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => {
+            let mut result = std::mem::take(b1);
+            result.extend_from_slice(b2);
+            Ok(RuntimeValue::Bytes(result))
+        }
         [RuntimeValue::Array(a1), RuntimeValue::Array(a2)] => {
             let total_size = a1.len().saturating_add(a2.len());
             if total_size > MAX_RANGE_SIZE {
@@ -2554,6 +2584,11 @@ fn _cbor_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
                 .map_err(|e| Error::Runtime(format!("Failed to parse CBOR: {}", e)))?;
             cbor_value_to_runtime(value)
         }
+        [RuntimeValue::Bytes(b)] => {
+            let value: ciborium::Value = ciborium::from_reader(b.as_slice())
+                .map_err(|e| Error::Runtime(format!("Failed to parse CBOR: {}", e)))?;
+            cbor_value_to_runtime(value)
+        }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("_cbor_parse should always receive exactly one argument"),
     }
@@ -2569,9 +2604,7 @@ fn cbor_value_to_runtime(value: ciborium::Value) -> Result<RuntimeValue, Error> 
         }
         ciborium::Value::Float(f) => Ok(RuntimeValue::Number(crate::number::Number::from(f))),
         ciborium::Value::Text(s) => Ok(RuntimeValue::String(s)),
-        ciborium::Value::Bytes(b) => Ok(RuntimeValue::String(
-            base64::engine::general_purpose::STANDARD.encode(&b),
-        )),
+        ciborium::Value::Bytes(b) => Ok(RuntimeValue::Bytes(b)),
         ciborium::Value::Array(arr) => {
             let items: Result<Vec<_>, _> = arr.into_iter().map(cbor_value_to_runtime).collect();
             Ok(RuntimeValue::Array(items?))
@@ -2602,6 +2635,72 @@ fn _hcl_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("_hcl_parse should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "_hcl_stringify", params = Fixed(1))]
+fn _hcl_stringify_impl(_ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [value] => {
+            let json_value = runtime_to_json_value(value);
+            let s = hcl::to_string(&json_value).map_err(|e| Error::Runtime(format!("Failed to serialize HCL: {}", e)))?;
+            Ok(RuntimeValue::String(s))
+        }
+        _ => unreachable!("_hcl_stringify should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "_cbor_stringify", params = Fixed(1))]
+fn _cbor_stringify_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [value] => {
+            let cbor_value = runtime_to_cbor_value(std::mem::take(value));
+            let mut buf = Vec::new();
+            ciborium::into_writer(&cbor_value, &mut buf)
+                .map_err(|e| Error::Runtime(format!("Failed to serialize CBOR: {}", e)))?;
+            Ok(RuntimeValue::Bytes(buf))
+        }
+        _ => unreachable!("_cbor_stringify should always receive exactly one argument"),
+    }
+}
+
+fn runtime_to_json_value(value: &RuntimeValue) -> serde_json::Value {
+    match value {
+        RuntimeValue::None => serde_json::Value::Null,
+        RuntimeValue::Boolean(b) => serde_json::Value::Bool(*b),
+        RuntimeValue::Number(n) => serde_json::Number::from_f64(n.value())
+            .map(serde_json::Value::Number)
+            .unwrap_or(serde_json::Value::Null),
+        RuntimeValue::String(s) => serde_json::Value::String(s.clone()),
+        RuntimeValue::Symbol(i) => serde_json::Value::String(i.to_string()),
+        RuntimeValue::Array(arr) => serde_json::Value::Array(arr.iter().map(runtime_to_json_value).collect()),
+        RuntimeValue::Dict(map) => {
+            let obj: serde_json::Map<String, serde_json::Value> =
+                map.iter().map(|(k, v)| (k.to_string(), runtime_to_json_value(v))).collect();
+            serde_json::Value::Object(obj)
+        }
+        RuntimeValue::Bytes(b) => {
+            serde_json::Value::String(base64::engine::general_purpose::STANDARD.encode(b))
+        }
+        _ => serde_json::Value::Null,
+    }
+}
+
+fn runtime_to_cbor_value(value: RuntimeValue) -> ciborium::Value {
+    match value {
+        RuntimeValue::None => ciborium::Value::Null,
+        RuntimeValue::Boolean(b) => ciborium::Value::Bool(b),
+        RuntimeValue::Number(n) => ciborium::Value::Float(n.value()),
+        RuntimeValue::String(s) => ciborium::Value::Text(s),
+        RuntimeValue::Symbol(i) => ciborium::Value::Text(i.to_string()),
+        RuntimeValue::Bytes(b) => ciborium::Value::Bytes(b),
+        RuntimeValue::Array(arr) => ciborium::Value::Array(arr.into_iter().map(runtime_to_cbor_value).collect()),
+        RuntimeValue::Dict(map) => ciborium::Value::Map(
+            map.into_iter()
+                .map(|(k, v)| (ciborium::Value::Text(k.to_string()), runtime_to_cbor_value(v)))
+                .collect(),
+        ),
+        _ => ciborium::Value::Null,
     }
 }
 
@@ -3237,7 +3336,9 @@ mq_macros::builtin_dispatch! {
     _TOON_PARSE,
     _TOML_PARSE,
     _CBOR_PARSE,
+    _CBOR_STRINGIFY,
     _HCL_PARSE,
+    _HCL_STRINGIFY,
     _XML_PARSE,
     SET_VARIABLE,
     GET_VARIABLE,
@@ -3698,8 +3799,15 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
     map.insert(
         SmolStr::new("_cbor_parse"),
         BuiltinFunctionDoc {
-            description: "Parses a base64-encoded CBOR string into a data structure.",
-            params: &["base64_string"],
+            description: "Parses a base64-encoded CBOR string or raw bytes into a data structure.",
+            params: &["input"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_cbor_stringify"),
+        BuiltinFunctionDoc {
+            description: "Serializes a value to CBOR bytes.",
+            params: &["value"],
         },
     );
     map.insert(
@@ -3707,6 +3815,13 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses an HCL string into a data structure.",
             params: &["hcl_string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_hcl_stringify"),
+        BuiltinFunctionDoc {
+            description: "Serializes a value to an HCL string.",
+            params: &["value"],
         },
     );
     map.insert(
@@ -6498,6 +6613,166 @@ mod tests {
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_hcl_stringify_dict() {
+        let ident = Ident::new("_hcl_stringify");
+        let mut map = BTreeMap::new();
+        map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+        map.insert(Ident::new("age"), RuntimeValue::Number(30.into()));
+        let input = RuntimeValue::Dict(map);
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![input],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_ok());
+        let s = result.unwrap().to_string();
+        assert!(s.contains("name") && s.contains("Alice"));
+        assert!(s.contains("age"));
+    }
+
+    #[rstest]
+    #[case::simple_map(
+        // {"name": "Alice", "age": 30} encoded as CBOR then base64
+        "omRuYW1lZUFsaWNlY2FnZRge",
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+            map.insert(Ident::new("age"), RuntimeValue::Number(30.into()));
+            Ok(RuntimeValue::Dict(map))
+        }
+    )]
+    fn test_cbor_stringify_roundtrip(#[case] base64_input: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let env = Shared::new(SharedCell::new(Env::default()));
+
+        // parse
+        let ident_parse = Ident::new("_cbor_parse");
+        let parsed = eval_builtin(
+            &RuntimeValue::None,
+            &ident_parse,
+            vec![RuntimeValue::String(base64_input.to_string())],
+            &env,
+        );
+        assert!(parsed.is_ok());
+        assert_eq!(parsed.as_ref().ok(), expected.as_ref().ok());
+
+        // stringify
+        let ident_stringify = Ident::new("_cbor_stringify");
+        let bytes_result = eval_builtin(
+            &RuntimeValue::None,
+            &ident_stringify,
+            vec![parsed.unwrap()],
+            &env,
+        );
+        assert!(bytes_result.is_ok());
+        assert!(matches!(bytes_result.unwrap(), RuntimeValue::Bytes(_)));
+    }
+
+    #[test]
+    fn test_cbor_parse_from_bytes() {
+        // {"name": "Alice"} as raw CBOR bytes
+        let cbor_bytes = base64::engine::general_purpose::STANDARD
+            .decode("oWRuYW1lZUFsaWNl")
+            .unwrap();
+        let ident = Ident::new("_cbor_parse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::Bytes(cbor_bytes)],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_ok());
+        let mut expected = BTreeMap::new();
+        expected.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+        assert_eq!(result.unwrap(), RuntimeValue::Dict(expected));
+    }
+
+    #[test]
+    fn test_base64_bytes_input() {
+        let ident = Ident::new("base64");
+        let bytes = vec![0x48u8, 0x65, 0x6c, 0x6c, 0x6f]; // "Hello"
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::Bytes(bytes)],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, Ok(RuntimeValue::String("SGVsbG8=".to_string())));
+    }
+
+    #[test]
+    fn test_bytes_add() {
+        let ident = Ident::new("add");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::Bytes(vec![1, 2]), RuntimeValue::Bytes(vec![3, 4])],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, Ok(RuntimeValue::Bytes(vec![1, 2, 3, 4])));
+    }
+
+    #[test]
+    fn test_bytes_reverse() {
+        let ident = Ident::new("reverse");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::Bytes(vec![1, 2, 3])],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, Ok(RuntimeValue::Bytes(vec![3, 2, 1])));
+    }
+
+    #[test]
+    fn test_bytes_slice() {
+        let ident = Ident::new("slice");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![
+                RuntimeValue::Bytes(vec![10, 20, 30, 40, 50]),
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(4.into()),
+            ],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, Ok(RuntimeValue::Bytes(vec![20, 30, 40])));
+    }
+
+    #[test]
+    fn test_md5_bytes_input() {
+        let ident = Ident::new("md5");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::Bytes(b"hello".to_vec())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(
+            result,
+            Ok(RuntimeValue::String("5d41402abc4b2a76b9719d911017c592".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_sha256_bytes_input() {
+        let ident = Ident::new("sha256");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::Bytes(b"hello".to_vec())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(
+            result,
+            Ok(RuntimeValue::String(
+                "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".to_string()
+            ))
+        );
     }
 
     #[rstest]

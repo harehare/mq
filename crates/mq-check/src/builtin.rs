@@ -26,6 +26,7 @@ pub fn register_all(ctx: &mut InferenceContext) {
     register_variable(ctx);
     register_debug(ctx);
     register_file_io(ctx);
+    register_bytes(ctx);
 }
 
 /// Registers multiple builtins with the same type signature.
@@ -1085,6 +1086,16 @@ fn register_debug(ctx: &mut InferenceContext) {
 /// File I/O functions
 fn register_file_io(ctx: &mut InferenceContext) {
     register_unary(ctx, "read_file", Type::String, Type::String);
+}
+
+fn register_bytes(ctx: &mut InferenceContext) {
+    // _cbor_stringify: (a) -> bytes
+    let a = ctx.fresh_var();
+    register_unary(ctx, "_cbor_stringify", Type::Var(a), Type::Bytes);
+
+    // _hcl_stringify: (a) -> string
+    let a = ctx.fresh_var();
+    register_unary(ctx, "_hcl_stringify", Type::Var(a), Type::String);
 }
 
 #[cfg(test)]

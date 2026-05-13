@@ -56,7 +56,8 @@ pub fn unify(
         | (Type::Bool, Type::Bool)
         | (Type::Symbol, Type::Symbol)
         | (Type::None, Type::None)
-        | (Type::Markdown, Type::Markdown) => {}
+        | (Type::Markdown, Type::Markdown)
+        | (Type::Bytes, Type::Bytes) => {}
 
         // Type variables
         (Type::Var(v1), Type::Var(v2)) if v1 == v2 => {}

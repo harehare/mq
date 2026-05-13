@@ -29,6 +29,8 @@ pub enum Type {
     None,
     /// Markdown document type
     Markdown,
+    /// Raw binary data type (e.g. CBOR byte strings)
+    Bytes,
     /// Array type with element type
     Array(Box<Type>),
     /// Tuple type with known element types (e.g., `(number, string)`)
@@ -180,15 +182,16 @@ impl Type {
             Type::Symbol => 5,
             Type::None => 6,
             Type::Markdown => 7,
-            Type::Array(_) => 8,
-            Type::Tuple(_) => 9,
-            Type::Dict(_, _) => 10,
-            Type::Function(_, _) => 11,
-            Type::Union(_) => 12,
-            Type::Record(_, _) => 13,
-            Type::RowEmpty => 14,
-            Type::Var(_) => 15,
-            Type::Never => 16,
+            Type::Bytes => 8,
+            Type::Array(_) => 9,
+            Type::Tuple(_) => 10,
+            Type::Dict(_, _) => 11,
+            Type::Function(_, _) => 12,
+            Type::Union(_) => 13,
+            Type::Record(_, _) => 14,
+            Type::RowEmpty => 15,
+            Type::Var(_) => 16,
+            Type::Never => 17,
         }
     }
 
@@ -293,7 +296,8 @@ impl Type {
             | (Type::Bool, Type::Bool)
             | (Type::Symbol, Type::Symbol)
             | (Type::None, Type::None)
-            | (Type::Markdown, Type::Markdown) => true,
+            | (Type::Markdown, Type::Markdown)
+            | (Type::Bytes, Type::Bytes) => true,
 
             // Arrays match if their element types can match
             (Type::Array(elem1), Type::Array(elem2)) => elem1.can_match(elem2),
@@ -375,7 +379,8 @@ impl Type {
             | (Type::Bool, Type::Bool)
             | (Type::Symbol, Type::Symbol)
             | (Type::None, Type::None)
-            | (Type::Markdown, Type::Markdown) => true,
+            | (Type::Markdown, Type::Markdown)
+            | (Type::Bytes, Type::Bytes) => true,
 
             // Arrays: recurse strictly
             (Type::Array(elem1), Type::Array(elem2)) => elem1.can_branch_unify_with(elem2),
@@ -432,7 +437,8 @@ impl Type {
             | (Type::Bool, Type::Bool)
             | (Type::Symbol, Type::Symbol)
             | (Type::None, Type::None)
-            | (Type::Markdown, Type::Markdown) => Some(100),
+            | (Type::Markdown, Type::Markdown)
+            | (Type::Bytes, Type::Bytes) => Some(100),
 
             // Type variables get low score (prefer concrete types).
             // This arm must come BEFORE the union arms so that a Var parameter
@@ -524,6 +530,7 @@ impl Type {
             Type::Symbol => "symbol".to_string(),
             Type::None => "none".to_string(),
             Type::Markdown => "markdown".to_string(),
+            Type::Bytes => "bytes".to_string(),
             Type::Array(elem) => format!("[{}]", elem.display_resolved()),
             Type::Tuple(elems) => {
                 let elems_str = elems
@@ -598,6 +605,7 @@ impl Type {
             Type::Symbol => "symbol".to_string(),
             Type::None => "none".to_string(),
             Type::Markdown => "markdown".to_string(),
+            Type::Bytes => "bytes".to_string(),
             Type::Array(elem) => format!("[{}]", elem.fmt_renumbered(var_map, counter)),
             Type::Tuple(elems) => {
                 let elems_str = elems

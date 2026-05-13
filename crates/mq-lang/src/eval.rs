@@ -340,7 +340,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                 RuntimeValue::Dict(_)
                 | RuntimeValue::Boolean(_)
                 | RuntimeValue::Number(_)
-                | RuntimeValue::String(_) => value.to_string().into(),
+                | RuntimeValue::String(_)
+                | RuntimeValue::Bytes(_) => value.to_string().into(),
                 RuntimeValue::Symbol(i) => i.as_str().into(),
                 RuntimeValue::Markdown(node, _) => *node,
             })

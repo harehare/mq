@@ -101,6 +101,8 @@ pub enum RuntimeValue {
     Module(ModuleEnv),
     /// An AST node (quoted expression).
     Ast(Shared<ast::node::Node>),
+    /// Raw binary data (e.g. CBOR byte strings).
+    Bytes(Vec<u8>),
     /// An empty or null value.
     #[default]
     None,
@@ -121,6 +123,7 @@ impl PartialEq for RuntimeValue {
             (RuntimeValue::Dict(a), RuntimeValue::Dict(b)) => a == b,
             (RuntimeValue::Module(a), RuntimeValue::Module(b)) => a == b,
             (RuntimeValue::Ast(a), RuntimeValue::Ast(b)) => a == b,
+            (RuntimeValue::Bytes(a), RuntimeValue::Bytes(b)) => a == b,
             (RuntimeValue::None, RuntimeValue::None) => true,
             _ => false,
         }
@@ -284,6 +287,7 @@ impl PartialOrd for RuntimeValue {
                 Some(Ordering::Less) => Some(Ordering::Less),
                 _ => None,
             },
+            (RuntimeValue::Bytes(a), RuntimeValue::Bytes(b)) => a.partial_cmp(b),
             (RuntimeValue::Dict(_), _) => None,
             (_, RuntimeValue::Dict(_)) => None,
             (RuntimeValue::Module(a), RuntimeValue::Module(b)) => a.name.partial_cmp(&b.name),
@@ -309,6 +313,7 @@ impl std::fmt::Display for RuntimeValue {
             Self::Dict(_) => self.string(),
             Self::Module(module_name) => Cow::Owned(format!(r#"module "{}""#, module_name.name)),
             Self::Ast(node) => Cow::Owned(node.to_code()),
+            Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
         };
         write!(f, "{}", value)
     }
@@ -320,10 +325,19 @@ impl std::fmt::Debug for RuntimeValue {
             Self::None => Cow::Borrowed("None"),
             Self::String(s) => Cow::Owned(format!("{:?}", s)),
             Self::Array(arr) => Cow::Owned(format!("{:?}", arr)),
+            Self::Bytes(b) => Cow::Owned(format!("bytes({})", bytes_to_hex(b))),
             a => a.string(),
         };
         write!(f, "{}", v)
     }
+}
+
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    bytes.iter().fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
+        write!(s, "{b:02x}").unwrap();
+        s
+    })
 }
 
 impl RuntimeValue {
@@ -363,6 +377,7 @@ impl RuntimeValue {
             RuntimeValue::Dict(_) => "dict",
             RuntimeValue::Module(_) => "module",
             RuntimeValue::Ast(_) => "ast",
+            RuntimeValue::Bytes(_) => "bytes",
         }
     }
 
@@ -407,6 +422,7 @@ impl RuntimeValue {
             RuntimeValue::String(s) => s.is_empty(),
             RuntimeValue::Markdown(m, _) => m.value().is_empty(),
             RuntimeValue::Dict(m) => m.is_empty(),
+            RuntimeValue::Bytes(b) => b.is_empty(),
             RuntimeValue::None => true,
             _ => false,
         }
@@ -434,6 +450,7 @@ impl RuntimeValue {
             | RuntimeValue::Dict(_) => true,
             RuntimeValue::Module(_) => true,
             RuntimeValue::Ast(_) => true,
+            RuntimeValue::Bytes(b) => !b.is_empty(),
             RuntimeValue::None => false,
         }
     }
@@ -452,6 +469,7 @@ impl RuntimeValue {
             RuntimeValue::Array(a) => a.len(),
             RuntimeValue::Markdown(m, _) => m.value().len(),
             RuntimeValue::Dict(m) => m.len(),
+            RuntimeValue::Bytes(b) => b.len(),
             RuntimeValue::None => 0,
             RuntimeValue::Function(..) => 0,
             RuntimeValue::Module(m) => m.len(),
@@ -524,6 +542,7 @@ impl RuntimeValue {
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             Self::Module(m) => Cow::Owned(format!("module/{}", m.name())),
             Self::Ast(node) => Cow::Owned(node.to_code()),
+            Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
             Self::Dict(map) => {
                 let items = map
                     .iter()
@@ -658,6 +677,9 @@ impl RuntimeValues {
                                 })
                                 .collect::<Vec<_>>(),
                         ),
+                        RuntimeValue::Bytes(b) => {
+                            RuntimeValue::new_markdown(node.with_value(bytes_to_hex(b).as_str()))
+                        }
                         RuntimeValue::Dict(map) => {
                             let mut new_dict = BTreeMap::new();
                             for (k, v) in map {
@@ -1035,5 +1057,59 @@ mod tests {
         let num_val = RuntimeValue::Number(Number::from(5.0));
         assert_eq!(map1.partial_cmp(&num_val), None);
         assert_eq!(num_val.partial_cmp(&map1), None);
+    }
+
+    #[test]
+    fn test_bytes_name() {
+        assert_eq!(RuntimeValue::Bytes(vec![]).name(), "bytes");
+        assert_eq!(RuntimeValue::Bytes(vec![1, 2, 3]).name(), "bytes");
+    }
+
+    #[test]
+    fn test_bytes_is_empty() {
+        assert!(RuntimeValue::Bytes(vec![]).is_empty());
+        assert!(!RuntimeValue::Bytes(vec![0]).is_empty());
+    }
+
+    #[test]
+    fn test_bytes_is_truthy() {
+        assert!(!RuntimeValue::Bytes(vec![]).is_truthy());
+        assert!(RuntimeValue::Bytes(vec![0]).is_truthy());
+        assert!(RuntimeValue::Bytes(vec![1, 2, 3]).is_truthy());
+    }
+
+    #[test]
+    fn test_bytes_len() {
+        assert_eq!(RuntimeValue::Bytes(vec![]).len(), 0);
+        assert_eq!(RuntimeValue::Bytes(vec![1, 2, 3]).len(), 3);
+    }
+
+    #[test]
+    fn test_bytes_display() {
+        assert_eq!(format!("{}", RuntimeValue::Bytes(vec![0xde, 0xad, 0xbe, 0xef])), "deadbeef");
+        assert_eq!(format!("{}", RuntimeValue::Bytes(vec![])), "");
+    }
+
+    #[test]
+    fn test_bytes_debug() {
+        assert_eq!(format!("{:?}", RuntimeValue::Bytes(vec![0xca, 0xfe])), "bytes(cafe)");
+    }
+
+    #[test]
+    fn test_bytes_partial_eq() {
+        assert_eq!(RuntimeValue::Bytes(vec![1, 2]), RuntimeValue::Bytes(vec![1, 2]));
+        assert_ne!(RuntimeValue::Bytes(vec![1, 2]), RuntimeValue::Bytes(vec![1, 3]));
+        assert_ne!(RuntimeValue::Bytes(vec![1, 2]), RuntimeValue::String("0102".to_string()));
+    }
+
+    #[test]
+    fn test_bytes_partial_ord() {
+        assert!(RuntimeValue::Bytes(vec![1]) < RuntimeValue::Bytes(vec![2]));
+        assert!(RuntimeValue::Bytes(vec![1, 2]) > RuntimeValue::Bytes(vec![1]));
+        assert_eq!(
+            RuntimeValue::Bytes(vec![1]).partial_cmp(&RuntimeValue::Bytes(vec![1])),
+            Some(std::cmp::Ordering::Equal)
+        );
+        assert_eq!(RuntimeValue::Bytes(vec![]).partial_cmp(&RuntimeValue::None), None);
     }
 }

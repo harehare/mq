@@ -1,6 +1,14 @@
 # CBOR Implementation in mq
 
-# Parses a base64-encoded CBOR string and returns the corresponding data structure.
+# Parses a base64-encoded CBOR string (or raw bytes) and returns the corresponding data structure.
 def cbor_parse(input):
-  _cbor_parse(trim(to_string(input)))
+  if (is_bytes(input)):
+    _cbor_parse(input)
+  else:
+    _cbor_parse(trim(to_string(input)))
+end
+
+# Serializes a value to CBOR bytes.
+def cbor_stringify(data):
+  _cbor_stringify(data)
 end
