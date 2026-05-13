@@ -92,7 +92,7 @@ jobs:
           target: ${{ matrix.target }}
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
       - name: Install cargo-deb
-        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        uses: taiki-e/install-action@3235f8901fd37ffed0052b276cec25a362fb82e9 # v2.77.7
         with:
           tool: cargo-deb
       - name: Install musl-tools
@@ -131,7 +131,7 @@ jobs:
           target: ${{ matrix.target }}
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
       - name: Install cargo-generate-rpm
-        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        uses: taiki-e/install-action@3235f8901fd37ffed0052b276cec25a362fb82e9 # v2.77.7
         with:
           tool: cargo-generate-rpm
       - name: Install musl-tools
