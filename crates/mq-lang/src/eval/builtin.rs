@@ -11,7 +11,7 @@ use crate::ident::all_symbols;
 use crate::number::{self};
 use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
-use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
+use chrono::{DateTime, Datelike, Duration, Local, Months, NaiveDate, Timelike};
 use csv::ReaderBuilder;
 use itertools::Itertools;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
@@ -323,6 +323,96 @@ fn strftime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
             vec![std::mem::take(a), std::mem::take(b)],
         )),
         _ => unreachable!("strftime should always receive exactly two arguments"),
+    }
+}
+
+/// Adds n units to a broken-down time array and returns a new broken-down array (UTC).
+/// Input/output format: [year, month (0-11), day, hour, minute, second, weekday, day-of-year]
+/// Units: "seconds", "minutes", "hours", "days", "weeks", "months", "years"
+/// Month/year arithmetic is calendar-aware (e.g. Jan 31 + 1 month = Feb 28/29).
+#[mq_macros::mq_fn(name = "date_add", params = Fixed(3))]
+fn date_add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [
+            RuntimeValue::Array(arr),
+            RuntimeValue::Number(n),
+            RuntimeValue::String(unit),
+        ] if arr.len() == 8 => {
+            let amount = n.value() as i64;
+            let dt = broken_down_time_to_naive(arr)?.and_utc();
+            let result = match unit.as_str() {
+                "seconds" => dt.checked_add_signed(Duration::seconds(amount)),
+                "minutes" => dt.checked_add_signed(Duration::minutes(amount)),
+                "hours" => dt.checked_add_signed(Duration::hours(amount)),
+                "days" => dt.checked_add_signed(Duration::days(amount)),
+                "weeks" => dt.checked_add_signed(Duration::weeks(amount)),
+                "months" => {
+                    if amount >= 0 {
+                        dt.checked_add_months(Months::new(amount as u32))
+                    } else {
+                        dt.checked_sub_months(Months::new((-amount) as u32))
+                    }
+                }
+                "years" => {
+                    if amount >= 0 {
+                        dt.checked_add_months(Months::new(amount as u32 * 12))
+                    } else {
+                        dt.checked_sub_months(Months::new((-amount) as u32 * 12))
+                    }
+                }
+                u => {
+                    return Err(Error::Runtime(format!(
+                        "date_add: unknown unit {:?}, expected \"seconds\", \"minutes\", \"hours\", \"days\", \"weeks\", \"months\", or \"years\"",
+                        u
+                    )));
+                }
+            };
+            result
+                .map(|dt| broken_down_time_array(&dt))
+                .ok_or_else(|| Error::Runtime("date_add: arithmetic overflow or invalid date".to_string()))
+        }
+        [a, b, c] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+        )),
+        _ => unreachable!("date_add should always receive exactly three arguments"),
+    }
+}
+
+/// Returns the difference (array2 - array1) in the given unit.
+/// Input format: [year, month (0-11), day, hour, minute, second, weekday, day-of-year]
+/// Units: "seconds", "minutes", "hours", "days", "weeks"
+#[mq_macros::mq_fn(name = "date_diff", params = Fixed(3))]
+fn date_diff_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [
+            RuntimeValue::Array(arr1),
+            RuntimeValue::Array(arr2),
+            RuntimeValue::String(unit),
+        ] if arr1.len() == 8 && arr2.len() == 8 => {
+            let dt1 = broken_down_time_to_naive(arr1)?.and_utc();
+            let dt2 = broken_down_time_to_naive(arr2)?.and_utc();
+            let diff = dt2.signed_duration_since(dt1);
+            let result = match unit.as_str() {
+                "seconds" => diff.num_seconds(),
+                "minutes" => diff.num_minutes(),
+                "hours" => diff.num_hours(),
+                "days" => diff.num_days(),
+                "weeks" => diff.num_weeks(),
+                u => {
+                    return Err(Error::Runtime(format!(
+                        "date_diff: unknown unit {:?}, expected \"seconds\", \"minutes\", \"hours\", \"days\", or \"weeks\"",
+                        u
+                    )));
+                }
+            };
+            Ok(RuntimeValue::Number(result.into()))
+        }
+        [a, b, c] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+        )),
+        _ => unreachable!("date_diff should always receive exactly three arguments"),
     }
 }
 
@@ -3156,6 +3246,8 @@ mq_macros::builtin_dispatch! {
     LOCALTIME,
     MKTIME,
     STRFTIME,
+    DATE_ADD,
+    DATE_DIFF,
     BASE64,
     BASE64D,
     BASE64URL,
@@ -3874,6 +3966,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Formats a Unix timestamp (seconds) as a date string using the given strftime format (e.g. \"%Y-%m-%d\").",
             params: &["timestamp", "format"],
+        },
+    );
+    map.insert(
+        SmolStr::new("date_add"),
+        BuiltinFunctionDoc {
+            description: "Adds n units to a broken-down time array and returns a new array. Units: \"seconds\", \"minutes\", \"hours\", \"days\", \"weeks\", \"months\", \"years\". Month/year arithmetic is calendar-aware.",
+            params: &["array", "n", "unit"],
+        },
+    );
+    map.insert(
+        SmolStr::new("date_diff"),
+        BuiltinFunctionDoc {
+            description: "Returns the difference (array2 - array1) in the given unit. Units: \"seconds\", \"minutes\", \"hours\", \"days\", \"weeks\".",
+            params: &["array1", "array2", "unit"],
         },
     );
     map.insert(
@@ -5230,6 +5336,135 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result, RuntimeValue::String(expected.into()));
+    }
+
+    fn gmtime_array(secs: i64) -> RuntimeValue {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("gmtime"),
+            vec![RuntimeValue::Number(secs.into())],
+            &env,
+        )
+        .unwrap()
+    }
+
+    // date_add: simple durations
+    #[rstest]
+    #[case(1704067200_i64, 60, "seconds", 1704067260_i64)]
+    #[case(1704067200_i64, 5, "minutes", 1704067500_i64)]
+    #[case(1704067200_i64, 2, "hours", 1704074400_i64)]
+    #[case(1704067200_i64, 1, "days", 1704153600_i64)]
+    #[case(1704067200_i64, -1,  "days",    1703980800_i64)]
+    #[case(1704067200_i64, 1, "weeks", 1704672000_i64)]
+    fn test_date_add_duration(#[case] base: i64, #[case] n: i64, #[case] unit: &str, #[case] expected_secs: i64) {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let arr = gmtime_array(base);
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("date_add"),
+            vec![arr, RuntimeValue::Number(n.into()), RuntimeValue::String(unit.into())],
+            &env,
+        )
+        .unwrap();
+        // convert result array back to timestamp via mktime and compare
+        let ts = eval_builtin(&RuntimeValue::None, &Ident::new("mktime"), vec![result], &env).unwrap();
+        assert_eq!(ts, RuntimeValue::Number(expected_secs.into()));
+    }
+
+    // date_add: calendar-aware month/year arithmetic
+    #[test]
+    fn test_date_add_months_end_of_month() {
+        // 2024-01-31 + 1 month = 2024-02-29 (leap year)
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let arr = gmtime_array(1706659200); // 2024-01-31T00:00:00Z
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("date_add"),
+            vec![
+                arr,
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::String("months".into()),
+            ],
+            &env,
+        )
+        .unwrap();
+        // 2024-02-29T00:00:00Z = 1709164800
+        let ts = eval_builtin(&RuntimeValue::None, &Ident::new("mktime"), vec![result], &env).unwrap();
+        assert_eq!(ts, RuntimeValue::Number(1709164800_i64.into()));
+    }
+
+    #[test]
+    fn test_date_add_years() {
+        // 2024-02-29 + 1 year = 2025-02-28 (non-leap year clamps)
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let arr = gmtime_array(1709164800); // 2024-02-29T00:00:00Z
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("date_add"),
+            vec![
+                arr,
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::String("years".into()),
+            ],
+            &env,
+        )
+        .unwrap();
+        // 2025-02-28T00:00:00Z = 1740700800
+        let ts = eval_builtin(&RuntimeValue::None, &Ident::new("mktime"), vec![result], &env).unwrap();
+        assert_eq!(ts, RuntimeValue::Number(1740700800_i64.into()));
+    }
+
+    #[test]
+    fn test_date_add_invalid_unit() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let arr = gmtime_array(0);
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("date_add"),
+            vec![
+                arr,
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::String("centuries".into()),
+            ],
+            &env,
+        );
+        assert!(matches!(result, Err(Error::Runtime(_))));
+    }
+
+    // date_diff: difference in various units
+    #[rstest]
+    #[case(1704067200_i64, 1704153600_i64, "seconds", 86400_i64)]
+    #[case(1704067200_i64, 1704153600_i64, "minutes", 1440_i64)]
+    #[case(1704067200_i64, 1704153600_i64, "hours", 24_i64)]
+    #[case(1704067200_i64, 1704153600_i64, "days", 1_i64)]
+    #[case(1704067200_i64, 1704672000_i64, "weeks", 1_i64)]
+    #[case(1704153600_i64, 1704067200_i64, "seconds", -86400_i64)]
+    fn test_date_diff(#[case] base1: i64, #[case] base2: i64, #[case] unit: &str, #[case] expected: i64) {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let arr1 = gmtime_array(base1);
+        let arr2 = gmtime_array(base2);
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("date_diff"),
+            vec![arr1, arr2, RuntimeValue::String(unit.into())],
+            &env,
+        )
+        .unwrap();
+        assert_eq!(result, RuntimeValue::Number(expected.into()));
+    }
+
+    #[test]
+    fn test_date_diff_invalid_unit() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let arr = gmtime_array(0);
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("date_diff"),
+            vec![arr.clone(), arr, RuntimeValue::String("months".into())],
+            &env,
+        );
+        assert!(matches!(result, Err(Error::Runtime(_))));
     }
 
     #[test]

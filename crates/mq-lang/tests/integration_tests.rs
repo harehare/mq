@@ -2662,6 +2662,24 @@ fn engine() -> DefaultEngine {
 // now | gmtime / strftime pipeline
 #[case::now_gmtime_len("now | gmtime | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(8.into())].into()))]
 #[case::now_strftime_len("now | strftime(\"%Y-%m-%d\") | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(10.into())].into()))]
+// date_add: add days → result is array of length 8
+#[case::date_add_days_len("gmtime(1704067200) | date_add(1, \"days\") | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(8.into())].into()))]
+// date_add: add days then mktime = original + 86400
+#[case::date_add_days_roundtrip("gmtime(1704067200) | date_add(1, \"days\") | mktime", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1704153600_i64.into())].into()))]
+// date_add: add months calendar-aware (2024-01-31 + 1 month = 2024-02-29)
+#[case::date_add_month_clamp("gmtime(1706659200) | date_add(1, \"months\") | mktime", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1709164800_i64.into())].into()))]
+// date_add: add years calendar-aware (2024-02-29 + 1 year = 2025-02-28)
+#[case::date_add_year_clamp("gmtime(1709164800) | date_add(1, \"years\") | mktime", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1740700800_i64.into())].into()))]
+// date_add: pipeline now | gmtime | date_add returns array
+#[case::date_add_now_pipeline("now | gmtime | date_add(7, \"days\") | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(8.into())].into()))]
+// date_diff: 1 day apart
+#[case::date_diff_days("date_diff(gmtime(1704067200), gmtime(1704153600), \"days\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+// date_diff: 24 hours apart
+#[case::date_diff_hours("date_diff(gmtime(1704067200), gmtime(1704153600), \"hours\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(24.into())].into()))]
+// date_diff: negative (reversed order)
+#[case::date_diff_negative("date_diff(gmtime(1704153600), gmtime(1704067200), \"days\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number((-1_i64).into())].into()))]
+// date_diff: same → 0
+#[case::date_diff_zero("date_diff(gmtime(1704067200), gmtime(1704067200), \"seconds\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
