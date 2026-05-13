@@ -11,6 +11,7 @@ use crate::ident::all_symbols;
 use crate::number::{self};
 use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
+use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
 use csv::ReaderBuilder;
 use itertools::Itertools;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
@@ -225,9 +226,104 @@ fn now_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<Runti
         (std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| Error::Runtime(format!("{}", e)))?
-            .as_millis() as i64)
+            .as_secs() as i64)
             .into(),
     ))
+}
+
+/// Array format: [year, month (0-11), day (1-31), hour (0-23), minute (0-59), second (0-60), weekday (0=Sun), day-of-year (0-365)]
+fn broken_down_time_array<Tz: chrono::TimeZone>(dt: &chrono::DateTime<Tz>) -> RuntimeValue {
+    RuntimeValue::Array(vec![
+        RuntimeValue::Number(((dt.year()) as i64).into()),
+        RuntimeValue::Number((dt.month0() as i64).into()),
+        RuntimeValue::Number((dt.day() as i64).into()),
+        RuntimeValue::Number((dt.hour() as i64).into()),
+        RuntimeValue::Number((dt.minute() as i64).into()),
+        RuntimeValue::Number((dt.second() as i64).into()),
+        RuntimeValue::Number((dt.weekday().num_days_from_sunday() as i64).into()),
+        RuntimeValue::Number((dt.ordinal0() as i64).into()),
+    ])
+}
+
+fn broken_down_time_to_naive(arr: &[RuntimeValue]) -> Result<chrono::NaiveDateTime, Error> {
+    let get_i64 = |v: &RuntimeValue| -> Result<i64, Error> {
+        match v {
+            RuntimeValue::Number(n) => Ok(n.value() as i64),
+            _ => Err(Error::Runtime("mktime: array elements must be numbers".to_string())),
+        }
+    };
+    let year = get_i64(&arr[0])? as i32;
+    let month = (get_i64(&arr[1])? + 1) as u32;
+    let day = get_i64(&arr[2])? as u32;
+    let hour = get_i64(&arr[3])? as u32;
+    let minute = get_i64(&arr[4])? as u32;
+    let second = get_i64(&arr[5])? as u32;
+    NaiveDate::from_ymd_opt(year, month, day)
+        .and_then(|d| d.and_hms_opt(hour, minute, second))
+        .ok_or_else(|| Error::Runtime("mktime: invalid date components".to_string()))
+}
+
+/// Converts Unix timestamp (seconds) to broken-down UTC time array:
+/// [year, month (0-11), day, hour, minute, second, weekday (0=Sunday), day-of-year (0-365)]
+#[mq_macros::mq_fn(name = "gmtime", params = Fixed(1))]
+fn gmtime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(secs)] => {
+            let secs_val = secs.value() as i64;
+            DateTime::from_timestamp(secs_val, 0)
+                .map(|dt| broken_down_time_array(&dt))
+                .ok_or_else(|| Error::Runtime(format!("Invalid timestamp: {}", secs_val)))
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("gmtime should always receive exactly one argument"),
+    }
+}
+
+/// Converts Unix timestamp (seconds) to broken-down local time array:
+/// [year, month (0-11), day, hour, minute, second, weekday (0=Sunday), day-of-year (0-365)]
+#[mq_macros::mq_fn(name = "localtime", params = Fixed(1))]
+fn localtime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(secs)] => {
+            let secs_val = secs.value() as i64;
+            DateTime::from_timestamp(secs_val, 0)
+                .map(|dt| broken_down_time_array(&dt.with_timezone(&Local)))
+                .ok_or_else(|| Error::Runtime(format!("Invalid timestamp: {}", secs_val)))
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("localtime should always receive exactly one argument"),
+    }
+}
+
+/// Converts broken-down UTC time array to Unix timestamp (seconds).
+/// Input format: [year, month (0-11), day, hour, minute, second, weekday, day-of-year]
+#[mq_macros::mq_fn(name = "mktime", params = Fixed(1))]
+fn mktime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Array(arr)] if arr.len() == 8 => {
+            broken_down_time_to_naive(arr).map(|dt| RuntimeValue::Number(dt.and_utc().timestamp().into()))
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("mktime should always receive exactly one argument"),
+    }
+}
+
+/// Formats a Unix timestamp (seconds) as a date string using the given strftime format.
+#[mq_macros::mq_fn(name = "strftime", params = Fixed(2))]
+fn strftime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(secs), RuntimeValue::String(fmt)] => {
+            let secs_val = secs.value() as i64;
+            DateTime::from_timestamp(secs_val, 0)
+                .map(|dt| RuntimeValue::String(dt.format(fmt.as_str()).to_string()))
+                .ok_or_else(|| Error::Runtime(format!("strftime: invalid timestamp: {}", secs_val)))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("strftime should always receive exactly two arguments"),
+    }
 }
 
 #[mq_macros::mq_fn(name = "base64", params = Fixed(1))]
@@ -3056,6 +3152,10 @@ mq_macros::builtin_dispatch! {
     FROM_DATE,
     TO_DATE,
     NOW,
+    GMTIME,
+    LOCALTIME,
+    MKTIME,
+    STRFTIME,
     BASE64,
     BASE64D,
     BASE64URL,
@@ -3746,6 +3846,34 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the current timestamp.",
             params: &[],
+        },
+    );
+    map.insert(
+        SmolStr::new("gmtime"),
+        BuiltinFunctionDoc {
+            description: "Converts Unix timestamp (seconds since epoch) to broken-down UTC time array [year, mon (0-11), mday, hour, min, sec, wday (0=Sun), yday (0-365)].",
+            params: &["timestamp"],
+        },
+    );
+    map.insert(
+        SmolStr::new("localtime"),
+        BuiltinFunctionDoc {
+            description: "Converts Unix timestamp (seconds since epoch) to broken-down local time array [year, mon (0-11), mday, hour, min, sec, wday (0=Sun), yday (0-365)].",
+            params: &["timestamp"],
+        },
+    );
+    map.insert(
+        SmolStr::new("mktime"),
+        BuiltinFunctionDoc {
+            description: "Converts broken-down UTC time array [year, mon (0-11), mday, hour, min, sec, wday, yday] to Unix timestamp (seconds since epoch).",
+            params: &["time_array"],
+        },
+    );
+    map.insert(
+        SmolStr::new("strftime"),
+        BuiltinFunctionDoc {
+            description: "Formats a Unix timestamp (seconds) as a date string using the given strftime format (e.g. \"%Y-%m-%d\").",
+            params: &["timestamp", "format"],
         },
     );
     map.insert(
@@ -5010,6 +5138,124 @@ mod tests {
         );
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), expected_error);
+    }
+
+    #[test]
+    fn test_gmtime_epoch() {
+        // Unix epoch (0) → 1970-01-01T00:00:00 UTC (Thursday)
+        // format: [year, mon(0-11), mday, hour, min, sec, wday(0=Sun), yday(0-365)]
+        let ident = Ident::new("gmtime");
+        let args = vec![RuntimeValue::Number(0.into())];
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            args,
+            &Shared::new(SharedCell::new(Env::default())),
+        )
+        .unwrap();
+        assert_eq!(
+            result,
+            RuntimeValue::Array(vec![
+                RuntimeValue::Number(1970.into()), // year
+                RuntimeValue::Number(0.into()),    // mon (Jan=0)
+                RuntimeValue::Number(1.into()),    // mday
+                RuntimeValue::Number(0.into()),    // hour
+                RuntimeValue::Number(0.into()),    // min
+                RuntimeValue::Number(0.into()),    // sec
+                RuntimeValue::Number(4.into()),    // wday (Thu=4)
+                RuntimeValue::Number(0.into()),    // yday
+            ])
+        );
+    }
+
+    #[test]
+    fn test_gmtime_known_date() {
+        // 2024-01-01T00:00:00 UTC = 1704067200 seconds
+        let ident = Ident::new("gmtime");
+        let args = vec![RuntimeValue::Number(1704067200_i64.into())];
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            args,
+            &Shared::new(SharedCell::new(Env::default())),
+        )
+        .unwrap();
+        assert_eq!(
+            result,
+            RuntimeValue::Array(vec![
+                RuntimeValue::Number(2024.into()), // year
+                RuntimeValue::Number(0.into()),    // mon (Jan=0)
+                RuntimeValue::Number(1.into()),    // mday
+                RuntimeValue::Number(0.into()),    // hour
+                RuntimeValue::Number(0.into()),    // min
+                RuntimeValue::Number(0.into()),    // sec
+                RuntimeValue::Number(1.into()),    // wday (Mon=1)
+                RuntimeValue::Number(0.into()),    // yday
+            ])
+        );
+    }
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(1704067200_i64, 1704067200_i64)]
+    #[case(1718454645_i64, 1718454645_i64)]
+    fn test_mktime_roundtrip(#[case] secs: i64, #[case] expected: i64) {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let gmtime_ident = Ident::new("gmtime");
+        let mktime_ident = Ident::new("mktime");
+
+        let arr = eval_builtin(
+            &RuntimeValue::None,
+            &gmtime_ident,
+            vec![RuntimeValue::Number(secs.into())],
+            &env,
+        )
+        .unwrap();
+        let result = eval_builtin(&RuntimeValue::None, &mktime_ident, vec![arr], &env).unwrap();
+        assert_eq!(result, RuntimeValue::Number(expected.into()));
+    }
+
+    #[rstest]
+    #[case(1704067200_i64, "%Y-%m-%d", "2024-01-01")]
+    #[case(0_i64, "%Y-%m-%dT%H:%M:%S", "1970-01-01T00:00:00")]
+    #[case(1704067200_i64, "%Y", "2024")]
+    fn test_strftime(#[case] ts: i64, #[case] fmt: &str, #[case] expected: &str) {
+        let ident = Ident::new("strftime");
+        let args = vec![RuntimeValue::Number(ts.into()), RuntimeValue::String(fmt.into())];
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            args,
+            &Shared::new(SharedCell::new(Env::default())),
+        )
+        .unwrap();
+        assert_eq!(result, RuntimeValue::String(expected.into()));
+    }
+
+    #[test]
+    fn test_gmtime_invalid_type() {
+        let ident = Ident::new("gmtime");
+        let args = vec![RuntimeValue::String("not a number".into())];
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            args,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(matches!(result, Err(Error::InvalidTypes(_, _))));
+    }
+
+    #[test]
+    fn test_mktime_invalid_input() {
+        let ident = Ident::new("mktime");
+        let args = vec![RuntimeValue::String("not an array".into())];
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            args,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(matches!(result, Err(Error::InvalidTypes(_, _))));
     }
 
     #[test]

@@ -3965,21 +3965,21 @@ mod tests {
         Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "get".to_string(),
                                                      args: vec!["bool".into(), "number".into()]})))]
-    #[case::to_date(vec![RuntimeValue::Number(1609459200000_i64.into())],
+    #[case::to_date(vec![RuntimeValue::Number(1609459200_i64.into())],
         vec![
             ast_call("to_date", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("%Y-%m-%d".to_string())))
             ])
         ],
         Ok(vec![RuntimeValue::String("2021-01-01".to_string())]))]
-    #[case::to_date(vec![RuntimeValue::Number(1609459200000_i64.into())],
+    #[case::to_date(vec![RuntimeValue::Number(1609459200_i64.into())],
         vec![
             ast_call("to_date", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("%Y/%m/%d %H:%M:%S".to_string())))
             ])
         ],
         Ok(vec![RuntimeValue::String("2021/01/01 00:00:00".to_string())]))]
-    #[case::to_date(vec![RuntimeValue::Number(1609488000000_i64.into())],
+    #[case::to_date(vec![RuntimeValue::Number(1609488000_i64.into())],
         vec![
             ast_call("to_date", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("%d %b %Y %H:%M".to_string())))
@@ -4279,7 +4279,7 @@ mod tests {
         vec![
             ast_call("from_date", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::Number(1742036400000_i64.into())]))]
+        Ok(vec![RuntimeValue::Number(1742036400_i64.into())]))]
     #[case::from_date_invalid_format(vec![RuntimeValue::String("2021-01-01".to_string())],
         vec![
             ast_call("from_date", SmallVec::new())
