@@ -2715,11 +2715,27 @@ fn runtime_to_json_value(value: &RuntimeValue) -> serde_json::Value {
     }
 }
 
+fn runtime_number_to_cbor_value(n: number::Number) -> ciborium::Value {
+    if n.is_int() {
+        let number_string = n.to_string();
+
+        if let Ok(value) = number_string.parse::<i128>() {
+            return ciborium::Value::Integer(value.into());
+        }
+
+        if let Ok(value) = number_string.parse::<u128>() {
+            return ciborium::Value::Integer(value.into());
+        }
+    }
+
+    ciborium::Value::Float(n.value())
+}
+
 fn runtime_to_cbor_value(value: RuntimeValue) -> ciborium::Value {
     match value {
         RuntimeValue::None => ciborium::Value::Null,
         RuntimeValue::Boolean(b) => ciborium::Value::Bool(b),
-        RuntimeValue::Number(n) => ciborium::Value::Float(n.value()),
+        RuntimeValue::Number(n) => runtime_number_to_cbor_value(n),
         RuntimeValue::String(s) => ciborium::Value::Text(s),
         RuntimeValue::Symbol(i) => ciborium::Value::Text(i.to_string()),
         RuntimeValue::Bytes(b) => ciborium::Value::Bytes(b),
