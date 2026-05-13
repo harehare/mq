@@ -245,11 +245,11 @@ fn broken_down_time_array<Tz: chrono::TimeZone>(dt: &chrono::DateTime<Tz>) -> Ru
     ])
 }
 
-fn broken_down_time_to_naive(arr: &[RuntimeValue]) -> Result<chrono::NaiveDateTime, Error> {
+fn broken_down_time_to_naive(caller: &str, arr: &[RuntimeValue]) -> Result<chrono::NaiveDateTime, Error> {
     let get_i64 = |v: &RuntimeValue| -> Result<i64, Error> {
         match v {
             RuntimeValue::Number(n) => Ok(n.value() as i64),
-            _ => Err(Error::Runtime("mktime: array elements must be numbers".to_string())),
+            _ => Err(Error::Runtime(format!("{caller}: array elements must be numbers"))),
         }
     };
     let year = get_i64(&arr[0])? as i32;
@@ -260,7 +260,7 @@ fn broken_down_time_to_naive(arr: &[RuntimeValue]) -> Result<chrono::NaiveDateTi
     let second = get_i64(&arr[5])? as u32;
     NaiveDate::from_ymd_opt(year, month, day)
         .and_then(|d| d.and_hms_opt(hour, minute, second))
-        .ok_or_else(|| Error::Runtime("mktime: invalid date components".to_string()))
+        .ok_or_else(|| Error::Runtime(format!("{caller}: invalid date components")))
 }
 
 /// Converts Unix timestamp (seconds) to broken-down UTC time array:
@@ -301,7 +301,7 @@ fn localtime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
 fn mktime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Array(arr)] if arr.len() == 8 => {
-            broken_down_time_to_naive(arr).map(|dt| RuntimeValue::Number(dt.and_utc().timestamp().into()))
+            broken_down_time_to_naive("mktime", arr).map(|dt| RuntimeValue::Number(dt.and_utc().timestamp().into()))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("mktime should always receive exactly one argument"),
@@ -339,7 +339,7 @@ fn date_add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
             RuntimeValue::String(unit),
         ] if arr.len() == 8 => {
             let amount = n.value() as i64;
-            let dt = broken_down_time_to_naive(arr)?.and_utc();
+            let dt = broken_down_time_to_naive("date_add", arr)?.and_utc();
             let result = match unit.as_str() {
                 "seconds" => dt.checked_add_signed(Duration::seconds(amount)),
                 "minutes" => dt.checked_add_signed(Duration::minutes(amount)),
@@ -390,8 +390,8 @@ fn date_diff_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
             RuntimeValue::Array(arr2),
             RuntimeValue::String(unit),
         ] if arr1.len() == 8 && arr2.len() == 8 => {
-            let dt1 = broken_down_time_to_naive(arr1)?.and_utc();
-            let dt2 = broken_down_time_to_naive(arr2)?.and_utc();
+            let dt1 = broken_down_time_to_naive("date_diff", arr1)?.and_utc();
+            let dt2 = broken_down_time_to_naive("date_diff", arr2)?.and_utc();
             let diff = dt2.signed_duration_since(dt1);
             let result = match unit.as_str() {
                 "seconds" => diff.num_seconds(),
@@ -5491,6 +5491,42 @@ mod tests {
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(matches!(result, Err(Error::InvalidTypes(_, _))));
+    }
+
+    #[test]
+    fn test_date_add_malformed_array_error_prefix() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let bad_arr = RuntimeValue::Array(vec![RuntimeValue::String("x".into()); 8]);
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("date_add"),
+            vec![
+                bad_arr,
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::String("days".into()),
+            ],
+            &env,
+        );
+        match result {
+            Err(Error::Runtime(msg)) => assert!(msg.starts_with("date_add:"), "expected date_add prefix, got: {msg}"),
+            other => panic!("expected Runtime error, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_date_diff_malformed_array_error_prefix() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let bad_arr = RuntimeValue::Array(vec![RuntimeValue::String("x".into()); 8]);
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("date_diff"),
+            vec![bad_arr.clone(), bad_arr, RuntimeValue::String("days".into())],
+            &env,
+        );
+        match result {
+            Err(Error::Runtime(msg)) => assert!(msg.starts_with("date_diff:"), "expected date_diff prefix, got: {msg}"),
+            other => panic!("expected Runtime error, got: {other:?}"),
+        }
     }
 
     #[test]
