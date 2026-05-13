@@ -2619,6 +2619,12 @@ fn engine() -> DefaultEngine {
 #[case::paren_free_fn_as_value_preserved("map([\"a\", \"b\"], upcase)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("A".to_string()), RuntimeValue::String("B".to_string())])].into()))]
 // paren-free calls: passing user-defined function as value to map (no spurious auto-call)
 #[case::paren_free_user_fn_as_value_preserved("def double(x): x * 2; | map([1, 2, 3], double)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(6.into())])].into()))]
+// shadowing builtin: user-defined function with same name as builtin calls the native builtin inside its body
+#[case::shadow_builtin_upcase("def upcase: upcase() | ltrimstr(\"HELLO\"); | \"hello\" | upcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("".to_string())].into()))]
+// shadowing builtin: user function wraps builtin and adds extra transformation
+#[case::shadow_builtin_with_extra("def upcase(x): upcase(x) | ltrimstr(\"HELLO\"); | upcase(\"hello\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("".to_string())].into()))]
+// shadowing builtin: outer scope sees user-defined function
+#[case::shadow_builtin_outer_scope("def upcase: upcase(); | \"world\" | upcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("WORLD".to_string())].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

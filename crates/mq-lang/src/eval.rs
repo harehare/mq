@@ -1702,6 +1702,14 @@ impl<T: ModuleResolver> Evaluator<T> {
             self.debugger.write().unwrap().push_call_stack(Shared::clone(&node));
 
             let new_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(fn_env))));
+
+            // If the function name matches a built-in, expose the native builtin in the
+            // body's scope so calls to the same name invoke the builtin rather than
+            // recursing back into this user-defined function.
+            if builtin::get_builtin_functions(&ident).is_some() {
+                define(&new_env, ident, RuntimeValue::NativeFunction(ident));
+            }
+
             let has_variadic = params.iter().any(|p| p.is_variadic);
             let required_params = params.iter().filter(|p| p.default.is_none() && !p.is_variadic).count();
             let arg_count = args.len();
