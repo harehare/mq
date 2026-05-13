@@ -662,6 +662,11 @@ fn register_type_conversion(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_unary(ctx, "to_array", Type::Var(a), Type::array(Type::Var(a)));
 
+    // to_bytes: string -> bytes, [number] -> bytes, bytes -> bytes
+    register_unary(ctx, "to_bytes", Type::String, Type::Bytes);
+    register_unary(ctx, "to_bytes", Type::array(Type::Number), Type::Bytes);
+    register_unary(ctx, "to_bytes", Type::Bytes, Type::Bytes);
+
     let a = ctx.fresh_var();
     register_unary(ctx, "type", Type::Var(a), Type::String);
 }

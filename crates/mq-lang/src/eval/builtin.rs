@@ -423,6 +423,26 @@ fn to_array_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
     convert::to_array(&mut args[0])
 }
 
+#[mq_macros::mq_fn(name = "to_bytes", params = Fixed(1))]
+fn to_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::Bytes(std::mem::take(s).into_bytes())),
+        [RuntimeValue::Bytes(b)] => Ok(RuntimeValue::Bytes(std::mem::take(b))),
+        [RuntimeValue::Array(arr)] => {
+            let mut bytes = Vec::with_capacity(arr.len());
+            for v in arr.iter() {
+                match v {
+                    RuntimeValue::Number(n) => bytes.push(n.value() as u8),
+                    other => return Err(Error::InvalidTypes(ident.to_string(), vec![other.clone()])),
+                }
+            }
+            Ok(RuntimeValue::Bytes(bytes))
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("to_bytes should always receive exactly one argument"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "url_encode", params = Fixed(1))]
 fn url_encode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -842,8 +862,16 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             let len = b.len();
             let start = start.value() as isize;
             let end = end.value() as isize;
-            let real_start = if start < 0 { (len as isize + start).max(0) as usize } else { (start as usize).min(len) };
-            let real_end = if end < 0 { (len as isize + end).max(0) as usize } else { (end as usize).min(len) };
+            let real_start = if start < 0 {
+                (len as isize + start).max(0) as usize
+            } else {
+                (start as usize).min(len)
+            };
+            let real_end = if end < 0 {
+                (len as isize + end).max(0) as usize
+            } else {
+                (end as usize).min(len)
+            };
             if real_start >= len || real_end <= real_start {
                 return Ok(RuntimeValue::Bytes(vec![]));
             }
@@ -2643,7 +2671,8 @@ fn _hcl_stringify_impl(_ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Sha
     match args.as_mut_slice() {
         [value] => {
             let json_value = runtime_to_json_value(value);
-            let s = hcl::to_string(&json_value).map_err(|e| Error::Runtime(format!("Failed to serialize HCL: {}", e)))?;
+            let s =
+                hcl::to_string(&json_value).map_err(|e| Error::Runtime(format!("Failed to serialize HCL: {}", e)))?;
             Ok(RuntimeValue::String(s))
         }
         _ => unreachable!("_hcl_stringify should always receive exactly one argument"),
@@ -2675,13 +2704,13 @@ fn runtime_to_json_value(value: &RuntimeValue) -> serde_json::Value {
         RuntimeValue::Symbol(i) => serde_json::Value::String(i.to_string()),
         RuntimeValue::Array(arr) => serde_json::Value::Array(arr.iter().map(runtime_to_json_value).collect()),
         RuntimeValue::Dict(map) => {
-            let obj: serde_json::Map<String, serde_json::Value> =
-                map.iter().map(|(k, v)| (k.to_string(), runtime_to_json_value(v))).collect();
+            let obj: serde_json::Map<String, serde_json::Value> = map
+                .iter()
+                .map(|(k, v)| (k.to_string(), runtime_to_json_value(v)))
+                .collect();
             serde_json::Value::Object(obj)
         }
-        RuntimeValue::Bytes(b) => {
-            serde_json::Value::String(base64::engine::general_purpose::STANDARD.encode(b))
-        }
+        RuntimeValue::Bytes(b) => serde_json::Value::String(base64::engine::general_purpose::STANDARD.encode(b)),
         _ => serde_json::Value::Null,
     }
 }
@@ -3232,6 +3261,7 @@ mq_macros::builtin_dispatch! {
     TO_STRING,
     TO_NUMBER,
     TO_ARRAY,
+    TO_BYTES,
     URL_ENCODE,
     TO_TEXT,
     ENDS_WITH,
@@ -4023,6 +4053,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         SmolStr::new("to_array"),
         BuiltinFunctionDoc {
             description: "Converts the given value to an array.",
+            params: &["value"],
+        },
+    );
+    map.insert(
+        SmolStr::new("to_bytes"),
+        BuiltinFunctionDoc {
+            description: "Converts a string (UTF-8), array of numbers, or bytes to raw bytes.",
             params: &["value"],
         },
     );
@@ -6661,12 +6698,7 @@ mod tests {
 
         // stringify
         let ident_stringify = Ident::new("_cbor_stringify");
-        let bytes_result = eval_builtin(
-            &RuntimeValue::None,
-            &ident_stringify,
-            vec![parsed.unwrap()],
-            &env,
-        );
+        let bytes_result = eval_builtin(&RuntimeValue::None, &ident_stringify, vec![parsed.unwrap()], &env);
         assert!(bytes_result.is_ok());
         assert!(matches!(bytes_result.unwrap(), RuntimeValue::Bytes(_)));
     }
@@ -6701,6 +6733,56 @@ mod tests {
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, Ok(RuntimeValue::String("SGVsbG8=".to_string())));
+    }
+
+    #[rstest]
+    #[case::string(
+        RuntimeValue::String("hello".to_string()),
+        Ok(RuntimeValue::Bytes(vec![0x68, 0x65, 0x6c, 0x6c, 0x6f]))
+    )]
+    #[case::empty_string(
+        RuntimeValue::String("".to_string()),
+        Ok(RuntimeValue::Bytes(vec![]))
+    )]
+    #[case::utf8_string(
+        RuntimeValue::String("あ".to_string()),
+        Ok(RuntimeValue::Bytes(vec![0xe3, 0x81, 0x82]))
+    )]
+    #[case::array_of_numbers(
+        RuntimeValue::Array(vec![
+            RuntimeValue::Number(0.into()),
+            RuntimeValue::Number(255.into()),
+            RuntimeValue::Number(128.into()),
+        ]),
+        Ok(RuntimeValue::Bytes(vec![0, 255, 128]))
+    )]
+    #[case::bytes_identity(
+        RuntimeValue::Bytes(vec![1, 2, 3]),
+        Ok(RuntimeValue::Bytes(vec![1, 2, 3]))
+    )]
+    fn test_to_bytes(#[case] input: RuntimeValue, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("to_bytes");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![input],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::number(RuntimeValue::Number(42.into()))]
+    #[case::array_with_non_number(RuntimeValue::Array(vec![RuntimeValue::String("x".to_string())]))]
+    fn test_to_bytes_invalid(#[case] input: RuntimeValue) {
+        let ident = Ident::new("to_bytes");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![input],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
     }
 
     #[test]

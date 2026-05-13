@@ -677,9 +677,7 @@ impl RuntimeValues {
                                 })
                                 .collect::<Vec<_>>(),
                         ),
-                        RuntimeValue::Bytes(b) => {
-                            RuntimeValue::new_markdown(node.with_value(bytes_to_hex(b).as_str()))
-                        }
+                        RuntimeValue::Bytes(b) => RuntimeValue::new_markdown(node.with_value(bytes_to_hex(b).as_str())),
                         RuntimeValue::Dict(map) => {
                             let mut new_dict = BTreeMap::new();
                             for (k, v) in map {
@@ -1086,7 +1084,10 @@ mod tests {
 
     #[test]
     fn test_bytes_display() {
-        assert_eq!(format!("{}", RuntimeValue::Bytes(vec![0xde, 0xad, 0xbe, 0xef])), "deadbeef");
+        assert_eq!(
+            format!("{}", RuntimeValue::Bytes(vec![0xde, 0xad, 0xbe, 0xef])),
+            "deadbeef"
+        );
         assert_eq!(format!("{}", RuntimeValue::Bytes(vec![])), "");
     }
 
@@ -1099,7 +1100,10 @@ mod tests {
     fn test_bytes_partial_eq() {
         assert_eq!(RuntimeValue::Bytes(vec![1, 2]), RuntimeValue::Bytes(vec![1, 2]));
         assert_ne!(RuntimeValue::Bytes(vec![1, 2]), RuntimeValue::Bytes(vec![1, 3]));
-        assert_ne!(RuntimeValue::Bytes(vec![1, 2]), RuntimeValue::String("0102".to_string()));
+        assert_ne!(
+            RuntimeValue::Bytes(vec![1, 2]),
+            RuntimeValue::String("0102".to_string())
+        );
     }
 
     #[test]
