@@ -1094,6 +1094,16 @@ fn register_file_io(ctx: &mut InferenceContext) {
 }
 
 fn register_bytes(ctx: &mut InferenceContext) {
+    // _cbor_parse: string -> a, bytes -> a
+    let a = ctx.fresh_var();
+    register_unary(ctx, "_cbor_parse", Type::String, Type::Var(a));
+    let a = ctx.fresh_var();
+    register_unary(ctx, "_cbor_parse", Type::Bytes, Type::Var(a));
+
+    // _hcl_parse: string -> a
+    let a = ctx.fresh_var();
+    register_unary(ctx, "_hcl_parse", Type::String, Type::Var(a));
+
     // _cbor_stringify: (a) -> bytes
     let a = ctx.fresh_var();
     register_unary(ctx, "_cbor_stringify", Type::Var(a), Type::Bytes);
@@ -1101,6 +1111,22 @@ fn register_bytes(ctx: &mut InferenceContext) {
     // _hcl_stringify: (a) -> string
     let a = ctx.fresh_var();
     register_unary(ctx, "_hcl_stringify", Type::Var(a), Type::String);
+
+    // add: (bytes, bytes) -> bytes
+    register_binary(ctx, "add", Type::Bytes, Type::Bytes, Type::Bytes);
+    register_binary(ctx, "+", Type::Bytes, Type::Bytes, Type::Bytes);
+
+    // slice: (bytes, number, number) -> bytes
+    register_ternary(ctx, "slice", Type::Bytes, Type::Number, Type::Number, Type::Bytes);
+
+    // reverse: (bytes) -> bytes
+    register_unary(ctx, "reverse", Type::Bytes, Type::Bytes);
+
+    // len: (bytes) -> number
+    register_unary(ctx, "len", Type::Bytes, Type::Number);
+
+    // base64: (bytes) -> string
+    register_unary(ctx, "base64", Type::Bytes, Type::String);
 }
 
 #[cfg(test)]

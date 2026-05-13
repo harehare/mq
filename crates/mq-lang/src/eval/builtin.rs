@@ -618,7 +618,13 @@ fn to_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
             let mut bytes = Vec::with_capacity(arr.len());
             for v in arr.iter() {
                 match v {
-                    RuntimeValue::Number(n) => bytes.push(n.value() as u8),
+                    RuntimeValue::Number(n) => {
+                        let f = n.value();
+                        if !f.is_finite() || !n.is_int() || !(0.0..=255.0).contains(&f) {
+                            return Err(Error::InvalidTypes(ident.to_string(), vec![v.clone()]));
+                        }
+                        bytes.push(f as u8);
+                    }
                     other => return Err(Error::InvalidTypes(ident.to_string(), vec![other.clone()])),
                 }
             }
@@ -7307,6 +7313,11 @@ mod tests {
     #[rstest]
     #[case::number(RuntimeValue::Number(42.into()))]
     #[case::array_with_non_number(RuntimeValue::Array(vec![RuntimeValue::String("x".to_string())]))]
+    #[case::array_with_negative(RuntimeValue::Array(vec![RuntimeValue::Number((-1i64).into())]))]
+    #[case::array_with_256(RuntimeValue::Array(vec![RuntimeValue::Number(256i64.into())]))]
+    #[case::array_with_fractional(RuntimeValue::Array(vec![RuntimeValue::Number(1.5f64.into())]))]
+    #[case::array_with_nan(RuntimeValue::Array(vec![RuntimeValue::Number(f64::NAN.into())]))]
+    #[case::array_with_infinity(RuntimeValue::Array(vec![RuntimeValue::Number(f64::INFINITY.into())]))]
     fn test_to_bytes_invalid(#[case] input: RuntimeValue) {
         let ident = Ident::new("to_bytes");
         let result = eval_builtin(
