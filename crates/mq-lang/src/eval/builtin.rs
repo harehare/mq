@@ -530,6 +530,81 @@ fn sha256_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     }
 }
 
+#[mq_macros::mq_fn(name = "sha512", params = Fixed(1))]
+fn sha512_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::sha512(s),
+        [RuntimeValue::Bytes(b)] => convert::sha512_bytes(b),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| {
+                convert::sha512(md.value().as_str()).and_then(|h| match h {
+                    RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                    a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                })
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => convert::sha512(&a.to_string()),
+        _ => unreachable!("sha512 should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "from_hex", params = Fixed(1))]
+fn from_hex_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::from_hex(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| convert::from_hex(md.value().as_str()))
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("from_hex should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "to_hex", params = Fixed(1))]
+fn to_hex_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Bytes(b)] => convert::to_hex(b),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("to_hex should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "utf8", params = Fixed(1))]
+fn utf8_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Bytes(b)] => convert::utf8(b),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("utf8 should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "xor", params = Fixed(2))]
+fn xor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => {
+            if b1.len() != b2.len() {
+                return Err(Error::Runtime(format!(
+                    "xor: byte slices must have the same length ({} != {})",
+                    b1.len(),
+                    b2.len()
+                )));
+            }
+            Ok(RuntimeValue::Bytes(b1.iter().zip(b2.iter()).map(|(a, b)| a ^ b).collect()))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("xor should always receive exactly two arguments"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "min", params = Fixed(2))]
 fn min_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -1539,6 +1614,7 @@ fn gt_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Run
         [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 > s2).into()),
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 > n2).into()),
         [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 > b2).into()),
+        [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => Ok((b1 > b2).into()),
         [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => Ok((n1 > n2).into()),
         [_, _] => Ok(RuntimeValue::FALSE),
         _ => unreachable!("gt should always receive exactly two arguments"),
@@ -1552,6 +1628,7 @@ fn gte_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Ru
         [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 >= s2).into()),
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 >= n2).into()),
         [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 >= b2).into()),
+        [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => Ok((b1 >= b2).into()),
         [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => Ok((n1 >= n2).into()),
         [_, _] => Ok(RuntimeValue::FALSE),
         _ => unreachable!("gte should always receive exactly two arguments"),
@@ -1565,6 +1642,7 @@ fn lt_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Run
         [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 < s2).into()),
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 < n2).into()),
         [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 < b2).into()),
+        [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => Ok((b1 < b2).into()),
         [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => Ok((n1 < n2).into()),
         [_, _] => Ok(RuntimeValue::FALSE),
         _ => unreachable!("lt should always receive exactly two arguments"),
@@ -1578,6 +1656,7 @@ fn lte_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Ru
         [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 <= s2).into()),
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 <= n2).into()),
         [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 <= b2).into()),
+        [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => Ok((b1 <= b2).into()),
         [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => Ok((n1 <= n2).into()),
         [_, _] => Ok(RuntimeValue::FALSE),
         _ => unreachable!("lte should always receive exactly two arguments"),
@@ -3378,6 +3457,7 @@ mq_macros::builtin_dispatch! {
     BASE64URLD,
     MD5,
     SHA256,
+    SHA512,
     MIN,
     MAX,
     FROM_HTML,
@@ -3387,6 +3467,10 @@ mq_macros::builtin_dispatch! {
     TO_NUMBER,
     TO_ARRAY,
     TO_BYTES,
+    FROM_HEX,
+    TO_HEX,
+    UTF8,
+    XOR,
     URL_ENCODE,
     TO_TEXT,
     ENDS_WITH,
@@ -4224,10 +4308,59 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
+        SmolStr::new("md5"),
+        BuiltinFunctionDoc {
+            description: "Computes the MD5 hash of a string or bytes and returns a lowercase hex string.",
+            params: &["input"],
+        },
+    );
+    map.insert(
+        SmolStr::new("sha256"),
+        BuiltinFunctionDoc {
+            description: "Computes the SHA-256 hash of a string or bytes and returns a lowercase hex string.",
+            params: &["input"],
+        },
+    );
+    map.insert(
+        SmolStr::new("sha512"),
+        BuiltinFunctionDoc {
+            description: "Computes the SHA-512 hash of a string or bytes and returns a lowercase hex string.",
+            params: &["input"],
+        },
+    );
+    map.insert(
         SmolStr::new("to_bytes"),
         BuiltinFunctionDoc {
             description: "Converts a string (UTF-8), array of numbers, or bytes to raw bytes.",
             params: &["value"],
+        },
+    );
+    map.insert(
+        SmolStr::new("from_hex"),
+        BuiltinFunctionDoc {
+            description: "Parses a hex string into raw bytes.",
+            params: &["hex_string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("to_hex"),
+        BuiltinFunctionDoc {
+            description: "Encodes raw bytes as a lowercase hex string.",
+            params: &["bytes"],
+        },
+    );
+    map.insert(
+        SmolStr::new("utf8"),
+        BuiltinFunctionDoc {
+            description: "Decodes bytes as a UTF-8 string, returning an error if the bytes are not valid UTF-8.",
+            params: &["bytes"],
+        },
+    );
+    map.insert(
+        SmolStr::new("xor"),
+        BuiltinFunctionDoc {
+            description: "Computes the bitwise XOR of two byte arrays of equal length.",
+            params: &["bytes1", "bytes2"],
         },
     );
     map.insert(
@@ -7310,6 +7443,205 @@ mod tests {
                 "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".to_string()
             ))
         );
+    }
+
+    #[test]
+    fn test_sha512_string_input() {
+        let ident = Ident::new("sha512");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String("hello".to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(
+            result,
+            Ok(RuntimeValue::String(
+                "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca72323c3d99ba5c11d7c7acc6e14b8c5da0c4663475c2e5c3adef46f73bcdec043".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_sha512_bytes_input() {
+        let ident = Ident::new("sha512");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::Bytes(b"hello".to_vec())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(
+            result,
+            Ok(RuntimeValue::String(
+                "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca72323c3d99ba5c11d7c7acc6e14b8c5da0c4663475c2e5c3adef46f73bcdec043".to_string()
+            ))
+        );
+    }
+
+    #[rstest]
+    #[case::lowercase("deadbeef", Ok(RuntimeValue::Bytes(vec![0xde, 0xad, 0xbe, 0xef])))]
+    #[case::uppercase("DEADBEEF", Ok(RuntimeValue::Bytes(vec![0xde, 0xad, 0xbe, 0xef])))]
+    #[case::empty("", Ok(RuntimeValue::Bytes(vec![])))]
+    fn test_from_hex(#[case] input: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("from_hex");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(input.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::odd_length("abc", true)]
+    #[case::invalid_chars("zzzz", true)]
+    fn test_from_hex_invalid(#[case] input: &str, #[case] is_err: bool) {
+        let ident = Ident::new("from_hex");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::String(input.to_string())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result.is_err(), is_err);
+    }
+
+    #[rstest]
+    #[case::basic(vec![0xde, 0xad, 0xbe, 0xef], Ok(RuntimeValue::String("deadbeef".to_string())))]
+    #[case::empty(vec![], Ok(RuntimeValue::String("".to_string())))]
+    #[case::zero_ff(vec![0x00, 0xff], Ok(RuntimeValue::String("00ff".to_string())))]
+    #[case::all_zeros(vec![0x00, 0x00], Ok(RuntimeValue::String("0000".to_string())))]
+    fn test_to_hex(#[case] input: Vec<u8>, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("to_hex");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::Bytes(input)],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_to_hex_roundtrip() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let original = vec![0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef];
+        let hex = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("to_hex"),
+            vec![RuntimeValue::Bytes(original.clone())],
+            &env,
+        )
+        .unwrap();
+        let roundtripped = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("from_hex"),
+            vec![hex],
+            &env,
+        )
+        .unwrap();
+        assert_eq!(roundtripped, RuntimeValue::Bytes(original));
+    }
+
+    #[rstest]
+    #[case("gt",  vec![0x02], vec![0x01], true)]
+    #[case("gt",  vec![0x01], vec![0x02], false)]
+    #[case("gt",  vec![0x01], vec![0x01], false)]
+    #[case("gt",  vec![0x01, 0x00], vec![0x01], true)]
+    #[case("gte", vec![0x02], vec![0x01], true)]
+    #[case("gte", vec![0x01], vec![0x01], true)]
+    #[case("gte", vec![0x01], vec![0x02], false)]
+    #[case("lt",  vec![0x01], vec![0x02], true)]
+    #[case("lt",  vec![0x02], vec![0x01], false)]
+    #[case("lt",  vec![0x01], vec![0x01], false)]
+    #[case("lte", vec![0x01], vec![0x02], true)]
+    #[case("lte", vec![0x01], vec![0x01], true)]
+    #[case("lte", vec![0x02], vec![0x01], false)]
+    fn test_bytes_comparison(
+        #[case] op: &str,
+        #[case] lhs: Vec<u8>,
+        #[case] rhs: Vec<u8>,
+        #[case] expected: bool,
+    ) {
+        let ident = Ident::new(op);
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::Bytes(lhs), RuntimeValue::Bytes(rhs)],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, Ok(RuntimeValue::Boolean(expected)));
+    }
+
+    #[test]
+    fn test_utf8_valid() {
+        let ident = Ident::new("utf8");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::Bytes(b"hello".to_vec())],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, Ok(RuntimeValue::String("hello".to_string())));
+    }
+
+    #[test]
+    fn test_utf8_invalid() {
+        let ident = Ident::new("utf8");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::Bytes(vec![0xff, 0xfe])],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_xor_basic() {
+        let ident = Ident::new("xor");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![
+                RuntimeValue::Bytes(vec![0xaa, 0xbb]),
+                RuntimeValue::Bytes(vec![0x55, 0x44]),
+            ],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, Ok(RuntimeValue::Bytes(vec![0xff, 0xff])));
+    }
+
+    #[test]
+    fn test_xor_identity() {
+        let ident = Ident::new("xor");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![
+                RuntimeValue::Bytes(vec![0x01, 0x02, 0x03]),
+                RuntimeValue::Bytes(vec![0x00, 0x00, 0x00]),
+            ],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, Ok(RuntimeValue::Bytes(vec![0x01, 0x02, 0x03])));
+    }
+
+    #[test]
+    fn test_xor_length_mismatch() {
+        let ident = Ident::new("xor");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![
+                RuntimeValue::Bytes(vec![0x01, 0x02]),
+                RuntimeValue::Bytes(vec![0x01]),
+            ],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
     }
 
     #[rstest]
