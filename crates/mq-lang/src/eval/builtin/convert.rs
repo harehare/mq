@@ -344,19 +344,19 @@ pub fn to_text(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
     }
 }
 
-/// convert from date string to timestamp (milliseconds)
+/// convert from date string to Unix timestamp (seconds)
 #[inline(always)]
 pub fn from_date(date_str: &str) -> Result<RuntimeValue, Error> {
     match chrono::DateTime::parse_from_rfc3339(date_str) {
-        Ok(datetime) => Ok(RuntimeValue::Number(datetime.timestamp_millis().into())),
+        Ok(datetime) => Ok(RuntimeValue::Number(datetime.timestamp().into())),
         Err(e) => Err(Error::Runtime(format!("{}", e))),
     }
 }
 
-/// convert from timestamp (milliseconds) to date string
+/// convert from Unix timestamp (seconds) to date string
 #[inline(always)]
-pub fn to_date(ms: Number, convert: Option<&str>) -> Result<RuntimeValue, Error> {
-    chrono::DateTime::from_timestamp((ms.value() as i64) / 1000, 0)
+pub fn to_date(secs: Number, convert: Option<&str>) -> Result<RuntimeValue, Error> {
+    chrono::DateTime::from_timestamp(secs.value() as i64, 0)
         .map(|dt| {
             convert
                 .map(|f| dt.format(f).to_string())
@@ -833,12 +833,12 @@ mod tests {
 
     // Test from_date
     #[rstest]
-    #[case("2024-01-01T00:00:00Z", 1704067200000)]
-    #[case("2024-06-15T12:30:45Z", 1718454645000)]
-    #[case("2024-12-31T23:59:59Z", 1735689599000)]
-    fn test_from_date_valid(#[case] input: &str, #[case] expected_ms: i64) {
+    #[case("2024-01-01T00:00:00Z", 1704067200)]
+    #[case("2024-06-15T12:30:45Z", 1718454645)]
+    #[case("2024-12-31T23:59:59Z", 1735689599)]
+    fn test_from_date_valid(#[case] input: &str, #[case] expected_secs: i64) {
         let result = from_date(input).unwrap();
-        assert_eq!(result, RuntimeValue::Number(expected_ms.into()));
+        assert_eq!(result, RuntimeValue::Number(expected_secs.into()));
     }
 
     #[rstest]
@@ -852,14 +852,14 @@ mod tests {
 
     // Test to_date
     #[rstest]
-    #[case(1704067200000, None, "2024-01-01T00:00:00Z")]
-    #[case(1704067200000, Some("%Y-%m-%d"), "2024-01-01")]
-    #[case(1718454645000, Some("%Y/%m/%d %H:%M"), "2024/06/15 12:30")]
-    #[case(1704067200000, Some("%d/%m/%Y"), "01/01/2024")]
-    #[case(1704067200000, Some("%H:%M:%S"), "00:00:00")]
-    #[case(1704067200000, Some("%Y"), "2024")]
-    fn test_to_date(#[case] ms: i64, #[case] convert: Option<&str>, #[case] expected: &str) {
-        let result = to_date(ms.into(), convert).unwrap();
+    #[case(1704067200, None, "2024-01-01T00:00:00Z")]
+    #[case(1704067200, Some("%Y-%m-%d"), "2024-01-01")]
+    #[case(1718454645, Some("%Y/%m/%d %H:%M"), "2024/06/15 12:30")]
+    #[case(1704067200, Some("%d/%m/%Y"), "01/01/2024")]
+    #[case(1704067200, Some("%H:%M:%S"), "00:00:00")]
+    #[case(1704067200, Some("%Y"), "2024")]
+    fn test_to_date(#[case] secs: i64, #[case] convert: Option<&str>, #[case] expected: &str) {
+        let result = to_date(secs.into(), convert).unwrap();
         assert_eq!(result, RuntimeValue::String(expected.to_string()));
     }
 
