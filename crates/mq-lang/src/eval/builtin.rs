@@ -2719,11 +2719,11 @@ fn runtime_number_to_cbor_value(n: number::Number) -> ciborium::Value {
     if n.is_int() {
         let number_string = n.to_string();
 
-        if let Ok(value) = number_string.parse::<i128>() {
+        if let Ok(value) = number_string.parse::<i64>() {
             return ciborium::Value::Integer(value.into());
         }
 
-        if let Ok(value) = number_string.parse::<u128>() {
+        if let Ok(value) = number_string.parse::<u64>() {
             return ciborium::Value::Integer(value.into());
         }
     }
