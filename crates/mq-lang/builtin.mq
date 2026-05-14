@@ -22,6 +22,9 @@ def is_none(n): type(n) == "None";
 # Checks if input is a dictionary
 def is_dict(d): type(d) == "dict";
 
+# Checks if input is bytes
+def is_bytes(b): type(b) == "bytes";
+
 # Checks if string contains a substring
 def contains(haystack, needle):
   if (is_dict(haystack)):

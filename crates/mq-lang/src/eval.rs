@@ -340,7 +340,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                 RuntimeValue::Dict(_)
                 | RuntimeValue::Boolean(_)
                 | RuntimeValue::Number(_)
-                | RuntimeValue::String(_) => value.to_string().into(),
+                | RuntimeValue::String(_)
+                | RuntimeValue::Bytes(_) => value.to_string().into(),
                 RuntimeValue::Symbol(i) => i.as_str().into(),
                 RuntimeValue::Markdown(node, _) => *node,
             })
@@ -1525,6 +1526,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     "bool" => matches!(value, RuntimeValue::Boolean(_)),
                     "array" => matches!(value, RuntimeValue::Array(_)),
                     "dict" => matches!(value, RuntimeValue::Dict(_)),
+                    "bytes" => matches!(value, RuntimeValue::Bytes(_)),
                     "markdown" => matches!(value, RuntimeValue::Markdown(_, _)),
                     "function" => matches!(value, RuntimeValue::Function(_, _, _)),
                     "symbol" => matches!(value, RuntimeValue::Symbol(_)),
@@ -6548,6 +6550,44 @@ mod tests {
                     ]),
                     guard: Some(ast_node(ast::Expr::Literal(ast::Literal::Bool(false)))),
                     body: ast_node(ast::Expr::Literal(ast::Literal::String("guarded".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("other".to_string())])
+    )]
+    #[case::match_type_bytes_matches(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_call("to_bytes", smallvec![ast_node(ast::Expr::Literal(ast::Literal::String("hello".to_string())))]),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Type(crate::Ident::new("bytes")),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("bytes".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("bytes".to_string())])
+    )]
+    #[case::match_type_bytes_no_match(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Literal(ast::Literal::String("hello".to_string()))),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Type(crate::Ident::new("bytes")),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("bytes".to_string()))),
                 },
                 MatchArm {
                     pattern: Pattern::Wildcard,

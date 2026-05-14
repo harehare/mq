@@ -44,3 +44,4 @@ wasm-opt = ['-O4', '--enable-simd', '--enable-bulk-memory', '--enable-nontrappin
 
 [package.metadata.cargo-machete]
 ignored = ["wasm-bindgen-futures"]
+

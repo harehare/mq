@@ -324,6 +324,9 @@ pub fn to_array(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
         RuntimeValue::String(s) => Ok(RuntimeValue::Array(
             s.chars().map(|c| RuntimeValue::String(c.to_string())).collect(),
         )),
+        RuntimeValue::Bytes(bytes) => Ok(RuntimeValue::Array(
+            bytes.iter().map(|b| RuntimeValue::Number((*b).into())).collect(),
+        )),
         RuntimeValue::None => Ok(RuntimeValue::Array(Vec::new())),
         value => Ok(RuntimeValue::Array(vec![std::mem::take(value)])),
     }
@@ -370,6 +373,14 @@ pub fn to_date(secs: Number, convert: Option<&str>) -> Result<RuntimeValue, Erro
 #[inline(always)]
 pub fn base64(input: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(BASE64_STANDARD.encode(input)))
+}
+
+/// Encode to base64 from raw bytes
+#[inline(always)]
+pub fn base64_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
+    Ok(RuntimeValue::String(
+        base64::engine::general_purpose::STANDARD.encode(input),
+    ))
 }
 
 /// Decode from base64
@@ -423,11 +434,74 @@ pub fn md5(input: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(bytes_to_hex(&digest.0)))
 }
 
+/// Compute MD5 hash of raw bytes and return lowercase hex string.
+#[inline(always)]
+pub fn md5_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
+    let digest = md5::compute(input);
+    Ok(RuntimeValue::String(bytes_to_hex(&digest.0)))
+}
+
 /// Compute SHA-256 hash and return lowercase hex string.
 #[inline(always)]
 pub fn sha256(input: &str) -> Result<RuntimeValue, Error> {
     let hash = sha2::Sha256::digest(input.as_bytes());
     Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
+}
+
+/// Compute SHA-256 hash of raw bytes and return lowercase hex string.
+#[inline(always)]
+pub fn sha256_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
+    let hash = sha2::Sha256::digest(input);
+    Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
+}
+
+/// Compute SHA-512 hash and return lowercase hex string.
+#[inline(always)]
+pub fn sha512(input: &str) -> Result<RuntimeValue, Error> {
+    let hash = sha2::Sha512::digest(input.as_bytes());
+    Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
+}
+
+/// Compute SHA-512 hash of raw bytes and return lowercase hex string.
+#[inline(always)]
+pub fn sha512_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
+    let hash = sha2::Sha512::digest(input);
+    Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
+}
+
+/// Parse a lowercase or uppercase hex string into raw bytes.
+#[inline(always)]
+pub fn from_hex(input: &str) -> Result<RuntimeValue, Error> {
+    if !input.len().is_multiple_of(2) {
+        return Err(Error::Runtime(format!(
+            "from_hex: odd-length hex string: \"{}\"",
+            input
+        )));
+    }
+    let bytes = input
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|chunk| {
+            let s = std::str::from_utf8(chunk)
+                .map_err(|_| Error::Runtime("from_hex: invalid hex byte (non-ASCII)".to_string()))?;
+            u8::from_str_radix(s, 16).map_err(|_| Error::Runtime(format!("from_hex: invalid hex byte \"{}\"", s)))
+        })
+        .collect::<Result<Vec<u8>, _>>()?;
+    Ok(RuntimeValue::Bytes(bytes))
+}
+
+/// Decode bytes as a UTF-8 string, returning an error if the bytes are not valid UTF-8.
+#[inline(always)]
+pub fn utf8(input: &[u8]) -> Result<RuntimeValue, Error> {
+    String::from_utf8(input.to_vec())
+        .map(RuntimeValue::String)
+        .map_err(|e| Error::Runtime(format!("utf8: {}", e)))
+}
+
+/// Encode raw bytes as a lowercase hex string.
+#[inline(always)]
+pub fn to_hex(input: &[u8]) -> Result<RuntimeValue, Error> {
+    Ok(RuntimeValue::String(bytes_to_hex(input)))
 }
 
 #[inline(always)]
@@ -1130,5 +1204,52 @@ mod tests {
     fn test_sha256(#[case] input: &str, #[case] expected: &str) {
         let result = sha256(input).unwrap();
         assert_eq!(result, RuntimeValue::String(expected.to_string()));
+    }
+
+    #[rstest]
+    #[case(b"" as &[u8], "d41d8cd98f00b204e9800998ecf8427e")]
+    #[case(b"hello", "5d41402abc4b2a76b9719d911017c592")]
+    #[case(b"hello world", "5eb63bbbe01eeed093cb22bb8f5acdc3")]
+    fn test_md5_bytes(#[case] input: &[u8], #[case] expected: &str) {
+        let result = md5_bytes(input).unwrap();
+        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+    }
+
+    #[rstest]
+    #[case(b"" as &[u8], "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")]
+    #[case(b"hello", "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")]
+    fn test_sha256_bytes(#[case] input: &[u8], #[case] expected: &str) {
+        let result = sha256_bytes(input).unwrap();
+        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+    }
+
+    #[rstest]
+    #[case("deadbeef", Ok(RuntimeValue::Bytes(vec![0xde, 0xad, 0xbe, 0xef])))]
+    #[case("DEADBEEF", Ok(RuntimeValue::Bytes(vec![0xde, 0xad, 0xbe, 0xef])))]
+    #[case("", Ok(RuntimeValue::Bytes(vec![])))]
+    #[case("00ff", Ok(RuntimeValue::Bytes(vec![0x00, 0xff])))]
+    fn test_from_hex(#[case] input: &str, #[case] expected: Result<RuntimeValue, Error>) {
+        assert_eq!(from_hex(input), expected);
+    }
+
+    #[rstest]
+    #[case("abc")]
+    #[case("zzzz")]
+    #[case("にa")]
+    #[case("café")]
+    fn test_from_hex_invalid(#[case] input: &str) {
+        assert!(from_hex(input).is_err());
+    }
+
+    #[rstest]
+    #[case(b"hello" as &[u8], Ok(RuntimeValue::String("hello".to_string())))]
+    #[case(b"" as &[u8], Ok(RuntimeValue::String("".to_string())))]
+    fn test_utf8_valid(#[case] input: &[u8], #[case] expected: Result<RuntimeValue, Error>) {
+        assert_eq!(utf8(input), expected);
+    }
+
+    #[test]
+    fn test_utf8_invalid() {
+        assert!(utf8(&[0xff, 0xfe]).is_err());
     }
 }

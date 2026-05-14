@@ -130,6 +130,7 @@ pub(crate) fn analyze_type_predicate_call(
         | "is_list_item" | "is_table" | "is_table_row" | "is_table_cell" | "is_blockquote" | "is_hr" | "is_html"
         | "is_text" | "is_softbreak" | "is_hardbreak" | "is_task_list_item" | "is_footnote" | "is_footnote_ref"
         | "is_strikethrough" | "is_math" | "is_math_inline" | "is_toml" | "is_yaml" => Type::Markdown,
+        "is_bytes" => Type::Bytes,
         _ => return None,
     };
 
@@ -161,6 +162,7 @@ pub(crate) fn type_name_to_type(name: &str, ctx: &mut InferenceContext) -> Optio
         "none" => Some(Type::None),
         "symbol" => Some(Type::Symbol),
         "markdown" => Some(Type::Markdown),
+        "bytes" => Some(Type::Bytes),
         "array" => {
             let elem = ctx.fresh_var();
             Some(Type::array(Type::Var(elem)))

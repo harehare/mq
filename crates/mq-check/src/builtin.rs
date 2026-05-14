@@ -26,6 +26,7 @@ pub fn register_all(ctx: &mut InferenceContext) {
     register_variable(ctx);
     register_debug(ctx);
     register_file_io(ctx);
+    register_bytes(ctx);
 }
 
 /// Registers multiple builtins with the same type signature.
@@ -177,12 +178,13 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
 
 /// Comparison operators: <, >, <=, >=, ==, !=, lt, gt, lte, gte, eq, ne
 fn register_comparison(ctx: &mut InferenceContext) {
-    // Ordering: supports number, string, symbol, bool
+    // Ordering: supports number, string, symbol, bool, bytes
     for name in ["<", ">", "<=", ">=", "lt", "gt", "lte", "gte"] {
         register_binary(ctx, name, Type::Number, Type::Number, Type::Bool);
         register_binary(ctx, name, Type::String, Type::String, Type::Bool);
         register_binary(ctx, name, Type::Symbol, Type::Symbol, Type::Bool);
         register_binary(ctx, name, Type::Bool, Type::Bool, Type::Bool);
+        register_binary(ctx, name, Type::Bytes, Type::Bytes, Type::Bool);
     }
 
     // Equality: forall a. (a, a) -> bool
@@ -660,6 +662,13 @@ fn register_type_conversion(ctx: &mut InferenceContext) {
 
     let a = ctx.fresh_var();
     register_unary(ctx, "to_array", Type::Var(a), Type::array(Type::Var(a)));
+    // bytes -> [number]
+    register_unary(ctx, "to_array", Type::Bytes, Type::array(Type::Number));
+
+    // to_bytes: string -> bytes, [number] -> bytes, bytes -> bytes
+    register_unary(ctx, "to_bytes", Type::String, Type::Bytes);
+    register_unary(ctx, "to_bytes", Type::array(Type::Number), Type::Bytes);
+    register_unary(ctx, "to_bytes", Type::Bytes, Type::Bytes);
 
     let a = ctx.fresh_var();
     register_unary(ctx, "type", Type::Var(a), Type::String);
@@ -668,7 +677,15 @@ fn register_type_conversion(ctx: &mut InferenceContext) {
 /// Type check functions: is_none, is_array, is_dict, is_string, is_number, is_bool, is_empty
 fn register_type_checks(ctx: &mut InferenceContext) {
     // Type predicate functions: (a) -> bool
-    for name in ["is_none", "is_array", "is_dict", "is_string", "is_number", "is_bool"] {
+    for name in [
+        "is_none",
+        "is_array",
+        "is_dict",
+        "is_string",
+        "is_number",
+        "is_bool",
+        "is_bytes",
+    ] {
         let a = ctx.fresh_var();
         register_unary(ctx, name, Type::Var(a), Type::Bool);
     }
@@ -1085,6 +1102,63 @@ fn register_debug(ctx: &mut InferenceContext) {
 /// File I/O functions
 fn register_file_io(ctx: &mut InferenceContext) {
     register_unary(ctx, "read_file", Type::String, Type::String);
+}
+
+fn register_bytes(ctx: &mut InferenceContext) {
+    // _cbor_parse: string -> a, bytes -> a
+    let a = ctx.fresh_var();
+    register_unary(ctx, "_cbor_parse", Type::String, Type::Var(a));
+    let a = ctx.fresh_var();
+    register_unary(ctx, "_cbor_parse", Type::Bytes, Type::Var(a));
+
+    // _hcl_parse: string -> a
+    let a = ctx.fresh_var();
+    register_unary(ctx, "_hcl_parse", Type::String, Type::Var(a));
+
+    // _cbor_stringify: (a) -> bytes
+    let a = ctx.fresh_var();
+    register_unary(ctx, "_cbor_stringify", Type::Var(a), Type::Bytes);
+
+    // _hcl_stringify: (a) -> string
+    let a = ctx.fresh_var();
+    register_unary(ctx, "_hcl_stringify", Type::Var(a), Type::String);
+
+    // add: (bytes, bytes) -> bytes
+    register_binary(ctx, "add", Type::Bytes, Type::Bytes, Type::Bytes);
+    register_binary(ctx, "+", Type::Bytes, Type::Bytes, Type::Bytes);
+
+    // slice: (bytes, number, number) -> bytes
+    register_ternary(ctx, "slice", Type::Bytes, Type::Number, Type::Number, Type::Bytes);
+
+    // reverse: (bytes) -> bytes
+    register_unary(ctx, "reverse", Type::Bytes, Type::Bytes);
+
+    // len: (bytes) -> number
+    register_unary(ctx, "len", Type::Bytes, Type::Number);
+
+    // base64: (bytes) -> string
+    register_unary(ctx, "base64", Type::Bytes, Type::String);
+
+    // sha512: (a) -> string  (accepts string, bytes, or any)
+    let a = ctx.fresh_var();
+    register_unary(ctx, "sha512", Type::Var(a), Type::String);
+    register_unary(ctx, "sha512", Type::None, Type::None);
+
+    // to_hex: (bytes) -> string
+    register_unary(ctx, "to_hex", Type::Bytes, Type::String);
+
+    // from_hex: (string) -> bytes
+    register_unary(ctx, "from_hex", Type::String, Type::Bytes);
+    register_unary(ctx, "from_hex", Type::None, Type::None);
+
+    // utf8: (bytes) -> string
+    register_unary(ctx, "utf8", Type::Bytes, Type::String);
+    register_unary(ctx, "utf8", Type::None, Type::None);
+
+    // xor: (bytes, bytes) -> bytes
+    register_binary(ctx, "xor", Type::Bytes, Type::Bytes, Type::Bytes);
+
+    // gt/gte/lt/lte are registered in register_comparison; no duplicate needed here
 }
 
 #[cfg(test)]
@@ -2027,6 +2101,77 @@ mod tests {
     #[case::string_to_uniq("\"hello\" | uniq", false, "string piped to uniq")]
     #[case::string_to_compact("\"hello\" | compact", false, "string piped to compact")]
     fn test_pipe_wrong_type_comprehensive(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+        let result = check_types(code);
+        assert_eq!(
+            result.is_empty(),
+            should_succeed,
+            "{}: Code='{}' Result={:?}",
+            description,
+            code,
+            result
+        );
+    }
+
+    // Bytes builtin type signatures
+
+    #[rstest]
+    // to_bytes: string -> bytes
+    #[case::to_bytes_string(r#"to_bytes("hello")"#, true)]
+    // to_bytes: [number] -> bytes
+    #[case::to_bytes_array("to_bytes([104, 101, 108, 108, 111])", true)]
+    // to_bytes: bytes -> bytes (identity)
+    #[case::to_bytes_bytes(r#"to_bytes("hi") | to_bytes"#, true)]
+    // _cbor_stringify produces bytes
+    #[case::cbor_stringify_produces_bytes(r#"{"k": 1} | _cbor_stringify | to_hex"#, true)]
+    // bytes add/concatenation
+    #[case::bytes_add(r#"to_bytes("ab") | add(to_bytes("cd"))"#, true)]
+    #[case::bytes_add_op(r#"to_bytes("ab") + to_bytes("cd")"#, true)]
+    // slice on bytes
+    #[case::bytes_slice(r#"to_bytes("hello") | slice(1; 3)"#, true)]
+    // reverse on bytes
+    #[case::bytes_reverse(r#"to_bytes("hello") | reverse"#, true)]
+    // len on bytes
+    #[case::bytes_len(r#"to_bytes("hello") | len"#, true)]
+    // base64 on bytes produces string
+    #[case::bytes_base64(r#"to_bytes("hello") | base64"#, true)]
+    // to_hex: bytes -> string
+    #[case::to_hex(r#"to_bytes("hello") | to_hex"#, true)]
+    // from_hex: string -> bytes
+    #[case::from_hex(r#"from_hex("deadbeef")"#, true)]
+    // utf8: bytes -> string
+    #[case::utf8(r#"to_bytes("hello") | utf8"#, true)]
+    // xor: (bytes, bytes) -> bytes
+    #[case::xor(r#"to_bytes("ab") | xor(to_bytes("cd"))"#, true)]
+    // sha512: string -> string
+    #[case::sha512_string(r#"sha512("hello")"#, true)]
+    // sha512: bytes -> string
+    #[case::sha512_bytes(r#"to_bytes("hello") | sha512"#, true)]
+    // bytes comparisons
+    #[case::bytes_gt(r#"gt(to_bytes("b"); to_bytes("a"))"#, true)]
+    #[case::bytes_gte(r#"gte(to_bytes("a"); to_bytes("a"))"#, true)]
+    #[case::bytes_lt(r#"lt(to_bytes("a"); to_bytes("b"))"#, true)]
+    #[case::bytes_lte(r#"lte(to_bytes("a"); to_bytes("a"))"#, true)]
+    // is_bytes: (a) -> bool
+    #[case::is_bytes(r#"to_bytes("hello") | is_bytes"#, true)]
+    fn test_bytes_builtin_signatures(#[case] code: &str, #[case] should_succeed: bool) {
+        let result = check_types(code);
+        assert_eq!(
+            result.is_empty(),
+            should_succeed,
+            "Code: {}\nResult: {:?}",
+            code,
+            result
+        );
+    }
+
+    #[rstest]
+    // to_hex requires bytes, not string
+    #[case::to_hex_string(r#"to_hex("hello")"#, false, "to_hex expects bytes not string")]
+    // utf8 requires bytes, not string
+    #[case::utf8_string(r#"utf8("hello")"#, false, "utf8 expects bytes not string")]
+    // from_hex requires string, not bytes
+    #[case::from_hex_bytes(r#"to_bytes("hello") | from_hex"#, false, "from_hex expects string not bytes")]
+    fn test_bytes_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
         let result = check_types(code);
         assert_eq!(
             result.is_empty(),
