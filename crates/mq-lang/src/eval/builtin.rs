@@ -595,7 +595,9 @@ fn xor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
                     b2.len()
                 )));
             }
-            Ok(RuntimeValue::Bytes(b1.iter().zip(b2.iter()).map(|(a, b)| a ^ b).collect()))
+            Ok(RuntimeValue::Bytes(
+                b1.iter().zip(b2.iter()).map(|(a, b)| a ^ b).collect(),
+            ))
         }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -7535,13 +7537,7 @@ mod tests {
             &env,
         )
         .unwrap();
-        let roundtripped = eval_builtin(
-            &RuntimeValue::None,
-            &Ident::new("from_hex"),
-            vec![hex],
-            &env,
-        )
-        .unwrap();
+        let roundtripped = eval_builtin(&RuntimeValue::None, &Ident::new("from_hex"), vec![hex], &env).unwrap();
         assert_eq!(roundtripped, RuntimeValue::Bytes(original));
     }
 
@@ -7559,12 +7555,7 @@ mod tests {
     #[case("lte", vec![0x01], vec![0x02], true)]
     #[case("lte", vec![0x01], vec![0x01], true)]
     #[case("lte", vec![0x02], vec![0x01], false)]
-    fn test_bytes_comparison(
-        #[case] op: &str,
-        #[case] lhs: Vec<u8>,
-        #[case] rhs: Vec<u8>,
-        #[case] expected: bool,
-    ) {
+    fn test_bytes_comparison(#[case] op: &str, #[case] lhs: Vec<u8>, #[case] rhs: Vec<u8>, #[case] expected: bool) {
         let ident = Ident::new(op);
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -7635,10 +7626,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![
-                RuntimeValue::Bytes(vec![0x01, 0x02]),
-                RuntimeValue::Bytes(vec![0x01]),
-            ],
+            vec![RuntimeValue::Bytes(vec![0x01, 0x02]), RuntimeValue::Bytes(vec![0x01])],
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());

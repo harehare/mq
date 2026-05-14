@@ -377,9 +377,9 @@ pub fn base64(input: &str) -> Result<RuntimeValue, Error> {
 
 /// Encode to base64 from raw bytes
 #[inline(always)]
-pub fn base64_bytes(input: &Vec<u8>) -> Result<RuntimeValue, Error> {
+pub fn base64_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(
-        base64::engine::general_purpose::STANDARD.encode(input.as_slice()),
+        base64::engine::general_purpose::STANDARD.encode(input),
     ))
 }
 
@@ -472,7 +472,7 @@ pub fn sha512_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
 /// Parse a lowercase or uppercase hex string into raw bytes.
 #[inline(always)]
 pub fn from_hex(input: &str) -> Result<RuntimeValue, Error> {
-    if input.len() % 2 != 0 {
+    if !input.len().is_multiple_of(2) {
         return Err(Error::Runtime(format!(
             "from_hex: odd-length hex string: \"{}\"",
             input

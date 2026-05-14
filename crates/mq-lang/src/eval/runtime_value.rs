@@ -625,9 +625,9 @@ impl RuntimeValue {
             RuntimeValue::None => ciborium::Value::Null,
             RuntimeValue::Boolean(b) => ciborium::Value::Bool(b),
             RuntimeValue::Number(n) => ciborium::Value::Float(n.value()),
-            RuntimeValue::String(s) => ciborium::Value::Text(s.to_string()),
+            RuntimeValue::String(s) => ciborium::Value::Text(s),
             RuntimeValue::Symbol(i) => ciborium::Value::Text(i.to_string()),
-            RuntimeValue::Bytes(b) => ciborium::Value::Bytes(b.clone()),
+            RuntimeValue::Bytes(b) => ciborium::Value::Bytes(b),
             RuntimeValue::Array(arr) => ciborium::Value::Array(arr.into_iter().map(Self::to_cbor_value).collect()),
             RuntimeValue::Dict(map) => ciborium::Value::Map(
                 map.into_iter()

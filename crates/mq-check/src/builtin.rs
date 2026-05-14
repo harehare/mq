@@ -675,7 +675,15 @@ fn register_type_conversion(ctx: &mut InferenceContext) {
 /// Type check functions: is_none, is_array, is_dict, is_string, is_number, is_bool, is_empty
 fn register_type_checks(ctx: &mut InferenceContext) {
     // Type predicate functions: (a) -> bool
-    for name in ["is_none", "is_array", "is_dict", "is_string", "is_number", "is_bool", "is_bytes"] {
+    for name in [
+        "is_none",
+        "is_array",
+        "is_dict",
+        "is_string",
+        "is_number",
+        "is_bool",
+        "is_bytes",
+    ] {
         let a = ctx.fresh_var();
         register_unary(ctx, name, Type::Var(a), Type::Bool);
     }
