@@ -483,7 +483,7 @@ pub fn from_hex(input: &str) -> Result<RuntimeValue, Error> {
         .chunks_exact(2)
         .map(|chunk| {
             let s = std::str::from_utf8(chunk)
-                .map_err(|_| Error::Runtime(format!("from_hex: invalid hex byte (non-ASCII)")))?;
+                .map_err(|_| Error::Runtime("from_hex: invalid hex byte (non-ASCII)".to_string()))?;
             u8::from_str_radix(s, 16).map_err(|_| Error::Runtime(format!("from_hex: invalid hex byte \"{}\"", s)))
         })
         .collect::<Result<Vec<u8>, _>>()?;
