@@ -372,6 +372,14 @@ pub fn base64(input: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(BASE64_STANDARD.encode(input)))
 }
 
+/// Encode to base64 from raw bytes
+#[inline(always)]
+pub fn base64_bytes(input: &Vec<u8>) -> Result<RuntimeValue, Error> {
+    Ok(RuntimeValue::String(
+        base64::engine::general_purpose::STANDARD.encode(input.as_slice()),
+    ))
+}
+
 /// Decode from base64
 #[inline(always)]
 pub fn base64d(input: &str) -> Result<RuntimeValue, Error> {

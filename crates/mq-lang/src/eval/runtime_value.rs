@@ -268,6 +268,39 @@ impl From<serde_json::Value> for RuntimeValue {
     }
 }
 
+impl From<ciborium::Value> for RuntimeValue {
+    fn from(value: ciborium::Value) -> Self {
+        match value {
+            ciborium::Value::Null => RuntimeValue::NONE,
+            ciborium::Value::Bool(b) => RuntimeValue::Boolean(b),
+            ciborium::Value::Integer(i) => {
+                let n: i128 = i.into();
+                RuntimeValue::Number(crate::number::Number::from(n as f64))
+            }
+            ciborium::Value::Float(f) => RuntimeValue::Number(crate::number::Number::from(f)),
+            ciborium::Value::Text(s) => RuntimeValue::String(s),
+            ciborium::Value::Bytes(b) => RuntimeValue::Bytes(b),
+            ciborium::Value::Array(arr) => {
+                let items = arr.into_iter().map(Into::into).collect();
+                RuntimeValue::Array(items)
+            }
+            ciborium::Value::Map(pairs) => {
+                let mut map = BTreeMap::new();
+                for (k, v) in pairs {
+                    let key = match k {
+                        ciborium::Value::Text(s) => Ident::new(&s),
+                        other => Ident::new(&format!("{:?}", other)),
+                    };
+                    map.insert(key, v.into());
+                }
+                RuntimeValue::Dict(map)
+            }
+            ciborium::Value::Tag(_, inner) => (*inner).into(),
+            _ => RuntimeValue::NONE,
+        }
+    }
+}
+
 impl PartialOrd for RuntimeValue {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
@@ -561,6 +594,47 @@ impl RuntimeValue {
             RuntimeValue::Number(n) => RuntimeValue::Number((-n.value()).into()),
             RuntimeValue::String(s) => RuntimeValue::String(s.chars().rev().collect()),
             _ => self.clone(),
+        }
+    }
+
+    pub fn to_json_value(self) -> serde_json::Value {
+        use base64::Engine;
+        match self {
+            RuntimeValue::None => serde_json::Value::Null,
+            RuntimeValue::Boolean(b) => serde_json::Value::Bool(b),
+            RuntimeValue::Number(n) => serde_json::Number::from_f64(n.value())
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
+            RuntimeValue::String(s) => serde_json::Value::String(s),
+            RuntimeValue::Symbol(i) => serde_json::Value::String(i.to_string()),
+            RuntimeValue::Array(arr) => serde_json::Value::Array(arr.into_iter().map(Self::to_json_value).collect()),
+            RuntimeValue::Dict(map) => {
+                let obj: serde_json::Map<String, serde_json::Value> = map
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v.to_json_value()))
+                    .collect();
+                serde_json::Value::Object(obj)
+            }
+            RuntimeValue::Bytes(b) => serde_json::Value::String(base64::engine::general_purpose::STANDARD.encode(b)),
+            _ => serde_json::Value::Null,
+        }
+    }
+
+    pub fn to_cbor_value(self) -> ciborium::Value {
+        match self {
+            RuntimeValue::None => ciborium::Value::Null,
+            RuntimeValue::Boolean(b) => ciborium::Value::Bool(b),
+            RuntimeValue::Number(n) => ciborium::Value::Float(n.value()),
+            RuntimeValue::String(s) => ciborium::Value::Text(s.to_string()),
+            RuntimeValue::Symbol(i) => ciborium::Value::Text(i.to_string()),
+            RuntimeValue::Bytes(b) => ciborium::Value::Bytes(b.clone()),
+            RuntimeValue::Array(arr) => ciborium::Value::Array(arr.into_iter().map(Self::to_cbor_value).collect()),
+            RuntimeValue::Dict(map) => ciborium::Value::Map(
+                map.into_iter()
+                    .map(|(k, v)| (ciborium::Value::Text(k.to_string()), v.to_cbor_value()))
+                    .collect(),
+            ),
+            _ => ciborium::Value::Null,
         }
     }
 }

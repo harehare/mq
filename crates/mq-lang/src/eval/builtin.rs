@@ -421,9 +421,7 @@ fn date_diff_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
 fn base64_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => convert::base64(s),
-        [RuntimeValue::Bytes(b)] => Ok(RuntimeValue::String(
-            base64::engine::general_purpose::STANDARD.encode(b.as_slice()),
-        )),
+        [RuntimeValue::Bytes(b)] => convert::base64_bytes(b),
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
             .map(|md| {
@@ -2802,46 +2800,15 @@ fn _cbor_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
                 .map_err(|e| Error::Runtime(format!("Failed to decode base64: {}", e)))?;
             let value: ciborium::Value = ciborium::from_reader(bytes.as_slice())
                 .map_err(|e| Error::Runtime(format!("Failed to parse CBOR: {}", e)))?;
-            cbor_value_to_runtime(value)
+            Ok(value.into())
         }
         [RuntimeValue::Bytes(b)] => {
             let value: ciborium::Value = ciborium::from_reader(b.as_slice())
                 .map_err(|e| Error::Runtime(format!("Failed to parse CBOR: {}", e)))?;
-            cbor_value_to_runtime(value)
+            Ok(value.into())
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("_cbor_parse should always receive exactly one argument"),
-    }
-}
-
-fn cbor_value_to_runtime(value: ciborium::Value) -> Result<RuntimeValue, Error> {
-    match value {
-        ciborium::Value::Null => Ok(RuntimeValue::NONE),
-        ciborium::Value::Bool(b) => Ok(RuntimeValue::Boolean(b)),
-        ciborium::Value::Integer(i) => {
-            let n: i128 = i.into();
-            Ok(RuntimeValue::Number(crate::number::Number::from(n as f64)))
-        }
-        ciborium::Value::Float(f) => Ok(RuntimeValue::Number(crate::number::Number::from(f))),
-        ciborium::Value::Text(s) => Ok(RuntimeValue::String(s)),
-        ciborium::Value::Bytes(b) => Ok(RuntimeValue::Bytes(b)),
-        ciborium::Value::Array(arr) => {
-            let items: Result<Vec<_>, _> = arr.into_iter().map(cbor_value_to_runtime).collect();
-            Ok(RuntimeValue::Array(items?))
-        }
-        ciborium::Value::Map(pairs) => {
-            let mut map = BTreeMap::new();
-            for (k, v) in pairs {
-                let key = match k {
-                    ciborium::Value::Text(s) => Ident::new(&s),
-                    other => Ident::new(&format!("{:?}", other)),
-                };
-                map.insert(key, cbor_value_to_runtime(v)?);
-            }
-            Ok(RuntimeValue::Dict(map))
-        }
-        ciborium::Value::Tag(_, inner) => cbor_value_to_runtime(*inner),
-        _ => Ok(RuntimeValue::NONE),
     }
 }
 
@@ -2862,7 +2829,7 @@ fn _hcl_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
 fn _hcl_stringify_impl(_ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [value] => {
-            let json_value = runtime_to_json_value(value);
+            let json_value = std::mem::take(value).to_json_value();
             let s =
                 hcl::to_string(&json_value).map_err(|e| Error::Runtime(format!("Failed to serialize HCL: {}", e)))?;
             Ok(RuntimeValue::String(s))
@@ -2875,69 +2842,13 @@ fn _hcl_stringify_impl(_ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Sha
 fn _cbor_stringify_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [value] => {
-            let cbor_value = runtime_to_cbor_value(std::mem::take(value));
+            let cbor_value = std::mem::take(value).to_cbor_value();
             let mut buf = Vec::new();
             ciborium::into_writer(&cbor_value, &mut buf)
                 .map_err(|e| Error::Runtime(format!("Failed to serialize CBOR: {}", e)))?;
             Ok(RuntimeValue::Bytes(buf))
         }
         _ => unreachable!("_cbor_stringify should always receive exactly one argument"),
-    }
-}
-
-fn runtime_to_json_value(value: &RuntimeValue) -> serde_json::Value {
-    match value {
-        RuntimeValue::None => serde_json::Value::Null,
-        RuntimeValue::Boolean(b) => serde_json::Value::Bool(*b),
-        RuntimeValue::Number(n) => serde_json::Number::from_f64(n.value())
-            .map(serde_json::Value::Number)
-            .unwrap_or(serde_json::Value::Null),
-        RuntimeValue::String(s) => serde_json::Value::String(s.clone()),
-        RuntimeValue::Symbol(i) => serde_json::Value::String(i.to_string()),
-        RuntimeValue::Array(arr) => serde_json::Value::Array(arr.iter().map(runtime_to_json_value).collect()),
-        RuntimeValue::Dict(map) => {
-            let obj: serde_json::Map<String, serde_json::Value> = map
-                .iter()
-                .map(|(k, v)| (k.to_string(), runtime_to_json_value(v)))
-                .collect();
-            serde_json::Value::Object(obj)
-        }
-        RuntimeValue::Bytes(b) => serde_json::Value::String(base64::engine::general_purpose::STANDARD.encode(b)),
-        _ => serde_json::Value::Null,
-    }
-}
-
-fn runtime_number_to_cbor_value(n: number::Number) -> ciborium::Value {
-    if n.is_int() {
-        let number_string = n.to_string();
-
-        if let Ok(value) = number_string.parse::<i64>() {
-            return ciborium::Value::Integer(value.into());
-        }
-
-        if let Ok(value) = number_string.parse::<u64>() {
-            return ciborium::Value::Integer(value.into());
-        }
-    }
-
-    ciborium::Value::Float(n.value())
-}
-
-fn runtime_to_cbor_value(value: RuntimeValue) -> ciborium::Value {
-    match value {
-        RuntimeValue::None => ciborium::Value::Null,
-        RuntimeValue::Boolean(b) => ciborium::Value::Bool(b),
-        RuntimeValue::Number(n) => runtime_number_to_cbor_value(n),
-        RuntimeValue::String(s) => ciborium::Value::Text(s),
-        RuntimeValue::Symbol(i) => ciborium::Value::Text(i.to_string()),
-        RuntimeValue::Bytes(b) => ciborium::Value::Bytes(b),
-        RuntimeValue::Array(arr) => ciborium::Value::Array(arr.into_iter().map(runtime_to_cbor_value).collect()),
-        RuntimeValue::Dict(map) => ciborium::Value::Map(
-            map.into_iter()
-                .map(|(k, v)| (ciborium::Value::Text(k.to_string()), runtime_to_cbor_value(v)))
-                .collect(),
-        ),
-        _ => ciborium::Value::Null,
     }
 }
 
