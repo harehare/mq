@@ -478,11 +478,13 @@ pub fn from_hex(input: &str) -> Result<RuntimeValue, Error> {
             input
         )));
     }
-    let bytes = (0..input.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&input[i..i + 2], 16)
-                .map_err(|_| Error::Runtime(format!("from_hex: invalid hex byte \"{}\"", &input[i..i + 2])))
+    let bytes = input
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|chunk| {
+            let s = std::str::from_utf8(chunk)
+                .map_err(|_| Error::Runtime(format!("from_hex: invalid hex byte (non-ASCII)")))?;
+            u8::from_str_radix(s, 16).map_err(|_| Error::Runtime(format!("from_hex: invalid hex byte \"{}\"", s)))
         })
         .collect::<Result<Vec<u8>, _>>()?;
     Ok(RuntimeValue::Bytes(bytes))
@@ -1233,6 +1235,8 @@ mod tests {
     #[rstest]
     #[case("abc")]
     #[case("zzzz")]
+    #[case("にa")]
+    #[case("café")]
     fn test_from_hex_invalid(#[case] input: &str) {
         assert!(from_hex(input).is_err());
     }
