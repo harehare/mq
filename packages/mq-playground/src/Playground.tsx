@@ -1820,7 +1820,7 @@ export const Playground = () => {
             >
               <img src="./logo.svg" className="logo-icon" />
             </a>
-            <h1 style={{ color: "var(--header-title-color)" }}>mq</h1>
+            <h1 style={{ color: "var(--header-title-color)" }}>playground</h1>
           </div>
           <div
             style={{
