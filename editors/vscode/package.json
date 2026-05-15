@@ -204,6 +204,6 @@
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1",
-    "which": "^6.0.1"
+    "which": "^7.0.0"
   }
 }
