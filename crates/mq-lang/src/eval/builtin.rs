@@ -1,3 +1,4 @@
+pub mod bytes;
 pub mod convert;
 mod range;
 mod regex;
@@ -607,6 +608,85 @@ fn xor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
     }
 }
 
+#[mq_macros::mq_fn(name = "band", params = Fixed(2))]
+fn band_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => {
+            if b1.len() != b2.len() {
+                return Err(Error::Runtime(format!(
+                    "band: byte slices must have the same length ({} != {})",
+                    b1.len(),
+                    b2.len()
+                )));
+            }
+            Ok(RuntimeValue::Bytes(
+                b1.iter().zip(b2.iter()).map(|(a, b)| a & b).collect(),
+            ))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("band should always receive exactly two arguments"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "bor", params = Fixed(2))]
+fn bor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => {
+            if b1.len() != b2.len() {
+                return Err(Error::Runtime(format!(
+                    "bor: byte slices must have the same length ({} != {})",
+                    b1.len(),
+                    b2.len()
+                )));
+            }
+            Ok(RuntimeValue::Bytes(
+                b1.iter().zip(b2.iter()).map(|(a, b)| a | b).collect(),
+            ))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("bor should always receive exactly two arguments"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "bnot", params = Fixed(1))]
+fn bnot_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Bytes(b)] => Ok(RuntimeValue::Bytes(b.iter().map(|x| !x).collect())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("bnot should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "pack", params = Fixed(2))]
+fn pack_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(fmt), RuntimeValue::Number(n)] => bytes::pack_number(fmt, n.value()),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("pack should always receive exactly two arguments"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "unpack", params = Fixed(2))]
+fn unpack_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(fmt), RuntimeValue::Bytes(b)] => bytes::unpack_bytes(fmt, b),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("unpack should always receive exactly two arguments"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "min", params = Fixed(2))]
 fn min_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -744,6 +824,7 @@ fn ends_with_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, env: &SharedE
             .map(|md| Ok(md.value().ends_with(&*s).into()))
             .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(s1.ends_with(&*s2).into()),
+        [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => Ok(b1.ends_with(b2).into()),
         [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
             .last()
             .map_or(Ok(RuntimeValue::FALSE), |o| {
@@ -767,6 +848,7 @@ fn starts_with_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, env: &Share
             .map(|md| Ok(md.value().starts_with(&*s).into()))
             .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(s1.starts_with(&*s2).into()),
+        [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => Ok(b1.starts_with(b2).into()),
         [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
             .first()
             .map_or(Ok(RuntimeValue::FALSE), |o| {
@@ -1223,6 +1305,14 @@ fn index_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
                 ))
             })
             .unwrap_or_else(|| Ok(RuntimeValue::Number((-1_i64).into()))),
+        [RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(needle)] => {
+            let pos = haystack
+                .windows(needle.len().max(1))
+                .position(|w| w == needle.as_slice())
+                .map(|i| i as i64)
+                .unwrap_or(-1);
+            Ok(RuntimeValue::Number(pos.into()))
+        }
         [RuntimeValue::Array(array), v] => Ok(array
             .iter()
             .position(|o| o == v)
@@ -1272,6 +1362,15 @@ fn rindex_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
                 ))
             })
             .unwrap_or_else(|| Ok(RuntimeValue::Number((-1_i64).into()))),
+        [RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(needle)] => {
+            let nlen = needle.len().max(1);
+            let pos = haystack
+                .windows(nlen)
+                .rposition(|w| w == needle.as_slice())
+                .map(|i| i as i64)
+                .unwrap_or(-1);
+            Ok(RuntimeValue::Number(pos.into()))
+        }
         [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
             .iter()
             .rposition(|o| match o {
@@ -3473,6 +3572,11 @@ mq_macros::builtin_dispatch! {
     TO_HEX,
     UTF8,
     XOR,
+    BAND,
+    BOR,
+    BNOT,
+    PACK,
+    UNPACK,
     URL_ENCODE,
     TO_TEXT,
     ENDS_WITH,
@@ -4366,6 +4470,41 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
+        SmolStr::new("band"),
+        BuiltinFunctionDoc {
+            description: "Computes the bitwise AND of two byte arrays of equal length.",
+            params: &["bytes1", "bytes2"],
+        },
+    );
+    map.insert(
+        SmolStr::new("bor"),
+        BuiltinFunctionDoc {
+            description: "Computes the bitwise OR of two byte arrays of equal length.",
+            params: &["bytes1", "bytes2"],
+        },
+    );
+    map.insert(
+        SmolStr::new("bnot"),
+        BuiltinFunctionDoc {
+            description: "Computes the bitwise NOT (complement) of a byte array.",
+            params: &["bytes"],
+        },
+    );
+    map.insert(
+        SmolStr::new("pack"),
+        BuiltinFunctionDoc {
+            description: "Packs a number into bytes using the given format. Supported formats: u8, i8, u16be/le, i16be/le, u32be/le, i32be/le, u64be/le, i64be/le, f32be/le, f64be/le.",
+            params: &["format", "value"],
+        },
+    );
+    map.insert(
+        SmolStr::new("unpack"),
+        BuiltinFunctionDoc {
+            description: "Unpacks a number from bytes using the given format. Supported formats: u8, i8, u16be/le, i16be/le, u32be/le, i32be/le, u64be/le, i64be/le, f32be/le, f64be/le.",
+            params: &["format", "bytes"],
+        },
+    );
+    map.insert(
         SmolStr::new("url_encode"),
         BuiltinFunctionDoc {
             description: "URL-encodes the given string.",
@@ -4382,15 +4521,15 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("ends_with"),
         BuiltinFunctionDoc {
-            description: "Checks if the given string ends with the specified substring.",
-            params: &["string", "substring"],
+            description: "Checks if the given string or byte array ends with the specified suffix.",
+            params: &["value", "suffix"],
         },
     );
     map.insert(
         SmolStr::new("starts_with"),
         BuiltinFunctionDoc {
-            description: "Checks if the given string starts with the specified substring.",
-            params: &["string", "substring"],
+            description: "Checks if the given string or byte array starts with the specified prefix.",
+            params: &["value", "prefix"],
         },
     );
     map.insert(
@@ -4508,8 +4647,8 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("index"),
         BuiltinFunctionDoc {
-            description: "Finds the first occurrence of a substring in the given string.",
-            params: &["string", "substring"],
+            description: "Finds the first occurrence of a substring or byte subsequence. Returns -1 if not found.",
+            params: &["value", "needle"],
         },
     );
     map.insert(
@@ -4522,8 +4661,8 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("rindex"),
         BuiltinFunctionDoc {
-            description: "Finds the last occurrence of a substring in the given string.",
-            params: &["string", "substring"],
+            description: "Finds the last occurrence of a substring or byte subsequence. Returns -1 if not found.",
+            params: &["value", "needle"],
         },
     );
     map.insert(
@@ -5483,6 +5622,23 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
                 repeated_array.extend_from_slice(array);
             }
             Ok(RuntimeValue::Array(repeated_array))
+        }
+        RuntimeValue::Bytes(b) => {
+            if n == 0 {
+                return Ok(RuntimeValue::Bytes(vec![]));
+            }
+            let total_size = b.len().saturating_mul(n);
+            if total_size > MAX_RANGE_SIZE {
+                return Err(Error::Runtime(format!(
+                    "bytes repeat size {} exceeds maximum allowed size of {}",
+                    total_size, MAX_RANGE_SIZE
+                )));
+            }
+            let mut repeated = Vec::with_capacity(total_size);
+            for _ in 0..n {
+                repeated.extend_from_slice(b);
+            }
+            Ok(RuntimeValue::Bytes(repeated))
         }
         RuntimeValue::None => Ok(RuntimeValue::NONE),
         _ => Err(Error::InvalidTypes(
@@ -7943,5 +8099,391 @@ mod tests {
     ) {
         let result = eval_selector_with_args(&node, &selector, &args);
         assert_eq!(!result.is_none(), expected_match);
+    }
+
+    fn env() -> Shared<SharedCell<Env>> {
+        Shared::new(SharedCell::new(Env::default()))
+    }
+
+    fn call(name: &str, args: Vec<RuntimeValue>) -> Result<RuntimeValue, Error> {
+        eval_builtin(&RuntimeValue::None, &Ident::new(name), args, &env())
+    }
+
+    // =========================================================================
+    // band
+    // =========================================================================
+
+    #[rstest]
+    #[case(vec![0xff, 0xff], vec![0xff, 0xff], vec![0xff, 0xff])]
+    #[case(vec![0xf0, 0x0f], vec![0xff, 0xff], vec![0xf0, 0x0f])]
+    #[case(vec![0xaa, 0x55], vec![0x55, 0xaa], vec![0x00, 0x00])]
+    #[case(vec![0xff],       vec![0x00],       vec![0x00])]
+    #[case(vec![],           vec![],           vec![])]
+    fn test_band(#[case] b1: Vec<u8>, #[case] b2: Vec<u8>, #[case] expected: Vec<u8>) {
+        assert_eq!(
+            call("band", vec![RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)]),
+            Ok(RuntimeValue::Bytes(expected))
+        );
+    }
+
+    #[rstest]
+    #[case(vec![0x01, 0x02], vec![0x01])]
+    #[case(vec![],           vec![0x00])]
+    fn test_band_length_mismatch(#[case] b1: Vec<u8>, #[case] b2: Vec<u8>) {
+        assert!(call("band", vec![RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)]).is_err());
+    }
+
+    #[test]
+    fn test_band_type_error() {
+        assert!(
+            call(
+                "band",
+                vec![RuntimeValue::String("a".into()), RuntimeValue::Bytes(vec![0x01])]
+            )
+            .is_err()
+        );
+    }
+
+    // =========================================================================
+    // bor
+    // =========================================================================
+
+    #[rstest]
+    #[case(vec![0x00, 0x00], vec![0x00, 0x00], vec![0x00, 0x00])]
+    #[case(vec![0xf0, 0x00], vec![0x0f, 0x00], vec![0xff, 0x00])]
+    #[case(vec![0xaa, 0x55], vec![0x55, 0xaa], vec![0xff, 0xff])]
+    #[case(vec![0x00],       vec![0xff],       vec![0xff])]
+    #[case(vec![],           vec![],           vec![])]
+    fn test_bor(#[case] b1: Vec<u8>, #[case] b2: Vec<u8>, #[case] expected: Vec<u8>) {
+        assert_eq!(
+            call("bor", vec![RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)]),
+            Ok(RuntimeValue::Bytes(expected))
+        );
+    }
+
+    #[rstest]
+    #[case(vec![0x01, 0x02], vec![0x01])]
+    #[case(vec![],           vec![0x00])]
+    fn test_bor_length_mismatch(#[case] b1: Vec<u8>, #[case] b2: Vec<u8>) {
+        assert!(call("bor", vec![RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)]).is_err());
+    }
+
+    #[test]
+    fn test_bor_type_error() {
+        assert!(
+            call(
+                "bor",
+                vec![RuntimeValue::Number(1.into()), RuntimeValue::Bytes(vec![0x01])]
+            )
+            .is_err()
+        );
+    }
+
+    // =========================================================================
+    // bnot
+    // =========================================================================
+
+    #[rstest]
+    #[case(vec![0x00],       vec![0xff])]
+    #[case(vec![0xff],       vec![0x00])]
+    #[case(vec![0xf0, 0x0f], vec![0x0f, 0xf0])]
+    #[case(vec![0x55, 0xaa], vec![0xaa, 0x55])]
+    #[case(vec![],           vec![])]
+    fn test_bnot(#[case] input: Vec<u8>, #[case] expected: Vec<u8>) {
+        assert_eq!(
+            call("bnot", vec![RuntimeValue::Bytes(input)]),
+            Ok(RuntimeValue::Bytes(expected))
+        );
+    }
+
+    #[test]
+    fn test_bnot_double_negation() {
+        let original = vec![0xde, 0xad, 0xbe, 0xef];
+        let once = call("bnot", vec![RuntimeValue::Bytes(original.clone())]).unwrap();
+        let twice = call("bnot", vec![once]).unwrap();
+        assert_eq!(twice, RuntimeValue::Bytes(original));
+    }
+
+    #[test]
+    fn test_bnot_type_error() {
+        assert!(call("bnot", vec![RuntimeValue::String("a".into())]).is_err());
+    }
+
+    // =========================================================================
+    // starts_with / ends_with for bytes
+    // =========================================================================
+
+    #[rstest]
+    #[case(vec![0x01, 0x02, 0x03], vec![0x01, 0x02],             true)]
+    #[case(vec![0x01, 0x02, 0x03], vec![0x01, 0x02, 0x03],       true)]
+    #[case(vec![0x01, 0x02, 0x03], vec![0x02, 0x03],             false)]
+    #[case(vec![0x01, 0x02, 0x03], vec![0x01, 0x02, 0x03, 0x04], false)]
+    #[case(vec![0x01],             vec![],                        true)]
+    #[case(vec![],                 vec![],                        true)]
+    fn test_bytes_starts_with(#[case] haystack: Vec<u8>, #[case] prefix: Vec<u8>, #[case] expected: bool) {
+        assert_eq!(
+            call(
+                "starts_with",
+                vec![RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(prefix)]
+            ),
+            Ok(RuntimeValue::Boolean(expected))
+        );
+    }
+
+    #[rstest]
+    #[case(vec![0x01, 0x02, 0x03], vec![0x02, 0x03],             true)]
+    #[case(vec![0x01, 0x02, 0x03], vec![0x01, 0x02, 0x03],       true)]
+    #[case(vec![0x01, 0x02, 0x03], vec![0x01, 0x02],             false)]
+    #[case(vec![0x01, 0x02, 0x03], vec![0x00, 0x01, 0x02, 0x03], false)]
+    #[case(vec![0x01],             vec![],                        true)]
+    #[case(vec![],                 vec![],                        true)]
+    fn test_bytes_ends_with(#[case] haystack: Vec<u8>, #[case] suffix: Vec<u8>, #[case] expected: bool) {
+        assert_eq!(
+            call(
+                "ends_with",
+                vec![RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(suffix)]
+            ),
+            Ok(RuntimeValue::Boolean(expected))
+        );
+    }
+
+    // =========================================================================
+    // index / rindex for bytes
+    // =========================================================================
+
+    #[rstest]
+    #[case(vec![0x01, 0x02, 0x03, 0x02],     vec![0x02],       1)]
+    #[case(vec![0x01, 0x02, 0x03],           vec![0x04],       -1)]
+    #[case(vec![0x01, 0x02, 0x03],           vec![0x01, 0x02], 0)]
+    #[case(vec![0x01, 0x02, 0x03],           vec![0x02, 0x03], 1)]
+    #[case(vec![0x01, 0x02, 0x03],           vec![0x01, 0x02, 0x03], 0)]
+    #[case(vec![0x01, 0x02, 0x03],           vec![0x01, 0x02, 0x03, 0x04], -1)]
+    #[case(vec![],                           vec![0x01],       -1)]
+    fn test_bytes_index(#[case] haystack: Vec<u8>, #[case] needle: Vec<u8>, #[case] expected: i64) {
+        assert_eq!(
+            call(
+                "index",
+                vec![RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(needle)]
+            ),
+            Ok(RuntimeValue::Number(expected.into()))
+        );
+    }
+
+    #[rstest]
+    #[case(vec![0x01, 0x02, 0x03, 0x02],     vec![0x02],       3)]
+    #[case(vec![0x01, 0x02, 0x03],           vec![0x04],       -1)]
+    #[case(vec![0x01, 0x02, 0x03, 0x01, 0x02], vec![0x01, 0x02], 3)]
+    #[case(vec![0x01, 0x02, 0x03],           vec![0x01, 0x02, 0x03], 0)]
+    #[case(vec![],                           vec![0x01],       -1)]
+    fn test_bytes_rindex(#[case] haystack: Vec<u8>, #[case] needle: Vec<u8>, #[case] expected: i64) {
+        assert_eq!(
+            call(
+                "rindex",
+                vec![RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(needle)]
+            ),
+            Ok(RuntimeValue::Number(expected.into()))
+        );
+    }
+
+    #[test]
+    fn test_bytes_index_rindex_agree_single_occurrence() {
+        let h = vec![0xaa, 0xbb, 0xcc];
+        let n = vec![0xbb];
+        let idx = call(
+            "index",
+            vec![RuntimeValue::Bytes(h.clone()), RuntimeValue::Bytes(n.clone())],
+        )
+        .unwrap();
+        let ridx = call("rindex", vec![RuntimeValue::Bytes(h), RuntimeValue::Bytes(n)]).unwrap();
+        assert_eq!(idx, ridx);
+    }
+
+    // =========================================================================
+    // repeat for bytes
+    // =========================================================================
+
+    #[rstest]
+    #[case(vec![0x01, 0x02], 0, vec![])]
+    #[case(vec![0x01, 0x02], 1, vec![0x01, 0x02])]
+    #[case(vec![0x01, 0x02], 3, vec![0x01, 0x02, 0x01, 0x02, 0x01, 0x02])]
+    #[case(vec![0xff],       4, vec![0xff, 0xff, 0xff, 0xff])]
+    #[case(vec![],           5, vec![])]
+    fn test_bytes_repeat(#[case] input: Vec<u8>, #[case] n: u32, #[case] expected: Vec<u8>) {
+        assert_eq!(
+            call(
+                "repeat",
+                vec![RuntimeValue::Bytes(input), RuntimeValue::Number((n as f64).into())]
+            ),
+            Ok(RuntimeValue::Bytes(expected))
+        );
+    }
+
+    // =========================================================================
+    // pack
+    // =========================================================================
+
+    #[rstest]
+    #[case("u8",    0.0,    vec![0x00])]
+    #[case("u8",    255.0,  vec![0xff])]
+    #[case("i8",    -1.0,   vec![0xff])]
+    #[case("i8",    -128.0, vec![0x80])]
+    #[case("i8",    127.0,  vec![0x7f])]
+    #[case("u16be", 256.0,  vec![0x01, 0x00])]
+    #[case("u16le", 256.0,  vec![0x00, 0x01])]
+    #[case("i16be", -1.0,   vec![0xff, 0xff])]
+    #[case("i16le", -1.0,   vec![0xff, 0xff])]
+    #[case("u32be", 1.0,    vec![0x00, 0x00, 0x00, 0x01])]
+    #[case("u32le", 1.0,    vec![0x01, 0x00, 0x00, 0x00])]
+    #[case("i32be", -1.0,   vec![0xff, 0xff, 0xff, 0xff])]
+    #[case("i32le", -1.0,   vec![0xff, 0xff, 0xff, 0xff])]
+    #[case("u64be", 1.0,    vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01])]
+    #[case("u64le", 1.0,    vec![0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])]
+    #[case("i64be", -1.0,   vec![0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff])]
+    #[case("f32be", 1.0,    vec![0x3f, 0x80, 0x00, 0x00])]
+    #[case("f32le", 1.0,    vec![0x00, 0x00, 0x80, 0x3f])]
+    #[case("f64be", 1.0,    vec![0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])]
+    #[case("f64le", 1.0,    vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f])]
+    fn test_pack(#[case] fmt: &str, #[case] value: f64, #[case] expected: Vec<u8>) {
+        assert_eq!(
+            call(
+                "pack",
+                vec![RuntimeValue::String(fmt.into()), RuntimeValue::Number(value.into())]
+            ),
+            Ok(RuntimeValue::Bytes(expected))
+        );
+    }
+
+    #[rstest]
+    #[case("z99")]
+    #[case("u16")]
+    #[case("")]
+    fn test_pack_unknown_format(#[case] fmt: &str) {
+        assert!(
+            call(
+                "pack",
+                vec![RuntimeValue::String(fmt.into()), RuntimeValue::Number(0.0.into())]
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn test_pack_type_error() {
+        assert!(
+            call(
+                "pack",
+                vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(0.0.into())]
+            )
+            .is_err()
+        );
+    }
+
+    // =========================================================================
+    // unpack
+    // =========================================================================
+
+    #[rstest]
+    #[case("u8",    vec![0x2a],                                               42.0)]
+    #[case("i8",    vec![0xff],                                               -1.0)]
+    #[case("u16be", vec![0x01, 0x00],                                         256.0)]
+    #[case("u16le", vec![0x00, 0x01],                                         256.0)]
+    #[case("i16be", vec![0xff, 0xff],                                         -1.0)]
+    #[case("i16le", vec![0xff, 0xff],                                         -1.0)]
+    #[case("u32be", vec![0x00, 0x00, 0x00, 0x01],                             1.0)]
+    #[case("u32le", vec![0x01, 0x00, 0x00, 0x00],                             1.0)]
+    #[case("i32be", vec![0xff, 0xff, 0xff, 0xff],                             -1.0)]
+    #[case("i32le", vec![0xff, 0xff, 0xff, 0xff],                             -1.0)]
+    #[case("u64be", vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01],    1.0)]
+    #[case("u64le", vec![0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],    1.0)]
+    #[case("i64be", vec![0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],    -1.0)]
+    #[case("f32be", vec![0x3f, 0x80, 0x00, 0x00],                             1.0)]
+    #[case("f32le", vec![0x00, 0x00, 0x80, 0x3f],                             1.0)]
+    #[case("f64be", vec![0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],    1.0)]
+    #[case("f64le", vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f],    1.0)]
+    fn test_unpack(#[case] fmt: &str, #[case] bytes: Vec<u8>, #[case] expected: f64) {
+        assert_eq!(
+            call(
+                "unpack",
+                vec![RuntimeValue::String(fmt.into()), RuntimeValue::Bytes(bytes)]
+            ),
+            Ok(RuntimeValue::Number(expected.into()))
+        );
+    }
+
+    #[rstest]
+    #[case("u8",    vec![])]
+    #[case("u16be", vec![0x00])]
+    #[case("u32be", vec![0x00, 0x00, 0x00])]
+    #[case("u64be", vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])]
+    #[case("f32be", vec![0x00, 0x00, 0x00])]
+    #[case("f64be", vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])]
+    fn test_unpack_too_short(#[case] fmt: &str, #[case] bytes: Vec<u8>) {
+        assert!(
+            call(
+                "unpack",
+                vec![RuntimeValue::String(fmt.into()), RuntimeValue::Bytes(bytes)]
+            )
+            .is_err()
+        );
+    }
+
+    #[rstest]
+    #[case("z99")]
+    #[case("")]
+    fn test_unpack_unknown_format(#[case] fmt: &str) {
+        assert!(
+            call(
+                "unpack",
+                vec![RuntimeValue::String(fmt.into()), RuntimeValue::Bytes(vec![0x00])]
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn test_unpack_type_error() {
+        assert!(
+            call(
+                "unpack",
+                vec![RuntimeValue::Number(1.into()), RuntimeValue::Bytes(vec![0x00])]
+            )
+            .is_err()
+        );
+    }
+
+    // =========================================================================
+    // pack / unpack roundtrip — all formats
+    // =========================================================================
+
+    #[rstest]
+    #[case("u8", 42.0)]
+    #[case("i8",    -5.0)]
+    #[case("u16be", 1234.0)]
+    #[case("u16le", 1234.0)]
+    #[case("i16be", -1000.0)]
+    #[case("i16le", -1000.0)]
+    #[case("u32be", 100000.0)]
+    #[case("u32le", 100000.0)]
+    #[case("i32be", -100000.0)]
+    #[case("i32le", -100000.0)]
+    #[case("u64be", 1000000.0)]
+    #[case("u64le", 1000000.0)]
+    #[case("i64be", -1000000.0)]
+    #[case("i64le", -1000000.0)]
+    #[case("f32be", 1.5)]
+    #[case("f32le", 1.5)]
+    #[case("f64be", 1.23456789)]
+    #[case("f64le", 1.23456789)]
+    fn test_pack_unpack_roundtrip(#[case] fmt: &str, #[case] value: f64) {
+        let packed = call(
+            "pack",
+            vec![RuntimeValue::String(fmt.into()), RuntimeValue::Number(value.into())],
+        )
+        .unwrap();
+        let result = call("unpack", vec![RuntimeValue::String(fmt.into()), packed]).unwrap();
+        match result {
+            RuntimeValue::Number(n) => assert!((n.value() - value).abs() < 1e-5),
+            _ => panic!("expected Number"),
+        }
     }
 }
