@@ -96,6 +96,7 @@ enum OutputFormat {
     Json,
     Table,
     Grep,
+    Raw,
     None,
 }
 
@@ -823,6 +824,23 @@ impl Cli {
             Box::new(BufWriter::new(stdout.lock()))
         };
         let runtime_values = runtime_values.values();
+
+        if matches!(self.output.output_format, OutputFormat::Raw) {
+            for value in runtime_values {
+                match value {
+                    mq_lang::RuntimeValue::Bytes(b) => Self::write_ignore_pipe(&mut handle, b)?,
+                    _ => Self::write_ignore_pipe(&mut handle, value.to_string().as_bytes())?,
+                }
+            }
+            if !self.output.unbuffered
+                && let Err(e) = handle.flush()
+                && e.kind() != std::io::ErrorKind::BrokenPipe
+            {
+                return Err(miette!(e));
+            }
+            return Ok(());
+        }
+
         let mut markdown =
             mq_markdown::Markdown::new(runtime_values.iter().flat_map(Self::runtime_value_to_nodes).collect());
         markdown.set_options(mq_markdown::RenderOptions {
@@ -865,6 +883,7 @@ impl Cli {
             OutputFormat::Grep => {
                 Self::write_ignore_pipe(&mut handle, markdown.to_string().as_bytes())?;
             }
+            OutputFormat::Raw => unreachable!(),
             OutputFormat::None => {}
         }
 
@@ -1363,6 +1382,76 @@ mod tests {
             output_content.starts_with('{') || output_content.starts_with('['),
             "JSON output should be valid JSON"
         );
+    }
+
+    #[test]
+    fn test_output_format_raw() {
+        let (_, output_file) = create_file("test_raw_output.bin", "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some(r#"to_bytes("hello")"#.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_bytes = fs::read(&output_file).expect("Failed to read output");
+        assert_eq!(output_bytes, b"hello");
+    }
+
+    #[rstest]
+    #[case::from_string("raw_from_string", r#"to_bytes("hello")"#, b"hello" as &[u8])]
+    #[case::from_number_array("raw_from_array", "to_bytes([104, 101, 108, 108, 111])", b"hello")]
+    #[case::binary_data("raw_binary", "to_bytes([0, 255, 128, 1])", &[0u8, 255, 128, 1])]
+    #[case::non_bytes_string("raw_string_value", r#""hello""#, b"hello")]
+    #[case::utf8("raw_utf8", r#"to_bytes("あ")"#, &[0xe3u8, 0x81, 0x82])]
+    #[case::empty("raw_empty", "to_bytes([])", b"")]
+    fn test_output_format_raw_bytes(#[case] suffix: &str, #[case] query: &str, #[case] expected: &[u8]) {
+        let (_, output_file) = create_file(&format!("test_{}.bin", suffix), "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some(query.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_bytes = fs::read(&output_file).expect("Failed to read output");
+        assert_eq!(output_bytes, expected);
     }
 
     #[test]
