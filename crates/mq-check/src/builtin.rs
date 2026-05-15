@@ -1158,6 +1158,34 @@ fn register_bytes(ctx: &mut InferenceContext) {
     // xor: (bytes, bytes) -> bytes
     register_binary(ctx, "xor", Type::Bytes, Type::Bytes, Type::Bytes);
 
+    // band: (bytes, bytes) -> bytes
+    register_binary(ctx, "band", Type::Bytes, Type::Bytes, Type::Bytes);
+
+    // bor: (bytes, bytes) -> bytes
+    register_binary(ctx, "bor", Type::Bytes, Type::Bytes, Type::Bytes);
+
+    // bnot: (bytes) -> bytes
+    register_unary(ctx, "bnot", Type::Bytes, Type::Bytes);
+
+    // starts_with/ends_with: (bytes, bytes) -> bool
+    register_binary(ctx, "starts_with", Type::Bytes, Type::Bytes, Type::Bool);
+    register_binary(ctx, "ends_with", Type::Bytes, Type::Bytes, Type::Bool);
+
+    // index/rindex: (bytes, bytes) -> number
+    register_binary(ctx, "index", Type::Bytes, Type::Bytes, Type::Number);
+    register_binary(ctx, "rindex", Type::Bytes, Type::Bytes, Type::Number);
+
+    // pack: (string, number) -> bytes
+    register_binary(ctx, "pack", Type::String, Type::Number, Type::Bytes);
+    register_binary(ctx, "pack", Type::String, Type::None, Type::None);
+
+    // unpack: (string, bytes) -> number
+    register_binary(ctx, "unpack", Type::String, Type::Bytes, Type::Number);
+    register_binary(ctx, "unpack", Type::String, Type::None, Type::None);
+
+    // repeat: (bytes, number) -> bytes
+    register_binary(ctx, "repeat", Type::Bytes, Type::Number, Type::Bytes);
+
     // gt/gte/lt/lte are registered in register_comparison; no duplicate needed here
 }
 
