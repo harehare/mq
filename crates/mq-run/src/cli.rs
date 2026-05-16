@@ -25,7 +25,18 @@ use crate::grep;
     ## To read query from file:\n\
     mq -f 'file' file.md\n\n\
     ## To start a REPL session:\n\
-    mq repl\n")]
+    mq repl\n\n\
+    # Auto-parsing by file extension:\n\n\
+    When no -I flag is given, mq automatically imports the matching module based on the file extension:\n\n\
+    .json              import \"json\" | json::json_parse()\n\
+    .yaml / .yml       import \"yaml\" | yaml::yaml_parse()\n\
+    .toml              import \"toml\" | toml::toml_parse()\n\
+    .xml               import \"xml\"  | xml::xml_parse()\n\
+    .toon              import \"toon\" | toon::toon_parse()\n\
+    .csv               import \"csv\"  | csv::csv_parse(true)\n\
+    .tsv               import \"csv\"  | csv::tsv_parse(true)\n\
+    .psv               import \"csv\"  | csv::psv_parse(true)\n\n\
+    Use -I raw to disable auto-parsing and receive the raw string.\n")]
 #[command(
     about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
     long_about = None
@@ -541,6 +552,26 @@ impl Cli {
         Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
     }
 
+    /// Returns a query prefix that auto-imports and parses a module-backed format when
+    /// no explicit `--input-format` is given and the file extension has a matching module.
+    fn auto_query_prefix(&self, file: &Option<PathBuf>) -> Option<String> {
+        if self.input.input_format.is_some() {
+            return None;
+        }
+        let ext = file.as_ref()?.extension()?.to_string_lossy().to_lowercase();
+        match ext.as_str() {
+            "json" => Some(r#"import "json" | json::json_parse()"#.to_string()),
+            "yaml" | "yml" => Some(r#"import "yaml" | yaml::yaml_parse()"#.to_string()),
+            "toml" => Some(r#"import "toml" | toml::toml_parse()"#.to_string()),
+            "xml" => Some(r#"import "xml" | xml::xml_parse()"#.to_string()),
+            "toon" => Some(r#"import "toon" | toon::toon_parse()"#.to_string()),
+            "csv" => Some(r#"import "csv" | csv::csv_parse(true)"#.to_string()),
+            "tsv" => Some(r#"import "csv" | csv::tsv_parse(true)"#.to_string()),
+            "psv" => Some(r#"import "csv" | csv::psv_parse(true)"#.to_string()),
+            _ => None,
+        }
+    }
+
     fn execute(
         &self,
         engine: &mut mq_lang::DefaultEngine,
@@ -548,6 +579,15 @@ impl Cli {
         file: &Option<PathBuf>,
         content: &str,
     ) -> miette::Result<()> {
+        let effective_query;
+        let query = match self.auto_query_prefix(file) {
+            Some(prefix) => {
+                effective_query = format!("{} | {}", prefix, query);
+                effective_query.as_str()
+            }
+            None => query,
+        };
+
         if let Some(file) = file {
             engine.define_string_value("__FILE__", file.to_string_lossy().as_ref());
             engine.define_string_value(
@@ -2309,5 +2349,117 @@ mod tests {
     #[case("unknown", InputFormat::Markdown)] // default fallback
     fn test_from_extension(#[case] ext: &str, #[case] expected: InputFormat) {
         assert_eq!(InputFormat::from_extension(ext), expected);
+    }
+
+    #[rstest]
+    #[case("file.json", Some(r#"import "json" | json::json_parse()"#))]
+    #[case("file.yaml", Some(r#"import "yaml" | yaml::yaml_parse()"#))]
+    #[case("file.yml", Some(r#"import "yaml" | yaml::yaml_parse()"#))]
+    #[case("file.toml", Some(r#"import "toml" | toml::toml_parse()"#))]
+    #[case("file.xml", Some(r#"import "xml" | xml::xml_parse()"#))]
+    #[case("file.toon", Some(r#"import "toon" | toon::toon_parse()"#))]
+    #[case("file.csv", Some(r#"import "csv" | csv::csv_parse(true)"#))]
+    #[case("file.tsv", Some(r#"import "csv" | csv::tsv_parse(true)"#))]
+    #[case("file.psv", Some(r#"import "csv" | csv::psv_parse(true)"#))]
+    #[case("file.md", None)]
+    #[case("file.txt", None)]
+    fn test_auto_query_prefix(#[case] filename: &str, #[case] expected: Option<&str>) {
+        let cli = Cli {
+            input: InputArgs::default(),
+            ..Cli::default()
+        };
+        let file = Some(PathBuf::from(filename));
+        assert_eq!(cli.auto_query_prefix(&file).as_deref(), expected);
+    }
+
+    #[test]
+    fn test_auto_query_prefix_disabled_when_input_format_set() {
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Raw),
+                ..Default::default()
+            },
+            ..Cli::default()
+        };
+        let file = Some(PathBuf::from("file.json"));
+        assert_eq!(cli.auto_query_prefix(&file), None);
+    }
+
+    #[test]
+    fn test_auto_query_prefix_none_for_no_file() {
+        let cli = Cli {
+            input: InputArgs::default(),
+            ..Cli::default()
+        };
+        assert_eq!(cli.auto_query_prefix(&None), None);
+    }
+
+    #[test]
+    fn test_json_auto_parse() {
+        let (_, temp_file_path) = create_file("auto_parse_test.json", r#"{"key": "value"}"#);
+        let temp_file_path_clone = temp_file_path.clone();
+        let (_, output_file) = create_file("auto_parse_output.md", "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(content.contains("value"), "JSON should be parsed automatically");
+    }
+
+    #[test]
+    fn test_csv_auto_parse() {
+        let (_, temp_file_path) = create_file("auto_parse_test.csv", "name,age\nAlice,30\n");
+        let temp_file_path_clone = temp_file_path.clone();
+        let (_, output_file) = create_file("auto_parse_csv_output.md", "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(content.contains("Alice"), "CSV should be parsed automatically");
+        assert!(content.contains("name"), "CSV header should be parsed");
     }
 }
