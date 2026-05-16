@@ -12,13 +12,6 @@ use std::io::{self, BufWriter, Write};
 use std::path::PathBuf;
 
 /// Prints query results in grep-like format.
-///
-/// - `runtime_values`: the matched nodes returned by the query engine.
-/// - `original_input`: all top-level nodes from the input document (used for context expansion).
-/// - `file`: source file path, included as a prefix when present.
-/// - `output_file`: redirect output to a file instead of stdout.
-/// - `unbuffered`: skip buffering (flush after every write).
-/// - `before` / `after`: number of sibling nodes to include before / after each match.
 pub(crate) fn print_grep(
     runtime_values: mq_lang::RuntimeValues,
     original_input: &[mq_lang::RuntimeValue],
@@ -165,90 +158,214 @@ fn merge_ranges(ranges: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
 fn to_nodes(value: &mq_lang::RuntimeValue) -> Vec<mq_markdown::Node> {
     match value {
         mq_lang::RuntimeValue::Markdown(node, _) => vec![(**node).clone()],
-        mq_lang::RuntimeValue::Array(items) => items.iter().flat_map(to_nodes).collect(),
+        mq_lang::RuntimeValue::Array(_) | mq_lang::RuntimeValue::Dict(_) => flattern(value)
+            .into_iter()
+            .map(|(i, v)| format!("{}: {}", i, v).into())
+            .collect(),
         _ => vec![value.to_string().into()],
+    }
+}
+
+fn join_key(prefix: &str, suffix: &str) -> String {
+    if suffix.starts_with('[') {
+        format!("{}{}", prefix, suffix)
+    } else {
+        format!("{}.{}", prefix, suffix)
+    }
+}
+
+fn flattern(value: &mq_lang::RuntimeValue) -> Vec<(String, mq_lang::RuntimeValue)> {
+    match value {
+        mq_lang::RuntimeValue::Dict(map) => map
+            .iter()
+            .flat_map(|(k, v)| {
+                let nested = flattern(v);
+                if nested.is_empty() {
+                    vec![(k.as_str(), v.clone())]
+                } else {
+                    nested
+                        .into_iter()
+                        .map(|(nk, nv)| (join_key(&k.as_str(), &nk), nv))
+                        .collect()
+                }
+            })
+            .collect(),
+        mq_lang::RuntimeValue::Array(items) => items
+            .iter()
+            .enumerate()
+            .flat_map(|(i, v)| {
+                let prefix = format!("[{}]", i);
+                let nested = flattern(v);
+                if nested.is_empty() {
+                    vec![(prefix, v.clone())]
+                } else {
+                    nested
+                        .into_iter()
+                        .map(|(nk, nv)| (join_key(&prefix, &nk), nv))
+                        .collect()
+                }
+            })
+            .collect(),
+        _ => vec![],
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
+    use std::collections::BTreeMap;
 
-    #[test]
-    fn test_format_line_with_filename_and_line() {
-        let result = format_line(&Some("file.md".to_string()), Some(5), "## Heading", ":");
-        assert_eq!(result, "file.md:5:## Heading\n");
+    #[rstest]
+    #[case::with_filename_and_line(Some("file.md".to_string()), Some(5), "## Heading", ":", "file.md:5:## Heading\n")]
+    #[case::context_separator(Some("file.md".to_string()), Some(4), "Some text.", "-", "file.md-4-Some text.\n")]
+    #[case::without_filename(None, Some(3), "Paragraph.", ":", "3:Paragraph.\n")]
+    #[case::without_line_number(Some("file.md".to_string()), None, "text", ":", "file.md:text\n")]
+    #[case::no_filename_no_line(None, None, "plain", ":", "plain\n")]
+    fn test_format_line(
+        #[case] filename: Option<String>,
+        #[case] line_num: Option<usize>,
+        #[case] content: &str,
+        #[case] sep: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(format_line(&filename, line_num, content, sep), expected);
+    }
+
+    #[rstest]
+    #[case::empty(vec![], vec![])]
+    #[case::single(vec![(2, 5)], vec![(2, 5)])]
+    #[case::overlapping(vec![(0, 3), (2, 5)], vec![(0, 5)])]
+    #[case::adjacent(vec![(0, 1), (2, 3)], vec![(0, 3)])]
+    #[case::non_adjacent(vec![(0, 1), (3, 4)], vec![(0, 1), (3, 4)])]
+    #[case::adjacent_chain(vec![(0, 1), (2, 3), (4, 5)], vec![(0, 5)])]
+    #[case::mixed(vec![(0, 1), (2, 3), (5, 6)], vec![(0, 3), (5, 6)])]
+    #[case::already_merged(vec![(0, 10)], vec![(0, 10)])]
+    fn test_merge_ranges(
+        #[case] input: Vec<(usize, usize)>,
+        #[case] expected: Vec<(usize, usize)>,
+    ) {
+        assert_eq!(merge_ranges(input), expected);
+    }
+
+    #[rstest]
+    #[case::non_collection(
+        mq_lang::RuntimeValue::String("hello".to_string()),
+        vec![]
+    )]
+    #[case::empty_array(
+        mq_lang::RuntimeValue::Array(vec![]),
+        vec![]
+    )]
+    #[case::flat_array(
+        mq_lang::RuntimeValue::Array(vec![
+            mq_lang::RuntimeValue::String("x".to_string()),
+            mq_lang::RuntimeValue::String("y".to_string()),
+        ]),
+        vec![
+            ("[0]".to_string(), mq_lang::RuntimeValue::String("x".to_string())),
+            ("[1]".to_string(), mq_lang::RuntimeValue::String("y".to_string())),
+        ]
+    )]
+    #[case::nested_array(
+        mq_lang::RuntimeValue::Array(vec![
+            mq_lang::RuntimeValue::Array(vec![
+                mq_lang::RuntimeValue::String("nested".to_string()),
+            ]),
+        ]),
+        vec![("[0][0]".to_string(), mq_lang::RuntimeValue::String("nested".to_string()))]
+    )]
+    fn test_flattern(
+        #[case] input: mq_lang::RuntimeValue,
+        #[case] expected: Vec<(String, mq_lang::RuntimeValue)>,
+    ) {
+        assert_eq!(flattern(&input), expected);
     }
 
     #[test]
-    fn test_format_line_context_separator() {
-        let result = format_line(&Some("file.md".to_string()), Some(4), "Some text.", "-");
-        assert_eq!(result, "file.md-4-Some text.\n");
+    fn test_flattern_flat_dict() {
+        let mut m = BTreeMap::new();
+        m.insert(mq_lang::Ident::new("key"), mq_lang::RuntimeValue::String("val".to_string()));
+        assert_eq!(
+            flattern(&mq_lang::RuntimeValue::Dict(m)),
+            vec![("key".to_string(), mq_lang::RuntimeValue::String("val".to_string()))]
+        );
     }
 
     #[test]
-    fn test_format_line_without_filename() {
-        let result = format_line(&None, Some(3), "Paragraph.", ":");
-        assert_eq!(result, "3:Paragraph.\n");
+    fn test_flattern_nested_dict() {
+        let mut inner = BTreeMap::new();
+        inner.insert(mq_lang::Ident::new("b"), mq_lang::RuntimeValue::String("deep".to_string()));
+        let mut outer = BTreeMap::new();
+        outer.insert(mq_lang::Ident::new("a"), mq_lang::RuntimeValue::Dict(inner));
+        assert_eq!(
+            flattern(&mq_lang::RuntimeValue::Dict(outer)),
+            vec![("a.b".to_string(), mq_lang::RuntimeValue::String("deep".to_string()))]
+        );
     }
 
     #[test]
-    fn test_format_line_without_line_number() {
-        let result = format_line(&Some("file.md".to_string()), None, "text", ":");
-        assert_eq!(result, "file.md:text\n");
+    fn test_flattern_dict_with_array() {
+        // dict["key"][0] → "key[0]"
+        let mut m = BTreeMap::new();
+        m.insert(
+            mq_lang::Ident::new("key"),
+            mq_lang::RuntimeValue::Array(vec![mq_lang::RuntimeValue::String("val".to_string())]),
+        );
+        assert_eq!(
+            flattern(&mq_lang::RuntimeValue::Dict(m)),
+            vec![("key[0]".to_string(), mq_lang::RuntimeValue::String("val".to_string()))]
+        );
     }
 
     #[test]
-    fn test_format_line_no_filename_no_line() {
-        let result = format_line(&None, None, "plain", ":");
-        assert_eq!(result, "plain\n");
+    fn test_flattern_array_with_dict() {
+        // [0].key → "[0].key"
+        let mut m = BTreeMap::new();
+        m.insert(mq_lang::Ident::new("b"), mq_lang::RuntimeValue::String("val".to_string()));
+        let input = mq_lang::RuntimeValue::Array(vec![mq_lang::RuntimeValue::Dict(m)]);
+        assert_eq!(
+            flattern(&input),
+            vec![("[0].b".to_string(), mq_lang::RuntimeValue::String("val".to_string()))]
+        );
     }
 
-    // --- merge_ranges tests ---
-
-    #[test]
-    fn test_merge_ranges_empty() {
-        assert_eq!(merge_ranges(vec![]), vec![]);
-    }
-
-    #[test]
-    fn test_merge_ranges_single() {
-        assert_eq!(merge_ranges(vec![(2, 5)]), vec![(2, 5)]);
-    }
-
-    #[test]
-    fn test_merge_ranges_overlapping() {
-        // (0,3) and (2,5) overlap — should become (0,5)
-        assert_eq!(merge_ranges(vec![(0, 3), (2, 5)]), vec![(0, 5)]);
-    }
-
-    #[test]
-    fn test_merge_ranges_adjacent() {
-        // (0,1) and (2,3) are adjacent (end+1 == next start) — should merge into (0,3)
-        assert_eq!(merge_ranges(vec![(0, 1), (2, 3)]), vec![(0, 3)]);
-    }
-
-    #[test]
-    fn test_merge_ranges_non_adjacent() {
-        // (0,1) and (3,4) have a gap — should remain two separate groups
-        assert_eq!(merge_ranges(vec![(0, 1), (3, 4)]), vec![(0, 1), (3, 4)]);
-    }
-
-    #[test]
-    fn test_merge_ranges_multiple_adjacent_chain() {
-        // Three adjacent ranges should collapse into one
-        assert_eq!(merge_ranges(vec![(0, 1), (2, 3), (4, 5)]), vec![(0, 5)]);
-    }
-
-    #[test]
-    fn test_merge_ranges_mixed() {
-        // First two merge (adjacent), third is separate
-        assert_eq!(merge_ranges(vec![(0, 1), (2, 3), (5, 6)]), vec![(0, 3), (5, 6)]);
+    #[rstest]
+    #[case::string(
+        mq_lang::RuntimeValue::String("hello".to_string()),
+        vec!["hello".to_string()]
+    )]
+    #[case::boolean(
+        mq_lang::RuntimeValue::Boolean(true),
+        vec!["true".to_string()]
+    )]
+    #[case::empty_array(
+        mq_lang::RuntimeValue::Array(vec![]),
+        vec![]
+    )]
+    #[case::flat_array(
+        mq_lang::RuntimeValue::Array(vec![
+            mq_lang::RuntimeValue::String("x".to_string()),
+            mq_lang::RuntimeValue::String("y".to_string()),
+        ]),
+        vec!["[0]: x".to_string(), "[1]: y".to_string()]
+    )]
+    fn test_to_nodes(
+        #[case] input: mq_lang::RuntimeValue,
+        #[case] expected: Vec<String>,
+    ) {
+        let actual: Vec<String> = to_nodes(&input).into_iter().map(|n| n.to_string()).collect();
+        assert_eq!(actual, expected);
     }
 
     #[test]
-    fn test_merge_ranges_already_merged() {
-        // No-op when ranges are already fully merged
-        assert_eq!(merge_ranges(vec![(0, 10)]), vec![(0, 10)]);
+    fn test_to_nodes_dict() {
+        let mut m = BTreeMap::new();
+        m.insert(mq_lang::Ident::new("key"), mq_lang::RuntimeValue::String("val".to_string()));
+        let actual: Vec<String> = to_nodes(&mq_lang::RuntimeValue::Dict(m))
+            .into_iter()
+            .map(|n| n.to_string())
+            .collect();
+        assert_eq!(actual, vec!["key: val"]);
     }
 }
