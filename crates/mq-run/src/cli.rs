@@ -853,16 +853,20 @@ impl Cli {
         }
     }
 
+    fn markdown_node_to_json_value(node: &mq_markdown::Node) -> miette::Result<serde_json::Value> {
+        let markdown_json = mq_markdown::Markdown::new(vec![node.clone()]).to_json();
+        serde_json::from_str(&markdown_json)
+            .map_err(|e| miette!("Failed to parse Markdown JSON output: {}", e))
+    }
+
     fn runtime_values_to_json(runtime_values: &[mq_lang::RuntimeValue]) -> miette::Result<String> {
         let json_values: Vec<serde_json::Value> = runtime_values
             .iter()
             .map(|v| match v {
-                mq_lang::RuntimeValue::Markdown(node, _) => {
-                    serde_json::to_value(node.as_ref()).unwrap_or(serde_json::Value::Null)
-                }
-                _ => v.clone().to_json_value(),
+                mq_lang::RuntimeValue::Markdown(node, _) => Self::markdown_node_to_json_value(node.as_ref()),
+                _ => Ok(v.clone().to_json_value()),
             })
-            .collect();
+            .collect::<miette::Result<Vec<_>>>()?;
 
         // Markdown results are always wrapped in an array for consistent AST output.
         // A single non-Markdown value is output directly to avoid double-wrapping
