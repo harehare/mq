@@ -853,34 +853,38 @@ impl Cli {
         }
     }
 
-    fn print(&self, runtime_values: mq_lang::RuntimeValues) -> miette::Result<()> {
-        let stdout = io::stdout();
-        let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
-            let file = fs::File::create(output_file).into_diagnostic()?;
-            Box::new(BufWriter::new(file))
-        } else if self.output.unbuffered {
-            Box::new(stdout.lock())
+    fn runtime_values_to_json(runtime_values: &[mq_lang::RuntimeValue]) -> miette::Result<String> {
+        let filtered: Vec<&mq_lang::RuntimeValue> = runtime_values
+            .iter()
+            .filter(|v| match v {
+                mq_lang::RuntimeValue::Markdown(node, _) => !node.is_empty() && !node.is_empty_fragment(),
+                _ => true,
+            })
+            .collect();
+
+        let all_markdown = filtered
+            .iter()
+            .all(|v| matches!(v, mq_lang::RuntimeValue::Markdown(_, _)));
+
+        let result = if !all_markdown && filtered.len() == 1 {
+            filtered[0].clone().to_json_value()
         } else {
-            Box::new(BufWriter::new(stdout.lock()))
+            let json_values: Vec<serde_json::Value> = filtered
+                .iter()
+                .map(|v| match v {
+                    mq_lang::RuntimeValue::Markdown(node, _) => {
+                        serde_json::to_value(node.as_ref()).unwrap_or(serde_json::Value::Null)
+                    }
+                    _ => (*v).clone().to_json_value(),
+                })
+                .collect();
+            serde_json::Value::Array(json_values)
         };
-        let runtime_values = runtime_values.values();
 
-        if matches!(self.output.output_format, OutputFormat::Raw) {
-            for value in runtime_values {
-                match value {
-                    mq_lang::RuntimeValue::Bytes(b) => Self::write_ignore_pipe(&mut handle, b)?,
-                    _ => Self::write_ignore_pipe(&mut handle, value.to_string().as_bytes())?,
-                }
-            }
-            if !self.output.unbuffered
-                && let Err(e) = handle.flush()
-                && e.kind() != std::io::ErrorKind::BrokenPipe
-            {
-                return Err(miette!(e));
-            }
-            return Ok(());
-        }
+        serde_json::to_string_pretty(&result).map_err(|e| miette!("Failed to serialize to JSON: {}", e))
+    }
 
+    fn build_markdown(&self, runtime_values: &[mq_lang::RuntimeValue]) -> mq_markdown::Markdown {
         let mut markdown =
             mq_markdown::Markdown::new(runtime_values.iter().flat_map(Self::runtime_value_to_nodes).collect());
         markdown.set_options(mq_markdown::RenderOptions {
@@ -899,21 +903,50 @@ impl Cli {
                 LinkUrlStyle::Angle => mq_markdown::UrlSurroundStyle::Angle,
             },
         });
+        markdown
+    }
+
+    fn print(&self, runtime_values: mq_lang::RuntimeValues) -> miette::Result<()> {
+        let stdout = io::stdout();
+        let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
+            let file = fs::File::create(output_file).into_diagnostic()?;
+            Box::new(BufWriter::new(file))
+        } else if self.output.unbuffered {
+            Box::new(stdout.lock())
+        } else {
+            Box::new(BufWriter::new(stdout.lock()))
+        };
+        let runtime_values = runtime_values.values();
 
         match self.output.output_format {
-            OutputFormat::Html => Self::write_ignore_pipe(&mut handle, markdown.to_html().as_bytes())?,
+            OutputFormat::Raw => {
+                for value in runtime_values {
+                    match value {
+                        mq_lang::RuntimeValue::Bytes(b) => Self::write_ignore_pipe(&mut handle, b)?,
+                        _ => Self::write_ignore_pipe(&mut handle, value.to_string().as_bytes())?,
+                    }
+                }
+            }
+            OutputFormat::Json => {
+                let json_str = Self::runtime_values_to_json(runtime_values)?;
+                Self::write_ignore_pipe(&mut handle, json_str.as_bytes())?;
+            }
+            OutputFormat::Html => {
+                let markdown = self.build_markdown(runtime_values);
+                Self::write_ignore_pipe(&mut handle, markdown.to_html().as_bytes())?;
+            }
             OutputFormat::Text => {
+                let markdown = self.build_markdown(runtime_values);
                 Self::write_ignore_pipe(&mut handle, markdown.to_text().as_bytes())?;
             }
             OutputFormat::Markdown if self.output.color_output && !Self::is_no_color() => {
+                let markdown = self.build_markdown(runtime_values);
                 let theme = mq_markdown::ColorTheme::from_env();
                 Self::write_ignore_pipe(&mut handle, markdown.to_colored_string_with_theme(&theme).as_bytes())?;
             }
             OutputFormat::Markdown => {
+                let markdown = self.build_markdown(runtime_values);
                 Self::write_ignore_pipe(&mut handle, markdown.to_string().as_bytes())?;
-            }
-            OutputFormat::Json => {
-                Self::write_ignore_pipe(&mut handle, markdown.to_json()?.as_bytes())?;
             }
             OutputFormat::Table => {
                 let theme = (self.output.color_output && !Self::is_no_color()).then(mq_markdown::ColorTheme::from_env);
@@ -921,9 +954,9 @@ impl Cli {
                 Self::write_ignore_pipe(&mut handle, format!("{}\n", table).as_bytes())?;
             }
             OutputFormat::Grep => {
+                let markdown = self.build_markdown(runtime_values);
                 Self::write_ignore_pipe(&mut handle, markdown.to_string().as_bytes())?;
             }
-            OutputFormat::Raw => unreachable!(),
             OutputFormat::None => {}
         }
 
@@ -1387,9 +1420,9 @@ mod tests {
     }
 
     #[test]
-    fn test_output_format_json() {
-        let (_, temp_file_path) = create_file("test_json.md", "# Test");
-        let (_, output_file) = create_file("test_json_output.json", "");
+    fn test_output_format_json_markdown_input() {
+        let (_, temp_file_path) = create_file("test_json_md_input.md", "# Test");
+        let (_, output_file) = create_file("test_json_md_output.json", "");
         let temp_file_path_clone = temp_file_path.clone();
         let output_file_clone = output_file.clone();
 
@@ -1417,10 +1450,99 @@ mod tests {
 
         assert!(cli.run().is_ok());
         let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
-        assert!(!output_content.is_empty(), "JSON output should not be empty");
+        let parsed: serde_json::Value = serde_json::from_str(&output_content).expect("Output should be valid JSON");
+        assert!(parsed.is_array(), "Markdown JSON output should be an array");
+        let nodes = parsed.as_array().unwrap();
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0]["type"], "Heading", "Markdown heading should have type=Heading");
+    }
+
+    #[test]
+    fn test_output_format_json_with_json_object_input() {
+        let (_, temp_file_path) = create_file("test_json_obj_input.json", r#"{"id": 1, "name": "Alice"}"#);
+        let (_, output_file) = create_file("test_json_obj_output.json", "");
+        let temp_file_path_clone = temp_file_path.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Json,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        let parsed: serde_json::Value = serde_json::from_str(&output_content).expect("Output should be valid JSON");
+        assert!(parsed.is_object(), "JSON object input should output a JSON object");
+        assert_eq!(parsed["id"], 1.0, "id field should be preserved");
+        assert_eq!(parsed["name"], "Alice", "name field should be preserved");
         assert!(
-            output_content.starts_with('{') || output_content.starts_with('['),
-            "JSON output should be valid JSON"
+            parsed.get("type").is_none(),
+            "Output should not contain Markdown AST 'type' field"
+        );
+    }
+
+    #[test]
+    fn test_output_format_json_with_json_array_input() {
+        let (_, temp_file_path) = create_file(
+            "test_json_arr_input.json",
+            r#"[{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]"#,
+        );
+        let (_, output_file) = create_file("test_json_arr_output.json", "");
+        let temp_file_path_clone = temp_file_path.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Json,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        let parsed: serde_json::Value = serde_json::from_str(&output_content).expect("Output should be valid JSON");
+        assert!(parsed.is_array(), "JSON array input should output a JSON array");
+        let arr = parsed.as_array().unwrap();
+        assert_eq!(arr.len(), 2, "Array should have 2 elements");
+        assert_eq!(arr[0]["id"], 1.0);
+        assert_eq!(arr[0]["name"], "Alice");
+        assert_eq!(arr[1]["id"], 2.0);
+        assert_eq!(arr[1]["name"], "Bob");
+        assert!(
+            arr[0].get("type").is_none(),
+            "Output should not contain Markdown AST fields"
         );
     }
 
