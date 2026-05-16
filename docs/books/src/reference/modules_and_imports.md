@@ -97,6 +97,31 @@ include "math"
 | sub(10, 4) # Returns 6
 ```
 
+## Built-in modules
+
+mq ships several built-in modules for parsing common structured data formats.
+They are available via `import` without any additional installation.
+
+| Module  | Parse function              | Description                               |
+| ------- | --------------------------- | ----------------------------------------- |
+| `json`  | `json::json_parse()`        | Parses a JSON string                      |
+| `yaml`  | `yaml::yaml_parse()`        | Parses a YAML string                      |
+| `toml`  | `toml::toml_parse()`        | Parses a TOML string                      |
+| `xml`   | `xml::xml_parse()`          | Parses an XML string                      |
+| `toon`  | `toon::toon_parse()`        | Parses a Toon string                      |
+| `csv`   | `csv::csv_parse(has_header)` | Parses CSV (`,` delimiter)               |
+| `csv`   | `csv::tsv_parse(has_header)` | Parses TSV (`\t` delimiter)              |
+| `csv`   | `csv::psv_parse(has_header)` | Parses PSV (`\|` delimiter)              |
+
+These modules are also used automatically when you process a file whose extension matches (see [CLI auto-parsing](./cli.md#auto-parsing-by-file-extension)).
+
+### Example
+
+```mq
+import "json"
+| json::json_parse()
+```
+
 ## Comparison
 
 | Feature  | `module`                          | `import`                          | `include`               |
