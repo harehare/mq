@@ -2686,6 +2686,7 @@ dependencies = [
  "rstest",
  "rustyline",
  "scopeguard",
+ "serde_json",
  "strum",
  "tabled",
  "which",
