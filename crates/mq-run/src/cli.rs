@@ -854,19 +854,34 @@ impl Cli {
     }
 
     fn runtime_values_to_json(runtime_values: &[mq_lang::RuntimeValue]) -> miette::Result<String> {
-        let json_values: Vec<serde_json::Value> = runtime_values
+        let filtered: Vec<&mq_lang::RuntimeValue> = runtime_values
             .iter()
-            .filter_map(|v| match v {
-                mq_lang::RuntimeValue::Markdown(node, _) if node.is_empty() || node.is_empty_fragment() => None,
-                mq_lang::RuntimeValue::Markdown(node, _) => {
-                    Some(serde_json::to_value(node.as_ref()).unwrap_or(serde_json::Value::Null))
-                }
-                _ => Some(v.clone().to_json_value()),
+            .filter(|v| match v {
+                mq_lang::RuntimeValue::Markdown(node, _) => !node.is_empty() && !node.is_empty_fragment(),
+                _ => true,
             })
             .collect();
 
-        serde_json::to_string_pretty(&serde_json::Value::Array(json_values))
-            .map_err(|e| miette!("Failed to serialize to JSON: {}", e))
+        let all_markdown = filtered
+            .iter()
+            .all(|v| matches!(v, mq_lang::RuntimeValue::Markdown(_, _)));
+
+        let result = if !all_markdown && filtered.len() == 1 {
+            filtered[0].clone().to_json_value()
+        } else {
+            let json_values: Vec<serde_json::Value> = filtered
+                .iter()
+                .map(|v| match v {
+                    mq_lang::RuntimeValue::Markdown(node, _) => {
+                        serde_json::to_value(node.as_ref()).unwrap_or(serde_json::Value::Null)
+                    }
+                    _ => (*v).clone().to_json_value(),
+                })
+                .collect();
+            serde_json::Value::Array(json_values)
+        };
+
+        serde_json::to_string_pretty(&result).map_err(|e| miette!("Failed to serialize to JSON: {}", e))
     }
 
     fn build_markdown(&self, runtime_values: &[mq_lang::RuntimeValue]) -> mq_markdown::Markdown {
