@@ -853,31 +853,20 @@ impl Cli {
         }
     }
 
-    fn markdown_node_to_json_value(node: &mq_markdown::Node) -> miette::Result<serde_json::Value> {
-        let markdown_json = mq_markdown::Markdown::new(vec![node.clone()]).to_json();
-        serde_json::from_str(&markdown_json)
-            .map_err(|e| miette!("Failed to parse Markdown JSON output: {}", e))
-    }
-
     fn runtime_values_to_json(runtime_values: &[mq_lang::RuntimeValue]) -> miette::Result<String> {
         let json_values: Vec<serde_json::Value> = runtime_values
             .iter()
-            .map(|v| match v {
-                mq_lang::RuntimeValue::Markdown(node, _) => Self::markdown_node_to_json_value(node.as_ref()),
-                _ => Ok(v.clone().to_json_value()),
+            .filter_map(|v| match v {
+                mq_lang::RuntimeValue::Markdown(node, _) if node.is_empty() || node.is_empty_fragment() => None,
+                mq_lang::RuntimeValue::Markdown(node, _) => {
+                    Some(serde_json::to_value(node.as_ref()).unwrap_or(serde_json::Value::Null))
+                }
+                _ => Some(v.clone().to_json_value()),
             })
-            .collect::<miette::Result<Vec<_>>>()?;
+            .collect();
 
-        // Markdown results are always wrapped in an array for consistent AST output.
-        // A single non-Markdown value is output directly to avoid double-wrapping
-        // (e.g. a JSON array from json_parse() should not become [[...]]).
-        let output_value = match (runtime_values.len(), runtime_values.first()) {
-            (1, Some(mq_lang::RuntimeValue::Markdown(_, _))) => serde_json::Value::Array(json_values),
-            (1, _) => json_values.into_iter().next().unwrap_or(serde_json::Value::Null),
-            _ => serde_json::Value::Array(json_values),
-        };
-
-        serde_json::to_string_pretty(&output_value).map_err(|e| miette!("Failed to serialize to JSON: {}", e))
+        serde_json::to_string_pretty(&serde_json::Value::Array(json_values))
+            .map_err(|e| miette!("Failed to serialize to JSON: {}", e))
     }
 
     fn build_markdown(&self, runtime_values: &[mq_lang::RuntimeValue]) -> mq_markdown::Markdown {
