@@ -1,5 +1,6 @@
 pub mod bytes;
 pub mod convert;
+pub mod date;
 mod range;
 mod regex;
 
@@ -13,7 +14,7 @@ use crate::number::{self};
 use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
 use base64::Engine;
-use chrono::{DateTime, Datelike, Duration, Local, Months, NaiveDate, Timelike};
+use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
 use csv::ReaderBuilder;
 use itertools::Itertools;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
@@ -342,36 +343,7 @@ fn date_add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
         ] if arr.len() == 8 => {
             let amount = n.value() as i64;
             let dt = broken_down_time_to_naive("date_add", arr)?.and_utc();
-            let result = match unit.as_str() {
-                "seconds" => dt.checked_add_signed(Duration::seconds(amount)),
-                "minutes" => dt.checked_add_signed(Duration::minutes(amount)),
-                "hours" => dt.checked_add_signed(Duration::hours(amount)),
-                "days" => dt.checked_add_signed(Duration::days(amount)),
-                "weeks" => dt.checked_add_signed(Duration::weeks(amount)),
-                "months" => {
-                    if amount >= 0 {
-                        dt.checked_add_months(Months::new(amount as u32))
-                    } else {
-                        dt.checked_sub_months(Months::new((-amount) as u32))
-                    }
-                }
-                "years" => {
-                    if amount >= 0 {
-                        dt.checked_add_months(Months::new(amount as u32 * 12))
-                    } else {
-                        dt.checked_sub_months(Months::new((-amount) as u32 * 12))
-                    }
-                }
-                u => {
-                    return Err(Error::Runtime(format!(
-                        "date_add: unknown unit {:?}, expected \"seconds\", \"minutes\", \"hours\", \"days\", \"weeks\", \"months\", or \"years\"",
-                        u
-                    )));
-                }
-            };
-            result
-                .map(|dt| broken_down_time_array(&dt))
-                .ok_or_else(|| Error::Runtime("date_add: arithmetic overflow or invalid date".to_string()))
+            date::add(dt, amount, unit.as_str()).map(|dt| broken_down_time_array(&dt))
         }
         [a, b, c] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -394,21 +366,8 @@ fn date_diff_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
         ] if arr1.len() == 8 && arr2.len() == 8 => {
             let dt1 = broken_down_time_to_naive("date_diff", arr1)?.and_utc();
             let dt2 = broken_down_time_to_naive("date_diff", arr2)?.and_utc();
-            let diff = dt2.signed_duration_since(dt1);
-            let result = match unit.as_str() {
-                "seconds" => diff.num_seconds(),
-                "minutes" => diff.num_minutes(),
-                "hours" => diff.num_hours(),
-                "days" => diff.num_days(),
-                "weeks" => diff.num_weeks(),
-                u => {
-                    return Err(Error::Runtime(format!(
-                        "date_diff: unknown unit {:?}, expected \"seconds\", \"minutes\", \"hours\", \"days\", or \"weeks\"",
-                        u
-                    )));
-                }
-            };
-            Ok(RuntimeValue::Number(result.into()))
+            let duration = dt2.signed_duration_since(dt1);
+            date::diff(duration, unit.as_str()).map(|n| RuntimeValue::Number(n.into()))
         }
         [a, b, c] => Err(Error::InvalidTypes(
             ident.to_string(),
