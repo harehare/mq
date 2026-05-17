@@ -256,169 +256,93 @@ impl Display for AttrKind {
     }
 }
 
+impl Selector {
+    /// Converts a dot-prefixed selector string (e.g. `".text"`, `".h"`) to a `Selector`.
+    ///
+    /// Returns `None` for unknown or non-simple selectors (bracket forms, quoted keys).
+    pub fn from_selector_str(s: &str) -> Option<Self> {
+        match s {
+            ".h" | ".heading" => Some(Selector::Heading(None)),
+            ".h1" => Some(Selector::Heading(Some(1))),
+            ".h2" => Some(Selector::Heading(Some(2))),
+            ".h3" => Some(Selector::Heading(Some(3))),
+            ".h4" => Some(Selector::Heading(Some(4))),
+            ".h5" => Some(Selector::Heading(Some(5))),
+            ".h6" => Some(Selector::Heading(Some(6))),
+            ".>" | ".blockquote" => Some(Selector::Blockquote),
+            ".^" | ".footnote" => Some(Selector::Footnote),
+            ".<" | ".mdx_jsx_flow_element" => Some(Selector::MdxJsxFlowElement),
+            ".**" | ".emphasis" => Some(Selector::Emphasis),
+            ".$$" | ".math" => Some(Selector::Math),
+            ".horizontal_rule" | ".---" | ".***" | ".___" => Some(Selector::HorizontalRule),
+            ".{}" | ".mdx_text_expression" => Some(Selector::MdxTextExpression),
+            ".[^]" | ".footnote_ref" => Some(Selector::FootnoteRef),
+            ".definition" => Some(Selector::Definition),
+            ".break" => Some(Selector::Break),
+            ".delete" => Some(Selector::Delete),
+            ".<>" | ".html" => Some(Selector::Html),
+            ".image" => Some(Selector::Image),
+            ".image_ref" => Some(Selector::ImageRef),
+            ".code_inline" => Some(Selector::InlineCode),
+            ".math_inline" => Some(Selector::InlineMath),
+            ".link" => Some(Selector::Link),
+            ".link_ref" => Some(Selector::LinkRef),
+            ".[]" | ".list" => Some(Selector::List(None, None)),
+            ".task" => Some(Selector::Task),
+            ".todo" => Some(Selector::Todo),
+            ".done" => Some(Selector::Done),
+            ".toml" => Some(Selector::Toml),
+            ".strong" => Some(Selector::Strong),
+            ".yaml" => Some(Selector::Yaml),
+            ".code" => Some(Selector::Code),
+            ".mdx_js_esm" => Some(Selector::MdxJsEsm),
+            ".mdx_jsx_text_element" => Some(Selector::MdxJsxTextElement),
+            ".mdx_flow_expression" => Some(Selector::MdxFlowExpression),
+            ".text" => Some(Selector::Text),
+            ".[][]" | ".table" => Some(Selector::Table(None, None)),
+            ".table_align" => Some(Selector::TableAlign),
+            ".." => Some(Selector::Recursive),
+            ".value" => Some(Selector::Attr(AttrKind::Value)),
+            ".values" => Some(Selector::Attr(AttrKind::Values)),
+            ".children" | ".cn" => Some(Selector::Attr(AttrKind::Children)),
+            ".lang" => Some(Selector::Attr(AttrKind::Lang)),
+            ".meta" => Some(Selector::Attr(AttrKind::Meta)),
+            ".fence" => Some(Selector::Attr(AttrKind::Fence)),
+            ".url" => Some(Selector::Attr(AttrKind::Url)),
+            ".alt" => Some(Selector::Attr(AttrKind::Alt)),
+            ".title" => Some(Selector::Attr(AttrKind::Title)),
+            ".ident" => Some(Selector::Attr(AttrKind::Ident)),
+            ".label" => Some(Selector::Attr(AttrKind::Label)),
+            ".depth" => Some(Selector::Attr(AttrKind::Depth)),
+            ".level" => Some(Selector::Attr(AttrKind::Level)),
+            ".index" => Some(Selector::Attr(AttrKind::Index)),
+            ".ordered" => Some(Selector::Attr(AttrKind::Ordered)),
+            ".checked" => Some(Selector::Attr(AttrKind::Checked)),
+            ".column" => Some(Selector::Attr(AttrKind::Column)),
+            ".row" => Some(Selector::Attr(AttrKind::Row)),
+            ".align" => Some(Selector::Attr(AttrKind::Align)),
+            ".name" => Some(Selector::Attr(AttrKind::Name)),
+            _ => None,
+        }
+    }
+}
+
 impl TryFrom<&Token> for Selector {
     type Error = UnknownSelector;
 
     fn try_from(token: &Token) -> Result<Self, Self::Error> {
         if let TokenKind::Selector(s) = &token.kind {
-            match s.as_str() {
-                // Heading selectors
-                ".h" | ".heading" => Ok(Selector::Heading(None)),
-                ".h1" => Ok(Selector::Heading(Some(1))),
-                ".h2" => Ok(Selector::Heading(Some(2))),
-                ".h3" => Ok(Selector::Heading(Some(3))),
-                ".h4" => Ok(Selector::Heading(Some(4))),
-                ".h5" => Ok(Selector::Heading(Some(5))),
-                ".h6" => Ok(Selector::Heading(Some(6))),
-
-                // Blockquote
-                ".>" | ".blockquote" => Ok(Selector::Blockquote),
-
-                // Footnote
-                ".^" | ".footnote" => Ok(Selector::Footnote),
-
-                // MDX JSX Flow Element
-                ".<" | ".mdx_jsx_flow_element" => Ok(Selector::MdxJsxFlowElement),
-
-                // Emphasis
-                ".**" | ".emphasis" => Ok(Selector::Emphasis),
-
-                // Math
-                ".$$" | ".math" => Ok(Selector::Math),
-
-                // Horizontal Rule
-                ".horizontal_rule" | ".---" | ".***" | ".___" => Ok(Selector::HorizontalRule),
-
-                // MDX Text Expression
-                ".{}" | ".mdx_text_expression" => Ok(Selector::MdxTextExpression),
-
-                // Footnote Reference
-                ".[^]" | ".footnote_ref" => Ok(Selector::FootnoteRef),
-
-                // Definition
-                ".definition" => Ok(Selector::Definition),
-
-                // Break
-                ".break" => Ok(Selector::Break),
-
-                // Delete
-                ".delete" => Ok(Selector::Delete),
-
-                // HTML
-                ".<>" | ".html" => Ok(Selector::Html),
-
-                // Image
-                ".image" => Ok(Selector::Image),
-
-                // Image Reference
-                ".image_ref" => Ok(Selector::ImageRef),
-
-                // Inline Code
-                ".code_inline" => Ok(Selector::InlineCode),
-
-                // Inline Math
-                ".math_inline" => Ok(Selector::InlineMath),
-
-                // Link
-                ".link" => Ok(Selector::Link),
-
-                // Link Reference
-                ".link_ref" => Ok(Selector::LinkRef),
-
-                // List
-                ".[]" | ".list" => Ok(Selector::List(None, None)),
-
-                // Task List
-                ".task" => Ok(Selector::Task),
-
-                // Todo List
-                ".todo" => Ok(Selector::Todo),
-
-                // Done List
-                ".done" => Ok(Selector::Done),
-
-                // TOML
-                ".toml" => Ok(Selector::Toml),
-
-                // Strong
-                ".strong" => Ok(Selector::Strong),
-
-                // YAML
-                ".yaml" => Ok(Selector::Yaml),
-
-                // Code
-                ".code" => Ok(Selector::Code),
-
-                // MDX JS ESM
-                ".mdx_js_esm" => Ok(Selector::MdxJsEsm),
-
-                // MDX JSX Text Element
-                ".mdx_jsx_text_element" => Ok(Selector::MdxJsxTextElement),
-
-                // MDX Flow Expression
-                ".mdx_flow_expression" => Ok(Selector::MdxFlowExpression),
-
-                // Text
-                ".text" => Ok(Selector::Text),
-
-                // Table
-                ".[][]" | ".table" => Ok(Selector::Table(None, None)),
-
-                // Table Align
-                ".table_align" => Ok(Selector::TableAlign),
-
-                // Recursive
-                ".." => Ok(Selector::Recursive),
-
-                // Attribute selectors - Common
-                ".value" => Ok(Selector::Attr(AttrKind::Value)),
-                ".values" => Ok(Selector::Attr(AttrKind::Values)),
-                ".children" | ".cn" => Ok(Selector::Attr(AttrKind::Children)),
-
-                // Attribute selectors - Code
-                ".lang" => Ok(Selector::Attr(AttrKind::Lang)),
-                ".meta" => Ok(Selector::Attr(AttrKind::Meta)),
-                ".fence" => Ok(Selector::Attr(AttrKind::Fence)),
-
-                // Attribute selectors - Link/Image
-                ".url" => Ok(Selector::Attr(AttrKind::Url)),
-                ".alt" => Ok(Selector::Attr(AttrKind::Alt)),
-                ".title" => Ok(Selector::Attr(AttrKind::Title)),
-
-                // Attribute selectors - Reference
-                ".ident" => Ok(Selector::Attr(AttrKind::Ident)),
-                ".label" => Ok(Selector::Attr(AttrKind::Label)),
-
-                // Attribute selectors - Heading
-                ".depth" => Ok(Selector::Attr(AttrKind::Depth)),
-                ".level" => Ok(Selector::Attr(AttrKind::Level)),
-
-                // Attribute selectors - List
-                ".index" => Ok(Selector::Attr(AttrKind::Index)),
-                ".ordered" => Ok(Selector::Attr(AttrKind::Ordered)),
-                ".checked" => Ok(Selector::Attr(AttrKind::Checked)),
-
-                // Attribute selectors - TableCell
-                ".column" => Ok(Selector::Attr(AttrKind::Column)),
-                ".row" => Ok(Selector::Attr(AttrKind::Row)),
-
-                // Attribute selectors - TableHeader
-                ".align" => Ok(Selector::Attr(AttrKind::Align)),
-
-                // Attribute selectors - MDX
-                ".name" => Ok(Selector::Attr(AttrKind::Name)),
-
-                s => {
-                    if let Some(sel) = parse_bracket_selector(s) {
-                        return Ok(sel);
-                    }
-                    // Quoted property selector: ."key" is the only way to access dict keys
-                    if let Some(quoted) = s.strip_prefix(".\"").and_then(|r| r.strip_suffix('"')) {
-                        return Ok(Selector::Property(Ident::new(&unescape_property_key(quoted))));
-                    }
-                    Err(UnknownSelector(token.clone()))
-                }
+            if let Some(sel) = Self::from_selector_str(s.as_str()) {
+                return Ok(sel);
             }
+            if let Some(sel) = parse_bracket_selector(s.as_str()) {
+                return Ok(sel);
+            }
+            // Quoted property selector: ."key" is the only way to access dict keys
+            if let Some(quoted) = s.strip_prefix(".\"").and_then(|r| r.strip_suffix('"')) {
+                return Ok(Selector::Property(Ident::new(&unescape_property_key(quoted))));
+            }
+            Err(UnknownSelector(token.clone()))
         } else {
             Err(UnknownSelector(token.clone()))
         }

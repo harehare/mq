@@ -898,12 +898,10 @@ impl<T: ModuleResolver> Evaluator<T> {
                         _ if matches!(selector, Selector::List(None, None)) => {
                             vec![value.clone()]
                         }
-                        RuntimeValue::Dict(_) => {
-                            match Self::eval_selector_expr(value, selector) {
-                                RuntimeValue::Array(arr) if matches!(selector, Selector::Recursive) => arr,
-                                other => vec![other],
-                            }
-                        }
+                        RuntimeValue::Dict(_) => match Self::eval_selector_expr(value, selector) {
+                            RuntimeValue::Array(arr) if matches!(selector, Selector::Recursive) => arr,
+                            other => vec![other],
+                        },
                         _ => vec![RuntimeValue::NONE],
                     })
                     .collect::<Vec<_>>();
