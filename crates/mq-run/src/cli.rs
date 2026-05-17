@@ -161,7 +161,7 @@ struct InputArgs {
     import_module_names: Option<Vec<String>>,
 
     /// Sets string that can be referenced at runtime
-    #[arg(long, value_names = ["NAME", "VALUE"])]
+    #[arg(long, value_names = ["NAME", "VALUE"], aliases = ["arg", "define"])]
     args: Option<Vec<String>>,
 
     /// Sets file contents that can be referenced at runtime
