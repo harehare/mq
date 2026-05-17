@@ -48,7 +48,6 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     }
   }
 ]\n")
-
 )]
 #[case::args(
     vec!["--unbuffered", "--args", "val1", "test", "select(contains(val1))"],

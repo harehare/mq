@@ -6,23 +6,24 @@
 use miette::miette;
 use mq_markdown::ColorTheme;
 
+fn json_quote(s: &str) -> String {
+    serde_json::to_string(s).unwrap()
+}
+
 fn colorize_json_value(value: &serde_json::Value, indent: usize, theme: &ColorTheme<'_>) -> String {
-    let indent_str = "  ".repeat(indent);
-    let inner_indent = "  ".repeat(indent + 1);
     let reset = &theme.code.1;
 
     match value {
         serde_json::Value::Null => format!("{}null{}", theme.blockquote_marker.0, reset),
         serde_json::Value::Bool(b) => format!("{}{}{}", theme.heading.0, b, reset),
         serde_json::Value::Number(n) => format!("{}{}{}", theme.emphasis.0, n, reset),
-        serde_json::Value::String(s) => {
-            let json_str = serde_json::to_string(s).unwrap_or_else(|_| format!("\"{}\"", s));
-            format!("{}{}{}", theme.code.0, json_str, reset)
-        }
+        serde_json::Value::String(s) => format!("{}{}{}", theme.code.0, json_quote(s), reset),
         serde_json::Value::Array(arr) => {
             if arr.is_empty() {
                 return "[]".to_string();
             }
+            let indent_str = "  ".repeat(indent);
+            let inner_indent = "  ".repeat(indent + 1);
             let items: Vec<String> = arr
                 .iter()
                 .map(|v| format!("{}{}", inner_indent, colorize_json_value(v, indent + 1, theme)))
@@ -33,15 +34,16 @@ fn colorize_json_value(value: &serde_json::Value, indent: usize, theme: &ColorTh
             if map.is_empty() {
                 return "{}".to_string();
             }
+            let indent_str = "  ".repeat(indent);
+            let inner_indent = "  ".repeat(indent + 1);
             let items: Vec<String> = map
                 .iter()
                 .map(|(k, v)| {
-                    let key = serde_json::to_string(k).unwrap_or_else(|_| format!("\"{}\"", k));
                     format!(
                         "{}{}{}{}: {}",
                         inner_indent,
                         theme.link_url.0,
-                        key,
+                        json_quote(k),
                         reset,
                         colorize_json_value(v, indent + 1, theme)
                     )
@@ -53,10 +55,11 @@ fn colorize_json_value(value: &serde_json::Value, indent: usize, theme: &ColorTh
 }
 
 /// Converts a list of [`mq_lang::RuntimeValue`]s into a JSON string.
-///
-/// When `color` is `true`, ANSI color codes are applied using the current
-/// [`ColorTheme`] (read from the `MQ_COLORS` environment variable).
-pub(crate) fn runtime_values_to_json(runtime_values: &[mq_lang::RuntimeValue], color: bool) -> miette::Result<String> {
+/// Pass `Some(theme)` to enable ANSI color output.
+pub(crate) fn runtime_values_to_json(
+    runtime_values: &[mq_lang::RuntimeValue],
+    theme: Option<&ColorTheme<'_>>,
+) -> miette::Result<String> {
     let filtered: Vec<&mq_lang::RuntimeValue> = runtime_values
         .iter()
         .filter(|v| match v {
@@ -84,9 +87,8 @@ pub(crate) fn runtime_values_to_json(runtime_values: &[mq_lang::RuntimeValue], c
         serde_json::Value::Array(json_values)
     };
 
-    if color {
-        let theme = ColorTheme::from_env();
-        Ok(colorize_json_value(&result, 0, &theme))
+    if let Some(theme) = theme {
+        Ok(colorize_json_value(&result, 0, theme))
     } else {
         serde_json::to_string_pretty(&result).map_err(|e| miette!("Failed to serialize to JSON: {}", e))
     }

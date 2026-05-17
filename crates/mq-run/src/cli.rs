@@ -897,8 +897,8 @@ impl Cli {
                 }
             }
             OutputFormat::Json => {
-                let color = self.output.color_output && !Self::is_no_color();
-                let json_str = crate::json::runtime_values_to_json(runtime_values, color)?;
+                let theme = (self.output.color_output && !Self::is_no_color()).then(mq_markdown::ColorTheme::from_env);
+                let json_str = crate::json::runtime_values_to_json(runtime_values, theme.as_ref())?;
                 Self::write_ignore_pipe(&mut handle, json_str.as_bytes())?;
                 Self::write_ignore_pipe(&mut handle, b"\n")?;
             }
