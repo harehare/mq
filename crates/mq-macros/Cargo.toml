@@ -1,6 +1,6 @@
 [package]
 name = "mq-macros"
-version = "0.5.29"
+version = "0.5.30"
 edition = "2024"
 authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 description = "Procedural macros for mq builtin function registration"

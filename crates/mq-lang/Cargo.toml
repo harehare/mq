@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-lang"
 readme = "../../README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.29"
+version = "0.5.30"
 
 [dependencies]
 mq-macros = {workspace = true}
@@ -64,4 +64,3 @@ name = "benchmark"
 
 [package.metadata.cargo-machete]
 ignored = ["hcl-rs"]
-

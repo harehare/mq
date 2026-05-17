@@ -10,7 +10,7 @@ name = "mq-wasm"
 publish = false
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.29"
+version = "0.5.30"
 
 [lib]
 crate-type = ["cdylib"]
@@ -44,4 +44,3 @@ wasm-opt = ['-O4', '--enable-simd', '--enable-bulk-memory', '--enable-nontrappin
 
 [package.metadata.cargo-machete]
 ignored = ["wasm-bindgen-futures"]
-
