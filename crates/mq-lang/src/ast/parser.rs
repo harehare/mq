@@ -2460,10 +2460,29 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     }))
                 }
             }
-            TokenKind::DoubleDot => Ok(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(token)),
-                expr: Shared::new(Expr::Selector(Selector::Recursive)),
-            })),
+            TokenKind::DoubleDot => {
+                let recursive_node = Shared::new(Node {
+                    token_id: self.token_arena.alloc(Shared::clone(token)),
+                    expr: Shared::new(Expr::Selector(Selector::Recursive)),
+                });
+                // .."key" sugar: recursive descent + key access
+                if let Some(next) = self.tokens.peek()
+                    && let TokenKind::StringLiteral(key) = &next.kind
+                {
+                    let key = key.clone();
+                    let next = self.tokens.next().unwrap();
+                    let prop_node = Shared::new(Node {
+                        token_id: self.token_arena.alloc(Shared::clone(&next)),
+                        expr: Shared::new(Expr::Selector(Selector::Property(Ident::new(key.as_str())))),
+                    });
+                    Ok(Shared::new(Node {
+                        token_id: self.token_arena.alloc(Shared::clone(token)),
+                        expr: Shared::new(Expr::Block(vec![recursive_node, prop_node])),
+                    }))
+                } else {
+                    Ok(recursive_node)
+                }
+            }
             _ => Err(SyntaxError::InsufficientTokens((**token).clone())),
         }
     }
