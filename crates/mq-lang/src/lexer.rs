@@ -557,6 +557,12 @@ fn selector(input: Span) -> IResult<Span, Token> {
 }
 
 /// Parses an identifier or keyword in a single pass.
+///
+/// The ASCII base `[A-Za-z0-9_]+` is parsed first. Keywords are only matched
+/// at a word boundary (next char is not alphanumeric and not `_`). When the
+/// next char after the base is `-` or `*`, a second parse extends the span to
+/// cover the full identifier; otherwise `base_span` is used directly, avoiding
+/// a redundant re-parse.
 fn ident_or_keyword(input: Span) -> IResult<Span, Token> {
     let (after_base, base_span) =
         recognize(pair(alt((alpha1, tag("_"))), many0(alt((alphanumeric1, tag("_")))))).parse(input)?;
@@ -564,66 +570,93 @@ fn ident_or_keyword(input: Span) -> IResult<Span, Token> {
     let module_id = base_span.extra;
     let base_frag = *base_span.fragment();
 
-    let keyword_kind = match base_frag {
-        "break" => Some(TokenKind::Break),
-        "catch" => Some(TokenKind::Catch),
-        "continue" => Some(TokenKind::Continue),
-        "def" => Some(TokenKind::Def),
-        "do" => Some(TokenKind::Do),
-        "elif" => Some(TokenKind::Elif),
-        "else" => Some(TokenKind::Else),
-        "end" => Some(TokenKind::End),
-        "fn" => Some(TokenKind::Fn),
-        "foreach" => Some(TokenKind::Foreach),
-        "if" => Some(TokenKind::If),
-        "import" => Some(TokenKind::Import),
-        "include" => Some(TokenKind::Include),
-        "let" => Some(TokenKind::Let),
-        "loop" => Some(TokenKind::Loop),
-        "macro" => Some(TokenKind::Macro),
-        "match" => Some(TokenKind::Match),
-        "module" => Some(TokenKind::Module),
-        "nodes" => Some(TokenKind::Nodes),
-        "None" => Some(TokenKind::None),
-        "quote" => Some(TokenKind::Quote),
-        "self" => Some(TokenKind::Self_),
-        "try" => Some(TokenKind::Try),
-        "unquote" => Some(TokenKind::Unquote),
-        "var" => Some(TokenKind::Var),
-        "while" => Some(TokenKind::While),
-        _ => None,
-    };
+    let next_char = after_base.fragment().chars().next();
+    // A word boundary means the identifier cannot be extended by an alphanumeric
+    // or underscore character (including non-ASCII Unicode letters/digits).
+    let at_word_boundary = next_char.map(|c| !c.is_alphanumeric() && c != '_').unwrap_or(true);
 
-    if let Some(kind) = keyword_kind {
+    if at_word_boundary {
+        let keyword_kind = match base_frag {
+            "break" => Some(TokenKind::Break),
+            "catch" => Some(TokenKind::Catch),
+            "continue" => Some(TokenKind::Continue),
+            "def" => Some(TokenKind::Def),
+            "do" => Some(TokenKind::Do),
+            "elif" => Some(TokenKind::Elif),
+            "else" => Some(TokenKind::Else),
+            "end" => Some(TokenKind::End),
+            "fn" => Some(TokenKind::Fn),
+            "foreach" => Some(TokenKind::Foreach),
+            "if" => Some(TokenKind::If),
+            "import" => Some(TokenKind::Import),
+            "include" => Some(TokenKind::Include),
+            "let" => Some(TokenKind::Let),
+            "loop" => Some(TokenKind::Loop),
+            "macro" => Some(TokenKind::Macro),
+            "match" => Some(TokenKind::Match),
+            "module" => Some(TokenKind::Module),
+            "nodes" => Some(TokenKind::Nodes),
+            "None" => Some(TokenKind::None),
+            "quote" => Some(TokenKind::Quote),
+            "self" => Some(TokenKind::Self_),
+            "try" => Some(TokenKind::Try),
+            "unquote" => Some(TokenKind::Unquote),
+            "var" => Some(TokenKind::Var),
+            "while" => Some(TokenKind::While),
+            _ => None,
+        };
+
+        if let Some(kind) = keyword_kind {
+            return Ok((
+                after_base,
+                Token {
+                    range: base_span.into(),
+                    kind,
+                    module_id,
+                },
+            ));
+        }
+    }
+
+    // When the next character can extend the identifier (`-` or `*`), re-parse
+    // from the original input to capture the full span. Otherwise `base_span`
+    // already covers the complete identifier, so we reuse it directly.
+    if next_char == Some('-') || next_char == Some('*') {
+        let (after_full, full_span) = recognize(pair(
+            alt((alpha1, tag("_"))),
+            many0(alt((alphanumeric1, tag("_"), tag("-"), tag("*")))),
+        ))
+        .parse(input)?;
+
+        let full_frag = *full_span.fragment();
+        let kind = match full_frag {
+            "true" => TokenKind::BoolLiteral(true),
+            "false" => TokenKind::BoolLiteral(false),
+            s => TokenKind::Ident(SmolStr::new(s)),
+        };
+
         return Ok((
-            after_base,
+            after_full,
             Token {
-                range: base_span.into(),
+                range: full_span.into(),
                 kind,
-                module_id,
+                module_id: full_span.extra,
             },
         ));
     }
 
-    let (after_full, full_span) = recognize(pair(
-        alt((alpha1, tag("_"))),
-        many0(alt((alphanumeric1, tag("_"), tag("-"), tag("*")))),
-    ))
-    .parse(input)?;
-
-    let full_frag = *full_span.fragment();
-    let kind = match full_frag {
+    let kind = match base_frag {
         "true" => TokenKind::BoolLiteral(true),
         "false" => TokenKind::BoolLiteral(false),
         s => TokenKind::Ident(SmolStr::new(s)),
     };
 
     Ok((
-        after_full,
+        after_base,
         Token {
-            range: full_span.into(),
+            range: base_span.into(),
             kind,
-            module_id: full_span.extra,
+            module_id,
         },
     ))
 }
@@ -1152,6 +1185,18 @@ mod tests {
         Ok(vec![
             Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 4} }, kind: TokenKind::End, module_id: 1.into()},
             Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 5} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    // Non-ASCII alphanumeric after an ASCII keyword base must block the keyword match.
+    // "defä" must not lex as keyword Def; the ASCII portion becomes Ident("def") instead.
+    #[case::keyword_boundary_non_ascii_def("defä",
+        Options{ignore_errors: true, include_spaces: false},
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 4} }, kind: TokenKind::Ident(SmolStr::new("def")), module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 5} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::keyword_boundary_non_ascii_if("ifé",
+        Options{ignore_errors: true, include_spaces: false},
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::Ident(SmolStr::new("if")), module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 4} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     #[case::number_regex("\"^(-?(?:0|[1-9]\\\\d*)(?:\\\\.\\\\d+)?(?:[eE][+-]?\\\\d+)?)\"",
         Options::default(),
         Ok(vec![

@@ -824,11 +824,6 @@ impl Cli {
     }
 
     /// Converts a `RuntimeValue` into a list of Markdown nodes.
-    ///
-    /// Typed dicts (e.g. `{type: :section, ...}`) are automatically expanded
-    /// to their constituent nodes so users can output section objects directly
-    /// without calling `collect()`. Arrays containing Markdown nodes or typed
-    /// dicts are also expanded and flattened.
     fn runtime_value_to_nodes(runtime_value: &mq_lang::RuntimeValue) -> Vec<mq_markdown::Node> {
         match runtime_value {
             mq_lang::RuntimeValue::Markdown(node, _) => vec![(**node).clone()],
@@ -900,7 +895,6 @@ impl Cli {
                 let theme = (self.output.color_output && !Self::is_no_color()).then(mq_markdown::ColorTheme::from_env);
                 let json_str = crate::json::runtime_values_to_json(runtime_values, theme.as_ref())?;
                 Self::write_ignore_pipe(&mut handle, json_str.as_bytes())?;
-                Self::write_ignore_pipe(&mut handle, b"\n")?;
             }
             OutputFormat::Html => {
                 let markdown = self.build_markdown(runtime_values);

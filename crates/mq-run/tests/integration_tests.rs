@@ -32,22 +32,22 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
 #[case::json(
     vec!["--unbuffered", "-F", "json", ".code_inline"],
     "`inline code`",
-    Some("[
+    Some(r#"[
   {
-    \"type\": \"CodeInline\",
-    \"value\": \"inline code\",
-    \"position\": {
-      \"start\": {
-        \"line\": 1,
-        \"column\": 1
+    "type": "CodeInline",
+    "value": "inline code",
+    "position": {
+      "start": {
+        "line": 1,
+        "column": 1
       },
-      \"end\": {
-        \"line\": 1,
-        \"column\": 14
+      "end": {
+        "line": 1,
+        "column": 14
       }
     }
   }
-]\n")
+]"#)
 )]
 #[case::args(
     vec!["--unbuffered", "--args", "val1", "test", "select(contains(val1))"],
