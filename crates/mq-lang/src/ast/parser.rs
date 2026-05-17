@@ -2460,10 +2460,51 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     }))
                 }
             }
-            TokenKind::DoubleDot => Ok(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(token)),
-                expr: Shared::new(Expr::Selector(Selector::Recursive)),
-            })),
+            TokenKind::DoubleDot => {
+                let recursive_node = Shared::new(Node {
+                    token_id: self.token_arena.alloc(Shared::clone(token)),
+                    expr: Shared::new(Expr::Selector(Selector::Recursive)),
+                });
+                if let Some(next) = self.tokens.peek() {
+                    match &next.kind {
+                        // .."key" → recursive descent + Dict key access
+                        TokenKind::StringLiteral(key) => {
+                            let key = key.clone();
+                            let next = self.tokens.next().unwrap();
+                            let prop_node = Shared::new(Node {
+                                token_id: self.token_arena.alloc(Shared::clone(next)),
+                                expr: Shared::new(Expr::Selector(Selector::Property(Ident::new(key.as_str())))),
+                            });
+                            return Ok(Shared::new(Node {
+                                token_id: self.token_arena.alloc(Shared::clone(token)),
+                                expr: Shared::new(Expr::Block(vec![recursive_node, prop_node])),
+                            }));
+                        }
+                        // ..text, ..h, ..code, etc. → recursive descent + Markdown node-type selector
+                        // Attribute selectors (.value, .url, .level, etc.) are excluded here;
+                        // use `.. | .value` instead, which routes through the proper attr() call.
+                        TokenKind::Ident(name) => {
+                            let selector_str = format!(".{}", name);
+                            if let Some(selector) = Selector::from_selector_str(&selector_str)
+                                && !selector.is_attribute_selector()
+                            {
+                                let next = self.tokens.next().unwrap();
+                                let sel_node = Shared::new(Node {
+                                    token_id: self.token_arena.alloc(Shared::clone(next)),
+                                    expr: Shared::new(Expr::Selector(selector)),
+                                });
+
+                                return Ok(Shared::new(Node {
+                                    token_id: self.token_arena.alloc(Shared::clone(token)),
+                                    expr: Shared::new(Expr::Block(vec![recursive_node, sel_node])),
+                                }));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(recursive_node)
+            }
             _ => Err(SyntaxError::InsufficientTokens((**token).clone())),
         }
     }

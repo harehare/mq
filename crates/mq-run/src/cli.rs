@@ -853,37 +853,6 @@ impl Cli {
         }
     }
 
-    fn runtime_values_to_json(runtime_values: &[mq_lang::RuntimeValue]) -> miette::Result<String> {
-        let filtered: Vec<&mq_lang::RuntimeValue> = runtime_values
-            .iter()
-            .filter(|v| match v {
-                mq_lang::RuntimeValue::Markdown(node, _) => !node.is_empty() && !node.is_empty_fragment(),
-                _ => true,
-            })
-            .collect();
-
-        let all_markdown = filtered
-            .iter()
-            .all(|v| matches!(v, mq_lang::RuntimeValue::Markdown(_, _)));
-
-        let result = if !all_markdown && filtered.len() == 1 {
-            filtered[0].clone().to_json_value()
-        } else {
-            let json_values: Vec<serde_json::Value> = filtered
-                .iter()
-                .map(|v| match v {
-                    mq_lang::RuntimeValue::Markdown(node, _) => {
-                        serde_json::to_value(node.as_ref()).unwrap_or(serde_json::Value::Null)
-                    }
-                    _ => (*v).clone().to_json_value(),
-                })
-                .collect();
-            serde_json::Value::Array(json_values)
-        };
-
-        serde_json::to_string_pretty(&result).map_err(|e| miette!("Failed to serialize to JSON: {}", e))
-    }
-
     fn build_markdown(&self, runtime_values: &[mq_lang::RuntimeValue]) -> mq_markdown::Markdown {
         let mut markdown =
             mq_markdown::Markdown::new(runtime_values.iter().flat_map(Self::runtime_value_to_nodes).collect());
@@ -928,8 +897,10 @@ impl Cli {
                 }
             }
             OutputFormat::Json => {
-                let json_str = Self::runtime_values_to_json(runtime_values)?;
+                let theme = (self.output.color_output && !Self::is_no_color()).then(mq_markdown::ColorTheme::from_env);
+                let json_str = crate::json::runtime_values_to_json(runtime_values, theme.as_ref())?;
                 Self::write_ignore_pipe(&mut handle, json_str.as_bytes())?;
+                Self::write_ignore_pipe(&mut handle, b"\n")?;
             }
             OutputFormat::Html => {
                 let markdown = self.build_markdown(runtime_values);

@@ -858,6 +858,25 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
     }
 
+    /// Collects the value itself and all nested values recursively (depth-first).
+    fn collect_recursive(value: &RuntimeValue) -> Vec<RuntimeValue> {
+        let mut result = vec![value.clone()];
+        match value {
+            RuntimeValue::Array(items) => {
+                for item in items {
+                    result.extend(Self::collect_recursive(item));
+                }
+            }
+            RuntimeValue::Dict(map) => {
+                for v in map.values() {
+                    result.extend(Self::collect_recursive(v));
+                }
+            }
+            _ => {}
+        }
+        result
+    }
+
     fn eval_selector_expr(runtime_value: &RuntimeValue, selector: &Selector) -> RuntimeValue {
         if let Selector::Property(property_name) = selector {
             return Self::eval_property_selector_expr(runtime_value, property_name);
@@ -879,9 +898,10 @@ impl<T: ModuleResolver> Evaluator<T> {
                         _ if matches!(selector, Selector::List(None, None)) => {
                             vec![value.clone()]
                         }
-                        RuntimeValue::Dict(_) => {
-                            vec![Self::eval_selector_expr(value, selector)]
-                        }
+                        RuntimeValue::Dict(_) => match Self::eval_selector_expr(value, selector) {
+                            RuntimeValue::Array(arr) if matches!(selector, Selector::Recursive) => arr,
+                            other => vec![other],
+                        },
                         _ => vec![RuntimeValue::NONE],
                     })
                     .collect::<Vec<_>>();
@@ -891,6 +911,9 @@ impl<T: ModuleResolver> Evaluator<T> {
             RuntimeValue::Dict(map) => {
                 if matches!(selector, Selector::List(None, None)) {
                     return RuntimeValue::Array(map.values().cloned().collect());
+                }
+                if matches!(selector, Selector::Recursive) {
+                    return RuntimeValue::Array(Self::collect_recursive(runtime_value));
                 }
                 let new_map: BTreeMap<_, _> = map
                     .iter()
