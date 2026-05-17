@@ -34,7 +34,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
   -F, --output-format <OUTPUT_FORMAT>
-          Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, none]
+          Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, raw, none]
   -U, --update
           Update the input markdown (aliases: -i, --in-place, --inplace)
       --unbuffered
@@ -76,4 +76,19 @@ mq -f 'file' file.md
 
 ## To start a REPL session:
 mq repl
+
+# Auto-parsing by file extension:
+
+When no -I flag is given, mq automatically imports the matching module based on the file extension:
+
+.json              import "json" | json::json_parse()
+.yaml / .yml       import "yaml" | yaml::yaml_parse()
+.toml              import "toml" | toml::toml_parse()
+.xml               import "xml"  | xml::xml_parse()
+.toon              import "toon" | toon::toon_parse()
+.csv               import "csv"  | csv::csv_parse(true)
+.tsv               import "csv"  | csv::tsv_parse(true)
+.psv               import "csv"  | csv::psv_parse(true)
+
+Use -I raw to disable auto-parsing and receive the raw string.
 ```
