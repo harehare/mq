@@ -8,7 +8,7 @@ use nom::{
     IResult,
     branch::alt,
     bytes::complete::{escaped_transform, tag, take_while_m_n},
-    character::complete::{alpha1, alphanumeric1, anychar, char, multispace0, none_of},
+    character::complete::{alpha1, alphanumeric1, anychar, char, multispace0, none_of, satisfy},
     combinator::{map, map_opt, map_res, recognize, value},
     multi::{many0, many1},
     sequence::{delimited, pair, preceded},
@@ -447,10 +447,10 @@ fn byte_string_literal(input: Span) -> IResult<Span, Token> {
 
     let (span, byte_segments) = many0(alt((
         map(byte_escape_seq, |b| vec![b]),
-        map(none_of("\"\\"), |c| {
-            let mut buf = [0u8; 4];
-            let s = c.encode_utf8(&mut buf);
-            s.as_bytes().to_vec()
+        // Only plain ASCII characters are allowed unescaped; non-ASCII must
+        // use \xNN escapes to avoid silent UTF-8 multi-byte encoding.
+        map(satisfy(|c: char| c.is_ascii() && c != '"' && c != '\\'), |c| {
+            vec![c as u8]
         }),
     )))
     .parse(span)?;
@@ -1511,6 +1511,21 @@ mod tests {
             Token { range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 4 } },
                 kind: TokenKind::BytesLiteral(vec![]), module_id: 1.into() },
             Token { range: Range { start: Position { line: 1, column: 4 }, end: Position { line: 1, column: 4 } },
+                kind: TokenKind::Eof, module_id: 1.into() },
+        ])
+    )]
+    // Non-ASCII inside b"..." fails to parse as a byte literal.
+    // The tokenizer falls back: `b` becomes Ident and `"é"` becomes StringLiteral.
+    // Higher-level parsing then rejects the invalid expression.
+    #[case::non_ascii_not_a_byte_literal(
+        "b\"\u{00e9}\"",
+        Options::default(),
+        Ok(vec![
+            Token { range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 2 } },
+                kind: TokenKind::Ident(SmolStr::new("b")), module_id: 1.into() },
+            Token { range: Range { start: Position { line: 1, column: 2 }, end: Position { line: 1, column: 5 } },
+                kind: TokenKind::StringLiteral("\u{00e9}".to_string()), module_id: 1.into() },
+            Token { range: Range { start: Position { line: 1, column: 5 }, end: Position { line: 1, column: 5 } },
                 kind: TokenKind::Eof, module_id: 1.into() },
         ])
     )]
