@@ -292,6 +292,17 @@ fn format_literal(literal: &Literal, buf: &mut String) {
             buf.push_str(&escape_string(s));
             buf.push('"');
         }
+        Literal::Bytes(b) => {
+            buf.push_str("b\"");
+            for byte in b {
+                if byte.is_ascii_graphic() && *byte != b'"' && *byte != b'\\' {
+                    buf.push(*byte as char);
+                } else {
+                    write!(buf, "\\x{:02x}", byte).unwrap();
+                }
+            }
+            buf.push('"');
+        }
         Literal::Number(n) => {
             write!(buf, "{}", n).unwrap();
         }

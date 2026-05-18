@@ -314,10 +314,13 @@ impl Hir {
                     value: node.name(),
                     kind: match &node.token.clone().unwrap().kind {
                         mq_lang::TokenKind::StringLiteral(_) => SymbolKind::String,
+                        mq_lang::TokenKind::BytesLiteral(_) => SymbolKind::Bytes,
                         mq_lang::TokenKind::NumberLiteral(_) => SymbolKind::Number,
                         mq_lang::TokenKind::BoolLiteral(_) => SymbolKind::Boolean,
                         mq_lang::TokenKind::None => SymbolKind::None,
-                        _ => unreachable!("Literal nodes should only have string, number, boolean, or none tokens"),
+                        _ => unreachable!(
+                            "Literal nodes should only have string, bytes, number, boolean, or none tokens"
+                        ),
                     },
                     source: SourceInfo::new(Some(source_id), Some(node.range())),
                     scope: scope_id,
@@ -1634,6 +1637,17 @@ impl Hir {
                     });
                 }
                 // Literal patterns: create a literal child symbol for type checking
+                mq_lang::TokenKind::BytesLiteral(_) => {
+                    self.add_symbol(Symbol {
+                        value: Some(token.to_string().into()),
+                        kind: SymbolKind::Bytes,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                        insertion_order: 0,
+                    });
+                }
                 mq_lang::TokenKind::StringLiteral(s) => {
                     self.add_symbol(Symbol {
                         value: Some(s.as_str().into()),

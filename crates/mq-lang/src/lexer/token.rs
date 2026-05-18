@@ -50,6 +50,7 @@ pub enum TokenKind {
     Convert,
     Asterisk,
     BoolLiteral(bool),
+    BytesLiteral(Vec<u8>),
     Break,
     Catch,
     Coalesce,
@@ -163,6 +164,17 @@ impl Display for TokenKind {
             TokenKind::Not => write!(f, "!"),
             TokenKind::Asterisk => write!(f, "*"),
             TokenKind::BoolLiteral(b) => write!(f, "{}", b),
+            TokenKind::BytesLiteral(b) => {
+                write!(f, "b\"")?;
+                for byte in b {
+                    if byte.is_ascii_graphic() && *byte != b'"' && *byte != b'\\' {
+                        write!(f, "{}", *byte as char)?;
+                    } else {
+                        write!(f, "\\x{:02x}", byte)?;
+                    }
+                }
+                write!(f, "\"")
+            }
             TokenKind::Break => write!(f, "break"),
             TokenKind::Colon => write!(f, ":"),
             TokenKind::Comma => write!(f, ","),

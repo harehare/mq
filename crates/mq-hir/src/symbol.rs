@@ -60,6 +60,7 @@ pub enum SymbolKind {
     BinaryOp,
     Block,
     Boolean,
+    Bytes,
     Call,
     CallDynamic,
     /// Represents a destructuring binding (`let [a, b] = expr`).

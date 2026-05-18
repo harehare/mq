@@ -2680,6 +2680,18 @@ fn engine() -> DefaultEngine {
 #[case::date_diff_negative("date_diff(gmtime(1704153600), gmtime(1704067200), \"days\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number((-1_i64).into())].into()))]
 // date_diff: same → 0
 #[case::date_diff_zero("date_diff(gmtime(1704067200), gmtime(1704067200), \"seconds\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
+// byte string literals
+#[case::bytes_literal_basic(r#"b"abc""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![97, 98, 99])].into()))]
+#[case::bytes_literal_hex_escape(r#"b"\xf0\x9f\x99\x82""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![0xf0, 0x9f, 0x99, 0x82])].into()))]
+#[case::bytes_literal_escape_sequences(r#"b"\n\r\t\\""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![b'\n', b'\r', b'\t', b'\\'])].into()))]
+#[case::bytes_literal_empty(r#"b"""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![])].into()))]
+#[case::bytes_literal_len(r#"b"abc" | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
+#[case::bytes_literal_len_hex(r#"b"\xf0\x9f\x99\x82" | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
+#[case::bytes_literal_equality(r#"b"abc" == b"abc""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::bytes_literal_inequality(r#"b"abc" == b"def""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
+#[case::bytes_literal_type_name(r#"type(b"abc")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("bytes".to_string())].into()))]
+#[case::bytes_literal_is_empty(r#"is_empty(b"")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::bytes_literal_not_empty(r#"is_empty(b"a")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
