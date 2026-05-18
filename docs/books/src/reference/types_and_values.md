@@ -4,6 +4,7 @@
 
 - `42` (a number)
 - `"Hello, world!"` (a string)
+- `b"abc"` (a bytes literal)
 - `:value` (a symbol)
 - `[1, 2, 3]`, `array(1, 2, 3)` (an array)
 - `{"a": 1, "b": 2, "c": 3}`, `dict(["a", 1], ["b", 2], ["c", 3])` (a dictionary)
@@ -12,15 +13,60 @@
 
 ## Types
 
-| Type         | Description                                                                                                       | Examples                                       |
-| ------------ | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| **Number**   | Represents numeric values.                                                                                        | `1`, `3.14`, `-42`                             |
-| **String**   | Represents sequences of characters, including Unicode code points and escape sequences in the form of `\{0x000}`. | `"hello"`, `"123"`, `"😊"`, `"\u{1F600}"`       |
-| **Symbol**   | Represents immutable, interned identifiers prefixed with `:`. Used for constant values and keys.                  | `:value`, `:success`, `:error`, `:ok`          |
-| **Boolean**  | Represents truth values.                                                                                          | `true`, `false`                                |
-| **Array**    | Represents ordered collections of values.                                                                         | `[1, 2, 3]`, `array(1, 2, 3)`                  |
-| **Dict**     | Represents key-value mappings (dictionaries).                                                                     | `{"a": 1, "b": 2}`, `dict(["a", 1], ["b", 2])` |
-| **Function** | Represents executable code.                                                                                       | `def foo(): 42; let name = def foo(): 42;`     |
+| Type         | Description                                                                                                       | Examples                                        |
+| ------------ | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| **Number**   | Represents numeric values.                                                                                        | `1`, `3.14`, `-42`                              |
+| **String**   | Represents sequences of characters, including Unicode code points and escape sequences in the form of `\{0x000}`. | `"hello"`, `"123"`, `"😊"`, `"\u{1F600}"`        |
+| **Bytes**    | Represents a raw byte sequence. Written with a `b` prefix. Only ASCII characters are allowed unescaped.          | `b"abc"`, `b"\xf0\x9f\x99\x82"`, `b""`         |
+| **Symbol**   | Represents immutable, interned identifiers prefixed with `:`. Used for constant values and keys.                  | `:value`, `:success`, `:error`, `:ok`           |
+| **Boolean**  | Represents truth values.                                                                                          | `true`, `false`                                 |
+| **Array**    | Represents ordered collections of values.                                                                         | `[1, 2, 3]`, `array(1, 2, 3)`                   |
+| **Dict**     | Represents key-value mappings (dictionaries).                                                                     | `{"a": 1, "b": 2}`, `dict(["a", 1], ["b", 2])`  |
+| **Function** | Represents executable code.                                                                                       | `def foo(): 42; let name = def foo(): 42;`      |
+
+## Byte String Literals
+
+Byte string literals use the `b"..."` syntax and represent raw sequences of bytes (`u8` values).
+
+```mq
+b"hello"            # 5-byte sequence [104, 101, 108, 108, 111]
+b"\xf0\x9f\x99\x82" # 4-byte emoji encoded as raw bytes
+b""                 # empty byte sequence
+```
+
+### Allowed characters
+
+Only **ASCII** characters (code points 0–127) may appear unescaped inside a byte literal. Non-ASCII characters such as `é` or `😊` must be written using `\xNN` hex escapes:
+
+```mq
+# Correct — use \xNN for non-ASCII bytes
+b"\xc3\xa9"    # UTF-8 encoding of 'é' (2 bytes: 0xc3, 0xa9)
+
+# Wrong — non-ASCII characters are not accepted in b"..."
+# b"é"          ← syntax error; use \xNN escapes instead
+```
+
+### Supported escape sequences
+
+| Escape | Byte value |
+| ------ | ---------- |
+| `\\`   | `0x5c` (backslash) |
+| `\"`   | `0x22` (double quote) |
+| `\n`   | `0x0a` (newline) |
+| `\r`   | `0x0d` (carriage return) |
+| `\t`   | `0x09` (tab) |
+| `\0`   | `0x00` (null) |
+| `\xNN` | Arbitrary byte (two hex digits) |
+
+### Common operations
+
+```mq
+b"abc" | len          # 3  — byte length, not character count
+b"abc" | type         # "bytes"
+b"abc" == b"abc"      # true
+b"abc" | is_empty     # false
+b""    | is_empty     # true
+```
 
 ## Accessing Values
 
