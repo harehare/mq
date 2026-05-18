@@ -26,16 +26,17 @@ use crate::grep;
     mq -f 'file' file.md\n\n\
     ## To start a REPL session:\n\
     mq repl\n\n\
-    # Auto-parsing by file extension:\n\n\
-    When no -I flag is given, mq automatically imports the matching module based on the file extension:\n\n\
-    .json              import \"json\" | json::json_parse()\n\
-    .yaml / .yml       import \"yaml\" | yaml::yaml_parse()\n\
-    .toml              import \"toml\" | toml::toml_parse()\n\
-    .xml               import \"xml\"  | xml::xml_parse()\n\
-    .toon              import \"toon\" | toon::toon_parse()\n\
-    .csv               import \"csv\"  | csv::csv_parse(true)\n\
-    .tsv               import \"csv\"  | csv::tsv_parse(true)\n\
-    .psv               import \"csv\"  | csv::psv_parse(true)\n\n\
+    # Auto-parsing by file extension or -I flag:\n\n\
+    mq automatically imports the matching module based on the file extension.\n\
+    You can also force a format explicitly with -I <format>:\n\n\
+    .json / -I json  import \"json\" | json::json_parse()\n\
+    .yaml / -I yaml  import \"yaml\" | yaml::yaml_parse()\n\
+    .toml / -I toml  import \"toml\" | toml::toml_parse()\n\
+    .xml  / -I xml   import \"xml\"  | xml::xml_parse()\n\
+    .toon / -I toon  import \"toon\" | toon::toon_parse()\n\
+    .csv  / -I csv   import \"csv\"  | csv::csv_parse(true)\n\
+    .tsv  / -I tsv   import \"csv\"  | csv::tsv_parse(true)\n\
+    .psv  / -I psv   import \"csv\"  | csv::psv_parse(true)\n\n\
     Use -I raw to disable auto-parsing and receive the raw string.\n")]
 #[command(
     about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
@@ -74,6 +75,7 @@ const UNIX_EXECUTABLE_BITS: u32 = 0o111;
 /// - Text: Treats input as plain text.
 /// - Null: No input.
 /// - Raw: Treats all input as a single string, without parsing.
+/// - Json/Toml/Toon/Yaml/Xml/Csv/Tsv/Psv: Module-backed formats that auto-import and parse.
 #[derive(Clone, Debug, Default, clap::ValueEnum, PartialEq)]
 enum InputFormat {
     #[default]
@@ -83,6 +85,14 @@ enum InputFormat {
     Text,
     Null,
     Raw,
+    Json,
+    Toml,
+    Toon,
+    Yaml,
+    Xml,
+    Csv,
+    Tsv,
+    Psv,
 }
 
 impl InputFormat {
@@ -91,9 +101,32 @@ impl InputFormat {
             "md" | "markdown" => Self::Markdown,
             "mdx" => Self::Mdx,
             "html" | "htm" => Self::Html,
-            "txt" | "log" | "csv" | "psv" | "tsv" | "toon" | "json" | "toml" | "yaml" | "yml" | "xml" => Self::Raw,
+            "txt" | "log" => Self::Raw,
             "jsonl" | "ndjson" => Self::Text,
+            "json" => Self::Json,
+            "toml" => Self::Toml,
+            "toon" => Self::Toon,
+            "yaml" | "yml" => Self::Yaml,
+            "xml" => Self::Xml,
+            "csv" => Self::Csv,
+            "tsv" => Self::Tsv,
+            "psv" => Self::Psv,
             _ => Self::Markdown,
+        }
+    }
+
+    /// Returns the auto-import query prefix for module-backed formats, or `None` for native formats.
+    fn module_query_prefix(&self) -> Option<&'static str> {
+        match self {
+            Self::Json => Some(r#"import "json" | json::json_parse()"#),
+            Self::Yaml => Some(r#"import "yaml" | yaml::yaml_parse()"#),
+            Self::Toml => Some(r#"import "toml" | toml::toml_parse()"#),
+            Self::Xml => Some(r#"import "xml" | xml::xml_parse()"#),
+            Self::Toon => Some(r#"import "toon" | toon::toon_parse()"#),
+            Self::Csv => Some(r#"import "csv" | csv::csv_parse(true)"#),
+            Self::Tsv => Some(r#"import "csv" | csv::tsv_parse(true)"#),
+            Self::Psv => Some(r#"import "csv" | csv::psv_parse(true)"#),
+            _ => None,
         }
     }
 }
@@ -552,24 +585,18 @@ impl Cli {
         Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
     }
 
-    /// Returns a query prefix that auto-imports and parses a module-backed format when
-    /// no explicit `--input-format` is given and the file extension has a matching module.
+    /// Returns a query prefix that auto-imports and parses a module-backed format.
+    ///
+    /// If an explicit `-I <format>` is given and it is a module-backed format, the prefix
+    /// for that format is returned. Otherwise the file extension is used for detection.
     fn auto_query_prefix(&self, file: &Option<PathBuf>) -> Option<String> {
-        if self.input.input_format.is_some() {
-            return None;
+        if let Some(fmt) = &self.input.input_format {
+            return fmt.module_query_prefix().map(str::to_string);
         }
         let ext = file.as_ref()?.extension()?.to_string_lossy().to_lowercase();
-        match ext.as_str() {
-            "json" => Some(r#"import "json" | json::json_parse()"#.to_string()),
-            "yaml" | "yml" => Some(r#"import "yaml" | yaml::yaml_parse()"#.to_string()),
-            "toml" => Some(r#"import "toml" | toml::toml_parse()"#.to_string()),
-            "xml" => Some(r#"import "xml" | xml::xml_parse()"#.to_string()),
-            "toon" => Some(r#"import "toon" | toon::toon_parse()"#.to_string()),
-            "csv" => Some(r#"import "csv" | csv::csv_parse(true)"#.to_string()),
-            "tsv" => Some(r#"import "csv" | csv::tsv_parse(true)"#.to_string()),
-            "psv" => Some(r#"import "csv" | csv::psv_parse(true)"#.to_string()),
-            _ => None,
-        }
+        InputFormat::from_extension(&ext)
+            .module_query_prefix()
+            .map(str::to_string)
     }
 
     fn execute(
@@ -614,7 +641,16 @@ impl Cli {
             InputFormat::Text => mq_lang::parse_text_input(content)?,
             InputFormat::Html => mq_lang::parse_html_input(content)?,
             InputFormat::Null => mq_lang::null_input(),
-            InputFormat::Raw => mq_lang::raw_input(content),
+            // Module-backed formats pass raw content; the auto-imported module handles parsing.
+            InputFormat::Raw
+            | InputFormat::Json
+            | InputFormat::Toml
+            | InputFormat::Toon
+            | InputFormat::Yaml
+            | InputFormat::Xml
+            | InputFormat::Csv
+            | InputFormat::Tsv
+            | InputFormat::Psv => mq_lang::raw_input(content),
         };
 
         let is_grep = matches!(self.output.output_format, OutputFormat::Grep);

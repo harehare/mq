@@ -216,6 +216,36 @@ In {year}, the snowfall was above average.
     "# h1\n\nP1.\n\nP2.\n\n# h2\n\nEnd.\n",
     Some("1:# h1\n3-P1.\n--\n7:# h2\n9-End.\n")
 )]
+#[case::input_format_json(
+    vec!["--unbuffered", "-I", "json", ".[]"],
+    r#"{"name": "Alice", "age": 30}"#,
+    Some("[\"Alice\", 30]\n")
+)]
+#[case::input_format_yaml(
+    vec!["--unbuffered", "-I", "yaml", ".[]"],
+    "name: Alice\nage: 30\n",
+    Some("[\"Alice\", 30]\n")
+)]
+#[case::input_format_toml(
+    vec!["--unbuffered", "-I", "toml", ".[]"],
+    "[person]\nname = \"Alice\"\nage = 30\n",
+    Some("[{\"age\": 30, \"name\": \"Alice\"}]\n")
+)]
+#[case::input_format_csv(
+    vec!["--unbuffered", "-I", "csv", ".[]"],
+    "name,age\nAlice,30\nBob,25\n",
+    Some("[{\"name\": \"Alice\", \"age\": \"30\"}, {\"name\": \"Bob\", \"age\": \"25\"}]\n")
+)]
+#[case::input_format_tsv(
+    vec!["--unbuffered", "-I", "tsv", ".[]"],
+    "name\tage\nAlice\t30\nBob\t25\n",
+    Some("[{\"name\": \"Alice\", \"age\": \"30\"}, {\"name\": \"Bob\", \"age\": \"25\"}]\n")
+)]
+#[case::input_format_psv(
+    vec!["--unbuffered", "-I", "psv", ".[]"],
+    "name|age\nAlice|30\nBob|25\n",
+    Some("[{\"name\": \"Alice\", \"age\": \"30\"}, {\"name\": \"Bob\", \"age\": \"25\"}]\n")
+)]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,
@@ -341,6 +371,114 @@ fn test_cli_run_with_csv_input() -> Result<(), Box<dyn std::error::Error>> {
 | Bob | 25 |
 ",
     );
+    Ok(())
+}
+
+#[test]
+fn test_auto_format_json_extension() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file_path) = create_file("test_auto_format.json", r#"{"name": "Alice"}"#);
+    let temp_file_path_clone = temp_file_path.clone();
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+    let assert = cargo::cargo_bin_cmd!("mq")
+        .arg("--unbuffered")
+        .arg(".[]")
+        .arg(temp_file_path.to_string_lossy().to_string())
+        .assert();
+    assert.success().code(0).stdout("[\"Alice\"]\n");
+    Ok(())
+}
+
+#[test]
+fn test_auto_format_yaml_extension() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file_path) = create_file("test_auto_format.yaml", "name: Alice\n");
+    let temp_file_path_clone = temp_file_path.clone();
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+    let assert = cargo::cargo_bin_cmd!("mq")
+        .arg("--unbuffered")
+        .arg(".[]")
+        .arg(temp_file_path.to_string_lossy().to_string())
+        .assert();
+    assert.success().code(0).stdout("[\"Alice\"]\n");
+    Ok(())
+}
+
+#[test]
+fn test_auto_format_toml_extension() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file_path) = create_file("test_auto_format.toml", "[person]\nname = \"Alice\"\n");
+    let temp_file_path_clone = temp_file_path.clone();
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+    let assert = cargo::cargo_bin_cmd!("mq")
+        .arg("--unbuffered")
+        .arg(".[]")
+        .arg(temp_file_path.to_string_lossy().to_string())
+        .assert();
+    assert.success().code(0).stdout("[{\"name\": \"Alice\"}]\n");
+    Ok(())
+}
+
+#[test]
+fn test_auto_format_csv_extension() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file_path) = create_file("test_auto_format.csv", "name,age\nAlice,30\n");
+    let temp_file_path_clone = temp_file_path.clone();
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+    let assert = cargo::cargo_bin_cmd!("mq")
+        .arg("--unbuffered")
+        .arg(".[]")
+        .arg(temp_file_path.to_string_lossy().to_string())
+        .assert();
+    assert.success().code(0).stdout("[{\"name\": \"Alice\", \"age\": \"30\"}]\n");
+    Ok(())
+}
+
+#[test]
+fn test_auto_format_tsv_extension() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file_path) = create_file("test_auto_format.tsv", "name\tage\nAlice\t30\n");
+    let temp_file_path_clone = temp_file_path.clone();
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+    let assert = cargo::cargo_bin_cmd!("mq")
+        .arg("--unbuffered")
+        .arg(".[]")
+        .arg(temp_file_path.to_string_lossy().to_string())
+        .assert();
+    assert.success().code(0).stdout("[{\"name\": \"Alice\", \"age\": \"30\"}]\n");
+    Ok(())
+}
+
+#[test]
+fn test_auto_format_psv_extension() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file_path) = create_file("test_auto_format.psv", "name|age\nAlice|30\n");
+    let temp_file_path_clone = temp_file_path.clone();
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+    let assert = cargo::cargo_bin_cmd!("mq")
+        .arg("--unbuffered")
+        .arg(".[]")
+        .arg(temp_file_path.to_string_lossy().to_string())
+        .assert();
+    assert.success().code(0).stdout("[{\"name\": \"Alice\", \"age\": \"30\"}]\n");
     Ok(())
 }
 
