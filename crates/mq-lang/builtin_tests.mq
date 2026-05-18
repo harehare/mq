@@ -152,6 +152,13 @@ def test_is_empty():
 
   | let result6 = is_empty(None)
   | assert_eq(result6, true)
+
+  | let result7 = is_empty(b"binary data")
+  | assert_eq(result7, false)
+
+  | let result8 = is_empty(b"")
+  | assert_eq(result8, true)
+
 end
 
 # Selector tests

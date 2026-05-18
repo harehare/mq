@@ -8,7 +8,7 @@ use nom::{
     IResult,
     branch::alt,
     bytes::complete::{escaped_transform, tag, take_while_m_n},
-    character::complete::{alpha1, alphanumeric1, anychar, char, multispace0, none_of},
+    character::complete::{alpha1, alphanumeric1, anychar, char, multispace0, none_of, satisfy},
     combinator::{map, map_opt, map_res, recognize, value},
     multi::{many0, many1},
     sequence::{delimited, pair, preceded},
@@ -420,6 +420,58 @@ fn string_segment<'a>(input: Span<'a>) -> IResult<Span<'a>, StringSegment> {
     .parse(input)
 }
 
+fn byte_escape_seq(input: Span) -> IResult<Span, u8> {
+    preceded(
+        char('\\'),
+        alt((
+            preceded(
+                char('x'),
+                map_res(take_while_m_n(2, 2, |c: char| c.is_ascii_hexdigit()), |hex: Span| {
+                    u8::from_str_radix(hex.fragment(), 16)
+                }),
+            ),
+            value(b'\\', char('\\')),
+            value(b'"', char('"')),
+            value(b'\n', char('n')),
+            value(b'\r', char('r')),
+            value(b'\t', char('t')),
+            value(b'\0', char('0')),
+        )),
+    )
+    .parse(input)
+}
+
+fn byte_string_literal(input: Span) -> IResult<Span, Token> {
+    let (span, start) = position(input)?;
+    let (span, _) = tag("b\"")(span)?;
+
+    let (span, byte_segments) = many0(alt((
+        map(byte_escape_seq, |b| vec![b]),
+        // Only plain ASCII characters are allowed unescaped; non-ASCII must
+        // use \xNN escapes to avoid silent UTF-8 multi-byte encoding.
+        map(satisfy(|c: char| c.is_ascii() && c != '"' && c != '\\'), |c| {
+            vec![c as u8]
+        }),
+    )))
+    .parse(span)?;
+
+    let (span, _) = char('"').parse(span)?;
+    let (span, end) = position(span)?;
+    let bytes: Vec<u8> = byte_segments.into_iter().flatten().collect();
+
+    Ok((
+        span,
+        Token {
+            range: Range {
+                start: start.into(),
+                end: end.into(),
+            },
+            kind: TokenKind::BytesLiteral(bytes),
+            module_id: start.extra,
+        },
+    ))
+}
+
 fn interpolated_string(input: Span) -> IResult<Span, Token> {
     let (span, start) = position(input)?;
     let (span, _) = tag("s\"")(span)?;
@@ -518,7 +570,14 @@ fn string_literal(input: Span) -> IResult<Span, Token> {
 }
 
 fn literals(input: Span) -> IResult<Span, Token> {
-    alt((string_literal, interpolated_string, empty_string, number_literal)).parse(input)
+    alt((
+        byte_string_literal,
+        string_literal,
+        interpolated_string,
+        empty_string,
+        number_literal,
+    ))
+    .parse(input)
 }
 
 /// Parses a selector token starting with `.`.
@@ -1415,6 +1474,77 @@ mod tests {
             Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 4} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
 
     fn test_parse(#[case] input: &str, #[case] options: Options, #[case] expected: Result<Vec<Token>, SyntaxError>) {
+        assert_eq!(Lexer::new(options).tokenize(input, 1.into()), expected);
+    }
+
+    #[rstest]
+    #[case::basic(r#"b"abc""#,
+        Options::default(),
+        Ok(vec![
+            Token { range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 7 } },
+                kind: TokenKind::BytesLiteral(vec![97, 98, 99]), module_id: 1.into() },
+            Token { range: Range { start: Position { line: 1, column: 7 }, end: Position { line: 1, column: 7 } },
+                kind: TokenKind::Eof, module_id: 1.into() },
+        ])
+    )]
+    #[case::hex_escape(r#"b"\xf0\x9f""#,
+        Options::default(),
+        Ok(vec![
+            Token { range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 12 } },
+                kind: TokenKind::BytesLiteral(vec![0xf0, 0x9f]), module_id: 1.into() },
+            Token { range: Range { start: Position { line: 1, column: 12 }, end: Position { line: 1, column: 12 } },
+                kind: TokenKind::Eof, module_id: 1.into() },
+        ])
+    )]
+    #[case::standard_escapes(r#"b"\n\r\t\\""#,
+        Options::default(),
+        Ok(vec![
+            Token { range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 12 } },
+                kind: TokenKind::BytesLiteral(vec![b'\n', b'\r', b'\t', b'\\']), module_id: 1.into() },
+            Token { range: Range { start: Position { line: 1, column: 12 }, end: Position { line: 1, column: 12 } },
+                kind: TokenKind::Eof, module_id: 1.into() },
+        ])
+    )]
+    #[case::empty(r#"b"""#,
+        Options::default(),
+        Ok(vec![
+            Token { range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 4 } },
+                kind: TokenKind::BytesLiteral(vec![]), module_id: 1.into() },
+            Token { range: Range { start: Position { line: 1, column: 4 }, end: Position { line: 1, column: 4 } },
+                kind: TokenKind::Eof, module_id: 1.into() },
+        ])
+    )]
+    // Non-ASCII inside b"..." fails to parse as a byte literal.
+    // The tokenizer falls back: `b` becomes Ident and `"é"` becomes StringLiteral.
+    // Higher-level parsing then rejects the invalid expression.
+    #[case::non_ascii_not_a_byte_literal(
+        "b\"\u{00e9}\"",
+        Options::default(),
+        Ok(vec![
+            Token { range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 2 } },
+                kind: TokenKind::Ident(SmolStr::new("b")), module_id: 1.into() },
+            Token { range: Range { start: Position { line: 1, column: 2 }, end: Position { line: 1, column: 5 } },
+                kind: TokenKind::StringLiteral("\u{00e9}".to_string()), module_id: 1.into() },
+            Token { range: Range { start: Position { line: 1, column: 5 }, end: Position { line: 1, column: 5 } },
+                kind: TokenKind::Eof, module_id: 1.into() },
+        ])
+    )]
+    #[case::b_ident_without_quote("b foo",
+        Options::default(),
+        Ok(vec![
+            Token { range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 2 } },
+                kind: TokenKind::Ident(SmolStr::new("b")), module_id: 1.into() },
+            Token { range: Range { start: Position { line: 1, column: 3 }, end: Position { line: 1, column: 6 } },
+                kind: TokenKind::Ident(SmolStr::new("foo")), module_id: 1.into() },
+            Token { range: Range { start: Position { line: 1, column: 6 }, end: Position { line: 1, column: 6 } },
+                kind: TokenKind::Eof, module_id: 1.into() },
+        ])
+    )]
+    fn test_byte_string_literal(
+        #[case] input: &str,
+        #[case] options: Options,
+        #[case] expected: Result<Vec<Token>, SyntaxError>,
+    ) {
         assert_eq!(Lexer::new(options).tokenize(input, 1.into()), expected);
     }
 }

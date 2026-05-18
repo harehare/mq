@@ -1140,6 +1140,9 @@ impl Formatter {
                     self.output.push_str(&escaped);
                     self.output.push('"');
                 }
+                mq_lang::TokenKind::BytesLiteral(_) => {
+                    self.output.push_str(&token.to_string());
+                }
                 mq_lang::TokenKind::NumberLiteral(n) => self.output.push_str(&n.to_string()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
                 mq_lang::TokenKind::None => self.output.push_str(&token.to_string()),
@@ -1336,6 +1339,9 @@ impl Formatter {
                     self.output.push('"');
                     self.output.push_str(&escaped);
                     self.output.push('"');
+                }
+                mq_lang::TokenKind::BytesLiteral(_) => {
+                    self.output.push_str(&token.to_string());
                 }
                 mq_lang::TokenKind::NumberLiteral(n) => self.output.push_str(&n.to_string()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
@@ -2802,6 +2808,10 @@ end
     #[case::arrow_as_call_arg_with_other_args("map(->(): program;, 1, \"test\")", "map(->(): program;, 1, \"test\")")]
     #[case::nested_arrow_as_call_arg("outer(map(->(): inner();))", "outer(map(->(): inner();))")]
     #[case::arrow_end("->(): test end", "->(): test end")]
+    #[case::bytes_literal_basic(r#"b"abc""#, r#"b"abc""#)]
+    #[case::bytes_literal_hex(r#"b"\xf0\x9f\x99\x82""#, r#"b"\xf0\x9f\x99\x82""#)]
+    #[case::bytes_literal_with_pipe(r#"b"abc"  |  len"#, r#"b"abc" | len"#)]
+    #[case::bytes_literal_in_call(r#"len(b"abc")"#, r#"len(b"abc")"#)]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

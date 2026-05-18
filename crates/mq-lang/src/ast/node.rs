@@ -286,6 +286,7 @@ pub struct MatchArm {
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Literal {
     String(String),
+    Bytes(Vec<u8>),
     Number(Number),
     Symbol(Ident),
     Bool(bool),
@@ -309,6 +310,17 @@ impl Display for Literal {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
             Literal::String(s) => write!(f, "{}", s),
+            Literal::Bytes(b) => {
+                write!(f, "b\"")?;
+                for byte in b {
+                    if byte.is_ascii_graphic() && *byte != b'"' && *byte != b'\\' {
+                        write!(f, "{}", *byte as char)?;
+                    } else {
+                        write!(f, "\\x{:02x}", byte)?;
+                    }
+                }
+                write!(f, "\"")
+            }
             Literal::Number(n) => write!(f, "{}", n),
             Literal::Symbol(i) => write!(f, "{}", i),
             Literal::Bool(b) => write!(f, "{}", b),

@@ -1188,6 +1188,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Literal::None => RuntimeValue::None,
             ast::Literal::Bool(b) => RuntimeValue::Boolean(*b),
             ast::Literal::String(s) => RuntimeValue::String(s.clone()),
+            ast::Literal::Bytes(b) => RuntimeValue::Bytes(b.clone()),
             ast::Literal::Symbol(i) => RuntimeValue::Symbol(*i),
             ast::Literal::Number(n) => RuntimeValue::Number(*n),
         }

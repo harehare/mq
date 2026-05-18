@@ -51,7 +51,7 @@ end
 
 # Checks if string, array or dict is empty
 def is_empty(s):
-  if (is_string(s) || is_array(s) || is_dict(s)):
+  if (is_string(s) || is_array(s) || is_dict(s) || is_bytes(s)):
     len(s) == 0
   elif (is_none(s)):
     true

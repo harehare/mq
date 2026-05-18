@@ -400,6 +400,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Ident(name) => self.parse_ident(name, token),
             TokenKind::BoolLiteral(_) => self.parse_literal(token),
             TokenKind::StringLiteral(_) => self.parse_literal(token),
+            TokenKind::BytesLiteral(_) => self.parse_literal(token),
             TokenKind::NumberLiteral(_) => self.parse_literal(token),
             TokenKind::LBracket => self.parse_array(token),
             TokenKind::LBrace => self.parse_dict(token),
@@ -546,6 +547,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             expr_token.kind,
             TokenKind::BoolLiteral(_)
                 | TokenKind::StringLiteral(_)
+                | TokenKind::BytesLiteral(_)
                 | TokenKind::NumberLiteral(_)
                 | TokenKind::If
                 | TokenKind::Foreach
@@ -977,6 +979,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::StringLiteral(s) => Ok(Shared::new(Node {
                 token_id: self.token_arena.alloc(Shared::clone(literal_token)),
                 expr: Shared::new(Expr::Literal(Literal::String(s.to_owned()))),
+            })),
+            TokenKind::BytesLiteral(b) => Ok(Shared::new(Node {
+                token_id: self.token_arena.alloc(Shared::clone(literal_token)),
+                expr: Shared::new(Expr::Literal(Literal::Bytes(b.clone()))),
             })),
             TokenKind::NumberLiteral(n) => Ok(Shared::new(Node {
                 token_id: self.token_arena.alloc(Shared::clone(literal_token)),
@@ -1788,6 +1794,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
             // Literal patterns
             TokenKind::StringLiteral(s) => Ok(Pattern::Literal(Literal::String(s.clone()))),
+            TokenKind::BytesLiteral(b) => Ok(Pattern::Literal(Literal::Bytes(b.clone()))),
             TokenKind::NumberLiteral(n) => Ok(Pattern::Literal(Literal::Number(*n))),
             TokenKind::BoolLiteral(b) => Ok(Pattern::Literal(Literal::Bool(*b))),
             TokenKind::None => Ok(Pattern::Literal(Literal::None)),

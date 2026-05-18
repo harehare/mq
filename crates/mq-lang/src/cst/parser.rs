@@ -424,9 +424,11 @@ impl<'a> Parser<'a> {
             TokenKind::Self_ => self.parse_self(leading_trivia),
             TokenKind::Let | TokenKind::Var => self.parse_var_decl(leading_trivia, in_loop),
             TokenKind::Selector(_) | TokenKind::DoubleDot => self.parse_selector(leading_trivia),
-            TokenKind::StringLiteral(_) | TokenKind::NumberLiteral(_) | TokenKind::BoolLiteral(_) | TokenKind::None => {
-                self.parse_node(NodeKind::Literal, leading_trivia)
-            }
+            TokenKind::StringLiteral(_)
+            | TokenKind::BytesLiteral(_)
+            | TokenKind::NumberLiteral(_)
+            | TokenKind::BoolLiteral(_)
+            | TokenKind::None => self.parse_node(NodeKind::Literal, leading_trivia),
             TokenKind::InterpolatedString(_) => self.parse_interpolated_string(leading_trivia),
             TokenKind::LBracket => self.parse_array(leading_trivia),
             TokenKind::LBrace => self.parse_dict(leading_trivia),
@@ -785,6 +787,7 @@ impl<'a> Parser<'a> {
         match &token.kind {
             TokenKind::Ident(_)
             | TokenKind::StringLiteral(_)
+            | TokenKind::BytesLiteral(_)
             | TokenKind::BoolLiteral(_)
             | TokenKind::NumberLiteral(_)
             | TokenKind::None
@@ -1778,8 +1781,12 @@ impl<'a> Parser<'a> {
                     children,
                 }))
             }
-            // Literal patterns (string, number, bool, none)
-            TokenKind::StringLiteral(_) | TokenKind::NumberLiteral(_) | TokenKind::BoolLiteral(_) | TokenKind::None => {
+            // Literal patterns (string, bytes, number, bool, none)
+            TokenKind::StringLiteral(_)
+            | TokenKind::BytesLiteral(_)
+            | TokenKind::NumberLiteral(_)
+            | TokenKind::BoolLiteral(_)
+            | TokenKind::None => {
                 self.advance();
                 let trailing_trivia = self.parse_trailing_trivia();
                 Ok(Shared::new(Node {

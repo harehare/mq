@@ -82,7 +82,7 @@ impl Hir {
                             })
                             .unwrap_or(false) &&
                         // Don't warn about tokens, trivial symbols, or arguments/literals that are part of the halt call
-                        !matches!(other_symbol.kind, SymbolKind::Keyword | SymbolKind::Argument | SymbolKind::Number | SymbolKind::String | SymbolKind::Boolean) &&
+                        !matches!(other_symbol.kind, SymbolKind::Keyword | SymbolKind::Argument | SymbolKind::Number | SymbolKind::String | SymbolKind::Bytes | SymbolKind::Boolean) &&
                         other_symbol.value.is_some() &&
                         other_symbol.parent != Some(halt_symbol_id)
                     })
