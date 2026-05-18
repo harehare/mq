@@ -442,7 +442,10 @@ fn test_auto_format_csv_extension() -> Result<(), Box<dyn std::error::Error>> {
         .arg(".[]")
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
-    assert.success().code(0).stdout("[{\"name\": \"Alice\", \"age\": \"30\"}]\n");
+    assert
+        .success()
+        .code(0)
+        .stdout("[{\"name\": \"Alice\", \"age\": \"30\"}]\n");
     Ok(())
 }
 
@@ -460,7 +463,10 @@ fn test_auto_format_tsv_extension() -> Result<(), Box<dyn std::error::Error>> {
         .arg(".[]")
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
-    assert.success().code(0).stdout("[{\"name\": \"Alice\", \"age\": \"30\"}]\n");
+    assert
+        .success()
+        .code(0)
+        .stdout("[{\"name\": \"Alice\", \"age\": \"30\"}]\n");
     Ok(())
 }
 
@@ -478,7 +484,10 @@ fn test_auto_format_psv_extension() -> Result<(), Box<dyn std::error::Error>> {
         .arg(".[]")
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
-    assert.success().code(0).stdout("[{\"name\": \"Alice\", \"age\": \"30\"}]\n");
+    assert
+        .success()
+        .code(0)
+        .stdout("[{\"name\": \"Alice\", \"age\": \"30\"}]\n");
     Ok(())
 }
 
