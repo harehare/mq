@@ -217,34 +217,34 @@ In {year}, the snowfall was above average.
     Some("1:# h1\n3-P1.\n--\n7:# h2\n9-End.\n")
 )]
 #[case::input_format_json(
-    vec!["--unbuffered", "-I", "json", ".[]"],
+    vec!["--unbuffered", "-I", "json", "[.\"name\", .\"age\"]"],
     r#"{"name": "Alice", "age": 30}"#,
     Some("[\"Alice\", 30]\n")
 )]
 #[case::input_format_yaml(
-    vec!["--unbuffered", "-I", "yaml", ".[]"],
+    vec!["--unbuffered", "-I", "yaml", "[.\"name\", .\"age\"]"],
     "name: Alice\nage: 30\n",
     Some("[\"Alice\", 30]\n")
 )]
 #[case::input_format_toml(
-    vec!["--unbuffered", "-I", "toml", ".[]"],
+    vec!["--unbuffered", "-I", "toml", ".[] | map(fn(x): [do x | .\"name\" end, do x | .\"age\" end];)"],
     "[person]\nname = \"Alice\"\nage = 30\n",
-    Some("[{\"age\": 30, \"name\": \"Alice\"}]\n")
+    Some("[[\"Alice\", 30]]\n")
 )]
 #[case::input_format_csv(
-    vec!["--unbuffered", "-I", "csv", ".[]"],
+    vec!["--unbuffered", "-I", "csv", "map(fn(x): [do x | .\"name\" end, do x | .\"age\" end];)"],
     "name,age\nAlice,30\nBob,25\n",
-    Some("[{\"name\": \"Alice\", \"age\": \"30\"}, {\"name\": \"Bob\", \"age\": \"25\"}]\n")
+    Some("[[\"Alice\", \"30\"], [\"Bob\", \"25\"]]\n")
 )]
 #[case::input_format_tsv(
-    vec!["--unbuffered", "-I", "tsv", ".[]"],
+    vec!["--unbuffered", "-I", "tsv", "map(fn(x): [do x | .\"name\" end, do x | .\"age\" end];)"],
     "name\tage\nAlice\t30\nBob\t25\n",
-    Some("[{\"name\": \"Alice\", \"age\": \"30\"}, {\"name\": \"Bob\", \"age\": \"25\"}]\n")
+    Some("[[\"Alice\", \"30\"], [\"Bob\", \"25\"]]\n")
 )]
 #[case::input_format_psv(
-    vec!["--unbuffered", "-I", "psv", ".[]"],
+    vec!["--unbuffered", "-I", "psv", "map(fn(x): [do x | .\"name\" end, do x | .\"age\" end];)"],
     "name|age\nAlice|30\nBob|25\n",
-    Some("[{\"name\": \"Alice\", \"age\": \"30\"}, {\"name\": \"Bob\", \"age\": \"25\"}]\n")
+    Some("[[\"Alice\", \"30\"], [\"Bob\", \"25\"]]\n")
 )]
 #[case::input_format_xml(
     vec!["--unbuffered", "-I", "xml", "self"],
