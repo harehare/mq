@@ -84,7 +84,7 @@ const UNIX_EXECUTABLE_BITS: u32 = 0o111;
 ///
 /// Module-backed formats (auto-import and parse, sorted alphabetically):
 /// - Cbor: Reads input as raw bytes and parses via the `cbor` module.
-/// - Csv/Tsv/Psv/Json/Toml/Toon/Xml/Yaml/Hcl: Auto-import the matching module and parse.
+/// - Csv/Hcl/Json/Psv/Toml/Toon/Tsv/Xml/Yaml: Auto-import the matching module and parse.
 #[derive(Clone, Debug, Default, clap::ValueEnum, PartialEq)]
 enum InputFormat {
     #[default]
