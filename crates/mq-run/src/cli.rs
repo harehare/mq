@@ -788,12 +788,12 @@ impl Cli {
         let query = self.get_query()?;
         let mut engine = self.create_engine()?;
 
-        self.process_lines(|file, line| self.execute(&mut engine, &query, &file.cloned(), &line.to_string().into()))
+        self.process_lines(|file, line| self.execute(&mut engine, &query, &file.cloned(), &line.into()))
     }
 
     fn process_lines<F>(&self, mut process: F) -> miette::Result<()>
     where
-        F: FnMut(Option<&PathBuf>, &str) -> miette::Result<()>,
+        F: FnMut(Option<&PathBuf>, String) -> miette::Result<()>,
     {
         // If files are specified, process each file line by line
         if let Some(files) = &self.files {
@@ -802,7 +802,7 @@ impl Cli {
                 let reader = io::BufReader::new(file_handle);
                 for line_result in reader.lines() {
                     let line = line_result.into_diagnostic()?;
-                    process(Some(file), &line)?;
+                    process(Some(file), line)?;
                 }
             }
         } else {
@@ -811,7 +811,7 @@ impl Cli {
             let reader = io::BufReader::new(stdin.lock());
             for line_result in reader.lines() {
                 let line = line_result.into_diagnostic()?;
-                process(None, &line)?;
+                process(None, line)?;
             }
         }
         Ok(())
