@@ -95,7 +95,6 @@ enum InputFormat {
     Null,
     Raw,
     Bytes,
-    // Module-backed formats (alphabetical order)
     Cbor,
     Csv,
     Hcl,
@@ -116,7 +115,6 @@ impl InputFormat {
             "html" | "htm" => Self::Html,
             "txt" | "log" => Self::Raw,
             "jsonl" | "ndjson" => Self::Text,
-            // Module-backed formats (alphabetical order)
             "cbor" => Self::Cbor,
             "csv" => Self::Csv,
             "hcl" => Self::Hcl,
@@ -131,7 +129,10 @@ impl InputFormat {
         }
     }
 
-    /// Returns the auto-import query prefix for module-backed formats, or `None` for native formats.
+    fn needs_binary_read(&self) -> bool {
+        matches!(self, Self::Bytes | Self::Cbor)
+    }
+
     fn module_query_prefix(&self) -> Option<&'static str> {
         match self {
             // Module-backed formats (alphabetical order)
@@ -823,12 +824,21 @@ impl Cli {
         )
     }
 
+    fn needs_binary_read_for_file(&self, file: &Path) -> bool {
+        self.input
+            .input_format
+            .as_ref()
+            .map(|fmt| fmt.needs_binary_read())
+            .unwrap_or_else(|| {
+                let ext = file.extension().unwrap_or_default().to_string_lossy().to_lowercase();
+                InputFormat::from_extension(&ext).needs_binary_read()
+            })
+    }
+
     fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, ContentData)>> {
         if matches!(self.input.input_format, Some(InputFormat::Null)) {
             return Ok(vec![(None, ContentData::empty())]);
         }
-
-        let binary = self.is_binary_format();
 
         self.files
             .clone()
@@ -836,7 +846,7 @@ impl Cli {
                 let load_contents: miette::Result<Vec<ContentData>> = files
                     .iter()
                     .map(|file| {
-                        if binary {
+                        if self.needs_binary_read_for_file(file) {
                             fs::read(file).map(Into::into).into_diagnostic()
                         } else {
                             fs::read_to_string(file).map(Into::into).into_diagnostic()
@@ -856,7 +866,7 @@ impl Cli {
                     return Ok(vec![(None, ContentData::empty())]);
                 }
 
-                if binary {
+                if self.is_binary_format() {
                     let mut buf = Vec::new();
                     io::stdin().read_to_end(&mut buf).into_diagnostic()?;
                     Ok(vec![(None, buf.into())])
