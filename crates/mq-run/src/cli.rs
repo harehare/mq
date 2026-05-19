@@ -26,17 +26,21 @@ use crate::grep;
     mq -f 'file' file.md\n\n\
     ## To start a REPL session:\n\
     mq repl\n\n\
-    # Auto-parsing by file extension:\n\n\
-    When no -I flag is given, mq automatically imports the matching module based on the file extension:\n\n\
-    .json              import \"json\" | json::json_parse()\n\
-    .yaml / .yml       import \"yaml\" | yaml::yaml_parse()\n\
-    .toml              import \"toml\" | toml::toml_parse()\n\
-    .xml               import \"xml\"  | xml::xml_parse()\n\
-    .toon              import \"toon\" | toon::toon_parse()\n\
-    .csv               import \"csv\"  | csv::csv_parse(true)\n\
-    .tsv               import \"csv\"  | csv::tsv_parse(true)\n\
-    .psv               import \"csv\"  | csv::psv_parse(true)\n\n\
-    Use -I raw to disable auto-parsing and receive the raw string.\n")]
+    # Auto-parsing by file extension or -I flag:\n\n\
+    mq automatically imports the matching module based on the file extension.\n\
+    You can also force a format explicitly with -I <format>:\n\n\
+    .cbor / -I cbor  import \"cbor\" | cbor::cbor_parse()  (reads as bytes)\n\
+    .csv  / -I csv   import \"csv\"  | csv::csv_parse(true)\n\
+    .hcl  / -I hcl   import \"hcl\"  | hcl::hcl_parse()\n\
+    .json / -I json  import \"json\" | json::json_parse()\n\
+    .psv  / -I psv   import \"csv\"  | csv::psv_parse(true)\n\
+    .toml / -I toml  import \"toml\" | toml::toml_parse()\n\
+    .toon / -I toon  import \"toon\" | toon::toon_parse()\n\
+    .tsv  / -I tsv   import \"csv\"  | csv::tsv_parse(true)\n\
+    .xml  / -I xml   import \"xml\"  | xml::xml_parse()\n\
+    .yaml / -I yaml  import \"yaml\" | yaml::yaml_parse()\n\n\
+    Use -I raw   to disable auto-parsing and receive the raw string.\n\
+    Use -I bytes to read input as raw bytes without parsing.\n")]
 #[command(
     about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
     long_about = None
@@ -68,12 +72,19 @@ pub struct Cli {
 const UNIX_EXECUTABLE_BITS: u32 = 0o111;
 
 /// Represents the input format for processing.
+///
+/// Native formats (no module import):
 /// - Markdown: Standard Markdown parsing.
 /// - Mdx: MDX parsing.
 /// - Html: HTML parsing.
 /// - Text: Treats input as plain text.
 /// - Null: No input.
 /// - Raw: Treats all input as a single string, without parsing.
+/// - Bytes: Reads input as raw bytes (`RuntimeValue::Bytes`), without any parsing.
+///
+/// Module-backed formats (auto-import and parse, sorted alphabetically):
+/// - Cbor: Reads input as raw bytes and parses via the `cbor` module.
+/// - Csv/Hcl/Json/Psv/Toml/Toon/Tsv/Xml/Yaml: Auto-import the matching module and parse.
 #[derive(Clone, Debug, Default, clap::ValueEnum, PartialEq)]
 enum InputFormat {
     #[default]
@@ -83,6 +94,17 @@ enum InputFormat {
     Text,
     Null,
     Raw,
+    Bytes,
+    Cbor,
+    Csv,
+    Hcl,
+    Json,
+    Psv,
+    Toml,
+    Toon,
+    Tsv,
+    Xml,
+    Yaml,
 }
 
 impl InputFormat {
@@ -91,10 +113,79 @@ impl InputFormat {
             "md" | "markdown" => Self::Markdown,
             "mdx" => Self::Mdx,
             "html" | "htm" => Self::Html,
-            "txt" | "log" | "csv" | "psv" | "tsv" | "toon" | "json" | "toml" | "yaml" | "yml" | "xml" => Self::Raw,
+            "txt" | "log" => Self::Raw,
             "jsonl" | "ndjson" => Self::Text,
+            "cbor" => Self::Cbor,
+            "csv" => Self::Csv,
+            "hcl" => Self::Hcl,
+            "json" => Self::Json,
+            "psv" => Self::Psv,
+            "toml" => Self::Toml,
+            "toon" => Self::Toon,
+            "tsv" => Self::Tsv,
+            "xml" => Self::Xml,
+            "yaml" | "yml" => Self::Yaml,
             _ => Self::Markdown,
         }
+    }
+
+    fn needs_binary_read(&self) -> bool {
+        matches!(self, Self::Bytes | Self::Cbor)
+    }
+
+    fn module_query_prefix(&self) -> Option<&'static str> {
+        match self {
+            // Module-backed formats (alphabetical order)
+            Self::Cbor => Some(r#"import "cbor" | cbor::cbor_parse()"#),
+            Self::Csv => Some(r#"import "csv" | csv::csv_parse(true)"#),
+            Self::Hcl => Some(r#"import "hcl" | hcl::hcl_parse()"#),
+            Self::Json => Some(r#"import "json" | json::json_parse()"#),
+            Self::Psv => Some(r#"import "csv" | csv::psv_parse(true)"#),
+            Self::Toml => Some(r#"import "toml" | toml::toml_parse()"#),
+            Self::Toon => Some(r#"import "toon" | toon::toon_parse()"#),
+            Self::Tsv => Some(r#"import "csv" | csv::tsv_parse(true)"#),
+            Self::Xml => Some(r#"import "xml" | xml::xml_parse()"#),
+            Self::Yaml => Some(r#"import "yaml" | yaml::yaml_parse()"#),
+            _ => None,
+        }
+    }
+}
+
+/// Holds file/stdin content as either UTF-8 text or raw bytes.
+enum ContentData {
+    Text(String),
+    Bytes(Vec<u8>),
+}
+
+impl ContentData {
+    fn empty() -> Self {
+        ContentData::Text(String::new())
+    }
+
+    fn as_str(&self) -> Option<&str> {
+        match self {
+            ContentData::Text(s) => Some(s),
+            ContentData::Bytes(_) => None,
+        }
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        match self {
+            ContentData::Text(s) => s.as_bytes(),
+            ContentData::Bytes(b) => b,
+        }
+    }
+}
+
+impl From<String> for ContentData {
+    fn from(s: String) -> Self {
+        ContentData::Text(s)
+    }
+}
+
+impl From<Vec<u8>> for ContentData {
+    fn from(b: Vec<u8>) -> Self {
+        ContentData::Bytes(b)
     }
 }
 
@@ -552,24 +643,18 @@ impl Cli {
         Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
     }
 
-    /// Returns a query prefix that auto-imports and parses a module-backed format when
-    /// no explicit `--input-format` is given and the file extension has a matching module.
+    /// Returns a query prefix that auto-imports and parses a module-backed format.
+    ///
+    /// If an explicit `-I <format>` is given and it is a module-backed format, the prefix
+    /// for that format is returned. Otherwise the file extension is used for detection.
     fn auto_query_prefix(&self, file: &Option<PathBuf>) -> Option<String> {
-        if self.input.input_format.is_some() {
-            return None;
+        if let Some(fmt) = &self.input.input_format {
+            return fmt.module_query_prefix().map(str::to_string);
         }
         let ext = file.as_ref()?.extension()?.to_string_lossy().to_lowercase();
-        match ext.as_str() {
-            "json" => Some(r#"import "json" | json::json_parse()"#.to_string()),
-            "yaml" | "yml" => Some(r#"import "yaml" | yaml::yaml_parse()"#.to_string()),
-            "toml" => Some(r#"import "toml" | toml::toml_parse()"#.to_string()),
-            "xml" => Some(r#"import "xml" | xml::xml_parse()"#.to_string()),
-            "toon" => Some(r#"import "toon" | toon::toon_parse()"#.to_string()),
-            "csv" => Some(r#"import "csv" | csv::csv_parse(true)"#.to_string()),
-            "tsv" => Some(r#"import "csv" | csv::tsv_parse(true)"#.to_string()),
-            "psv" => Some(r#"import "csv" | csv::psv_parse(true)"#.to_string()),
-            _ => None,
-        }
+        InputFormat::from_extension(&ext)
+            .module_query_prefix()
+            .map(str::to_string)
     }
 
     fn execute(
@@ -577,7 +662,7 @@ impl Cli {
         engine: &mut mq_lang::DefaultEngine,
         query: &str,
         file: &Option<PathBuf>,
-        content: &str,
+        content: &ContentData,
     ) -> miette::Result<()> {
         let effective_query;
         let query = match self.auto_query_prefix(file) {
@@ -600,6 +685,7 @@ impl Cli {
             );
         }
 
+        let text = content.as_str().unwrap_or("");
         let input = match self.input.input_format.as_ref().cloned().unwrap_or_else(|| {
             if let Some(file) = file {
                 InputFormat::from_extension(&file.extension().unwrap_or_default().to_string_lossy())
@@ -609,12 +695,27 @@ impl Cli {
                 InputFormat::Markdown
             }
         }) {
-            InputFormat::Markdown => mq_lang::parse_markdown_input(content)?,
-            InputFormat::Mdx => mq_lang::parse_mdx_input(content)?,
-            InputFormat::Text => mq_lang::parse_text_input(content)?,
-            InputFormat::Html => mq_lang::parse_html_input(content)?,
+            // Native formats
+            InputFormat::Markdown => mq_lang::parse_markdown_input(text)?,
+            InputFormat::Mdx => mq_lang::parse_mdx_input(text)?,
+            InputFormat::Html => mq_lang::parse_html_input(text)?,
+            InputFormat::Text => mq_lang::parse_text_input(text)?,
             InputFormat::Null => mq_lang::null_input(),
-            InputFormat::Raw => mq_lang::raw_input(content),
+            InputFormat::Raw => mq_lang::raw_input(text),
+            // Bytes: pass raw binary content as RuntimeValue::Bytes with no further parsing.
+            InputFormat::Bytes => mq_lang::bytes_input(content.as_bytes()),
+            // Module-backed binary format: pass raw bytes; the cbor module handles parsing.
+            InputFormat::Cbor => mq_lang::bytes_input(content.as_bytes()),
+            // Module-backed text formats (alphabetical): pass raw string; the module handles parsing.
+            InputFormat::Csv
+            | InputFormat::Hcl
+            | InputFormat::Json
+            | InputFormat::Psv
+            | InputFormat::Toml
+            | InputFormat::Toon
+            | InputFormat::Tsv
+            | InputFormat::Xml
+            | InputFormat::Yaml => mq_lang::raw_input(text),
         };
 
         let is_grep = matches!(self.output.output_format, OutputFormat::Grep);
@@ -679,15 +780,20 @@ impl Cli {
     }
 
     fn process_streaming(&self) -> miette::Result<()> {
+        if self.is_binary_format() {
+            return Err(miette!(
+                "Streaming mode is not supported for binary input formats (bytes, cbor)"
+            ));
+        }
         let query = self.get_query()?;
         let mut engine = self.create_engine()?;
 
-        self.process_lines(|file, line| self.execute(&mut engine, &query, &file.cloned(), line))
+        self.process_lines(|file, line| self.execute(&mut engine, &query, &file.cloned(), &line.into()))
     }
 
     fn process_lines<F>(&self, mut process: F) -> miette::Result<()>
     where
-        F: FnMut(Option<&PathBuf>, &str) -> miette::Result<()>,
+        F: FnMut(Option<&PathBuf>, String) -> miette::Result<()>,
     {
         // If files are specified, process each file line by line
         if let Some(files) = &self.files {
@@ -696,7 +802,7 @@ impl Cli {
                 let reader = io::BufReader::new(file_handle);
                 for line_result in reader.lines() {
                     let line = line_result.into_diagnostic()?;
-                    process(Some(file), &line)?;
+                    process(Some(file), line)?;
                 }
             }
         } else {
@@ -705,23 +811,47 @@ impl Cli {
             let reader = io::BufReader::new(stdin.lock());
             for line_result in reader.lines() {
                 let line = line_result.into_diagnostic()?;
-                process(None, &line)?;
+                process(None, line)?;
             }
         }
         Ok(())
     }
 
-    fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, String)>> {
+    fn is_binary_format(&self) -> bool {
+        matches!(
+            self.input.input_format,
+            Some(InputFormat::Bytes) | Some(InputFormat::Cbor)
+        )
+    }
+
+    fn needs_binary_read_for_file(&self, file: &Path) -> bool {
+        self.input
+            .input_format
+            .as_ref()
+            .map(|fmt| fmt.needs_binary_read())
+            .unwrap_or_else(|| {
+                let ext = file.extension().unwrap_or_default().to_string_lossy().to_lowercase();
+                InputFormat::from_extension(&ext).needs_binary_read()
+            })
+    }
+
+    fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, ContentData)>> {
         if matches!(self.input.input_format, Some(InputFormat::Null)) {
-            return Ok(vec![(None, "".to_string())]);
+            return Ok(vec![(None, ContentData::empty())]);
         }
 
         self.files
             .clone()
             .map(|files| {
-                let load_contents: miette::Result<Vec<String>> = files
+                let load_contents: miette::Result<Vec<ContentData>> = files
                     .iter()
-                    .map(|file| fs::read_to_string(file).into_diagnostic())
+                    .map(|file| {
+                        if self.needs_binary_read_for_file(file) {
+                            fs::read(file).map(Into::into).into_diagnostic()
+                        } else {
+                            fs::read_to_string(file).map(Into::into).into_diagnostic()
+                        }
+                    })
                     .collect();
                 load_contents.map(move |contents| {
                     files
@@ -733,12 +863,18 @@ impl Cli {
             })
             .unwrap_or_else(|| {
                 if io::stdin().is_terminal() {
-                    return Ok(vec![(None, "".to_string())]);
+                    return Ok(vec![(None, ContentData::empty())]);
                 }
 
-                let mut input = String::new();
-                io::stdin().read_to_string(&mut input).into_diagnostic()?;
-                Ok(vec![(None, input)])
+                if self.is_binary_format() {
+                    let mut buf = Vec::new();
+                    io::stdin().read_to_end(&mut buf).into_diagnostic()?;
+                    Ok(vec![(None, buf.into())])
+                } else {
+                    let mut input = String::new();
+                    io::stdin().read_to_string(&mut input).into_diagnostic()?;
+                    Ok(vec![(None, input.into())])
+                }
             })
     }
 
@@ -2423,16 +2559,18 @@ mod tests {
     #[case("htm", InputFormat::Html)]
     #[case("txt", InputFormat::Raw)]
     #[case("log", InputFormat::Raw)]
-    #[case("csv", InputFormat::Raw)]
-    #[case("psv", InputFormat::Raw)]
-    #[case("tsv", InputFormat::Raw)]
-    #[case("json", InputFormat::Raw)]
-    #[case("toml", InputFormat::Raw)]
-    #[case("yaml", InputFormat::Raw)]
-    #[case("yml", InputFormat::Raw)]
-    #[case("xml", InputFormat::Raw)]
+    #[case("csv", InputFormat::Csv)]
+    #[case("psv", InputFormat::Psv)]
+    #[case("tsv", InputFormat::Tsv)]
+    #[case("json", InputFormat::Json)]
+    #[case("toml", InputFormat::Toml)]
+    #[case("yaml", InputFormat::Yaml)]
+    #[case("yml", InputFormat::Yaml)]
+    #[case("xml", InputFormat::Xml)]
     #[case("jsonl", InputFormat::Text)]
     #[case("ndjson", InputFormat::Text)]
+    #[case("cbor", InputFormat::Cbor)]
+    #[case("hcl", InputFormat::Hcl)]
     #[case("unknown", InputFormat::Markdown)] // default fallback
     fn test_from_extension(#[case] ext: &str, #[case] expected: InputFormat) {
         assert_eq!(InputFormat::from_extension(ext), expected);
@@ -2448,6 +2586,7 @@ mod tests {
     #[case("file.csv", Some(r#"import "csv" | csv::csv_parse(true)"#))]
     #[case("file.tsv", Some(r#"import "csv" | csv::tsv_parse(true)"#))]
     #[case("file.psv", Some(r#"import "csv" | csv::psv_parse(true)"#))]
+    #[case("file.cbor", Some(r#"import "cbor" | cbor::cbor_parse()"#))]
     #[case("file.md", None)]
     #[case("file.txt", None)]
     fn test_auto_query_prefix(#[case] filename: &str, #[case] expected: Option<&str>) {
@@ -2548,5 +2687,226 @@ mod tests {
         let content = fs::read_to_string(&output_file).expect("Failed to read output");
         assert!(content.contains("Alice"), "CSV should be parsed automatically");
         assert!(content.contains("name"), "CSV header should be parsed");
+    }
+
+    fn create_binary_file(name: &str, content: &[u8]) -> (PathBuf, PathBuf) {
+        let temp_dir = std::env::temp_dir();
+        let temp_file_path = temp_dir.join(name);
+        let mut file = File::create(&temp_file_path).expect("Failed to create temp file");
+        file.write_all(content).expect("Failed to write to temp file");
+        (temp_dir, temp_file_path)
+    }
+
+    #[test]
+    fn test_content_data_empty() {
+        let c = ContentData::empty();
+        assert_eq!(c.as_str(), Some(""));
+        assert_eq!(c.as_bytes(), b"");
+    }
+
+    #[rstest]
+    #[case(ContentData::Text("hello".to_string()), Some("hello"))]
+    #[case(ContentData::Text("".to_string()), Some(""))]
+    #[case(ContentData::Bytes(vec![0xde, 0xad]), None)]
+    #[case(ContentData::Bytes(vec![]), None)]
+    fn test_content_data_as_str(#[case] input: ContentData, #[case] expected: Option<&str>) {
+        assert_eq!(input.as_str(), expected);
+    }
+
+    #[rstest]
+    #[case(ContentData::Text("abc".to_string()), b"abc".as_ref())]
+    #[case(ContentData::Text("".to_string()), b"".as_ref())]
+    #[case(ContentData::Bytes(vec![0xde, 0xad, 0xbe, 0xef]), &[0xde, 0xad, 0xbe, 0xef])]
+    #[case(ContentData::Bytes(vec![]), b"".as_ref())]
+    fn test_content_data_as_bytes(#[case] input: ContentData, #[case] expected: &[u8]) {
+        assert_eq!(input.as_bytes(), expected);
+    }
+
+    // --- ContentData::from (Into conversions) ---
+
+    #[rstest]
+    #[case("hello".to_string(), Some("hello"))]
+    #[case("".to_string(), Some(""))]
+    fn test_content_data_from_string(#[case] s: String, #[case] expected_str: Option<&str>) {
+        let c: ContentData = s.into();
+        assert_eq!(c.as_str(), expected_str);
+    }
+
+    #[rstest]
+    #[case(vec![0x01, 0x02, 0x03])]
+    #[case(vec![])]
+    fn test_content_data_from_vec_u8(#[case] bytes: Vec<u8>) {
+        let expected = bytes.clone();
+        let c: ContentData = bytes.into();
+        assert_eq!(c.as_str(), None);
+        assert_eq!(c.as_bytes(), expected.as_slice());
+    }
+
+    #[rstest]
+    #[case(Some(InputFormat::Bytes), true)]
+    #[case(Some(InputFormat::Cbor), true)]
+    #[case(Some(InputFormat::Json), false)]
+    #[case(Some(InputFormat::Yaml), false)]
+    #[case(Some(InputFormat::Toml), false)]
+    #[case(Some(InputFormat::Markdown), false)]
+    #[case(Some(InputFormat::Raw), false)]
+    #[case(Some(InputFormat::Text), false)]
+    #[case(Some(InputFormat::Null), false)]
+    #[case(None, false)]
+    fn test_is_binary_format(#[case] fmt: Option<InputFormat>, #[case] expected: bool) {
+        let cli = Cli {
+            input: InputArgs {
+                input_format: fmt,
+                ..Default::default()
+            },
+            ..Cli::default()
+        };
+        assert_eq!(cli.is_binary_format(), expected);
+    }
+
+    #[rstest]
+    #[case(InputFormat::Bytes, None)]
+    #[case(InputFormat::Cbor, Some(r#"import "cbor" | cbor::cbor_parse()"#))]
+    #[case(InputFormat::Json, Some(r#"import "json" | json::json_parse()"#))]
+    #[case(InputFormat::Hcl, Some(r#"import "hcl" | hcl::hcl_parse()"#))]
+    #[case(InputFormat::Markdown, None)]
+    #[case(InputFormat::Raw, None)]
+    fn test_module_query_prefix(#[case] fmt: InputFormat, #[case] expected: Option<&str>) {
+        assert_eq!(fmt.module_query_prefix(), expected);
+    }
+
+    #[rstest]
+    #[case(InputFormat::Bytes)]
+    #[case(InputFormat::Cbor)]
+    fn test_binary_format_streaming_returns_error(#[case] fmt: InputFormat) {
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(fmt),
+                stream: true,
+                ..Default::default()
+            },
+            query: Some("self".to_string()),
+            ..Cli::default()
+        };
+        assert!(cli.run().is_err());
+    }
+
+    #[rstest]
+    #[case(&[0x01, 0x02, 0x03, 0xff], "self", "bytes_self")]
+    #[case(&[0xca, 0xfe, 0xba, 0xbe], "self", "bytes_self2")]
+    fn test_bytes_input_self_roundtrip(#[case] data: &[u8], #[case] query: &str, #[case] suffix: &str) {
+        let (_, temp_file_path) = create_binary_file(&format!("test_{suffix}.bin"), data);
+        let temp_file_path_clone = temp_file_path.clone();
+        let (_, output_file) = create_file(&format!("test_{suffix}_out.md"), "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() { std::fs::remove_file(&temp_file_path_clone).ok(); }
+            if output_file_clone.exists() { std::fs::remove_file(&output_file_clone).ok(); }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Bytes),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some(query.to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let result = fs::read(&output_file).expect("Failed to read output");
+        assert_eq!(result, data);
+    }
+
+    #[rstest]
+    #[case(&[0xca, 0xfe, 0xba, 0xbe], "4")]
+    #[case(&[0x01], "1")]
+    #[case(&[], "0")]
+    fn test_bytes_input_len(#[case] data: &[u8], #[case] expected_len: &str) {
+        let suffix = format!("bytes_len_{}", data.len());
+        let (_, temp_file_path) = create_binary_file(&format!("test_{suffix}.bin"), data);
+        let temp_file_path_clone = temp_file_path.clone();
+        let (_, output_file) = create_file(&format!("test_{suffix}_out.md"), "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() { std::fs::remove_file(&temp_file_path_clone).ok(); }
+            if output_file_clone.exists() { std::fs::remove_file(&output_file_clone).ok(); }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Bytes),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some("len()".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let result = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert_eq!(result.trim(), expected_len);
+    }
+
+    #[rstest]
+    // CBOR text string "hello": major 3 (text), len 5
+    #[case(&[0x65, 0x68, 0x65, 0x6c, 0x6c, 0x6f], None, "hello", "cbor_auto_hello")]
+    // CBOR integer 42: 0x18 0x2a
+    #[case(&[0x18, 0x2a], Some(InputFormat::Cbor), "42", "cbor_explicit_42")]
+    // CBOR integer 0: 0x00
+    #[case(&[0x00], Some(InputFormat::Cbor), "0", "cbor_explicit_0")]
+    fn test_cbor_parse(
+        #[case] cbor_bytes: &[u8],
+        #[case] fmt: Option<InputFormat>,
+        #[case] expected: &str,
+        #[case] suffix: &str,
+    ) {
+        let ext = if fmt.is_none() { "cbor" } else { "bin" };
+        let (_, temp_file_path) = create_binary_file(&format!("test_{suffix}.{ext}"), cbor_bytes);
+        let temp_file_path_clone = temp_file_path.clone();
+        let (_, output_file) = create_file(&format!("test_{suffix}_out.md"), "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() { std::fs::remove_file(&temp_file_path_clone).ok(); }
+            if output_file_clone.exists() { std::fs::remove_file(&output_file_clone).ok(); }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: fmt,
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let result = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(
+            result.trim().contains(expected),
+            "expected '{}' in output, got '{}'",
+            expected,
+            result.trim()
+        );
     }
 }

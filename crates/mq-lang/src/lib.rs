@@ -213,6 +213,11 @@ pub fn raw_input(input: &str) -> Vec<RuntimeValue> {
     vec![input.to_string().into()]
 }
 
+/// Returns a vector containing a single `RuntimeValue::Bytes` for raw binary input.
+pub fn bytes_input(bytes: &[u8]) -> Vec<RuntimeValue> {
+    vec![RuntimeValue::Bytes(bytes.to_vec())]
+}
+
 #[inline(always)]
 pub(crate) fn token_alloc(arena: &TokenArena, token: &Shared<Token>) -> TokenId {
     #[cfg(not(feature = "sync"))]
