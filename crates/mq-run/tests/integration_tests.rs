@@ -246,6 +246,11 @@ In {year}, the snowfall was above average.
     "name|age\nAlice|30\nBob|25\n",
     Some("[{\"name\": \"Alice\", \"age\": \"30\"}, {\"name\": \"Bob\", \"age\": \"25\"}]\n")
 )]
+#[case::input_format_xml(
+    vec!["--unbuffered", "-I", "xml", "self"],
+    "<root>text</root>",
+    Some("{\"text\": \"text\", \"attributes\": {}, \"tag\": \"root\", \"children\": []}\n")
+)]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,
