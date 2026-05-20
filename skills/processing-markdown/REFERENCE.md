@@ -39,6 +39,7 @@ Commands:
 | `--csv`, `--yaml`, `--toml`, `--xml` | Load built-in modules                                                        |
 | `--list`                          | List all available subcommands (built-in and external)                          |
 
+
 ## Auto-Parsing by File Extension
 
 When no `-I` flag is given, mq automatically imports based on file extension:
@@ -59,6 +60,7 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 
 ### Heading (`.h`)
 
+
 | Attribute        | Type    | Description                |
 | ---------------- | ------- | -------------------------- |
 | `level`, `depth` | Integer | Heading level (1–6)        |
@@ -66,6 +68,7 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 
 
 ### Code Block (`.code`)
+
 
 | Attribute          | Type    | Description                 |
 | ------------------ | ------- | --------------------------- |
@@ -77,6 +80,7 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 
 ### Link (`.link`) / Image (`.image`)
 
+
 | Attribute | Type   | `.link`      | `.image`      |
 | --------- | ------ | ------------ | ------------- |
 | `url`     | String | Link URL     | Image URL     |
@@ -86,6 +90,7 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 
 
 ### List (`.list`)
+
 
 | Attribute | Type    | Description            |
 | --------- | ------- | ---------------------- |
@@ -98,6 +103,7 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 
 ### Table Cell (`.[row][col]`)
 
+
 | Attribute               | Type    | Description                  |
 | ----------------------- | ------- | ---------------------------- |
 | `row`                   | Integer | Row number                   |
@@ -108,6 +114,7 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 
 
 ### Reference Nodes
+
 
 | Node            | Attributes                       |
 | --------------- | -------------------------------- |
@@ -120,6 +127,7 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 
 ### MDX Nodes
 
+
 | Node                      | Attribute | Description      |
 | ------------------------- | --------- | ---------------- |
 | `.mdx_jsx_flow_element`   | `name`    | Element name     |
@@ -129,27 +137,35 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 ## Function Reference
 
 ### String
+
 `upcase()`, `downcase()`, `split(s, sep)`, `join(arr, sep)`, `trim()`, `ltrimstr(s, prefix)`, `rtrimstr(s, suffix)`, `starts_with(s, prefix)`, `ends_with(s, suffix)`, `contains(haystack, needle)`, `index(s, sub)`, `rindex(s, sub)`, `slice(s, start, end)`, `replace(s, old, new)`, `gsub(s, pattern, rep)`, `regex_match(s, pat)`, `capture(s, pat)`, `repeat(s, n)`, `explode(s)`, `implode(arr)`, `url_encode(s)`, `base64(s)`, `base64d(s)`
 
 ### Array & Collection
+
 `len`, `reverse`, `sort`, `sort_by(arr, fn)`, `uniq`, `unique_by(arr, fn)`, `compact`, `flatten`, `first`, `last`, `min`, `max`, `group_by(arr, fn)`, `pluck(arr, key)`, `any(arr, fn)`, `all(arr, fn)`, `map(arr, fn)`, `filter(arr, fn)`, `fold(arr, init, fn)`, `select(condition)`, `range(start, end, step)`
 
 ### Numeric
+
 `add`, `sub`, `mul`, `div`, `mod`, `pow`, `abs`, `round`, `ceil`, `floor`, `trunc`, `negate`, `to_number`
 
 ### Bytes
+
 `len`, `type`, `is_empty`, `==`, `base64(b)`, `base64d(s)` — byte sequences created with `b"..."` literals
 
 ### Dictionary
+
 `dict()`, `get(d, key)`, `set(d, key, val)`, `keys`, `values`, `entries`, `update(d1, d2)`
 
 ### Markdown Creation
+
 `to_h(text, depth)`, `to_code(text, lang)`, `to_code_inline(text)`, `to_link(url, text, title)`, `to_image(url, alt, title)`, `to_strong(text)`, `to_em(text)`, `to_hr()`, `to_math(text)`, `to_math_inline(text)`, `to_md_text(text)`, `to_md_list(val, level)`, `to_md_table_row(cells...)`, `to_md_table_cell(val, row, col)`
 
 ### Markdown Manipulation
+
 `set_attr(node, attr, val)`, `attr(node, attr)`, `set_check(list, checked)`, `set_ref(node, ref_id)`, `set_code_block_lang(code, lang)`, `set_list_ordered(list, ordered)`, `increase_header_level(h)`, `decrease_header_level(h)`, `to_text(node)`, `to_markdown_string(node)`, `to_html(node)`, `to_md_name(node)`
 
 ### Type, I/O & Utility
+
 **Type**: `type`, `to_string()`, `to_number()`, `to_array()`, `is_none()`, `is_empty()`, `coalesce(a, b)`
 
 **I/O**: `print`, `stderr`, `input`, `read_file(path)`
