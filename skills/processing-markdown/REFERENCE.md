@@ -58,12 +58,15 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 ## Full Attribute Reference
 
 ### Heading (`.h`)
+
 | Attribute        | Type    | Description                |
 | ---------------- | ------- | -------------------------- |
 | `level`, `depth` | Integer | Heading level (1–6)        |
 | `value`          | String  | Text content               |
 
+
 ### Code Block (`.code`)
+
 | Attribute          | Type    | Description                 |
 | ------------------ | ------- | --------------------------- |
 | `lang`, `language` | String  | Language identifier         |
@@ -71,7 +74,9 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 | `meta`             | String  | Metadata string             |
 | `fence`            | Boolean | Whether fenced              |
 
+
 ### Link (`.link`) / Image (`.image`)
+
 | Attribute | Type   | `.link`      | `.image`      |
 | --------- | ------ | ------------ | ------------- |
 | `url`     | String | Link URL     | Image URL     |
@@ -79,7 +84,9 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 | `value`   | String | Link text    | —             |
 | `alt`     | String | —            | Alt text      |
 
+
 ### List (`.list`)
+
 | Attribute | Type    | Description            |
 | --------- | ------- | ---------------------- |
 | `index`   | Integer | Item index             |
@@ -88,7 +95,9 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 | `checked` | Boolean | Checkbox state         |
 | `value`   | String  | Text content           |
 
+
 ### Table Cell (`.[row][col]`)
+
 | Attribute               | Type    | Description                  |
 | ----------------------- | ------- | ---------------------------- |
 | `row`                   | Integer | Row number                   |
@@ -97,7 +106,9 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 | `last_cell_of_in_table` | Boolean | Last cell in table           |
 | `value`                 | String  | Text content                 |
 
+
 ### Reference Nodes
+
 | Node            | Attributes                       |
 | --------------- | -------------------------------- |
 | `.link_ref`     | `ident`, `label`                 |
@@ -106,11 +117,14 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 | `.footnote`     | `ident`, `text`                  |
 | `.definition`   | `ident`, `url`, `title`, `label` |
 
+
 ### MDX Nodes
+
 | Node                      | Attribute | Description      |
 | ------------------------- | --------- | ---------------- |
 | `.mdx_jsx_flow_element`   | `name`    | Element name     |
 | `.mdx_flow_expression`    | `value`   | Expression value |
+
 
 ## Function Reference
 
@@ -151,3 +165,4 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 - `__FILE__` — full path to the file being processed
 - `__FILE_NAME__` — filename without path
 - `__FILE_STEM__` — filename without extension
+

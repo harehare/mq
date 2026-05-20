@@ -7,6 +7,7 @@ description: Processes Markdown files using mq, a jq-like query language for Mar
 
 ## Core Selectors
 
+
 | Selector         | Description            |
 | ---------------- | ---------------------- |
 | `.h`             | All headings           |
@@ -113,6 +114,7 @@ curl -s https://example.com | mq -I html '.h | to_text()'
 ```
 
 ## Essential CLI Flags
+
 
 | Flag                  | Purpose                                               |
 | --------------------- | ----------------------------------------------------- |
