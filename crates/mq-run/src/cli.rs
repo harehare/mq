@@ -267,11 +267,11 @@ struct InputArgs {
 
     /// Sets a named string argument. NAME is accessible directly in queries, and also
     /// via ARGS."named" when --args or --argv is given.
-    #[arg(long, value_names = ["NAME", "VALUE"], aliases = ["arg", "define"])]
+    #[arg(long, num_args = 2, value_names = ["NAME", "VALUE"], aliases = ["arg", "define"])]
     args: Option<Vec<String>>,
 
     /// Sets file contents that can be referenced at runtime
-    #[arg(long="rawfile", value_names = ["NAME", "FILE"])]
+    #[arg(long="rawfile", num_args = 2, value_names = ["NAME", "FILE"])]
     raw_file: Option<Vec<String>>,
 
     /// Enable streaming mode for processing large files line by line
@@ -617,10 +617,10 @@ impl Cli {
         if self.input.args.is_some() || self.argv.is_some() {
             let mut named: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = BTreeMap::new();
             if let Some(args) = &self.input.args {
-                args.chunks(2).for_each(|v| {
+                for v in args.chunks(2) {
                     engine.define_string_value(&v[0], &v[1]);
                     named.insert(mq_lang::Ident::new(&v[0]), mq_lang::RuntimeValue::String(v[1].clone()));
-                });
+                }
             }
             let positional: Vec<mq_lang::RuntimeValue> = self
                 .argv
@@ -3195,5 +3195,19 @@ mod tests {
             result.contains("heading"),
             "file content should still be processed when --argv is given"
         );
+    }
+
+    #[test]
+    fn test_args_pair_works() {
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                args: Some(vec!["name".to_string(), "Alice".to_string()]),
+                ..Default::default()
+            },
+            query: Some("name".to_string()),
+            ..Cli::default()
+        };
+        assert!(cli.run().is_ok(), "--args with a valid NAME VALUE pair should succeed");
     }
 }
