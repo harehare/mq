@@ -75,9 +75,6 @@ pub struct Cli {
     files: Option<Vec<PathBuf>>,
 
     /// Positional string arguments, available as ARGS."positional" in queries.
-    /// Behaves like jq's --args: place it after the query and any file arguments.
-    /// To pass values that start with `-`, insert `--` before those values.
-    /// When given, ARGS is defined as {\"positional\": [...], \"named\": {...}}.
     #[arg(long = "argv", num_args = 0..)]
     argv: Option<Vec<String>>,
 }
