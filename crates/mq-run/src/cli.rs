@@ -4,6 +4,7 @@ use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::DefaultEngine;
 use rayon::prelude::*;
+use std::collections::BTreeMap;
 use std::io::BufRead;
 use std::io::IsTerminal;
 use std::io::{self, BufWriter, Read, Write};
@@ -19,16 +20,13 @@ use crate::grep;
 #[command(name = "mq")]
 #[command(author = env!("CARGO_PKG_AUTHORS"))]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(after_help = "# Examples:\n\n\
-    ## To filter markdown nodes:\n\
-    mq 'query' file.md\n\n\
-    ## To read query from file:\n\
-    mq -f 'file' file.md\n\n\
-    ## To start a REPL session:\n\
-    mq repl\n\n\
-    # Auto-parsing by file extension or -I flag:\n\n\
+#[command(after_help = "# Examples\n\n\
+    mq 'query' file.md\n\
+    mq -f 'file' file.md        # read query from file\n\
+    mq repl                     # start a REPL session\n\n\
+    # Auto-parsing by file extension or -I flag\n\n\
     mq automatically imports the matching module based on the file extension.\n\
-    You can also force a format explicitly with -I <format>:\n\n\
+    Use -I <format> to force a specific format:\n\n\
     .cbor / -I cbor  import \"cbor\" | cbor::cbor_parse()  (reads as bytes)\n\
     .csv  / -I csv   import \"csv\"  | csv::csv_parse(true)\n\
     .hcl  / -I hcl   import \"hcl\"  | hcl::hcl_parse()\n\
@@ -40,7 +38,16 @@ use crate::grep;
     .xml  / -I xml   import \"xml\"  | xml::xml_parse()\n\
     .yaml / -I yaml  import \"yaml\" | yaml::yaml_parse()\n\n\
     Use -I raw   to disable auto-parsing and receive the raw string.\n\
-    Use -I bytes to read input as raw bytes without parsing.\n")]
+    Use -I bytes to read input as raw bytes without parsing.\n\n\
+    # Passing arguments to queries (ARGS)\n\n\
+    When --args or --data is given, ARGS = {\"positional\": [...], \"named\": {...}}\n\n\
+    mq -I null 'name' --args name Alice\n\
+    mq -I null 'ARGS | .\"named\"' --args name Alice\n\
+    # => {\"name\": \"Alice\"}\n\n\
+    mq -I null 'ARGS | .\"positional\"' --data x y z  # must come after query and files\n\
+    # => [\"x\", \"y\", \"z\"]\n\n\
+    mq -I null 'ARGS' file.md --args name Alice --data x y z\n\
+    # => {\"positional\": [\"x\",\"y\",\"z\"], \"named\": {\"name\": \"Alice\"}}\n")]
 #[command(
     about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
     long_about = None
@@ -66,6 +73,12 @@ pub struct Cli {
     #[arg(value_name = "QUERY OR FILE")]
     query: Option<String>,
     files: Option<Vec<PathBuf>>,
+
+    /// Positional string arguments, available as ARGS."positional" in queries.
+    /// Behaves like jq's --args: must be placed after the query and any file arguments.
+    /// When given, ARGS is defined as {\"positional\": [...], \"named\": {...}}.
+    #[arg(long = "data", num_args = 0.., allow_hyphen_values = true)]
+    data: Option<Vec<String>>,
 }
 
 #[cfg(unix)]
@@ -251,7 +264,8 @@ struct InputArgs {
     #[arg(short = 'm', long)]
     import_module_names: Option<Vec<String>>,
 
-    /// Sets string that can be referenced at runtime
+    /// Sets a named string argument. NAME is accessible directly in queries, and also
+    /// via ARGS."named" when --args or --data is given.
     #[arg(long, value_names = ["NAME", "VALUE"], aliases = ["arg", "define"])]
     args: Option<Vec<String>>,
 
@@ -599,10 +613,31 @@ impl Cli {
             }
         }
 
-        if let Some(args) = &self.input.args {
-            args.chunks(2).for_each(|v| {
-                engine.define_string_value(&v[0], &v[1]);
-            });
+        if self.input.args.is_some() || self.data.is_some() {
+            let mut named: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = BTreeMap::new();
+            if let Some(args) = &self.input.args {
+                args.chunks(2).for_each(|v| {
+                    engine.define_string_value(&v[0], &v[1]);
+                    named.insert(mq_lang::Ident::new(&v[0]), mq_lang::RuntimeValue::String(v[1].clone()));
+                });
+            }
+            let positional: Vec<mq_lang::RuntimeValue> = self
+                .data
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .map(|s| mq_lang::RuntimeValue::String(s.clone()))
+                .collect();
+            let args_map: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = [
+                (
+                    mq_lang::Ident::new("positional"),
+                    mq_lang::RuntimeValue::Array(positional),
+                ),
+                (mq_lang::Ident::new("named"), mq_lang::RuntimeValue::Dict(named)),
+            ]
+            .into_iter()
+            .collect();
+            engine.define_value("ARGS", mq_lang::RuntimeValue::Dict(args_map));
         }
 
         if let Some(raw_file) = &self.input.raw_file {
@@ -2907,6 +2942,257 @@ mod tests {
             "expected '{}' in output, got '{}'",
             expected,
             result.trim()
+        );
+    }
+
+    #[rstest]
+    #[case::data_only(
+        "data_only",
+        None,
+        Some(vec!["x".to_string(), "y".to_string(), "z".to_string()]),
+        "ARGS",
+        r#"{"positional": ["x", "y", "z"], "named": {}}"#
+    )]
+    #[case::args_only(
+        "args_only",
+        Some(vec!["name".to_string(), "Alice".to_string()]),
+        None,
+        "ARGS",
+        r#"{"positional": [], "named": {"name": "Alice"}}"#
+    )]
+    #[case::args_and_data(
+        "args_and_data",
+        Some(vec!["name".to_string(), "Alice".to_string()]),
+        Some(vec!["x".to_string(), "y".to_string()]),
+        "ARGS",
+        r#"{"positional": ["x", "y"], "named": {"name": "Alice"}}"#
+    )]
+    #[case::positional_access(
+        "positional_access",
+        None,
+        Some(vec!["a".to_string(), "b".to_string()]),
+        r#"ARGS | ."positional""#,
+        r#"["a", "b"]"#
+    )]
+    #[case::named_access(
+        "named_access",
+        Some(vec!["key".to_string(), "val".to_string()]),
+        None,
+        r#"ARGS | ."named""#,
+        r#"{"key": "val"}"#
+    )]
+    #[case::named_individual_var(
+        "named_individual_var",
+        Some(vec!["greeting".to_string(), "hello".to_string()]),
+        None,
+        "greeting",
+        "hello"
+    )]
+    fn test_args_and_data(
+        #[case] suffix: &str,
+        #[case] args: Option<Vec<String>>,
+        #[case] data: Option<Vec<String>>,
+        #[case] query: &str,
+        #[case] expected: &str,
+    ) {
+        let (_, output_file) = create_file(&format!("test_args_data_{suffix}.md"), "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                args,
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some(query.to_string()),
+            data,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let result = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert_eq!(result.trim(), expected, "query: {}", query);
+    }
+
+    #[test]
+    fn test_files_without_data_single_file() {
+        let (_, input_file) = create_file("test_files_no_data_single.md", "# hello");
+        let (_, output_file) = create_file("test_files_no_data_single_out.md", "");
+        let input_file_clone = input_file.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if input_file_clone.exists() { std::fs::remove_file(&input_file_clone).ok(); }
+            if output_file_clone.exists() { std::fs::remove_file(&output_file_clone).ok(); }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Text,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some("self".to_string()),
+            files: Some(vec![input_file]),
+            data: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let result = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(result.contains("hello"), "file content should be processed");
+    }
+
+    #[test]
+    fn test_files_without_data_multiple_files() {
+        // Verify each file is processed independently; output_file is per-run so check each separately.
+        let (_, file1) = create_file("test_files_no_data_multi1.md", "# file1");
+        let (_, file2) = create_file("test_files_no_data_multi2.md", "# file2");
+        let (_, out1) = create_file("test_files_no_data_multi_out1.md", "");
+        let (_, out2) = create_file("test_files_no_data_multi_out2.md", "");
+        let file1_clone = file1.clone();
+        let file2_clone = file2.clone();
+        let out1_clone = out1.clone();
+        let out2_clone = out2.clone();
+
+        defer! {
+            if file1_clone.exists() { std::fs::remove_file(&file1_clone).ok(); }
+            if file2_clone.exists() { std::fs::remove_file(&file2_clone).ok(); }
+            if out1_clone.exists() { std::fs::remove_file(&out1_clone).ok(); }
+            if out2_clone.exists() { std::fs::remove_file(&out2_clone).ok(); }
+        }
+
+        for (input, output, expected) in [(&file1, &out1, "file1"), (&file2, &out2, "file2")] {
+            let cli = Cli {
+                input: InputArgs::default(),
+                output: OutputArgs {
+                    output_format: OutputFormat::Text,
+                    output_file: Some(output.clone()),
+                    ..Default::default()
+                },
+                query: Some("self".to_string()),
+                files: Some(vec![input.clone()]),
+                data: None,
+                ..Cli::default()
+            };
+            assert!(cli.run().is_ok());
+            let result = fs::read_to_string(output).expect("Failed to read output");
+            assert!(result.contains(expected), "file content '{}' should appear", expected);
+        }
+
+        // Also verify multi-file run (no output_file) succeeds without error
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs::default(),
+            query: Some("self".to_string()),
+            files: Some(vec![file1, file2]),
+            data: None,
+            ..Cli::default()
+        };
+        assert!(cli.run().is_ok(), "multi-file run without --data should succeed");
+    }
+
+    #[test]
+    fn test_files_with_data_does_not_mix() {
+        // --data values must not be treated as files, and files must not appear in ARGS
+        let (_, input_file) = create_file("test_files_with_data.md", "# content");
+        let (_, output_file) = create_file("test_files_with_data_out.md", "");
+        let input_file_clone = input_file.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if input_file_clone.exists() { std::fs::remove_file(&input_file_clone).ok(); }
+            if output_file_clone.exists() { std::fs::remove_file(&output_file_clone).ok(); }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some("ARGS".to_string()),
+            files: Some(vec![input_file]),
+            data: Some(vec!["alpha".to_string(), "beta".to_string()]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let result = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(result.contains("alpha"), "ARGS.positional should contain 'alpha'");
+        assert!(result.contains("beta"), "ARGS.positional should contain 'beta'");
+        assert!(!result.contains("content"), "file content must not appear in ARGS");
+    }
+
+    #[test]
+    fn test_files_without_data_args_undefined() {
+        // Without --data or --args, ARGS must be undefined (runtime error expected)
+        let (_, input_file) = create_file("test_files_no_args_undefined.md", "# x");
+        let input_file_clone = input_file.clone();
+
+        defer! {
+            if input_file_clone.exists() { std::fs::remove_file(&input_file_clone).ok(); }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs::default(),
+            query: Some("ARGS".to_string()),
+            files: Some(vec![input_file]),
+            data: None,
+            ..Cli::default()
+        };
+
+        assert!(
+            cli.run().is_err(),
+            "ARGS should be undefined when neither --args nor --data is given"
+        );
+    }
+
+    #[test]
+    fn test_files_with_data_file_content_processed() {
+        // File content is still processed even when --data is given
+        let (_, input_file) = create_file("test_files_data_content.md", "# heading");
+        let (_, output_file) = create_file("test_files_data_content_out.md", "");
+        let input_file_clone = input_file.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if input_file_clone.exists() { std::fs::remove_file(&input_file_clone).ok(); }
+            if output_file_clone.exists() { std::fs::remove_file(&output_file_clone).ok(); }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Text,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some("self".to_string()),
+            files: Some(vec![input_file]),
+            data: Some(vec!["x".to_string()]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let result = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(
+            result.contains("heading"),
+            "file content should still be processed when --data is given"
         );
     }
 }

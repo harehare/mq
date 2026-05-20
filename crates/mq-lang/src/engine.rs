@@ -99,6 +99,11 @@ impl<T: ModuleResolver> Engine<T> {
         self.evaluator.define_string_value(name, value);
     }
 
+    /// Defines an arbitrary runtime value in the current environment.
+    pub fn define_value(&self, name: &str, value: RuntimeValue) {
+        self.evaluator.define_value(name, value);
+    }
+
     /// Load the built-in function modules.
     ///
     /// This must be called to enable access to standard functions

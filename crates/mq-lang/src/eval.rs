@@ -349,8 +349,14 @@ impl<T: ModuleResolver> Evaluator<T> {
         .map(RuntimeValue::new_markdown)
     }
 
+    /// Defines a new string variable in the current environment.
     pub fn define_string_value(&self, name: &str, value: &str) {
         define(&self.env, Ident::new(name), RuntimeValue::String(value.to_string()));
+    }
+
+    /// Defines an arbitrary runtime value in the current environment.
+    pub fn define_value(&self, name: &str, value: RuntimeValue) {
+        define(&self.env, Ident::new(name), value);
     }
 
     pub(crate) fn load_builtin_module(&mut self) -> Result<(), RuntimeError> {
