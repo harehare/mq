@@ -40,13 +40,13 @@ use crate::grep;
     Use -I raw   to disable auto-parsing and receive the raw string.\n\
     Use -I bytes to read input as raw bytes without parsing.\n\n\
     # Passing arguments to queries (ARGS)\n\n\
-    When --args or --data is given, ARGS = {\"positional\": [...], \"named\": {...}}\n\n\
+    When --args or --argv is given, ARGS = {\"positional\": [...], \"named\": {...}}\n\n\
     mq -I null 'name' --args name Alice\n\
     mq -I null 'ARGS | .\"named\"' --args name Alice\n\
     # => {\"name\": \"Alice\"}\n\n\
-    mq -I null 'ARGS | .\"positional\"' --data x y z  # must come after query and files\n\
+    mq -I null 'ARGS | .\"positional\"' --argv x y z  # must come after query and files\n\
     # => [\"x\", \"y\", \"z\"]\n\n\
-    mq -I null 'ARGS' file.md --args name Alice --data x y z\n\
+    mq -I null 'ARGS' file.md --args name Alice --argv x y z\n\
     # => {\"positional\": [\"x\",\"y\",\"z\"], \"named\": {\"name\": \"Alice\"}}\n")]
 #[command(
     about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
@@ -77,8 +77,8 @@ pub struct Cli {
     /// Positional string arguments, available as ARGS."positional" in queries.
     /// Behaves like jq's --args: must be placed after the query and any file arguments.
     /// When given, ARGS is defined as {\"positional\": [...], \"named\": {...}}.
-    #[arg(long = "data", num_args = 0.., allow_hyphen_values = true)]
-    data: Option<Vec<String>>,
+    #[arg(long = "argv", num_args = 0.., allow_hyphen_values = true)]
+    argv: Option<Vec<String>>,
 }
 
 #[cfg(unix)]
@@ -265,7 +265,7 @@ struct InputArgs {
     import_module_names: Option<Vec<String>>,
 
     /// Sets a named string argument. NAME is accessible directly in queries, and also
-    /// via ARGS."named" when --args or --data is given.
+    /// via ARGS."named" when --args or --argv is given.
     #[arg(long, value_names = ["NAME", "VALUE"], aliases = ["arg", "define"])]
     args: Option<Vec<String>>,
 
@@ -613,7 +613,7 @@ impl Cli {
             }
         }
 
-        if self.input.args.is_some() || self.data.is_some() {
+        if self.input.args.is_some() || self.argv.is_some() {
             let mut named: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = BTreeMap::new();
             if let Some(args) = &self.input.args {
                 args.chunks(2).for_each(|v| {
@@ -622,7 +622,7 @@ impl Cli {
                 });
             }
             let positional: Vec<mq_lang::RuntimeValue> = self
-                .data
+                .argv
                 .as_deref()
                 .unwrap_or(&[])
                 .iter()
@@ -2991,7 +2991,7 @@ mod tests {
     fn test_args_and_data(
         #[case] suffix: &str,
         #[case] args: Option<Vec<String>>,
-        #[case] data: Option<Vec<String>>,
+        #[case] argv: Option<Vec<String>>,
         #[case] query: &str,
         #[case] expected: &str,
     ) {
@@ -3016,7 +3016,7 @@ mod tests {
                 ..Default::default()
             },
             query: Some(query.to_string()),
-            data,
+            argv,
             ..Cli::default()
         };
 
@@ -3046,7 +3046,7 @@ mod tests {
             },
             query: Some("self".to_string()),
             files: Some(vec![input_file]),
-            data: None,
+            argv: None,
             ..Cli::default()
         };
 
@@ -3084,7 +3084,7 @@ mod tests {
                 },
                 query: Some("self".to_string()),
                 files: Some(vec![input.clone()]),
-                data: None,
+                argv: None,
                 ..Cli::default()
             };
             assert!(cli.run().is_ok());
@@ -3098,15 +3098,15 @@ mod tests {
             output: OutputArgs::default(),
             query: Some("self".to_string()),
             files: Some(vec![file1, file2]),
-            data: None,
+            argv: None,
             ..Cli::default()
         };
-        assert!(cli.run().is_ok(), "multi-file run without --data should succeed");
+        assert!(cli.run().is_ok(), "multi-file run without --argv should succeed");
     }
 
     #[test]
     fn test_files_with_data_does_not_mix() {
-        // --data values must not be treated as files, and files must not appear in ARGS
+        // --argv values must not be treated as files, and files must not appear in ARGS
         let (_, input_file) = create_file("test_files_with_data.md", "# content");
         let (_, output_file) = create_file("test_files_with_data_out.md", "");
         let input_file_clone = input_file.clone();
@@ -3126,7 +3126,7 @@ mod tests {
             },
             query: Some("ARGS".to_string()),
             files: Some(vec![input_file]),
-            data: Some(vec!["alpha".to_string(), "beta".to_string()]),
+            argv: Some(vec!["alpha".to_string(), "beta".to_string()]),
             ..Cli::default()
         };
 
@@ -3139,7 +3139,7 @@ mod tests {
 
     #[test]
     fn test_files_without_data_args_undefined() {
-        // Without --data or --args, ARGS must be undefined (runtime error expected)
+        // Without --argv or --args, ARGS must be undefined (runtime error expected)
         let (_, input_file) = create_file("test_files_no_args_undefined.md", "# x");
         let input_file_clone = input_file.clone();
 
@@ -3152,19 +3152,19 @@ mod tests {
             output: OutputArgs::default(),
             query: Some("ARGS".to_string()),
             files: Some(vec![input_file]),
-            data: None,
+            argv: None,
             ..Cli::default()
         };
 
         assert!(
             cli.run().is_err(),
-            "ARGS should be undefined when neither --args nor --data is given"
+            "ARGS should be undefined when neither --args nor --argv is given"
         );
     }
 
     #[test]
     fn test_files_with_data_file_content_processed() {
-        // File content is still processed even when --data is given
+        // File content is still processed even when --argv is given
         let (_, input_file) = create_file("test_files_data_content.md", "# heading");
         let (_, output_file) = create_file("test_files_data_content_out.md", "");
         let input_file_clone = input_file.clone();
@@ -3184,7 +3184,7 @@ mod tests {
             },
             query: Some("self".to_string()),
             files: Some(vec![input_file]),
-            data: Some(vec!["x".to_string()]),
+            argv: Some(vec!["x".to_string()]),
             ..Cli::default()
         };
 
@@ -3192,7 +3192,7 @@ mod tests {
         let result = fs::read_to_string(&output_file).expect("Failed to read output");
         assert!(
             result.contains("heading"),
-            "file content should still be processed when --data is given"
+            "file content should still be processed when --argv is given"
         );
     }
 }
