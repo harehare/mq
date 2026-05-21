@@ -6,7 +6,7 @@ updates:
       interval: "daily"
       time: "20:00"
     cooldown:
-      default-days: 5
+      default-days: 7
       semver-major-days: 7
     groups:
       dependencies:
@@ -19,7 +19,7 @@ updates:
       interval: "daily"
       time: "20:00"
     cooldown:
-      default-days: 5
+      default-days: 7
       semver-major-days: 7
     groups:
       dependencies:
@@ -32,7 +32,7 @@ updates:
       interval: "daily"
       time: "20:00"
     cooldown:
-      default-days: 5
+      default-days: 7
       semver-major-days: 7
     groups:
       dependencies:
@@ -45,7 +45,7 @@ updates:
       interval: "daily"
       time: "20:00"
     cooldown:
-      default-days: 5
+      default-days: 7
       semver-major-days: 7
     groups:
       dependencies:
@@ -61,4 +61,3 @@ updates:
       dependencies:
         patterns: ["*"]
     open-pull-requests-limit: 10
-
