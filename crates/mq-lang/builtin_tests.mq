@@ -754,3 +754,13 @@ def test_ngram():
   | assert_eq(result3, [])
 end
 
+def test_zip():
+  let result1 = zip([1, 2, 3], ["a", "b", "c"])
+  | assert_eq(result1, [[1, "a"], [2, "b"], [3, "c"]])
+
+  | let result2 = zip([1, 2], ["x", "y", "z"])
+  | assert_eq(result2, [[1, "x"], [2, "y"]])
+
+  | let result3 = zip([], ["a", "b"])
+  | assert_eq(result3, [])
+end

@@ -772,3 +772,19 @@ def ngram(s, n):
     end
 end
 
+# Combines two arrays into an array of pairs, where each pair contains elements from the same index in both arrays.
+def zip(arr1, arr2):
+  if (not(is_array(arr1)) || not(is_array(arr2))):
+    error("arguments must be arrays")
+  else:
+    do
+      var result = []
+      | var i = 0
+      | while (i < len(arr1) && i < len(arr2)):
+          result += [[arr1[i], arr2[i]]]
+          | i += 1
+        end
+      | result
+    end
+end
+
