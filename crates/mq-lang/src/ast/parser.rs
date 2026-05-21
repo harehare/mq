@@ -553,6 +553,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::Foreach
                 | TokenKind::LBrace
                 | TokenKind::LBracket
+                | TokenKind::LParen
                 | TokenKind::While
                 | TokenKind::Loop
                 | TokenKind::Match
@@ -6636,6 +6637,33 @@ mod tests {
                                 Shared::new(Node {
                                     token_id: 2.into(),
                                     expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("end", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("end")))))))),
+                                }),
+                            ],
+                        )),
+                    })
+                ]))]
+    #[case::not_with_paren_expr(
+                vec![
+                    token(TokenKind::Not),
+                    token(TokenKind::LParen),
+                    token(TokenKind::BoolLiteral(false)),
+                    token(TokenKind::RParen),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Shared::new(Node {
+                        token_id: 0.into(),
+                        expr: Shared::new(Expr::Call(
+                            IdentWithToken::new_with_token(constants::builtins::NOT, Some(Shared::new(token(TokenKind::Not)))),
+                            smallvec![
+                                Shared::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Shared::new(Expr::Paren(
+                                        Shared::new(Node {
+                                            token_id: 2.into(),
+                                            expr: Shared::new(Expr::Literal(Literal::Bool(false))),
+                                        })
+                                    )),
                                 }),
                             ],
                         )),
