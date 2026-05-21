@@ -138,12 +138,6 @@ steps:
 
 The [Playground](https://mqlang.org/playground) lets you run mq queries in the browser with no install.
 
-### Web API
-
-You can try mq without installing anything via the hosted REST API.
-
-The interactive API documentation is available at [Swagger UI](https://api.mqlang.org/docs).
-
 ### mq-web (npm)
 
 [mq-web](https://www.npmjs.com/package/mq-web) is the official WebAssembly build for browser.
