@@ -57,10 +57,6 @@ jobs:
           cp ./scripts/install.sh ./docs
           cp ./scripts/install_lsp.sh ./docs
           cp ./scripts/install_crawler.sh ./docs
-      - name: Replace env vars
-        env:
-          API_URL: ${{ secrets.API_URL }}
-        run: ./scripts/replace-env.sh
       - name: Deploy
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
