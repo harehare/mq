@@ -17,6 +17,7 @@ use base64::Engine;
 use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
 use csv::ReaderBuilder;
 use itertools::Itertools;
+use quick_xml::XmlVersion;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use similar::{ChangeTag, TextDiff};
 use smol_str::SmolStr;
@@ -3008,7 +3009,7 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                     let attr = attr.map_err(|e| Error::Runtime(format!("XML attribute error: {}", e)))?;
                     let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
                     let value = attr
-                        .decode_and_unescape_value(reader.decoder())
+                        .decoded_and_normalized_value(XmlVersion::default(), reader.decoder())
                         .map_err(|e| Error::Runtime(format!("XML attribute value error: {}", e)))?
                         .to_string();
                     attrs.insert(Ident::new(&key), RuntimeValue::String(value));
