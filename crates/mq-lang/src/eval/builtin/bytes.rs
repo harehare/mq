@@ -3,7 +3,7 @@ use crate::eval::runtime_value::RuntimeValue;
 
 /// Supported binary packing formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PackFormat {
+pub(super) enum PackFormat {
     U8,
     I8,
     U16Be,
@@ -139,12 +139,12 @@ impl PackFormat {
 }
 
 /// Public helpers called from `builtin.rs`.
-pub fn pack_number(fmt: &str, value: f64) -> Result<RuntimeValue, Error> {
+pub(super) fn pack_number(fmt: &str, value: f64) -> Result<RuntimeValue, Error> {
     let fmt: PackFormat = fmt.try_into()?;
     Ok(fmt.pack(value))
 }
 
-pub fn unpack_bytes(fmt: &str, bytes: &[u8]) -> Result<RuntimeValue, Error> {
+pub(super) fn unpack_bytes(fmt: &str, bytes: &[u8]) -> Result<RuntimeValue, Error> {
     let fmt: PackFormat = fmt.try_into()?;
     fmt.unpack(bytes)
 }

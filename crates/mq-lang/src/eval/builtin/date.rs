@@ -3,7 +3,7 @@ use chrono::{DateTime, Duration, Months, Utc};
 
 /// Date/time units used by `date_add` and `date_diff`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DateUnit {
+pub(super) enum DateUnit {
     Seconds,
     Minutes,
     Hours,
@@ -80,14 +80,14 @@ impl DateUnit {
 }
 
 /// Public helper called from `builtin.rs` for `date_add`.
-pub fn add(dt: DateTime<Utc>, amount: i64, unit: &str) -> Result<DateTime<Utc>, Error> {
+pub(super) fn add(dt: DateTime<Utc>, amount: i64, unit: &str) -> Result<DateTime<Utc>, Error> {
     let unit = DateUnit::try_from(unit)?;
     unit.apply_add(dt, amount)
         .ok_or_else(|| Error::Runtime("date_add: arithmetic overflow or invalid date".to_string()))
 }
 
 /// Public helper called from `builtin.rs` for `date_diff`.
-pub fn diff(diff: Duration, unit: &str) -> Result<i64, Error> {
+pub(super) fn diff(diff: Duration, unit: &str) -> Result<i64, Error> {
     let unit = DateUnit::try_from(unit)?;
     unit.apply_diff(diff)
 }

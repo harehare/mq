@@ -1,6 +1,7 @@
-pub mod bytes;
-pub mod convert;
-pub mod date;
+pub(super) mod bytes;
+pub(super) mod convert;
+pub(super) mod date;
+pub(super) mod path;
 mod range;
 mod regex;
 
@@ -3461,6 +3462,56 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
     }
 }
 
+#[mq_macros::mq_fn(name = "basename", params = Fixed(1))]
+fn basename_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(path::basename(s))),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("basename should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "dirname", params = Fixed(1))]
+fn dirname_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(path::dirname(s))),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("dirname should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "extname", params = Fixed(1))]
+fn extname_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(path::extname(s))),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("extname should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "stem", params = Fixed(1))]
+fn stem_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(path::stem(s))),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("stem should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "path_join", params = Fixed(2))]
+fn path_join_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(base), RuntimeValue::String(component)] => {
+            path::path_join(base, component).map(RuntimeValue::String)
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("path_join should always receive exactly two arguments"),
+    }
+}
+
 #[cfg(feature = "file-io")]
 #[mq_macros::mq_fn(name = "read_file", params = Fixed(1))]
 fn read_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
@@ -3653,6 +3704,11 @@ mq_macros::builtin_dispatch! {
     SHIFT_LEFT,
     SHIFT_RIGHT,
     _DIFF,
+    BASENAME,
+    DIRNAME,
+    EXTNAME,
+    STEM,
+    PATH_JOIN,
     #[cfg(feature = "file-io")]
     READ_FILE,
 }
@@ -5047,6 +5103,41 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Reads the contents of a file at the given path and returns it as a string.",
             params: &["path"],
+        },
+    );
+    map.insert(
+        SmolStr::new("basename"),
+        BuiltinFunctionDoc {
+            description: "Returns the final component of a path string (e.g. \"file.txt\" from \"/a/b/file.txt\").",
+            params: &["path"],
+        },
+    );
+    map.insert(
+        SmolStr::new("dirname"),
+        BuiltinFunctionDoc {
+            description: "Returns the parent directory of a path string (e.g. \"/a/b\" from \"/a/b/file.txt\"). Returns \".\" if the path has no parent.",
+            params: &["path"],
+        },
+    );
+    map.insert(
+        SmolStr::new("extname"),
+        BuiltinFunctionDoc {
+            description: "Returns the extension of a file path including the leading dot (e.g. \".txt\" from \"file.txt\"). Returns an empty string if there is no extension.",
+            params: &["path"],
+        },
+    );
+    map.insert(
+        SmolStr::new("stem"),
+        BuiltinFunctionDoc {
+            description: "Returns the file name without the extension (e.g. \"file\" from \"/a/b/file.txt\").",
+            params: &["path"],
+        },
+    );
+    map.insert(
+        SmolStr::new("path_join"),
+        BuiltinFunctionDoc {
+            description: "Joins a base path with a component path and returns the resulting path string (e.g. path_join(\"/a/b\", \"c.txt\") → \"/a/b/c.txt\").",
+            params: &["base", "component"],
         },
     );
     map.insert(

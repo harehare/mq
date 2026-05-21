@@ -7,7 +7,7 @@ use sha2::Digest;
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ConvertKind {
+pub(super) enum ConvertKind {
     Blockquote,
     Heading(u8),
     HorizontalRule,
@@ -18,7 +18,7 @@ pub(crate) enum ConvertKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Convert {
+pub(super) enum Convert {
     Base64,
     Html,
     Markdown(ConvertKind),
@@ -235,7 +235,7 @@ impl Convert {
 
 /// convert to HTML
 #[inline(always)]
-pub fn to_html(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
+pub(super) fn to_html(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
     match value {
         RuntimeValue::None => Ok(RuntimeValue::NONE),
         RuntimeValue::String(s) => Ok(mq_markdown::to_html(s).into()),
@@ -246,7 +246,7 @@ pub fn to_html(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
 }
 
 /// convert to Markdown string
-pub fn to_markdown_string(args: Vec<RuntimeValue>) -> Result<RuntimeValue, Error> {
+pub(super) fn to_markdown_string(args: Vec<RuntimeValue>) -> Result<RuntimeValue, Error> {
     let args = flatten(args);
 
     Ok(mq_markdown::Markdown::new(
@@ -262,7 +262,7 @@ pub fn to_markdown_string(args: Vec<RuntimeValue>) -> Result<RuntimeValue, Error
 }
 
 /// convert to string
-pub fn to_string(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
+pub(super) fn to_string(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
     match value {
         RuntimeValue::Symbol(s) => Ok(s.as_str().into()),
         o => Ok(o.to_string().into()),
@@ -270,7 +270,7 @@ pub fn to_string(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
 }
 
 /// convert to number
-pub fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
+pub(super) fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
     match value {
         node @ RuntimeValue::Markdown(_, _) => node
             .markdown_node()
@@ -318,7 +318,7 @@ pub fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
 }
 
 /// convert to array
-pub fn to_array(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
+pub(super) fn to_array(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
     match value {
         RuntimeValue::Array(array) => Ok(RuntimeValue::Array(std::mem::take(array))),
         RuntimeValue::String(s) => Ok(RuntimeValue::Array(
@@ -333,7 +333,7 @@ pub fn to_array(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
 }
 
 /// convert to text
-pub fn to_text(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
+pub(super) fn to_text(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
     match value {
         RuntimeValue::None => Ok(RuntimeValue::NONE),
         RuntimeValue::Markdown(node_value, _) => Ok(node_value.value().into()),
@@ -349,7 +349,7 @@ pub fn to_text(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
 
 /// convert from date string to Unix timestamp (seconds)
 #[inline(always)]
-pub fn from_date(date_str: &str) -> Result<RuntimeValue, Error> {
+pub(super) fn from_date(date_str: &str) -> Result<RuntimeValue, Error> {
     match chrono::DateTime::parse_from_rfc3339(date_str) {
         Ok(datetime) => Ok(RuntimeValue::Number(datetime.timestamp().into())),
         Err(e) => Err(Error::Runtime(format!("{}", e))),
@@ -358,7 +358,7 @@ pub fn from_date(date_str: &str) -> Result<RuntimeValue, Error> {
 
 /// convert from Unix timestamp (seconds) to date string
 #[inline(always)]
-pub fn to_date(secs: Number, convert: Option<&str>) -> Result<RuntimeValue, Error> {
+pub(super) fn to_date(secs: Number, convert: Option<&str>) -> Result<RuntimeValue, Error> {
     chrono::DateTime::from_timestamp(secs.value() as i64, 0)
         .map(|dt| {
             convert
@@ -371,13 +371,13 @@ pub fn to_date(secs: Number, convert: Option<&str>) -> Result<RuntimeValue, Erro
 
 /// Encode to base64
 #[inline(always)]
-pub fn base64(input: &str) -> Result<RuntimeValue, Error> {
+pub(super) fn base64(input: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(BASE64_STANDARD.encode(input)))
 }
 
 /// Encode to base64 from raw bytes
 #[inline(always)]
-pub fn base64_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
+pub(super) fn base64_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(
         base64::engine::general_purpose::STANDARD.encode(input),
     ))
@@ -385,7 +385,7 @@ pub fn base64_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
 
 /// Decode from base64
 #[inline(always)]
-pub fn base64d(input: &str) -> Result<RuntimeValue, Error> {
+pub(super) fn base64d(input: &str) -> Result<RuntimeValue, Error> {
     BASE64_STANDARD
         .decode(input)
         .map_err(Error::InvalidBase64String)
@@ -394,13 +394,13 @@ pub fn base64d(input: &str) -> Result<RuntimeValue, Error> {
 
 /// Encode to base64url
 #[inline(always)]
-pub fn base64url(input: &str) -> Result<RuntimeValue, Error> {
+pub(super) fn base64url(input: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(BASE64_URL_SAFE_NO_PAD.encode(input)))
 }
 
 /// Decode from base64url
 #[inline(always)]
-pub fn base64urld(input: &str) -> Result<RuntimeValue, Error> {
+pub(super) fn base64urld(input: &str) -> Result<RuntimeValue, Error> {
     BASE64_URL_SAFE_NO_PAD
         .decode(input)
         .map_err(Error::InvalidBase64String)
@@ -409,7 +409,7 @@ pub fn base64urld(input: &str) -> Result<RuntimeValue, Error> {
 
 /// URL encode
 #[inline(always)]
-pub fn url_encode(input: &str) -> Result<RuntimeValue, Error> {
+pub(super) fn url_encode(input: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(
         utf8_percent_encode(input, NON_ALPHANUMERIC).to_string(),
     ))
@@ -417,7 +417,7 @@ pub fn url_encode(input: &str) -> Result<RuntimeValue, Error> {
 
 /// URL decode
 #[inline(always)]
-pub fn url_decode(input: &str) -> Result<RuntimeValue, Error> {
+pub(super) fn url_decode(input: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(
         percent_decode(input.as_bytes()).decode_utf8_lossy().to_string(),
     ))
@@ -429,49 +429,49 @@ pub fn url_decode(input: &str) -> Result<RuntimeValue, Error> {
 /// purposes. It is suitable for non-cryptographic use cases such as content
 /// fingerprinting and cache keys.
 #[inline(always)]
-pub fn md5(input: &str) -> Result<RuntimeValue, Error> {
+pub(super) fn md5(input: &str) -> Result<RuntimeValue, Error> {
     let digest = md5::compute(input.as_bytes());
     Ok(RuntimeValue::String(bytes_to_hex(&digest.0)))
 }
 
 /// Compute MD5 hash of raw bytes and return lowercase hex string.
 #[inline(always)]
-pub fn md5_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
+pub(super) fn md5_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
     let digest = md5::compute(input);
     Ok(RuntimeValue::String(bytes_to_hex(&digest.0)))
 }
 
 /// Compute SHA-256 hash and return lowercase hex string.
 #[inline(always)]
-pub fn sha256(input: &str) -> Result<RuntimeValue, Error> {
+pub(super) fn sha256(input: &str) -> Result<RuntimeValue, Error> {
     let hash = sha2::Sha256::digest(input.as_bytes());
     Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
 }
 
 /// Compute SHA-256 hash of raw bytes and return lowercase hex string.
 #[inline(always)]
-pub fn sha256_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
+pub(super) fn sha256_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
     let hash = sha2::Sha256::digest(input);
     Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
 }
 
 /// Compute SHA-512 hash and return lowercase hex string.
 #[inline(always)]
-pub fn sha512(input: &str) -> Result<RuntimeValue, Error> {
+pub(super) fn sha512(input: &str) -> Result<RuntimeValue, Error> {
     let hash = sha2::Sha512::digest(input.as_bytes());
     Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
 }
 
 /// Compute SHA-512 hash of raw bytes and return lowercase hex string.
 #[inline(always)]
-pub fn sha512_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
+pub(super) fn sha512_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
     let hash = sha2::Sha512::digest(input);
     Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
 }
 
 /// Parse a lowercase or uppercase hex string into raw bytes.
 #[inline(always)]
-pub fn from_hex(input: &str) -> Result<RuntimeValue, Error> {
+pub(super) fn from_hex(input: &str) -> Result<RuntimeValue, Error> {
     if !input.len().is_multiple_of(2) {
         return Err(Error::Runtime(format!(
             "from_hex: odd-length hex string: \"{}\"",
@@ -492,7 +492,7 @@ pub fn from_hex(input: &str) -> Result<RuntimeValue, Error> {
 
 /// Decode bytes as a UTF-8 string, returning an error if the bytes are not valid UTF-8.
 #[inline(always)]
-pub fn utf8(input: &[u8]) -> Result<RuntimeValue, Error> {
+pub(super) fn utf8(input: &[u8]) -> Result<RuntimeValue, Error> {
     String::from_utf8(input.to_vec())
         .map(RuntimeValue::String)
         .map_err(|e| Error::Runtime(format!("utf8: {}", e)))
@@ -500,7 +500,7 @@ pub fn utf8(input: &[u8]) -> Result<RuntimeValue, Error> {
 
 /// Encode raw bytes as a lowercase hex string.
 #[inline(always)]
-pub fn to_hex(input: &[u8]) -> Result<RuntimeValue, Error> {
+pub(super) fn to_hex(input: &[u8]) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(bytes_to_hex(input)))
 }
 
@@ -515,7 +515,7 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
 
 /// Shell escape for safe use in shell commands
 #[inline(always)]
-pub fn shell_escape(input: &str) -> Result<RuntimeValue, Error> {
+pub(super) fn shell_escape(input: &str) -> Result<RuntimeValue, Error> {
     // If the string is empty, return empty quotes
     if input.is_empty() {
         return Ok(RuntimeValue::String("''".to_string()));
@@ -540,7 +540,7 @@ pub fn shell_escape(input: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(format!("'{}'", escaped)))
 }
 
-pub fn flatten(args: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
+pub(super) fn flatten(args: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
     let mut result = Vec::new();
     for arg in args {
         match arg {
