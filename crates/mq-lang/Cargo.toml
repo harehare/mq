@@ -40,7 +40,7 @@ string-interner = {workspace = true}
 thiserror = {workspace = true}
 url = {workspace = true}
 toon-format = { version = "0.4", default-features = false }
-quick-xml = "0.40.0"
+quick-xml = "0.40.1"
 similar = "3.0.0"
 
 [features]
