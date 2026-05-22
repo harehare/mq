@@ -638,6 +638,27 @@ impl Formatter {
         indent_level: usize,
         block_indent_level: usize,
     ) {
+        if matches!(
+            node.token.as_ref().map(|t| &t.kind),
+            Some(mq_lang::TokenKind::Selector(_))
+        ) {
+            node.children.iter().enumerate().for_each(|(i, child)| {
+                let is_list_iterator = i > 0
+                    && matches!(
+                        child.token.as_ref().map(|t| &t.kind),
+                        Some(mq_lang::TokenKind::Selector(s)) if s == "."
+                    );
+                if is_list_iterator {
+                    child.children.iter().for_each(|bracket_child| {
+                        self.format_node(mq_lang::Shared::clone(bracket_child), 0);
+                    });
+                } else {
+                    self.format_node(mq_lang::Shared::clone(child), if i == 0 { indent_level } else { 0 });
+                }
+            });
+            return;
+        }
+
         let is_prev_pipe = self.is_prev_pipe();
         let indent_adjustment = if self.is_let_line() {
             self.current_line_indent()

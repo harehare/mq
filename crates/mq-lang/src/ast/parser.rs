@@ -2462,6 +2462,17 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         }));
                     }
 
+                    // ."key"[] or ."key"[n]: array iteration/indexing on the property value
+                    if matches!(selector, Selector::Property(_))
+                        && self.is_next_token(|kind| matches!(kind, TokenKind::LBracket))
+                    {
+                        let prop_node = Shared::new(Node {
+                            token_id: self.token_arena.alloc(Shared::clone(token)),
+                            expr: Shared::new(Expr::Selector(selector)),
+                        });
+                        return self.parse_property_iterator(token, vec![prop_node]);
+                    }
+
                     Ok(Shared::new(Node {
                         token_id: self.token_arena.alloc(Shared::clone(token)),
                         expr: Shared::new(Expr::Selector(selector)),
@@ -2585,8 +2596,54 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }));
         }
 
+        // ."a"."b"[] or ."a"."b"[n]: array iteration/indexing after a chained property access
+        if self.is_next_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            return self.parse_property_iterator(first_token, nodes);
+        }
+
         Ok(Shared::new(Node {
             token_id: self.token_arena.alloc(Shared::clone(first_token)),
+            expr: Shared::new(Expr::Block(nodes)),
+        }))
+    }
+
+    fn parse_property_iterator(
+        &mut self,
+        token: &Shared<Token>,
+        mut nodes: Program,
+    ) -> Result<Shared<Node>, SyntaxError> {
+        let index = self.parse_bracket_expr()?;
+
+        let list_selector = match &index {
+            None => Selector::List(None, None),
+            Some(node) => {
+                if let Expr::Literal(Literal::Number(num)) = &*node.expr {
+                    Selector::List(Some(num.value() as usize), None)
+                } else {
+                    // Dynamic index expression: emit a SelectorCall so the index is evaluated at runtime
+                    let token_id = self.token_arena.alloc(Shared::clone(token));
+                    nodes.push(Shared::new(Node {
+                        token_id,
+                        expr: Shared::new(Expr::SelectorCall(
+                            Selector::List(None, None),
+                            smallvec![Shared::clone(node)],
+                        )),
+                    }));
+                    return Ok(Shared::new(Node {
+                        token_id: self.token_arena.alloc(Shared::clone(token)),
+                        expr: Shared::new(Expr::Block(nodes)),
+                    }));
+                }
+            }
+        };
+
+        nodes.push(Shared::new(Node {
+            token_id: self.token_arena.alloc(Shared::clone(token)),
+            expr: Shared::new(Expr::Selector(list_selector)),
+        }));
+
+        Ok(Shared::new(Node {
+            token_id: self.token_arena.alloc(Shared::clone(token)),
             expr: Shared::new(Expr::Block(nodes)),
         }))
     }
@@ -8442,6 +8499,128 @@ mod tests {
                 }
             }
             Err(err) => panic!("Parse error: {:?}", err),
+        }
+    }
+
+    // ."key"[] or ."key"[n] — single property selector followed by array iterator/index
+    #[rstest]
+    #[case::all_elements(".\"items\"", None, vec![Selector::Property("items".into()), Selector::List(None, None)])]
+    #[case::index_0(".\"items\"", Some(0usize), vec![Selector::Property("items".into()), Selector::List(Some(0), None)])]
+    #[case::index_2(".\"items\"", Some(2usize), vec![Selector::Property("items".into()), Selector::List(Some(2), None)])]
+    fn test_parse_property_selector_iterator(
+        #[case] selector_str: &str,
+        #[case] index: Option<usize>,
+        #[case] expected: Vec<Selector>,
+    ) {
+        let mut arena = Arena::new(10);
+        let mut tokens = vec![
+            Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Selector(SmolStr::new(selector_str)),
+                module_id: 1.into(),
+            }),
+            Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::LBracket,
+                module_id: 1.into(),
+            }),
+        ];
+        if let Some(idx) = index {
+            tokens.push(Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::NumberLiteral(idx.into()),
+                module_id: 1.into(),
+            }));
+        }
+        tokens.push(Shared::new(Token {
+            range: Range::default(),
+            kind: TokenKind::RBracket,
+            module_id: 1.into(),
+        }));
+        tokens.push(Shared::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: 1.into(),
+        }));
+
+        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID)
+            .parse()
+            .expect("parse error");
+
+        assert_eq!(result.len(), 1);
+        let Expr::Block(nodes) = &*result[0].expr else {
+            panic!("expected Block, got {:?}", result[0].expr);
+        };
+        assert_eq!(nodes.len(), expected.len());
+        for (node, sel) in nodes.iter().zip(expected.iter()) {
+            let Expr::Selector(actual) = &*node.expr else {
+                panic!("expected Selector, got {:?}", node.expr);
+            };
+            assert_eq!(actual, sel);
+        }
+    }
+
+    // ."a"."b"[] or ."a"."b"[n] — chained property selectors followed by array iterator/index
+    #[rstest]
+    #[case::all_elements(".\"a\"", ".\"b\"", None, vec![Selector::Property("a".into()), Selector::Property("b".into()), Selector::List(None, None)])]
+    #[case::index_0(".\"a\"", ".\"b\"", Some(0usize), vec![Selector::Property("a".into()), Selector::Property("b".into()), Selector::List(Some(0), None)])]
+    #[case::index_1(".\"a\"", ".\"b\"", Some(1usize), vec![Selector::Property("a".into()), Selector::Property("b".into()), Selector::List(Some(1), None)])]
+    fn test_parse_chained_property_selector_iterator(
+        #[case] first: &str,
+        #[case] second: &str,
+        #[case] index: Option<usize>,
+        #[case] expected: Vec<Selector>,
+    ) {
+        let mut arena = Arena::new(10);
+        let mut tokens = vec![
+            Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Selector(SmolStr::new(first)),
+                module_id: 1.into(),
+            }),
+            Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Selector(SmolStr::new(second)),
+                module_id: 1.into(),
+            }),
+            Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::LBracket,
+                module_id: 1.into(),
+            }),
+        ];
+        if let Some(idx) = index {
+            tokens.push(Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::NumberLiteral(idx.into()),
+                module_id: 1.into(),
+            }));
+        }
+        tokens.push(Shared::new(Token {
+            range: Range::default(),
+            kind: TokenKind::RBracket,
+            module_id: 1.into(),
+        }));
+        tokens.push(Shared::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: 1.into(),
+        }));
+
+        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID)
+            .parse()
+            .expect("parse error");
+
+        assert_eq!(result.len(), 1);
+        let Expr::Block(nodes) = &*result[0].expr else {
+            panic!("expected Block, got {:?}", result[0].expr);
+        };
+        assert_eq!(nodes.len(), expected.len());
+        for (node, sel) in nodes.iter().zip(expected.iter()) {
+            let Expr::Selector(actual) = &*node.expr else {
+                panic!("expected Selector, got {:?}", node.expr);
+            };
+            assert_eq!(actual, sel);
         }
     }
 

@@ -6,6 +6,7 @@ use crate::{
     cst::node::{BinaryOp, UnaryOp},
     selector::{self, Selector},
 };
+use smol_str::SmolStr;
 
 use super::{
     error::ParseError,
@@ -1001,12 +1002,33 @@ impl<'a> Parser<'a> {
                     {
                         nodes.push(self.next_node(|kind| matches!(kind, TokenKind::Selector(_)), NodeKind::Selector)?);
                     }
+                    // ."a"."b"[] or ."a"."b"[n]: array iterator/indexer after chained properties
+                    if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
+                        nodes.push(self.build_list_selector_node()?);
+                    }
                     return Ok(Shared::new(Node {
                         kind: NodeKind::Block,
                         token: Some(first_token),
                         leading_trivia: block_leading,
                         trailing_trivia: block_trailing,
                         children: nodes,
+                    }));
+                }
+
+                // ."key"[] or ."key"[n]: property + array iterator/indexer
+                if matches!(selector, Selector::Property(_))
+                    && matches!(self.peek().map(|t| &t.kind), Some(TokenKind::LBracket))
+                {
+                    let first_token = Shared::clone(node.token.as_ref().unwrap());
+                    let block_leading = node.leading_trivia.clone();
+                    let block_trailing = node.trailing_trivia.clone();
+                    let list_node = self.build_list_selector_node()?;
+                    return Ok(Shared::new(Node {
+                        kind: NodeKind::Block,
+                        token: Some(first_token),
+                        leading_trivia: block_leading,
+                        trailing_trivia: block_trailing,
+                        children: vec![Shared::new(node), list_node],
                     }));
                 }
 
@@ -1023,6 +1045,27 @@ impl<'a> Parser<'a> {
                 Ok(Shared::new(node))
             }
         }
+    }
+
+    fn build_list_selector_node(&mut self) -> Result<Shared<Node>, ParseError> {
+        let (range, module_id) = {
+            let bracket = self.peek().ok_or(ParseError::UnexpectedEOFDetected)?;
+            (bracket.range, bracket.module_id)
+        };
+        let dot_token = Shared::new(Token {
+            kind: TokenKind::Selector(SmolStr::new(".")),
+            range,
+            module_id,
+        });
+        let mut bracket_children: Vec<Shared<Node>> = Vec::new();
+        self.parse_selector_bracket(&mut bracket_children)?;
+        Ok(Shared::new(Node {
+            kind: NodeKind::Selector,
+            token: Some(dot_token),
+            leading_trivia: Vec::new(),
+            trailing_trivia: Vec::new(),
+            children: bracket_children,
+        }))
     }
 
     /// Parses a single bracket index `[N]` for selector expressions, pushing tokens onto `children`.
@@ -7964,6 +8007,122 @@ mod tests {
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::selector_property_iterator(
+        // ."items"[] → Block([Selector(."items"), Selector(. + [[ + ]]))]
+        vec![
+            Shared::new(token(TokenKind::Selector(".\"items\"".into()))),
+            Shared::new(token(TokenKind::LBracket)),
+            Shared::new(token(TokenKind::RBracket)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Block,
+                    token: Some(Shared::new(token(TokenKind::Selector(".\"items\"".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Selector,
+                            token: Some(Shared::new(token(TokenKind::Selector(".\"items\"".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Selector,
+                            token: Some(Shared::new(Token {
+                                kind: TokenKind::Selector(".".into()),
+                                range: Range::default(),
+                                module_id: 1.into(),
+                            })),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: vec![
+                                Shared::new(Node {
+                                    kind: NodeKind::Token,
+                                    token: Some(Shared::new(token(TokenKind::LBracket))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                                Shared::new(Node {
+                                    kind: NodeKind::Token,
+                                    token: Some(Shared::new(token(TokenKind::RBracket))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                            ],
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::selector_property_iterator_with_index(
+        // ."items"[0] → Block([Selector(."items"), Selector(. + [[ + 0 + ]]))]
+        vec![
+            Shared::new(token(TokenKind::Selector(".\"items\"".into()))),
+            Shared::new(token(TokenKind::LBracket)),
+            Shared::new(token(TokenKind::NumberLiteral(0.0.into()))),
+            Shared::new(token(TokenKind::RBracket)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Block,
+                    token: Some(Shared::new(token(TokenKind::Selector(".\"items\"".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Selector,
+                            token: Some(Shared::new(token(TokenKind::Selector(".\"items\"".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Selector,
+                            token: Some(Shared::new(Token {
+                                kind: TokenKind::Selector(".".into()),
+                                range: Range::default(),
+                                module_id: 1.into(),
+                            })),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: vec![
+                                Shared::new(Node {
+                                    kind: NodeKind::Token,
+                                    token: Some(Shared::new(token(TokenKind::LBracket))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                                Shared::new(Node {
+                                    kind: NodeKind::Literal,
+                                    token: Some(Shared::new(token(TokenKind::NumberLiteral(0.0.into())))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                                Shared::new(Node {
+                                    kind: NodeKind::Token,
+                                    token: Some(Shared::new(token(TokenKind::RBracket))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                            ],
                         }),
                     ],
                 }),
