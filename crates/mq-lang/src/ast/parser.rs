@@ -2462,6 +2462,17 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         }));
                     }
 
+                    // ."key"[] or ."key"[n]: array iteration/indexing on the property value
+                    if matches!(selector, Selector::Property(_))
+                        && self.is_next_token(|kind| matches!(kind, TokenKind::LBracket))
+                    {
+                        let prop_node = Shared::new(Node {
+                            token_id: self.token_arena.alloc(Shared::clone(token)),
+                            expr: Shared::new(Expr::Selector(selector)),
+                        });
+                        return self.parse_property_iterator(token, vec![prop_node]);
+                    }
+
                     Ok(Shared::new(Node {
                         token_id: self.token_arena.alloc(Shared::clone(token)),
                         expr: Shared::new(Expr::Selector(selector)),
@@ -2585,8 +2596,54 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }));
         }
 
+        // ."a"."b"[] or ."a"."b"[n]: array iteration/indexing after a chained property access
+        if self.is_next_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            return self.parse_property_iterator(first_token, nodes);
+        }
+
         Ok(Shared::new(Node {
             token_id: self.token_arena.alloc(Shared::clone(first_token)),
+            expr: Shared::new(Expr::Block(nodes)),
+        }))
+    }
+
+    fn parse_property_iterator(
+        &mut self,
+        token: &Shared<Token>,
+        mut nodes: Program,
+    ) -> Result<Shared<Node>, SyntaxError> {
+        let index = self.parse_bracket_expr()?;
+
+        let list_selector = match &index {
+            None => Selector::List(None, None),
+            Some(node) => {
+                if let Expr::Literal(Literal::Number(num)) = &*node.expr {
+                    Selector::List(Some(num.value() as usize), None)
+                } else {
+                    // Dynamic index expression: emit a SelectorCall so the index is evaluated at runtime
+                    let token_id = self.token_arena.alloc(Shared::clone(token));
+                    nodes.push(Shared::new(Node {
+                        token_id,
+                        expr: Shared::new(Expr::SelectorCall(
+                            Selector::List(None, None),
+                            smallvec![Shared::clone(node)],
+                        )),
+                    }));
+                    return Ok(Shared::new(Node {
+                        token_id: self.token_arena.alloc(Shared::clone(token)),
+                        expr: Shared::new(Expr::Block(nodes)),
+                    }));
+                }
+            }
+        };
+
+        nodes.push(Shared::new(Node {
+            token_id: self.token_arena.alloc(Shared::clone(token)),
+            expr: Shared::new(Expr::Selector(list_selector)),
+        }));
+
+        Ok(Shared::new(Node {
+            token_id: self.token_arena.alloc(Shared::clone(token)),
             expr: Shared::new(Expr::Block(nodes)),
         }))
     }
