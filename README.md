@@ -12,10 +12,10 @@
 
 <h1 align="center">mq</h1>
 
-[![ci](https://github.com/harehare/mq/actions/workflows/ci.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/ci.yml)
-[![audit](https://github.com/harehare/mq/actions/workflows/audit.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/audit.yml)
-[![crates.io](https://img.shields.io/crates/v/mq-markdown)](https://crates.io/crates/mq-markdown)
-[![codecov](https://codecov.io/gh/harehare/mq/graph/badge.svg?token=E4UD7Q9NC3)](https://codecov.io/gh/harehare/mq)
+[![ci](https://img.shields.io/github/actions/workflow/status/harehare/mq/ci.yml?logo=github-actions&label=ci)](https://github.com/harehare/mq/actions/workflows/ci.yml)
+[![audit](https://img.shields.io/github/actions/workflow/status/harehare/mq/audit.yml?logo=github-actions&label=audit)](https://github.com/harehare/mq/actions/workflows/audit.yml)
+[![crates.io](https://img.shields.io/crates/v/mq-markdown?logo=rust)](https://crates.io/crates/mq-markdown)
+[![codecov](https://img.shields.io/codecov/c/github/harehare/mq?logo=codecov)](https://codecov.io/gh/harehare/mq)
 [![codspeed badge](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json?style=for-the-badge)](https://codspeed.io/harehare/mq)
 
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
@@ -165,8 +165,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -A, --aggregate
