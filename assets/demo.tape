@@ -27,7 +27,7 @@ Type `mq '.h | select(contains("Filter"))' demo.md`
 Enter
 Sleep 1s
 
-Type `mq 'nodes | .code | compact() | first()' example.html`
+Type `mq 'nodes | .code | compact | first' example.html`
 Enter
 Sleep 1s
 
@@ -39,7 +39,7 @@ Type `mq 'select(.code.lang == "rust")' demo.md`
 Enter
 Sleep 1s
 
-Type `mq 'select(.code.lang == "rust") | to_text()' demo.md`
+Type `mq 'select(.code.lang == "rust") | to_text' demo.md`
 Enter
 Sleep 1s
 
@@ -63,6 +63,6 @@ Type `mq '.[][]' demo.md`
 Enter
 Sleep 1s
 
-Type `mq -U '.[1][1] | upcase()' demo.md`
+Type `mq -U '.[1][1] | upcase' demo.md`
 Enter
 Sleep 1s
