@@ -396,6 +396,30 @@ impl<'a> Parser<'a> {
             lhs = Shared::new(op);
         }
 
+        if self.try_next_token(|kind| matches!(kind, TokenKind::As)) {
+            let as_leading_trivia = self.parse_leading_trivia();
+            let as_token = self.advance().unwrap();
+            let as_trailing_trivia = self.parse_trailing_trivia();
+
+            let name_leading_trivia = self.parse_leading_trivia();
+            let name_node = match self.peek().map(|t| &t.kind) {
+                Some(TokenKind::Ident(_)) => self.parse_ident(name_leading_trivia)?,
+                Some(_) => {
+                    return Err(ParseError::UnexpectedToken(Shared::clone(self.peek().unwrap())));
+                }
+                None => return Err(ParseError::UnexpectedEOFDetected),
+            };
+
+            let as_node = Node {
+                kind: NodeKind::As,
+                token: Some(Shared::clone(as_token)),
+                leading_trivia: as_leading_trivia,
+                trailing_trivia: as_trailing_trivia,
+                children: vec![lhs, name_node],
+            };
+            return Ok(Shared::new(as_node));
+        }
+
         Ok(lhs)
     }
 

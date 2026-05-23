@@ -2701,6 +2701,18 @@ fn engine() -> DefaultEngine {
 #[case::bytes_literal_type_name(r#"type(b"abc")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("bytes".to_string())].into()))]
 #[case::bytes_literal_is_empty(r#"is_empty(b"")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::bytes_literal_not_empty(r#"is_empty(b"a")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
+// as binding: bind value to name and access it later
+#[case::as_binding_basic("42 as x | x", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
+// as binding: bind returns original pipeline value (not bound value)
+#[case::as_binding_passthrough("42 as x | \"hello\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
+// as binding: bind literal to name, use in expression
+#[case::as_binding_in_expression("1 as a | 2 as b | add(a, b)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
+// as binding: bind selector result to name
+#[case::as_binding_selector("let v = \"hello\" | v as s | upcase(s)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("HELLO".to_string())].into()))]
+// as binding: multiple bindings in same pipeline
+#[case::as_binding_multiple("1 as a | 2 as b | add(a, b)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
+// as binding: bind in def body
+#[case::as_binding_in_def("def double_add(x): x as a | add(a, a); | double_add(5)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(10.into())].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

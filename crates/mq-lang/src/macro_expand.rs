@@ -211,6 +211,13 @@ impl Macro {
                     expr: Shared::new(Expr::Foreach(ident.clone(), expanded_collection, expanded_program)),
                 }))
             }
+            Expr::As(ident, value) => {
+                let expanded_value = self.expand_node(value, evaluator)?;
+                Ok(Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::As(ident.clone(), expanded_value)),
+                }))
+            }
             Expr::Let(pattern, value) => {
                 let expanded_value = self.expand_node(value, evaluator)?;
                 Ok(Shared::new(Node {
@@ -627,6 +634,13 @@ impl Macro {
                     )),
                 })
             }
+            Expr::As(ident, value) => {
+                let substituted_value = self.substitute_node(value, substitutions);
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::As(ident.clone(), substituted_value)),
+                })
+            }
             Expr::Let(pattern, value) => {
                 let substituted_value = self.substitute_node(value, substitutions);
                 Shared::new(Node {
@@ -961,6 +975,13 @@ impl Macro {
                         substituted_collection,
                         substituted_program,
                     )),
+                })
+            }
+            Expr::As(ident, value) => {
+                let substituted_value = self.substitute_in_quote(value, substitutions);
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::As(ident.clone(), substituted_value)),
                 })
             }
             Expr::Let(pattern, value) => {

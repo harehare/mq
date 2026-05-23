@@ -636,6 +636,7 @@ fn ident_or_keyword(input: Span) -> IResult<Span, Token> {
 
     if at_word_boundary {
         let keyword_kind = match base_frag {
+            "as" => Some(TokenKind::As),
             "break" => Some(TokenKind::Break),
             "catch" => Some(TokenKind::Catch),
             "continue" => Some(TokenKind::Continue),

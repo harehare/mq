@@ -77,6 +77,10 @@ impl Node {
                 format_args(args, buf, indent);
                 buf.push(')');
             }
+            Expr::As(ident, value) => {
+                value.format_to_code(buf, indent);
+                write!(buf, " as {}", ident).unwrap();
+            }
             Expr::Let(pattern, value) => {
                 buf.push_str("let ");
                 format_pattern(pattern, buf);

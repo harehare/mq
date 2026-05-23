@@ -133,7 +133,8 @@ impl Node {
                 let end = block.range(arena).end;
                 Range { start, end }
             }
-            Expr::Let(_, node)
+            Expr::As(_, node)
+            | Expr::Let(_, node)
             | Expr::Var(_, node)
             | Expr::Assign(_, node)
             | Expr::Quote(node)
@@ -332,6 +333,7 @@ impl Display for Literal {
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Expr {
+    As(IdentWithToken, Shared<Node>),
     Block(Program),
     Call(IdentWithToken, Args),
     CallDynamic(Shared<Node>, Args),

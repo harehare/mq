@@ -370,7 +370,36 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     fn parse_equality_expr(&mut self, initial_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let lhs = self.parse_primary_expr(initial_token)?;
-        Self::parse_binary_op(self, 0, lhs) // Start from precedence 0 to include assignment
+        let lhs = Self::parse_binary_op(self, 0, lhs)?;
+
+        if let Some(token) = self.tokens.peek()
+            && matches!(token.kind, TokenKind::As)
+        {
+            return self.parse_as_binding(lhs);
+        }
+
+        Ok(lhs)
+    }
+
+    fn parse_as_binding(&mut self, expr: Shared<Node>) -> Result<Shared<Node>, SyntaxError> {
+        let as_token = self.tokens.next().unwrap();
+        let as_token_id = self.token_arena.alloc(Shared::clone(as_token));
+
+        let name_token = match self.tokens.next() {
+            Some(token) => token,
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+        };
+
+        match &name_token.kind {
+            TokenKind::Ident(name) => {
+                let ident = IdentWithToken::new_with_token(name, Some(Shared::clone(name_token)));
+                Ok(Shared::new(Node {
+                    token_id: as_token_id,
+                    expr: Shared::new(Expr::As(ident, expr)),
+                }))
+            }
+            _ => Err(SyntaxError::UnexpectedToken((**name_token).clone())),
+        }
     }
 
     fn parse_primary_expr(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
@@ -929,6 +958,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         matches!(
             token_kind,
             Some(TokenKind::And)
+                | Some(TokenKind::As)
                 | Some(TokenKind::Asterisk)
                 | Some(TokenKind::Catch)
                 | Some(TokenKind::Colon)
@@ -8622,6 +8652,42 @@ mod tests {
             };
             assert_eq!(actual, sel);
         }
+    }
+
+    #[test]
+    fn test_parse_as_binding() {
+        let mut arena = Arena::new(10);
+        let tokens = [
+            Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::NumberLiteral(42.into()),
+                module_id: 1.into(),
+            }),
+            Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::As,
+                module_id: 1.into(),
+            }),
+            Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Ident("x".into()),
+                module_id: 1.into(),
+            }),
+            Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }),
+        ];
+        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+        assert!(result.is_ok());
+        let program = result.unwrap();
+        assert_eq!(program.len(), 1);
+        let Expr::As(ident, inner) = &*program[0].expr else {
+            panic!("expected Expr::As, got {:?}", program[0].expr);
+        };
+        assert_eq!(ident.name.as_str(), "x");
+        assert!(matches!(*inner.expr, Expr::Literal(Literal::Number(_))));
     }
 
     #[test]
