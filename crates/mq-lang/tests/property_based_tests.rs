@@ -41,7 +41,8 @@ mod strategies {
             .prop_filter("Avoid reserved keywords", |s| {
                 !matches!(
                     s.as_str(),
-                    "if" | "else"
+                    "as" | "if"
+                        | "else"
                         | "elif"
                         | "let"
                         | "var"

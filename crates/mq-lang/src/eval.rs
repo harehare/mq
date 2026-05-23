@@ -1081,6 +1081,11 @@ impl<T: ModuleResolver> Evaluator<T> {
                 program.clone(),
                 Shared::clone(env),
             )),
+            ast::Expr::As(ident, node) => {
+                let val = self.eval_expr(runtime_value, node, env)?;
+                define(env, ident.name, val);
+                Ok(runtime_value.clone())
+            }
             ast::Expr::Let(pattern, node) => {
                 let val = self.eval_expr(runtime_value, node, env)?;
                 if let Pattern::Ident(ident) = pattern {

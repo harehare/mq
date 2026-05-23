@@ -277,6 +277,9 @@ impl Formatter {
             mq_lang::CstNodeKind::InterpolatedString => {
                 self.append_interpolated_string(&node, indent_level_consider_new_line);
             }
+            mq_lang::CstNodeKind::As => {
+                self.format_as_binding(&node, indent_level_consider_new_line);
+            }
             mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var => {
                 self.format_var_decl(&node, indent_level_consider_new_line, indent_level)
             }
@@ -715,6 +718,20 @@ impl Formatter {
 
             self.format_node(mq_lang::Shared::clone(child), indent_level);
         });
+    }
+
+    fn format_as_binding(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        if let Some(expr) = node.children.first() {
+            self.format_node(mq_lang::Shared::clone(expr), indent_level);
+        }
+        if !self.output.ends_with(' ') {
+            self.append_space();
+        }
+        self.output.push_str("as");
+        self.append_space();
+        if let Some(name) = node.children.get(1) {
+            self.format_node(mq_lang::Shared::clone(name), indent_level);
+        }
     }
 
     fn format_quote(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
@@ -2833,6 +2850,9 @@ end
     #[case::bytes_literal_hex(r#"b"\xf0\x9f\x99\x82""#, r#"b"\xf0\x9f\x99\x82""#)]
     #[case::bytes_literal_with_pipe(r#"b"abc"  |  len"#, r#"b"abc" | len"#)]
     #[case::bytes_literal_in_call(r#"len(b"abc")"#, r#"len(b"abc")"#)]
+    #[case::as_binding_basic("42 as x | x", "42 as x | x")]
+    #[case::as_binding_spaces("42  as  x  |  x", "42 as x | x")]
+    #[case::as_binding_selector(".text as title | title", ".text as title | title")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

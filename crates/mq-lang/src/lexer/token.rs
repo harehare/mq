@@ -47,6 +47,7 @@ pub struct Token {
 pub enum TokenKind {
     And,
     Arrow,
+    As,
     Convert,
     Asterisk,
     BoolLiteral(bool),
@@ -159,6 +160,7 @@ impl Display for TokenKind {
         match &self {
             TokenKind::And => write!(f, "&&"),
             TokenKind::Arrow => write!(f, "->"),
+            TokenKind::As => write!(f, "as"),
             TokenKind::Convert => write!(f, "@"),
             TokenKind::Or => write!(f, "||"),
             TokenKind::Not => write!(f, "!"),

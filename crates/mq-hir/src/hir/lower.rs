@@ -163,6 +163,9 @@ impl Hir {
             mq_lang::CstNodeKind::InterpolatedString => {
                 self.add_interpolated_string(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::As => {
+                self.add_as_binding(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var => {
                 self.add_var_decl(node, source_id, scope_id, parent);
             }
@@ -624,6 +627,44 @@ impl Hir {
                 children.iter().skip(1).for_each(|child| {
                     self.add_expr(child, source_id, scope_id, Some(symbol_id));
                 });
+            }
+        }
+    }
+
+    fn add_as_binding(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if matches!(node.kind, mq_lang::CstNodeKind::As) {
+            let _keyword_id = self.insert_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Keyword,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+                insertion_order: 0,
+            });
+
+            let children = node.children_without_token();
+            // children[0] is the expression being bound, children[1] is the binding name
+            if let Some(name_node) = children.get(1) {
+                let symbol_id = self.insert_symbol(Symbol {
+                    value: name_node.name(),
+                    kind: SymbolKind::Variable,
+                    source: SourceInfo::new(Some(source_id), Some(name_node.range())),
+                    scope: scope_id,
+                    doc: node.comments(),
+                    parent,
+                    insertion_order: 0,
+                });
+
+                if let Some(expr_node) = children.first() {
+                    self.add_expr(expr_node, source_id, scope_id, Some(symbol_id));
+                }
             }
         }
     }
