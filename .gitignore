@@ -86,6 +86,7 @@ settings.local.json
 # claude
 CLAUDE.local.md
 .claude/worktrees/
+.claude/projects/
 
 example.html
 
@@ -97,3 +98,4 @@ tsconfig.tsbuildinfo
 
 mutants.out
 
+*.proptest-regressions
