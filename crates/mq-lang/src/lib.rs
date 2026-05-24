@@ -75,6 +75,7 @@ pub use ast::node::Pattern as AstPattern;
 pub use ast::parser::Parser as AstParser;
 #[cfg(feature = "ast-json")]
 pub use ast::{ast_from_json, ast_to_json};
+pub use engine::CompiledProgram;
 pub use engine::Engine;
 pub use error::Error;
 pub use eval::builtin::{

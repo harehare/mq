@@ -21,6 +21,35 @@ use crate::{
     parse,
 };
 
+/// A compiled mq program bundled with its original source, returned by [`Engine::compile`].
+#[derive(Debug, Clone)]
+pub struct CompiledProgram {
+    pub(crate) source: String,
+    pub(crate) program: crate::ast::Program,
+}
+
+impl CompiledProgram {
+    /// Returns the original source code.
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// Returns the underlying AST nodes.
+    pub fn program(&self) -> &crate::ast::Program {
+        &self.program
+    }
+}
+
+impl From<crate::ast::Program> for CompiledProgram {
+    /// Wraps a raw `Program` (e.g. from `ast_from_json`) with no source context.
+    fn from(program: crate::ast::Program) -> Self {
+        Self {
+            source: String::new(),
+            program,
+        }
+    }
+}
+
 /// The main execution engine for the mq.
 ///
 /// The `Engine` manages parsing, optimization, and evaluation of mq code.
@@ -188,20 +217,27 @@ impl<T: ModuleResolver> Engine<T> {
             .map_err(|e| Box::new(error::Error::from_error(code, e, self.evaluator.module_loader.clone())))
     }
 
-    /// Compiles mq code into a pre-parsed Program that can be evaluated multiple times.
+    /// Compiles mq code into a [`CompiledProgram`] that can be evaluated multiple times.
     ///
     /// Use this with `eval_compiled` to avoid re-parsing the same query for each input.
-    pub fn compile(&mut self, code: &str) -> Result<crate::Program, Box<error::Error>> {
+    pub fn compile(&mut self, code: &str) -> Result<CompiledProgram, Box<error::Error>> {
         if code.is_empty() {
-            return Ok(vec![]);
+            return Ok(CompiledProgram {
+                source: String::new(),
+                program: vec![],
+            });
         }
-        parse(code, Shared::clone(&self.token_arena))
+        let program = parse(code, Shared::clone(&self.token_arena))?;
+        Ok(CompiledProgram {
+            source: code.to_string(),
+            program,
+        })
     }
 
-    /// Evaluates a pre-compiled Program against the given input.
+    /// Evaluates a pre-compiled program against the given input.
     ///
     /// Use with `compile` to avoid re-parsing the same query for each input file,
-    /// or with a program constructed from a deserialized JSON AST (`ast-json` feature).
+    /// or with a [`CompiledProgram`] constructed from a deserialized JSON AST (`ast-json` feature).
     ///
     /// # Examples
     ///
@@ -209,16 +245,26 @@ impl<T: ModuleResolver> Engine<T> {
     /// let mut engine = mq_lang::DefaultEngine::default();
     /// engine.load_builtin_module();
     ///
-    /// let program = engine.compile("add(\" world\")").unwrap();
+    /// let compiled = engine.compile("add(\" world\")").unwrap();
     /// let input = mq_lang::parse_text_input("hello").unwrap();
-    /// let result = engine.eval_compiled(&program, input.into_iter());
+    /// let result = engine.eval_compiled(&compiled, input.into_iter());
     /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
     /// ```
-    pub fn eval_compiled<I: Iterator<Item = RuntimeValue>>(&mut self, program: &crate::Program, input: I) -> MqResult {
+    pub fn eval_compiled<I: Iterator<Item = RuntimeValue>>(
+        &mut self,
+        compiled: &CompiledProgram,
+        input: I,
+    ) -> MqResult {
         self.evaluator
-            .eval(program, input)
+            .eval(&compiled.program, input)
             .map(|values| values.into())
-            .map_err(|e| Box::new(error::Error::from_error("", e, self.evaluator.module_loader.clone())))
+            .map_err(|e| {
+                Box::new(error::Error::from_error(
+                    &compiled.source,
+                    e,
+                    self.evaluator.module_loader.clone(),
+                ))
+            })
     }
 
     /// Returns a reference to the debugger instance.
@@ -369,6 +415,7 @@ mod tests {
 
     #[test]
     fn test_eval_compiled_with_ast() {
+        use super::CompiledProgram;
         use crate::{AstExpr, AstLiteral, AstNode, Shared};
 
         let mut engine = DefaultEngine::default();
@@ -379,7 +426,8 @@ mod tests {
             expr: Shared::new(AstExpr::Literal(AstLiteral::String("hello".to_string()))),
         })];
 
-        let result = engine.eval_compiled(&program, crate::null_input().into_iter());
+        let compiled = CompiledProgram::from(program);
+        let result = engine.eval_compiled(&compiled, crate::null_input().into_iter());
         assert!(result.is_ok());
         let values = result.unwrap();
         assert_eq!(values.len(), 1);

@@ -870,7 +870,7 @@ impl Cli {
     fn execute_compiled(
         &self,
         engine: &mut mq_lang::DefaultEngine,
-        program: &mq_lang::Program,
+        program: &mq_lang::CompiledProgram,
         file: &Option<PathBuf>,
         content: &ContentData,
     ) -> miette::Result<()> {
