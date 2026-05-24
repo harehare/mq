@@ -190,6 +190,26 @@ impl<T: ModuleResolver> Engine<T> {
             .map_err(|e| Box::new(error::Error::from_error(code, e, self.evaluator.module_loader.clone())))
     }
 
+    /// Compiles mq code into a pre-parsed Program that can be evaluated multiple times.
+    ///
+    /// Use this with `eval_compiled` to avoid re-parsing the same query for each input.
+    pub fn compile(&mut self, code: &str) -> Result<crate::Program, Box<error::Error>> {
+        if code.is_empty() {
+            return Ok(vec![]);
+        }
+        parse(code, Shared::clone(&self.token_arena))
+    }
+
+    /// Evaluates a pre-compiled Program against the given input.
+    ///
+    /// Use with `compile` to avoid re-parsing the same query for each input file.
+    pub fn eval_compiled<I: Iterator<Item = RuntimeValue>>(&mut self, program: &crate::Program, input: I) -> MqResult {
+        self.evaluator
+            .eval(program, input)
+            .map(|values| values.into())
+            .map_err(|e| Box::new(error::Error::from_error("", e, self.evaluator.module_loader.clone())))
+    }
+
     /// Evaluates a pre-parsed AST (Program).
     ///
     /// This is similar to `eval`, but takes an AST directly, skipping parsing.

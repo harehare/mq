@@ -12,7 +12,18 @@ use crate::{
 };
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
-use std::{borrow::Cow, path::PathBuf, sync::LazyLock};
+use std::{borrow::Cow, cell::RefCell, path::PathBuf, sync::LazyLock};
+
+use crate::Token;
+
+struct BuiltinCache {
+    tokens: Vec<Shared<Token>>,
+    module: Module,
+}
+
+thread_local! {
+    static BUILTIN_CACHE: RefCell<Option<BuiltinCache>> = const { RefCell::new(None) };
+}
 
 pub type ModuleId = ArenaId<ModuleName>;
 
@@ -197,7 +208,42 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 
     pub fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Module, ModuleError> {
-        self.load(Module::BUILTIN_MODULE, BUILTIN_FILE, token_arena)
+        // Check thread-local cache first
+        let cached = BUILTIN_CACHE.with(|cache| cache.borrow().as_ref().map(|c| (c.tokens.clone(), c.module.clone())));
+
+        if let Some((tokens, module)) = cached {
+            // Pre-populate token_arena with cached builtin tokens (skip index 0, the dummy EOF)
+            {
+                #[cfg(not(feature = "sync"))]
+                token_arena.borrow_mut().extend_from_slice(&tokens);
+                #[cfg(feature = "sync")]
+                token_arena.write().unwrap().extend_from_slice(&tokens);
+            }
+            // Register "builtin" module name in this engine's loaded_modules arena
+            self.loaded_modules.alloc(Module::BUILTIN_MODULE.into());
+            return Ok(module);
+        }
+
+        // First time on this thread: parse normally
+        let module = self.load(Module::BUILTIN_MODULE, BUILTIN_FILE, Shared::clone(&token_arena))?;
+
+        // Save to thread-local cache (skip index 0 which is the dummy EOF token)
+        let tokens = {
+            #[cfg(not(feature = "sync"))]
+            let arena = token_arena.borrow();
+            #[cfg(feature = "sync")]
+            let arena = token_arena.read().unwrap();
+            arena.as_slice()[1..].iter().map(Shared::clone).collect::<Vec<_>>()
+        };
+
+        BUILTIN_CACHE.with(|cache| {
+            *cache.borrow_mut() = Some(BuiltinCache {
+                tokens,
+                module: module.clone(),
+            });
+        });
+
+        Ok(module)
     }
 
     #[cfg(feature = "debugger")]
