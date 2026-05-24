@@ -36,9 +36,9 @@
 //! ## Features
 //!
 //! - `ast-json`: Enables serialization and deserialization of the AST (Abstract Syntax Tree)
-//!   to/from JSON format. This also enables the `Engine::eval_ast` method for direct
-//!   AST execution. When this feature is enabled, `serde` and `serde_json` dependencies
-//!   are included.
+//!   to/from JSON format (`ast_to_json` / `ast_from_json`). Use `Engine::compile` and
+//!   `Engine::eval_compiled` to execute programs constructed from deserialized ASTs.
+//!   When this feature is enabled, `serde` and `serde_json` dependencies are included.
 mod arena;
 mod ast;
 #[cfg(feature = "cst")]

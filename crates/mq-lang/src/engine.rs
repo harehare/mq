@@ -202,43 +202,23 @@ impl<T: ModuleResolver> Engine<T> {
 
     /// Evaluates a pre-compiled Program against the given input.
     ///
-    /// Use with `compile` to avoid re-parsing the same query for each input file.
-    pub fn eval_compiled<I: Iterator<Item = RuntimeValue>>(&mut self, program: &crate::Program, input: I) -> MqResult {
-        self.evaluator
-            .eval(program, input)
-            .map(|values| values.into())
-            .map_err(|e| Box::new(error::Error::from_error("", e, self.evaluator.module_loader.clone())))
-    }
-
-    /// Evaluates a pre-parsed AST (Program).
-    ///
-    /// This is similar to `eval`, but takes an AST directly, skipping parsing.
-    /// The AST is typically obtained from deserializing a JSON AST.
+    /// Use with `compile` to avoid re-parsing the same query for each input file,
+    /// or with a program constructed from a deserialized JSON AST (`ast-json` feature).
     ///
     /// # Examples
     ///
     /// ```rust
-    /// #[cfg(feature = "ast-json")]
-    /// use mq_lang::{DefaultEngine, AstNode, AstExpr, AstLiteral, Program, RuntimeValue, Shared};
-    ///
-    /// let mut engine = DefaultEngine::default();
+    /// let mut engine = mq_lang::DefaultEngine::default();
     /// engine.load_builtin_module();
     ///
-    /// let json = r#"[
-    ///   {
-    ///     "expr": {
-    ///       "Literal": {"String": "hello"}
-    ///     }
-    ///   }
-    /// ]"#;
-    /// let program: mq_lang::Program = serde_json::from_str(json).unwrap();
-    /// let result = engine.eval_ast(program, mq_lang::null_input().into_iter());
-    /// assert_eq!(result.unwrap(), vec!["hello".to_string().into()].into());
+    /// let program = engine.compile("add(\" world\")").unwrap();
+    /// let input = mq_lang::parse_text_input("hello").unwrap();
+    /// let result = engine.eval_compiled(&program, input.into_iter());
+    /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
     /// ```
-    #[cfg(feature = "ast-json")]
-    pub fn eval_ast<I: Iterator<Item = RuntimeValue>>(&mut self, program: Program, input: I) -> MqResult {
+    pub fn eval_compiled<I: Iterator<Item = RuntimeValue>>(&mut self, program: &crate::Program, input: I) -> MqResult {
         self.evaluator
-            .eval(&program, input.into_iter())
+            .eval(program, input)
             .map(|values| values.into())
             .map_err(|e| Box::new(error::Error::from_error("", e, self.evaluator.module_loader.clone())))
     }
@@ -389,9 +369,8 @@ mod tests {
         assert_eq!(values.len(), 1);
     }
 
-    #[cfg(feature = "ast-json")]
     #[test]
-    fn test_eval_ast() {
+    fn test_eval_compiled_with_ast() {
         use crate::{AstExpr, AstLiteral, AstNode, Shared};
 
         let mut engine = DefaultEngine::default();
@@ -402,7 +381,7 @@ mod tests {
             expr: Shared::new(AstExpr::Literal(AstLiteral::String("hello".to_string()))),
         })];
 
-        let result = engine.eval_ast(program, crate::null_input().into_iter());
+        let result = engine.eval_compiled(&program, crate::null_input().into_iter());
         assert!(result.is_ok());
         let values = result.unwrap();
         assert_eq!(values.len(), 1);
