@@ -314,10 +314,11 @@ mod tests {
     use smol_str::SmolStr;
 
     use crate::{
-        Shared, SharedCell, Token, TokenKind,
+        Range, Shared, SharedCell, Token, TokenKind,
         ast::node::{self as ast, IdentWithToken, Param},
         module::LocalFsModuleResolver,
-        range::{Position, Range},
+        range::Position,
+        token_alloc,
     };
 
     use super::{Module, ModuleError, ModuleLoader};
@@ -325,6 +326,22 @@ mod tests {
     #[fixture]
     fn token_arena() -> Shared<SharedCell<crate::arena::Arena<Shared<Token>>>> {
         Shared::new(SharedCell::new(crate::arena::Arena::new(10)))
+    }
+
+    /// Arena that mirrors the engine's initial state: one dummy EOF token at index 0.
+    /// Required to exercise the "pristine" cache path in `load_builtin`.
+    #[fixture]
+    fn pristine_token_arena() -> Shared<SharedCell<crate::arena::Arena<Shared<Token>>>> {
+        let arena = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
+        token_alloc(
+            &arena,
+            &Shared::new(Token {
+                kind: TokenKind::Eof,
+                range: Range::default(),
+                module_id: Module::TOP_LEVEL_MODULE_ID,
+            }),
+        );
+        arena
     }
 
     #[rstest]
@@ -462,5 +479,114 @@ mod tests {
 
         let module = result.unwrap();
         assert_eq!(module.name, Module::BUILTIN_MODULE);
+    }
+
+    /// Token arena size must be the same whether the builtin module was loaded from a fresh
+    /// parse or replayed from the thread-local cache.
+    #[rstest]
+    fn test_load_builtin_cache_arena_size_consistent(
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+    ) {
+        let arena1 = pristine_token_arena;
+        let mut loader1 = ModuleLoader::new(LocalFsModuleResolver::default());
+        loader1.load_builtin(Shared::clone(&arena1)).unwrap();
+        #[cfg(not(feature = "sync"))]
+        let size1 = arena1.borrow().len();
+        #[cfg(feature = "sync")]
+        let size1 = arena1.read().unwrap().len();
+
+        let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
+        token_alloc(
+            &arena2,
+            &Shared::new(Token {
+                kind: TokenKind::Eof,
+                range: Range::default(),
+                module_id: Module::TOP_LEVEL_MODULE_ID,
+            }),
+        );
+        let mut loader2 = ModuleLoader::new(LocalFsModuleResolver::default());
+        loader2.load_builtin(Shared::clone(&arena2)).unwrap();
+        #[cfg(not(feature = "sync"))]
+        let size2 = arena2.borrow().len();
+        #[cfg(feature = "sync")]
+        let size2 = arena2.read().unwrap().len();
+
+        assert_eq!(size1, size2, "arena size must match between cache and fresh parse");
+        assert!(size1 > 1, "builtin tokens must be added to the arena");
+    }
+
+    /// The module returned from cache must have the same function/var/macro counts as a fresh parse.
+    #[rstest]
+    fn test_load_builtin_cache_module_counts_consistent(
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+    ) {
+        let mut loader1 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let module1 = loader1.load_builtin(pristine_token_arena).unwrap();
+
+        let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
+        token_alloc(
+            &arena2,
+            &Shared::new(Token {
+                kind: TokenKind::Eof,
+                range: Range::default(),
+                module_id: Module::TOP_LEVEL_MODULE_ID,
+            }),
+        );
+        let mut loader2 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let module2 = loader2.load_builtin(arena2).unwrap();
+
+        assert_eq!(module1.name, module2.name);
+        assert_eq!(module1.functions.len(), module2.functions.len());
+        assert_eq!(module1.vars.len(), module2.vars.len());
+        assert_eq!(module1.macros.len(), module2.macros.len());
+        assert_eq!(module1.modules.len(), module2.modules.len());
+    }
+
+    /// After load_builtin, the builtin module must be registered at loaded_modules index 1
+    /// (TOP_LEVEL_MODULE is always 0).
+    #[rstest]
+    fn test_load_builtin_module_registered_at_id_one(
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+    ) {
+        let mut loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        loader.load_builtin(pristine_token_arena).unwrap();
+
+        assert_eq!(loader.loaded_modules.len(), 2);
+        assert!(loader.loaded_modules.contains(Module::BUILTIN_MODULE.into()));
+    }
+
+    /// All tokens injected from cache must carry module_id == 1 (BUILTIN_MODULE_ID),
+    /// so that error diagnostics resolve to the builtin source file rather than garbage.
+    #[rstest]
+    fn test_load_builtin_cache_tokens_have_builtin_module_id(
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+    ) {
+        let mut loader1 = ModuleLoader::new(LocalFsModuleResolver::default());
+        loader1.load_builtin(pristine_token_arena).unwrap();
+
+        // Second pristine load — this is the cache-hit path.
+        let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
+        token_alloc(
+            &arena2,
+            &Shared::new(Token {
+                kind: TokenKind::Eof,
+                range: Range::default(),
+                module_id: Module::TOP_LEVEL_MODULE_ID,
+            }),
+        );
+        let mut loader2 = ModuleLoader::new(LocalFsModuleResolver::default());
+        loader2.load_builtin(Shared::clone(&arena2)).unwrap();
+
+        let builtin_module_id: crate::ModuleId = 1.into();
+        #[cfg(not(feature = "sync"))]
+        let arena = arena2.borrow();
+        #[cfg(feature = "sync")]
+        let arena = arena2.read().unwrap();
+        for token in arena.as_slice()[1..].iter() {
+            assert_eq!(
+                token.module_id, builtin_module_id,
+                "cached builtin token must have BUILTIN_MODULE_ID"
+            );
+        }
     }
 }

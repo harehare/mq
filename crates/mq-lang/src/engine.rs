@@ -436,6 +436,73 @@ mod tests {
         assert!(compiled.program().is_empty());
     }
 
+    // --- builtin cache tests ---
+
+    /// Two sequential engines calling the same builtin functions must produce identical results,
+    /// whether the builtin module was loaded from a fresh parse or replayed from the cache.
+    #[rstest]
+    #[case("add(1, 2)", vec!["".to_string().into()], vec![3.into()])]
+    #[case("not(false)", vec!["".to_string().into()], vec![true.into()])]
+    #[case("to_string(42)", vec!["".to_string().into()], vec!["42".to_string().into()])]
+    fn test_builtin_cache_sequential_engines_consistent(
+        #[case] query: &str,
+        #[case] input: Vec<crate::RuntimeValue>,
+        #[case] expected: Vec<crate::RuntimeValue>,
+    ) {
+        let mut engine1 = DefaultEngine::default();
+        engine1.load_builtin_module();
+        let result1 = engine1.eval(query, input.clone().into_iter()).unwrap();
+
+        let mut engine2 = DefaultEngine::default();
+        engine2.load_builtin_module();
+        let result2 = engine2.eval(query, input.into_iter()).unwrap();
+
+        assert_eq!(result1.values(), &expected);
+        assert_eq!(result2.values(), &expected);
+    }
+
+    /// Compiling and evaluating a builtin function call on a second engine (cache path) must
+    /// produce the correct result — verifying that token_ids in the compiled program are valid
+    /// when the builtin tokens were injected from cache rather than freshly parsed.
+    #[rstest]
+    #[case("add(1, 2)", vec!["".to_string().into()], vec![3.into()])]
+    #[case("not(false)", vec!["".to_string().into()], vec![true.into()])]
+    #[case("len(\"hello\")", vec!["".to_string().into()], vec![5.into()])]
+    fn test_builtin_cache_eval_compiled_token_ids_valid(
+        #[case] query: &str,
+        #[case] input: Vec<crate::RuntimeValue>,
+        #[case] expected: Vec<crate::RuntimeValue>,
+    ) {
+        let mut engine1 = DefaultEngine::default();
+        engine1.load_builtin_module();
+
+        let mut engine2 = DefaultEngine::default();
+        engine2.load_builtin_module();
+        let compiled = engine2.compile(query).unwrap();
+        let result = engine2.eval_compiled(&compiled, input.into_iter()).unwrap();
+        assert_eq!(result.values(), &expected);
+    }
+
+    /// Runtime errors produced on an engine that used the builtin cache must still carry the
+    /// correct source_code — confirming that token_id lookups remain valid after cache replay.
+    #[rstest]
+    #[case("undefined_fn()", "undefined_fn()")]
+    #[case("unknown_call(1, 2)", "unknown_call(1, 2)")]
+    fn test_builtin_cache_runtime_error_preserves_source(#[case] query: &str, #[case] expected_source: &str) {
+        let mut engine1 = DefaultEngine::default();
+        engine1.load_builtin_module();
+
+        let mut engine2 = DefaultEngine::default();
+        engine2.load_builtin_module();
+        let compiled = engine2.compile(query).unwrap();
+        let err = engine2
+            .eval_compiled(&compiled, crate::null_input().into_iter())
+            .unwrap_err();
+        assert_eq!(err.source_code, expected_source);
+    }
+
+    // --- CompiledProgram unit tests ---
+
     #[test]
     fn test_compiled_program_from_has_empty_source() {
         let compiled = CompiledProgram::from(vec![]);
