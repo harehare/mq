@@ -329,7 +329,9 @@ impl<T: ModuleResolver> Engine<T> {
 
 #[cfg(test)]
 mod tests {
+    use super::CompiledProgram;
     use crate::DefaultEngine;
+    use rstest::rstest;
     use scopeguard::defer;
     use std::io::Write;
     use std::{fs::File, path::PathBuf};
@@ -413,9 +415,79 @@ mod tests {
         assert_eq!(values.len(), 1);
     }
 
+    #[rstest]
+    #[case("add(1, 1)", "add(1, 1)")]
+    #[case(".", ".")]
+    #[case("length(.)", "length(.)")]
+    fn test_compiled_program_source(#[case] query: &str, #[case] expected: &str) {
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile(query).unwrap();
+        assert_eq!(compiled.source(), expected);
+        assert!(!compiled.program().is_empty());
+        assert_eq!(compiled.clone().source(), expected);
+    }
+
+    #[rstest]
+    #[case("")]
+    fn test_compile_empty_code(#[case] query: &str) {
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile(query).unwrap();
+        assert_eq!(compiled.source(), "");
+        assert!(compiled.program().is_empty());
+    }
+
+    #[test]
+    fn test_compiled_program_from_has_empty_source() {
+        let compiled = CompiledProgram::from(vec![]);
+        assert_eq!(compiled.source(), "");
+        assert!(compiled.program().is_empty());
+    }
+
+    #[rstest]
+    #[case("add(1, 1)", vec!["".to_string().into()], vec![2.into()])]
+    #[case("add(\" world\")", vec!["hello".to_string().into()], vec!["hello world".to_string().into()])]
+    #[case("add(\" world\")", vec!["hi".to_string().into()], vec!["hi world".to_string().into()])]
+    fn test_eval_compiled(
+        #[case] query: &str,
+        #[case] input: Vec<crate::RuntimeValue>,
+        #[case] expected: Vec<crate::RuntimeValue>,
+    ) {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let compiled = engine.compile(query).unwrap();
+        let result = engine.eval_compiled(&compiled, input.into_iter());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().values(), &expected);
+    }
+
+    #[rstest]
+    #[case("undefined_fn()", "undefined_fn()")]
+    #[case("unknown()", "unknown()")]
+    fn test_eval_compiled_runtime_error_preserves_source(#[case] query: &str, #[case] expected_source: &str) {
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile(query).unwrap();
+        let err = engine
+            .eval_compiled(&compiled, crate::null_input().into_iter())
+            .unwrap_err();
+        assert_eq!(err.source_code, expected_source);
+    }
+
+    #[rstest]
+    #[case("undefined_fn()")]
+    #[case("unknown()")]
+    fn test_eval_compiled_from_program_has_empty_source_in_error(#[case] query: &str) {
+        let mut engine = DefaultEngine::default();
+        let original = engine.compile(query).unwrap();
+        let no_source = CompiledProgram::from(original.program().clone());
+        assert_eq!(no_source.source(), "");
+        let err = engine
+            .eval_compiled(&no_source, crate::null_input().into_iter())
+            .unwrap_err();
+        assert_eq!(err.source_code, "");
+    }
+
     #[test]
     fn test_eval_compiled_with_ast() {
-        use super::CompiledProgram;
         use crate::{AstExpr, AstLiteral, AstNode, Shared};
 
         let mut engine = DefaultEngine::default();
