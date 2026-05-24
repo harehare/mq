@@ -255,6 +255,9 @@ impl<T: ModuleResolver> Engine<T> {
         compiled: &CompiledProgram,
         input: I,
     ) -> MqResult {
+        #[cfg(feature = "debugger")]
+        self.evaluator.module_loader.set_source_code(compiled.source.clone());
+
         self.evaluator
             .eval(&compiled.program, input)
             .map(|values| values.into())
