@@ -2,8 +2,6 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-#[cfg(feature = "ast-json")]
-use crate::Program;
 #[cfg(feature = "debugger")]
 use crate::eval::env::Env;
 #[cfg(feature = "debugger")]
