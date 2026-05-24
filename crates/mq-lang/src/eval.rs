@@ -284,7 +284,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 .map(|runtime_value| match &runtime_value {
                     RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
                     _ => self
-                        .eval_program(&program, runtime_value, Shared::clone(&self.env))
+                        .eval_program(&program, runtime_value, &Shared::clone(&self.env))
                         .map_err(|e| e.into_inner_error()),
                 })
                 .collect();
@@ -292,7 +292,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             if nodes_program.is_empty() {
                 values
             } else {
-                self.eval_program(&nodes_program, values?.into(), Shared::clone(&self.env))
+                self.eval_program(&nodes_program, values?.into(), &Shared::clone(&self.env))
                     .map(|value| {
                         if let RuntimeValue::Array(values) = value {
                             values
@@ -307,7 +307,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 .map(|runtime_value| match &runtime_value {
                     RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
                     _ => self
-                        .eval_program(&program, runtime_value, Shared::clone(&self.env))
+                        .eval_program(&program, runtime_value, &Shared::clone(&self.env))
                         .map_err(|e| e.into_inner_error()),
                 })
                 .collect()
@@ -321,7 +321,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 .eval_program(
                     program,
                     RuntimeValue::new_markdown(child_node.clone()),
-                    Shared::clone(&self.env),
+                    &Shared::clone(&self.env),
                 )
                 .map_err(|e| e.into_inner_error())?;
 
@@ -360,8 +360,11 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     pub(crate) fn load_builtin_module(&mut self) -> Result<(), RuntimeError> {
-        let module = self.module_loader.load_builtin(Shared::clone(&self.token_arena))?;
-        self.load_module(module)
+        match self.module_loader.load_builtin(Shared::clone(&self.token_arena)) {
+            Ok(module) => self.load_module(module),
+            Err(ModuleError::AlreadyLoaded(_)) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
     }
 
     pub(crate) fn load_module(&mut self, module: module::Module) -> Result<(), RuntimeError> {
@@ -449,13 +452,13 @@ impl<T: ModuleResolver> Evaluator<T> {
         &mut self,
         program: &Program,
         runtime_value: RuntimeValue,
-        env: Shared<SharedCell<Env>>,
+        env: &Shared<SharedCell<Env>>,
     ) -> EvalResult {
         let mut value = runtime_value;
         for expr in program {
-            match self.eval_expr(&value, expr, &env) {
+            match self.eval_expr(&value, expr, env) {
                 Ok(new_value) => {
-                    value = self.maybe_auto_call_pipeline_ident(new_value, &value, expr, &env)?;
+                    value = self.maybe_auto_call_pipeline_ident(new_value, &value, expr, env)?;
                 }
                 Err(e) => return Err(e),
             }
@@ -1066,7 +1069,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             }
             ast::Expr::Block(program) => {
                 let block_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
-                self.eval_program(program, runtime_value.clone(), block_env)
+                self.eval_program(program, runtime_value.clone(), &block_env)
             }
             ast::Expr::CallDynamic(callable, args) => self.eval_call_dynamic(runtime_value, callable, args, env),
             ast::Expr::If(condition) => self.eval_if(runtime_value, condition, env),
@@ -1255,7 +1258,7 @@ impl<T: ModuleResolver> Evaluator<T> {
 
                 for value in values {
                     define(&env, ident, value.clone());
-                    match self.eval_program(body, value, Shared::clone(&env)) {
+                    match self.eval_program(body, value, &env) {
                         Ok(result) => results.push(result),
                         Err(EvalError::Flow(ControlFlow::Break(_, Some(v)))) => return Ok(*v),
                         Err(EvalError::Flow(ControlFlow::Break(_, None))) => break,
@@ -1272,7 +1275,7 @@ impl<T: ModuleResolver> Evaluator<T> {
 
                 for c in s.chars() {
                     define(&env, ident, RuntimeValue::String(c.to_string()));
-                    match self.eval_program(body, RuntimeValue::String(c.to_string()), Shared::clone(&env)) {
+                    match self.eval_program(body, RuntimeValue::String(c.to_string()), &env) {
                         Ok(result) => results.push(result),
                         Err(EvalError::Flow(ControlFlow::Break(_, Some(v)))) => return Ok(*v),
                         Err(EvalError::Flow(ControlFlow::Break(_, None))) => break,
@@ -1313,7 +1316,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         let mut first = true;
 
         while cond_value.is_truthy() {
-            match self.eval_program(body, runtime_value.clone(), Shared::clone(&env)) {
+            match self.eval_program(body, runtime_value.clone(), &env) {
                 Ok(mut new_runtime_value) => {
                     std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                     cond_value = self.eval_expr(&runtime_value, cond, &env)?;
@@ -1346,7 +1349,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         let env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
 
         loop {
-            match self.eval_program(body, runtime_value.clone(), Shared::clone(&env)) {
+            match self.eval_program(body, runtime_value.clone(), &env) {
                 Ok(mut new_runtime_value) => {
                     std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                 }
@@ -1813,7 +1816,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 }
             }
 
-            let result = self.eval_program(program, runtime_value.clone(), new_env);
+            let result = self.eval_program(program, runtime_value.clone(), &new_env);
             self.exit_scope();
             #[cfg(feature = "debugger")]
             self.debugger.write().unwrap().pop_call_stack();

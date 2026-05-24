@@ -1,11 +1,11 @@
 pub mod runtime;
 pub mod syntax;
 
-use miette::{Diagnostic, SourceOffset, SourceSpan};
+use miette::{Diagnostic, NamedSource, SourceOffset, SourceSpan};
 use std::borrow::Cow;
 
 use crate::{
-    Module, ModuleLoader, ModuleResolver, Token, TokenKind,
+    ModuleLoader, ModuleResolver, Token, TokenKind,
     error::{runtime::RuntimeError, syntax::SyntaxError},
     module::{self, error::ModuleError},
 };
@@ -56,8 +56,8 @@ impl InnerError {
 pub struct Error {
     /// The underlying cause of the error.
     pub cause: InnerError,
-    /// The source code related to the error.
-    pub source_code: String,
+    /// The named source code for diagnostics (includes the module filename when available).
+    pub source_code: NamedSource<String>,
     /// The location in the source code for diagnostics.
     pub location: SourceSpan,
     /// The location of the opening delimiter, if applicable (e.g. unclosed `(`, `[`, `{`).
@@ -76,19 +76,20 @@ impl Error {
 
         match token {
             Some(token) => {
-                let source_code = module_loader
+                let source_str = module_loader
                     .get_source_code(token.module_id, source_code)
                     .unwrap_or_default();
+                let source_name = module_loader.module_file_name(token.module_id);
 
                 let span_for = |t: &Token| {
                     SourceSpan::new(
-                        SourceOffset::from_location(&source_code, t.range.start.line as usize, t.range.start.column),
+                        SourceOffset::from_location(&source_str, t.range.start.line as usize, t.range.start.column),
                         std::cmp::max(
-                            SourceOffset::from_location(&source_code, t.range.end.line as usize, t.range.end.column)
+                            SourceOffset::from_location(&source_str, t.range.end.line as usize, t.range.end.column)
                                 .offset()
                                 .saturating_sub(
                                     SourceOffset::from_location(
-                                        &source_code,
+                                        &source_str,
                                         t.range.start.line as usize,
                                         t.range.start.column,
                                     )
@@ -104,7 +105,7 @@ impl Error {
 
                 Self {
                     cause,
-                    source_code,
+                    source_code: NamedSource::new(source_name, source_str),
                     location,
                     secondary_location,
                 }
@@ -119,27 +120,30 @@ impl Error {
                     _ => (None, false),
                 };
 
-                let source_code = module_id
-                    .map(|module_id| match module_loader.module_name(*module_id) {
-                        Cow::Borrowed(Module::TOP_LEVEL_MODULE) => source_code.clone(),
-                        Cow::Borrowed(Module::BUILTIN_MODULE) => module::BUILTIN_FILE.to_string(),
-                        Cow::Borrowed(module_name) => module_loader.clone().resolve(module_name).unwrap_or_default(),
-                        Cow::Owned(module_name) => module_loader.clone().resolve(&module_name).unwrap_or_default(),
+                let source_name = module_id
+                    .map(|id| module_loader.module_file_name(*id))
+                    .unwrap_or_default();
+
+                let source_str = module_id
+                    .map(|id| {
+                        module_loader
+                            .get_source_code(*id, source_code.clone())
+                            .unwrap_or_default()
                     })
                     .unwrap_or(source_code);
 
                 let location = if is_eof {
-                    let lines = source_code.lines();
+                    let lines = source_str.lines();
                     let loc_line = lines.clone().count().saturating_sub(1);
                     let loc_col = lines.last().map(|lines| lines.len()).unwrap_or(0);
-                    SourceSpan::new(SourceOffset::from_location(&source_code, loc_line, loc_col), 1)
+                    SourceSpan::new(SourceOffset::from_location(&source_str, loc_line, loc_col), 1)
                 } else {
-                    SourceSpan::new(SourceOffset::from_location(&source_code, 0, 0), 1)
+                    SourceSpan::new(SourceOffset::from_location(&source_str, 0, 0), 1)
                 };
 
                 Self {
                     cause,
-                    source_code,
+                    source_code: NamedSource::new(source_name, source_str),
                     location,
                     secondary_location: None,
                 }
@@ -475,7 +479,7 @@ impl Diagnostic for Error {
 
     #[cold]
     fn source_code(&self) -> Option<&dyn miette::SourceCode> {
-        Some(&self.source_code)
+        Some(&self.source_code as &dyn miette::SourceCode)
     }
 }
 
@@ -513,7 +517,7 @@ mod test {
         let module_loader: ModuleLoader = ModuleLoader::default();
         let error = Error::from_error("line 1\nline 2", cause, module_loader);
 
-        assert_eq!(error.source_code, "line 1\nline 2");
+        assert_eq!(error.source_code.inner(), "line 1\nline 2");
     }
 
     #[rstest]
@@ -662,7 +666,7 @@ mod test {
         #[case] source_code: &str,
     ) {
         let error = Error::from_error(source_code, cause, module_loader);
-        assert_eq!(error.source_code, source_code);
+        assert_eq!(error.source_code.inner(), source_code);
     }
 
     #[test]
@@ -693,7 +697,7 @@ mod test {
         let cause = InnerError::Runtime(RuntimeError::ZeroDivision(token));
         let error = Error::from_error("top level source", cause, loader);
 
-        assert_eq!(error.source_code, "def func1(): 42; | let val1 = 1");
+        assert_eq!(error.source_code.inner(), "def func1(): 42; | let val1 = 1");
     }
 
     #[test]
@@ -710,7 +714,7 @@ mod test {
         let cause = InnerError::Runtime(RuntimeError::ZeroDivision(token));
         let error = Error::from_error("top level source", cause, loader);
 
-        assert_eq!(error.source_code, module::BUILTIN_FILE);
+        assert_eq!(error.source_code.inner(), module::BUILTIN_FILE);
     }
 
     #[rstest]

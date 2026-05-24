@@ -89,6 +89,11 @@ impl<T: Clone + PartialEq> Arena<T> {
     pub fn contains(&self, value: T) -> bool {
         self.items.contains(&value)
     }
+
+    /// Extends the arena by cloning elements from a slice.
+    pub fn extend_from_slice(&mut self, items: &[T]) {
+        self.items.extend_from_slice(items);
+    }
 }
 
 impl<T> Index<ArenaId<T>> for Arena<T> {
@@ -103,6 +108,11 @@ impl<T> Arena<T> {
     /// Returns a reference to the element at the given `ArenaId`, or `None` if out of bounds.
     pub fn get(&self, id: ArenaId<T>) -> Option<&T> {
         self.items.get(id.id as usize)
+    }
+
+    /// Returns a slice of all elements in the arena.
+    pub fn as_slice(&self) -> &[T] {
+        &self.items
     }
 }
 

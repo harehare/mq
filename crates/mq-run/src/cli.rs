@@ -690,6 +690,93 @@ impl Cli {
             .map(str::to_string)
     }
 
+    fn set_file_vars(&self, engine: &mut mq_lang::DefaultEngine, file: &Path) {
+        engine.define_string_value("__FILE__", file.to_string_lossy().as_ref());
+        engine.define_string_value(
+            "__FILE_NAME__",
+            file.file_name().unwrap_or_default().to_string_lossy().as_ref(),
+        );
+        engine.define_string_value(
+            "__FILE_STEM__",
+            file.file_stem().unwrap_or_default().to_string_lossy().as_ref(),
+        );
+    }
+
+    fn resolve_input(
+        &self,
+        file: &Option<PathBuf>,
+        content: &ContentData,
+    ) -> miette::Result<Vec<mq_lang::RuntimeValue>> {
+        let text = content.as_str().unwrap_or("");
+        Ok(
+            match self.input.input_format.as_ref().cloned().unwrap_or_else(|| {
+                if let Some(file) = file {
+                    InputFormat::from_extension(&file.extension().unwrap_or_default().to_string_lossy())
+                } else if io::stdin().is_terminal() {
+                    InputFormat::Null
+                } else {
+                    InputFormat::Markdown
+                }
+            }) {
+                // Native formats
+                InputFormat::Markdown => mq_lang::parse_markdown_input(text)?,
+                InputFormat::Mdx => mq_lang::parse_mdx_input(text)?,
+                InputFormat::Html => mq_lang::parse_html_input(text)?,
+                InputFormat::Text => mq_lang::parse_text_input(text)?,
+                InputFormat::Null => mq_lang::null_input(),
+                InputFormat::Raw => mq_lang::raw_input(text),
+                // Bytes: pass raw binary content as RuntimeValue::Bytes with no further parsing.
+                InputFormat::Bytes => mq_lang::bytes_input(content.as_bytes()),
+                // Module-backed binary format: pass raw bytes; the cbor module handles parsing.
+                InputFormat::Cbor => mq_lang::bytes_input(content.as_bytes()),
+                // Module-backed text formats (alphabetical): pass raw string; the module handles parsing.
+                InputFormat::Csv
+                | InputFormat::Hcl
+                | InputFormat::Json
+                | InputFormat::Psv
+                | InputFormat::Toml
+                | InputFormat::Toon
+                | InputFormat::Tsv
+                | InputFormat::Xml
+                | InputFormat::Yaml => mq_lang::raw_input(text),
+            },
+        )
+    }
+
+    fn apply_update(
+        &self,
+        input: Vec<mq_lang::RuntimeValue>,
+        results: mq_lang::RuntimeValues,
+    ) -> miette::Result<mq_lang::RuntimeValues> {
+        let current_values: mq_lang::RuntimeValues = input.into();
+        if current_values.len() != results.len() {
+            return Err(miette!("The number of input and output values do not match"));
+        }
+        Ok(current_values.update_with(results))
+    }
+
+    fn emit_results(
+        &self,
+        runtime_values: mq_lang::RuntimeValues,
+        grep_input: Option<Vec<mq_lang::RuntimeValue>>,
+        file: &Option<PathBuf>,
+    ) -> miette::Result<()> {
+        if let Some(input) = grep_input {
+            let (before, after) = self.output.context_counts();
+            grep::print_grep(
+                runtime_values,
+                &input,
+                file,
+                &self.output.output_file,
+                self.output.unbuffered,
+                before,
+                after,
+            )
+        } else {
+            self.print(runtime_values)
+        }
+    }
+
     fn execute(
         &self,
         engine: &mut mq_lang::DefaultEngine,
@@ -706,63 +793,17 @@ impl Cli {
             None => query,
         };
 
-        if let Some(file) = file {
-            engine.define_string_value("__FILE__", file.to_string_lossy().as_ref());
-            engine.define_string_value(
-                "__FILE_NAME__",
-                file.file_name().unwrap_or_default().to_string_lossy().as_ref(),
-            );
-            engine.define_string_value(
-                "__FILE_STEM__",
-                file.file_stem().unwrap_or_default().to_string_lossy().as_ref(),
-            );
+        if let Some(f) = file {
+            self.set_file_vars(engine, f);
         }
 
-        let text = content.as_str().unwrap_or("");
-        let input = match self.input.input_format.as_ref().cloned().unwrap_or_else(|| {
-            if let Some(file) = file {
-                InputFormat::from_extension(&file.extension().unwrap_or_default().to_string_lossy())
-            } else if io::stdin().is_terminal() {
-                InputFormat::Null
-            } else {
-                InputFormat::Markdown
-            }
-        }) {
-            // Native formats
-            InputFormat::Markdown => mq_lang::parse_markdown_input(text)?,
-            InputFormat::Mdx => mq_lang::parse_mdx_input(text)?,
-            InputFormat::Html => mq_lang::parse_html_input(text)?,
-            InputFormat::Text => mq_lang::parse_text_input(text)?,
-            InputFormat::Null => mq_lang::null_input(),
-            InputFormat::Raw => mq_lang::raw_input(text),
-            // Bytes: pass raw binary content as RuntimeValue::Bytes with no further parsing.
-            InputFormat::Bytes => mq_lang::bytes_input(content.as_bytes()),
-            // Module-backed binary format: pass raw bytes; the cbor module handles parsing.
-            InputFormat::Cbor => mq_lang::bytes_input(content.as_bytes()),
-            // Module-backed text formats (alphabetical): pass raw string; the module handles parsing.
-            InputFormat::Csv
-            | InputFormat::Hcl
-            | InputFormat::Json
-            | InputFormat::Psv
-            | InputFormat::Toml
-            | InputFormat::Toon
-            | InputFormat::Tsv
-            | InputFormat::Xml
-            | InputFormat::Yaml => mq_lang::raw_input(text),
-        };
-
+        let input = self.resolve_input(file, content)?;
         let is_grep = matches!(self.output.output_format, OutputFormat::Grep);
-        let original_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
+        let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
 
         let runtime_values = if self.output.update {
             let results = engine.eval(query, input.clone().into_iter()).map_err(|e| *e)?;
-            let current_values: mq_lang::RuntimeValues = input.clone().into();
-
-            if current_values.len() != results.len() {
-                return Err(miette!("The number of input and output values do not match"));
-            }
-
-            current_values.update_with(results)
+            self.apply_update(input, results)?
         } else {
             engine.eval(query, input.into_iter()).map_err(|e| *e)?
         };
@@ -777,20 +818,24 @@ impl Cli {
             self.print(separator)?;
         }
 
-        if let Some(orig) = original_input {
-            let (before, after) = self.output.context_counts();
-            grep::print_grep(
-                runtime_values,
-                &orig,
-                file,
-                &self.output.output_file,
-                self.output.unbuffered,
-                before,
-                after,
-            )
-        } else {
-            self.print(runtime_values)
+        self.emit_results(runtime_values, grep_input, file)
+    }
+
+    /// Returns the effective query string combining any auto-prefix with the base query.
+    fn effective_query(&self, query: &str, file: &Option<PathBuf>) -> String {
+        match self.auto_query_prefix(file) {
+            Some(prefix) => format!("{} | {}", prefix, query),
+            None => query.to_string(),
         }
+    }
+
+    /// Returns true if all files would produce the same effective query prefix.
+    fn all_files_same_prefix(&self, files: &[(Option<PathBuf>, ContentData)]) -> bool {
+        if files.is_empty() {
+            return true;
+        }
+        let first = self.auto_query_prefix(&files[0].0);
+        files[1..].iter().all(|(f, _)| self.auto_query_prefix(f) == first)
     }
 
     fn process_batch(&self) -> Result<(), miette::Error> {
@@ -804,12 +849,49 @@ impl Cli {
             })?;
         } else {
             let mut engine = self.create_engine()?;
-            files
-                .iter()
-                .try_for_each(|(file, content)| self.execute(&mut engine, &query, file, content))?;
+
+            // Pre-compile query if all files share the same effective query (same prefix)
+            if files.len() > 1 && self.all_files_same_prefix(&files) && self.output.separator.is_none() {
+                let effective = self.effective_query(&query, &files[0].0);
+                let program = engine.compile(&effective).map_err(|e| *e)?;
+                for (file, content) in &files {
+                    self.execute_compiled(&mut engine, &program, file, content)?;
+                }
+            } else {
+                files
+                    .iter()
+                    .try_for_each(|(file, content)| self.execute(&mut engine, &query, file, content))?;
+            }
         }
 
         Ok(())
+    }
+
+    fn execute_compiled(
+        &self,
+        engine: &mut mq_lang::DefaultEngine,
+        program: &mq_lang::CompiledProgram,
+        file: &Option<PathBuf>,
+        content: &ContentData,
+    ) -> miette::Result<()> {
+        if let Some(f) = file {
+            self.set_file_vars(engine, f);
+        }
+
+        let input = self.resolve_input(file, content)?;
+        let is_grep = matches!(self.output.output_format, OutputFormat::Grep);
+        let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
+
+        let runtime_values = if self.output.update {
+            let results = engine
+                .eval_compiled(program, input.clone().into_iter())
+                .map_err(|e| *e)?;
+            self.apply_update(input, results)?
+        } else {
+            engine.eval_compiled(program, input.into_iter()).map_err(|e| *e)?
+        };
+
+        self.emit_results(runtime_values, grep_input, file)
     }
 
     fn process_streaming(&self) -> miette::Result<()> {

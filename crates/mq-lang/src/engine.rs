@@ -2,8 +2,6 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-#[cfg(feature = "ast-json")]
-use crate::Program;
 #[cfg(feature = "debugger")]
 use crate::eval::env::Env;
 #[cfg(feature = "debugger")]
@@ -22,6 +20,35 @@ use crate::{
     eval::Evaluator,
     parse,
 };
+
+/// A compiled mq program bundled with its original source, returned by [`Engine::compile`].
+#[derive(Debug, Clone)]
+pub struct CompiledProgram {
+    pub(crate) source: String,
+    pub(crate) program: crate::ast::Program,
+}
+
+impl CompiledProgram {
+    /// Returns the original source code.
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// Returns the underlying AST nodes.
+    pub fn program(&self) -> &crate::ast::Program {
+        &self.program
+    }
+}
+
+impl From<crate::ast::Program> for CompiledProgram {
+    /// Wraps a raw `Program` (e.g. from `ast_from_json`) with no source context.
+    fn from(program: crate::ast::Program) -> Self {
+        Self {
+            source: String::new(),
+            program,
+        }
+    }
+}
 
 /// The main execution engine for the mq.
 ///
@@ -190,37 +217,57 @@ impl<T: ModuleResolver> Engine<T> {
             .map_err(|e| Box::new(error::Error::from_error(code, e, self.evaluator.module_loader.clone())))
     }
 
-    /// Evaluates a pre-parsed AST (Program).
+    /// Compiles mq code into a [`CompiledProgram`] that can be evaluated multiple times.
     ///
-    /// This is similar to `eval`, but takes an AST directly, skipping parsing.
-    /// The AST is typically obtained from deserializing a JSON AST.
+    /// Use this with `eval_compiled` to avoid re-parsing the same query for each input.
+    pub fn compile(&mut self, code: &str) -> Result<CompiledProgram, Box<error::Error>> {
+        if code.is_empty() {
+            return Ok(CompiledProgram {
+                source: String::new(),
+                program: vec![],
+            });
+        }
+        let program = parse(code, Shared::clone(&self.token_arena))?;
+        Ok(CompiledProgram {
+            source: code.to_string(),
+            program,
+        })
+    }
+
+    /// Evaluates a pre-compiled program against the given input.
+    ///
+    /// Use with `compile` to avoid re-parsing the same query for each input file,
+    /// or with a [`CompiledProgram`] constructed from a deserialized JSON AST (`ast-json` feature).
     ///
     /// # Examples
     ///
     /// ```rust
-    /// #[cfg(feature = "ast-json")]
-    /// use mq_lang::{DefaultEngine, AstNode, AstExpr, AstLiteral, Program, RuntimeValue, Shared};
-    ///
-    /// let mut engine = DefaultEngine::default();
+    /// let mut engine = mq_lang::DefaultEngine::default();
     /// engine.load_builtin_module();
     ///
-    /// let json = r#"[
-    ///   {
-    ///     "expr": {
-    ///       "Literal": {"String": "hello"}
-    ///     }
-    ///   }
-    /// ]"#;
-    /// let program: mq_lang::Program = serde_json::from_str(json).unwrap();
-    /// let result = engine.eval_ast(program, mq_lang::null_input().into_iter());
-    /// assert_eq!(result.unwrap(), vec!["hello".to_string().into()].into());
+    /// let compiled = engine.compile("add(\" world\")").unwrap();
+    /// let input = mq_lang::parse_text_input("hello").unwrap();
+    /// let result = engine.eval_compiled(&compiled, input.into_iter());
+    /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
     /// ```
-    #[cfg(feature = "ast-json")]
-    pub fn eval_ast<I: Iterator<Item = RuntimeValue>>(&mut self, program: Program, input: I) -> MqResult {
+    pub fn eval_compiled<I: Iterator<Item = RuntimeValue>>(
+        &mut self,
+        compiled: &CompiledProgram,
+        input: I,
+    ) -> MqResult {
+        #[cfg(feature = "debugger")]
+        self.evaluator.module_loader.set_source_code(compiled.source.clone());
+
         self.evaluator
-            .eval(&program, input.into_iter())
+            .eval(&compiled.program, input)
             .map(|values| values.into())
-            .map_err(|e| Box::new(error::Error::from_error("", e, self.evaluator.module_loader.clone())))
+            .map_err(|e| {
+                Box::new(error::Error::from_error(
+                    &compiled.source,
+                    e,
+                    self.evaluator.module_loader.clone(),
+                ))
+            })
     }
 
     /// Returns a reference to the debugger instance.
@@ -285,7 +332,9 @@ impl<T: ModuleResolver> Engine<T> {
 
 #[cfg(test)]
 mod tests {
+    use super::CompiledProgram;
     use crate::DefaultEngine;
+    use rstest::rstest;
     use scopeguard::defer;
     use std::io::Write;
     use std::{fs::File, path::PathBuf};
@@ -369,9 +418,200 @@ mod tests {
         assert_eq!(values.len(), 1);
     }
 
-    #[cfg(feature = "ast-json")]
+    #[rstest]
+    #[case("add(1, 1)", "add(1, 1)")]
+    #[case(".", ".")]
+    #[case("length(.)", "length(.)")]
+    fn test_compiled_program_source(#[case] query: &str, #[case] expected: &str) {
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile(query).unwrap();
+        assert_eq!(compiled.source(), expected);
+        assert!(!compiled.program().is_empty());
+        assert_eq!(compiled.clone().source(), expected);
+    }
+
+    #[rstest]
+    #[case("")]
+    fn test_compile_empty_code(#[case] query: &str) {
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile(query).unwrap();
+        assert_eq!(compiled.source(), "");
+        assert!(compiled.program().is_empty());
+    }
+
+    // --- builtin cache tests ---
+
+    /// Two sequential engines calling the same builtin functions must produce identical results,
+    /// whether the builtin module was loaded from a fresh parse or replayed from the cache.
+    #[rstest]
+    #[case("add(1, 2)", vec!["".to_string().into()], vec![3.into()])]
+    #[case("not(false)", vec!["".to_string().into()], vec![true.into()])]
+    #[case("to_string(42)", vec!["".to_string().into()], vec!["42".to_string().into()])]
+    fn test_builtin_cache_sequential_engines_consistent(
+        #[case] query: &str,
+        #[case] input: Vec<crate::RuntimeValue>,
+        #[case] expected: Vec<crate::RuntimeValue>,
+    ) {
+        let mut engine1 = DefaultEngine::default();
+        engine1.load_builtin_module();
+        let result1 = engine1.eval(query, input.clone().into_iter()).unwrap();
+
+        let mut engine2 = DefaultEngine::default();
+        engine2.load_builtin_module();
+        let result2 = engine2.eval(query, input.into_iter()).unwrap();
+
+        assert_eq!(result1.values(), &expected);
+        assert_eq!(result2.values(), &expected);
+    }
+
+    /// Compiling and evaluating a builtin function call on a second engine (cache path) must
+    /// produce the correct result — verifying that token_ids in the compiled program are valid
+    /// when the builtin tokens were injected from cache rather than freshly parsed.
+    #[rstest]
+    #[case("add(1, 2)", vec!["".to_string().into()], vec![3.into()])]
+    #[case("not(false)", vec!["".to_string().into()], vec![true.into()])]
+    #[case("len(\"hello\")", vec!["".to_string().into()], vec![5.into()])]
+    fn test_builtin_cache_eval_compiled_token_ids_valid(
+        #[case] query: &str,
+        #[case] input: Vec<crate::RuntimeValue>,
+        #[case] expected: Vec<crate::RuntimeValue>,
+    ) {
+        let mut engine1 = DefaultEngine::default();
+        engine1.load_builtin_module();
+
+        let mut engine2 = DefaultEngine::default();
+        engine2.load_builtin_module();
+        let compiled = engine2.compile(query).unwrap();
+        let result = engine2.eval_compiled(&compiled, input.into_iter()).unwrap();
+        assert_eq!(result.values(), &expected);
+    }
+
+    /// Runtime errors on a cache-using engine must carry the correct source_code.
+    #[rstest]
+    #[case("undefined_fn()", "undefined_fn()")]
+    #[case("unknown_call(1, 2)", "unknown_call(1, 2)")]
+    fn test_builtin_cache_runtime_error_preserves_source(#[case] query: &str, #[case] expected_source: &str) {
+        let mut engine1 = DefaultEngine::default();
+        engine1.load_builtin_module();
+
+        let mut engine2 = DefaultEngine::default();
+        engine2.load_builtin_module();
+        let compiled = engine2.compile(query).unwrap();
+        let err = engine2
+            .eval_compiled(&compiled, crate::null_input().into_iter())
+            .unwrap_err();
+        assert_eq!(err.source_code.inner(), expected_source);
+    }
+
+    /// The error location (token offset + span) must point to the erroring identifier in
+    /// source_code.  If cached tokens were injected at shifted positions the offset would
+    /// land on the wrong character.
+    #[rstest]
+    #[case("undefined_fn()", "undefined_fn")]
+    #[case("1 | undefined_fn()", "undefined_fn")]
+    #[case("add(1) | unknown_fn()", "unknown_fn")]
+    fn test_builtin_cache_runtime_error_token_location_correct(#[case] query: &str, #[case] expected_ident: &str) {
+        let mut engine1 = DefaultEngine::default();
+        engine1.load_builtin_module();
+
+        let mut engine2 = DefaultEngine::default();
+        engine2.load_builtin_module();
+        let compiled = engine2.compile(query).unwrap();
+        let err = engine2
+            .eval_compiled(&compiled, crate::null_input().into_iter())
+            .unwrap_err();
+
+        let offset = err.location.offset();
+        let len = err.location.len();
+        assert_eq!(
+            &err.source_code.inner()[offset..offset + len],
+            expected_ident,
+            "location must point to the erroring identifier, not a shifted position"
+        );
+        assert_eq!(offset, query.find(expected_ident).unwrap());
+    }
+
+    /// Two sequential engines (one possibly fresh-parse, one cache) must produce identical
+    /// error locations — confirming that token_id indices are not shifted by cache replay.
+    #[rstest]
+    #[case("undefined_fn()")]
+    #[case("1 | undefined_fn()")]
+    #[case("add(1) | unknown_fn()")]
+    fn test_builtin_cache_and_fresh_parse_error_location_identical(#[case] query: &str) {
+        let mut engine1 = DefaultEngine::default();
+        engine1.load_builtin_module();
+        let compiled1 = engine1.compile(query).unwrap();
+        let err1 = engine1
+            .eval_compiled(&compiled1, crate::null_input().into_iter())
+            .unwrap_err();
+
+        let mut engine2 = DefaultEngine::default();
+        engine2.load_builtin_module();
+        let compiled2 = engine2.compile(query).unwrap();
+        let err2 = engine2
+            .eval_compiled(&compiled2, crate::null_input().into_iter())
+            .unwrap_err();
+
+        assert_eq!(
+            err1.location, err2.location,
+            "error location must be identical regardless of whether builtin cache was used"
+        );
+    }
+
+    // --- CompiledProgram unit tests ---
+
     #[test]
-    fn test_eval_ast() {
+    fn test_compiled_program_from_has_empty_source() {
+        let compiled = CompiledProgram::from(vec![]);
+        assert_eq!(compiled.source(), "");
+        assert!(compiled.program().is_empty());
+    }
+
+    #[rstest]
+    #[case("add(1, 1)", vec!["".to_string().into()], vec![2.into()])]
+    #[case("add(\" world\")", vec!["hello".to_string().into()], vec!["hello world".to_string().into()])]
+    #[case("add(\" world\")", vec!["hi".to_string().into()], vec!["hi world".to_string().into()])]
+    fn test_eval_compiled(
+        #[case] query: &str,
+        #[case] input: Vec<crate::RuntimeValue>,
+        #[case] expected: Vec<crate::RuntimeValue>,
+    ) {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let compiled = engine.compile(query).unwrap();
+        let result = engine.eval_compiled(&compiled, input.into_iter());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().values(), &expected);
+    }
+
+    #[rstest]
+    #[case("undefined_fn()", "undefined_fn()")]
+    #[case("unknown()", "unknown()")]
+    fn test_eval_compiled_runtime_error_preserves_source(#[case] query: &str, #[case] expected_source: &str) {
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile(query).unwrap();
+        let err = engine
+            .eval_compiled(&compiled, crate::null_input().into_iter())
+            .unwrap_err();
+        assert_eq!(err.source_code.inner(), expected_source);
+    }
+
+    #[rstest]
+    #[case("undefined_fn()")]
+    #[case("unknown()")]
+    fn test_eval_compiled_from_program_has_empty_source_in_error(#[case] query: &str) {
+        let mut engine = DefaultEngine::default();
+        let original = engine.compile(query).unwrap();
+        let no_source = CompiledProgram::from(original.program().clone());
+        assert_eq!(no_source.source(), "");
+        let err = engine
+            .eval_compiled(&no_source, crate::null_input().into_iter())
+            .unwrap_err();
+        assert_eq!(err.source_code.inner(), "");
+    }
+
+    #[test]
+    fn test_eval_compiled_with_ast() {
         use crate::{AstExpr, AstLiteral, AstNode, Shared};
 
         let mut engine = DefaultEngine::default();
@@ -382,7 +622,8 @@ mod tests {
             expr: Shared::new(AstExpr::Literal(AstLiteral::String("hello".to_string()))),
         })];
 
-        let result = engine.eval_ast(program, crate::null_input().into_iter());
+        let compiled = CompiledProgram::from(program);
+        let result = engine.eval_compiled(&compiled, crate::null_input().into_iter());
         assert!(result.is_ok());
         let values = result.unwrap();
         assert_eq!(values.len(), 1);

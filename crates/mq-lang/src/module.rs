@@ -12,7 +12,18 @@ use crate::{
 };
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
-use std::{borrow::Cow, path::PathBuf, sync::LazyLock};
+use std::{borrow::Cow, cell::RefCell, path::PathBuf, sync::LazyLock};
+
+use crate::Token;
+
+struct BuiltinCache {
+    tokens: Vec<Shared<Token>>,
+    module: Module,
+}
+
+thread_local! {
+    static BUILTIN_CACHE: RefCell<Option<BuiltinCache>> = const { RefCell::new(None) };
+}
 
 pub type ModuleId = ArenaId<ModuleName>;
 
@@ -197,25 +208,86 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 
     pub fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Module, ModuleError> {
-        self.load(Module::BUILTIN_MODULE, BUILTIN_FILE, token_arena)
+        if self.loaded_modules.contains(Module::BUILTIN_MODULE.into()) {
+            return Err(ModuleError::AlreadyLoaded(Cow::Borrowed(Module::BUILTIN_MODULE)));
+        }
+
+        // Cache is only valid when both arenas are in their initial state (builtin
+        // module_id == 1, tokens right after the dummy EOF). Fall back to full parse otherwise.
+        let pristine = self.loaded_modules.len() == 1 && {
+            #[cfg(not(feature = "sync"))]
+            {
+                token_arena.borrow().len() == 1
+            }
+            #[cfg(feature = "sync")]
+            {
+                token_arena.read().unwrap().len() == 1
+            }
+        };
+
+        if pristine {
+            let cached =
+                BUILTIN_CACHE.with(|cache| cache.borrow().as_ref().map(|c| (c.tokens.clone(), c.module.clone())));
+
+            if let Some((tokens, module)) = cached {
+                {
+                    #[cfg(not(feature = "sync"))]
+                    token_arena.borrow_mut().extend_from_slice(&tokens);
+                    #[cfg(feature = "sync")]
+                    token_arena.write().unwrap().extend_from_slice(&tokens);
+                }
+                self.loaded_modules.alloc(Module::BUILTIN_MODULE.into());
+                return Ok(module);
+            }
+        }
+
+        let module = self.load(Module::BUILTIN_MODULE, BUILTIN_FILE, Shared::clone(&token_arena))?;
+
+        if pristine {
+            let tokens = {
+                #[cfg(not(feature = "sync"))]
+                let arena = token_arena.borrow();
+                #[cfg(feature = "sync")]
+                let arena = token_arena.read().unwrap();
+                arena.as_slice()[1..].iter().map(Shared::clone).collect::<Vec<_>>()
+            };
+
+            BUILTIN_CACHE.with(|cache| {
+                *cache.borrow_mut() = Some(BuiltinCache {
+                    tokens,
+                    module: module.clone(),
+                });
+            });
+        }
+
+        Ok(module)
     }
 
     #[cfg(feature = "debugger")]
     pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, ModuleError> {
-        match self.module_name(module_id) {
-            Cow::Borrowed(Module::TOP_LEVEL_MODULE) => Ok(self.source_code.clone().unwrap_or_default()),
-            Cow::Borrowed(Module::BUILTIN_MODULE) => Ok(BUILTIN_FILE.to_string()),
-            Cow::Borrowed(module_name) => self.resolve(module_name),
-            Cow::Owned(module_name) => self.resolve(&module_name),
+        let name = self.module_name(module_id);
+        match name.as_ref() {
+            Module::TOP_LEVEL_MODULE => Ok(self.source_code.clone().unwrap_or_default()),
+            Module::BUILTIN_MODULE => Ok(BUILTIN_FILE.to_string()),
+            module_name => self.resolve(module_name),
         }
     }
 
     pub fn get_source_code(&self, module_id: ModuleId, source_code: String) -> Result<String, ModuleError> {
-        match self.module_name(module_id) {
-            Cow::Borrowed(Module::TOP_LEVEL_MODULE) => Ok(source_code),
-            Cow::Borrowed(Module::BUILTIN_MODULE) => Ok(BUILTIN_FILE.to_string()),
-            Cow::Borrowed(module_name) => self.resolve(module_name),
-            Cow::Owned(module_name) => self.resolve(&module_name),
+        let name = self.module_name(module_id);
+        match name.as_ref() {
+            Module::TOP_LEVEL_MODULE => Ok(source_code),
+            Module::BUILTIN_MODULE => Ok(BUILTIN_FILE.to_string()),
+            module_name => self.resolve(module_name),
+        }
+    }
+
+    /// Returns the display filename for a module (e.g. `"builtin.mq"`, `"csv.mq"`, `""` for top-level).
+    pub fn module_file_name(&self, module_id: ModuleId) -> String {
+        let name = self.module_name(module_id);
+        match name.as_ref() {
+            Module::TOP_LEVEL_MODULE => String::new(),
+            other => resolver::module_name(other).to_string(),
         }
     }
 
@@ -251,10 +323,11 @@ mod tests {
     use smol_str::SmolStr;
 
     use crate::{
-        Shared, SharedCell, Token, TokenKind,
+        Range, Shared, SharedCell, Token, TokenKind,
         ast::node::{self as ast, IdentWithToken, Param},
         module::LocalFsModuleResolver,
-        range::{Position, Range},
+        range::Position,
+        token_alloc,
     };
 
     use super::{Module, ModuleError, ModuleLoader};
@@ -262,6 +335,22 @@ mod tests {
     #[fixture]
     fn token_arena() -> Shared<SharedCell<crate::arena::Arena<Shared<Token>>>> {
         Shared::new(SharedCell::new(crate::arena::Arena::new(10)))
+    }
+
+    /// Arena that mirrors the engine's initial state: one dummy EOF token at index 0.
+    /// Required to exercise the "pristine" cache path in `load_builtin`.
+    #[fixture]
+    fn pristine_token_arena() -> Shared<SharedCell<crate::arena::Arena<Shared<Token>>>> {
+        let arena = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
+        token_alloc(
+            &arena,
+            &Shared::new(Token {
+                kind: TokenKind::Eof,
+                range: Range::default(),
+                module_id: Module::TOP_LEVEL_MODULE_ID,
+            }),
+        );
+        arena
     }
 
     #[rstest]
@@ -370,5 +459,143 @@ mod tests {
         assert!(super::STANDARD_MODULES.contains_key("csv"));
         let csv_content = super::STANDARD_MODULES.get("csv").unwrap()();
         assert!(csv_content.contains("")); // Just check it's a string, optionally check for expected content
+    }
+
+    #[test]
+    fn test_load_builtin_idempotent() {
+        let token_arena = token_arena();
+        let mut loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        assert!(loader.load_builtin(Shared::clone(&token_arena)).is_ok());
+        // Second call on the same loader must return AlreadyLoaded, not corrupt state.
+        assert!(matches!(
+            loader.load_builtin(Shared::clone(&token_arena)),
+            Err(ModuleError::AlreadyLoaded(_))
+        ));
+    }
+
+    #[test]
+    fn test_load_builtin_non_pristine_falls_back_to_parse() {
+        // Load another module first so the arenas are no longer in their initial state.
+        let token_arena = token_arena();
+        let mut loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        loader
+            .load("other", "def dummy(): 1;", Shared::clone(&token_arena))
+            .expect("should load other module");
+
+        // load_builtin must still succeed even though the arenas are non-pristine.
+        let result = loader.load_builtin(Shared::clone(&token_arena));
+        assert!(result.is_ok(), "load_builtin failed on non-pristine state: {result:?}");
+
+        let module = result.unwrap();
+        assert_eq!(module.name, Module::BUILTIN_MODULE);
+    }
+
+    /// Token arena size must be the same whether the builtin module was loaded from a fresh
+    /// parse or replayed from the thread-local cache.
+    #[rstest]
+    fn test_load_builtin_cache_arena_size_consistent(
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+    ) {
+        let arena1 = pristine_token_arena;
+        let mut loader1 = ModuleLoader::new(LocalFsModuleResolver::default());
+        loader1.load_builtin(Shared::clone(&arena1)).unwrap();
+        #[cfg(not(feature = "sync"))]
+        let size1 = arena1.borrow().len();
+        #[cfg(feature = "sync")]
+        let size1 = arena1.read().unwrap().len();
+
+        let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
+        token_alloc(
+            &arena2,
+            &Shared::new(Token {
+                kind: TokenKind::Eof,
+                range: Range::default(),
+                module_id: Module::TOP_LEVEL_MODULE_ID,
+            }),
+        );
+        let mut loader2 = ModuleLoader::new(LocalFsModuleResolver::default());
+        loader2.load_builtin(Shared::clone(&arena2)).unwrap();
+        #[cfg(not(feature = "sync"))]
+        let size2 = arena2.borrow().len();
+        #[cfg(feature = "sync")]
+        let size2 = arena2.read().unwrap().len();
+
+        assert_eq!(size1, size2, "arena size must match between cache and fresh parse");
+        assert!(size1 > 1, "builtin tokens must be added to the arena");
+    }
+
+    /// The module returned from cache must have the same function/var/macro counts as a fresh parse.
+    #[rstest]
+    fn test_load_builtin_cache_module_counts_consistent(
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+    ) {
+        let mut loader1 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let module1 = loader1.load_builtin(pristine_token_arena).unwrap();
+
+        let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
+        token_alloc(
+            &arena2,
+            &Shared::new(Token {
+                kind: TokenKind::Eof,
+                range: Range::default(),
+                module_id: Module::TOP_LEVEL_MODULE_ID,
+            }),
+        );
+        let mut loader2 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let module2 = loader2.load_builtin(arena2).unwrap();
+
+        assert_eq!(module1.name, module2.name);
+        assert_eq!(module1.functions.len(), module2.functions.len());
+        assert_eq!(module1.vars.len(), module2.vars.len());
+        assert_eq!(module1.macros.len(), module2.macros.len());
+        assert_eq!(module1.modules.len(), module2.modules.len());
+    }
+
+    /// After load_builtin, the builtin module must be registered at loaded_modules index 1
+    /// (TOP_LEVEL_MODULE is always 0).
+    #[rstest]
+    fn test_load_builtin_module_registered_at_id_one(
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+    ) {
+        let mut loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        loader.load_builtin(pristine_token_arena).unwrap();
+
+        assert_eq!(loader.loaded_modules.len(), 2);
+        assert!(loader.loaded_modules.contains(Module::BUILTIN_MODULE.into()));
+    }
+
+    /// All tokens injected from cache must carry module_id == 1 (BUILTIN_MODULE_ID),
+    /// so that error diagnostics resolve to the builtin source file rather than garbage.
+    #[rstest]
+    fn test_load_builtin_cache_tokens_have_builtin_module_id(
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+    ) {
+        let mut loader1 = ModuleLoader::new(LocalFsModuleResolver::default());
+        loader1.load_builtin(pristine_token_arena).unwrap();
+
+        // Second pristine load — this is the cache-hit path.
+        let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
+        token_alloc(
+            &arena2,
+            &Shared::new(Token {
+                kind: TokenKind::Eof,
+                range: Range::default(),
+                module_id: Module::TOP_LEVEL_MODULE_ID,
+            }),
+        );
+        let mut loader2 = ModuleLoader::new(LocalFsModuleResolver::default());
+        loader2.load_builtin(Shared::clone(&arena2)).unwrap();
+
+        let builtin_module_id: crate::ModuleId = 1.into();
+        #[cfg(not(feature = "sync"))]
+        let arena = arena2.borrow();
+        #[cfg(feature = "sync")]
+        let arena = arena2.read().unwrap();
+        for token in arena.as_slice()[1..].iter() {
+            assert_eq!(
+                token.module_id, builtin_module_id,
+                "cached builtin token must have BUILTIN_MODULE_ID"
+            );
+        }
     }
 }
