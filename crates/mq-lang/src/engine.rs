@@ -483,8 +483,7 @@ mod tests {
         assert_eq!(result.values(), &expected);
     }
 
-    /// Runtime errors produced on an engine that used the builtin cache must still carry the
-    /// correct source_code — confirming that token_id lookups remain valid after cache replay.
+    /// Runtime errors on a cache-using engine must carry the correct source_code.
     #[rstest]
     #[case("undefined_fn()", "undefined_fn()")]
     #[case("unknown_call(1, 2)", "unknown_call(1, 2)")]
@@ -499,6 +498,61 @@ mod tests {
             .eval_compiled(&compiled, crate::null_input().into_iter())
             .unwrap_err();
         assert_eq!(err.source_code, expected_source);
+    }
+
+    /// The error location (token offset + span) must point to the erroring identifier in
+    /// source_code.  If cached tokens were injected at shifted positions the offset would
+    /// land on the wrong character.
+    #[rstest]
+    #[case("undefined_fn()", "undefined_fn")]
+    #[case("1 | undefined_fn()", "undefined_fn")]
+    #[case("add(1) | unknown_fn()", "unknown_fn")]
+    fn test_builtin_cache_runtime_error_token_location_correct(#[case] query: &str, #[case] expected_ident: &str) {
+        let mut engine1 = DefaultEngine::default();
+        engine1.load_builtin_module();
+
+        let mut engine2 = DefaultEngine::default();
+        engine2.load_builtin_module();
+        let compiled = engine2.compile(query).unwrap();
+        let err = engine2
+            .eval_compiled(&compiled, crate::null_input().into_iter())
+            .unwrap_err();
+
+        let offset = err.location.offset();
+        let len = err.location.len();
+        assert_eq!(
+            &err.source_code[offset..offset + len],
+            expected_ident,
+            "location must point to the erroring identifier, not a shifted position"
+        );
+        assert_eq!(offset, query.find(expected_ident).unwrap());
+    }
+
+    /// Two sequential engines (one possibly fresh-parse, one cache) must produce identical
+    /// error locations — confirming that token_id indices are not shifted by cache replay.
+    #[rstest]
+    #[case("undefined_fn()")]
+    #[case("1 | undefined_fn()")]
+    #[case("add(1) | unknown_fn()")]
+    fn test_builtin_cache_and_fresh_parse_error_location_identical(#[case] query: &str) {
+        let mut engine1 = DefaultEngine::default();
+        engine1.load_builtin_module();
+        let compiled1 = engine1.compile(query).unwrap();
+        let err1 = engine1
+            .eval_compiled(&compiled1, crate::null_input().into_iter())
+            .unwrap_err();
+
+        let mut engine2 = DefaultEngine::default();
+        engine2.load_builtin_module();
+        let compiled2 = engine2.compile(query).unwrap();
+        let err2 = engine2
+            .eval_compiled(&compiled2, crate::null_input().into_iter())
+            .unwrap_err();
+
+        assert_eq!(
+            err1.location, err2.location,
+            "error location must be identical regardless of whether builtin cache was used"
+        );
     }
 
     // --- CompiledProgram unit tests ---
