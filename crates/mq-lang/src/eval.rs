@@ -360,8 +360,11 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     pub(crate) fn load_builtin_module(&mut self) -> Result<(), RuntimeError> {
-        let module = self.module_loader.load_builtin(Shared::clone(&self.token_arena))?;
-        self.load_module(module)
+        match self.module_loader.load_builtin(Shared::clone(&self.token_arena)) {
+            Ok(module) => self.load_module(module),
+            Err(ModuleError::AlreadyLoaded(_)) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
     }
 
     pub(crate) fn load_module(&mut self, module: module::Module) -> Result<(), RuntimeError> {

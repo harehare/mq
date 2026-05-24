@@ -208,40 +208,57 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 
     pub fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Module, ModuleError> {
-        // Check thread-local cache first
-        let cached = BUILTIN_CACHE.with(|cache| cache.borrow().as_ref().map(|c| (c.tokens.clone(), c.module.clone())));
-
-        if let Some((tokens, module)) = cached {
-            // Pre-populate token_arena with cached builtin tokens (skip index 0, the dummy EOF)
-            {
-                #[cfg(not(feature = "sync"))]
-                token_arena.borrow_mut().extend_from_slice(&tokens);
-                #[cfg(feature = "sync")]
-                token_arena.write().unwrap().extend_from_slice(&tokens);
-            }
-            // Register "builtin" module name in this engine's loaded_modules arena
-            self.loaded_modules.alloc(Module::BUILTIN_MODULE.into());
-            return Ok(module);
+        if self.loaded_modules.contains(Module::BUILTIN_MODULE.into()) {
+            return Err(ModuleError::AlreadyLoaded(Cow::Borrowed(Module::BUILTIN_MODULE)));
         }
 
-        // First time on this thread: parse normally
-        let module = self.load(Module::BUILTIN_MODULE, BUILTIN_FILE, Shared::clone(&token_arena))?;
-
-        // Save to thread-local cache (skip index 0 which is the dummy EOF token)
-        let tokens = {
+        // Cache is only valid when both arenas are in their initial state (builtin
+        // module_id == 1, tokens right after the dummy EOF). Fall back to full parse otherwise.
+        let pristine = self.loaded_modules.len() == 1 && {
             #[cfg(not(feature = "sync"))]
-            let arena = token_arena.borrow();
+            {
+                token_arena.borrow().len() == 1
+            }
             #[cfg(feature = "sync")]
-            let arena = token_arena.read().unwrap();
-            arena.as_slice()[1..].iter().map(Shared::clone).collect::<Vec<_>>()
+            {
+                token_arena.read().unwrap().len() == 1
+            }
         };
 
-        BUILTIN_CACHE.with(|cache| {
-            *cache.borrow_mut() = Some(BuiltinCache {
-                tokens,
-                module: module.clone(),
+        if pristine {
+            let cached =
+                BUILTIN_CACHE.with(|cache| cache.borrow().as_ref().map(|c| (c.tokens.clone(), c.module.clone())));
+
+            if let Some((tokens, module)) = cached {
+                {
+                    #[cfg(not(feature = "sync"))]
+                    token_arena.borrow_mut().extend_from_slice(&tokens);
+                    #[cfg(feature = "sync")]
+                    token_arena.write().unwrap().extend_from_slice(&tokens);
+                }
+                self.loaded_modules.alloc(Module::BUILTIN_MODULE.into());
+                return Ok(module);
+            }
+        }
+
+        let module = self.load(Module::BUILTIN_MODULE, BUILTIN_FILE, Shared::clone(&token_arena))?;
+
+        if pristine {
+            let tokens = {
+                #[cfg(not(feature = "sync"))]
+                let arena = token_arena.borrow();
+                #[cfg(feature = "sync")]
+                let arena = token_arena.read().unwrap();
+                arena.as_slice()[1..].iter().map(Shared::clone).collect::<Vec<_>>()
+            };
+
+            BUILTIN_CACHE.with(|cache| {
+                *cache.borrow_mut() = Some(BuiltinCache {
+                    tokens,
+                    module: module.clone(),
+                });
             });
-        });
+        }
 
         Ok(module)
     }
@@ -416,5 +433,34 @@ mod tests {
         assert!(super::STANDARD_MODULES.contains_key("csv"));
         let csv_content = super::STANDARD_MODULES.get("csv").unwrap()();
         assert!(csv_content.contains("")); // Just check it's a string, optionally check for expected content
+    }
+
+    #[test]
+    fn test_load_builtin_idempotent() {
+        let token_arena = token_arena();
+        let mut loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        assert!(loader.load_builtin(Shared::clone(&token_arena)).is_ok());
+        // Second call on the same loader must return AlreadyLoaded, not corrupt state.
+        assert!(matches!(
+            loader.load_builtin(Shared::clone(&token_arena)),
+            Err(ModuleError::AlreadyLoaded(_))
+        ));
+    }
+
+    #[test]
+    fn test_load_builtin_non_pristine_falls_back_to_parse() {
+        // Load another module first so the arenas are no longer in their initial state.
+        let token_arena = token_arena();
+        let mut loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        loader
+            .load("other", "def dummy(): 1;", Shared::clone(&token_arena))
+            .expect("should load other module");
+
+        // load_builtin must still succeed even though the arenas are non-pristine.
+        let result = loader.load_builtin(Shared::clone(&token_arena));
+        assert!(result.is_ok(), "load_builtin failed on non-pristine state: {result:?}");
+
+        let module = result.unwrap();
+        assert_eq!(module.name, Module::BUILTIN_MODULE);
     }
 }
