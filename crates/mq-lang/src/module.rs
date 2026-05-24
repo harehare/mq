@@ -265,20 +265,29 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
     #[cfg(feature = "debugger")]
     pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, ModuleError> {
-        match self.module_name(module_id) {
-            Cow::Borrowed(Module::TOP_LEVEL_MODULE) => Ok(self.source_code.clone().unwrap_or_default()),
-            Cow::Borrowed(Module::BUILTIN_MODULE) => Ok(BUILTIN_FILE.to_string()),
-            Cow::Borrowed(module_name) => self.resolve(module_name),
-            Cow::Owned(module_name) => self.resolve(&module_name),
+        let name = self.module_name(module_id);
+        match name.as_ref() {
+            Module::TOP_LEVEL_MODULE => Ok(self.source_code.clone().unwrap_or_default()),
+            Module::BUILTIN_MODULE => Ok(BUILTIN_FILE.to_string()),
+            module_name => self.resolve(module_name),
         }
     }
 
     pub fn get_source_code(&self, module_id: ModuleId, source_code: String) -> Result<String, ModuleError> {
-        match self.module_name(module_id) {
-            Cow::Borrowed(Module::TOP_LEVEL_MODULE) => Ok(source_code),
-            Cow::Borrowed(Module::BUILTIN_MODULE) => Ok(BUILTIN_FILE.to_string()),
-            Cow::Borrowed(module_name) => self.resolve(module_name),
-            Cow::Owned(module_name) => self.resolve(&module_name),
+        let name = self.module_name(module_id);
+        match name.as_ref() {
+            Module::TOP_LEVEL_MODULE => Ok(source_code),
+            Module::BUILTIN_MODULE => Ok(BUILTIN_FILE.to_string()),
+            module_name => self.resolve(module_name),
+        }
+    }
+
+    /// Returns the display filename for a module (e.g. `"builtin.mq"`, `"csv.mq"`, `""` for top-level).
+    pub fn module_file_name(&self, module_id: ModuleId) -> String {
+        let name = self.module_name(module_id);
+        match name.as_ref() {
+            Module::TOP_LEVEL_MODULE => String::new(),
+            other => resolver::module_name(other).to_string(),
         }
     }
 

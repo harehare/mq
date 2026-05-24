@@ -500,7 +500,7 @@ mod tests {
         let err = engine2
             .eval_compiled(&compiled, crate::null_input().into_iter())
             .unwrap_err();
-        assert_eq!(err.source_code, expected_source);
+        assert_eq!(err.source_code.inner(), expected_source);
     }
 
     /// The error location (token offset + span) must point to the erroring identifier in
@@ -524,7 +524,7 @@ mod tests {
         let offset = err.location.offset();
         let len = err.location.len();
         assert_eq!(
-            &err.source_code[offset..offset + len],
+            &err.source_code.inner()[offset..offset + len],
             expected_ident,
             "location must point to the erroring identifier, not a shifted position"
         );
@@ -593,7 +593,7 @@ mod tests {
         let err = engine
             .eval_compiled(&compiled, crate::null_input().into_iter())
             .unwrap_err();
-        assert_eq!(err.source_code, expected_source);
+        assert_eq!(err.source_code.inner(), expected_source);
     }
 
     #[rstest]
@@ -607,7 +607,7 @@ mod tests {
         let err = engine
             .eval_compiled(&no_source, crate::null_input().into_iter())
             .unwrap_err();
-        assert_eq!(err.source_code, "");
+        assert_eq!(err.source_code.inner(), "");
     }
 
     #[test]
