@@ -284,7 +284,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 .map(|runtime_value| match &runtime_value {
                     RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
                     _ => self
-                        .eval_program(&program, runtime_value, &self.env.clone())
+                        .eval_program(&program, runtime_value, &Shared::clone(&self.env))
                         .map_err(|e| e.into_inner_error()),
                 })
                 .collect();
@@ -292,7 +292,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             if nodes_program.is_empty() {
                 values
             } else {
-                self.eval_program(&nodes_program, values?.into(), &self.env.clone())
+                self.eval_program(&nodes_program, values?.into(), &Shared::clone(&self.env))
                     .map(|value| {
                         if let RuntimeValue::Array(values) = value {
                             values
@@ -307,7 +307,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 .map(|runtime_value| match &runtime_value {
                     RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
                     _ => self
-                        .eval_program(&program, runtime_value, &self.env.clone())
+                        .eval_program(&program, runtime_value, &Shared::clone(&self.env))
                         .map_err(|e| e.into_inner_error()),
                 })
                 .collect()
@@ -321,7 +321,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 .eval_program(
                     program,
                     RuntimeValue::new_markdown(child_node.clone()),
-                    &self.env.clone(),
+                    &Shared::clone(&self.env),
                 )
                 .map_err(|e| e.into_inner_error())?;
 
