@@ -8571,7 +8571,7 @@ mod tests {
         tmp.write_all(b"hello").expect("failed to write");
         let path = tmp.path().to_string_lossy().to_string();
         assert_eq!(
-            call("file_exists", vec![RuntimeValue::String(path.into())]),
+            call("file_exists", vec![RuntimeValue::String(path)]),
             Ok(RuntimeValue::Boolean(true))
         );
     }
@@ -8582,9 +8582,7 @@ mod tests {
         assert_eq!(
             call(
                 "file_exists",
-                vec![RuntimeValue::String(
-                    "/nonexistent/path/no_such_file.md".into()
-                )]
+                vec![RuntimeValue::String("/nonexistent/path/no_such_file.md".into())]
             ),
             Ok(RuntimeValue::Boolean(false))
         );
