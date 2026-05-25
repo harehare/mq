@@ -3525,6 +3525,16 @@ fn read_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
     }
 }
 
+#[cfg(feature = "file-io")]
+#[mq_macros::mq_fn(name = "file_exists", params = Fixed(1))]
+fn file_exists_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(path)] => Ok(std::path::Path::new(path).exists().into()),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("file_exists should always receive exactly one argument"),
+    }
+}
+
 const fn fnv1a_hash_64(s: &str) -> u64 {
     const FNV_OFFSET_BASIS_64: u64 = 14695981039346656037;
     const FNV_PRIME_64: u64 = 1099511628211;
@@ -3711,6 +3721,8 @@ mq_macros::builtin_dispatch! {
     PATH_JOIN,
     #[cfg(feature = "file-io")]
     READ_FILE,
+    #[cfg(feature = "file-io")]
+    FILE_EXISTS,
 }
 
 #[derive(Clone, Debug)]
@@ -5105,6 +5117,15 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &["path"],
         },
     );
+    #[cfg(feature = "file-io")]
+    map.insert(
+        SmolStr::new("file_exists"),
+        BuiltinFunctionDoc {
+            description: "Checks if a file exists at the given path.",
+            params: &["path"],
+        },
+    );
+
     map.insert(
         SmolStr::new("basename"),
         BuiltinFunctionDoc {
@@ -8536,5 +8557,43 @@ mod tests {
             RuntimeValue::Number(n) => assert!((n.value() - value).abs() < 1e-5),
             _ => panic!("expected Number"),
         }
+    }
+
+    // =========================================================================
+    // file_exists
+    // =========================================================================
+
+    #[cfg(feature = "file-io")]
+    #[test]
+    fn test_file_exists_with_existing_file() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        tmp.write_all(b"hello").expect("failed to write");
+        let path = tmp.path().to_string_lossy().to_string();
+        assert_eq!(
+            call("file_exists", vec![RuntimeValue::String(path.into())]),
+            Ok(RuntimeValue::Boolean(true))
+        );
+    }
+
+    #[cfg(feature = "file-io")]
+    #[test]
+    fn test_file_exists_with_nonexistent_file() {
+        assert_eq!(
+            call(
+                "file_exists",
+                vec![RuntimeValue::String(
+                    "/nonexistent/path/no_such_file.md".into()
+                )]
+            ),
+            Ok(RuntimeValue::Boolean(false))
+        );
+    }
+
+    #[cfg(feature = "file-io")]
+    #[test]
+    fn test_file_exists_invalid_type() {
+        let result = call("file_exists", vec![RuntimeValue::Number(42.into())]);
+        assert!(result.is_err());
     }
 }

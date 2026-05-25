@@ -2596,6 +2596,7 @@ dependencies = [
  "smallvec",
  "smol_str",
  "string-interner",
+ "tempfile",
  "thiserror 2.0.18",
  "toml 1.1.2+spec-1.1.0",
  "toon-format",
