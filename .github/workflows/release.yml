@@ -219,6 +219,7 @@ jobs:
       - name: Create Release
         run: |
           gh release create "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
             --draft \
             --generate-notes \
             target/*/*
