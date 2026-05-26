@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-crawler"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.30"
+version = "0.5.31"
 
 [dependencies]
 chromiumoxide = {workspace = true}
