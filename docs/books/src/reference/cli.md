@@ -20,7 +20,7 @@ Options:
   -f, --from-file
           load filter from the file
   -I, --input-format <INPUT_FORMAT>
-          Set input format [possible values: markdown, mdx, html, text, null, raw]
+          Set input format [possible values: markdown, mdx, html, text, null, raw, bytes, cbor, csv, hcl, json, psv, toml, toon, tsv, xml, yaml]
   -L, --directory <MODULE_DIRECTORIES>
           Search modules from the directory
   -M, --module-names <MODULE_NAMES>
@@ -28,7 +28,7 @@ Options:
   -m, --import-module-names <IMPORT_MODULE_NAMES>
           Import modules by name, making them available as `name::fn()` in queries
       --args <NAME> <VALUE>
-          Sets string that can be referenced at runtime
+          Sets a named string argument. NAME is accessible directly in queries, and also via ARGS."named" when --args or --argv is given
       --rawfile <NAME> <FILE>
           Sets file contents that can be referenced at runtime
       --stream
@@ -61,34 +61,49 @@ Options:
           List all available subcommands (built-in and external)
   -P <PARALLEL_THRESHOLD>
           Number of files to process before switching to parallel processing [default: 10]
+      --argv [<ARGV>...]
+          Positional string arguments, available as ARGS."positional" in queries
   -h, --help
           Print help
   -V, --version
           Print version
 
-# Examples:
+# Examples
 
-## To filter markdown nodes:
 mq 'query' file.md
+mq -f 'file' file.md        # read query from file
+mq repl                     # start a REPL session
 
-## To read query from file:
-mq -f 'file' file.md
+# Auto-parsing by file extension or -I flag
 
-## To start a REPL session:
-mq repl
+mq automatically imports the matching module based on the file extension.
+Use -I <format> to force a specific format:
 
-# Auto-parsing by file extension:
+.cbor / -I cbor  import "cbor" | cbor::cbor_parse()  (reads as bytes)
+.csv  / -I csv   import "csv"  | csv::csv_parse(true)
+.hcl  / -I hcl   import "hcl"  | hcl::hcl_parse()
+.json / -I json  import "json" | json::json_parse()
+.psv  / -I psv   import "csv"  | csv::psv_parse(true)
+.toml / -I toml  import "toml" | toml::toml_parse()
+.toon / -I toon  import "toon" | toon::toon_parse()
+.tsv  / -I tsv   import "csv"  | csv::tsv_parse(true)
+.xml  / -I xml   import "xml"  | xml::xml_parse()
+.yaml / -I yaml  import "yaml" | yaml::yaml_parse()
 
-When no -I flag is given, mq automatically imports the matching module based on the file extension:
+Use -I raw   to disable auto-parsing and receive the raw string.
+Use -I bytes to read input as raw bytes without parsing.
 
-.json              import "json" | json::json_parse()
-.yaml / .yml       import "yaml" | yaml::yaml_parse()
-.toml              import "toml" | toml::toml_parse()
-.xml               import "xml"  | xml::xml_parse()
-.toon              import "toon" | toon::toon_parse()
-.csv               import "csv"  | csv::csv_parse(true)
-.tsv               import "csv"  | csv::tsv_parse(true)
-.psv               import "csv"  | csv::psv_parse(true)
+# Passing arguments to queries (ARGS)
 
-Use -I raw to disable auto-parsing and receive the raw string.
+When --args or --argv is given, ARGS = {"positional": [...], "named": {...}}
+
+mq -I null 'name' --args name Alice
+mq -I null 'ARGS | ."named"' --args name Alice
+# => {"name": "Alice"}
+
+mq -I null 'ARGS | ."positional"' --argv x y z  # must come after query and files
+# => ["x", "y", "z"]
+
+mq -I null 'ARGS' file.md --args name Alice --argv x y z
+# => {"positional": ["x","y","z"], "named": {"name": "Alice"}}
 ```
