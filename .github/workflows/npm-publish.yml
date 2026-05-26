@@ -33,6 +33,7 @@ jobs:
         with:
           node-version-file: .tool-versions
           registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
       - name: Install dependencies
         working-directory: packages/mq-web
         run: pnpm install --frozen-lockfile
@@ -68,6 +69,7 @@ jobs:
         with:
           node-version-file: .tool-versions
           registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
       - name: Install dependencies
         working-directory: packages/mq-nodejs
         run: pnpm install --frozen-lockfile
