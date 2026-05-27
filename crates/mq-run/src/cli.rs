@@ -883,10 +883,7 @@ impl Cli {
         loop {
             match rx.recv() {
                 Ok(Ok(event)) => {
-                    if matches!(
-                        event.kind,
-                        EventKind::Modify(_) | EventKind::Create(_)
-                    ) {
+                    if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                         // drain pending events to debounce rapid saves
                         std::thread::sleep(std::time::Duration::from_millis(50));
                         while rx.try_recv().is_ok() {}
@@ -3366,7 +3363,11 @@ mod tests {
         };
         let result = cli.run();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("--watch requires at least one input file"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("--watch requires at least one input file")
+        );
     }
-
 }

@@ -24,6 +24,7 @@ allow = [
   "Zlib",
   "MIT-0",
   "OpenSSL",
+  "CC0-1.0",
 ]
 confidence-threshold = 0.8
 exceptions = []
