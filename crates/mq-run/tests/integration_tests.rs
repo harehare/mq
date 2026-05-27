@@ -743,6 +743,29 @@ fn test_var_array_destructuring_mutation() -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
+#[cfg(feature = "watch")]
+#[test]
+fn test_watch_conflicts_with_stream() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file_path) = create_file("test_watch_stream_conflict.md", "# test");
+    let temp_file_path_clone = temp_file_path.clone();
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--watch")
+        .arg("--stream")
+        .arg(".heading")
+        .arg(&temp_file_path)
+        .assert();
+    assert.failure();
+
+    Ok(())
+}
+
 #[test]
 fn test_let_simple_regression() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = cargo::cargo_bin_cmd!("mq");

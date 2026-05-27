@@ -14,9 +14,10 @@ default-run = "mq"
 
 [features]
 debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite", "mq-dap"]
-default = ["std", "use_mimalloc"]
+default = ["std", "use_mimalloc", "watch"]
 std = []
 use_mimalloc = ["mimalloc"]
+watch = ["dep:notify"]
 
 [dependencies]
 clap = {workspace = true, features = ["derive"]}
@@ -28,6 +29,7 @@ mq-dap = {workspace = true, optional = true}
 mq-lang = {workspace = true, features = ["file-io"]}
 mq-markdown = {workspace = true, features = ["json", "html-to-markdown", "color"]}
 mq-repl = {workspace = true}
+notify = {workspace = true, optional = true}
 rayon = {workspace = true}
 serde_json = {workspace = true}
 regex-lite = {workspace = true, optional = true}

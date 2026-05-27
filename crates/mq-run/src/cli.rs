@@ -70,6 +70,11 @@ pub struct Cli {
     #[arg(short = 'P', default_value_t = 10)]
     parallel_threshold: usize,
 
+    /// Watch input files and re-run the query on changes
+    #[cfg(feature = "watch")]
+    #[arg(long, default_value_t = false, conflicts_with = "stream")]
+    watch: bool,
+
     #[arg(value_name = "QUERY OR FILE")]
     query: Option<String>,
     files: Option<Vec<PathBuf>>,
@@ -581,6 +586,10 @@ impl Cli {
                 if self.input.stream {
                     self.process_streaming()
                 } else {
+                    #[cfg(feature = "watch")]
+                    if self.watch {
+                        return self.process_watch();
+                    }
                     self.process_batch()
                 }
             }
@@ -836,6 +845,62 @@ impl Cli {
         }
         let first = self.auto_query_prefix(&files[0].0);
         files[1..].iter().all(|(f, _)| self.auto_query_prefix(f) == first)
+    }
+
+    #[cfg(feature = "watch")]
+    fn process_watch(&self) -> miette::Result<()> {
+        use notify::{EventKind, RecursiveMode, Watcher, recommended_watcher};
+        use std::sync::mpsc;
+
+        let Some(files) = &self.files else {
+            return Err(miette!("--watch requires at least one input file"));
+        };
+        if files.is_empty() {
+            return Err(miette!("--watch requires at least one input file"));
+        }
+
+        let (tx, rx) = mpsc::channel();
+        let mut watcher = recommended_watcher(move |event| {
+            let _ = tx.send(event);
+        })
+        .into_diagnostic()?;
+
+        for file in files {
+            watcher
+                .watch(file.as_ref(), RecursiveMode::NonRecursive)
+                .into_diagnostic()?;
+        }
+
+        let file_list = files
+            .iter()
+            .map(|f| f.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!("Watching {} ... (Ctrl+C to exit)", file_list);
+
+        let _ = self.process_batch();
+
+        loop {
+            match rx.recv() {
+                Ok(Ok(event)) => {
+                    if matches!(
+                        event.kind,
+                        EventKind::Modify(_) | EventKind::Create(_)
+                    ) {
+                        // drain pending events to debounce rapid saves
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                        while rx.try_recv().is_ok() {}
+
+                        eprintln!("\n---");
+                        let _ = self.process_batch();
+                    }
+                }
+                Ok(Err(e)) => eprintln!("watch error: {}", e),
+                Err(_) => break,
+            }
+        }
+
+        Ok(())
     }
 
     fn process_batch(&self) -> Result<(), miette::Error> {
@@ -3289,4 +3354,19 @@ mod tests {
         };
         assert!(cli.run().is_ok(), "--args with a valid NAME VALUE pair should succeed");
     }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn test_watch_requires_file() {
+        let cli = Cli {
+            watch: true,
+            query: Some(".heading".to_string()),
+            files: None,
+            ..Cli::default()
+        };
+        let result = cli.run();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("--watch requires at least one input file"));
+    }
+
 }
