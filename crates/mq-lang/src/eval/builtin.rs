@@ -1803,6 +1803,11 @@ fn add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 
             Ok(RuntimeValue::Array(arr))
         }
+        [RuntimeValue::Dict(d1), RuntimeValue::Dict(d2)] => {
+            let mut result = std::mem::take(d1);
+            result.extend(std::mem::take(d2));
+            Ok(RuntimeValue::Dict(result))
+        }
         [a, RuntimeValue::None] | [RuntimeValue::None, a] => Ok(std::mem::take(a)),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -8523,10 +8528,6 @@ mod tests {
         );
     }
 
-    // =========================================================================
-    // pack / unpack roundtrip — all formats
-    // =========================================================================
-
     #[rstest]
     #[case("u8", 42.0)]
     #[case("i8",    -5.0)]
@@ -8558,10 +8559,6 @@ mod tests {
             _ => panic!("expected Number"),
         }
     }
-
-    // =========================================================================
-    // file_exists
-    // =========================================================================
 
     #[cfg(feature = "file-io")]
     #[test]
