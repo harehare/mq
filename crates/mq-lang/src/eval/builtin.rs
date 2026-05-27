@@ -1803,6 +1803,11 @@ fn add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 
             Ok(RuntimeValue::Array(arr))
         }
+        [RuntimeValue::Dict(d1), RuntimeValue::Dict(d2)] => {
+            let mut result = std::mem::take(d1);
+            result.extend(std::mem::take(d2));
+            Ok(RuntimeValue::Dict(result))
+        }
         [a, RuntimeValue::None] | [RuntimeValue::None, a] => Ok(std::mem::take(a)),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -6407,6 +6412,42 @@ mod tests {
     }
 
     // Tests for Dict functions
+    #[rstest]
+    #[case(
+        BTreeMap::from([("a".into(), RuntimeValue::Number(1.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
+        BTreeMap::from([("c".into(), RuntimeValue::Number(3.0.into()))]),
+        BTreeMap::from([("a".into(), RuntimeValue::Number(1.0.into())), ("b".into(), RuntimeValue::Number(2.0.into())), ("c".into(), RuntimeValue::Number(3.0.into()))]),
+    )]
+    #[case(
+        BTreeMap::from([("a".into(), RuntimeValue::Number(1.0.into()))]),
+        BTreeMap::from([("a".into(), RuntimeValue::Number(99.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
+        BTreeMap::from([("a".into(), RuntimeValue::Number(99.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
+    )]
+    #[case(
+        BTreeMap::new(),
+        BTreeMap::from([("x".into(), RuntimeValue::String("hello".into()))]),
+        BTreeMap::from([("x".into(), RuntimeValue::String("hello".into()))]),
+    )]
+    #[case(
+        BTreeMap::from([("x".into(), RuntimeValue::String("hello".into()))]),
+        BTreeMap::new(),
+        BTreeMap::from([("x".into(), RuntimeValue::String("hello".into()))]),
+    )]
+    fn test_eval_builtin_add_dict(
+        #[case] d1: BTreeMap<Ident, RuntimeValue>,
+        #[case] d2: BTreeMap<Ident, RuntimeValue>,
+        #[case] expected: BTreeMap<Ident, RuntimeValue>,
+    ) {
+        let ident = Ident::new("add");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::Dict(d1), RuntimeValue::Dict(d2)],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, Ok(RuntimeValue::Dict(expected)));
+    }
+
     #[test]
     fn test_eval_builtin_new_dict() {
         let ident = Ident::new("dict");
@@ -8523,10 +8564,6 @@ mod tests {
         );
     }
 
-    // =========================================================================
-    // pack / unpack roundtrip — all formats
-    // =========================================================================
-
     #[rstest]
     #[case("u8", 42.0)]
     #[case("i8",    -5.0)]
@@ -8558,10 +8595,6 @@ mod tests {
             _ => panic!("expected Number"),
         }
     }
-
-    // =========================================================================
-    // file_exists
-    // =========================================================================
 
     #[cfg(feature = "file-io")]
     #[test]
