@@ -788,3 +788,46 @@ def zip(arr1, arr2):
     end
 end
 
+# Returns the minimum element in an array based on a provided function that extracts a comparable value from each element.
+def min_by(arr, f):
+  if (is_empty(arr)):
+    None
+  else:
+    do
+      var min_item = arr[0]
+      | var min_value = f(min_item)
+      | var i = 1
+      | while (i < len(arr)):
+          let item = arr[i]
+          | let value = f(item)
+          | if (value < min_value):
+              do
+                min_item = item | min_value = value
+              end
+          | i += 1
+        end
+      | min_item
+    end
+end
+
+# Returns the maximum element in an array based on a provided function that extracts a comparable value from each element.
+def max_by(arr, f):
+  if (is_empty(arr)):
+    None
+  else:
+    do
+      var max_item = arr[0]
+      | var max_value = f(max_item)
+      | var i = 1
+      | while (i < len(arr)):
+          let item = arr[i]
+          | let value = f(item)
+          | if (value > max_value):
+              do
+                max_item = item | max_value = value
+              end
+          | i += 1
+        end
+      | max_item
+    end
+end

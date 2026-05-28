@@ -764,3 +764,26 @@ def test_zip():
   | let result3 = zip([], ["a", "b"])
   | assert_eq(result3, [])
 end
+
+def test_min_by():
+  let result1 = min_by([{"value": 3}, {"value": 1}, {"value": 2}], fn(x): x["value"];)
+  | assert_eq(result1["value"], 1)
+
+  | let result2 = min_by([], fn(x): x;)
+  | assert_eq(result2, None)
+
+  | let result3 = min_by([{"score": 10}, {"score": 5}], fn(x): x["score"];)
+  | assert_eq(result3["score"], 5)
+end
+
+def test_max_by():
+  let result1 = max_by([{"value": 3}, {"value": 1}, {"value": 2}], fn(x): x["value"];)
+  | assert_eq(result1["value"], 3)
+
+  | let result2 = max_by([], fn(x): x;)
+  | assert_eq(result2, None)
+
+  | let result3 = max_by([{"score": 10}, {"score": 5}], fn(x): x["score"];)
+  | assert_eq(result3["score"], 10)
+end
+
