@@ -119,7 +119,7 @@ You can install the Neovim plugin by following the instructions in the [mq.nvim 
 
 ### Zed
 
-You can install the Zed extension by following the instructions in the [zed-mq README](https://github.com/harehare/mq/blob/main/editors/zed/README.md).
+You can install the Zed extension from the [harehare/zed-mq](https://github.com/harehare/zed-mq) repository.
 
 ### GitHub Actions
 
