@@ -5,11 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="./assets/logo.svg" />
     <link rel="icon" href="favicon.ico" />
-    <title>mq - jq like tool for markdown processing</title>
+    <title>mq – jq-like tool for Markdown processing</title>
     <meta
       name="description"
-      content="mq is a command-line tool that processes Markdown using a syntax similar to jq. It's written in Rust, allowing you to easily slice, filter, map, and transform structured data."
+      content="mq is a command-line tool that processes Markdown using a syntax similar to jq. Written in Rust — slice, filter, map, and transform Markdown with ease."
     />
+    <link rel="canonical" href="https://mqlang.org/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://mqlang.org/" />
+    <meta property="og:site_name" content="mq" />
+    <meta
+      property="og:title"
+      content="mq – jq-like tool for Markdown processing"
+    />
+    <meta
+      property="og:description"
+      content="A command-line tool that processes Markdown using a syntax similar to jq. Written in Rust — slice, filter, map, and transform with ease."
+    />
+    <meta property="og:image" content="https://mqlang.org/logo.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preconnect" href="https://cdn.tailwindcss.com" />
@@ -112,6 +125,19 @@
         opacity: 0;
       }
     </style>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "mq",
+        "description": "A command-line tool that processes Markdown using a syntax similar to jq. Written in Rust — slice, filter, map, and transform with ease.",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Linux, macOS, Windows",
+        "codeRepository": "https://github.com/harehare/mq",
+        "programmingLanguage": "Rust",
+        "url": "https://mqlang.org"
+      }
+    </script>
   </head>
   <body
     class="bg-surface text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container"
@@ -160,16 +186,26 @@
             target="_blank"
             class="flex items-center gap-1.5 text-[#85d4ff] px-2 py-2 md:px-3 hover:bg-white/5 transition-all duration-300 rounded-lg scale-98-on-click"
           >
-            <span class="material-symbols-outlined text-xl leading-none">code</span>
-            <span class="hidden md:inline text-sm font-medium font-headline tracking-tight">GitHub</span>
+            <span class="material-symbols-outlined text-xl leading-none"
+              >code</span
+            >
+            <span
+              class="hidden md:inline text-sm font-medium font-headline tracking-tight"
+              >GitHub</span
+            >
           </a>
           <a
             href="https://mqlang.org/book/"
             target="_blank"
             class="flex items-center gap-1.5 text-[#85d4ff] px-2 py-2 md:px-3 hover:bg-white/5 transition-all duration-300 rounded-lg scale-98-on-click"
           >
-            <span class="material-symbols-outlined text-xl leading-none">menu_book</span>
-            <span class="hidden md:inline text-sm font-medium font-headline tracking-tight">Documentation</span>
+            <span class="material-symbols-outlined text-xl leading-none"
+              >menu_book</span
+            >
+            <span
+              class="hidden md:inline text-sm font-medium font-headline tracking-tight"
+              >Documentation</span
+            >
           </a>
         </div>
       </div>
@@ -648,7 +684,7 @@
                 >
               </h3>
               <p class="text-on-surface-variant leading-relaxed">
-              Type inference and checking for the mq language.
+                Type inference and checking for the mq language.
               </p>
             </div>
             <div
@@ -683,7 +719,8 @@
                 >
               </h3>
               <p class="text-on-surface-variant leading-relaxed">
-              A task runner that executes code blocks in Markdown files based on section titles
+                A task runner that executes code blocks in Markdown files based
+                on section titles
               </p>
             </div>
           </div>
@@ -716,7 +753,6 @@
           </div>
         </div>
       </section>
-
     </main>
 
     <!-- Footer -->
@@ -820,6 +856,5 @@
         switchTab(defaultTab);
       });
     </script>
-
   </body>
 </html>

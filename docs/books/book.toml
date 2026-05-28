@@ -1,6 +1,6 @@
 [book]
 authors = ["Takahiro Sato"]
-description = "Reference on the mq."
+description = "mq documentation: a jq-like command-line tool for processing Markdown files written in Rust. Learn how to slice, filter, map, and transform Markdown with ease."
 language = "en"
 src = "src"
 title = "mq - jq like tool for markdown processing"
