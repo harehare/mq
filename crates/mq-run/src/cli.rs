@@ -850,6 +850,7 @@ impl Cli {
     #[cfg(feature = "watch")]
     fn process_watch(&self) -> miette::Result<()> {
         use notify::{EventKind, RecursiveMode, Watcher, recommended_watcher};
+        use std::collections::HashSet;
         use std::sync::mpsc;
 
         let Some(files) = &self.files else {
@@ -865,10 +866,22 @@ impl Cli {
         })
         .into_diagnostic()?;
 
+        let target_paths: HashSet<PathBuf> = files
+            .iter()
+            .map(|f| f.canonicalize().unwrap_or_else(|_| f.clone()))
+            .collect();
+
+        let mut watched_dirs: HashSet<PathBuf> = HashSet::new();
         for file in files {
-            watcher
-                .watch(file.as_ref(), RecursiveMode::NonRecursive)
-                .into_diagnostic()?;
+            let dir = file
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("."));
+            if watched_dirs.insert(dir.clone()) {
+                watcher
+                    .watch(&dir, RecursiveMode::NonRecursive)
+                    .into_diagnostic()?;
+            }
         }
 
         let file_list = files
@@ -883,8 +896,14 @@ impl Cli {
         loop {
             match rx.recv() {
                 Ok(Ok(event)) => {
-                    if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
-                        // drain pending events to debounce rapid saves
+                    let affects_target = event.paths.iter().any(|p| {
+                        let canon = p.canonicalize().unwrap_or_else(|_| p.clone());
+                        target_paths.contains(&canon) || target_paths.contains(p)
+                    });
+
+                    if affects_target
+                        && matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_))
+                    {
                         std::thread::sleep(std::time::Duration::from_millis(50));
                         while rx.try_recv().is_ok() {}
 
