@@ -878,9 +878,7 @@ impl Cli {
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|| PathBuf::from("."));
             if watched_dirs.insert(dir.clone()) {
-                watcher
-                    .watch(&dir, RecursiveMode::NonRecursive)
-                    .into_diagnostic()?;
+                watcher.watch(&dir, RecursiveMode::NonRecursive).into_diagnostic()?;
             }
         }
 
@@ -901,9 +899,7 @@ impl Cli {
                         target_paths.contains(&canon) || target_paths.contains(p)
                     });
 
-                    if affects_target
-                        && matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_))
-                    {
+                    if affects_target && matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                         std::thread::sleep(std::time::Duration::from_millis(50));
                         while rx.try_recv().is_ok() {}
 
