@@ -5,18 +5,18 @@
 The if expression evaluates a condition and executes code based on the result:
 
 ```mq
- if (eq(x, 1)):
+ if (x == 1):
    "one"
- elif (eq(x, 2)):
+ elif (x == 2):
    "two"
  else:
    "other"
 ```
 
 ```mq
- if (eq(x, 1)):
+ if (x == 1):
    do "one" | upcase();
- elif (eq(x, 2)):
+ elif (x == 2):
    do "TWO" | downcase();
  else:
    do
@@ -25,7 +25,7 @@ The if expression evaluates a condition and executes code based on the result:
 ```
 
 ```mq
- if (eq(x, 1)):
+ if (x == 1):
    "one"
 ```
 
