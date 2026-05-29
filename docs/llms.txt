@@ -9,7 +9,7 @@
 - [CLI Reference](https://mqlang.org/book/reference/cli): All CLI flags, options, and subcommands
 - [Syntax](https://mqlang.org/book/reference/syntax): Language syntax overview
 - [Types and Values](https://mqlang.org/book/reference/types_and_values): Number, String, Symbol, Boolean, Array, Dict, Function
-- [Selectors](https://mqlang.org/book/reference/selectors): Select and access Markdown nodes (.h, .code, .link, .image, .list, etc.)
+- [Selectors](https://mqlang.org/book/reference/selectors): Select and access Markdown nodes (.h, .code, .link, .image, .list, .p, .li, .hr, .br, etc.) with aliases for common selectors
 - [Nodes](https://mqlang.org/book/reference/nodes): Access all Markdown nodes as a flat array
 - [Builtin Functions and Selectors](https://mqlang.org/book/reference/builtins): Complete reference for all built-in functions and selectors
 - [Operators](https://mqlang.org/book/reference/operators): Pipe |, shift << >>, conversion @, range .., and more
