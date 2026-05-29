@@ -274,31 +274,31 @@ impl Selector {
             ".<" | ".mdx_jsx_flow_element" => Some(Selector::MdxJsxFlowElement),
             ".**" | ".emphasis" => Some(Selector::Emphasis),
             ".$$" | ".math" => Some(Selector::Math),
-            ".horizontal_rule" | ".---" | ".***" | ".___" => Some(Selector::HorizontalRule),
+            ".horizontal_rule" | ".hr" | ".---" | ".***" | ".___" => Some(Selector::HorizontalRule),
             ".{}" | ".mdx_text_expression" => Some(Selector::MdxTextExpression),
             ".[^]" | ".footnote_ref" => Some(Selector::FootnoteRef),
             ".definition" => Some(Selector::Definition),
-            ".break" => Some(Selector::Break),
+            ".break" | ".br" => Some(Selector::Break),
             ".delete" => Some(Selector::Delete),
             ".<>" | ".html" => Some(Selector::Html),
             ".image" => Some(Selector::Image),
             ".image_ref" => Some(Selector::ImageRef),
-            ".code_inline" => Some(Selector::InlineCode),
-            ".math_inline" => Some(Selector::InlineMath),
+            ".code_inline" | ".inline_code" => Some(Selector::InlineCode),
+            ".math_inline" | ".inline_math" => Some(Selector::InlineMath),
             ".link" => Some(Selector::Link),
             ".link_ref" => Some(Selector::LinkRef),
-            ".[]" | ".list" => Some(Selector::List(None, None)),
+            ".[]" | ".list" | ".li" => Some(Selector::List(None, None)),
             ".task" => Some(Selector::Task),
             ".todo" => Some(Selector::Todo),
             ".done" => Some(Selector::Done),
             ".toml" => Some(Selector::Toml),
             ".strong" => Some(Selector::Strong),
             ".yaml" => Some(Selector::Yaml),
-            ".code" => Some(Selector::Code),
+            ".code" | ".code_block" => Some(Selector::Code),
             ".mdx_js_esm" => Some(Selector::MdxJsEsm),
             ".mdx_jsx_text_element" => Some(Selector::MdxJsxTextElement),
             ".mdx_flow_expression" => Some(Selector::MdxFlowExpression),
-            ".text" => Some(Selector::Text),
+            ".text" | ".p" | ".paragraph" => Some(Selector::Text),
             ".[][]" | ".table" => Some(Selector::Table(None, None)),
             ".table_align" => Some(Selector::TableAlign),
             ".." => Some(Selector::Recursive),
@@ -452,6 +452,7 @@ mod tests {
     #[case::math_alias(".$$", Selector::Math, ".math")]
     // Horizontal Rule
     #[case::horizontal_rule(".horizontal_rule", Selector::HorizontalRule, ".horizontal_rule")]
+    #[case::horizontal_rule_alias_hr(".hr", Selector::HorizontalRule, ".horizontal_rule")]
     #[case::horizontal_rule_alias_dash(".---", Selector::HorizontalRule, ".horizontal_rule")]
     #[case::horizontal_rule_alias_star(".***", Selector::HorizontalRule, ".horizontal_rule")]
     #[case::horizontal_rule_alias_underscore(".___", Selector::HorizontalRule, ".horizontal_rule")]
@@ -465,6 +466,7 @@ mod tests {
     #[case::definition(".definition", Selector::Definition, ".definition")]
     // Break
     #[case::break_selector(".break", Selector::Break, ".break")]
+    #[case::break_alias_br(".br", Selector::Break, ".break")]
     // Delete
     #[case::delete(".delete", Selector::Delete, ".delete")]
     // HTML
@@ -476,8 +478,10 @@ mod tests {
     #[case::image_ref(".image_ref", Selector::ImageRef, ".image_ref")]
     // Inline Code
     #[case::code_inline(".code_inline", Selector::InlineCode, ".code_inline")]
+    #[case::inline_code_alias(".inline_code", Selector::InlineCode, ".code_inline")]
     // Inline Math
     #[case::math_inline(".math_inline", Selector::InlineMath, ".math_inline")]
+    #[case::inline_math_alias(".inline_math", Selector::InlineMath, ".math_inline")]
     // Link
     #[case::link(".link", Selector::Link, ".link")]
     // Link Reference
@@ -485,6 +489,7 @@ mod tests {
     // List
     #[case::list(".list", Selector::List(None, None), ".list")]
     #[case::list_bracket(".[]", Selector::List(None, None), ".list")]
+    #[case::list_alias_li(".li", Selector::List(None, None), ".list")]
     #[case::list_with_index(".[1]", Selector::List(Some(1), None), ".[1]")]
     // Task List
     #[case::task(".task", Selector::Task, ".task")]
@@ -498,6 +503,7 @@ mod tests {
     #[case::yaml(".yaml", Selector::Yaml, ".yaml")]
     // Code
     #[case::code(".code", Selector::Code, ".code")]
+    #[case::code_block_alias(".code_block", Selector::Code, ".code")]
     // MDX JS ESM
     #[case::mdx_js_esm(".mdx_js_esm", Selector::MdxJsEsm, ".mdx_js_esm")]
     // MDX JSX Text Element
@@ -506,6 +512,8 @@ mod tests {
     #[case::mdx_flow_expression(".mdx_flow_expression", Selector::MdxFlowExpression, ".mdx_flow_expression")]
     // Text
     #[case::text(".text", Selector::Text, ".text")]
+    #[case::text_alias_p(".p", Selector::Text, ".text")]
+    #[case::text_alias_paragraph(".paragraph", Selector::Text, ".text")]
     // Table
     #[case::table(".table", Selector::Table(None, None), ".table")]
     #[case::table_bracket(".[][]", Selector::Table(None, None), ".table")]
