@@ -12,6 +12,29 @@ Selectors use the `.` prefix to select markdown nodes. For example:
 .link    # Selects all link nodes
 ```
 
+## Selector Aliases
+
+Many selectors have shorter or alternative names that you can use interchangeably:
+
+| Canonical Selector | Aliases                      | Description              |
+| ------------------ | ---------------------------- | ------------------------ |
+| `.text`            | `.p`, `.paragraph`           | Paragraph / text nodes   |
+| `.list`            | `.li`                        | List items               |
+| `.code`            | `.code_block`                | Fenced code blocks       |
+| `.code_inline`     | `.inline_code`               | Inline code spans        |
+| `.math_inline`     | `.inline_math`               | Inline math spans        |
+| `.horizontal_rule` | `.hr`, `.---`, `.***`, `.___` | Horizontal rules         |
+| `.break`           | `.br`                        | Line breaks              |
+
+Example:
+
+```mq
+.p          # Same as .text — selects all paragraph nodes
+.li         # Same as .list — selects all list items
+.code_block # Same as .code — selects all fenced code blocks
+.hr         # Same as .horizontal_rule
+```
+
 ## Selector Calls (Filtered Matching)
 
 Selectors can accept arguments to filter nodes by specific properties, using a function-call syntax:
