@@ -371,6 +371,14 @@ fn register_string(ctx: &mut InferenceContext) {
     register_ternary(ctx, "gsub", Type::None, Type::String, Type::String, Type::None);
     register_ternary(ctx, "replace", Type::None, Type::String, Type::String, Type::None);
 
+    // lines: (string) -> [string]
+    register_unary(ctx, "lines", Type::String, Type::array(Type::String));
+    register_unary(ctx, "lines", Type::None, Type::None);
+
+    // unlines: ([string]) -> string
+    register_unary(ctx, "unlines", Type::array(Type::String), Type::String);
+    register_unary(ctx, "unlines", Type::None, Type::None);
+
     // slugify: (string, string) -> string
     register_unary(ctx, "slugify", Type::String, Type::String);
     // slugify: (string) -> string
@@ -647,6 +655,26 @@ fn register_dict(ctx: &mut InferenceContext) {
     // get: (a, b, c) -> d (chained access, e.g., get(dict, key1)[key2])
     let (a, b, c, d) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
     register_ternary(ctx, "get", Type::Var(a), Type::Var(b), Type::Var(c), Type::Var(d));
+
+    // pick: ({k: v}, [k]) -> {k: v}
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "pick",
+        Type::dict(Type::Var(k), Type::Var(v)),
+        Type::array(Type::Var(k)),
+        Type::dict(Type::Var(k), Type::Var(v)),
+    );
+
+    // omit: ({k: v}, [k]) -> {k: v}
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "omit",
+        Type::dict(Type::Var(k), Type::Var(v)),
+        Type::array(Type::Var(k)),
+        Type::dict(Type::Var(k), Type::Var(v)),
+    );
 
     // None propagation for dict functions
     register_none_propagation_unary(ctx, &["keys", "values", "entries"]);
@@ -1393,6 +1421,21 @@ mod tests {
     }
 
     #[rstest]
+    #[case::lines("lines(\"a\\nb\\nc\")", true)]
+    #[case::lines_wrong_type("lines(42)", false)]
+    #[case::unlines("unlines([\"a\", \"b\", \"c\"])", true)]
+    fn test_lines_unlines_functions(#[case] code: &str, #[case] should_succeed: bool) {
+        let result = check_types(code);
+        assert_eq!(
+            result.is_empty(),
+            should_succeed,
+            "Code: {}\nResult: {:?}",
+            code,
+            result
+        );
+    }
+
+    #[rstest]
     #[case::explode("explode(\"hello\")", true)]
     #[case::implode("implode([104, 101, 108, 108, 111])", true)]
     #[case::utf8bytelen("utf8bytelen(\"hello\")", true)]
@@ -1480,6 +1523,20 @@ mod tests {
     #[case::values("values({\"a\": 1, \"b\": 2})", true)]
     #[case::entries("entries({\"a\": 1, \"b\": 2})", true)]
     fn test_dict_query_functions(#[case] code: &str, #[case] should_succeed: bool) {
+        let result = check_types(code);
+        assert_eq!(
+            result.is_empty(),
+            should_succeed,
+            "Code: {}\nResult: {:?}",
+            code,
+            result
+        );
+    }
+
+    #[rstest]
+    #[case::pick("pick({\"a\": 1, \"b\": 2, \"c\": 3}, [\"a\", \"b\"])", true)]
+    #[case::omit("omit({\"a\": 1, \"b\": 2, \"c\": 3}, [\"a\"])", true)]
+    fn test_dict_pick_omit_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
             result.is_empty(),
