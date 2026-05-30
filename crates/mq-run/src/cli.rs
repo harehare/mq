@@ -490,6 +490,66 @@ impl Cli {
         Ok(())
     }
 
+    /// Returns a description for an official mq tool, or None if the name is not an official tool.
+    fn official_tool_description(name: &str) -> Option<&'static str> {
+        match name {
+            "check" => Some("Syntax and semantic checker for mq files"),
+            "conv" => Some("CLI tool for converting various file formats to Markdown"),
+            "crawl" => Some("Web crawler that extracts structured data from websites"),
+            "dbg" => Some("Debugger for mq"),
+            "docs" => Some("Documentation generator for mq functions, macros, and selectors"),
+            "fmt" => Some("Formatter for mq query language (.mq) files"),
+            "http" => Some("Lightweight HTTP server that executes mq scripts for each request"),
+            "lsp" => Some("Language Server Protocol implementation for mq query files"),
+            "mcp" => Some("Model Context Protocol server for AI assistants"),
+            "serve" => Some("Browser-based Markdown viewer with mq query support"),
+            "task" => Some("Task runner using mq for Markdown-based task definitions"),
+            "test" => Some("Test runner for mq"),
+            "tui" => Some("Terminal User Interface for interactive mq query"),
+            "update" => Some("Update mq binary and tools to the latest version"),
+            "view" => Some("Viewer for Markdown content"),
+            _ => None,
+        }
+    }
+
+    fn is_official_tool(name: &str) -> bool {
+        Self::official_tool_description(name).is_some()
+    }
+
+    /// Returns an error with installation instructions for an official tool that is not installed.
+    fn official_tool_not_found_error(name: &str) -> miette::Report {
+        let description = Self::official_tool_description(name).unwrap_or("");
+        let mq_update_installed = which("mq-update").is_ok();
+
+        #[cfg(windows)]
+        let install_mq_update = "cargo install --git https://github.com/harehare/mq-update";
+        #[cfg(not(windows))]
+        let install_mq_update =
+            "curl -fsSL https://raw.githubusercontent.com/harehare/mq-update/main/scripts/install.sh | bash";
+
+        if name == "update" {
+            miette!(
+                help = install_mq_update,
+                "'mq-update' is an official mq tool but is not installed — {}",
+                description
+            )
+        } else if mq_update_installed {
+            miette!(
+                help = format!("mq update {}", name),
+                "'mq-{}' is an official mq tool but is not installed — {}",
+                name,
+                description
+            )
+        } else {
+            miette!(
+                help = format!("1. Install mq-update:\n   {install_mq_update}\n\n2. Then run:\n   mq update {name}"),
+                "'mq-{}' is an official mq tool but is not installed — {}",
+                name,
+                description
+            )
+        }
+    }
+
     /// List all available subcommands (built-in and external)
     fn list_commands(&self) -> miette::Result<()> {
         let mut output = vec![
@@ -562,6 +622,8 @@ impl Cli {
                         args.extend(files.iter().map(|p| p.to_string_lossy().to_string()));
                     }
                     return self.execute_external_command(command_path, &args);
+                } else if Self::is_official_tool(query_value) {
+                    return Err(Self::official_tool_not_found_error(query_value));
                 }
             }
         }
@@ -1499,6 +1561,44 @@ mod tests {
         // Should not panic on nonexistent directory
         Cli::collect_mq_commands_from_dir(&nonexistent, &mut seen);
         assert!(seen.is_empty());
+    }
+
+    #[rstest]
+    #[case("check", true)]
+    #[case("conv", true)]
+    #[case("crawl", true)]
+    #[case("dbg", true)]
+    #[case("docs", true)]
+    #[case("fmt", true)]
+    #[case("http", true)]
+    #[case("lsp", true)]
+    #[case("mcp", true)]
+    #[case("serve", true)]
+    #[case("task", true)]
+    #[case("test", true)]
+    #[case("tui", true)]
+    #[case("update", true)]
+    #[case("view", true)]
+    #[case("unknown", false)]
+    #[case("foo", false)]
+    #[case("repl", false)]
+    fn test_is_official_tool(#[case] name: &str, #[case] expected: bool) {
+        assert_eq!(Cli::is_official_tool(name), expected);
+    }
+
+    #[rstest]
+    #[case("lsp")]
+    #[case("tui")]
+    #[case("update")]
+    fn test_official_tool_description_is_some(#[case] name: &str) {
+        assert!(Cli::official_tool_description(name).is_some());
+        assert!(!Cli::official_tool_description(name).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_official_tool_not_found_error_contains_tool_name() {
+        let err = Cli::official_tool_not_found_error("tui");
+        assert!(err.to_string().contains("tui"));
     }
 
     #[rstest]
