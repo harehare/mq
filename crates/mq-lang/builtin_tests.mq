@@ -787,3 +787,47 @@ def test_max_by():
   | assert_eq(result3["score"], 10)
 end
 
+def test_lines():
+  let result1 = lines("line1\nline2\nline3")
+  | assert_eq(result1, ["line1", "line2", "line3"])
+
+  | let result2 = lines("single line")
+  | assert_eq(result2, ["single line"])
+
+  | let result3 = lines("")
+  | assert_eq(result3, [""])
+end
+
+def test_unlines():
+  let result1 = unlines(["line1", "line2", "line3"])
+  | assert_eq(result1, "line1\nline2\nline3")
+
+  | let result2 = unlines(["single line"])
+  | assert_eq(result2, "single line")
+
+  | let result3 = unlines([])
+  | assert_eq(result3, "")
+end
+
+def test_pick():
+  let result1 = pick({"a": 1, "b": 2, "c": 3}, ["a", "c"])
+  | assert_eq(result1, {"a": 1, "c": 3})
+
+  | let result2 = pick({"x": 10, "y": 20}, ["y"])
+  | assert_eq(result2, {"y": 20})
+
+  | let result3 = pick({"key": "value"}, ["nonexistent"])
+  | assert_eq(result3, dict())
+end
+
+def test_omit():
+  let result1 = omit({"a": 1, "b": 2, "c": 3}, ["b"])
+  | assert_eq(result1, {"a": 1, "c": 3})
+
+  | let result2 = omit({"x": 10, "y": 20}, ["x", "y"])
+  | assert_eq(result2, {})
+
+  | let result3 = omit({"key": "value"}, ["nonexistent"])
+  | assert_eq(result3, {"key": "value"})
+end
+

@@ -831,3 +831,50 @@ def max_by(arr, f):
       | max_item
     end
 end
+
+# Returns the lines of a string as an array by splitting on newline characters.
+def lines(s): if (is_none(s)): None else: split(s, "\n");
+
+# Joins an array of strings into a single string with newline characters between them.
+def unlines(arr): if (is_none(arr)): None else: join(arr, "\n");
+
+# Returns a new dictionary containing only the specified keys from the original dictionary, if they exist.
+def pick(d, keys):
+  if (!is_dict(d)):
+    error("first argument must be a dict")
+  elif (!is_array(keys)):
+    error("second argument must be an array")
+  else:
+    do
+      var result = {}
+      | var i = 0
+      | while (i < len(keys)):
+          let key = keys[i]
+          | let value = d[key]
+          | if (!is_none(value)):
+              result[key] = value
+          | i += 1
+        end
+      | result
+    end
+end
+
+# Returns a new dictionary excluding the specified keys from the original dictionary.
+def omit(d, keys):
+  if (!is_dict(d)):
+    error("first argument must be a dict")
+  elif (!is_array(keys)):
+    error("second argument must be an array")
+  else:
+    do
+      var result = d
+      | var i = 0
+      | while (i < len(keys)):
+          let key = keys[i]
+          | result = del(result, key)
+          | i += 1
+        end
+      | result
+    end
+end
+
