@@ -1,16 +1,13 @@
 <div align="center">
   <img src="assets/logo.svg" style="width: 128px; height: 128px;"/>
-</div>
 
-<div align="center">
   <a href="https://mqlang.org">Visit the site 🌐</a>
   &mdash;
   <a href="https://mqlang.org/book">Read the book 📖</a>
   &mdash;
   <a href="https://mqlang.org/playground">Playground 🎮</a>
-</div>
 
-<h1 align="center">mq</h1>
+<h1>mq</h1>
 
 [![ci](https://img.shields.io/github/actions/workflow/status/harehare/mq/ci.yml?logo=github-actions&label=ci)](https://github.com/harehare/mq/actions/workflows/ci.yml)
 [![audit](https://img.shields.io/github/actions/workflow/status/harehare/mq/audit.yml?logo=github-actions&label=audit)](https://github.com/harehare/mq/actions/workflows/audit.yml)
@@ -18,8 +15,12 @@
 [![codecov](https://img.shields.io/codecov/c/github/harehare/mq?logo=codecov)](https://codecov.io/gh/harehare/mq)
 [![codspeed badge](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json?style=for-the-badge)](https://codspeed.io/harehare/mq)
 
+**Query. Filter. Transform Markdown.**
+
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
 It's written in Rust, allowing you to easily slice, filter, map, and transform structured data.
+
+</div>
 
 ![demo](assets/demo.gif)
 
@@ -165,8 +166,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -A, --aggregate
