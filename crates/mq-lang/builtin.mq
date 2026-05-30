@@ -833,10 +833,10 @@ def max_by(arr, f):
 end
 
 # Returns the lines of a string as an array by splitting on newline characters.
-def lines(s): split(s, "\n");
+def lines(s): if (is_none(s)): None else: split(s, "\n");
 
 # Joins an array of strings into a single string with newline characters between them.
-def unlines(arr): join(arr, "\n");
+def unlines(arr): if (is_none(arr)): None else: join(arr, "\n");
 
 # Returns a new dictionary containing only the specified keys from the original dictionary, if they exist.
 def pick(d, keys):
@@ -871,9 +871,7 @@ def omit(d, keys):
       | var i = 0
       | while (i < len(keys)):
           let key = keys[i]
-          | let value = d[key]
-          | if (!is_none(value)):
-              result = del(result, key)
+          | result = del(result, key)
           | i += 1
         end
       | result
