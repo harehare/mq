@@ -67,15 +67,6 @@ pub struct Cli {
     list: bool,
 
     /// Use the built-in reference document as input instead of a file.
-    ///
-    /// Generates a Markdown document containing all built-in functions,
-    /// selectors, and standard module functions, then runs QUERY against it.
-    /// Omit QUERY to print the full reference as Markdown.
-    ///
-    /// Examples:
-    ///   mq --doc '.'          # full reference
-    ///   mq --doc '.h'         # section headings only
-    ///   mq --doc '.table'     # all function/selector tables
     #[arg(long, default_value_t = false)]
     doc: bool,
 
@@ -252,7 +243,7 @@ pub enum LinkUrlStyle {
 #[derive(Clone, Debug, clap::Args, Default)]
 struct InputArgs {
     /// Aggregate all input files/content into a single array
-    #[arg(short = 'A', long, default_value_t = false)]
+    #[arg(short = 'A', long, default_value_t = false, default_value_if("doc", "true", "true"))]
     aggregate: bool,
 
     /// load filter from the file
@@ -533,17 +524,13 @@ impl Cli {
     }
 
     /// Runs a query against the generated reference Markdown document.
-    ///
-    /// When `--doc` is set, the reference document is used as the sole input
-    /// instead of any file or stdin. If no query was supplied, the identity
-    /// query `self` is used so the full document is printed.
     fn run_doc(&self) -> miette::Result<()> {
         let markdown = crate::reference::generate();
         let input = mq_lang::parse_markdown_input(&markdown).map_err(|e| miette!(e.to_string()))?;
 
-        let query = self.query.as_deref().unwrap_or("self");
+        let query = self.get_query()?;
         let mut engine = self.create_engine()?;
-        let runtime_values = engine.eval(query, input.into_iter()).map_err(|e| *e)?;
+        let runtime_values = engine.eval(&query, input.into_iter()).map_err(|e| *e)?;
         self.print(runtime_values)
     }
 

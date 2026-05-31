@@ -17,22 +17,22 @@ use mq_lang::{
 pub fn generate() -> String {
     let mut md = String::with_capacity(64 * 1024);
 
-    append_native_functions(&mut md);
+    append_builtin_functions(&mut md);
     append_selectors(&mut md);
-    append_module_section(&mut md, "builtin", BUILTIN_MODULE_FILE, true);
 
     let mut modules: Vec<_> = STANDARD_MODULES.iter().collect();
     modules.sort_by_key(|(k, _)| *k);
+
     for (name, get_source) in modules {
         let source = get_source();
-        append_module_section(&mut md, name, source, false);
+        append_module_section(&mut md, name, source);
     }
 
     md
 }
 
-fn append_native_functions(md: &mut String) {
-    md.push_str("# Built-in Functions\n\n");
+fn append_builtin_functions(md: &mut String) {
+    md.push_str("## Built-in Functions\n\n");
     md.push_str("| name | params | description |\n");
     md.push_str("|------|--------|-------------|\n");
 
@@ -51,33 +51,8 @@ fn append_native_functions(md: &mut String) {
             cell(doc.description),
         ));
     }
-    md.push('\n');
-}
 
-fn append_selectors(md: &mut String) {
-    md.push_str("# Selectors\n\n");
-    md.push_str("| selector | description |\n");
-    md.push_str("|----------|-------------|\n");
-
-    let mut entries: Vec<_> = BUILTIN_SELECTOR_DOC.iter().collect();
-    entries.sort_by_key(|(k, _)| *k);
-
-    for (name, doc) in entries {
-        md.push_str(&format!("| {} | {} |\n", cell(name), cell(doc.description)));
-    }
-    md.push('\n');
-}
-
-fn append_module_section(md: &mut String, name: &str, source: &str, is_builtin: bool) {
-    if is_builtin {
-        md.push_str("# Module: builtin\n\n");
-        md.push_str("The standard library, always available without import.\n\n");
-    } else {
-        md.push_str(&format!("\n# Module: {name}\n\n"));
-        md.push_str(&format!("import \"{name}\" |\n\n"));
-    }
-
-    let fns = extract_functions_from_cst(source, is_builtin);
+    let fns = extract_functions_from_cst(BUILTIN_MODULE_FILE, true);
     if fns.is_empty() {
         return;
     }
@@ -93,12 +68,39 @@ fn append_module_section(md: &mut String, name: &str, source: &str, is_builtin: 
     }
 }
 
-/// Parses `.mq` source with the CST and returns `(name, params, description)`
-/// for each public function.
-///
-/// When `skip_native` is true (used for `builtin.mq`), functions that appear
-/// in `BUILTIN_FUNCTION_DOC` are skipped so they aren't duplicated in the
-/// native-functions section.
+fn append_selectors(md: &mut String) {
+    md.push_str("## Selectors\n\n");
+    md.push_str("| selector | description |\n");
+    md.push_str("|----------|-------------|\n");
+
+    let mut entries: Vec<_> = BUILTIN_SELECTOR_DOC.iter().collect();
+    entries.sort_by_key(|(k, _)| *k);
+
+    for (name, doc) in entries {
+        md.push_str(&format!("| {} | {} |\n", cell(name), cell(doc.description)));
+    }
+}
+
+fn append_module_section(md: &mut String, name: &str, source: &str) {
+    md.push_str(&format!("\n## Module: {name}\n\n"));
+    md.push_str(&format!("import \"{name}\" |\n\n"));
+
+    let fns = extract_functions_from_cst(source, false);
+    if fns.is_empty() {
+        return;
+    }
+    md.push_str("| name | params | description |\n");
+    md.push_str("|------|--------|-------------|\n");
+    for (fn_name, params, desc) in &fns {
+        md.push_str(&format!(
+            "| {} | {} | {} |\n",
+            cell(fn_name),
+            cell(&params.join(", ")),
+            cell(desc),
+        ));
+    }
+}
+
 fn extract_functions_from_cst(source: &str, skip_native: bool) -> Vec<(String, Vec<String>, String)> {
     let (nodes, _) = mq_lang::parse_recovery(source);
     let mut result = Vec::new();
@@ -115,13 +117,6 @@ fn extract_functions_from_cst(source: &str, skip_native: bool) -> Vec<(String, V
     result
 }
 
-/// Extracts `(name, params, description)` from a CST `Def` node.
-///
-/// - `name`: the `Ident` token text of the first child
-/// - `params`: `Ident` tokens that appear between `(` and `)` in children
-/// - `description`: leading-trivia `Comment` tokens joined with a space
-///
-/// Returns `None` for private functions (names starting with `_`).
 fn def_info(node: &Shared<CstNode>, skip_native: bool) -> Option<(String, Vec<String>, String)> {
     // Function name: first child with NodeKind::Ident
     let name_node = node.children.iter().find(|c| matches!(c.kind, CstNodeKind::Ident))?;
@@ -167,7 +162,6 @@ fn ident_text(node: &Shared<CstNode>) -> Option<String> {
     })
 }
 
-/// Escapes `|` and newlines so text is safe inside a Markdown table cell.
 fn cell(s: &str) -> String {
     s.replace('|', "\\|").replace('\n', " ")
 }
