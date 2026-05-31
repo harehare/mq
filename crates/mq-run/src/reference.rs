@@ -56,6 +56,7 @@ fn append_builtin_functions(md: &mut String) {
     if fns.is_empty() {
         return;
     }
+    md.push_str("\n\n### builtin.mq\n\n");
     md.push_str("| name | params | description |\n");
     md.push_str("|------|--------|-------------|\n");
     for (fn_name, params, desc) in &fns {
