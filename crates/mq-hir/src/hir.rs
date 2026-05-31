@@ -112,6 +112,12 @@ impl Hir {
             return;
         }
 
+        // Mark as loaded before processing so that inline `import` expressions
+        // inside builtin.mq (e.g. `do import "yaml" | ...`) do not re-enter
+        // this function when add_expr → add_import_expr → add_code → add_nodes
+        // calls add_builtin() again.
+        self.builtin.loaded = true;
+
         let (nodes, _) = mq_lang::parse_recovery(mq_lang::BUILTIN_MODULE_FILE);
 
         nodes.iter().for_each(|node| {
@@ -182,8 +188,6 @@ impl Hir {
                 });
             }
         }
-
-        self.builtin.loaded = true;
     }
 
     pub fn add_nodes(&mut self, url: Url, nodes: &[mq_lang::Shared<mq_lang::CstNode>]) -> (SourceId, ScopeId) {

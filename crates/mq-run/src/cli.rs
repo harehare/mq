@@ -15,6 +15,7 @@ use std::{fs, path::PathBuf};
 use which::which;
 
 use crate::grep;
+use crate::reference;
 
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
@@ -65,6 +66,10 @@ pub struct Cli {
     /// List all available subcommands (built-in and external)
     #[arg(long)]
     list: bool,
+
+    /// Use the built-in reference document as input instead of a file.
+    #[arg(long, default_value_t = false)]
+    doc: bool,
 
     /// Number of files to process before switching to parallel processing
     #[arg(short = 'P', default_value_t = 10)]
@@ -239,7 +244,7 @@ pub enum LinkUrlStyle {
 #[derive(Clone, Debug, clap::Args, Default)]
 struct InputArgs {
     /// Aggregate all input files/content into a single array
-    #[arg(short = 'A', long, default_value_t = false)]
+    #[arg(short = 'A', long, default_value_t = false, default_value_if("doc", "true", "true"))]
     aggregate: bool,
 
     /// load filter from the file
@@ -519,9 +524,24 @@ impl Cli {
         Ok(())
     }
 
+    /// Runs a query against the generated reference Markdown document.
+    fn run_doc(&self) -> miette::Result<()> {
+        let markdown = reference::generate();
+        let input = mq_lang::parse_markdown_input(&markdown)?;
+
+        let query = self.get_query()?;
+        let mut engine = self.create_engine()?;
+        let runtime_values = engine.eval(&query, input.into_iter()).map_err(|e| *e)?;
+        self.print(runtime_values)
+    }
+
     pub fn run(&self) -> miette::Result<()> {
         if self.list {
             return self.list_commands();
+        }
+
+        if self.doc {
+            return self.run_doc();
         }
 
         if (self.output.before_context.is_some()
