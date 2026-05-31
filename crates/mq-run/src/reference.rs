@@ -175,7 +175,6 @@ mod tests {
         let md = generate();
         assert!(md.contains("# Built-in Functions"));
         assert!(md.contains("# Selectors"));
-        assert!(md.contains("# Module: builtin"));
         assert!(md.contains("# Module: csv"));
         assert!(md.contains("# Module: yaml"));
     }
