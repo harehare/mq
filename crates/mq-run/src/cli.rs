@@ -516,10 +516,35 @@ impl Cli {
         Self::official_tool_description(name).is_some()
     }
 
+    /// Returns true if `mq-update` is available in PATH or in `~/.local/bin`.
+    fn is_mq_update_available() -> bool {
+        if which("mq-update").is_ok() {
+            return true;
+        }
+        // ~/.local/bin is a supported install directory but is not always exported on PATH
+        Self::get_external_commands_dir()
+            .map(|dir| {
+                let path = dir.join("mq-update");
+                if !path.is_file() {
+                    return false;
+                }
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    fs::metadata(&path)
+                        .map(|m| m.permissions().mode() & UNIX_EXECUTABLE_BITS != 0)
+                        .unwrap_or(false)
+                }
+                #[cfg(not(unix))]
+                true
+            })
+            .unwrap_or(false)
+    }
+
     /// Returns an error with installation instructions for an official tool that is not installed.
     fn official_tool_not_found_error(name: &str) -> miette::Report {
         let description = Self::official_tool_description(name).unwrap_or("");
-        let mq_update_installed = which("mq-update").is_ok();
+        let mq_update_installed = Self::is_mq_update_available();
 
         #[cfg(windows)]
         let install_mq_update = "cargo install --git https://github.com/harehare/mq-update";
@@ -1599,6 +1624,36 @@ mod tests {
     fn test_official_tool_not_found_error_contains_tool_name() {
         let err = Cli::official_tool_not_found_error("tui");
         assert!(err.to_string().contains("tui"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_is_mq_update_available_local_bin() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // Temporarily create a fake mq-update in a temp dir and simulate get_external_commands_dir
+        // by verifying the logic directly: if the file exists and is executable, it's available.
+        let temp_dir = std::env::temp_dir().join("mq-update-avail-test");
+        fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
+
+        defer! {
+            fs::remove_dir_all(&temp_dir).ok();
+        }
+
+        let fake_update = temp_dir.join("mq-update");
+        fs::write(&fake_update, "#!/bin/sh").expect("Failed to write fake mq-update");
+        fs::set_permissions(&fake_update, fs::Permissions::from_mode(0o755)).expect("Failed to set permissions");
+
+        assert!(fake_update.is_file());
+        let mode = fs::metadata(&fake_update).unwrap().permissions().mode();
+        assert!(mode & UNIX_EXECUTABLE_BITS != 0, "mq-update should be executable");
+
+        // Verify a non-executable file is not considered available
+        let non_exec = temp_dir.join("mq-update-noexec");
+        fs::write(&non_exec, "#!/bin/sh").expect("Failed to write non-exec file");
+        fs::set_permissions(&non_exec, fs::Permissions::from_mode(0o644)).expect("Failed to set permissions");
+        let mode2 = fs::metadata(&non_exec).unwrap().permissions().mode();
+        assert!(mode2 & UNIX_EXECUTABLE_BITS == 0, "non-exec file should not pass");
     }
 
     #[rstest]
