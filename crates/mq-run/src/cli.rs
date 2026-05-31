@@ -15,6 +15,7 @@ use std::{fs, path::PathBuf};
 use which::which;
 
 use crate::grep;
+use crate::reference;
 
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
@@ -525,8 +526,8 @@ impl Cli {
 
     /// Runs a query against the generated reference Markdown document.
     fn run_doc(&self) -> miette::Result<()> {
-        let markdown = crate::reference::generate();
-        let input = mq_lang::parse_markdown_input(&markdown).map_err(|e| miette!(e.to_string()))?;
+        let markdown = reference::generate();
+        let input = mq_lang::parse_markdown_input(&markdown)?;
 
         let query = self.get_query()?;
         let mut engine = self.create_engine()?;
