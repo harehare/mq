@@ -174,10 +174,10 @@ mod tests {
     #[test]
     fn test_generate_contains_sections() {
         let md = generate();
-        assert!(md.contains("# Built-in Functions"));
-        assert!(md.contains("# Selectors"));
-        assert!(md.contains("# Module: csv"));
-        assert!(md.contains("# Module: yaml"));
+        assert!(md.contains("## Built-in Functions"));
+        assert!(md.contains("## Selectors"));
+        assert!(md.contains("## Module: csv"));
+        assert!(md.contains("## Module: yaml"));
     }
 
     #[test]
