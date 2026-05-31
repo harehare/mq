@@ -66,6 +66,19 @@ pub struct Cli {
     #[arg(long)]
     list: bool,
 
+    /// Use the built-in reference document as input instead of a file.
+    ///
+    /// Generates a Markdown document containing all built-in functions,
+    /// selectors, and standard module functions, then runs QUERY against it.
+    /// Omit QUERY to print the full reference as Markdown.
+    ///
+    /// Examples:
+    ///   mq --doc '.'          # full reference
+    ///   mq --doc '.h'         # section headings only
+    ///   mq --doc '.table'     # all function/selector tables
+    #[arg(long, default_value_t = false)]
+    doc: bool,
+
     /// Number of files to process before switching to parallel processing
     #[arg(short = 'P', default_value_t = 10)]
     parallel_threshold: usize,
@@ -519,9 +532,28 @@ impl Cli {
         Ok(())
     }
 
+    /// Runs a query against the generated reference Markdown document.
+    ///
+    /// When `--doc` is set, the reference document is used as the sole input
+    /// instead of any file or stdin. If no query was supplied, the identity
+    /// query `self` is used so the full document is printed.
+    fn run_doc(&self) -> miette::Result<()> {
+        let markdown = crate::reference::generate();
+        let input = mq_lang::parse_markdown_input(&markdown).map_err(|e| miette!(e.to_string()))?;
+
+        let query = self.query.as_deref().unwrap_or("self");
+        let mut engine = self.create_engine()?;
+        let runtime_values = engine.eval(query, input.into_iter()).map_err(|e| *e)?;
+        self.print(runtime_values)
+    }
+
     pub fn run(&self) -> miette::Result<()> {
         if self.list {
             return self.list_commands();
+        }
+
+        if self.doc {
+            return self.run_doc();
         }
 
         if (self.output.before_context.is_some()
