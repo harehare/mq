@@ -878,3 +878,12 @@ def omit(d, keys):
     end
 end
 
+# Parses frontmatter from a markdown node, supporting both YAML and TOML formats.
+def frontmatter(v):
+  if (is_yaml(v)):
+    do import "yaml" | yaml::yaml_parse(v);
+  elif (is_toml(v)):
+    do import "toml" | toml::toml_parse(v);
+  else: None
+end
+
