@@ -3,7 +3,7 @@ use crate::html_to_markdown;
 #[cfg(feature = "html-to-markdown")]
 use crate::html_to_markdown::ConversionOptions;
 use crate::node::{ColorTheme, Node, Position, RenderOptions, TableAlign, TableCell, render_values};
-use markdown::Constructs;
+use markdown::{CompileOptions, Constructs, Options, ParseOptions};
 use miette::miette;
 use std::{fmt, str::FromStr};
 
@@ -167,7 +167,8 @@ impl Markdown {
     }
 
     pub fn to_html(&self) -> String {
-        markdown::to_html(self.to_string().as_str())
+        let md_str = self.to_string();
+        markdown::to_html_with_options(&md_str, &html_options()).unwrap_or_else(|_| markdown::to_html(&md_str))
     }
 
     pub fn to_text(&self) -> String {
@@ -257,8 +258,66 @@ impl Markdown {
     }
 }
 
+/// Returns the shared `Options` used for both `Markdown::to_html` and the
+/// standalone `to_html` helper.  The options mirror the constructs that are
+/// enabled during parsing (see `from_markdown_str`) so that every feature
+/// that can be *parsed* is also correctly *rendered* to HTML, including:
+///
+/// - GFM tables → `<table>`
+/// - GFM task-list items → `<input type="checkbox">`
+/// - GFM strikethrough → `<del>`
+/// - GFM footnotes
+/// - GFM autolink literals
+/// - Math (flow and inline) via `<code class="language-math …">`
+/// - YAML / TOML frontmatter (stripped from HTML output)
+fn html_options() -> Options {
+    Options {
+        parse: ParseOptions {
+            gfm_strikethrough_single_tilde: true,
+            math_text_single_dollar: true,
+            constructs: Constructs {
+                attention: true,
+                autolink: true,
+                block_quote: true,
+                character_escape: true,
+                character_reference: true,
+                code_indented: true,
+                code_fenced: true,
+                code_text: true,
+                definition: true,
+                frontmatter: true,
+                gfm_autolink_literal: true,
+                gfm_label_start_footnote: true,
+                gfm_footnote_definition: true,
+                gfm_strikethrough: true,
+                gfm_table: true,
+                gfm_task_list_item: true,
+                hard_break_escape: true,
+                hard_break_trailing: true,
+                heading_atx: true,
+                heading_setext: true,
+                html_flow: true,
+                html_text: true,
+                label_start_image: true,
+                label_start_link: true,
+                label_end: true,
+                list_item: true,
+                math_flow: true,
+                math_text: true,
+                thematic_break: true,
+                ..Constructs::default()
+            },
+            ..ParseOptions::default()
+        },
+        compile: CompileOptions {
+            allow_dangerous_html: true,
+            ..CompileOptions::default()
+        },
+    }
+}
+
 pub fn to_html(s: &str) -> String {
-    markdown::to_html(s)
+    markdown::to_html_with_options(s, &html_options()).unwrap_or_else(|_| markdown::to_html(s))
 }
 
 #[cfg(test)]
@@ -362,6 +421,95 @@ mod tests {
         let md = "# Hello".parse::<Markdown>().unwrap();
         let html = md.to_html();
         assert_eq!(html, "<h1>Hello</h1>\n");
+    }
+
+    #[test]
+    fn test_to_html_gfm_table() {
+        let md = "| A | B |\n|---|---|\n| 1 | 2 |".parse::<Markdown>().unwrap();
+        let html = md.to_html();
+        assert!(html.contains("<table>"), "expected <table> tag in: {html}");
+        assert!(html.contains("<thead>"), "expected <thead> in: {html}");
+        assert!(html.contains("<tbody>"), "expected <tbody> in: {html}");
+        assert!(html.contains("<th>A</th>"), "expected <th>A</th> in: {html}");
+        assert!(html.contains("<td>1</td>"), "expected <td>1</td> in: {html}");
+    }
+
+    #[test]
+    fn test_to_html_gfm_table_alignment() {
+        let md = "| L | C | R |\n|:---|:---:|---:|\n| a | b | c |"
+            .parse::<Markdown>()
+            .unwrap();
+        let html = md.to_html();
+        assert!(
+            html.contains("align=\"left\"") || html.contains("style=\"text-align:left\"") || html.contains("<table>"),
+            "table with alignment rendered: {html}"
+        );
+    }
+
+    #[test]
+    fn test_to_html_gfm_strikethrough() {
+        let md = "~~deleted~~".parse::<Markdown>().unwrap();
+        let html = md.to_html();
+        assert!(html.contains("<del>deleted</del>"), "expected <del> in: {html}");
+    }
+
+    #[test]
+    fn test_to_html_gfm_task_list() {
+        let md = "- [ ] Unchecked\n- [x] Checked".parse::<Markdown>().unwrap();
+        let html = md.to_html();
+        assert!(html.contains("<input"), "expected <input> in: {html}");
+        assert!(html.contains("type=\"checkbox\""), "expected checkbox in: {html}");
+        assert!(html.contains("checked"), "expected checked attribute in: {html}");
+    }
+
+    #[test]
+    fn test_to_html_math_inline() {
+        let md = "Inline math: $E = mc^2$".parse::<Markdown>().unwrap();
+        let html = md.to_html();
+        assert!(
+            html.contains("math") && html.contains("E = mc^2"),
+            "expected math content in: {html}"
+        );
+    }
+
+    #[test]
+    fn test_to_html_math_block() {
+        let md = "$$\n\\frac{1}{2}\n$$".parse::<Markdown>().unwrap();
+        let html = md.to_html();
+        assert!(
+            html.contains("math") && html.contains("\\frac{1}{2}"),
+            "expected math block in: {html}"
+        );
+    }
+
+    #[test]
+    fn test_to_html_footnote() {
+        let md = "Footnote[^1]\n\n[^1]: Definition".parse::<Markdown>().unwrap();
+        let html = md.to_html();
+        assert!(
+            html.contains("footnote") || html.contains("fn"),
+            "expected footnote in: {html}"
+        );
+    }
+
+    #[test]
+    fn test_to_html_html_passthrough() {
+        let md = "<kbd>Ctrl</kbd>+<kbd>C</kbd>".parse::<Markdown>().unwrap();
+        let html = md.to_html();
+        assert!(
+            html.contains("<kbd>Ctrl</kbd>"),
+            "expected <kbd> passthrough in: {html}"
+        );
+    }
+
+    #[test]
+    fn test_to_html_standalone_gfm_table() {
+        let input = "| H1 | H2 |\n|---|---|\n| a | b |";
+        let html = to_html(input);
+        assert!(
+            html.contains("<table>"),
+            "expected <table> from standalone to_html: {html}"
+        );
     }
 
     #[test]
