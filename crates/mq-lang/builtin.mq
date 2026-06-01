@@ -883,7 +883,7 @@ def frontmatter(v):
   if (is_yaml(v)):
     do import "yaml" | yaml::yaml_parse(v);
   elif (is_toml(v)):
-    do import "toml" | toml::toml_parse(v);
+    do import "toml" | v | .value | toml::toml_parse;
   else: None
 end
 
