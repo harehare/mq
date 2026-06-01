@@ -3,6 +3,7 @@ import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
 import "./vim.css";
 import * as mq from "mq-web";
+import { toHtml } from "mq-web";
 import { languages, editor, IPosition } from "monaco-editor";
 import LZString from "lz-string";
 import { FileTree } from "./components/FileTree";
@@ -177,8 +178,9 @@ export const Playground = () => {
                   : null;
     })(),
   );
-  const [activeTab, setActiveTab] = useState<"output" | "ast">("output");
+  const [activeTab, setActiveTab] = useState<"output" | "ast" | "preview">("output");
   const [astResult, setAstResult] = useState("");
+  const [previewHtml, setPreviewHtml] = useState("");
   const [files, setFiles] = useState<FileNode[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
@@ -526,17 +528,18 @@ export const Playground = () => {
     const startTime = performance.now();
 
     try {
-      setResult(
-        await mq.run(code, markdown ?? "", {
-          isUpdate,
-          inputFormat,
-          listStyle,
-          linkTitleStyle,
-          linkUrlStyle,
-        }),
-      );
+      const output = await mq.run(code, markdown ?? "", {
+        isUpdate,
+        inputFormat,
+        listStyle,
+        linkTitleStyle,
+        linkUrlStyle,
+      });
+      setResult(output);
+      setPreviewHtml(await toHtml(output));
     } catch (e) {
       setResult((e as Error).toString());
+      setPreviewHtml("");
     } finally {
       const endTime = performance.now();
       setExecutionTime(endTime - startTime);
@@ -1775,6 +1778,17 @@ export const Playground = () => {
   const monacoTheme =
     theme === "mq" ? "mq-branded" : isDarkMode ? "mq-dark" : "mq-light";
 
+  const buildPreviewSrcDoc = (htmlFragment: string) => {
+    const bg = isDarkMode ? "#1e1e1e" : "#ffffff";
+    const fg = isDarkMode ? "#d4d4d4" : "#1a1a1a";
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+body{margin:16px;font-family:sans-serif;background:${bg};color:${fg};line-height:1.6}
+pre{background:${isDarkMode ? "#2d2d2d" : "#f5f5f5"};padding:12px;border-radius:4px;overflow:auto}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em}
+img{max-width:100%}
+</style></head><body>${htmlFragment}</body></html>`;
+  };
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
@@ -2053,6 +2067,12 @@ export const Playground = () => {
               Output
             </button>
             <button
+              className={`tab ${activeTab === "preview" ? "active" : ""}`}
+              onClick={() => setActiveTab("preview")}
+            >
+              Preview
+            </button>
+            <button
               className={`tab ${activeTab === "ast" ? "active" : ""}`}
               onClick={() => {
                 handleGenerateAst();
@@ -2180,6 +2200,22 @@ export const Playground = () => {
                   automaticLayout: true,
                 }}
                 theme={monacoTheme}
+              />
+            )}
+            {activeTab === "preview" && (
+              <iframe
+                srcDoc={
+                  previewHtml
+                    ? buildPreviewSrcDoc(previewHtml)
+                    : buildPreviewSrcDoc("<p style='color:#888'>Click \"Run\" button to display preview</p>")
+                }
+                sandbox="allow-same-origin"
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  border: "none",
+                }}
+                title="Preview"
               />
             )}
             {activeTab === "ast" && (
