@@ -12,7 +12,7 @@
     "oxlint": "^1.31.0",
     "tsup": "^8.5.1",
     "typescript": "^6.0.2",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.0"
   },
   "files": [
     "dist"
