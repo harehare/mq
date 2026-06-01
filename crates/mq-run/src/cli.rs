@@ -529,7 +529,7 @@ impl Cli {
         let markdown = reference::generate();
         let input = mq_lang::parse_markdown_input(&markdown)?;
 
-        let query = self.get_query()?;
+        let query = self.get_query().unwrap_or_else(|_| "self".to_string());
         let mut engine = self.create_engine()?;
         let runtime_values = engine.eval(&query, input.into_iter()).map_err(|e| *e)?;
         self.print(runtime_values)
