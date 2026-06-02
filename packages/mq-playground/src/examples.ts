@@ -17,14 +17,19 @@ export const EXAMPLE_CATEGORIES: ExampleCategory[] = [
     examples: [
       {
         name: "Hello World",
-        code: `# Hello world.
-select(.h || .list || .code) + " world"`,
-        markdown: `# Hello
+        code: `select(.code.lang == "js")`,
+        markdown: `# Hello, World!
 
-- Hello
-
+\`\`\`js
+console.log("Hello, World!")
 \`\`\`
-Hello
+
+\`\`\`python
+print("Hello, World!")
+\`\`\`
+
+\`\`\`rust
+println!("Hello, World!")
 \`\`\`
 `,
         isUpdate: false,
