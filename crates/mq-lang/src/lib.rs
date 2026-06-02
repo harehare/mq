@@ -51,6 +51,7 @@ mod lexer;
 mod macro_expand;
 mod module;
 mod number;
+mod optimizer;
 mod range;
 mod selector;
 

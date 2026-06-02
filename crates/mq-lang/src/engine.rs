@@ -18,6 +18,7 @@ use crate::{
     arena::Arena,
     error::{self},
     eval::Evaluator,
+    optimizer::Optimizer,
     parse,
 };
 
@@ -207,6 +208,7 @@ impl<T: ModuleResolver> Engine<T> {
         }
 
         let program = parse(code, Shared::clone(&self.token_arena))?;
+        let program = Optimizer::new().optimize(program);
 
         #[cfg(feature = "debugger")]
         self.evaluator.module_loader.set_source_code(code.to_string());
@@ -228,6 +230,7 @@ impl<T: ModuleResolver> Engine<T> {
             });
         }
         let program = parse(code, Shared::clone(&self.token_arena))?;
+        let program = Optimizer::new().optimize(program);
         Ok(CompiledProgram {
             source: code.to_string(),
             program,

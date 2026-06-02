@@ -1041,6 +1041,9 @@ impl<T: ModuleResolver> Evaluator<T> {
 
         match &*node.expr {
             ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
+            ast::Expr::SelectorChain(selectors) => Ok(selectors
+                .iter()
+                .fold(runtime_value.clone(), |v, sel| Self::eval_selector_expr(&v, sel))),
             ast::Expr::SelectorCall(selector, args) => {
                 let evaluated_args = args
                     .iter()
