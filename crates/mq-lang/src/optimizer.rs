@@ -889,8 +889,6 @@ impl Optimizer {
     }
 }
 
-// ── function inlining helpers ─────────────────────────────────────────────────
-
 struct InlinableFn {
     params: Vec<Ident>,
     body: Shared<ast::Node>,
@@ -1073,8 +1071,6 @@ fn literal_eq(a: Literal, b: Literal) -> bool {
     }
 }
 
-// ── tail-call optimization (TCO) ─────────────────────────────────────────────
-
 /// Scan `program` and rewrite self-tail-recursive `def` functions to use a loop.
 fn apply_tco_transforms(program: Program) -> Program {
     program
@@ -1255,8 +1251,6 @@ mod tests {
             .collect()
     }
 
-    // ── constant folding: arithmetic & string ─────────────────────────────────
-
     #[rstest]
     #[case("1 + 2", "3")]
     #[case("10 - 3", "7")]
@@ -1269,8 +1263,6 @@ mod tests {
     fn test_fold_arithmetic(#[case] query: &str, #[case] expected: &str) {
         assert_eq!(eval(query, "x"), vec![expected]);
     }
-
-    // ── constant folding: comparisons ─────────────────────────────────────────
 
     #[rstest]
     #[case("1 == 1", "true")]
@@ -1289,8 +1281,6 @@ mod tests {
         assert_eq!(eval(query, "x"), vec![expected]);
     }
 
-    // ── dead branch elimination ───────────────────────────────────────────────
-
     #[rstest]
     #[case("if (true): 1 else: 2", "1")]
     #[case("if (false): 1 else: 2", "2")]
@@ -1301,8 +1291,6 @@ mod tests {
         assert_eq!(eval(query, "x"), vec![expected]);
     }
 
-    // ── and / or short-circuit ────────────────────────────────────────────────
-
     #[rstest]
     #[case("false && true", "false")]
     #[case("true && false", "false")]
@@ -1311,8 +1299,6 @@ mod tests {
     fn test_short_circuit(#[case] query: &str, #[case] expected: &str) {
         assert_eq!(eval(query, "x"), vec![expected]);
     }
-
-    // ── non-foldable: preserve runtime behaviour ──────────────────────────────
 
     #[rstest]
     #[case("add(\"hello\", .)", "world", "helloworld")]
@@ -1327,8 +1313,6 @@ mod tests {
         let input = parse_text_input("x").unwrap();
         assert!(engine.eval("1 / 0", input.into_iter()).is_err());
     }
-
-    // ── SelectorChain: AST structure ─────────────────────────────────────────
 
     #[rstest]
     #[case(".h1 | .text", 2usize)]
@@ -1375,8 +1359,6 @@ mod tests {
         assert!(!matches!(&*program[0].expr, Expr::SelectorChain(_)));
     }
 
-    // ── InterpolatedString folding ────────────────────────────────────────────
-
     #[rstest]
     #[case("s\"hello world\"", "hello world")]
     #[case("s\"static text only\"", "static text only")]
@@ -1402,8 +1384,6 @@ mod tests {
         assert!(matches!(&*compiled.program()[0].expr, Expr::InterpolatedString(_)));
     }
 
-    // ── let literal propagation ───────────────────────────────────────────────
-
     #[rstest]
     #[case("let x = 10 | add(x, 5)", "15")]
     #[case("let a = 3 | let b = 4 | a + b", "7")]
@@ -1418,8 +1398,6 @@ mod tests {
     fn test_let_non_literal_not_propagated(#[case] query: &str, #[case] expected: &str) {
         assert_eq!(eval(query, "x"), vec![expected]);
     }
-
-    // ── function inlining ─────────────────────────────────────────────────────
 
     #[rstest]
     // 1-param: arithmetic body — inlined + constant-folded
@@ -1462,8 +1440,6 @@ mod tests {
             last.expr
         );
     }
-
-    // ── tail-call optimization ────────────────────────────────────────────────
 
     #[rstest]
     // Simple countdown: recursive call directly in else branch
