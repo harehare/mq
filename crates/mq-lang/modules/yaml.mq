@@ -26,7 +26,7 @@ def _yaml_stringify_value(value, indent_level):
       if (is_empty(keys(value))):
         "{}"
       else:
-        join(map(keys(value), fn(k): "\n" + indent + k + ": " + _yaml_stringify_value(value[k], indent_level + 1);), "")
+        join(map(sort(keys(value)), fn(k): "\n" + indent + k + ": " + _yaml_stringify_value(value[k], indent_level + 1);), "")
     else:
       to_string(value)
 end
@@ -47,7 +47,7 @@ def yaml_stringify(data):
     if (is_empty(keys(data))):
       "{}"
     else:
-      join(map(keys(data), fn(k): k + ": " + _yaml_stringify_value(data[k], 1);), "\n")
+      join(map(sort(keys(data)), fn(k): k + ": " + _yaml_stringify_value(data[k], 1);), "\n")
   else:
     _yaml_stringify_value(data, 0)
 end
@@ -99,7 +99,13 @@ def yaml_to_json(data):
 end
 
 # Converts a data structure to a YAML front matter string.
+# deprecated: use to_frontmatter instead
 def to_front_matter(data):
+  "---\n" + yaml_stringify(data) + "\n---"
+end
+
+# Converts a data structure to a YAML front matter string.
+def to_frontmatter(data):
   "---\n" + yaml_stringify(data) + "\n---"
 end
 

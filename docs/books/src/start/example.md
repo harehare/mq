@@ -621,5 +621,6 @@ $ mq -A 'let headers = count_by(fn(x): x | select(.h);)
 Extract frontmatter metadata from markdown files:
 
 ```mq
-import "yaml" | if (.yaml): yaml::yaml_parse() | get(:title)
+.yaml | frontmatter()
 ```
+

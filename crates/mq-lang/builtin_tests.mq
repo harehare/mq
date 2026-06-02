@@ -831,3 +831,24 @@ def test_omit():
   | assert_eq(result3, {"key": "value"})
 end
 
+def test_frontmatter():
+  # YAML frontmatter is parsed into a dict
+  let result1 = do "---\ntitle: Hello\nauthor: World\n---\n\n# Heading" | to_markdown() | first() | frontmatter();
+  | assert_eq(result1["title"], "Hello")
+  | assert_eq(result1["author"], "World")
+
+  # TOML frontmatter is parsed into a dict
+  | let result2 = do "+++\ntitle = \"Hello\"\nauthor = \"World\"\n+++\n\n# Heading" | to_markdown() | first() | frontmatter();
+  | assert_eq(result2["title"], "Hello")
+  | assert_eq(result2["author"], "World")
+
+  # Non-frontmatter node returns None
+  | let result3 = do "# Heading" | to_markdown() | first() | frontmatter();
+  | assert_eq(result3, None)
+
+  # YAML frontmatter with nested values
+  | let result4 = do "---\ntitle: My Post\ntags:\n  - rust\n  - markdown\n---\n" | to_markdown() | first() | frontmatter();
+  | assert_eq(result4["title"], "My Post")
+  | assert_eq(result4["tags"], ["rust", "markdown"])
+end
+

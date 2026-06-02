@@ -111,7 +111,13 @@ end
 def test_to_front_matter():
   let input = {title: "title", date: "2024-06-01", tags: ["test", "yaml"], draft: false}
   | let result = yaml::to_front_matter(input)
-  | assert_eq(result, "---\ntitle: title\ndate: 2024-06-01\ntags: \n  - test\n  - yaml\ndraft: false\n---")
+  | assert_eq(result, "---\ndate: 2024-06-01\ndraft: false\ntags: \n  - test\n  - yaml\ntitle: title\n---")
+end
+
+def test_to_frontmatter():
+  let input = {title: "title", date: "2024-06-01", tags: ["test", "yaml"], draft: false}
+  | let result = yaml::to_frontmatter(input)
+  | assert_eq(result, "---\ndate: 2024-06-01\ndraft: false\ntags: \n  - test\n  - yaml\ntitle: title\n---")
 end
 
 # -- XML Tests --
