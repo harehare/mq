@@ -881,7 +881,7 @@ end
 # Parses frontmatter from a markdown node, supporting both YAML and TOML formats.
 def frontmatter(v):
   if (is_yaml(v)):
-    do import "yaml" | yaml::yaml_parse(v);
+    do import "yaml" | v | .value | yaml::yaml_parse;
   elif (is_toml(v)):
     do import "toml" | v | .value | toml::toml_parse;
   else: None
