@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use crate::{
@@ -11,42 +10,175 @@ use crate::{
     selector::Selector,
 };
 
-/// AST optimizer that applies safe, semantics-preserving transformations before evaluation.
-pub struct Optimizer;
+/// Stack-allocated map from `Ident` to `Literal` used during let-literal propagation.
+///
+/// Up to 8 entries live on the stack with no heap allocation; larger programs fall back
+/// to the heap automatically (SmallVec's spill behaviour).
+type LiteralEnv = SmallVec<[(Ident, Literal); 8]>;
 
-impl Default for Optimizer {
-    fn default() -> Self {
-        Self
+fn env_get(env: &LiteralEnv, key: Ident) -> Option<&Literal> {
+    env.iter().rev().find(|(k, _)| *k == key).map(|(_, v)| v)
+}
+
+fn env_insert(env: &mut LiteralEnv, key: Ident, val: Literal) {
+    if let Some(entry) = env.iter_mut().find(|(k, _)| *k == key) {
+        entry.1 = val;
+    } else {
+        env.push((key, val));
     }
 }
 
+fn env_remove(env: &mut LiteralEnv, key: Ident) {
+    env.retain(|(k, _)| *k != key);
+}
+
+/// Pointer-equality helper that works for both `Rc` and `Arc` (the `sync` feature).
+#[inline]
+fn ptr_eq<T: ?Sized>(a: &Shared<T>, b: &Shared<T>) -> bool {
+    #[cfg(not(feature = "sync"))]
+    {
+        std::rc::Rc::ptr_eq(a, b)
+    }
+    #[cfg(feature = "sync")]
+    {
+        std::sync::Arc::ptr_eq(a, b)
+    }
+}
+
+/// Controls which optimization passes are applied by the [`Optimizer`].
+///
+/// - `None`: no transformations; the AST is returned unchanged.
+/// - `Basic`: constant folding, dead-branch elimination, and selector-chain merging.
+/// - `Full` (default): all passes — `Basic` plus let-literal propagation, function
+///   inlining, and tail-call optimization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OptimizationLevel {
+    None,
+    Basic,
+    #[default]
+    Full,
+}
+
+/// AST optimizer that applies safe, semantics-preserving transformations before evaluation.
+#[derive(Default)]
+pub struct Optimizer {
+    level: OptimizationLevel,
+}
+
 impl Optimizer {
-    pub fn new() -> Self {
-        Self
+    /// Creates an `Optimizer` that runs only the passes enabled by `level`.
+    pub fn with_level(level: OptimizationLevel) -> Self {
+        Self { level }
     }
 
     pub fn optimize(&self, program: Program) -> Program {
-        let optimized: Program = program.into_iter().map(|node| self.optimize_node(node)).collect();
-        let chained = self.merge_selector_chains(optimized);
-        let propagated: Program = self
-            .propagate_let_literals(chained)
-            .into_iter()
-            .map(|node| self.optimize_node(node))
-            .collect();
-        let chained2 = self.merge_selector_chains(propagated);
-        // Collect inlineable functions, then inline and re-fold.
-        let inlinable = collect_inlinable(&chained2);
-        let inlined: Program = chained2
-            .into_iter()
-            .map(|node| self.apply_inline(node, &inlinable))
-            .collect();
-        // Apply tail-call optimization to self-recursive functions.
-        let tco_applied = apply_tco_transforms(inlined);
-        let refolded: Program = tco_applied.into_iter().map(|node| self.optimize_node(node)).collect();
-        self.merge_selector_chains(refolded)
+        match self.level {
+            OptimizationLevel::None => program,
+            OptimizationLevel::Basic => {
+                let optimized: Program = program.into_iter().map(|node| self.optimize_node(node)).collect();
+                self.merge_selector_chains(optimized)
+            }
+            OptimizationLevel::Full => {
+                // Pass 1: constant folding + let-literal propagation in a single traversal.
+                let program = self.propagate_and_fold(program);
+                let program = self.merge_selector_chains(program);
+
+                // Passes 2-4 are only worthwhile when Def nodes are present.
+                if !program.iter().any(|n| matches!(&*n.expr, ast::Expr::Def(..))) {
+                    return program;
+                }
+
+                let inlinable = collect_inlinable(&program);
+                let program: Program = if inlinable.is_empty() {
+                    program
+                } else {
+                    program.into_iter().map(|n| self.apply_inline(n, &inlinable)).collect()
+                };
+                let program = apply_tco_transforms(program);
+                let refolded: Program = program.into_iter().map(|n| self.optimize_node(n)).collect();
+                self.merge_selector_chains(refolded)
+            }
+        }
+    }
+
+    /// Single-pass constant folding + let-literal propagation.
+    ///
+    /// Processes top-level nodes left-to-right:
+    /// - `let x = <foldable-expr>`: optimises the RHS, registers `x` in the substitution
+    ///   map if the result is a literal.
+    /// - All other nodes: substitute known literals, then fold constants.
+    ///
+    /// This replaces the original two-pass sequence (optimize_node → propagate_let_literals
+    /// → optimize_node) with a single traversal.
+    fn propagate_and_fold(&self, program: Program) -> Program {
+        // Fast path: if no top-level let-literal bindings exist, skip the propagation
+        // machinery entirely and just fold constants. If nothing folds either, return
+        // the original program to avoid any allocation.
+        let has_let_literal = program.iter().any(|n| {
+            matches!(&*n.expr, ast::Expr::Let(Pattern::Ident(_), rhs) if matches!(&*rhs.expr, ast::Expr::Literal(_)))
+        });
+
+        if !has_let_literal {
+            let mut changed = false;
+            let result: Program = program
+                .iter()
+                .map(|n| {
+                    let opt = self.optimize_node(Shared::clone(n));
+                    if !ptr_eq(&opt, n) {
+                        changed = true;
+                    }
+                    opt
+                })
+                .collect();
+            return if changed { result } else { program };
+        }
+
+        let mut env: LiteralEnv = LiteralEnv::new();
+        let mut result: Program = Vec::with_capacity(program.len());
+
+        for node in program {
+            let token_id = node.token_id;
+            match &*node.expr {
+                ast::Expr::Let(Pattern::Ident(ident), rhs) => {
+                    let opt_rhs = self.optimize_node(Shared::clone(rhs));
+                    if let ast::Expr::Literal(lit) = &*opt_rhs.expr {
+                        env_insert(&mut env, ident.name, lit.clone());
+                    } else {
+                        env_remove(&mut env, ident.name);
+                    }
+                    // Reuse the original node when the RHS didn't change (e.g., already a literal).
+                    if ptr_eq(&opt_rhs, rhs) {
+                        result.push(node);
+                    } else {
+                        result.push(Shared::new(ast::Node {
+                            token_id,
+                            expr: Shared::new(ast::Expr::Let(Pattern::Ident(ident.clone()), opt_rhs)),
+                        }));
+                    }
+                }
+                _ => {
+                    let optimized = if env.is_empty() {
+                        self.optimize_node(node)
+                    } else {
+                        self.optimize_node(self.substitute_literals(node, &env))
+                    };
+                    result.push(optimized);
+                }
+            }
+        }
+
+        result
     }
 
     fn merge_selector_chains(&self, program: Program) -> Program {
+        // Fast path: skip allocation when no consecutive Selector nodes exist.
+        let has_consecutive = program
+            .windows(2)
+            .any(|w| matches!(&*w[0].expr, ast::Expr::Selector(_)) && matches!(&*w[1].expr, ast::Expr::Selector(_)));
+        if !has_consecutive {
+            return program;
+        }
+
         let mut result: Program = Vec::with_capacity(program.len());
         let mut iter = program.into_iter().peekable();
 
@@ -81,43 +213,8 @@ impl Optimizer {
         result
     }
 
-    /// Within a program, replace references to `let`-bound literal variables with the literal.
-    ///
-    /// Only `let` (immutable) bindings are propagated. `var` bindings are skipped because they
-    /// may be reassigned later. Propagation stops at scope-creating boundaries (Block, Def, Fn,
-    /// While, Foreach) so that shadowing in inner scopes is respected.
-    fn propagate_let_literals(&self, program: Program) -> Program {
-        let mut env: HashMap<Ident, Literal> = HashMap::new();
-        let mut result: Program = Vec::with_capacity(program.len());
-
-        for node in program {
-            match &*node.expr {
-                ast::Expr::Let(Pattern::Ident(ident), rhs) => {
-                    if let ast::Expr::Literal(lit) = &*rhs.expr {
-                        env.insert(ident.name, lit.clone());
-                    } else {
-                        // Non-literal RHS: ensure any previous binding for this name is cleared
-                        // so we don't propagate a stale value past a re-binding.
-                        env.remove(&ident.name);
-                    }
-                    result.push(node);
-                }
-                _ => {
-                    let subst = if env.is_empty() {
-                        node
-                    } else {
-                        self.substitute_literals(node, &env)
-                    };
-                    result.push(subst);
-                }
-            }
-        }
-
-        result
-    }
-
     /// Substitute `Ident` references with their bound literals, without crossing scope boundaries.
-    fn substitute_literals(&self, node: Shared<ast::Node>, env: &HashMap<Ident, Literal>) -> Shared<ast::Node> {
+    fn substitute_literals(&self, node: Shared<ast::Node>, env: &LiteralEnv) -> Shared<ast::Node> {
         if env.is_empty() {
             return node;
         }
@@ -125,7 +222,7 @@ impl Optimizer {
 
         match &*node.expr {
             ast::Expr::Ident(ident) => {
-                if let Some(lit) = env.get(&ident.name) {
+                if let Some(lit) = env_get(env, ident.name) {
                     return Shared::new(ast::Node {
                         token_id,
                         expr: Shared::new(ast::Expr::Literal(lit.clone())),
@@ -226,6 +323,24 @@ impl Optimizer {
                 ))),
             }),
 
+            // Substitute into Expr segments of interpolated strings so that
+            // `let x = "hi" | s"${x}!"` can later be folded to `"hi!"`.
+            ast::Expr::InterpolatedString(segments) => {
+                let subst_segs: Vec<StringSegment> = segments
+                    .iter()
+                    .map(|seg| match seg {
+                        StringSegment::Expr(inner) => {
+                            StringSegment::Expr(self.substitute_literals(Shared::clone(inner), env))
+                        }
+                        other => other.clone(),
+                    })
+                    .collect();
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: Shared::new(ast::Expr::InterpolatedString(subst_segs)),
+                })
+            }
+
             // Scope-creating or leaf nodes: stop substitution here.
             ast::Expr::Block(_)
             | ast::Expr::Def(_, _, _)
@@ -241,7 +356,6 @@ impl Optimizer {
             | ast::Expr::Literal(_)
             | ast::Expr::Selector(_)
             | ast::Expr::SelectorChain(_)
-            | ast::Expr::InterpolatedString(_)
             | ast::Expr::Self_
             | ast::Expr::Nodes
             | ast::Expr::Break(None)
@@ -256,7 +370,7 @@ impl Optimizer {
         }
     }
 
-    fn apply_inline(&self, node: Shared<ast::Node>, fns: &HashMap<Ident, InlinableFn>) -> Shared<ast::Node> {
+    fn apply_inline(&self, node: Shared<ast::Node>, fns: &FxHashMap<Ident, InlinableFn>) -> Shared<ast::Node> {
         if fns.is_empty() {
             return node;
         }
@@ -339,6 +453,10 @@ impl Optimizer {
                 if let Some(folded) = self.try_fold_call(token_id, &ident.name, &opt_args) {
                     return folded;
                 }
+                // Return the original node when no argument changed (avoids allocation).
+                if args.iter().zip(opt_args.iter()).all(|(orig, opt)| ptr_eq(orig, opt)) {
+                    return node;
+                }
                 Shared::new(ast::Node {
                     token_id,
                     expr: Shared::new(ast::Expr::Call(ident.clone(), opt_args)),
@@ -349,10 +467,16 @@ impl Optimizer {
             ast::Expr::And(operands) => self.optimize_and(token_id, operands),
             ast::Expr::Or(operands) => self.optimize_or(token_id, operands),
 
-            ast::Expr::Block(program) => Shared::new(ast::Node {
-                token_id,
-                expr: Shared::new(ast::Expr::Block(self.optimize(program.clone()))),
-            }),
+            ast::Expr::Block(program) => {
+                let opt = self.optimize(program.clone());
+                if program.iter().zip(opt.iter()).all(|(a, b)| ptr_eq(a, b)) {
+                    return node;
+                }
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: Shared::new(ast::Expr::Block(opt)),
+                })
+            }
 
             ast::Expr::Def(ident, params, program) => Shared::new(ast::Node {
                 token_id,
@@ -371,69 +495,107 @@ impl Optimizer {
                 )),
             }),
 
-            ast::Expr::While(cond, program) => Shared::new(ast::Node {
-                token_id,
-                expr: Shared::new(ast::Expr::While(
-                    self.optimize_node(Shared::clone(cond)),
-                    self.optimize(program.clone()),
-                )),
-            }),
+            ast::Expr::While(cond, program) => {
+                let opt_cond = self.optimize_node(Shared::clone(cond));
+                let opt_body = self.optimize(program.clone());
+                if ptr_eq(&opt_cond, cond) && program.iter().zip(opt_body.iter()).all(|(a, b)| ptr_eq(a, b)) {
+                    return node;
+                }
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: Shared::new(ast::Expr::While(opt_cond, opt_body)),
+                })
+            }
 
-            ast::Expr::Loop(program) => Shared::new(ast::Node {
-                token_id,
-                expr: Shared::new(ast::Expr::Loop(self.optimize(program.clone()))),
-            }),
+            ast::Expr::Loop(program) => {
+                let opt = self.optimize(program.clone());
+                if program.iter().zip(opt.iter()).all(|(a, b)| ptr_eq(a, b)) {
+                    return node;
+                }
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: Shared::new(ast::Expr::Loop(opt)),
+                })
+            }
 
-            ast::Expr::Foreach(ident, values, program) => Shared::new(ast::Node {
-                token_id,
-                expr: Shared::new(ast::Expr::Foreach(
-                    ident.clone(),
-                    self.optimize_node(Shared::clone(values)),
-                    self.optimize(program.clone()),
-                )),
-            }),
+            ast::Expr::Foreach(ident, values, program) => {
+                let opt_values = self.optimize_node(Shared::clone(values));
+                let opt_body = self.optimize(program.clone());
+                if ptr_eq(&opt_values, values) && program.iter().zip(opt_body.iter()).all(|(a, b)| ptr_eq(a, b)) {
+                    return node;
+                }
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: Shared::new(ast::Expr::Foreach(ident.clone(), opt_values, opt_body)),
+                })
+            }
 
-            ast::Expr::As(ident, inner) => Shared::new(ast::Node {
-                token_id,
-                expr: Shared::new(ast::Expr::As(ident.clone(), self.optimize_node(Shared::clone(inner)))),
-            }),
+            ast::Expr::As(ident, inner) => {
+                let opt_inner = self.optimize_node(Shared::clone(inner));
+                if ptr_eq(&opt_inner, inner) {
+                    return node;
+                }
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: Shared::new(ast::Expr::As(ident.clone(), opt_inner)),
+                })
+            }
 
-            ast::Expr::Let(pattern, inner) => Shared::new(ast::Node {
-                token_id,
-                expr: Shared::new(ast::Expr::Let(
-                    pattern.clone(),
-                    self.optimize_node(Shared::clone(inner)),
-                )),
-            }),
+            ast::Expr::Let(pattern, inner) => {
+                let opt_inner = self.optimize_node(Shared::clone(inner));
+                if ptr_eq(&opt_inner, inner) {
+                    return node;
+                }
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: Shared::new(ast::Expr::Let(pattern.clone(), opt_inner)),
+                })
+            }
 
-            ast::Expr::Var(pattern, inner) => Shared::new(ast::Node {
-                token_id,
-                expr: Shared::new(ast::Expr::Var(
-                    pattern.clone(),
-                    self.optimize_node(Shared::clone(inner)),
-                )),
-            }),
+            ast::Expr::Var(pattern, inner) => {
+                let opt_inner = self.optimize_node(Shared::clone(inner));
+                if ptr_eq(&opt_inner, inner) {
+                    return node;
+                }
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: Shared::new(ast::Expr::Var(pattern.clone(), opt_inner)),
+                })
+            }
 
-            ast::Expr::Assign(ident, inner) => Shared::new(ast::Node {
-                token_id,
-                expr: Shared::new(ast::Expr::Assign(
-                    ident.clone(),
-                    self.optimize_node(Shared::clone(inner)),
-                )),
-            }),
+            ast::Expr::Assign(ident, inner) => {
+                let opt_inner = self.optimize_node(Shared::clone(inner));
+                if ptr_eq(&opt_inner, inner) {
+                    return node;
+                }
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: Shared::new(ast::Expr::Assign(ident.clone(), opt_inner)),
+                })
+            }
 
-            ast::Expr::Try(try_expr, catch_expr) => Shared::new(ast::Node {
-                token_id,
-                expr: Shared::new(ast::Expr::Try(
-                    self.optimize_node(Shared::clone(try_expr)),
-                    self.optimize_node(Shared::clone(catch_expr)),
-                )),
-            }),
+            ast::Expr::Try(try_expr, catch_expr) => {
+                let opt_try = self.optimize_node(Shared::clone(try_expr));
+                let opt_catch = self.optimize_node(Shared::clone(catch_expr));
+                if ptr_eq(&opt_try, try_expr) && ptr_eq(&opt_catch, catch_expr) {
+                    return node;
+                }
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: Shared::new(ast::Expr::Try(opt_try, opt_catch)),
+                })
+            }
 
-            ast::Expr::Break(Some(val)) => Shared::new(ast::Node {
-                token_id,
-                expr: Shared::new(ast::Expr::Break(Some(self.optimize_node(Shared::clone(val))))),
-            }),
+            ast::Expr::Break(Some(val)) => {
+                let opt_val = self.optimize_node(Shared::clone(val));
+                if ptr_eq(&opt_val, val) {
+                    return node;
+                }
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: Shared::new(ast::Expr::Break(Some(opt_val))),
+                })
+            }
 
             ast::Expr::Match(value_node, arms) => {
                 let opt_value = self.optimize_node(Shared::clone(value_node));
@@ -454,6 +616,11 @@ impl Optimizer {
             ast::Expr::CallDynamic(callable, args) => {
                 let opt_callable = self.optimize_node(Shared::clone(callable));
                 let opt_args: Args = args.iter().map(|a| self.optimize_node(Shared::clone(a))).collect();
+                if ptr_eq(&opt_callable, callable)
+                    && args.iter().zip(opt_args.iter()).all(|(orig, opt)| ptr_eq(orig, opt))
+                {
+                    return node;
+                }
                 Shared::new(ast::Node {
                     token_id,
                     expr: Shared::new(ast::Expr::CallDynamic(opt_callable, opt_args)),
@@ -462,6 +629,9 @@ impl Optimizer {
 
             ast::Expr::SelectorCall(selector, args) => {
                 let opt_args: Args = args.iter().map(|a| self.optimize_node(Shared::clone(a))).collect();
+                if args.iter().zip(opt_args.iter()).all(|(orig, opt)| ptr_eq(orig, opt)) {
+                    return node;
+                }
                 Shared::new(ast::Node {
                     token_id,
                     expr: Shared::new(ast::Expr::SelectorCall(selector.clone(), opt_args)),
@@ -469,10 +639,19 @@ impl Optimizer {
             }
 
             ast::Expr::InterpolatedString(segments) => {
+                // Optimize each Expr segment; also promote string-literal Expr segments to
+                // Text so that fully-constant interpolated strings can be folded.
                 let opt_segs: Vec<StringSegment> = segments
                     .iter()
                     .map(|seg| match seg {
-                        StringSegment::Expr(node) => StringSegment::Expr(self.optimize_node(Shared::clone(node))),
+                        StringSegment::Expr(n) => {
+                            let opt = self.optimize_node(Shared::clone(n));
+                            if let ast::Expr::Literal(Literal::String(s)) = &*opt.expr {
+                                StringSegment::Text(s.clone())
+                            } else {
+                                StringSegment::Expr(opt)
+                            }
+                        }
                         other => other.clone(),
                     })
                     .collect();
@@ -724,8 +903,8 @@ struct InlinableFn {
 /// - It has no variadic or default-valued parameters.
 /// - It is not self-recursive.
 /// - Its body contains no free variables (all `Ident` refs are parameter names).
-fn collect_inlinable(program: &Program) -> HashMap<Ident, InlinableFn> {
-    let mut map = HashMap::new();
+fn collect_inlinable(program: &Program) -> FxHashMap<Ident, InlinableFn> {
+    let mut map = FxHashMap::default();
     for node in program {
         let ast::Expr::Def(ident, params, body) = &*node.expr else {
             continue;

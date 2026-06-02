@@ -90,6 +90,7 @@ pub use module::{
     BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, STANDARD_MODULES, error::ModuleError,
     resolver::LocalFsModuleResolver, resolver::ModuleResolver, resolver::module_name,
 };
+pub use optimizer::OptimizationLevel;
 pub use range::{Position, Range};
 pub use selector::{AttrKind, Selector};
 
