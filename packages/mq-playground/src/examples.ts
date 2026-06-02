@@ -17,7 +17,7 @@ export const EXAMPLE_CATEGORIES: ExampleCategory[] = [
     examples: [
       {
         name: "Hello World",
-        code: `select(.code.lang == "js")`,
+        code: `.code("js") | to_text`,
         markdown: `# Hello, World!
 
 \`\`\`js
