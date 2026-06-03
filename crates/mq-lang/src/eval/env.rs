@@ -73,7 +73,7 @@ const PROMOTE_THRESHOLD: usize = 6;
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 enum EnvContext {
-    Small(SmallVec<[(Ident, RuntimeValue); 2]>),
+    Small(SmallVec<[(Ident, RuntimeValue); 4]>),
     Large(Box<FxHashMap<Ident, RuntimeValue>>),
 }
 
@@ -468,9 +468,6 @@ impl Env {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "debugger")]
-    use std::collections::BTreeMap;
-
     use crate::Shared;
     use proptest::prelude::*;
     use rstest::rstest;
@@ -1211,37 +1208,37 @@ mod tests {
 
         let var = Ident::new(var_name);
 
-        if let Some(is_mutable) = define_in_grandparent {
-            if let Some(ref gp) = grandparent_env {
-                #[cfg(not(feature = "sync"))]
-                if is_mutable {
-                    gp.borrow_mut().define_mutable(var, num(1.0));
-                } else {
-                    gp.borrow_mut().define(var, num(1.0));
-                }
-                #[cfg(feature = "sync")]
-                if is_mutable {
-                    gp.write().unwrap().define_mutable(var, num(1.0));
-                } else {
-                    gp.write().unwrap().define(var, num(1.0));
-                }
+        if let Some(is_mutable) = define_in_grandparent
+            && let Some(ref gp) = grandparent_env
+        {
+            #[cfg(not(feature = "sync"))]
+            if is_mutable {
+                gp.borrow_mut().define_mutable(var, num(1.0));
+            } else {
+                gp.borrow_mut().define(var, num(1.0));
+            }
+            #[cfg(feature = "sync")]
+            if is_mutable {
+                gp.write().unwrap().define_mutable(var, num(1.0));
+            } else {
+                gp.write().unwrap().define(var, num(1.0));
             }
         }
 
-        if let Some(is_mutable) = define_in_parent {
-            if let Some(ref parent) = parent_env {
-                #[cfg(not(feature = "sync"))]
-                if is_mutable {
-                    parent.borrow_mut().define_mutable(var, num(100.0));
-                } else {
-                    parent.borrow_mut().define(var, num(100.0));
-                }
-                #[cfg(feature = "sync")]
-                if is_mutable {
-                    parent.write().unwrap().define_mutable(var, num(100.0));
-                } else {
-                    parent.write().unwrap().define(var, num(100.0));
-                }
+        if let Some(is_mutable) = define_in_parent
+            && let Some(ref parent) = parent_env
+        {
+            #[cfg(not(feature = "sync"))]
+            if is_mutable {
+                parent.borrow_mut().define_mutable(var, num(100.0));
+            } else {
+                parent.borrow_mut().define(var, num(100.0));
+            }
+            #[cfg(feature = "sync")]
+            if is_mutable {
+                parent.write().unwrap().define_mutable(var, num(100.0));
+            } else {
+                parent.write().unwrap().define(var, num(100.0));
             }
         }
 
