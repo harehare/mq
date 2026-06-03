@@ -4,6 +4,7 @@ use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::DefaultEngine;
 use rayon::prelude::*;
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::io::BufRead;
 use std::io::IsTerminal;
@@ -13,6 +14,12 @@ use std::process::Command;
 use std::str::FromStr;
 use std::{fs, path::PathBuf};
 use which::which;
+
+// Tracks whether any non-falsy value has been printed during a run.
+// Used by --exit-status / -e to decide the process exit code.
+thread_local! {
+    static HAD_TRUTHY_OUTPUT: Cell<bool> = const { Cell::new(false) };
+}
 
 use crate::grep;
 use crate::reference;
@@ -336,6 +343,11 @@ struct OutputArgs {
     /// Show NUM nodes before and after each match. Only effective with -F grep.
     #[clap(long, value_name = "NUM")]
     context: Option<usize>,
+
+    /// Exit with code 1 if the last output value is false, null, or the output
+    /// is empty. Mirrors jq's --exit-status / -e flag.
+    #[arg(short = 'e', long = "exit-status", default_value_t = false)]
+    exit_status: bool,
 }
 
 impl OutputArgs {
@@ -598,11 +610,24 @@ impl Cli {
             #[cfg(feature = "debugger")]
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
             None => {
-                if self.input.stream {
+                let result = if self.input.stream {
                     self.process_streaming()
                 } else {
                     self.process_batch()
+                };
+
+                // --exit-status / -e: exit with code 1 if no truthy value was
+                // produced. Mirrors jq's behaviour: false and null are falsy;
+                // everything else (including empty string, 0, [], {}) is truthy.
+                if self.output.exit_status {
+                    let had_truthy = HAD_TRUTHY_OUTPUT.with(|cell| cell.get());
+                    if !had_truthy {
+                        result?;
+                        std::process::exit(1);
+                    }
                 }
+
+                result
             }
         }
     }
@@ -1094,6 +1119,15 @@ impl Cli {
         }
     }
 
+    /// Returns true if a RuntimeValue is considered "falsy" for --exit-status.
+    /// Mirrors jq's definition: false and null are falsy; everything else is truthy.
+    fn is_falsy(value: &mq_lang::RuntimeValue) -> bool {
+        matches!(
+            value,
+            mq_lang::RuntimeValue::None | mq_lang::RuntimeValue::Boolean(false)
+        )
+    }
+
     /// Converts a `RuntimeValue` into a list of Markdown nodes.
     fn runtime_value_to_nodes(runtime_value: &mq_lang::RuntimeValue) -> Vec<mq_markdown::Node> {
         match runtime_value {
@@ -1151,7 +1185,18 @@ impl Cli {
         } else {
             Box::new(BufWriter::new(stdout.lock()))
         };
-        let runtime_values = runtime_values.values();
+        let values_ref = runtime_values.values();
+
+        // Track truthy output for --exit-status.
+        if self.output.exit_status {
+            for v in values_ref {
+                if !Self::is_falsy(v) {
+                    HAD_TRUTHY_OUTPUT.with(|cell| cell.set(true));
+                    break;
+                }
+            }
+        }
+        let runtime_values = runtime_values;
 
         match self.output.output_format {
             OutputFormat::Raw => {
