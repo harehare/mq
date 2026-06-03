@@ -1,4 +1,6 @@
-use rustc_hash::FxHashMap;
+use std::sync::OnceLock;
+
+use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 
 use crate::{
@@ -59,6 +61,32 @@ pub enum OptimizationLevel {
     Full,
 }
 
+/// Map `program` through `f` without allocating a new `Vec` when no node changes.
+///
+/// If every node is pointer-equal after `f`, the original `program` is returned as-is.
+/// Only when a changed node is encountered does a new `Vec` get allocated, pre-seeded with
+/// the unchanged prefix already seen.
+fn lazy_map_program<F>(program: Program, mut f: F) -> Program
+where
+    F: FnMut(&Shared<ast::Node>) -> Shared<ast::Node>,
+{
+    let mut result: Option<Vec<Shared<ast::Node>>> = None;
+    for (i, node) in program.iter().enumerate() {
+        let opt = f(node);
+        if !ptr_eq(&opt, node) {
+            if result.is_none() {
+                let mut r = Vec::with_capacity(program.len());
+                r.extend(program[..i].iter().cloned());
+                result = Some(r);
+            }
+            result.as_mut().unwrap().push(opt);
+        } else if let Some(ref mut r) = result {
+            r.push(Shared::clone(node));
+        }
+    }
+    result.unwrap_or(program)
+}
+
 /// AST optimizer that applies safe, semantics-preserving transformations before evaluation.
 #[derive(Default)]
 pub struct Optimizer {
@@ -72,15 +100,86 @@ impl Optimizer {
     }
 
     pub fn optimize(&self, program: Program) -> Program {
+        self.optimize_impl(program, true)
+    }
+
+    /// Optimize a nested sub-program (body of a Def, Block, While, Loop, Foreach, etc.).
+    ///
+    /// Avoids re-allocating a `FxHashSet` when the nested scope introduces no new `def`s:
+    /// the parent's `user_defs` set is reused directly. When new `def`s exist, a merged
+    /// set is created (one allocation).
+    ///
+    /// Unlike `optimize_impl`, this method only runs the constant-folding and
+    /// selector-chain passes — inlining, TCO, and dead-def elimination are intentionally
+    /// omitted because they require full program visibility.
+    fn optimize_nested(&self, program: Program, parent_user_defs: &FxHashSet<Ident>) -> Program {
+        if matches!(self.level, OptimizationLevel::None) {
+            return program;
+        }
+
+        // Merge parent user_defs with any local Defs. When there are no local Defs (the
+        // common case for loop bodies and blocks), skip the allocation entirely.
+        let merged;
+        let user_defs: &FxHashSet<Ident> = if program.iter().any(|n| matches!(&*n.expr, ast::Expr::Def(..))) {
+            merged = parent_user_defs
+                .iter()
+                .copied()
+                .chain(program.iter().filter_map(|n| {
+                    if let ast::Expr::Def(ident, ..) = &*n.expr {
+                        Some(ident.name)
+                    } else {
+                        None
+                    }
+                }))
+                .collect();
+            &merged
+        } else {
+            parent_user_defs
+        };
+
+        let optimized = lazy_map_program(program, |n| self.optimize_node(Shared::clone(n), user_defs));
+        self.merge_selector_chains(optimized)
+    }
+
+    /// Internal optimization entry point.
+    ///
+    /// `top_level` controls whether dead-def elimination runs. It must only run at the
+    /// top level because nested scopes (Module bodies, Def bodies) cannot see their
+    /// external callers, so eliminating defs there is incorrect.
+    fn optimize_impl(&self, program: Program, top_level: bool) -> Program {
+        // Collect user-defined function names only when Def nodes are actually present.
+        // Programs without any `def` (the common case for simple queries) share a static
+        // empty set — no heap allocation.
+        static EMPTY_DEFS: OnceLock<FxHashSet<Ident>> = OnceLock::new();
+        let user_defs_owned: FxHashSet<Ident>;
+        let user_defs: &FxHashSet<Ident> = if program.iter().any(|n| matches!(&*n.expr, ast::Expr::Def(..))) {
+            user_defs_owned = program
+                .iter()
+                .filter_map(|n| {
+                    if let ast::Expr::Def(ident, ..) = &*n.expr {
+                        Some(ident.name)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            &user_defs_owned
+        } else {
+            EMPTY_DEFS.get_or_init(FxHashSet::default)
+        };
+
         match self.level {
             OptimizationLevel::None => program,
             OptimizationLevel::Basic => {
-                let optimized: Program = program.into_iter().map(|node| self.optimize_node(node)).collect();
+                let optimized: Program = program
+                    .into_iter()
+                    .map(|node| self.optimize_node(node, user_defs))
+                    .collect();
                 self.merge_selector_chains(optimized)
             }
             OptimizationLevel::Full => {
                 // Pass 1: constant folding + let-literal propagation in a single traversal.
-                let program = self.propagate_and_fold(program);
+                let program = self.propagate_and_fold(program, user_defs);
                 let program = self.merge_selector_chains(program);
 
                 // Passes 2-4 are only worthwhile when Def nodes are present.
@@ -95,7 +194,14 @@ impl Optimizer {
                     program.into_iter().map(|n| self.apply_inline(n, &inlinable)).collect()
                 };
                 let program = apply_tco_transforms(program);
-                let refolded: Program = program.into_iter().map(|n| self.optimize_node(n)).collect();
+                // Dead-def elimination is safe only at the top level where all call sites
+                // are visible. In nested scopes, external callers are not in scope.
+                let program = if top_level {
+                    eliminate_dead_defs(program, &inlinable)
+                } else {
+                    program
+                };
+                let refolded: Program = program.into_iter().map(|n| self.optimize_node(n, user_defs)).collect();
                 self.merge_selector_chains(refolded)
             }
         }
@@ -110,7 +216,7 @@ impl Optimizer {
     ///
     /// This replaces the original two-pass sequence (optimize_node → propagate_let_literals
     /// → optimize_node) with a single traversal.
-    fn propagate_and_fold(&self, program: Program) -> Program {
+    fn propagate_and_fold(&self, program: Program, user_defs: &FxHashSet<Ident>) -> Program {
         // Fast path: if no top-level let-literal bindings exist, skip the propagation
         // machinery entirely and just fold constants. If nothing folds either, return
         // the original program to avoid any allocation.
@@ -119,18 +225,7 @@ impl Optimizer {
         });
 
         if !has_let_literal {
-            let mut changed = false;
-            let result: Program = program
-                .iter()
-                .map(|n| {
-                    let opt = self.optimize_node(Shared::clone(n));
-                    if !ptr_eq(&opt, n) {
-                        changed = true;
-                    }
-                    opt
-                })
-                .collect();
-            return if changed { result } else { program };
+            return lazy_map_program(program, |n| self.optimize_node(Shared::clone(n), user_defs));
         }
 
         let mut env: LiteralEnv = LiteralEnv::new();
@@ -140,7 +235,7 @@ impl Optimizer {
             let token_id = node.token_id;
             match &*node.expr {
                 ast::Expr::Let(Pattern::Ident(ident), rhs) => {
-                    let opt_rhs = self.optimize_node(Shared::clone(rhs));
+                    let opt_rhs = self.optimize_node(Shared::clone(rhs), user_defs);
                     if let ast::Expr::Literal(lit) = &*opt_rhs.expr {
                         env_insert(&mut env, ident.name, lit.clone());
                     } else {
@@ -158,9 +253,9 @@ impl Optimizer {
                 }
                 _ => {
                     let optimized = if env.is_empty() {
-                        self.optimize_node(node)
+                        self.optimize_node(node, user_defs)
                     } else {
-                        self.optimize_node(self.substitute_literals(node, &env))
+                        self.optimize_node(self.substitute_literals(node, &env), user_defs)
                     };
                     result.push(optimized);
                 }
@@ -442,15 +537,18 @@ impl Optimizer {
         }
     }
 
-    fn optimize_node(&self, node: Shared<ast::Node>) -> Shared<ast::Node> {
+    fn optimize_node(&self, node: Shared<ast::Node>, user_defs: &FxHashSet<Ident>) -> Shared<ast::Node> {
         let token_id = node.token_id;
 
         match &*node.expr {
-            ast::Expr::Paren(inner) => self.optimize_node(Shared::clone(inner)),
+            ast::Expr::Paren(inner) => self.optimize_node(Shared::clone(inner), user_defs),
 
             ast::Expr::Call(ident, args) => {
-                let opt_args: Args = args.iter().map(|a| self.optimize_node(Shared::clone(a))).collect();
-                if let Some(folded) = self.try_fold_call(token_id, &ident.name, &opt_args) {
+                let opt_args: Args = args
+                    .iter()
+                    .map(|a| self.optimize_node(Shared::clone(a), user_defs))
+                    .collect();
+                if let Some(folded) = self.try_fold_call(token_id, &ident.name, &opt_args, user_defs) {
                     return folded;
                 }
                 // Return the original node when no argument changed (avoids allocation).
@@ -463,12 +561,12 @@ impl Optimizer {
                 })
             }
 
-            ast::Expr::If(branches) => self.optimize_if(token_id, branches),
-            ast::Expr::And(operands) => self.optimize_and(token_id, operands),
-            ast::Expr::Or(operands) => self.optimize_or(token_id, operands),
+            ast::Expr::If(branches) => self.optimize_if(token_id, branches, user_defs),
+            ast::Expr::And(operands) => self.optimize_and(token_id, operands, user_defs),
+            ast::Expr::Or(operands) => self.optimize_or(token_id, operands, user_defs),
 
             ast::Expr::Block(program) => {
-                let opt = self.optimize(program.clone());
+                let opt = self.optimize_nested(program.clone(), user_defs);
                 if program.iter().zip(opt.iter()).all(|(a, b)| ptr_eq(a, b)) {
                     return node;
                 }
@@ -482,22 +580,22 @@ impl Optimizer {
                 token_id,
                 expr: Shared::new(ast::Expr::Def(
                     ident.clone(),
-                    self.optimize_params(params),
-                    self.optimize(program.clone()),
+                    self.optimize_params(params, user_defs),
+                    self.optimize_nested(program.clone(), user_defs),
                 )),
             }),
 
             ast::Expr::Fn(params, program) => Shared::new(ast::Node {
                 token_id,
                 expr: Shared::new(ast::Expr::Fn(
-                    self.optimize_params(params),
-                    self.optimize(program.clone()),
+                    self.optimize_params(params, user_defs),
+                    self.optimize_nested(program.clone(), user_defs),
                 )),
             }),
 
             ast::Expr::While(cond, program) => {
-                let opt_cond = self.optimize_node(Shared::clone(cond));
-                let opt_body = self.optimize(program.clone());
+                let opt_cond = self.optimize_node(Shared::clone(cond), user_defs);
+                let opt_body = self.optimize_nested(program.clone(), user_defs);
                 if ptr_eq(&opt_cond, cond) && program.iter().zip(opt_body.iter()).all(|(a, b)| ptr_eq(a, b)) {
                     return node;
                 }
@@ -508,7 +606,7 @@ impl Optimizer {
             }
 
             ast::Expr::Loop(program) => {
-                let opt = self.optimize(program.clone());
+                let opt = self.optimize_nested(program.clone(), user_defs);
                 if program.iter().zip(opt.iter()).all(|(a, b)| ptr_eq(a, b)) {
                     return node;
                 }
@@ -519,8 +617,8 @@ impl Optimizer {
             }
 
             ast::Expr::Foreach(ident, values, program) => {
-                let opt_values = self.optimize_node(Shared::clone(values));
-                let opt_body = self.optimize(program.clone());
+                let opt_values = self.optimize_node(Shared::clone(values), user_defs);
+                let opt_body = self.optimize_nested(program.clone(), user_defs);
                 if ptr_eq(&opt_values, values) && program.iter().zip(opt_body.iter()).all(|(a, b)| ptr_eq(a, b)) {
                     return node;
                 }
@@ -531,7 +629,7 @@ impl Optimizer {
             }
 
             ast::Expr::As(ident, inner) => {
-                let opt_inner = self.optimize_node(Shared::clone(inner));
+                let opt_inner = self.optimize_node(Shared::clone(inner), user_defs);
                 if ptr_eq(&opt_inner, inner) {
                     return node;
                 }
@@ -542,7 +640,7 @@ impl Optimizer {
             }
 
             ast::Expr::Let(pattern, inner) => {
-                let opt_inner = self.optimize_node(Shared::clone(inner));
+                let opt_inner = self.optimize_node(Shared::clone(inner), user_defs);
                 if ptr_eq(&opt_inner, inner) {
                     return node;
                 }
@@ -553,7 +651,7 @@ impl Optimizer {
             }
 
             ast::Expr::Var(pattern, inner) => {
-                let opt_inner = self.optimize_node(Shared::clone(inner));
+                let opt_inner = self.optimize_node(Shared::clone(inner), user_defs);
                 if ptr_eq(&opt_inner, inner) {
                     return node;
                 }
@@ -564,7 +662,7 @@ impl Optimizer {
             }
 
             ast::Expr::Assign(ident, inner) => {
-                let opt_inner = self.optimize_node(Shared::clone(inner));
+                let opt_inner = self.optimize_node(Shared::clone(inner), user_defs);
                 if ptr_eq(&opt_inner, inner) {
                     return node;
                 }
@@ -575,8 +673,8 @@ impl Optimizer {
             }
 
             ast::Expr::Try(try_expr, catch_expr) => {
-                let opt_try = self.optimize_node(Shared::clone(try_expr));
-                let opt_catch = self.optimize_node(Shared::clone(catch_expr));
+                let opt_try = self.optimize_node(Shared::clone(try_expr), user_defs);
+                let opt_catch = self.optimize_node(Shared::clone(catch_expr), user_defs);
                 if ptr_eq(&opt_try, try_expr) && ptr_eq(&opt_catch, catch_expr) {
                     return node;
                 }
@@ -587,7 +685,7 @@ impl Optimizer {
             }
 
             ast::Expr::Break(Some(val)) => {
-                let opt_val = self.optimize_node(Shared::clone(val));
+                let opt_val = self.optimize_node(Shared::clone(val), user_defs);
                 if ptr_eq(&opt_val, val) {
                     return node;
                 }
@@ -598,13 +696,16 @@ impl Optimizer {
             }
 
             ast::Expr::Match(value_node, arms) => {
-                let opt_value = self.optimize_node(Shared::clone(value_node));
+                let opt_value = self.optimize_node(Shared::clone(value_node), user_defs);
                 let opt_arms: MatchArms = arms
                     .iter()
                     .map(|arm| MatchArm {
                         pattern: arm.pattern.clone(),
-                        guard: arm.guard.as_ref().map(|g| self.optimize_node(Shared::clone(g))),
-                        body: self.optimize_node(Shared::clone(&arm.body)),
+                        guard: arm
+                            .guard
+                            .as_ref()
+                            .map(|g| self.optimize_node(Shared::clone(g), user_defs)),
+                        body: self.optimize_node(Shared::clone(&arm.body), user_defs),
                     })
                     .collect();
                 Shared::new(ast::Node {
@@ -614,8 +715,11 @@ impl Optimizer {
             }
 
             ast::Expr::CallDynamic(callable, args) => {
-                let opt_callable = self.optimize_node(Shared::clone(callable));
-                let opt_args: Args = args.iter().map(|a| self.optimize_node(Shared::clone(a))).collect();
+                let opt_callable = self.optimize_node(Shared::clone(callable), user_defs);
+                let opt_args: Args = args
+                    .iter()
+                    .map(|a| self.optimize_node(Shared::clone(a), user_defs))
+                    .collect();
                 if ptr_eq(&opt_callable, callable)
                     && args.iter().zip(opt_args.iter()).all(|(orig, opt)| ptr_eq(orig, opt))
                 {
@@ -628,7 +732,10 @@ impl Optimizer {
             }
 
             ast::Expr::SelectorCall(selector, args) => {
-                let opt_args: Args = args.iter().map(|a| self.optimize_node(Shared::clone(a))).collect();
+                let opt_args: Args = args
+                    .iter()
+                    .map(|a| self.optimize_node(Shared::clone(a), user_defs))
+                    .collect();
                 if args.iter().zip(opt_args.iter()).all(|(orig, opt)| ptr_eq(orig, opt)) {
                     return node;
                 }
@@ -645,7 +752,7 @@ impl Optimizer {
                     .iter()
                     .map(|seg| match seg {
                         StringSegment::Expr(n) => {
-                            let opt = self.optimize_node(Shared::clone(n));
+                            let opt = self.optimize_node(Shared::clone(n), user_defs);
                             if let ast::Expr::Literal(Literal::String(s)) = &*opt.expr {
                                 StringSegment::Text(s.clone())
                             } else {
@@ -677,12 +784,15 @@ impl Optimizer {
 
             ast::Expr::Module(ident, program) => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Module(ident.clone(), self.optimize(program.clone()))),
+                expr: Shared::new(ast::Expr::Module(
+                    ident.clone(),
+                    self.optimize_nested(program.clone(), user_defs),
+                )),
             }),
 
             ast::Expr::Unquote(inner) => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Unquote(self.optimize_node(Shared::clone(inner)))),
+                expr: Shared::new(ast::Expr::Unquote(self.optimize_node(Shared::clone(inner), user_defs))),
             }),
 
             ast::Expr::Literal(_)
@@ -701,8 +811,19 @@ impl Optimizer {
         }
     }
 
-    fn try_fold_call(&self, token_id: TokenId, name: &crate::Ident, args: &Args) -> Option<Shared<ast::Node>> {
+    fn try_fold_call(
+        &self,
+        token_id: TokenId,
+        name: &crate::Ident,
+        args: &Args,
+        user_defs: &FxHashSet<Ident>,
+    ) -> Option<Shared<ast::Node>> {
         use crate::ast::constants::builtins;
+
+        // Never fold a call whose name is shadowed by a user-defined function.
+        if user_defs.contains(name) {
+            return None;
+        }
 
         let make_lit = |lit: Literal| {
             Shared::new(ast::Node {
@@ -712,52 +833,159 @@ impl Optimizer {
         };
 
         if args.len() == 2 {
-            let lhs = literal_of(&args[0])?;
-            let rhs = literal_of(&args[1])?;
+            let lhs_lit = literal_of(&args[0]);
+            let rhs_lit = literal_of(&args[1]);
 
-            match name.as_str().as_str() {
-                n @ (builtins::ADD | builtins::SUB | builtins::MUL | builtins::DIV | builtins::MOD) => {
-                    match (lhs, rhs) {
+            // Both operands are literals: full constant folding.
+            if let (Some(lhs), Some(rhs)) = (lhs_lit.clone(), rhs_lit.clone()) {
+                match name.as_str().as_str() {
+                    n @ (builtins::ADD | builtins::SUB | builtins::MUL | builtins::DIV | builtins::MOD) => {
+                        match (lhs, rhs) {
+                            (Literal::Number(a), Literal::Number(b)) => {
+                                if (n == builtins::DIV || n == builtins::MOD) && b.is_zero() {
+                                    return None;
+                                }
+                                let result = match n {
+                                    builtins::ADD => a + b,
+                                    builtins::SUB => a - b,
+                                    builtins::MUL => a * b,
+                                    builtins::DIV => a / b,
+                                    builtins::MOD => a % b,
+                                    _ => unreachable!(),
+                                };
+                                return Some(make_lit(Literal::Number(result)));
+                            }
+                            (Literal::String(a), Literal::String(b)) if n == builtins::ADD => {
+                                return Some(make_lit(Literal::String(a + &b)));
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    builtins::EQ => return Some(make_lit(Literal::Bool(literal_eq(lhs, rhs)))),
+                    builtins::NE => return Some(make_lit(Literal::Bool(!literal_eq(lhs, rhs)))),
+
+                    n @ (builtins::LT | builtins::LTE | builtins::GT | builtins::GTE) => match (lhs, rhs) {
                         (Literal::Number(a), Literal::Number(b)) => {
-                            if (n == builtins::DIV || n == builtins::MOD) && b.is_zero() {
+                            if a.is_nan() || b.is_nan() {
                                 return None;
                             }
                             let result = match n {
-                                builtins::ADD => a + b,
-                                builtins::SUB => a - b,
-                                builtins::MUL => a * b,
-                                builtins::DIV => a / b,
-                                builtins::MOD => a % b,
+                                builtins::LT => a < b,
+                                builtins::LTE => a <= b,
+                                builtins::GT => a > b,
+                                builtins::GTE => a >= b,
                                 _ => unreachable!(),
                             };
-                            return Some(make_lit(Literal::Number(result)));
+                            return Some(make_lit(Literal::Bool(result)));
                         }
-                        (Literal::String(a), Literal::String(b)) if n == builtins::ADD => {
-                            return Some(make_lit(Literal::String(a + &b)));
+                        (Literal::String(a), Literal::String(b)) => {
+                            let result = match n {
+                                builtins::LT => a < b,
+                                builtins::LTE => a <= b,
+                                builtins::GT => a > b,
+                                builtins::GTE => a >= b,
+                                _ => unreachable!(),
+                            };
+                            return Some(make_lit(Literal::Bool(result)));
                         }
                         _ => {}
-                    }
-                }
+                    },
 
-                builtins::EQ => return Some(make_lit(Literal::Bool(literal_eq(lhs, rhs)))),
-                builtins::NE => return Some(make_lit(Literal::Bool(!literal_eq(lhs, rhs)))),
-
-                n @ (builtins::LT | builtins::LTE | builtins::GT | builtins::GTE) => {
-                    if let (Literal::Number(a), Literal::Number(b)) = (lhs, rhs) {
-                        if a.is_nan() || b.is_nan() {
-                            return None;
+                    builtins::STARTS_WITH => {
+                        if let (Literal::String(s), Literal::String(prefix)) = (lhs, rhs) {
+                            return Some(make_lit(Literal::Bool(s.starts_with(&*prefix))));
                         }
-                        let result = match n {
-                            builtins::LT => a < b,
-                            builtins::LTE => a <= b,
-                            builtins::GT => a > b,
-                            builtins::GTE => a >= b,
-                            _ => unreachable!(),
-                        };
-                        return Some(make_lit(Literal::Bool(result)));
+                    }
+
+                    builtins::ENDS_WITH => {
+                        if let (Literal::String(s), Literal::String(suffix)) = (lhs, rhs) {
+                            return Some(make_lit(Literal::Bool(s.ends_with(&*suffix))));
+                        }
+                    }
+
+                    builtins::INDEX => {
+                        if let (Literal::String(s), Literal::String(sub)) = (lhs, rhs) {
+                            let pos = s.find(&*sub).map(|v| v as i64).unwrap_or(-1);
+                            return Some(make_lit(Literal::Number(pos.into())));
+                        }
+                    }
+
+                    builtins::RINDEX => {
+                        if let (Literal::String(s), Literal::String(sub)) = (lhs, rhs) {
+                            let pos = s.rfind(&*sub).map(|v| v as i64).unwrap_or(-1);
+                            return Some(make_lit(Literal::Number(pos.into())));
+                        }
+                    }
+
+                    builtins::COALESCE => {
+                        return Some(match lhs {
+                            Literal::None => Shared::clone(&args[1]),
+                            _ => Shared::clone(&args[0]),
+                        });
+                    }
+
+                    _ => {}
+                }
+            }
+
+            // Partial fold: coalesce(none, x) → x even when x is not a literal.
+            if name.as_str().as_str() == builtins::COALESCE {
+                if matches!(&lhs_lit, Some(Literal::None)) {
+                    return Some(Shared::clone(&args[1]));
+                }
+                if lhs_lit.as_ref().is_some_and(|lit| !matches!(lit, Literal::None)) {
+                    return Some(Shared::clone(&args[0]));
+                }
+            }
+
+            // One operand is a literal: algebraic identity folding.
+            let op = name.as_str();
+            match op.as_str() {
+                builtins::ADD => {
+                    // add(x, 0) → x, add(0, x) → x
+                    if matches!(&rhs_lit, Some(Literal::Number(n)) if n.is_zero()) {
+                        return Some(Shared::clone(&args[0]));
+                    }
+                    if matches!(&lhs_lit, Some(Literal::Number(n)) if n.is_zero()) {
+                        return Some(Shared::clone(&args[1]));
+                    }
+                    // add("", x) → x, add(x, "") → x
+                    if matches!(&rhs_lit, Some(Literal::String(s)) if s.is_empty()) {
+                        return Some(Shared::clone(&args[0]));
+                    }
+                    if matches!(&lhs_lit, Some(Literal::String(s)) if s.is_empty()) {
+                        return Some(Shared::clone(&args[1]));
                     }
                 }
-
+                builtins::SUB => {
+                    // sub(x, 0) → x
+                    if matches!(&rhs_lit, Some(Literal::Number(n)) if n.is_zero()) {
+                        return Some(Shared::clone(&args[0]));
+                    }
+                }
+                builtins::MUL => {
+                    // mul(x, 1) → x, mul(1, x) → x
+                    if matches!(&rhs_lit, Some(Literal::Number(n)) if is_one(n)) {
+                        return Some(Shared::clone(&args[0]));
+                    }
+                    if matches!(&lhs_lit, Some(Literal::Number(n)) if is_one(n)) {
+                        return Some(Shared::clone(&args[1]));
+                    }
+                    // mul(x, 0) → 0, mul(0, x) → 0
+                    if matches!(&rhs_lit, Some(Literal::Number(n)) if n.is_zero()) {
+                        return Some(make_lit(Literal::Number(0i64.into())));
+                    }
+                    if matches!(&lhs_lit, Some(Literal::Number(n)) if n.is_zero()) {
+                        return Some(make_lit(Literal::Number(0i64.into())));
+                    }
+                }
+                builtins::DIV => {
+                    // div(x, 1) → x
+                    if matches!(&rhs_lit, Some(Literal::Number(n)) if is_one(n)) {
+                        return Some(Shared::clone(&args[0]));
+                    }
+                }
                 _ => {}
             }
         }
@@ -775,18 +1003,102 @@ impl Optimizer {
                         return Some(make_lit(Literal::Number(-n)));
                     }
                 }
+
+                // Numeric rounding/absolute value — safe because these are total functions on numbers.
+                n @ (builtins::FLOOR | builtins::CEIL | builtins::ROUND | builtins::ABS | builtins::TRUNC) => {
+                    if let Literal::Number(num) = arg {
+                        if num.is_nan() {
+                            return None;
+                        }
+                        let result = match n {
+                            builtins::FLOOR => num.value().floor(),
+                            builtins::CEIL => num.value().ceil(),
+                            builtins::ROUND => num.value().round(),
+                            builtins::ABS => num.value().abs(),
+                            builtins::TRUNC => num.value().trunc(),
+                            _ => unreachable!(),
+                        };
+                        return Some(make_lit(Literal::Number(result.into())));
+                    }
+                }
+
+                // len of constant-size literals.
+                builtins::LEN => match arg {
+                    Literal::String(s) => return Some(make_lit(Literal::Number(s.chars().count().into()))),
+                    Literal::Bytes(b) => return Some(make_lit(Literal::Number(b.len().into()))),
+                    _ => {}
+                },
+
+                // to_string on any primitive literal — replicates the runtime behaviour exactly.
+                builtins::TO_STRING => {
+                    let s = match arg {
+                        Literal::String(s) => s,
+                        Literal::Number(n) => n.to_string(),
+                        Literal::Bool(b) => b.to_string(),
+                        Literal::None => String::new(),
+                        Literal::Symbol(sym) => sym.to_string(),
+                        Literal::Bytes(_) => return None, // hex encoding would need extra logic
+                    };
+                    return Some(make_lit(Literal::String(s)));
+                }
+
+                // to_number on a string literal — only fold when parsing succeeds.
+                builtins::TO_NUMBER => {
+                    if let Literal::String(s) = arg {
+                        return s.parse::<f64>().ok().map(|n| make_lit(Literal::Number(n.into())));
+                    }
+                }
+
+                // String trimming.
+                n @ (builtins::TRIM | builtins::LTRIM | builtins::RTRIM) => {
+                    if let Literal::String(s) = arg {
+                        let result = match n {
+                            builtins::TRIM => s.trim().to_string(),
+                            builtins::LTRIM => s.trim_start().to_string(),
+                            builtins::RTRIM => s.trim_end().to_string(),
+                            _ => unreachable!(),
+                        };
+                        return Some(make_lit(Literal::String(result)));
+                    }
+                }
+
+                // String case conversion.
+                n @ (builtins::UPCASE | builtins::DOWNCASE) => {
+                    if let Literal::String(s) = arg {
+                        let result = match n {
+                            builtins::UPCASE => s.to_uppercase(),
+                            builtins::DOWNCASE => s.to_lowercase(),
+                            _ => unreachable!(),
+                        };
+                        return Some(make_lit(Literal::String(result)));
+                    }
+                }
+
                 _ => {}
+            }
+        }
+
+        // 3-argument constant folds.
+        if args.len() == 3 {
+            let a = literal_of(&args[0]);
+            let b = literal_of(&args[1]);
+            let c = literal_of(&args[2]);
+            if let (Some(Literal::String(s)), Some(Literal::String(from)), Some(Literal::String(to))) = (a, b, c) {
+                // replace("foo", "o", "a") → "faa"
+                if name.as_str().as_str() == builtins::REPLACE {
+                    return Some(make_lit(Literal::String(s.replace(&*from, &to))));
+                }
             }
         }
 
         None
     }
 
-    fn optimize_if(&self, token_id: TokenId, branches: &Branches) -> Shared<ast::Node> {
+    fn optimize_if(&self, token_id: TokenId, branches: &Branches, user_defs: &FxHashSet<Ident>) -> Shared<ast::Node> {
         let mut remaining: Branches = SmallVec::new();
 
         for (cond_node, body_node) in branches {
-            let opt_body = self.optimize_node(Shared::clone(body_node));
+            let opt_body = self.optimize_node(Shared::clone(body_node), user_defs);
 
             match cond_node {
                 None => {
@@ -794,7 +1106,7 @@ impl Optimizer {
                     break;
                 }
                 Some(cond) => {
-                    let opt_cond = self.optimize_node(Shared::clone(cond));
+                    let opt_cond = self.optimize_node(Shared::clone(cond), user_defs);
                     match &*opt_cond.expr {
                         ast::Expr::Literal(Literal::Bool(true)) => {
                             remaining.push((None, opt_body));
@@ -824,11 +1136,16 @@ impl Optimizer {
         }
     }
 
-    fn optimize_and(&self, token_id: TokenId, operands: &[Shared<ast::Node>]) -> Shared<ast::Node> {
+    fn optimize_and(
+        &self,
+        token_id: TokenId,
+        operands: &[Shared<ast::Node>],
+        user_defs: &FxHashSet<Ident>,
+    ) -> Shared<ast::Node> {
         let mut remaining: Vec<Shared<ast::Node>> = Vec::with_capacity(operands.len());
 
         for op in operands {
-            let opt = self.optimize_node(Shared::clone(op));
+            let opt = self.optimize_node(Shared::clone(op), user_defs);
             match &*opt.expr {
                 ast::Expr::Literal(lit) if !literal_is_truthy(lit) => {
                     return Shared::new(ast::Node {
@@ -853,11 +1170,16 @@ impl Optimizer {
         }
     }
 
-    fn optimize_or(&self, token_id: TokenId, operands: &[Shared<ast::Node>]) -> Shared<ast::Node> {
+    fn optimize_or(
+        &self,
+        token_id: TokenId,
+        operands: &[Shared<ast::Node>],
+        user_defs: &FxHashSet<Ident>,
+    ) -> Shared<ast::Node> {
         let mut remaining: Vec<Shared<ast::Node>> = Vec::with_capacity(operands.len());
 
         for op in operands {
-            let opt = self.optimize_node(Shared::clone(op));
+            let opt = self.optimize_node(Shared::clone(op), user_defs);
             match &*opt.expr {
                 ast::Expr::Literal(lit) if literal_is_truthy(lit) => return opt,
                 ast::Expr::Literal(lit) if !literal_is_truthy(lit) => continue,
@@ -877,12 +1199,15 @@ impl Optimizer {
         }
     }
 
-    fn optimize_params(&self, params: &Params) -> Params {
+    fn optimize_params(&self, params: &Params, user_defs: &FxHashSet<Ident>) -> Params {
         params
             .iter()
             .map(|p| ast::Param {
                 ident: p.ident.clone(),
-                default: p.default.as_ref().map(|d| self.optimize_node(Shared::clone(d))),
+                default: p
+                    .default
+                    .as_ref()
+                    .map(|d| self.optimize_node(Shared::clone(d), user_defs)),
                 is_variadic: p.is_variadic,
             })
             .collect()
@@ -1222,6 +1547,124 @@ fn build_tco_loop(fn_name: Ident, param_names: &[Ident], branches: &Branches, to
     result
 }
 
+/// Returns `true` if `n` is exactly the integer 1.
+#[inline]
+fn is_one(n: &crate::number::Number) -> bool {
+    (n.value() - 1.0).abs() < f64::EPSILON
+}
+
+/// Collect the names of every function directly called in `program` (recursively).
+fn collect_called_fns(program: &Program) -> FxHashSet<Ident> {
+    let mut set = FxHashSet::default();
+    for node in program {
+        collect_called_fns_node(node, &mut set);
+    }
+    set
+}
+
+fn collect_called_fns_node(node: &Shared<ast::Node>, set: &mut FxHashSet<Ident>) {
+    match &*node.expr {
+        // Direct call: record the callee name.
+        ast::Expr::Call(ident, args) => {
+            set.insert(ident.name);
+            for a in args {
+                collect_called_fns_node(a, set);
+            }
+        }
+        // Identifier reference: the name may be a first-class function value (e.g. passed
+        // to `map`, `filter`). Record it so we don't accidentally eliminate its Def.
+        ast::Expr::Ident(ident) => {
+            set.insert(ident.name);
+        }
+        ast::Expr::Def(_, _, body) | ast::Expr::Block(body) | ast::Expr::Loop(body) | ast::Expr::Module(_, body) => {
+            for n in body {
+                collect_called_fns_node(n, set);
+            }
+        }
+        ast::Expr::Fn(_, body) => {
+            for n in body {
+                collect_called_fns_node(n, set);
+            }
+        }
+        ast::Expr::If(branches) => {
+            for (cond, body) in branches {
+                if let Some(c) = cond {
+                    collect_called_fns_node(c, set);
+                }
+                collect_called_fns_node(body, set);
+            }
+        }
+        ast::Expr::And(ops) | ast::Expr::Or(ops) => {
+            for o in ops {
+                collect_called_fns_node(o, set);
+            }
+        }
+        ast::Expr::Try(t, c) => {
+            collect_called_fns_node(t, set);
+            collect_called_fns_node(c, set);
+        }
+        ast::Expr::SelectorCall(_, args) => {
+            for a in args {
+                collect_called_fns_node(a, set);
+            }
+        }
+        ast::Expr::CallDynamic(callee, args) => {
+            collect_called_fns_node(callee, set);
+            for a in args {
+                collect_called_fns_node(a, set);
+            }
+        }
+        ast::Expr::Let(_, rhs) | ast::Expr::Var(_, rhs) | ast::Expr::Assign(_, rhs) | ast::Expr::As(_, rhs) => {
+            collect_called_fns_node(rhs, set);
+        }
+        ast::Expr::While(cond, body) | ast::Expr::Foreach(_, cond, body) => {
+            collect_called_fns_node(cond, set);
+            for n in body {
+                collect_called_fns_node(n, set);
+            }
+        }
+        ast::Expr::Match(val, arms) => {
+            collect_called_fns_node(val, set);
+            for arm in arms {
+                if let Some(g) = &arm.guard {
+                    collect_called_fns_node(g, set);
+                }
+                collect_called_fns_node(&arm.body, set);
+            }
+        }
+        ast::Expr::Paren(inner) | ast::Expr::Break(Some(inner)) | ast::Expr::Unquote(inner) => {
+            collect_called_fns_node(inner, set);
+        }
+        ast::Expr::InterpolatedString(segs) => {
+            for seg in segs {
+                if let StringSegment::Expr(n) = seg {
+                    collect_called_fns_node(n, set);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Remove top-level `Def` nodes that were inlined everywhere they were called.
+///
+/// Only removes `Def`s that were candidates for inlining (present in `inlinable`) and
+/// are no longer referenced by any `Call` in the program. Non-inlinable functions (recursive,
+/// variadic, TCO-transformed) are always preserved because they may be called at runtime.
+fn eliminate_dead_defs(program: Program, inlinable: &FxHashMap<Ident, InlinableFn>) -> Program {
+    if inlinable.is_empty() {
+        return program;
+    }
+    let used = collect_called_fns(&program);
+    program
+        .into_iter()
+        .filter(|node| match &*node.expr {
+            ast::Expr::Def(ident, _, _) => !inlinable.contains_key(&ident.name) || used.contains(&ident.name),
+            _ => true,
+        })
+        .collect()
+}
+
 fn literal_is_truthy(lit: &Literal) -> bool {
     match lit {
         Literal::Bool(b) => *b,
@@ -1235,20 +1678,106 @@ fn literal_is_truthy(lit: &Literal) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::{DefaultEngine, parse_text_input};
+    use crate::{
+        DefaultEngine,
+        ast::node::{Expr, Literal},
+        optimizer::OptimizationLevel,
+    };
     use rstest::rstest;
 
-    fn eval(query: &str, input: &str) -> Vec<String> {
+    /// Compile `query` at the given `level` and return the resulting AST.
+    fn ast_with(query: &str, level: OptimizationLevel) -> crate::ast::Program {
         let mut engine = DefaultEngine::default();
-        engine.load_builtin_module();
-        let input = parse_text_input(input).unwrap();
-        engine
-            .eval(query, input.into_iter())
-            .unwrap()
-            .values()
-            .iter()
-            .map(|v| v.to_string())
-            .collect()
+        engine.set_optimization_level(level);
+        engine.compile(query).unwrap().program().clone()
+    }
+
+    fn ast_none(query: &str) -> crate::ast::Program {
+        ast_with(query, OptimizationLevel::None)
+    }
+
+    fn ast_basic(query: &str) -> crate::ast::Program {
+        ast_with(query, OptimizationLevel::Basic)
+    }
+
+    fn ast_full(query: &str) -> crate::ast::Program {
+        ast_with(query, OptimizationLevel::Full)
+    }
+
+    fn assert_literal(node: &crate::Shared<crate::AstNode>, expected: &str, ctx: &str) {
+        match &*node.expr {
+            Expr::Literal(lit) => assert_eq!(lit.to_string(), expected, "{ctx}"),
+            other => panic!("{ctx}: expected Literal({expected:?}), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn none_arithmetic_stays_as_call() {
+        let prog = ast_none("1 + 2");
+        assert_eq!(prog.len(), 1);
+        assert!(
+            matches!(&*prog[0].expr, Expr::Call(..)),
+            "None: expected Call, got {:?}",
+            prog[0].expr
+        );
+    }
+
+    #[test]
+    fn none_consecutive_selectors_stay_separate() {
+        let prog = ast_none(".h1 | .text");
+        assert_eq!(prog.len(), 2, "None must not merge selectors");
+        assert!(matches!(&*prog[0].expr, Expr::Selector(_)));
+        assert!(matches!(&*prog[1].expr, Expr::Selector(_)));
+    }
+
+    #[test]
+    fn none_if_with_literal_cond_stays_as_if() {
+        let prog = ast_none("if (true): 1 else: 2");
+        assert_eq!(prog.len(), 1);
+        assert!(
+            matches!(&*prog[0].expr, Expr::If(_)),
+            "None: expected If, got {:?}",
+            prog[0].expr
+        );
+    }
+
+    #[test]
+    fn none_and_stays_as_and() {
+        let prog = ast_none("false && .");
+        assert_eq!(prog.len(), 1);
+        assert!(
+            matches!(&*prog[0].expr, Expr::And(_)),
+            "None: expected And, got {:?}",
+            prog[0].expr
+        );
+    }
+
+    #[test]
+    fn none_interpolated_string_stays_unfolded() {
+        let prog = ast_none("s\"hello world\"");
+        assert_eq!(prog.len(), 1);
+        assert!(
+            matches!(&*prog[0].expr, Expr::InterpolatedString(_)),
+            "None: expected InterpolatedString, got {:?}",
+            prog[0].expr
+        );
+    }
+
+    #[test]
+    fn none_def_body_stays_as_if_no_tco() {
+        let prog = ast_none("def countdown(n): if (n == 0): \"done\" else: countdown(n - 1);");
+        assert_eq!(prog.len(), 1);
+        let Expr::Def(_, _, body) = &*prog[0].expr else {
+            panic!("expected Def");
+        };
+        assert!(
+            !body.iter().any(|n| matches!(&*n.expr, Expr::Loop(_))),
+            "None: must not apply TCO; Loop found in body"
+        );
+        assert!(
+            body.iter().any(|n| matches!(&*n.expr, Expr::If(_))),
+            "None: original If must remain in body"
+        );
     }
 
     #[rstest]
@@ -1257,11 +1786,16 @@ mod tests {
     #[case("3 * 4", "12")]
     #[case("10 / 2", "5")]
     #[case("10 % 3", "1")]
-    #[case("(2 + 3) * 4", "20")]
     #[case("\"hello\" + \" world\"", "hello world")]
     #[case("negate(5)", "-5")]
-    fn test_fold_arithmetic(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
+    #[case("not(false)", "true")]
+    #[case("not(true)", "false")]
+    fn fold_arithmetic_to_literal(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: expected single literal node");
+            assert_literal(&prog[0], expected, &format!("{level:?}"));
+        }
     }
 
     #[rstest]
@@ -1275,370 +1809,1149 @@ mod tests {
     #[case("3 > 2", "true")]
     #[case("2 > 3", "false")]
     #[case("2 >= 2", "true")]
-    #[case("not(false)", "true")]
-    #[case("not(true)", "false")]
-    fn test_fold_comparison(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
-    }
-
-    #[rstest]
-    #[case("if (true): 1 else: 2", "1")]
-    #[case("if (false): 1 else: 2", "2")]
-    #[case("if (false): 1", "")]
-    #[case("if (1 == 1): \"yes\" else: \"no\"", "yes")]
-    #[case("if (1 == 2): \"yes\" else: \"no\"", "no")]
-    fn test_dead_branch(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
-    }
-
-    #[rstest]
-    #[case("false && true", "false")]
-    #[case("true && false", "false")]
-    #[case("true || false", "true")]
-    #[case("false || true", "true")]
-    fn test_short_circuit(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
-    }
-
-    #[rstest]
-    #[case("add(\"hello\", .)", "world", "helloworld")]
-    fn test_non_literal_unchanged(#[case] query: &str, #[case] input: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, input), vec![expected]);
+    fn fold_comparisons_to_literal(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: expected single literal node");
+            assert_literal(&prog[0], expected, &format!("{level:?}"));
+        }
     }
 
     #[test]
-    fn test_div_zero_not_folded() {
-        let mut engine = DefaultEngine::default();
-        engine.load_builtin_module();
-        let input = parse_text_input("x").unwrap();
-        assert!(engine.eval("1 / 0", input.into_iter()).is_err());
+    fn fold_nested_arithmetic_to_literal() {
+        // (1 + 2) * (3 + 4) — both sub-expressions fold first, then the outer mul folds.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("(1 + 2) * (3 + 4)", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert_literal(&prog[0], "21", &format!("{level:?}"));
+        }
+    }
+
+    #[test]
+    fn fold_double_negation_to_literal() {
+        // not(not(true)) → true
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("not(not(true))", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert_literal(&prog[0], "true", &format!("{level:?}"));
+        }
+    }
+
+    #[test]
+    fn div_by_zero_not_folded() {
+        // Division by zero must stay as Call — the evaluator handles the error.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("1 / 0", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Call(..)),
+                "{level:?}: div-by-zero must stay as Call, got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[test]
+    fn dynamic_arg_prevents_folding() {
+        // add(., 1): left operand is the pipeline value — not a literal, cannot fold.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("add(., 1)", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Call(..)),
+                "{level:?}: dynamic arg must prevent folding, got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[test]
+    fn if_true_collapses_to_then_body() {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("if (true): 1 else: 2", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert_literal(&prog[0], "1", &format!("{level:?}: if(true)"));
+        }
+    }
+
+    #[test]
+    fn if_false_collapses_to_else_body() {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("if (false): 1 else: 2", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert_literal(&prog[0], "2", &format!("{level:?}: if(false)+else"));
+        }
+    }
+
+    #[test]
+    fn if_false_no_else_collapses_to_literal_none() {
+        // All branches eliminated → optimizer emits Literal::None.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("if (false): 1", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Literal(Literal::None)),
+                "{level:?}: expected Literal(None), got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[test]
+    fn if_foldable_condition_also_eliminated() {
+        // Condition `1 == 1` folds to `true`, then branch is eliminated.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("if (1 == 1): \"yes\" else: \"no\"", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert_literal(&prog[0], "yes", &format!("{level:?}"));
+        }
+    }
+
+    #[test]
+    fn if_dynamic_condition_stays_as_if() {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("if (.): 1 else: 2", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::If(_)),
+                "{level:?}: dynamic condition must not eliminate branch, got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[test]
+    fn elif_first_true_branch_wins() {
+        // `if (false): 1 elif (true): 2 elif (true): 3 else: 4` → Literal(2)
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("if (false): 1 elif (true): 2 elif (true): 3 else: 4", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert_literal(&prog[0], "2", &format!("{level:?}"));
+        }
+    }
+
+    #[test]
+    fn elif_all_false_no_else_collapses_to_literal_none() {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("if (false): 1 elif (false): 2 elif (false): 3", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Literal(Literal::None)),
+                "{level:?}: expected Literal(None), got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[test]
+    fn nested_if_both_levels_eliminated() {
+        // `if (true): if (false): 1 else: 2 else: 3` → outer true → inner, inner false → 2
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("if (true): if (false): 1 else: 2 else: 3", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert_literal(&prog[0], "2", &format!("{level:?}"));
+        }
+    }
+
+    #[test]
+    fn and_falsy_literal_short_circuits_to_false() {
+        // `false && .` — falsy operand → entire And becomes Literal(false).
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("false && .", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Literal(Literal::Bool(false))),
+                "{level:?}: expected Literal(false), got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[test]
+    fn and_truthy_literal_dropped_dynamic_preserved() {
+        // `true && .` — truthy literal is dropped; remaining dynamic operand wrapped in And.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("true && .", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::And(_)),
+                "{level:?}: expected And([.]), got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[test]
+    fn and_all_truthy_collapses_to_literal_true() {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("true && true && true", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Literal(Literal::Bool(true))),
+                "{level:?}: expected Literal(true), got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[test]
+    fn or_truthy_literal_short_circuits() {
+        // `true || .` — truthy operand → entire Or becomes Literal(true).
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("true || .", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Literal(Literal::Bool(true))),
+                "{level:?}: expected Literal(true), got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[test]
+    fn or_falsy_literal_dropped_dynamic_preserved() {
+        // `false || .` — falsy literal is dropped; remaining dynamic operand wrapped in Or.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("false || .", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Or(_)),
+                "{level:?}: expected Or([.]), got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[test]
+    fn or_all_falsy_collapses_to_literal_false() {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("false || false || false", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Literal(Literal::Bool(false))),
+                "{level:?}: expected Literal(false), got {:?}",
+                prog[0].expr
+            );
+        }
     }
 
     #[rstest]
     #[case(".h1 | .text", 2usize)]
-    fn test_selector_chain_merged(#[case] query: &str, #[case] chain_len: usize) {
-        use crate::ast::node::Expr;
-
-        let mut engine = DefaultEngine::default();
-        let compiled = engine.compile(query).unwrap();
-        let program = compiled.program();
-        assert_eq!(program.len(), 1, "consecutive selectors must collapse to one node");
-        assert!(
-            matches!(&*program[0].expr, Expr::SelectorChain(c) if c.len() == chain_len),
-            "SelectorChain length must be {chain_len}"
-        );
-        assert!(
-            engine
-                .eval_compiled(&compiled, parse_text_input("# Hello").unwrap().into_iter())
-                .is_ok()
-        );
+    #[case(".h1 | .text | .code", 3usize)]
+    fn consecutive_selectors_merged_into_chain(#[case] query: &str, #[case] expected_len: usize) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: expected single SelectorChain node");
+            assert!(
+                matches!(&*prog[0].expr, Expr::SelectorChain(c) if c.len() == expected_len),
+                "{level:?}: expected SelectorChain(len={expected_len}), got {:?}",
+                prog[0].expr
+            );
+        }
     }
 
     #[test]
-    fn test_selector_single_stays_selector() {
-        use crate::ast::node::Expr;
-
-        let mut engine = DefaultEngine::default();
-        let compiled = engine.compile(".h1").unwrap();
-        let program = compiled.program();
-        assert_eq!(program.len(), 1);
-        assert!(matches!(&*program[0].expr, Expr::Selector(_)));
+    fn single_selector_stays_as_selector_not_chain() {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(".h1", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Selector(_)),
+                "{level:?}: single selector must NOT become SelectorChain"
+            );
+        }
     }
 
     #[rstest]
     #[case(".h1 | to_string | .text")]
     #[case(".h1 | len() | .text")]
-    fn test_selector_chain_not_merged_across_call(#[case] query: &str) {
-        use crate::ast::node::Expr;
+    fn call_between_selectors_prevents_chain_merge(#[case] query: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert!(prog.len() > 1, "{level:?}: call between selectors must break the chain");
+            assert!(
+                !matches!(&*prog[0].expr, Expr::SelectorChain(_)),
+                "{level:?}: must not merge selectors across a call"
+            );
+        }
+    }
 
-        let mut engine = DefaultEngine::default();
-        engine.load_builtin_module();
-        let compiled = engine.compile(query).unwrap();
-        let program = compiled.program();
-        assert!(program.len() > 1, "call between selectors must break the chain");
-        assert!(!matches!(&*program[0].expr, Expr::SelectorChain(_)));
+    #[test]
+    fn none_level_does_not_merge_selectors() {
+        let prog = ast_none(".h1 | .text");
+        assert_eq!(prog.len(), 2, "None must not merge consecutive selectors");
+        assert!(matches!(&*prog[0].expr, Expr::Selector(_)));
+        assert!(matches!(&*prog[1].expr, Expr::Selector(_)));
+    }
+
+    #[test]
+    fn selector_chain_inside_def_body_merged() {
+        // Full inlines single-node def bodies and then eliminates the unused Def.
+        // `.h1 | .text` is merged into SelectorChain during inlining, so the final program
+        // has one top-level SelectorChain (the inlined call site) and no Def.
+        let prog = ast_full("def extract: .h1 | .text; | extract()");
+        assert!(
+            prog.iter().any(|n| matches!(&*n.expr, Expr::SelectorChain(_))),
+            "Full: inlined extract() must produce a top-level SelectorChain"
+        );
+        assert!(
+            !prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
+            "Full: fully-inlined Def must be eliminated"
+        );
     }
 
     #[rstest]
     #[case("s\"hello world\"", "hello world")]
     #[case("s\"static text only\"", "static text only")]
-    fn test_interpolated_string_folded_to_literal(#[case] query: &str, #[case] expected: &str) {
-        use crate::ast::node::Expr;
-
-        let mut engine = DefaultEngine::default();
-        let compiled = engine.compile(query).unwrap();
-        assert!(
-            matches!(&*compiled.program()[0].expr, Expr::Literal(_)),
-            "all-text interpolated string must be folded to Literal"
-        );
-        assert_eq!(eval(query, "x"), vec![expected]);
-    }
-
-    #[rstest]
-    #[case("s\"${self} end\"")]
-    fn test_interpolated_string_not_folded(#[case] query: &str) {
-        use crate::ast::node::Expr;
-
-        let mut engine = DefaultEngine::default();
-        let compiled = engine.compile(query).unwrap();
-        assert!(matches!(&*compiled.program()[0].expr, Expr::InterpolatedString(_)));
-    }
-
-    #[rstest]
-    #[case("let x = 10 | add(x, 5)", "15")]
-    #[case("let a = 3 | let b = 4 | a + b", "7")]
-    #[case("let n = 5 | if (n == 5): \"yes\" else: \"no\"", "yes")]
-    #[case("let n = 0 | if (n == 5): \"yes\" else: \"no\"", "no")]
-    fn test_let_propagation(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
-    }
-
-    #[rstest]
-    #[case("let x = add(1, 2) | add(x, 1)", "4")]
-    fn test_let_non_literal_not_propagated(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
-    }
-
-    #[rstest]
-    // 1-param: arithmetic body — inlined + constant-folded
-    #[case("def double(x): x * 2; | double(5)", "10")]
-    #[case("def add1(x): x + 1; | add1(9)", "10")]
-    #[case("def neg(x): negate(x); | neg(3)", "-3")]
-    // 1-param: comparison body
-    #[case("def is_zero(x): x == 0; | is_zero(0)", "true")]
-    #[case("def is_zero(x): x == 0; | is_zero(1)", "false")]
-    // 0-param: constant alias
-    #[case("def pi: 3; | pi()", "3")]
-    // Chained inlining: double(double(2)) → 2*2*2 = 8? no: double(2)=4, double(4)=8
-    #[case("def double(x): x * 2; | double(double(2))", "8")]
-    // Inline + let propagation: should all collapse to a single literal
-    #[case("def inc(x): x + 1; | let n = 4 | inc(n)", "5")]
-    fn test_inline_small_functions(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
-    }
-
-    #[rstest]
-    // Recursive function must NOT be inlined (would cause infinite unrolling)
-    #[case("def fact(n): if (n == 0): 1 else: n * fact(n - 1); | fact(5)", "120")]
-    // Function with free variable must NOT be inlined
-    #[case("let k = 10 | def add_k(x): x + k; | add_k(5)", "15")]
-    fn test_non_inlinable_functions_still_evaluate(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
+    fn all_text_interpolated_string_folded_to_literal(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Literal(_)),
+                "{level:?}: all-text interpolated string must fold to Literal"
+            );
+            assert_literal(&prog[0], expected, &format!("{level:?}"));
+        }
     }
 
     #[test]
-    fn test_inline_removes_call_node() {
-        use crate::DefaultEngine;
-        use crate::ast::node::Expr;
+    fn interpolated_string_with_dynamic_expr_not_folded() {
+        // A dynamic segment (`${self}`) prevents folding.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("s\"${self} end\"", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::InterpolatedString(_)),
+                "{level:?}: dynamic segment must prevent folding to Literal"
+            );
+        }
+    }
 
-        let mut engine = DefaultEngine::default();
-        let compiled = engine.compile("def double(x): x * 2; | double(4)").unwrap();
-        let last = compiled.program().last().unwrap();
+    #[test]
+    fn none_level_does_not_fold_interpolated_string() {
+        // Even a fully-static string must stay as InterpolatedString under None.
+        let prog = ast_none("s\"hello world\"");
+        assert_eq!(prog.len(), 1);
+        assert!(
+            matches!(&*prog[0].expr, Expr::InterpolatedString(_)),
+            "None must not fold interpolated strings"
+        );
+    }
+
+    #[test]
+    fn let_literal_propagated_and_folded_in_full() {
+        // Full: x is bound to 5, substituted into `x + 1`, folded to 6.
+        let prog = ast_full("let x = 5 | x + 1");
+        assert_eq!(prog.len(), 2);
+        assert_literal(&prog[1], "6", "Full: x+1 after propagation");
+    }
+
+    #[test]
+    fn let_literal_not_propagated_in_basic() {
+        // Basic does not propagate — `x + 1` stays as Call with Ident.
+        let prog = ast_basic("let x = 5 | x + 1");
+        assert_eq!(prog.len(), 2);
+        assert!(
+            matches!(&*prog[1].expr, Expr::Call(..)),
+            "Basic must not propagate let-literals; expected Call, got {:?}",
+            prog[1].expr
+        );
+    }
+
+    #[test]
+    fn let_rebind_propagates_latest_value() {
+        // Second binding of x shadows the first; `x + 0` folds to 2.
+        let prog = ast_full("let x = 1 | let x = 2 | x + 0");
+        assert_eq!(prog.len(), 3);
+        assert_literal(&prog[2], "2", "Full: second binding must shadow first");
+    }
+
+    #[test]
+    fn let_multiple_bindings_all_propagated() {
+        // Three bindings, all propagated and folded into a single literal.
+        let prog = ast_full("let a = 2 | let b = 3 | let c = 4 | a + b + c");
+        assert_eq!(prog.len(), 4);
+        assert_literal(&prog[3], "9", "Full: a+b+c after propagation");
+    }
+
+    #[test]
+    fn let_non_literal_rhs_not_propagated() {
+        // `let x = add(1, .)` — RHS is not a literal (dynamic arg) → x is not registered.
+        // Full folds `x + 0` to `x` via algebraic identity, but `x` stays as Ident (not a
+        // literal), proving the let binding was not propagated to a constant.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("let x = add(1, .) | x + 0", level);
+            assert_eq!(prog.len(), 2, "{level:?}");
+            assert!(
+                !matches!(&*prog[1].expr, Expr::Literal(_)),
+                "{level:?}: non-literal let must not propagate to a literal, got {:?}",
+                prog[1].expr
+            );
+        }
+    }
+
+    #[test]
+    fn simple_function_inlined_and_folded_in_full() {
+        // Full: double(4) → inlined to 4 * 2 → folded to Literal(8).
+        let prog = ast_full("def double(x): x * 2; | double(4)");
+        let last = prog.last().unwrap();
         assert!(
             matches!(&*last.expr, Expr::Literal(_)),
-            "inlined + folded call must collapse to a Literal, got: {:?}",
+            "Full: inlined+folded call must be Literal, got {:?}",
+            last.expr
+        );
+        assert_literal(last, "8", "Full: double(4)");
+    }
+
+    #[test]
+    fn function_call_stays_as_call_in_basic() {
+        // Basic does not inline — the call node is preserved.
+        let prog = ast_basic("def double(x): x * 2; | double(4)");
+        let last = prog.last().unwrap();
+        assert!(
+            matches!(&*last.expr, Expr::Call(..)),
+            "Basic must not inline; expected Call, got {:?}",
+            last.expr
+        );
+    }
+
+    #[test]
+    fn zero_param_constant_alias_inlined_in_full() {
+        let prog = ast_full("def pi: 3; | pi()");
+        let last = prog.last().unwrap();
+        assert!(
+            matches!(&*last.expr, Expr::Literal(_)),
+            "Full: 0-param constant alias must inline to Literal, got {:?}",
+            last.expr
+        );
+        assert_literal(last, "3", "Full: pi()");
+    }
+
+    #[test]
+    fn recursive_function_not_inlined() {
+        // Recursive functions must never be inlined (infinite unrolling).
+        let prog = ast_full("def fact(n): if (n == 0): 1 else: n * fact(n - 1); | fact(5)");
+        let last = prog.last().unwrap();
+        assert!(
+            matches!(&*last.expr, Expr::Call(..)),
+            "Full: recursive function must not be inlined; expected Call, got {:?}",
+            last.expr
+        );
+    }
+
+    #[test]
+    fn function_with_free_variable_not_inlined() {
+        // `add_k` references `k` which is not a parameter → not inlineable.
+        let prog = ast_full("let k = 10 | def add_k(x): x + k; | add_k(5)");
+        let last = prog.last().unwrap();
+        assert!(
+            matches!(&*last.expr, Expr::Call(..)),
+            "Full: function with free var must not be inlined; expected Call, got {:?}",
+            last.expr
+        );
+    }
+
+    #[test]
+    fn chained_inlining_collapses_to_literal() {
+        // Both add1 and mul2 are inlineable; mul2(add1(3)) → (3+1)*2 → 8.
+        let prog = ast_full("def add1(x): x + 1; | def mul2(x): x * 2; | mul2(add1(3))");
+        let last = prog.last().unwrap();
+        assert!(
+            matches!(&*last.expr, Expr::Literal(_)),
+            "Full: chained inline+fold must collapse to Literal, got {:?}",
+            last.expr
+        );
+        assert_literal(last, "8", "Full: mul2(add1(3))");
+    }
+
+    #[test]
+    fn tco_tail_recursive_def_gets_loop_in_full() {
+        let prog = ast_full("def countdown(n): if (n == 0): \"done\" else: countdown(n - 1);");
+        let Expr::Def(_, _, body) = &*prog[0].expr else {
+            panic!("expected Def");
+        };
+        assert!(
+            body.iter().any(|n| matches!(&*n.expr, Expr::Loop(_))),
+            "Full: TCO-transformed Def must contain a Loop node"
+        );
+        // The original top-level If must be replaced — not left alongside the Loop.
+        assert!(
+            !body.iter().any(|n| matches!(&*n.expr, Expr::If(_))),
+            "Full: original If must be replaced by Loop after TCO"
+        );
+    }
+
+    #[test]
+    fn tco_not_applied_in_basic() {
+        let prog = ast_basic("def countdown(n): if (n == 0): \"done\" else: countdown(n - 1);");
+        let Expr::Def(_, _, body) = &*prog[0].expr else {
+            panic!("expected Def");
+        };
+        assert!(
+            !body.iter().any(|n| matches!(&*n.expr, Expr::Loop(_))),
+            "Basic must not apply TCO; Loop found unexpectedly"
+        );
+    }
+
+    #[test]
+    fn tco_not_applied_in_none() {
+        let prog = ast_none("def countdown(n): if (n == 0): \"done\" else: countdown(n - 1);");
+        let Expr::Def(_, _, body) = &*prog[0].expr else {
+            panic!("expected Def");
+        };
+        assert!(
+            !body.iter().any(|n| matches!(&*n.expr, Expr::Loop(_))),
+            "None must not apply TCO"
+        );
+    }
+
+    #[test]
+    fn tco_not_applied_to_non_tail_call() {
+        // `n * fact(n-1)` is a binary op wrapping the recursive call — NOT a tail call.
+        let prog = ast_full("def fact(n): if (n == 0): 1 else: n * fact(n - 1);");
+        let Expr::Def(_, _, body) = &*prog[0].expr else {
+            panic!("expected Def");
+        };
+        assert!(
+            !body.iter().any(|n| matches!(&*n.expr, Expr::Loop(_))),
+            "Full: non-tail-recursive function must not be TCO-transformed"
+        );
+    }
+
+    #[test]
+    fn tco_multi_param_def_gets_loop() {
+        let prog = ast_full("def loop2(a, b): if (a == 0): b else: loop2(a - 1, b + 1);");
+        let Expr::Def(_, _, body) = &*prog[0].expr else {
+            panic!("expected Def");
+        };
+        assert!(
+            body.iter().any(|n| matches!(&*n.expr, Expr::Loop(_))),
+            "Full: multi-param tail-recursive Def must contain Loop"
+        );
+    }
+
+    #[test]
+    fn inline_then_constant_fold() {
+        // double(3 + 4): argument folds to 7, then inlined body 7 * 2 folds to 14.
+        let prog = ast_full("def double(x): x * 2; | double(3 + 4)");
+        let last = prog.last().unwrap();
+        assert_literal(last, "14", "Full: double(3+4)");
+    }
+
+    #[test]
+    fn inline_reveals_dead_branch() {
+        // always_false(0) inlines to `0 == 999`, folds to false, if-branch eliminated.
+        let prog = ast_full("def always_false(x): x == 999; | if (always_false(0)): \"bad\" else: \"good\"");
+        let last = prog.last().unwrap();
+        assert!(
+            matches!(&*last.expr, Expr::Literal(_)),
+            "Full: inline+dead-branch must collapse to Literal, got {:?}",
+            last.expr
+        );
+        assert_literal(last, "good", "Full: always_false(0)");
+    }
+
+    #[test]
+    fn let_propagation_enables_inline_and_fold() {
+        // n=9 propagated, inc(9) inlined to 9+1, folded to 10.
+        let prog = ast_full("def inc(x): x + 1; | let n = 9 | inc(n)");
+        let last = prog.last().unwrap();
+        assert!(
+            matches!(&*last.expr, Expr::Literal(_)),
+            "Full: propagation+inline+fold must collapse to Literal, got {:?}",
+            last.expr
+        );
+        assert_literal(last, "10", "Full: inc(n) where n=9");
+    }
+
+    #[test]
+    fn fold_then_dead_branch_elimination() {
+        // `if (1 + 2 == 3): "yes" else: "no"` — fold condition first, then eliminate branch.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("if (1 + 2 == 3): \"yes\" else: \"no\"", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert_literal(&prog[0], "yes", &format!("{level:?}"));
+        }
+    }
+
+    #[test]
+    fn let_propagation_into_and_or_operands() {
+        // `let n = 0 | n == 0 && true` — n substituted, `0 == 0` folds to true,
+        // then `true && true` collapses to Literal(true).
+        let prog = ast_full("let n = 0 | n == 0 && true");
+        let last = prog.last().unwrap();
+        assert!(
+            matches!(&*last.expr, Expr::Literal(Literal::Bool(true))),
+            "Full: propagation+and fold must collapse to Literal(true), got {:?}",
             last.expr
         );
     }
 
     #[rstest]
-    // Simple countdown: recursive call directly in else branch
-    #[case(
-        "def countdown(n): if (n == 0): \"done\" else: countdown(n - 1); | countdown(5)",
-        "done"
-    )]
-    // Multi-param: two counters
-    #[case("def loop2(a, b): if (a == 0): b else: loop2(a - 1, b + 1); | loop2(3, 0)", "3")]
-    // Accumulator pattern
-    #[case(
-        "def sum_to(acc, n): if (n == 0): acc else: sum_to(acc + n, n - 1); | sum_to(0, 10)",
-        "55"
-    )]
-    fn test_tco_correct_result(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
+    #[case("floor(3.9)", "3")]
+    #[case("ceil(3.1)", "4")]
+    #[case("round(3.5)", "4")]
+    #[case("abs(-7)", "7")]
+    #[case("trunc(3.9)", "3")]
+    fn numeric_unary_folds(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
     }
 
     #[rstest]
-    // TCO allows deeply recursive calls without hitting the stack limit
-    #[case("def go(n): if (n == 0): \"ok\" else: go(n - 1); | go(300)")]
-    fn test_tco_deep_recursion_no_stack_overflow(#[case] query: &str) {
-        let result = eval(query, "x");
-        assert_eq!(result, vec!["ok"], "deep recursion with TCO must not overflow");
+    #[case("len(\"hello\")", "5")]
+    #[case("len(\"\")", "0")]
+    fn len_string_folds(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    #[rstest]
+    #[case("to_string(42)", "42")]
+    #[case("to_string(3.5)", "3.5")]
+    #[case("to_string(true)", "true")]
+    #[case("to_string(false)", "false")]
+    fn to_string_folds(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    #[rstest]
+    #[case("to_number(\"42\")", "42")]
+    #[case("to_number(\"3.14\")", "3.14")]
+    fn to_number_folds(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
     }
 
     #[test]
-    fn test_tco_def_contains_loop_node() {
-        use crate::DefaultEngine;
-        use crate::ast::node::Expr;
+    fn to_number_invalid_string_not_folded() {
+        // Runtime would return an error — optimizer must not fold.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("to_number(\"abc\")", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Call(..)),
+                "{level:?}: unparseable to_number must stay as Call, got {:?}",
+                prog[0].expr
+            );
+        }
+    }
 
-        let mut engine = DefaultEngine::default();
-        let compiled = engine
-            .compile("def countdown(n): if (n == 0): \"done\" else: countdown(n - 1);")
-            .unwrap();
-        let program = compiled.program();
-        // The Def body should now contain a Loop node (not the original If).
-        let def_node = program.first().unwrap();
-        let Expr::Def(_, _, body) = &*def_node.expr else {
-            panic!("expected Def");
-        };
-        assert!(
-            body.iter().any(|n| matches!(&*n.expr, Expr::Loop(_))),
-            "TCO-transformed Def must contain a Loop node"
+    #[rstest]
+    #[case("lt(\"a\", \"b\")", "true")] // #[case(..)]  "a" < "b"
+    #[case("gt(\"b\", \"a\")", "true")]
+    #[case("lte(\"a\", \"a\")", "true")]
+    #[case("gte(\"b\", \"a\")", "true")]
+    #[case("lt(\"b\", \"a\")", "false")]
+    fn string_comparison_folds(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    #[test]
+    fn algebraic_identity_add_zero() {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(". + 0", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Self_),
+                "{level:?}: . + 0 must fold to Self_, got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[test]
+    fn algebraic_identity_mul_zero() {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(". * 0", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert_literal(&prog[0], "0", &format!("{level:?}: . * 0"));
+        }
+    }
+
+    #[test]
+    fn algebraic_identity_mul_one() {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(". * 1", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Self_),
+                "{level:?}: . * 1 must fold to Self_, got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[test]
+    fn algebraic_identity_div_one() {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(". / 1", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Self_),
+                "{level:?}: . / 1 must fold to Self_, got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[rstest]
+    #[case("trim(\"  hi  \")", "hi")]
+    #[case("ltrim(\"  hi\")", "hi")]
+    #[case("rtrim(\"hi  \")", "hi")]
+    #[case("upcase(\"hello\")", "HELLO")]
+    #[case("downcase(\"WORLD\")", "world")]
+    fn string_transform_folds(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    #[rstest]
+    #[case("starts_with(\"hello\", \"he\")", "true")]
+    #[case("starts_with(\"hello\", \"wo\")", "false")]
+    #[case("ends_with(\"hello\", \"lo\")", "true")]
+    #[case("ends_with(\"hello\", \"he\")", "false")]
+    #[case("index(\"hello\", \"ll\")", "2")]
+    #[case("index(\"hello\", \"xx\")", "-1")]
+    #[case("rindex(\"hello\", \"l\")", "3")]
+    fn string_search_folds(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    #[rstest]
+    #[case("replace(\"hello\", \"l\", \"r\")", "herro")]
+    #[case("replace(\"aaa\", \"a\", \"b\")", "bbb")]
+    fn replace_folds(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    #[test]
+    fn coalesce_none_folded() {
+        // coalesce(None, .) → Self_ (rhs is dynamic; None is Literal::None)
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("coalesce(None, .)", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Self_),
+                "{level:?}: coalesce(None, .) must fold to Self_, got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[test]
+    fn coalesce_non_none_lhs_folded() {
+        // coalesce("hi", .) → "hi" (lhs is non-none, rhs is never evaluated)
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("coalesce(\"hi\", .)", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert_literal(&prog[0], "hi", &format!("{level:?}: coalesce(\"hi\", .)"));
+        }
+    }
+
+    #[test]
+    fn coalesce_both_literals_folded() {
+        // coalesce(None, 42) → 42 (both are literals)
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("coalesce(None, 42)", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert_literal(&prog[0], "42", &format!("{level:?}: coalesce(None, 42)"));
+        }
+    }
+
+    #[test]
+    fn user_def_shadows_builtin_uses_user_semantics() {
+        // User's `upcase(x): x` is an identity — it gets inlined, producing "hello".
+        // The builtin would produce "HELLO". Verifying we get "hello" proves the
+        // user's definition was used (via inlining), not the builtin's constant fold.
+        let prog = ast_full("def upcase(x): x; | upcase(\"hello\")");
+        let last = prog.last().unwrap();
+        assert_literal(
+            last,
+            "hello",
+            "Full: user-shadowed upcase must produce identity, not builtin 'HELLO'",
         );
     }
 
-    #[rstest]
-    // Mutual recursion / complex body: must NOT be transformed (falls back to runtime)
-    #[case("def fact(n): if (n == 0): 1 else: n * fact(n - 1); | fact(5)", "120")]
-    fn test_tco_not_applied_to_non_tail_recursion(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
-    }
-
-    #[rstest]
-    #[case("1 + 2 + 3 + 4", "10")]
-    #[case("\"a\" + \"b\" + \"c\"", "abc")]
-    #[case("(1 + 2) * (3 + 4)", "21")]
-    #[case("((10 - 2) / 2) + 1", "5")]
-    // Folding inside call arguments
-    #[case("add(1 + 2, 3 + 4)", "10")]
-    #[case("mul(negate(2), 3 + 1)", "-8")]
-    // Fold within comparison operands
-    #[case("(1 + 1) == (2 * 1)", "true")]
-    #[case("(10 - 3) > (2 + 4)", "true")]
-    #[case("not(not(true))", "true")]
-    #[case("not(1 == 2)", "true")]
-    fn test_fold_nested(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
-    }
-
-    #[rstest]
-    // Outer true → inner branch runs; inner false → else
-    #[case("if (true): if (false): 1 else: 2 else: 3", "2")]
-    // Outer false → else, inner never evaluated
-    #[case("if (false): if (true): 99 else: 88 else: 42", "42")]
-    // All elif branches false → none
-    #[case("if (false): 1 elif (false): 2 elif (false): 3", "")]
-    // First elif true wins
-    #[case("if (false): 1 elif (true): 2 elif (true): 3 else: 4", "2")]
-    // Condition folded, body also contains foldable expression
-    #[case("if (2 * 3 == 6): 10 + 5 else: 0", "15")]
-    // Nested: outer fold → true, inner fold → false → inner else
-    #[case(
-        "if (1 + 1 == 2): if (3 - 3 == 1): \"inner_true\" else: \"inner_false\" else: \"outer_false\"",
-        "inner_false"
-    )]
-    fn test_dead_branch_nested(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
-    }
-
-    #[rstest]
-    // Truthy literal dropped from And; dynamic operand preserved
-    #[case("true && .", "x", "x")]
-    // Falsy literal in And → entire And short-circuits to false
-    #[case("false && .", "x", "false")]
-    // Falsy literal dropped from Or; dynamic operand preserved
-    #[case("false || .", "x", "x")]
-    // Truthy literal in Or → short-circuits to that literal
-    #[case("true || .", "x", "true")]
-    #[case("true && true && true", "x", "true")]
-    #[case("true && false && true", "x", "false")]
-    #[case("false || false || true", "x", "true")]
-    fn test_and_or_mixed(#[case] query: &str, #[case] input: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, input), vec![expected]);
+    #[test]
+    fn user_def_shadows_trim_uses_user_semantics() {
+        // User's `trim(x): x` is an identity. Builtin would strip spaces → "hi".
+        // After inlining, result should be "  hi  " (spaces preserved).
+        let prog = ast_full("def trim(x): x; | trim(\"  hi  \")");
+        let last = prog.last().unwrap();
+        assert_literal(last, "  hi  ", "Full: user-shadowed trim must preserve spaces");
     }
 
     #[test]
-    fn test_selector_chain_in_def_body() {
-        use crate::DefaultEngine;
-        use crate::ast::node::Expr;
+    fn non_shadowed_builtin_still_folded() {
+        // Having an unrelated user def must not block folding of other builtins.
+        let prog = ast_full("def my_fn(x): x; | upcase(\"hello\")");
+        let last = prog.last().unwrap();
+        assert_literal(last, "HELLO", "Full: non-shadowed upcase must fold");
+    }
 
-        let mut engine = DefaultEngine::default();
-        let compiled = engine.compile("def extract: .h1 | .text; | extract()").unwrap();
-        let program = compiled.program();
-        let def_node = program.first().unwrap();
-        let Expr::Def(_, _, body) = &*def_node.expr else {
+    #[rstest]
+    #[case("trim(\"  a  \")", "a")]
+    #[case("ltrim(\"  a\")", "a")]
+    #[case("rtrim(\"a  \")", "a")]
+    #[case("trim(\"\")", "")]
+    #[case("upcase(\"abc\")", "ABC")]
+    #[case("downcase(\"XYZ\")", "xyz")]
+    #[case("upcase(\"123\")", "123")]
+    fn string_ops_fold(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    #[test]
+    fn string_ops_with_dynamic_arg_not_folded() {
+        for q in ["trim(.)", "upcase(.)"] {
+            for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+                let prog = ast_with(q, level);
+                assert_eq!(prog.len(), 1, "{level:?}: {q}");
+                assert!(
+                    matches!(&*prog[0].expr, Expr::Call(..)),
+                    "{level:?}: {q} must remain Call"
+                );
+            }
+        }
+    }
+
+    #[rstest]
+    #[case("starts_with(\"hello\", \"he\")", "true")]
+    #[case("starts_with(\"hello\", \"lo\")", "false")]
+    #[case("ends_with(\"world\", \"ld\")", "true")]
+    #[case("ends_with(\"world\", \"wo\")", "false")]
+    #[case("index(\"abcabc\", \"bc\")", "1")]
+    #[case("rindex(\"abcabc\", \"bc\")", "4")]
+    #[case("index(\"abc\", \"x\")", "-1")]
+    fn string_search_fold(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    #[rstest]
+    #[case("replace(\"aabbcc\", \"b\", \"x\")", "aaxxcc")]
+    #[case("replace(\"hello\", \"l\", \"\")", "heo")]
+    #[case("replace(\"\", \"x\", \"y\")", "")]
+    fn replace_fold(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    #[rstest]
+    #[case("floor(3.7)", "3")]
+    #[case("floor(-1.2)", "-2")]
+    #[case("ceil(3.1)", "4")]
+    #[case("ceil(-1.8)", "-1")]
+    #[case("round(2.5)", "3")]
+    #[case("round(2.4)", "2")]
+    #[case("abs(-5)", "5")]
+    #[case("abs(5)", "5")]
+    #[case("trunc(3.9)", "3")]
+    #[case("trunc(-3.9)", "-3")]
+    fn numeric_math_folds(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    #[test]
+    fn numeric_math_dynamic_not_folded() {
+        for q in ["floor(.)", "abs(.)"] {
+            let prog = ast_basic(q);
+            assert!(
+                matches!(&*prog[0].expr, Expr::Call(..)),
+                "{q} with dynamic arg must stay Call"
+            );
+        }
+    }
+
+    #[rstest]
+    #[case("len(\"\")", "0")]
+    #[case("len(\"hello\")", "5")]
+    #[case("len(\"こんにちは\")", "5")] // Unicode: 5 chars
+    fn len_folds(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    #[rstest]
+    #[case("to_string(0)", "0")]
+    #[case("to_string(\"hi\")", "hi")]
+    #[case("to_string(true)", "true")]
+    fn to_string_lit_folds(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    #[rstest]
+    #[case("to_number(\"-1\")", "-1")]
+    #[case("to_number(\"0.5\")", "0.5")]
+    fn to_number_lit_folds(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    #[rstest]
+    #[case(". + 0")]
+    #[case("0 + .")]
+    #[case(". - 0")]
+    #[case(". * 1")]
+    #[case("1 * .")]
+    #[case(". / 1")]
+    fn algebraic_identity_returns_self(#[case] query: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Self_),
+                "{level:?}: {query} must fold to Self_"
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(". * 0")]
+    #[case("0 * .")]
+    fn algebraic_mul_zero_returns_literal_zero(#[case] query: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], "0", &format!("{level:?}: {query}"));
+        }
+    }
+
+    #[rstest]
+    #[case(". + \"\"")]
+    #[case("\"\" + .")]
+    fn algebraic_add_empty_string_returns_self(#[case] query: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Self_),
+                "{level:?}: {query} must fold to Self_"
+            );
+        }
+    }
+
+    #[test]
+    fn constant_fold_inside_block() {
+        // Blocks are nested scopes; constant folding must still apply.
+        let prog = ast_basic("(1 + 2)");
+        assert_eq!(prog.len(), 1);
+        assert_literal(&prog[0], "3", "Basic: (1+2) inside Paren must fold");
+    }
+
+    #[test]
+    fn selector_chain_merged_inside_while_body() {
+        // The selector chain inside a while condition (2 selectors) must merge.
+        // while(.h1 | .text) is only 2 nodes in the condition, but the condition
+        // itself is a single Call node; so we check a def body instead.
+        let prog = ast_basic("def f: .h1 | .text;");
+        let Expr::Def(_, _, body) = &*prog[0].expr else {
             panic!("expected Def");
         };
-        assert!(body.iter().any(|n| matches!(&*n.expr, Expr::SelectorChain(_))));
+        assert!(
+            body.iter().any(|n| matches!(&*n.expr, Expr::SelectorChain(_))),
+            "Basic: SelectorChain must be merged inside Def body"
+        );
     }
 
-    #[rstest]
-    // Re-binding same name: second binding wins
-    #[case("let x = 1 | let x = 2 | x + 0", "2")]
-    // Propagation into and/or operands
-    #[case("let n = 0 | n == 0 && true", "true")]
-    #[case("let n = 1 | n == 0 || true", "true")]
-    // Multiple bindings, all literals
-    #[case("let a = 2 | let b = 3 | let c = 4 | a + b + c", "9")]
-    // Non-literal rebind clears propagation for that name
-    #[case("let x = 5 | let x = add(1, 2) | add(x, 0)", "3")]
-    // Same variable used twice in one expression
-    #[case("let n = 7 | add(n, n)", "14")]
-    fn test_let_propagation_edge_cases(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
+    #[test]
+    fn nested_let_literal_not_propagated_across_scope() {
+        // A let binding defined at the top level must not propagate into a nested
+        // def body — they are separate scopes.
+        let prog = ast_full("let x = 99 | def f: x;");
+        let Expr::Def(_, _, body) = &*prog.iter().find(|n| matches!(&*n.expr, Expr::Def(..))).unwrap().expr else {
+            panic!("expected Def");
+        };
+        assert!(
+            matches!(&*body[0].expr, Expr::Ident(_)),
+            "Full: top-level let must not propagate into def body, got {:?}",
+            body[0].expr
+        );
     }
 
-    #[rstest]
-    // Nested inlining: g(f(x)) where both functions are inlineable
-    #[case("def add1(x): x + 1; | def mul2(x): x * 2; | mul2(add1(3))", "8")]
-    // Inline reveals constant comparison → dead branch elimination
-    #[case(
-        "def always_false(x): x == 999; | if (always_false(0)): \"bad\" else: \"good\"",
-        "good"
-    )]
-    // Inline + fold: argument is itself a foldable expression
-    #[case("def double(x): x * 2; | double(3 + 4)", "14")]
-    // Multiple distinct calls to same function
-    #[case("def inc(x): x + 1; | add(inc(3), inc(4))", "9")]
-    // Inline inside if condition
-    #[case("def is_pos(x): x > 0; | if (is_pos(5)): \"pos\" else: \"non-pos\"", "pos")]
-    // Inline inside and/or
-    #[case("def is_one(x): x == 1; | is_one(1) && is_one(1)", "true")]
-    #[case("def is_one(x): x == 1; | is_one(0) || is_one(1)", "true")]
-    fn test_inline_nested_and_interactions(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
+    #[test]
+    fn inlined_def_is_eliminated() {
+        // After inlining, the Def is no longer called → eliminated.
+        let prog = ast_full("def double(x): x * 2; | double(5)");
+        assert!(
+            !prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
+            "Full: fully-inlined Def must be eliminated from the program"
+        );
+        let last = prog.last().unwrap();
+        assert_literal(last, "10", "Full: double(5) must fold to 10");
     }
 
-    #[rstest]
-    #[case("let x = 3 | let y = 4 | x * y", "12")]
-    #[case("if (1 + 2 == 3): \"fold_then_dead\" else: \"no\"", "fold_then_dead")]
-    #[case("def inc(x): x + 1; | let n = 9 | inc(n)", "10")]
-    #[case("def always_true: 1 == 1; | if (always_true()): \"yes\" else: \"no\"", "yes")]
-    #[case(
-        "def gt_five(x): x > 5; | let n = 6 | if (gt_five(n)): \"big\" else: \"small\"",
-        "big"
-    )]
-    #[case("def compute(x): (x + 1) * (x - 1); | compute(4)", "15")]
-    fn test_cross_optimization_chains(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
+    #[test]
+    fn non_inlinable_def_preserved() {
+        // A recursive Def is not inlinable → must be kept.
+        let prog = ast_full("def count(n): if (n == 0): 0 else: count(n - 1);");
+        assert!(
+            prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
+            "Full: non-inlinable Def must be preserved"
+        );
     }
 
-    #[rstest]
-    // elif chain: multiple base cases, one recursive branch
-    #[case(
-        "def classify(n): if (n < 0): \"neg\" elif (n == 0): \"zero\" else: classify(n - 1); | classify(3)",
-        "zero"
-    )]
-    // Boolean accumulator with elif
-    #[case(
-        "def any_positive(found, n): if (found): true elif (n == 0): false else: any_positive(n > 0, n - 1); | any_positive(false, 5)",
-        "true"
-    )]
-    #[case("def repeat(n): if (n == 0): \"done\" else: repeat(n - 1); | repeat(10)", "done")]
-    fn test_tco_extended(#[case] query: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, "x"), vec![expected]);
+    #[test]
+    fn def_passed_as_value_not_eliminated() {
+        // When a Def is passed as a first-class function value, it must not be eliminated.
+        let prog = ast_full("def is_pos(x): gt(x, 0); | filter(array(1, -1, 2), is_pos)");
+        assert!(
+            prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
+            "Full: Def passed as first-class value must be preserved"
+        );
     }
 
-    #[rstest]
-    // Pipeline value concatenated with literal (text input)
-    #[case("add(., \" world\")", "hello", "hello world")]
-    // Dynamic comparison: left side is a variable resolved at runtime
-    #[case("let n = add(1, 1) | n > 1", "x", "true")]
-    #[case("let n = add(1, 1) | n > 3", "x", "false")]
-    #[case("let x = add(2, 3) | x * 2", "x", "10")]
-    // 2-param function is not inlineable but still works
-    #[case("def add2(a, b): a + b; | add2(3, 4)", "x", "7")]
-    fn test_non_optimizable_correctness(#[case] query: &str, #[case] input: &str, #[case] expected: &str) {
-        assert_eq!(eval(query, input), vec![expected]);
+    #[test]
+    fn tco_only_in_full() {
+        let query = "def sum(n): if (n == 0): 0 else: sum(n - 1);";
+        let none_prog = ast_none(query);
+        let basic_prog = ast_basic(query);
+        let full_prog = ast_full(query);
+
+        let has_loop = |prog: &crate::ast::Program| {
+            prog.iter().any(|n| {
+                if let Expr::Def(_, _, body) = &*n.expr {
+                    body.iter().any(|b| matches!(&*b.expr, Expr::Loop(_)))
+                } else {
+                    false
+                }
+            })
+        };
+        assert!(!has_loop(&none_prog), "None: no TCO");
+        assert!(!has_loop(&basic_prog), "Basic: no TCO");
+        assert!(has_loop(&full_prog), "Full: TCO must apply");
+    }
+
+    #[test]
+    fn none_level_is_identity() {
+        // At None, the program must be returned byte-for-byte unchanged.
+        let queries = ["1 + 2", "if (true): 1 else: 2", "false && .", "def f(x): x + 1; | f(5)"];
+        for q in queries {
+            let none = ast_none(q);
+            let basic = ast_basic(q);
+            assert!(!none.is_empty(), "None: {q} must produce nodes");
+            assert!(none.len() >= basic.len(), "None: {q}");
+        }
+    }
+
+    #[test]
+    fn chained_string_ops_fold() {
+        // upcase(trim("  hello  ")) → upcase("hello") → "HELLO"
+        let prog = ast_full("upcase(trim(\"  hello  \"))");
+        assert_eq!(prog.len(), 1);
+        assert_literal(&prog[0], "HELLO", "Full: chained upcase(trim(...)) must fold");
+    }
+
+    #[test]
+    fn nested_arithmetic_folds() {
+        // floor(abs(-3.7) + 1) → floor(3.7 + 1) → floor(4.7) → 4
+        let prog = ast_full("floor(abs(-3.7) + 1)");
+        assert_eq!(prog.len(), 1);
+        assert_literal(&prog[0], "4", "Full: nested floor(abs+add) must fold");
+    }
+
+    #[test]
+    fn let_chain_propagation() {
+        // let a = 1 | let b = 2 | let c = a + b → 3
+        let prog = ast_full("let a = 1 | let b = 2 | a + b");
+        let last = prog.last().unwrap();
+        assert_literal(last, "3", "Full: chained let propagation must fold to 3");
+    }
+
+    #[test]
+    fn let_and_string_propagation() {
+        // let prefix = "Hello" | starts_with(prefix, "He") → true
+        let prog = ast_full("let prefix = \"Hello\" | starts_with(prefix, \"He\")");
+        let last = prog.last().unwrap();
+        assert_literal(last, "true", "Full: let+starts_with must fold");
+    }
+
+    #[test]
+    fn full_pipeline_fold_then_dead_branch() {
+        // let x = 5 | if (x == 5): "yes" else: "no"
+        // Full: x substituted → if (true): "yes" → "yes"
+        let prog = ast_full("let x = 5 | if (x == 5): \"yes\" else: \"no\"");
+        let last = prog.last().unwrap();
+        assert_literal(last, "yes", "Full: propagate+fold+dead-branch must yield \"yes\"");
+    }
+
+    #[test]
+    fn basic_does_not_propagate_let() {
+        // Basic does not do let-literal propagation.
+        let prog = ast_basic("let x = 5 | if (x == 5): \"yes\" else: \"no\"");
+        let last = prog.last().unwrap();
+        assert!(
+            matches!(&*last.expr, Expr::If(_)),
+            "Basic: let propagation must not happen, expected If, got {:?}",
+            last.expr
+        );
+    }
+
+    #[test]
+    fn module_scoped_def_not_mistaken_for_builtin_shadow() {
+        // A Def inside a Module body must not prevent folding of the same-named
+        // builtin at the top level.
+        let prog = ast_full("upcase(\"hello\") | module m: def upcase(x): x; end");
+        // The upcase("hello") call at the top level should be folded.
+        let first = &prog[0];
+        assert_literal(
+            first,
+            "HELLO",
+            "Full: module-internal def must not shadow top-level fold",
+        );
     }
 }

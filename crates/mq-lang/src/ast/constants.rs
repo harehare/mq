@@ -25,6 +25,26 @@ pub mod builtins {
     pub const DIV: &str = "div";
     pub const MOD: &str = "mod";
     pub const FLOOR: &str = "floor";
+    pub const CEIL: &str = "ceil";
+    pub const ROUND: &str = "round";
+    pub const ABS: &str = "abs";
+    pub const TRUNC: &str = "trunc";
+
+    pub const TO_STRING: &str = "to_string";
+    pub const TO_NUMBER: &str = "to_number";
+
+    pub const TRIM: &str = "trim";
+    pub const LTRIM: &str = "ltrim";
+    pub const RTRIM: &str = "rtrim";
+    pub const UPCASE: &str = "upcase";
+    pub const DOWNCASE: &str = "downcase";
+
+    pub const STARTS_WITH: &str = "starts_with";
+    pub const ENDS_WITH: &str = "ends_with";
+    pub const INDEX: &str = "index";
+    pub const RINDEX: &str = "rindex";
+
+    pub const REPLACE: &str = "replace";
 
     pub const IS_REGEX_MATCH: &str = "is_regex_match";
     pub const IS_NOT_REGEX_MATCH: &str = "is_not_regex_match";
