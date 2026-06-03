@@ -61,6 +61,9 @@ impl EnvError {
 /// Below this threshold, linear search over a stack-allocated array is faster than hashing.
 const PROMOTE_THRESHOLD: usize = 6;
 
+/// Maximum capacity of the SmallVec variant of EnvContext.  Must be at least PROMOTE_THRESHOLD - 1 to avoid panicking on push.
+const ENV_CONTEXT_CAPACITY: usize = PROMOTE_THRESHOLD - 1;
+
 /// Per-scope variable storage.
 ///
 /// `Small` is stack-allocated (up to 8 entries) and uses linear search.  It is used
@@ -75,7 +78,7 @@ const PROMOTE_THRESHOLD: usize = 6;
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 enum EnvContext {
-    Small(SmallVec<[(Ident, RuntimeValue); 6]>),
+    Small(SmallVec<[(Ident, RuntimeValue); ENV_CONTEXT_CAPACITY]>),
     Large(Box<FxHashMap<Ident, RuntimeValue>>),
 }
 
