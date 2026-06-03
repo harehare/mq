@@ -82,6 +82,10 @@ pub struct Cli {
     /// Positional string arguments, available as ARGS."positional" in queries.
     #[arg(long = "argv", num_args = 0..)]
     argv: Option<Vec<String>>,
+
+    /// Optimization level for AST transformations (none = no changes, basic = constant folding and dead-branch elimination, full = all passes).
+    #[arg(long = "optimize-level", value_enum, default_value_t = OptimizeLevel::None)]
+    optimize_level: OptimizeLevel,
 }
 
 #[cfg(unix)]
@@ -202,6 +206,24 @@ impl From<String> for ContentData {
 impl From<Vec<u8>> for ContentData {
     fn from(b: Vec<u8>) -> Self {
         ContentData::Bytes(b)
+    }
+}
+
+#[derive(Clone, Debug, Default, clap::ValueEnum)]
+enum OptimizeLevel {
+    #[default]
+    None,
+    Basic,
+    Full,
+}
+
+impl From<OptimizeLevel> for mq_lang::OptimizationLevel {
+    fn from(level: OptimizeLevel) -> Self {
+        match level {
+            OptimizeLevel::None => mq_lang::OptimizationLevel::None,
+            OptimizeLevel::Basic => mq_lang::OptimizationLevel::Basic,
+            OptimizeLevel::Full => mq_lang::OptimizationLevel::Full,
+        }
     }
 }
 
@@ -610,6 +632,7 @@ impl Cli {
     fn create_engine(&self) -> miette::Result<DefaultEngine> {
         let mut engine = mq_lang::DefaultEngine::default();
         engine.load_builtin_module();
+        engine.set_optimization_level(self.optimize_level.clone().into());
 
         if self.input.aggregate {
             engine.import_module("section").map_err(|e| *e)?;

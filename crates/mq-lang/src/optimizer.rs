@@ -46,15 +46,15 @@ fn ptr_eq<T: ?Sized>(a: &Shared<T>, b: &Shared<T>) -> bool {
 
 /// Controls which optimization passes are applied by the [`Optimizer`].
 ///
-/// - `None`: no transformations; the AST is returned unchanged.
+/// - `None` (default): no transformations; the AST is returned unchanged.
 /// - `Basic`: constant folding, dead-branch elimination, and selector-chain merging.
-/// - `Full` (default): all passes — `Basic` plus let-literal propagation, function
+/// - `Full`: all passes — `Basic` plus let-literal propagation, function
 ///   inlining, and tail-call optimization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OptimizationLevel {
+    #[default]
     None,
     Basic,
-    #[default]
     Full,
 }
 
