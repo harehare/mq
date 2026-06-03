@@ -106,12 +106,6 @@ impl<T: ModuleResolver> Engine<T> {
     }
 
     /// Set the optimization level for AST transformations applied before evaluation.
-    ///
-    /// - [`OptimizationLevel::None`] – no transformations; fastest compile time.
-    /// - [`OptimizationLevel::Basic`] – constant folding, dead-branch elimination, and
-    ///   selector-chain merging.
-    /// - [`OptimizationLevel::Full`] (default) – all passes, including let-literal
-    ///   propagation, function inlining, and tail-call optimization.
     pub fn set_optimization_level(&mut self, level: OptimizationLevel) {
         self.optimization_level = level;
     }

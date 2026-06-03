@@ -12,10 +12,7 @@ use crate::{
     selector::Selector,
 };
 
-/// Stack-allocated map from `Ident` to `Literal` used during let-literal propagation.
-///
-/// Up to 8 entries live on the stack with no heap allocation; larger programs fall back
-/// to the heap automatically (SmallVec's spill behaviour).
+/// SmallVec-backed `(Ident, Literal)` map used during let-literal propagation.
 type LiteralEnv = SmallVec<[(Ident, Literal); 8]>;
 
 fn env_get(env: &LiteralEnv, key: Ident) -> Option<&Literal> {
@@ -99,19 +96,15 @@ impl Optimizer {
         Self { level }
     }
 
+    /// Runs all enabled optimization passes on `program` and returns the transformed AST.
     pub fn optimize(&self, program: Program) -> Program {
         self.optimize_impl(program, true)
     }
 
     /// Optimize a nested sub-program (body of a Def, Block, While, Loop, Foreach, etc.).
     ///
-    /// Avoids re-allocating a `FxHashSet` when the nested scope introduces no new `def`s:
-    /// the parent's `user_defs` set is reused directly. When new `def`s exist, a merged
-    /// set is created (one allocation).
-    ///
-    /// Unlike `optimize_impl`, this method only runs the constant-folding and
-    /// selector-chain passes — inlining, TCO, and dead-def elimination are intentionally
-    /// omitted because they require full program visibility.
+    /// Unlike `optimize_impl`, omits inlining, TCO, and dead-def elimination — those
+    /// passes require full program visibility and are incorrect inside nested scopes.
     fn optimize_nested(&self, program: Program, parent_user_defs: &FxHashSet<Ident>) -> Program {
         if matches!(self.level, OptimizationLevel::None) {
             return program;
@@ -213,9 +206,6 @@ impl Optimizer {
     /// - `let x = <foldable-expr>`: optimises the RHS, registers `x` in the substitution
     ///   map if the result is a literal.
     /// - All other nodes: substitute known literals, then fold constants.
-    ///
-    /// This replaces the original two-pass sequence (optimize_node → propagate_let_literals
-    /// → optimize_node) with a single traversal.
     fn propagate_and_fold(&self, program: Program, user_defs: &FxHashSet<Ident>) -> Program {
         // Fast path: if no top-level let-literal bindings exist, skip the propagation
         // machinery entirely and just fold constants. If nothing folds either, return
@@ -836,7 +826,6 @@ impl Optimizer {
             let lhs_lit = literal_of(&args[0]);
             let rhs_lit = literal_of(&args[1]);
 
-            // Both operands are literals: full constant folding.
             if let (Some(lhs), Some(rhs)) = (lhs_lit.clone(), rhs_lit.clone()) {
                 match name.as_str().as_str() {
                     n @ (builtins::ADD | builtins::SUB | builtins::MUL | builtins::DIV | builtins::MOD) => {
@@ -1022,7 +1011,6 @@ impl Optimizer {
                     }
                 }
 
-                // len of constant-size literals.
                 builtins::LEN => match arg {
                     Literal::String(s) => return Some(make_lit(Literal::Number(s.chars().count().into()))),
                     Literal::Bytes(b) => return Some(make_lit(Literal::Number(b.len().into()))),
@@ -1049,7 +1037,6 @@ impl Optimizer {
                     }
                 }
 
-                // String trimming.
                 n @ (builtins::TRIM | builtins::LTRIM | builtins::RTRIM) => {
                     if let Literal::String(s) = arg {
                         let result = match n {
@@ -1062,7 +1049,6 @@ impl Optimizer {
                     }
                 }
 
-                // String case conversion.
                 n @ (builtins::UPCASE | builtins::DOWNCASE) => {
                     if let Literal::String(s) = arg {
                         let result = match n {
@@ -1078,7 +1064,6 @@ impl Optimizer {
             }
         }
 
-        // 3-argument constant folds.
         if args.len() == 3 {
             let a = literal_of(&args[0]);
             let b = literal_of(&args[1]);
@@ -1564,15 +1549,14 @@ fn collect_called_fns(program: &Program) -> FxHashSet<Ident> {
 
 fn collect_called_fns_node(node: &Shared<ast::Node>, set: &mut FxHashSet<Ident>) {
     match &*node.expr {
-        // Direct call: record the callee name.
         ast::Expr::Call(ident, args) => {
             set.insert(ident.name);
             for a in args {
                 collect_called_fns_node(a, set);
             }
         }
-        // Identifier reference: the name may be a first-class function value (e.g. passed
-        // to `map`, `filter`). Record it so we don't accidentally eliminate its Def.
+        // An ident may be a first-class function value (e.g. passed to `map`, `filter`);
+        // record it so we don't accidentally eliminate its Def.
         ast::Expr::Ident(ident) => {
             set.insert(ident.name);
         }

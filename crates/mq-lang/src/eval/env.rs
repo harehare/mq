@@ -30,6 +30,7 @@ impl fmt::Display for EnvError {
 }
 
 impl EnvError {
+    /// Converts this error into a [`RuntimeError`] with the source location resolved from the token arena.
     #[cold]
     pub fn to_runtime_error(&self, token_id: TokenId, token_arena: TokenArena) -> RuntimeError {
         match self {
@@ -45,6 +46,7 @@ impl EnvError {
         }
     }
 
+    /// Converts this error into a [`RuntimeError`] using the provided token as the source location.
     #[cold]
     pub fn to_runtime_error_with_token(&self, token: Token) -> RuntimeError {
         match self {
@@ -73,7 +75,7 @@ const PROMOTE_THRESHOLD: usize = 6;
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 enum EnvContext {
-    Small(SmallVec<[(Ident, RuntimeValue); 4]>),
+    Small(SmallVec<[(Ident, RuntimeValue); 6]>),
     Large(Box<FxHashMap<Ident, RuntimeValue>>),
 }
 
@@ -319,15 +321,21 @@ impl Env {
         }
     }
 
+    /// Returns the number of bindings in the current scope, excluding parent scopes.
     pub fn len(&self) -> usize {
         self.context.len()
     }
 
+    /// Defines or overwrites an immutable binding for `ident` in the current scope.
     #[inline(always)]
     pub fn define(&mut self, ident: Ident, runtime_value: RuntimeValue) {
         self.context.upsert(ident, runtime_value);
     }
 
+    /// Looks up `ident` in this scope and its ancestors, falling back to built-in functions.
+    ///
+    /// Returns [`EnvError::InvalidDefinition`] if the identifier is not found anywhere in
+    /// the scope chain and is not a built-in.
     #[inline(always)]
     pub fn resolve(&self, ident: Ident) -> Result<RuntimeValue, EnvError> {
         if let Some(o) = self.context.get(ident) {
