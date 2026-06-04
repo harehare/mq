@@ -66,15 +66,13 @@ const ENV_CONTEXT_CAPACITY: usize = PROMOTE_THRESHOLD - 1;
 
 /// Per-scope variable storage.
 ///
-/// `Small` is stack-allocated (up to 8 entries) and uses linear search.  It is used
-/// for child scopes (function parameters, `let`/`var` bindings) where the number of
-/// variables is small.
+/// `Small` is stack-allocated and uses linear search.
+/// It is used for child scopes (function parameters, `let`/`var` bindings) where the number of variables is small.
 ///
-/// `Large` is a heap-allocated hash map.  It is used only for the global scope, which
-/// accumulates many entries when `load_builtin_module()` is called (103+ definitions).
+/// `Large` is a heap-allocated hash map.
+/// It is used only for the global scope, which accumulates many entries.
 ///
-/// `Env` is always stored inside `Shared<SharedCell<Env>>` (i.e. on the heap), so the
-/// large `Small` variant does not cause stack pressure.
+/// `Env` is always stored inside `Shared<SharedCell<Env>>` (i.e. on the heap), so the large `Small` variant does not cause stack pressure.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 enum EnvContext {
@@ -113,11 +111,6 @@ impl EnvContext {
     }
 
     /// Upsert: update an existing binding if present, otherwise push a new one.
-    ///
-    /// When the scope grows beyond `PROMOTE_THRESHOLD` unique entries, the `Small`
-    /// variant is automatically converted to `Large` (FxHashMap) so that subsequent
-    /// lookups remain O(1) even for scopes that accumulate many bindings (e.g. a
-    /// `foreach` body with many `let` variables).
     #[inline]
     fn upsert(&mut self, ident: Ident, value: RuntimeValue) {
         match self {
@@ -154,32 +147,10 @@ impl EnvContext {
     }
 
     #[cfg(feature = "debugger")]
-    fn iter_entries(&self) -> impl Iterator<Item = (Ident, &RuntimeValue)> + '_ {
+    fn iter_entries(&self) -> Box<dyn Iterator<Item = (Ident, &RuntimeValue)> + '_> {
         match self {
-            EnvContext::Small(v) => Either::A(v.iter().map(|(k, v)| (*k, v))),
-            EnvContext::Large(m) => Either::B(m.iter().map(|(k, v)| (*k, v))),
-        }
-    }
-}
-
-/// Helper to unify two different iterator types without boxing.
-#[cfg(feature = "debugger")]
-enum Either<A, B> {
-    A(A),
-    B(B),
-}
-
-#[cfg(feature = "debugger")]
-impl<A, B, T> Iterator for Either<A, B>
-where
-    A: Iterator<Item = T>,
-    B: Iterator<Item = T>,
-{
-    type Item = T;
-    fn next(&mut self) -> Option<T> {
-        match self {
-            Either::A(a) => a.next(),
-            Either::B(b) => b.next(),
+            EnvContext::Small(v) => Box::new(v.iter().map(|(k, v)| (*k, v))),
+            EnvContext::Large(m) => Box::new(m.iter().map(|(k, v)| (*k, v))),
         }
     }
 }
