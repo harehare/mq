@@ -1,11 +1,11 @@
 <div align="center">
   <img src="assets/logo.svg" style="width: 128px; height: 128px;"/>
 
-  <a href="https://mqlang.org">Visit the site 🌐</a>
-  &mdash;
-  <a href="https://mqlang.org/book">Read the book 📖</a>
-  &mdash;
-  <a href="https://mqlang.org/playground">Playground 🎮</a>
+<a href="https://mqlang.org">Visit the site 🌐</a>
+—
+<a href="https://mqlang.org/book">Read the book 📖</a>
+—
+<a href="https://mqlang.org/playground">Playground 🎮</a>
 
 <h1>mq</h1>
 
@@ -167,8 +167,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]
-  [FILES]...
+  [QUERY OR FILE]  
+  [FILES]...       
 
 Options:
   -A, --aggregate
