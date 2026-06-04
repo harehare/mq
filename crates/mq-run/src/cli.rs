@@ -84,7 +84,7 @@ pub struct Cli {
     argv: Option<Vec<String>>,
 
     /// Optimization level for AST transformations (none = no changes, basic = constant folding and dead-branch elimination, full = all passes).
-    #[arg(long = "optimize-level", value_enum, default_value_t = OptimizeLevel::None)]
+    #[arg(short='O', long = "optimize-level", value_enum, default_value_t = OptimizeLevel::None)]
     optimize_level: OptimizeLevel,
 }
 
