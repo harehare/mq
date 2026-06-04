@@ -58,33 +58,29 @@ impl fmt::Display for Command {
 
 impl Command {
     pub fn help(&self) -> String {
-        match self {
-            Command::Backtrace => {
-                format!("{:<20}{}", "backtrace or bt", "Print the current backtrace")
-            }
-            Command::Breakpoint(_) => format!("{:<20}{}", "b[reakpoint]", "Set a breakpoint at the specified line"),
-            Command::Continue => {
-                format!("{:<20}{}", "c[ontinue]", "Continue execution")
-            }
-            Command::Clear(_) => format!("{:<20}{}", "cl[ear]", "Clear breakpoints at a specific identifier"),
-            Command::Eval(_) | Command::Error(_) => "".to_string(),
-            Command::Finish => format!("{:<20}{}", "f[inish]", "Finish execution and return to the caller"),
-            Command::Help => format!("{:<20}{}", "h[elp]", "Print command help"),
-            Command::Info => format!("{:<20}{}", "i[nfo]", "Print information about the current context"),
-            Command::List => format!("{:<20}{}", "l[ist]", "List source code around the current line"),
-            Command::LongList => {
-                format!("{:<20}{}", "long-list or ll", "List all source code lines")
-            }
-            Command::Next => {
-                format!("{:<20}{}", "n[ext]", "Step over the next function call")
-            }
-            Command::Quit => {
-                format!("{:<20}{}", "q[uit]", "Quit evaluation and exit")
-            }
-            Command::Step => {
-                format!("{:<20}{}", "s[tep]", "Step into the next function call")
-            }
-        }
+        let (cmd, desc) = match self {
+            Command::Backtrace => ("backtrace or bt", "Print the current backtrace"),
+            Command::Breakpoint(_) => ("b[reakpoint]", "Set a breakpoint at the specified line"),
+            Command::Continue => ("c[ontinue]", "Continue execution"),
+            Command::Clear(_) => ("cl[ear]", "Clear breakpoints at a specific identifier"),
+            Command::Eval(_) | Command::Error(_) => return "".to_string(),
+            Command::Finish => ("f[inish]", "Finish execution and return to the caller"),
+            Command::Help => ("h[elp]", "Print command help"),
+            Command::Info => ("i[nfo]", "Print information about the current context"),
+            Command::List => ("l[ist]", "List source code around the current line"),
+            Command::LongList => ("long-list or ll", "List all source code lines"),
+            Command::Next => ("n[ext]", "Step over the next function call"),
+            Command::Quit => ("q[uit]", "Quit evaluation and exit"),
+            Command::Step => ("s[tep]", "Step into the next function call"),
+        };
+        let padding = " ".repeat(20_usize.saturating_sub(cmd.len()));
+        // func=#56d4d4, fg_muted=#94a3b8
+        format!(
+            "{}{}{}",
+            cmd.truecolor(86, 212, 212).bold(),
+            padding,
+            desc.truecolor(148, 163, 184)
+        )
     }
 }
 
@@ -247,6 +243,8 @@ impl DebuggerHandler {
                     );
                 }
                 Command::Eval(expr) => {
+                    editor.add_history_entry(&expr).unwrap();
+
                     let value: mq_lang::RuntimeValue = context.current_value.clone();
                     let mut engine = self.engine.switch_env(Shared::clone(&context.env));
                     let values = match engine.eval(&expr, vec![value].into_iter()) {
@@ -256,8 +254,6 @@ impl DebuggerHandler {
                             continue;
                         }
                     };
-
-                    editor.add_history_entry(&expr).unwrap();
 
                     let lines = values
                         .values()
@@ -287,6 +283,8 @@ impl DebuggerHandler {
                         })
                         .collect::<Vec<_>>();
 
+                    // accent=#67b8e3
+                    println!("{}", "Available Commands:".truecolor(103, 184, 227).bold());
                     println!("{}", commands.join("\n"))
                 }
                 Command::Continue => return Ok(mq_lang::DebuggerAction::Continue),
@@ -303,20 +301,26 @@ impl DebuggerHandler {
     }
 
     fn print_source_code(start: usize, current_line: usize, snippet: Vec<String>) {
-        // The width of the line number column is increased to account for the "=>" marker
         let line_number_width = max(current_line.to_string().len() + 4, 7);
         let display_source_code = snippet.iter().enumerate().map(|(i, line)| {
             let line_number = start + i + 1;
+            let highlighted = highlight_syntax(line);
 
             if line_number == current_line {
+                // warning=#f6ad55 for current line marker and number
                 format!(
                     "=>{:>line_number_width$}| {}",
-                    line_number.to_string().yellow().bold(),
-                    line.yellow().bold(),
+                    line_number.to_string().truecolor(246, 173, 85).bold(),
+                    highlighted,
                     line_number_width = line_number_width - 2
                 )
             } else {
-                format!("{:>line_number_width$}| {}", line_number.to_string().blue(), line)
+                // fg_muted=#94a3b8 for other line numbers
+                format!(
+                    "{:>line_number_width$}| {}",
+                    line_number.to_string().truecolor(148, 163, 184),
+                    highlighted
+                )
             }
         });
 
@@ -341,54 +345,99 @@ impl DebuggerHandler {
     }
 }
 
-/// Highlight mq syntax with keywords and commands
+/// Collect non-overlapping regex matches into `spans` (higher-priority patterns added first).
+/// Each span is (byte_start, byte_end, ansi_colored_string) on the original `line`.
+fn collect_spans(
+    spans: &mut Vec<(usize, usize, String)>,
+    pattern: &str,
+    line: &str,
+    color_fn: impl Fn(&str) -> String,
+) {
+    if let Ok(re) = regex_lite::Regex::new(pattern) {
+        for m in re.find_iter(line) {
+            let (start, end) = (m.start(), m.end());
+            let overlaps = spans.iter().any(|(s, e, _)| start < *e && end > *s);
+            if !overlaps {
+                spans.push((start, end, color_fn(m.as_str())));
+            }
+        }
+    }
+}
+
+/// Highlight mq syntax using tarn theme colors.
+///
+/// Color mapping (from tarn theme):
+/// - commands : success  #68d391
+/// - comment  : comment  #6b7a90
+/// - string   : string   #89ddff
+/// - keyword  : keyword  #67b8e3
+/// - constant : constant #85d4ff
+/// - selector : escape   #67e8f9
+/// - number   : number   #de935f
+/// - operator : operator #94a3b8
 fn highlight_syntax(line: &str) -> Cow<'_, str> {
-    let mut result = line.to_string();
+    let mut spans: Vec<(usize, usize, String)> = Vec::new();
 
-    let commands_pattern = r"^(backtrace|bt|step|s|next|n|finish|f|info|i|continue|c|help|quit|env|)\b";
-    if let Ok(re) = regex_lite::Regex::new(commands_pattern) {
-        result = re
-            .replace_all(&result, |caps: &regex_lite::Captures| {
-                caps[0].bright_green().to_string()
-            })
-            .to_string();
-    }
+    // Comments (#...) — highest priority
+    collect_spans(&mut spans, r"#.*", line, |s| s.truecolor(107, 122, 144).to_string());
 
-    let keywords_pattern =
-        r"\b(def|let|if|elif|else|end|while|foreach|self|nodes|fn|break|continue|include|true|false|None)\b";
-    if let Ok(re) = regex_lite::Regex::new(keywords_pattern) {
-        result = re
-            .replace_all(&result, |caps: &regex_lite::Captures| caps[0].bright_blue().to_string())
-            .to_string();
-    }
+    // String literals: s"...", b"...", plain "..."
+    collect_spans(&mut spans, r#"[sb]?"([^"\\]|\\.)*""#, line, |s| {
+        s.truecolor(137, 221, 255).to_string()
+    });
 
-    // Highlight strings
-    if let Ok(re) = regex_lite::Regex::new(r#""([^"\\]|\\.)*""#) {
-        result = re
-            .replace_all(&result, |caps: &regex_lite::Captures| {
-                caps[0].bright_green().to_string()
-            })
-            .to_string();
-    }
+    // Debugger commands (only at start of line)
+    collect_spans(
+        &mut spans,
+        r"^(backtrace|bt|step|s|next|n|finish|f|info|i|continue|c|help|quit|env)\b",
+        line,
+        |s| s.truecolor(104, 211, 145).to_string(),
+    );
 
-    // Highlight numbers
-    if let Ok(re) = regex_lite::Regex::new(r"\b\d+\b") {
-        result = re
-            .replace_all(&result, |caps: &regex_lite::Captures| {
-                caps[0].bright_magenta().to_string()
-            })
-            .to_string();
-    }
+    // Keywords
+    collect_spans(
+        &mut spans,
+        r"\b(as|break|catch|continue|def|do|elif|else|end|fn|foreach|if|import|include|let|loop|macro|match|module|nodes|quote|self|try|unquote|var|while)\b",
+        line,
+        |s| s.truecolor(103, 184, 227).bold().to_string(),
+    );
 
-    // Highlight operators (after other highlighting to avoid conflicts)
-    let operators_pattern = r"(->|<=|>=|==|!=|&&|[=|:;?!+\-*/%<>])";
-    if let Ok(re) = regex_lite::Regex::new(operators_pattern) {
-        result = re
-            .replace_all(&result, |caps: &regex_lite::Captures| {
-                caps[0].bright_yellow().to_string()
-            })
-            .to_string();
+    // Boolean / None constants
+    collect_spans(&mut spans, r"\b(true|false|None)\b", line, |s| {
+        s.truecolor(133, 212, 255).to_string()
+    });
+
+    // Selectors (.h1, .p, .**, .>, .^ etc.)
+    collect_spans(&mut spans, r"\.[a-zA-Z_*>^][a-zA-Z0-9_]*", line, |s| {
+        s.truecolor(103, 232, 249).to_string()
+    });
+
+    // Numbers (integers and floats)
+    collect_spans(&mut spans, r"\b\d+(\.\d+)?\b", line, |s| {
+        s.truecolor(222, 147, 95).to_string()
+    });
+
+    // Operators (compound before single-char) — lowest priority
+    collect_spans(
+        &mut spans,
+        r"(->|//=|\|\||\|\|=|&&=|&&|\?\?|=~|!~|<<|>>|\|=|%=|/=|\*=|-=|\+=|==|!=|<=|>=|\.\.|::|[=|:;?!+\-*/%<>@])",
+        line,
+        |s| s.truecolor(148, 163, 184).to_string(),
+    );
+
+    // Sort by byte position, then build the output in one pass.
+    spans.sort_by_key(|(start, _, _)| *start);
+
+    let mut result = String::with_capacity(line.len() * 3);
+    let mut pos = 0usize;
+    for (start, end, colored) in spans {
+        if start >= pos {
+            result.push_str(&line[pos..start]);
+            result.push_str(&colored);
+            pos = end;
+        }
     }
+    result.push_str(&line[pos..]);
 
     Cow::Owned(result)
 }
@@ -406,7 +455,8 @@ impl Completer for DebuggerLineHelper {
 
 impl Highlighter for DebuggerLineHelper {
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
-        prompt.cyan().to_string().into()
+        // accent=#67b8e3
+        prompt.truecolor(103, 184, 227).bold().to_string().into()
     }
 
     fn highlight_char(&self, _line: &str, _pos: usize, _kind: CmdKind) -> bool {
