@@ -48,8 +48,7 @@ fn ptr_eq<T: ?Sized>(a: &Shared<T>, b: &Shared<T>) -> bool {
 ///
 /// - `None` (default): no transformations; the AST is returned unchanged.
 /// - `Basic`: constant folding, dead-branch elimination, and selector-chain merging.
-/// - `Full`: all passes — `Basic` plus let-literal propagation, function
-///   inlining, and tail-call optimization.
+/// - `Full`: all passes — `Basic` plus let-literal propagation, function inlining, and tail-call optimization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OptimizationLevel {
     #[default]
@@ -102,9 +101,6 @@ impl Optimizer {
     }
 
     /// Optimize a nested sub-program (body of a Def, Block, While, Loop, Foreach, etc.).
-    ///
-    /// Unlike `optimize_impl`, omits inlining, TCO, and dead-def elimination — those
-    /// passes require full program visibility and are incorrect inside nested scopes.
     fn optimize_nested(&self, program: Program, parent_user_defs: &FxHashSet<Ident>) -> Program {
         if matches!(self.level, OptimizationLevel::None) {
             return program;
@@ -135,10 +131,6 @@ impl Optimizer {
     }
 
     /// Internal optimization entry point.
-    ///
-    /// `top_level` controls whether dead-def elimination runs. It must only run at the
-    /// top level because nested scopes (Module bodies, Def bodies) cannot see their
-    /// external callers, so eliminating defs there is incorrect.
     fn optimize_impl(&self, program: Program, top_level: bool) -> Program {
         // Collect user-defined function names only when Def nodes are actually present.
         // Programs without any `def` (the common case for simple queries) share a static
@@ -207,9 +199,6 @@ impl Optimizer {
     ///   map if the result is a literal.
     /// - All other nodes: substitute known literals, then fold constants.
     fn propagate_and_fold(&self, program: Program, user_defs: &FxHashSet<Ident>) -> Program {
-        // Fast path: if no top-level let-literal bindings exist, skip the propagation
-        // machinery entirely and just fold constants. If nothing folds either, return
-        // the original program to avoid any allocation.
         let has_let_literal = program.iter().any(|n| {
             matches!(&*n.expr, ast::Expr::Let(Pattern::Ident(_), rhs) if matches!(&*rhs.expr, ast::Expr::Literal(_)))
         });
@@ -315,7 +304,6 @@ impl Optimizer {
                 }
                 node
             }
-
             ast::Expr::Call(ident, args) => {
                 let subst_args: Args = args
                     .iter()
@@ -326,7 +314,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::Call(ident.clone(), subst_args)),
                 })
             }
-
             ast::Expr::CallDynamic(callable, args) => {
                 let subst_callable = self.substitute_literals(Shared::clone(callable), env);
                 let subst_args: Args = args
@@ -338,7 +325,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::CallDynamic(subst_callable, subst_args)),
                 })
             }
-
             ast::Expr::SelectorCall(selector, args) => {
                 let subst_args: Args = args
                     .iter()
@@ -349,7 +335,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::SelectorCall(selector.clone(), subst_args)),
                 })
             }
-
             ast::Expr::If(branches) => {
                 let subst_branches: Branches = branches
                     .iter()
@@ -365,7 +350,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::If(subst_branches)),
                 })
             }
-
             ast::Expr::And(operands) => {
                 let subst: Vec<_> = operands
                     .iter()
@@ -376,7 +360,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::And(subst)),
                 })
             }
-
             ast::Expr::Or(operands) => {
                 let subst: Vec<_> = operands
                     .iter()
@@ -387,12 +370,10 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::Or(subst)),
                 })
             }
-
             ast::Expr::Paren(inner) => Shared::new(ast::Node {
                 token_id,
                 expr: Shared::new(ast::Expr::Paren(self.substitute_literals(Shared::clone(inner), env))),
             }),
-
             ast::Expr::Try(try_expr, catch_expr) => Shared::new(ast::Node {
                 token_id,
                 expr: Shared::new(ast::Expr::Try(
@@ -400,14 +381,12 @@ impl Optimizer {
                     self.substitute_literals(Shared::clone(catch_expr), env),
                 )),
             }),
-
             ast::Expr::Break(Some(val)) => Shared::new(ast::Node {
                 token_id,
                 expr: Shared::new(ast::Expr::Break(Some(
                     self.substitute_literals(Shared::clone(val), env),
                 ))),
             }),
-
             // Substitute into Expr segments of interpolated strings so that
             // `let x = "hi" | s"${x}!"` can later be folded to `"hi!"`.
             ast::Expr::InterpolatedString(segments) => {
@@ -425,7 +404,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::InterpolatedString(subst_segs)),
                 })
             }
-
             // Scope-creating or leaf nodes: stop substitution here.
             ast::Expr::Block(_)
             | ast::Expr::Def(_, _, _)
@@ -474,7 +452,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::Call(ident.clone(), opt_args)),
                 })
             }
-
             // Recurse into sub-expressions — but not across scope-creating nodes (Def, Fn, Block).
             ast::Expr::If(branches) => {
                 let branches: ast::Branches = branches
@@ -491,21 +468,18 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::If(branches)),
                 })
             }
-
             ast::Expr::And(ops) => Shared::new(ast::Node {
                 token_id,
                 expr: Shared::new(ast::Expr::And(
                     ops.iter().map(|o| self.apply_inline(Shared::clone(o), fns)).collect(),
                 )),
             }),
-
             ast::Expr::Or(ops) => Shared::new(ast::Node {
                 token_id,
                 expr: Shared::new(ast::Expr::Or(
                     ops.iter().map(|o| self.apply_inline(Shared::clone(o), fns)).collect(),
                 )),
             }),
-
             ast::Expr::Try(try_expr, catch_expr) => Shared::new(ast::Node {
                 token_id,
                 expr: Shared::new(ast::Expr::Try(
@@ -513,7 +487,6 @@ impl Optimizer {
                     self.apply_inline(Shared::clone(catch_expr), fns),
                 )),
             }),
-
             ast::Expr::SelectorCall(sel, args) => {
                 let opt_args: Args = args.iter().map(|a| self.apply_inline(Shared::clone(a), fns)).collect();
                 Shared::new(ast::Node {
@@ -521,7 +494,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::SelectorCall(sel.clone(), opt_args)),
                 })
             }
-
             // Scope-creating and leaf nodes are left unchanged.
             _ => node,
         }
@@ -532,7 +504,6 @@ impl Optimizer {
 
         match &*node.expr {
             ast::Expr::Paren(inner) => self.optimize_node(Shared::clone(inner), user_defs),
-
             ast::Expr::Call(ident, args) => {
                 let opt_args: Args = args
                     .iter()
@@ -550,11 +521,9 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::Call(ident.clone(), opt_args)),
                 })
             }
-
             ast::Expr::If(branches) => self.optimize_if(token_id, branches, user_defs),
             ast::Expr::And(operands) => self.optimize_and(token_id, operands, user_defs),
             ast::Expr::Or(operands) => self.optimize_or(token_id, operands, user_defs),
-
             ast::Expr::Block(program) => {
                 let opt = self.optimize_nested(program.clone(), user_defs);
                 if program.iter().zip(opt.iter()).all(|(a, b)| ptr_eq(a, b)) {
@@ -565,7 +534,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::Block(opt)),
                 })
             }
-
             ast::Expr::Def(ident, params, program) => Shared::new(ast::Node {
                 token_id,
                 expr: Shared::new(ast::Expr::Def(
@@ -574,7 +542,6 @@ impl Optimizer {
                     self.optimize_nested(program.clone(), user_defs),
                 )),
             }),
-
             ast::Expr::Fn(params, program) => Shared::new(ast::Node {
                 token_id,
                 expr: Shared::new(ast::Expr::Fn(
@@ -582,7 +549,6 @@ impl Optimizer {
                     self.optimize_nested(program.clone(), user_defs),
                 )),
             }),
-
             ast::Expr::While(cond, program) => {
                 let opt_cond = self.optimize_node(Shared::clone(cond), user_defs);
                 let opt_body = self.optimize_nested(program.clone(), user_defs);
@@ -594,7 +560,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::While(opt_cond, opt_body)),
                 })
             }
-
             ast::Expr::Loop(program) => {
                 let opt = self.optimize_nested(program.clone(), user_defs);
                 if program.iter().zip(opt.iter()).all(|(a, b)| ptr_eq(a, b)) {
@@ -605,7 +570,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::Loop(opt)),
                 })
             }
-
             ast::Expr::Foreach(ident, values, program) => {
                 let opt_values = self.optimize_node(Shared::clone(values), user_defs);
                 let opt_body = self.optimize_nested(program.clone(), user_defs);
@@ -617,7 +581,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::Foreach(ident.clone(), opt_values, opt_body)),
                 })
             }
-
             ast::Expr::As(ident, inner) => {
                 let opt_inner = self.optimize_node(Shared::clone(inner), user_defs);
                 if ptr_eq(&opt_inner, inner) {
@@ -628,7 +591,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::As(ident.clone(), opt_inner)),
                 })
             }
-
             ast::Expr::Let(pattern, inner) => {
                 let opt_inner = self.optimize_node(Shared::clone(inner), user_defs);
                 if ptr_eq(&opt_inner, inner) {
@@ -639,7 +601,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::Let(pattern.clone(), opt_inner)),
                 })
             }
-
             ast::Expr::Var(pattern, inner) => {
                 let opt_inner = self.optimize_node(Shared::clone(inner), user_defs);
                 if ptr_eq(&opt_inner, inner) {
@@ -650,7 +611,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::Var(pattern.clone(), opt_inner)),
                 })
             }
-
             ast::Expr::Assign(ident, inner) => {
                 let opt_inner = self.optimize_node(Shared::clone(inner), user_defs);
                 if ptr_eq(&opt_inner, inner) {
@@ -661,7 +621,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::Assign(ident.clone(), opt_inner)),
                 })
             }
-
             ast::Expr::Try(try_expr, catch_expr) => {
                 let opt_try = self.optimize_node(Shared::clone(try_expr), user_defs);
                 let opt_catch = self.optimize_node(Shared::clone(catch_expr), user_defs);
@@ -673,7 +632,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::Try(opt_try, opt_catch)),
                 })
             }
-
             ast::Expr::Break(Some(val)) => {
                 let opt_val = self.optimize_node(Shared::clone(val), user_defs);
                 if ptr_eq(&opt_val, val) {
@@ -684,7 +642,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::Break(Some(opt_val))),
                 })
             }
-
             ast::Expr::Match(value_node, arms) => {
                 let opt_value = self.optimize_node(Shared::clone(value_node), user_defs);
                 let opt_arms: MatchArms = arms
@@ -703,7 +660,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::Match(opt_value, opt_arms)),
                 })
             }
-
             ast::Expr::CallDynamic(callable, args) => {
                 let opt_callable = self.optimize_node(Shared::clone(callable), user_defs);
                 let opt_args: Args = args
@@ -720,7 +676,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::CallDynamic(opt_callable, opt_args)),
                 })
             }
-
             ast::Expr::SelectorCall(selector, args) => {
                 let opt_args: Args = args
                     .iter()
@@ -734,7 +689,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::SelectorCall(selector.clone(), opt_args)),
                 })
             }
-
             ast::Expr::InterpolatedString(segments) => {
                 // Optimize each Expr segment; also promote string-literal Expr segments to
                 // Text so that fully-constant interpolated strings can be folded.
@@ -771,7 +725,6 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::InterpolatedString(opt_segs)),
                 })
             }
-
             ast::Expr::Module(ident, program) => Shared::new(ast::Node {
                 token_id,
                 expr: Shared::new(ast::Expr::Module(
@@ -779,12 +732,10 @@ impl Optimizer {
                     self.optimize_nested(program.clone(), user_defs),
                 )),
             }),
-
             ast::Expr::Unquote(inner) => Shared::new(ast::Node {
                 token_id,
                 expr: Shared::new(ast::Expr::Unquote(self.optimize_node(Shared::clone(inner), user_defs))),
             }),
-
             ast::Expr::Literal(_)
             | ast::Expr::Ident(_)
             | ast::Expr::Selector(_)
@@ -992,7 +943,6 @@ impl Optimizer {
                         return Some(make_lit(Literal::Number(-n)));
                     }
                 }
-
                 // Numeric rounding/absolute value — safe because these are total functions on numbers.
                 n @ (builtins::FLOOR | builtins::CEIL | builtins::ROUND | builtins::ABS | builtins::TRUNC) => {
                     if let Literal::Number(num) = arg {
@@ -1010,13 +960,11 @@ impl Optimizer {
                         return Some(make_lit(Literal::Number(result.into())));
                     }
                 }
-
                 builtins::LEN => match arg {
                     Literal::String(s) => return Some(make_lit(Literal::Number(s.chars().count().into()))),
                     Literal::Bytes(b) => return Some(make_lit(Literal::Number(b.len().into()))),
                     _ => {}
                 },
-
                 // to_string on any primitive literal — replicates the runtime behaviour exactly.
                 builtins::TO_STRING => {
                     let s = match arg {
@@ -1029,14 +977,12 @@ impl Optimizer {
                     };
                     return Some(make_lit(Literal::String(s)));
                 }
-
                 // to_number on a string literal — only fold when parsing succeeds.
                 builtins::TO_NUMBER => {
                     if let Literal::String(s) = arg {
                         return s.parse::<f64>().ok().map(|n| make_lit(Literal::Number(n.into())));
                     }
                 }
-
                 n @ (builtins::TRIM | builtins::LTRIM | builtins::RTRIM) => {
                     if let Literal::String(s) = arg {
                         let result = match n {
@@ -1048,7 +994,6 @@ impl Optimizer {
                         return Some(make_lit(Literal::String(result)));
                     }
                 }
-
                 n @ (builtins::UPCASE | builtins::DOWNCASE) => {
                     if let Literal::String(s) = arg {
                         let result = match n {
