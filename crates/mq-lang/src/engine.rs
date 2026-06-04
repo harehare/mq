@@ -18,6 +18,7 @@ use crate::{
     arena::Arena,
     error::{self},
     eval::Evaluator,
+    optimizer::{OptimizationLevel, Optimizer},
     parse,
 };
 
@@ -71,6 +72,7 @@ impl From<crate::ast::Program> for CompiledProgram {
 pub struct Engine<T: ModuleResolver = LocalFsModuleResolver> {
     pub(crate) evaluator: Evaluator<T>,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+    optimization_level: OptimizationLevel,
 }
 
 fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
@@ -99,7 +101,13 @@ impl<T: ModuleResolver> Engine<T> {
         Self {
             evaluator: Evaluator::new(ModuleLoader::new(module_resolver), Shared::clone(&token_arena)),
             token_arena,
+            optimization_level: OptimizationLevel::default(),
         }
+    }
+
+    /// Set the optimization level for AST transformations applied before evaluation.
+    pub fn set_optimization_level(&mut self, level: OptimizationLevel) {
+        self.optimization_level = level;
     }
 
     /// Set the maximum call stack depth for function calls.
@@ -207,6 +215,7 @@ impl<T: ModuleResolver> Engine<T> {
         }
 
         let program = parse(code, Shared::clone(&self.token_arena))?;
+        let program = Optimizer::with_level(self.optimization_level).optimize(program);
 
         #[cfg(feature = "debugger")]
         self.evaluator.module_loader.set_source_code(code.to_string());
@@ -228,6 +237,7 @@ impl<T: ModuleResolver> Engine<T> {
             });
         }
         let program = parse(code, Shared::clone(&self.token_arena))?;
+        let program = Optimizer::with_level(self.optimization_level).optimize(program);
         Ok(CompiledProgram {
             source: code.to_string(),
             program,
@@ -304,6 +314,7 @@ impl<T: ModuleResolver> Engine<T> {
         Self {
             evaluator: Evaluator::with_env(Shared::clone(&token_arena), Shared::clone(&env)),
             token_arena: Shared::clone(&token_arena),
+            optimization_level: self.optimization_level,
         }
     }
 

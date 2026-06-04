@@ -192,6 +192,7 @@ impl Node {
             Expr::Literal(_)
             | Expr::Ident(_)
             | Expr::Selector(_)
+            | Expr::SelectorChain(_)
             | Expr::Include(_)
             | Expr::Import(_)
             | Expr::InterpolatedString(_)
@@ -350,6 +351,11 @@ pub enum Expr {
     Ident(IdentWithToken),
     InterpolatedString(Vec<StringSegment>),
     Selector(Selector),
+    /// A sequence of selectors merged by the optimizer to reduce pipeline overhead.
+    ///
+    /// Equivalent to applying each selector in order, but evaluated in a single
+    /// `eval_expr` call instead of N separate pipeline steps.
+    SelectorChain(SmallVec<[Selector; 4]>),
     /// A selector with runtime-evaluated arguments for filtered matching.
     ///
     /// Supports `.h(1..2)`, `.h(1, 2)`, `.code("rust")`, etc.

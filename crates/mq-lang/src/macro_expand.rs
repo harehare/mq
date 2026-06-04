@@ -403,6 +403,7 @@ impl Macro {
             Expr::Literal(_)
             | Expr::Ident(_)
             | Expr::Selector(_)
+            | Expr::SelectorChain(_)
             | Expr::Nodes
             | Expr::Self_
             | Expr::Include(_)
@@ -810,6 +811,7 @@ impl Macro {
             // Leaf nodes and other expressions - no substitution needed
             Expr::Literal(_)
             | Expr::Selector(_)
+            | Expr::SelectorChain(_)
             | Expr::Nodes
             | Expr::Self_
             | Expr::Include(_)
