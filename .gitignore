@@ -99,3 +99,6 @@ tsconfig.tsbuildinfo
 mutants.out
 
 *.proptest-regressions
+
+*.mq-db
+
