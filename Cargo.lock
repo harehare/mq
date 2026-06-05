@@ -2614,6 +2614,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-lint"
+version = "0.1.0"
+dependencies = [
+ "miette",
+ "mq-hir",
+ "mq-lang",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "mq-lsp"
 version = "0.6.3"
 dependencies = [
