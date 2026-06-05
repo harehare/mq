@@ -150,6 +150,15 @@ pub struct TypeNarrowing {
     pub else_branch_ids: Vec<SymbolId>,
 }
 
+/// Cross-arm narrowing for match: subtract preceding arms' whole-type patterns from subsequent arms.
+#[derive(Debug, Clone)]
+pub struct CrossArmNarrowing {
+    pub def_id: SymbolId,
+    /// Types from preceding arms to subtract (only whole-type patterns like `none`, `:string:`)
+    pub exclude_types: Vec<Type>,
+    pub branch_id: SymbolId,
+}
+
 /// Inference context maintains state during type inference
 pub struct InferenceContext {
     /// Type variable context for generating fresh variables
@@ -181,6 +190,8 @@ pub struct InferenceContext {
     deferred_tuple_accesses: Vec<DeferredTupleAccess>,
     /// Type narrowings collected from type predicate conditions in if/elif expressions
     type_narrowings: Vec<TypeNarrowing>,
+    /// Cross-arm narrowings collected from match expressions
+    cross_arm_narrowings: Vec<CrossArmNarrowing>,
     /// When true, heterogeneous arrays produce a type error
     strict_array: bool,
 }
@@ -208,6 +219,7 @@ impl InferenceContext {
             deferred_selector_accesses: Vec::new(),
             deferred_tuple_accesses: Vec::new(),
             type_narrowings: Vec::new(),
+            cross_arm_narrowings: Vec::new(),
             strict_array,
         }
     }
@@ -323,6 +335,16 @@ impl InferenceContext {
     /// Takes all collected type narrowings (consumes them)
     pub fn take_type_narrowings(&mut self) -> Vec<TypeNarrowing> {
         std::mem::take(&mut self.type_narrowings)
+    }
+
+    /// Adds a cross-arm narrowing from a match expression
+    pub fn add_cross_arm_narrowing(&mut self, narrowing: CrossArmNarrowing) {
+        self.cross_arm_narrowings.push(narrowing);
+    }
+
+    /// Takes all cross-arm narrowings (consumes them)
+    pub fn take_cross_arm_narrowings(&mut self) -> Vec<CrossArmNarrowing> {
+        std::mem::take(&mut self.cross_arm_narrowings)
     }
 
     /// Reports a type mismatch error between two types.
