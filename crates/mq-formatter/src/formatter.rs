@@ -531,11 +531,16 @@ impl Formatter {
         // Check for 'do' keyword or colon
         let do_index = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::Do));
         let colon_index = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::Colon));
-        let uses_do_syntax = do_index.is_some();
+        // uses_do_syntax is true only when 'do' appears before ':' (or when there's no ':')
+        let uses_do_syntax = do_index.is_some_and(|di| colon_index.is_none_or(|ci| di < ci));
 
         // If there's no colon or do, split before the right parenthesis
-        let expr_index = if let Some(index) = do_index.or(colon_index) {
-            index
+        let expr_index = if uses_do_syntax {
+            do_index.unwrap()
+        } else if let Some(ci) = colon_index {
+            ci
+        } else if let Some(di) = do_index {
+            di
         } else {
             Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::RParen))
                 .map(|index| index + 1)
@@ -1050,8 +1055,9 @@ impl Formatter {
         // Check for 'do' keyword or colon
         let do_pos = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::Do));
         let colon_pos = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::Colon));
-        let uses_do_syntax = do_pos.is_some();
-        let separator_pos = do_pos.or(colon_pos).unwrap_or(0);
+        // uses_do_syntax is true only when 'do' appears before ':' (or when there's no ':')
+        let uses_do_syntax = do_pos.is_some_and(|di| colon_pos.is_none_or(|ci| di < ci));
+        let separator_pos = if uses_do_syntax { do_pos } else { colon_pos }.unwrap_or(0);
 
         // Format arguments (lparen, value, rparen)
         for child in node.children.iter().take(separator_pos) {
@@ -2853,6 +2859,43 @@ end
     #[case::as_binding_basic("42 as x | x", "42 as x | x")]
     #[case::as_binding_spaces("42  as  x  |  x", "42 as x | x")]
     #[case::as_binding_selector(".text as title | title", ".text as title | title")]
+    #[case::def_with_do_block_body(
+        r#"def test(x):
+  do
+    step1(x)
+    | step2(x)
+  end;"#,
+        r#"def test(x):
+  do
+    step1(x)
+    | step2(x)
+  end;
+"#
+    )]
+    #[case::foreach_colon_with_do_block_body(
+        r#"foreach(x, items):
+  do
+    process(x)
+  end;"#,
+        r#"foreach (x, items):
+  do
+    process(x)
+  end;
+"#
+    )]
+    #[case::foreach_do_with_nested_do_block(
+        r#"foreach(row, arr) do
+  do
+    process(row)
+  end
+end"#,
+        r#"foreach (row, arr) do
+  do
+    process(row)
+  end
+end
+"#
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
