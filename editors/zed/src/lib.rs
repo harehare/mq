@@ -1,6 +1,6 @@
 use zed_extension_api::{
-    self as zed, Result, SlashCommand, SlashCommandArgumentCompletion, SlashCommandOutput,
-    SlashCommandOutputSection, Worktree, process::Command, settings::LspSettings,
+    self as zed, Result, SlashCommand, SlashCommandArgumentCompletion, SlashCommandOutput, SlashCommandOutputSection,
+    Worktree, process::Command, settings::LspSettings,
 };
 
 struct MqExtension {
@@ -78,18 +78,12 @@ impl MqExtension {
                 &zed::LanguageServerInstallationStatus::Downloading,
             );
 
-            std::fs::create_dir_all(&version_dir)
-                .map_err(|e| format!("failed to create directory: {e}"))?;
+            std::fs::create_dir_all(&version_dir).map_err(|e| format!("failed to create directory: {e}"))?;
 
-            zed::download_file(
-                &asset.download_url,
-                &binary_path,
-                zed::DownloadedFileType::Uncompressed,
-            )
-            .map_err(|e| format!("failed to download file: {e}"))?;
+            zed::download_file(&asset.download_url, &binary_path, zed::DownloadedFileType::Uncompressed)
+                .map_err(|e| format!("failed to download file: {e}"))?;
 
-            let entries = std::fs::read_dir(".")
-                .map_err(|e| format!("failed to list working directory {e}"))?;
+            let entries = std::fs::read_dir(".").map_err(|e| format!("failed to list working directory {e}"))?;
             for entry in entries.flatten() {
                 if entry.file_name().to_str() != Some(&version_dir) {
                     let path = entry.path();
@@ -127,11 +121,7 @@ impl MqExtension {
 
         let mut args = vec!["--enable-type-checking".to_string()];
 
-        if init_opts
-            .get("strictArray")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
+        if init_opts.get("strictArray").and_then(|v| v.as_bool()).unwrap_or(false) {
             args.push("--strict-array".to_string());
         }
 
@@ -258,10 +248,7 @@ fn complete_md_files(prefix: &str) -> Vec<SlashCommandArgumentCompletion> {
             }
 
             let is_dir = path.is_dir();
-            let is_md = path
-                .extension()
-                .map(|e| e == "md" || e == "mdx")
-                .unwrap_or(false);
+            let is_md = path.extension().map(|e| e == "md" || e == "mdx").unwrap_or(false);
 
             if !is_dir && !is_md {
                 return None;
@@ -354,9 +341,7 @@ impl zed::Extension for MqExtension {
 
             "mq-code" => run_mq(".code", &args, worktree, "mq: code blocks"),
 
-            "mq-todo" => {
-                run_mq(".list | select(.checked == false)", &args, worktree, "mq: todos")
-            }
+            "mq-todo" => run_mq(".list | select(.checked == false)", &args, worktree, "mq: todos"),
 
             "mq-changelog" => run_mq(".h2 | first", &args, worktree, "mq: changelog"),
 
