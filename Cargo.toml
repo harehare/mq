@@ -16,6 +16,7 @@ members = [
   "crates/mq-crawler",
   "crates/mq-check",
   "crates/mq-test",
+  "editors/zed",
 ]
 resolver = "3"
 

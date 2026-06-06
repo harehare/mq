@@ -1,0 +1,43 @@
+id = "mq"
+name = "mq"
+description = "mq language support - jq-like tool for Markdown processing"
+version = "0.2.0"
+schema_version = 1
+authors = [
+  "Takahiro Sato <harehare1110@gmail.com>",
+]
+repository = "https://github.com/harehare/zed-mq"
+
+[grammars.mq]
+repository = "https://github.com/harehare/tree-sitter-mq"
+rev = "4c8382defb08158c8d8a90a5b0b43d7e6e12b27d"
+
+[language_servers.mq-lsp]
+name = "mq-lsp"
+languages = ["mq"]
+
+[slash_commands.mq-outline]
+description = "Extract heading structure from Markdown files. Usage: /mq-outline [file]"
+requires_argument = false
+tooltip_text = "Extract headings"
+
+[slash_commands.mq-code]
+description = "Extract all code blocks from Markdown files. Usage: /mq-code [file]"
+requires_argument = false
+tooltip_text = "Extract code blocks"
+
+[slash_commands.mq-todo]
+description = "Extract unchecked tasks from Markdown files. Usage: /mq-todo [file]"
+requires_argument = false
+tooltip_text = "Extract todos"
+
+[slash_commands.mq-changelog]
+description = "Extract the latest section from a changelog. Usage: /mq-changelog [file]"
+requires_argument = false
+tooltip_text = "Extract latest changelog"
+
+[slash_commands.mq]
+description = "Run an mq query on Markdown files. Usage: /mq <query> [file]"
+requires_argument = true
+tooltip_text = "Run mq query"
+
