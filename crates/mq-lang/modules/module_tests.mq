@@ -5,6 +5,7 @@ import "csv"
 | import "xml"
 | import "fuzzy"
 | import "section"
+| import "semver"
 | import "table"
 | import "toon"
 | include "test"
@@ -444,5 +445,192 @@ def test_table_sort_rows():
 
   | let md_result = table::sort_rows(t)
   | assert_eq(to_string(md_result[:rows][0][0]), "Alice")
+end
+
+# -- SemVer Tests --
+
+def test_semver_parse_basic():
+  let v = semver::semver_parse("1.2.3")
+  | assert_eq(v["major"], 1)
+  | assert_eq(v["minor"], 2)
+  | assert_eq(v["patch"], 3)
+  | assert_eq(v["pre"], "")
+  | assert_eq(v["build"], "")
+end
+
+def test_semver_parse_with_prerelease():
+  let v = semver::semver_parse("1.0.0-alpha.1")
+  | assert_eq(v["major"], 1)
+  | assert_eq(v["minor"], 0)
+  | assert_eq(v["patch"], 0)
+  | assert_eq(v["pre"], "alpha.1")
+  | assert_eq(v["build"], "")
+end
+
+def test_semver_parse_with_build():
+  let v = semver::semver_parse("1.0.0+build.123")
+  | assert_eq(v["major"], 1)
+  | assert_eq(v["pre"], "")
+  | assert_eq(v["build"], "build.123")
+end
+
+def test_semver_parse_with_pre_and_build():
+  let v = semver::semver_parse("1.0.0-beta.2+exp.sha.5114f85")
+  | assert_eq(v["pre"], "beta.2")
+  | assert_eq(v["build"], "exp.sha.5114f85")
+end
+
+def test_semver_to_string_basic():
+  let v = semver::semver_parse("1.2.3")
+  | assert_eq(semver::semver_to_string(v), "1.2.3")
+end
+
+def test_semver_to_string_with_pre():
+  let v = semver::semver_parse("2.0.0-rc.1")
+  | assert_eq(semver::semver_to_string(v), "2.0.0-rc.1")
+end
+
+def test_semver_to_string_with_build():
+  let v = semver::semver_parse("1.0.0+sha.abc123")
+  | assert_eq(semver::semver_to_string(v), "1.0.0+sha.abc123")
+end
+
+def test_semver_compare_equal():
+  let a = semver::semver_parse("1.2.3")
+  | let b = semver::semver_parse("1.2.3")
+  | assert_eq(semver::semver_compare(a, b), 0)
+end
+
+def test_semver_compare_major():
+  let a = semver::semver_parse("2.0.0")
+  | let b = semver::semver_parse("1.9.9")
+  | assert_eq(semver::semver_compare(a, b), 1)
+  | assert_eq(semver::semver_compare(b, a), -1)
+end
+
+def test_semver_compare_minor():
+  let a = semver::semver_parse("1.3.0")
+  | let b = semver::semver_parse("1.2.9")
+  | assert_eq(semver::semver_compare(a, b), 1)
+end
+
+def test_semver_compare_patch():
+  let a = semver::semver_parse("1.2.4")
+  | let b = semver::semver_parse("1.2.3")
+  | assert_eq(semver::semver_compare(a, b), 1)
+end
+
+def test_semver_compare_pre_vs_release():
+  let release = semver::semver_parse("1.0.0")
+  | let pre = semver::semver_parse("1.0.0-alpha")
+  | assert_true(semver::semver_gt(release, pre))
+end
+
+def test_semver_compare_pre_numeric():
+  let a = semver::semver_parse("1.0.0-alpha.2")
+  | let b = semver::semver_parse("1.0.0-alpha.1")
+  | assert_true(semver::semver_gt(a, b))
+end
+
+def test_semver_compare_pre_string():
+  let a = semver::semver_parse("1.0.0-beta")
+  | let b = semver::semver_parse("1.0.0-alpha")
+  | assert_true(semver::semver_gt(a, b))
+end
+
+def test_semver_compare_build_ignored():
+  let a = semver::semver_parse("1.0.0+build.1")
+  | let b = semver::semver_parse("1.0.0+build.2")
+  | assert_eq(semver::semver_compare(a, b), 0)
+end
+
+def test_semver_gt():
+  let a = semver::semver_parse("2.0.0")
+  | let b = semver::semver_parse("1.0.0")
+  | assert_true(semver::semver_gt(a, b))
+  | assert_false(semver::semver_gt(b, a))
+end
+
+def test_semver_lt():
+  let a = semver::semver_parse("1.0.0")
+  | let b = semver::semver_parse("2.0.0")
+  | assert_true(semver::semver_lt(a, b))
+  | assert_false(semver::semver_lt(b, a))
+end
+
+def test_semver_eq():
+  let a = semver::semver_parse("1.2.3")
+  | let b = semver::semver_parse("1.2.3")
+  | assert_true(semver::semver_eq(a, b))
+end
+
+def test_semver_gte():
+  let a = semver::semver_parse("1.2.3")
+  | let b = semver::semver_parse("1.2.3")
+  | assert_true(semver::semver_gte(a, b))
+  | let c = semver::semver_parse("1.2.4")
+  | assert_true(semver::semver_gte(c, a))
+end
+
+def test_semver_lte():
+  let a = semver::semver_parse("1.2.3")
+  | let b = semver::semver_parse("1.2.3")
+  | assert_true(semver::semver_lte(a, b))
+  | let c = semver::semver_parse("1.2.2")
+  | assert_true(semver::semver_lte(c, a))
+end
+
+def test_semver_bump_major():
+  let v = semver::semver_parse("1.2.3")
+  | let bumped = semver::semver_bump_major(v)
+  | assert_eq(bumped["major"], 2)
+  | assert_eq(bumped["minor"], 0)
+  | assert_eq(bumped["patch"], 0)
+  | assert_eq(bumped["pre"], "")
+end
+
+def test_semver_bump_minor():
+  let v = semver::semver_parse("1.2.3")
+  | let bumped = semver::semver_bump_minor(v)
+  | assert_eq(bumped["major"], 1)
+  | assert_eq(bumped["minor"], 3)
+  | assert_eq(bumped["patch"], 0)
+  | assert_eq(bumped["pre"], "")
+end
+
+def test_semver_bump_patch():
+  let v = semver::semver_parse("1.2.3")
+  | let bumped = semver::semver_bump_patch(v)
+  | assert_eq(bumped["major"], 1)
+  | assert_eq(bumped["minor"], 2)
+  | assert_eq(bumped["patch"], 4)
+  | assert_eq(bumped["pre"], "")
+end
+
+def test_semver_bump_clears_pre():
+  let v = semver::semver_parse("1.2.3-alpha")
+  | let bumped = semver::semver_bump_patch(v)
+  | assert_eq(bumped["pre"], "")
+end
+
+def test_semver_sort():
+  let versions = map(["1.0.0", "2.0.0", "1.5.0", "1.0.1"], semver::semver_parse)
+  | let sorted = semver::semver_sort(versions)
+  | assert_eq(semver::semver_to_string(sorted[0]), "1.0.0")
+  | assert_eq(semver::semver_to_string(sorted[1]), "1.0.1")
+  | assert_eq(semver::semver_to_string(sorted[2]), "1.5.0")
+  | assert_eq(semver::semver_to_string(sorted[3]), "2.0.0")
+end
+
+def test_semver_max():
+  let versions = map(["1.0.0", "3.0.0", "2.0.0"], semver::semver_parse)
+  | let max = semver::semver_max(versions)
+  | assert_eq(semver::semver_to_string(max), "3.0.0")
+end
+
+def test_semver_min():
+  let versions = map(["1.0.0", "3.0.0", "2.0.0"], semver::semver_parse)
+  | let min = semver::semver_min(versions)
+  | assert_eq(semver::semver_to_string(min), "1.0.0")
 end
 
