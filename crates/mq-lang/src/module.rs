@@ -78,6 +78,7 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     std_module!(hcl);
     std_module!(json);
     std_module!(section);
+    std_module!(semver);
     std_module!(test);
     std_module!(table);
     std_module!(toml);
