@@ -155,7 +155,14 @@ fn error_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
 fn print_impl(_: &Ident, current_value: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
         [a] => {
-            println!("{}", a);
+            #[cfg(target_arch = "wasm32")]
+            {
+                web_sys::console::log_1(&a.to_string().into());
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                println!("{}", a);
+            }
             Ok(current_value.clone())
         }
         _ => unreachable!("print should always receive exactly one argument"),
@@ -166,7 +173,15 @@ fn print_impl(_: &Ident, current_value: &RuntimeValue, args: Args, _: &SharedEnv
 fn stderr_impl(_: &Ident, current_value: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
         [a] => {
-            eprintln!("{}", a);
+            #[cfg(target_arch = "wasm32")]
+            {
+                web_sys::console::error_1(&a.to_string().into());
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                eprintln!("{}", a);
+            }
+
             Ok(current_value.clone())
         }
         _ => unreachable!("stderr should always receive exactly one argument"),
