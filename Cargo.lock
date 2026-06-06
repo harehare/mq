@@ -2600,6 +2600,7 @@ dependencies = [
  "toml 1.1.2+spec-1.1.0",
  "toon-format",
  "url",
+ "web-sys",
  "yaml-rust2",
 ]
 
