@@ -4,7 +4,6 @@ pub mod infinite_loop;
 pub mod missing_else_in_expr;
 pub mod shadow_variable;
 pub mod unreachable_code;
-pub mod unused_catch_binding;
 pub mod unused_function;
 pub mod unused_import;
 pub mod unused_variable;
@@ -22,6 +21,5 @@ pub fn all() -> Vec<Box<dyn LintRule>> {
         Box::new(shadow_variable::ShadowVariable),
         Box::new(missing_else_in_expr::MissingElseInExpr),
         Box::new(always_true_condition::AlwaysTrueCondition),
-        Box::new(unused_catch_binding::UnusedCatchBinding),
     ]
 }

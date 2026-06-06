@@ -1,10 +1,37 @@
 [package]
-name = "mq-lint"
-version = "0.1.0"
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+categories = ["command-line-utilities", "text-processing"]
+description = "Static analysis linter for mq"
 edition = "2024"
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query", "lint"]
+license = "MIT"
+name = "mq-lint"
+readme = "README.md"
+repository = "https://github.com/harehare/mq"
+version = "0.6.3"
+
+[features]
+cli = ["dep:clap", "dep:colored"]
+
+[[bin]]
+name = "mq-lint"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[package.metadata.binstall]
+pkg-fmt = "bin"
+pkg-url = "{ repo }/releases/download/v{ version }/{ bin }-{ target }{ binary-ext }"
+disabled-strategies = ["quick-install"]
 
 [dependencies]
+clap = {workspace = true, features = ["derive"], optional = true}
+colored = {workspace = true, optional = true}
+miette = {workspace = true}
 mq-hir = {workspace = true}
 mq-lang = {workspace = true}
-miette = {workspace = true}
+rustc-hash = {workspace = true}
 thiserror = {workspace = true}
+
+[dev-dependencies]
+rstest = {workspace = true}

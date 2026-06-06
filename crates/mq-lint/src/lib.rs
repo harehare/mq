@@ -14,7 +14,7 @@
 //!
 //! let config = LintConfig::default();
 //! let ctx = LintContext::new(&hir, source_id, &config);
-//! let linter = Linter::default();
+//! let linter = Linter::with_default_rules();
 //! let diagnostics = linter.run(&ctx);
 //! ```
 
@@ -94,6 +94,19 @@ pub struct LintContext<'a> {
 impl<'a> LintContext<'a> {
     pub fn new(hir: &'a Hir, source_id: SourceId, config: &'a LintConfig) -> Self {
         Self { hir, source_id, config }
+    }
+
+    /// Returns all symbols that belong to this source, including those added
+    /// via `insert_symbol` (e.g. Variable, Selector, Ref, Keyword).
+    ///
+    /// This is broader than `hir.symbols_for_source()`, which only returns
+    /// symbols registered with `add_symbol` (structured constructs like
+    /// Function, Match, Block, etc.).
+    pub fn all_symbols(&self) -> impl Iterator<Item = (mq_hir::SymbolId, &mq_hir::Symbol)> + '_ {
+        let source_id = self.source_id;
+        self.hir
+            .symbols()
+            .filter(move |(_, s)| s.source.source_id == Some(source_id))
     }
 }
 

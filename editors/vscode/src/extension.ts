@@ -605,6 +605,8 @@ const startLspServer = async (providedLspPath?: string) => {
 
   const enableTypeCheck = config.get<boolean>("typeCheck.enableTypeCheck");
   const strictArray = config.get<boolean>("typeCheck.strictArray");
+  const enableLint = config.get<boolean>("lint.enableLint");
+  const disabledLintRules = config.get<string[]>("lint.disabledRules") ?? [];
   const workspaceFolders = vscode.workspace.workspaceFolders;
   const workspacePaths =
     workspaceFolders && workspaceFolders.length > 0
@@ -612,6 +614,12 @@ const startLspServer = async (providedLspPath?: string) => {
       : [process.cwd()];
 
   const multiWorkspaceArgs = workspacePaths.flatMap((path) => ["-M", path]);
+  const lintArgs = enableLint
+    ? [
+        "--enable-lint",
+        ...disabledLintRules.flatMap((ruleId) => ["--disable-lint-rule", ruleId]),
+      ]
+    : [];
 
   const run: lc.Executable = {
     command: lspPath,
@@ -621,6 +629,7 @@ const startLspServer = async (providedLspPath?: string) => {
         enableTypeCheck ? "--enable-type-checking" : "",
         enableTypeCheck && strictArray ? "--strict-array" : "",
       ].filter((v) => v !== ""),
+      ...lintArgs,
     ],
     options: {},
   };

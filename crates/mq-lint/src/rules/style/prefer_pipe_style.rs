@@ -1,3 +1,5 @@
+use mq_hir::SymbolKind;
+
 use crate::{Diagnostic, LintContext, LintRule, Severity};
 
 pub struct PreferPipeStyle;
@@ -11,7 +13,75 @@ impl LintRule for PreferPipeStyle {
         Severity::Style
     }
 
-    fn check(&self, _ctx: &LintContext<'_>) -> Vec<Diagnostic> {
-        Vec::new()
+    fn check(&self, ctx: &LintContext<'_>) -> Vec<Diagnostic> {
+        // `f(g(x))` can always be rewritten as the pipe `x | g() | f()`.
+        ctx.all_symbols()
+            .filter(|(_, sym)| matches!(sym.kind, SymbolKind::Call | SymbolKind::CallDynamic))
+            .filter_map(|(outer_id, outer_sym)| {
+                let mut args = ctx.all_symbols().filter(|(_, s)| s.parent == Some(outer_id));
+                let (_, arg) = args.next()?;
+                if args.next().is_some() {
+                    return None;
+                }
+                if !matches!(arg.kind, SymbolKind::Call | SymbolKind::CallDynamic) {
+                    return None;
+                }
+
+                let outer_name = outer_sym.value.as_deref().unwrap_or("<call>");
+                let inner_name = arg.value.as_deref().unwrap_or("<call>");
+
+                let mut d = Diagnostic::new(
+                    self.id(),
+                    self.severity(),
+                    format!("nested call `{outer_name}({inner_name}(...))` reads better as a pipe"),
+                );
+                if let Some(range) = outer_sym.source.text_range {
+                    d = d.with_range(range);
+                }
+                Some(d.with_help(format!("rewrite as `... | {inner_name}() | {outer_name}()`")))
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use mq_hir::Hir;
+
+    use super::*;
+    use crate::{LintConfig, LintContext};
+
+    fn check(code: &str) -> Vec<Diagnostic> {
+        let mut hir = Hir::default();
+        let (source_id, _) = hir.add_code(None, code);
+        let config = LintConfig::default();
+        let ctx = LintContext::new(&hir, source_id, &config);
+        PreferPipeStyle.check(&ctx)
+    }
+
+    #[test]
+    fn detects_nested_unary_calls() {
+        let diags = check("to_text(to_upper(x))");
+        assert_eq!(diags.len(), 1);
+        assert!(diags[0].message.contains("to_text"));
+        assert!(diags[0].message.contains("to_upper"));
+    }
+
+    #[test]
+    fn no_diagnostic_for_multi_arg_outer_call() {
+        let diags = check("add(foo(x), y)");
+        assert_eq!(diags.len(), 0);
+    }
+
+    #[test]
+    fn no_diagnostic_for_non_call_argument() {
+        let diags = check("to_text(x)");
+        assert_eq!(diags.len(), 0);
+    }
+
+    #[test]
+    fn no_diagnostic_for_already_piped_style() {
+        let diags = check("x | to_upper() | to_text()");
+        assert_eq!(diags.len(), 0);
     }
 }

@@ -30,6 +30,9 @@ struct Cli {
 
     #[clap(flatten)]
     type_check: TypeCheckArgs,
+
+    #[clap(flatten)]
+    lint: LintArgs,
 }
 
 #[derive(Clone, Debug, clap::Args, Default)]
@@ -47,6 +50,17 @@ struct TypeCheckArgs {
     tuple: bool,
 }
 
+#[derive(Clone, Debug, clap::Args, Default)]
+struct LintArgs {
+    /// Enable mq-lint diagnostics (style, correctness, complexity, selector, module rules)
+    #[arg(short = 'L', long, default_value_t = false)]
+    enable_lint: bool,
+
+    /// Disable a specific lint rule by ID (repeatable)
+    #[arg(long = "disable-lint-rule", value_name = "RULE_ID")]
+    disable_lint_rule: Vec<String>,
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -55,10 +69,17 @@ async fn main() {
         ..Default::default()
     };
 
+    let mut lint_config = mq_lint::LintConfig::default();
+    for rule_id in &cli.lint.disable_lint_rule {
+        lint_config.disable_rule(rule_id.clone());
+    }
+
     let config = LspConfig::new(
         cli.module_paths.unwrap_or_default(),
         cli.type_check.enable_type_checking,
         type_check_config,
+        cli.lint.enable_lint,
+        lint_config,
     );
     server::start(config).await;
 }

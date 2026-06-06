@@ -31,6 +31,7 @@ The following external tools are available to extend mq's functionality:
 - [mq-docs](https://github.com/harehare/mq-docs) - A documentation generator for mq functions, macros, and selectors.
 - [mq-fmt](https://github.com/harehare/mq/blob/main/crates/mq-formatter/README.md)- Formatter for mq query language (.mq) files.
 - [mq-http](https://github.com/harehare/mq-http) - A lightweight HTTP server that executes mq scripts for each request.
+- [mq-lint](https://github.com/harehare/mq/blob/main/crates/mq-lint/README.md) - Static analysis linter for mq files (correctness, style, complexity, selector, and module rules).
 - [mq-lsp](https://github.com/harehare/mq/tree/main/crates/mq-lsp/README.md) - Language Server Protocol (LSP) implementation for mq query files, providing IDE features like completion, hover, and diagnostics.
 - [mq-mcp](https://github.com/harehare/mq-mcp) - Model Context Protocol (MCP) server implementation for AI assistants.
 - [mq-serve](https://github.com/harehare/mq-serve) - A browser-based Markdown viewer with mq query support.

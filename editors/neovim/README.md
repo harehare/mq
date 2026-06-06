@@ -100,6 +100,12 @@ require("mq").setup({
   -- Enable strict array mode (passes --strict-array to mq-lsp, requires enable_type_check)
   strict_array = false,
 
+  -- Enable mq-lint diagnostics (passes --enable-lint to mq-lsp)
+  enable_lint = false,
+
+  -- Lint rule IDs to disable (passes --disable-lint-rule <id> to mq-lsp for each, requires enable_lint)
+  lint_disabled_rules = {},
+
   -- Enable LSP inlay hints (requires Neovim 0.10+)
   enable_inlay_hints = true,
 
@@ -127,6 +133,17 @@ Enable type checking to get real-time type errors and richer hover type informat
 require("mq").setup({
   enable_type_check = true,   -- Enable type checking
   strict_array = true,        -- Arrays must contain elements of a single type
+})
+```
+
+### Linting
+
+Enable `mq-lint` diagnostics (correctness, style, complexity, selector, and module rules):
+
+```lua
+require("mq").setup({
+  enable_lint = true,
+  lint_disabled_rules = { "naming_convention", "shadow_variable" },
 })
 ```
 

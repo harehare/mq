@@ -509,6 +509,19 @@ impl Backend {
                         None
                     }
                 }));
+
+                // `unused_function` is skipped: already covered by the warning above.
+                if self.config.enable_lint {
+                    let lint_ctx = mq_lint::LintContext::new(&hir_guard, *source_id, &self.config.lint_config);
+                    let linter = mq_lint::Linter::with_default_rules();
+                    diagnostics.extend(
+                        linter
+                            .run(&lint_ctx)
+                            .into_iter()
+                            .filter(|d| d.rule_id != "unused_function")
+                            .map(|d| (&LspError::LintWarning(d)).into()),
+                    );
+                }
             }
         } // Guards are dropped here, before the await
 
@@ -523,6 +536,8 @@ pub struct LspConfig {
     module_paths: Vec<PathBuf>,
     enable_type_checking: bool,
     type_checker_options: mq_check::TypeCheckerOptions,
+    enable_lint: bool,
+    lint_config: mq_lint::LintConfig,
 }
 
 impl LspConfig {
@@ -534,15 +549,21 @@ impl LspConfig {
     ///   to the LSP server. These paths are used to initialize the language server's environment,
     ///   allowing it to provide features such as code completion, diagnostics, and navigation
     ///   based on the specified modules.
+    /// * `enable_lint` - Whether to also publish `mq-lint` diagnostics.
+    /// * `lint_config` - Per-rule lint configuration, used when `enable_lint` is `true`.
     pub fn new(
         module_paths: Vec<PathBuf>,
         enable_type_checking: bool,
         type_checker_options: mq_check::TypeCheckerOptions,
+        enable_lint: bool,
+        lint_config: mq_lint::LintConfig,
     ) -> Self {
         Self {
             module_paths,
             enable_type_checking,
             type_checker_options,
+            enable_lint,
+            lint_config,
         }
     }
 }
@@ -1476,6 +1497,92 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_lint_diagnostics_enabled() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::new(
+                vec![],
+                false,
+                mq_check::TypeCheckerOptions::default(),
+                true,
+                mq_lint::LintConfig::default(),
+            ),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        // `x` is declared but never used.
+        let code = "let x = .h1 | .text";
+        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+
+        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.error_map.insert(
+            uri.to_string(),
+            errors
+                .error_ranges(code)
+                .into_iter()
+                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .collect(),
+        );
+
+        {
+            let hir_guard = backend.hir.read().unwrap();
+            let lint_ctx = mq_lint::LintContext::new(&hir_guard, source_id, &backend.config.lint_config);
+            let diagnostics = mq_lint::Linter::with_default_rules().run(&lint_ctx);
+            assert!(
+                diagnostics.iter().any(|d| d.rule_id == "unused_variable"),
+                "expected an unused_variable lint diagnostic"
+            );
+        }
+
+        // Should complete without panic.
+        backend.diagnostics(uri, None).await;
+    }
+
+    #[tokio::test]
+    async fn test_lint_diagnostics_disabled_by_default() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        assert!(!backend.config.enable_lint);
+
+        let uri = Url::parse("file:///test.mq").unwrap();
+        let code = "let x = .h1 | .text";
+        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+
+        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.error_map.insert(
+            uri.to_string(),
+            errors
+                .error_ranges(code)
+                .into_iter()
+                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .collect(),
+        );
+
+        // Should complete without panic.
+        backend.diagnostics(uri, None).await;
+    }
+
+    #[tokio::test]
     async fn test_formatting_with_errors() {
         let (service, _) = LspService::new(|client| Backend {
             client,
@@ -1697,6 +1804,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_lsp_config_new() {
+        let mut lint_config = mq_lint::LintConfig::default();
+        lint_config.disable_rule("naming_convention");
         let config = LspConfig::new(
             vec![],
             true,
@@ -1704,9 +1813,13 @@ mod tests {
                 strict_array: true,
                 ..Default::default()
             },
+            true,
+            lint_config,
         );
         assert!(config.enable_type_checking);
         assert!(config.type_checker_options.strict_array);
+        assert!(config.enable_lint);
+        assert!(!config.lint_config.is_rule_enabled("naming_convention"));
     }
 
     #[tokio::test]
@@ -1714,6 +1827,7 @@ mod tests {
         let config = LspConfig::default();
         assert!(!config.enable_type_checking);
         assert!(!config.type_checker_options.strict_array);
+        assert!(!config.enable_lint);
     }
 
     #[tokio::test]
@@ -1725,7 +1839,13 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
-            config: LspConfig::new(vec![], false, mq_check::TypeCheckerOptions::default()),
+            config: LspConfig::new(
+                vec![],
+                false,
+                mq_check::TypeCheckerOptions::default(),
+                false,
+                mq_lint::LintConfig::default(),
+            ),
         });
 
         let backend = service.inner();
@@ -1761,7 +1881,13 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
-            config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions::default()),
+            config: LspConfig::new(
+                vec![],
+                true,
+                mq_check::TypeCheckerOptions::default(),
+                false,
+                mq_lint::LintConfig::default(),
+            ),
         });
 
         let backend = service.inner();
@@ -1798,7 +1924,13 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
-            config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions::default()),
+            config: LspConfig::new(
+                vec![],
+                true,
+                mq_check::TypeCheckerOptions::default(),
+                false,
+                mq_lint::LintConfig::default(),
+            ),
         });
 
         let backend = service.inner();
@@ -1835,7 +1967,13 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
-            config: LspConfig::new(vec![], true, mq_check::TypeCheckerOptions::default()),
+            config: LspConfig::new(
+                vec![],
+                true,
+                mq_check::TypeCheckerOptions::default(),
+                false,
+                mq_lint::LintConfig::default(),
+            ),
         });
 
         let backend = service.inner();
@@ -1878,6 +2016,8 @@ mod tests {
                     strict_array: true,
                     ..Default::default()
                 },
+                false,
+                mq_lint::LintConfig::default(),
             ),
         });
 
@@ -1921,6 +2061,8 @@ mod tests {
                     strict_array: false,
                     ..Default::default()
                 },
+                false,
+                mq_lint::LintConfig::default(),
             ),
         });
 

@@ -5,6 +5,7 @@ Language Server Protocol (LSP) implementation for the [mq](https://mqlang.org/) 
 ## Features
 
 - 🔍 **Diagnostics**: Real-time syntax and semantic error reporting
+- 🧹 **Linting**: Optional `mq-lint` diagnostics (correctness, style, complexity, selector, and module rules), toggled with `--enable-lint`
 - 💡 **Code Completion**: Intelligent suggestions for selectors, functions, and variables
 - 📖 **Hover Information**: Inline documentation and type information
 - 🎯 **Go To Definition**: Navigate to symbol definitions with a single click
@@ -51,6 +52,16 @@ The LSP server communicates via stdin/stdout following the LSP protocol:
 ```bash
 mq-lsp
 ```
+
+### CLI Options
+
+| Option                          | Description                                                |
+| -------------------------------- | ------------------------------------------------------------ |
+| `-M, --module-path <DIR>`        | Search modules from the directory (repeatable)              |
+| `-T, --enable-type-checking`     | Enable type checking for mq queries                         |
+| `--strict-array`                 | Reject heterogeneous arrays (requires `--enable-type-checking`) |
+| `-L, --enable-lint`              | Enable `mq-lint` diagnostics                                 |
+| `--disable-lint-rule <RULE_ID>`  | Disable a specific lint rule by ID (repeatable, requires `--enable-lint`) |
 
 ## Development
 

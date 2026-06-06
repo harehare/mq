@@ -20,6 +20,7 @@ mq-check = {workspace = true}
 mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
 mq-lang = {workspace = true, features = ["ast-json", "sync", "file-io"]}
+mq-lint = {workspace = true}
 mq-markdown = {workspace = true}
 serde_json = {workspace = true}
 smol_str = {workspace = true}

@@ -39,8 +39,19 @@ function M.start()
     end
   end
 
+  -- Build lint args from config
+  local lint_args = {}
+  if config.get("enable_lint") then
+    table.insert(lint_args, "--enable-lint")
+    for _, rule_id in ipairs(config.get("lint_disabled_rules")) do
+      table.insert(lint_args, "--disable-lint-rule")
+      table.insert(lint_args, rule_id)
+    end
+  end
+
   local args = vim.list_extend(vim.deepcopy(config.get("lsp_args")), multi_workspace_args)
   vim.list_extend(args, type_check_args)
+  vim.list_extend(args, lint_args)
 
   local lsp_config = config.get("lsp")
 

@@ -52,10 +52,7 @@ pub struct LintConfig {
 impl LintConfig {
     /// Returns `true` if the given rule should run.
     pub fn is_rule_enabled(&self, rule_id: &str) -> bool {
-        self.rules
-            .get(rule_id)
-            .map(|r| r.enabled)
-            .unwrap_or(true)
+        self.rules.get(rule_id).map(|r| r.enabled).unwrap_or(true)
     }
 
     /// Disable a specific rule by ID.

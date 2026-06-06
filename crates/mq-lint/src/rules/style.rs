@@ -6,14 +6,12 @@ pub mod prefer_pipe_style;
 pub mod prefer_specific_heading;
 pub mod redundant_boolean_literal;
 pub mod redundant_try;
-pub mod unnecessary_parens;
 
 use crate::LintRule;
 
 pub fn all() -> Vec<Box<dyn LintRule>> {
     vec![
         Box::new(prefer_let_over_var::PreferLetOverVar),
-        Box::new(unnecessary_parens::UnnecessaryParens),
         Box::new(prefer_pipe_style::PreferPipeStyle),
         Box::new(prefer_coalesce::PreferCoalesce),
         Box::new(prefer_specific_heading::PreferSpecificHeading),
