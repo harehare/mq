@@ -65,6 +65,12 @@ pub enum Type {
     /// For example, `Union(Array(String), Array(Number))` minus `is_array` predicate
     /// leaves no viable types, producing `Never` for the else-branch.
     Never,
+    /// Dynamic type — intentionally unknown at compile time (gradual typing).
+    ///
+    /// Unlike `Var`, `Dynamic` never participates in unification and is always
+    /// compatible with any type. Used for the implicit pipe input (`.`) and
+    /// return values of fully polymorphic builtins.
+    Dynamic,
 }
 
 impl Type {
@@ -140,6 +146,8 @@ impl Type {
     /// `Array`), returns `Type::Never` to signal an unreachable code path.
     pub fn subtract(&self, exclude: &Type) -> Type {
         match self {
+            // Dynamic stays dynamic regardless of exclusions
+            Type::Dynamic => Type::Dynamic,
             Type::Union(members) => {
                 let remaining: Vec<Type> = members
                     .iter()
@@ -170,6 +178,11 @@ impl Type {
         matches!(self, Type::Never)
     }
 
+    /// Checks if this is the dynamic (intentionally unknown) type.
+    pub fn is_dynamic(&self) -> bool {
+        matches!(self, Type::Dynamic)
+    }
+
     /// Returns a numeric discriminant for ordering purposes.
     /// Used by `Type::union` to sort union members without allocating.
     fn discriminant(&self) -> u8 {
@@ -192,6 +205,7 @@ impl Type {
             Type::RowEmpty => 15,
             Type::Var(_) => 16,
             Type::Never => 17,
+            Type::Dynamic => 18,
         }
     }
 
@@ -281,6 +295,9 @@ impl Type {
             // Never (bottom type) can match anything
             (Type::Never, _) | (_, Type::Never) => true,
 
+            // Dynamic is always compatible with any type
+            (Type::Dynamic, _) | (_, Type::Dynamic) => true,
+
             // Type variables always match
             (Type::Var(_), _) | (_, Type::Var(_)) => true,
 
@@ -361,6 +378,9 @@ impl Type {
             // Never (bottom type) can unify with anything
             (Type::Never, _) | (_, Type::Never) => true,
 
+            // Dynamic is always compatible (gradual typing)
+            (Type::Dynamic, _) | (_, Type::Dynamic) => true,
+
             // Two type variables are compatible (unification will sort them out)
             (Type::Var(_), Type::Var(_)) => true,
 
@@ -439,6 +459,9 @@ impl Type {
             | (Type::None, Type::None)
             | (Type::Markdown, Type::Markdown)
             | (Type::Bytes, Type::Bytes) => Some(100),
+
+            // Dynamic matches anything with low score (prefer concrete over dynamic)
+            (Type::Dynamic, _) | (_, Type::Dynamic) => Some(10),
 
             // Type variables get low score (prefer concrete types).
             // This arm must come BEFORE the union arms so that a Var parameter
@@ -580,6 +603,7 @@ impl Type {
                 type_var_name(*id)
             }
             Type::Never => "never".to_string(),
+            Type::Dynamic => "dynamic()".to_string(),
         }
     }
 
@@ -658,6 +682,7 @@ impl Type {
             }
             Type::RowEmpty => "{}".to_string(),
             Type::Never => "never".to_string(),
+            Type::Dynamic => "dynamic()".to_string(),
             Type::Var(id) => {
                 let index = *var_map.entry(*id).or_insert_with(|| {
                     let i = *counter;

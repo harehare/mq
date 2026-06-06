@@ -307,6 +307,16 @@ impl TypeChecker {
             });
         }
 
+        // Apply cross-arm narrowings from match expressions.
+        let dead_arms = narrowing::resolve_cross_arm_narrowings(hir, &mut ctx);
+        for (reason, range) in dead_arms {
+            ctx.add_error(TypeError::UnreachableCode {
+                reason,
+                span: range.as_ref().map(unify::range_to_span),
+                location: range,
+            });
+        }
+
         // Resolve deferred tuple index accesses now that variable types are known.
         if deferred::resolve_deferred_tuple_accesses(&mut ctx) {
             unify::solve_constraints(&mut ctx);

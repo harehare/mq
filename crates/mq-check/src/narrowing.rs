@@ -26,7 +26,7 @@
 //! - Structural selector: `if (.h): ...` → first function parameter narrowed to Markdown
 
 use crate::constraint::{ChildrenIndex, get_children, get_non_keyword_children};
-use crate::infer::{InferenceContext, NarrowingEntry};
+use crate::infer::{CrossArmNarrowing, InferenceContext, NarrowingEntry};
 use crate::types::Type;
 use crate::walk_ancestors;
 use mq_hir::{Hir, SymbolId, SymbolKind};
@@ -652,6 +652,114 @@ fn detect_dead_then_branch(
     } else {
         None
     }
+}
+
+/// Resolves cross-arm narrowings collected from match expressions.
+///
+/// For each arm body, subtracts all preceding whole-type pattern types from the matched
+/// variable's union type and applies the result to Ref symbols within that arm body.
+/// Reports dead arms where subtraction leaves `Never`.
+pub(crate) fn resolve_cross_arm_narrowings(
+    hir: &Hir,
+    ctx: &mut InferenceContext,
+) -> Vec<(String, Option<mq_lang::Range>)> {
+    let narrowings = ctx.take_cross_arm_narrowings();
+    if narrowings.is_empty() {
+        return Vec::new();
+    }
+
+    let mut tracked_branches: rustc_hash::FxHashSet<SymbolId> = rustc_hash::FxHashSet::default();
+    for n in &narrowings {
+        tracked_branches.insert(n.branch_id);
+    }
+
+    // Build def→refs and branch→descendants indices (same approach as resolve_type_narrowings).
+    let mut refs_with_selector_child: rustc_hash::FxHashSet<SymbolId> = rustc_hash::FxHashSet::default();
+    for (_, sym) in hir.symbols() {
+        if let Some(parent_id) = sym.parent
+            && matches!(sym.kind, mq_hir::SymbolKind::Selector(_))
+        {
+            refs_with_selector_child.insert(parent_id);
+        }
+    }
+
+    let mut def_to_refs: FxHashMap<SymbolId, Vec<SymbolId>> = FxHashMap::default();
+    for (ref_id, ref_sym) in hir.symbols() {
+        if !matches!(ref_sym.kind, mq_hir::SymbolKind::Ref) {
+            continue;
+        }
+        if refs_with_selector_child.contains(&ref_id) {
+            continue;
+        }
+        if let Some(def_id) = hir.resolve_reference_symbol(ref_id) {
+            def_to_refs.entry(def_id).or_default().push(ref_id);
+        }
+    }
+
+    let mut branch_descendants: FxHashMap<SymbolId, FxHashSet<SymbolId>> = FxHashMap::default();
+    for (sym_id, _) in hir.symbols() {
+        for (ancestor_id, _) in walk_ancestors(hir, sym_id) {
+            if tracked_branches.contains(&ancestor_id) {
+                branch_descendants.entry(ancestor_id).or_default().insert(sym_id);
+            }
+        }
+    }
+
+    let mut dead_branches: Vec<(String, Option<mq_lang::Range>)> = Vec::new();
+
+    for CrossArmNarrowing {
+        def_id,
+        exclude_types,
+        branch_id,
+    } in &narrowings
+    {
+        let Some(var_ty) = ctx.get_symbol_type(*def_id) else {
+            continue;
+        };
+        let var_ty = ctx.resolve_type(var_ty);
+
+        // Only meaningful for union types — non-unions have no types to subtract.
+        let members = match &var_ty {
+            Type::Union(m) => m.clone(),
+            _ => continue,
+        };
+
+        // Filter out all excluded types from the union members in a single pass.
+        let remaining_members: Vec<Type> = members
+            .iter()
+            .filter(|t| {
+                !exclude_types
+                    .iter()
+                    .any(|excl| std::mem::discriminant(*t) == std::mem::discriminant(excl))
+            })
+            .cloned()
+            .collect();
+
+        let remaining = if remaining_members.is_empty() {
+            Type::Never
+        } else {
+            Type::union(remaining_members)
+        };
+
+        if remaining.is_never() {
+            let var_name = hir
+                .symbol(*def_id)
+                .and_then(|s| s.value.as_deref())
+                .unwrap_or("the variable");
+            let range = hir.symbol(*branch_id).and_then(|s| s.source.text_range);
+            dead_branches.push((
+                format!(
+                    "match arm is unreachable: all types of `{}` are covered by preceding arms",
+                    var_name
+                ),
+                range,
+            ));
+        } else {
+            apply_narrowing_to_branch(ctx, *def_id, &remaining, *branch_id, &def_to_refs, &branch_descendants);
+        }
+    }
+
+    dead_branches
 }
 
 /// Applies a type narrowing to all Ref symbols within a branch that reference

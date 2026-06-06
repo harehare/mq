@@ -14,11 +14,13 @@ use helpers::{
     build_piped_call_args, collect_break_value_types, collect_pattern_variable_descendants, find_enclosing_function,
     find_lambda_function_child, get_post_loop_siblings, get_symbol_range, is_foreach_iterable_ref,
     is_inside_quote_block, merge_loop_types, might_receive_piped_input, resolve_builtin_call, resolve_pattern_type,
+    resolve_whole_type_pattern,
 };
 use pipe::{generate_block_constraints, generate_function_body_pipe_constraints, resolve_branch_body_type};
 
 use crate::infer::{
-    DeferredOverload, DeferredParameterCall, DeferredUserCall, InferenceContext, NarrowingEntry, TypeNarrowing,
+    CrossArmNarrowing, DeferredOverload, DeferredParameterCall, DeferredUserCall, InferenceContext, NarrowingEntry,
+    TypeNarrowing,
 };
 use crate::narrowing::analyze_condition;
 use crate::types::Type;
@@ -122,10 +124,12 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
 
     // Pass 2: Set up piped inputs for root-level symbols.
     //
-    // Root-level symbols (parent=None, not builtin/module) form an implicit pipe chain.
-    // In the same pass, propagate piped input into Variable initializer expressions so that
-    // Pass 3 can resolve calls like `items | let x = first()` without a second iteration
-    // (avoids re-scanning root_symbols and an extra `get_piped_input` lookup per Variable).
+    // Root-level symbols form an implicit pipe chain. The first symbol in the chain
+    // receives Dynamic as its piped input — the implicit stdin document whose type
+    // is intentionally unknown at compile time.
+    if !cats.root_symbols.is_empty() {
+        ctx.set_piped_input(cats.root_symbols[0], Type::Dynamic);
+    }
     for i in 1..cats.root_symbols.len() {
         let prev_ty = ctx.get_or_create_symbol_type(cats.root_symbols[i - 1]);
         ctx.set_piped_input(cats.root_symbols[i], prev_ty.clone());
@@ -1579,9 +1583,6 @@ pub(super) fn generate_symbol_constraints(
 
                 if !arm_children.is_empty() {
                     let mut arm_body_tys = Vec::new();
-                    // Collect concrete pattern types from all arms to build a union constraint
-                    // for the match expression.  We must not add one Equal per arm because that
-                    // would try to unify e.g. Array with String and produce a false type error.
                     let mut all_pattern_tys: Vec<Type> = Vec::new();
                     let mut has_wildcard_arm = false;
 
@@ -1603,8 +1604,6 @@ pub(super) fn generate_symbol_constraints(
                         }
                     }
 
-                    // Constrain the match expression to the union of all concrete pattern types,
-                    // but only when there is no wildcard arm (a wildcard arm means any type matches).
                     if !has_wildcard_arm && !all_pattern_tys.is_empty() {
                         let union_ty = Type::union(all_pattern_tys);
                         ctx.add_constraint(Constraint::Equal(
@@ -1615,31 +1614,32 @@ pub(super) fn generate_symbol_constraints(
                         ));
                     }
 
+                    // Tracks whole-type patterns from preceding arms for cross-arm narrowing.
+                    let mut accumulated_whole_types: Vec<Type> = Vec::new();
+
                     for &arm_id in &arm_children {
                         let arm_children_inner = get_children(children_index, arm_id);
 
-                        // Separate pattern and body children, tracking both IDs and types.
                         let mut body_ty = None;
                         let mut body_id = None;
                         let mut arm_pattern_ty = None;
+                        let mut arm_pattern_child_id = None;
                         for &arm_child_id in arm_children_inner {
                             if let Some(arm_child_symbol) = hir.symbol(arm_child_id) {
                                 if matches!(arm_child_symbol.kind, SymbolKind::Pattern { .. }) {
-                                    // Determine pattern type from its literal children
                                     let pattern_ty = resolve_pattern_type(hir, arm_child_id, ctx, children_index);
-                                    // Keep the pattern type if it is concrete (not a wildcard Var)
                                     if !pattern_ty.is_var() {
                                         arm_pattern_ty = Some(pattern_ty);
                                     }
+                                    arm_pattern_child_id = Some(arm_child_id);
                                 } else {
-                                    // Track the last non-Pattern child as the body
                                     body_ty = Some(ctx.get_or_create_symbol_type(arm_child_id));
                                     body_id = Some(arm_child_id);
                                 }
                             }
                         }
 
-                        // Narrow the matched variable to the concrete pattern type inside the arm body.
+                        // Narrow the matched variable to this arm's concrete pattern type.
                         if let (Some(def_id), Some(pat_ty), Some(bid)) = (match_var_def_id, arm_pattern_ty, body_id) {
                             ctx.add_type_narrowing(TypeNarrowing {
                                 then_narrowings: vec![NarrowingEntry {
@@ -1651,6 +1651,24 @@ pub(super) fn generate_symbol_constraints(
                                 then_branch_id: bid,
                                 else_branch_ids: Vec::new(),
                             });
+                        }
+
+                        // Cross-arm narrowing: subtract preceding whole-type patterns from this arm's body.
+                        if !accumulated_whole_types.is_empty()
+                            && let (Some(def_id), Some(bid)) = (match_var_def_id, body_id)
+                        {
+                            ctx.add_cross_arm_narrowing(CrossArmNarrowing {
+                                def_id,
+                                exclude_types: accumulated_whole_types.clone(),
+                                branch_id: bid,
+                            });
+                        }
+
+                        // Record this arm's whole-type pattern for subsequent arms.
+                        if let Some(pat_child_id) = arm_pattern_child_id
+                            && let Some(whole_ty) = resolve_whole_type_pattern(hir, pat_child_id, ctx, children_index)
+                        {
+                            accumulated_whole_types.push(whole_ty);
                         }
 
                         if let Some(body_ty) = body_ty {
@@ -1974,8 +1992,8 @@ pub(super) fn generate_symbol_constraints(
                     let ty_var = ctx.fresh_var();
                     ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                 }
-            } else if symbol.is_some_and(|s| s.value.as_deref() == Some("self")) {
-                // `self` refers to the piped input value
+            } else if symbol.is_some_and(|s| matches!(s.value.as_deref(), Some("self") | Some("."))) {
+                // `.` and `self` both refer to the piped input value
                 if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
                     ctx.set_symbol_type(symbol_id, piped_ty);
                 } else {

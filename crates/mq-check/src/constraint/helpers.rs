@@ -301,15 +301,33 @@ pub(super) fn resolve_builtin_call(
     }
 }
 
+/// Returns the type if the pattern matches an entire type class (safe to subtract cross-arm).
+/// None literals and type-label symbols qualify; literal patterns like "foo" or 42 return None.
+pub(super) fn resolve_whole_type_pattern(
+    hir: &Hir,
+    pattern_id: SymbolId,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) -> Option<Type> {
+    for &child_id in get_children(children_index, pattern_id) {
+        if let Some(child_sym) = hir.symbol(child_id) {
+            match child_sym.kind {
+                SymbolKind::None => return Some(Type::None),
+                SymbolKind::Symbol => {
+                    return child_sym
+                        .value
+                        .as_deref()
+                        .and_then(|n| crate::narrowing::type_name_to_type(n, ctx));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    None
+}
+
 /// Determines the type of a Pattern symbol from its literal children.
-///
-/// Pattern types:
-/// - Has a Number child → Number
-/// - Has a String child → String
-/// - Has a Boolean child → Bool
-/// - Has a Symbol child → Symbol
-/// - Has a None child → None
-/// - Otherwise → fresh type variable (wildcard or variable pattern)
 pub(super) fn resolve_pattern_type(
     hir: &Hir,
     pattern_id: SymbolId,
