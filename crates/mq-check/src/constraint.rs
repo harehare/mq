@@ -1049,49 +1049,58 @@ pub(super) fn generate_symbol_constraints(
                                             });
                                         }
                                     } else {
-                                        // Non-function variable with bracket access (e.g., v[0]).
-                                        // Always defer index access resolution to post-unification.
-                                        // This handles both Array and Tuple types correctly:
-                                        // - For Tuple (heterogeneous arrays), per-element types are preserved
-                                        // - For Array, element type is used as before
-                                        // - For unresolved vars, the fallback adds an Array structural constraint
-                                        // This avoids false positives where different elements of a heterogeneous
-                                        // array share the same type variable and get incorrectly unified.
-                                        let literal_index = children.first().and_then(|&arg_id| {
-                                            let arg_sym = hir.symbol(arg_id)?;
-                                            if matches!(arg_sym.kind, SymbolKind::Number) {
-                                                arg_sym.value.as_ref()?.parse::<usize>().ok()
-                                            } else {
-                                                None
+                                        // Non-function variable with bracket access.
+                                        // Two args → range slice v[start:end] lowered as v(start, end).
+                                        // One arg  → element access v[i] lowered as v(i).
+                                        if children.len() == 2 {
+                                            // Range slice: delegate to the "slice" builtin.
+                                            // Use original_func_ty (not func_ty) so the container's
+                                            // type variable stays unified with its definition site.
+                                            let mut slice_arg_tys = vec![original_func_ty.clone()];
+                                            slice_arg_tys.extend(explicit_arg_tys.iter().cloned());
+                                            let defer = might_receive_piped_input(hir, symbol_id)
+                                                || is_inside_quote_block(hir, symbol_id);
+                                            resolve_builtin_call(ctx, symbol_id, "slice", &slice_arg_tys, range, defer);
+                                        } else {
+                                            // Element access: defer as a tuple access so that
+                                            // Array/Tuple/Dict container types are handled correctly
+                                            // after unification.
+                                            let literal_index = children.first().and_then(|&arg_id| {
+                                                let arg_sym = hir.symbol(arg_id)?;
+                                                if matches!(arg_sym.kind, SymbolKind::Number) {
+                                                    arg_sym.value.as_ref()?.parse::<usize>().ok()
+                                                } else {
+                                                    None
+                                                }
+                                            });
+
+                                            // Only constrain the index to Number when it is a literal
+                                            // numeric index (e.g. v[0]). For variable indices
+                                            // (e.g. a String key used for Dict access), skip this
+                                            // constraint — the correct element type is resolved via
+                                            // resolve_deferred_tuple_accesses once the container's
+                                            // type is known.
+                                            if literal_index.is_some()
+                                                && let Some(index_ty) = explicit_arg_tys.first()
+                                            {
+                                                ctx.add_constraint(Constraint::Equal(
+                                                    index_ty.clone(),
+                                                    Type::Number,
+                                                    range,
+                                                    ConstraintOrigin::General,
+                                                ));
                                             }
-                                        });
 
-                                        // Only constrain the index to Number when it is a literal
-                                        // numeric index (e.g. v[0]). For variable indices
-                                        // (e.g. a String key used for Dict access), skip this
-                                        // constraint — the correct element type is resolved via
-                                        // resolve_deferred_tuple_accesses once the container's
-                                        // type is known.
-                                        if literal_index.is_some()
-                                            && let Some(index_ty) = explicit_arg_tys.first()
-                                        {
-                                            ctx.add_constraint(Constraint::Equal(
-                                                index_ty.clone(),
-                                                Type::Number,
-                                                range,
-                                                ConstraintOrigin::General,
-                                            ));
+                                            let ty_var = ctx.fresh_var();
+                                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+
+                                            ctx.add_deferred_tuple_access(infer::DeferredTupleAccess {
+                                                call_symbol_id: symbol_id,
+                                                def_id,
+                                                index: literal_index,
+                                                range: get_symbol_range(hir, symbol_id),
+                                            });
                                         }
-
-                                        let ty_var = ctx.fresh_var();
-                                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-
-                                        ctx.add_deferred_tuple_access(infer::DeferredTupleAccess {
-                                            call_symbol_id: symbol_id,
-                                            def_id,
-                                            index: literal_index,
-                                            range: get_symbol_range(hir, symbol_id),
-                                        });
                                     }
                                 }
                             }
