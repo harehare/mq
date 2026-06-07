@@ -365,7 +365,10 @@ def test_section_by_level_empty():
 end
 
 | let table_md = "| Name | Age | City |\n| --- | --- | --- |\n| Alice | 30 | Tokyo |\n| Bob | 25 | Osaka |\n"
-| let table_nodes = to_markdown(table_md) |
+| let table_nodes = to_markdown(table_md)
+| let table_md_followed_by_paragraph = "| N | A |\n| - | - |\n| x | 1 |\n| y | 2 |\n\nText.\n"
+| let table_md_followed_by_heading = "| N | A |\n| - | - |\n| x | 1 |\n| y | 2 |\n\n# H\n"
+| let table_md_followed_by_break = "| N | A |\n| - | - |\n| x | 1 |\n| y | 2 |\n\n---\n" |
 
 def test_table_tables():
   let result = table::tables(table_nodes)
@@ -379,6 +382,37 @@ end
 def test_table_tables_empty():
   let result = table::tables([])
   | assert_eq(result, [])
+end
+
+def test_table_tables_followed_by_paragraph():
+  let md_nodes = to_markdown(table_md_followed_by_paragraph)
+  | let result = table::tables(md_nodes)
+  | assert_eq(len(result), 1)
+  | let t = result[0]
+  | assert_eq(len(t[:rows]), 2)
+end
+
+def test_table_tables_followed_by_heading():
+  let md_nodes = to_markdown(table_md_followed_by_heading)
+  | let result = table::tables(md_nodes)
+  | assert_eq(len(result), 1)
+  | let t = result[0]
+  | assert_eq(len(t[:rows]), 2)
+end
+
+def test_table_tables_followed_by_break():
+  let md_nodes = to_markdown(table_md_followed_by_break)
+  | let result = table::tables(md_nodes)
+  | assert_eq(len(result), 1)
+  | let t = result[0]
+  | assert_eq(len(t[:rows]), 2)
+end
+
+def test_table_to_csv_followed_by_paragraph():
+  let md_nodes = to_markdown(table_md_followed_by_paragraph)
+  | let t = first(table::tables(md_nodes))
+  | let result = table::to_csv(t)
+  | assert_eq(result, "N,A\nx,1\ny,2")
 end
 
 def test_table_set_align():
