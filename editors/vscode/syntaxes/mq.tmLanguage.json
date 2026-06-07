@@ -15,6 +15,9 @@
             "include": "#symbols"
         },
         {
+            "include": "#strings.bytes"
+        },
+        {
             "include": "#strings"
         },
         {
@@ -46,11 +49,11 @@
             "patterns": [
                 {
                     "name": "keyword.control.mq",
-                    "match": "\\b(def|do|let|if|elif|else|end|while|foreach|self|nodes|fn|break|continue|include|match|module|import|var|macro|quote|unquote|loop)\\b"
+                    "match": "\\b(def|do|let|if|elif|else|end|while|foreach|self|nodes|fn|break|continue|include|match|module|import|var|macro|quote|unquote|loop|try|catch|as)\\b"
                 },
                 {
                     "name": "keyword.operator.mq",
-                    "match": "(=~|\\/\\/=|<=|>=|==|!=|&&|\\|\\||\\?\\?|\\+=|\\-=|\\*=|\\/=|\\|=|<<|>>|=|\\||:|;|\\?|!|\\+|\\-|\\*|\\/|%|<|>|@)"
+                    "match": "(=~|!~|\\/\\/=|::|\\.\\.|<=|>=|==|!=|&&|\\|\\||\\?\\?|\\+=|\\-=|\\*=|\\/=|%=|\\|=|<<|>>|->|=|\\||:|;|\\?|!|\\+|\\-|\\*|\\/|%|<|>|@)"
                 },
                 {
                     "name": "constant.language.boolean.mq",
@@ -109,6 +112,17 @@
                 }
             ]
         },
+        "strings.bytes": {
+            "name": "string.quoted.double.bytes.mq",
+            "begin": "b\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.mq",
+                    "match": "\\\\x[0-9a-fA-F]{2}|\\\\."
+                }
+            ]
+        },
         "strings.interpolate": {
             "name": "string.quoted.double.interpolated.mq",
             "begin": "s\"",
@@ -151,8 +165,24 @@
             ]
         },
         "numbers": {
-            "name": "constant.numeric.mq",
-            "match": "\\b[0-9]+\\b"
+            "patterns": [
+                {
+                    "name": "constant.numeric.hex.mq",
+                    "match": "\\b0x[0-9a-fA-F]+\\b"
+                },
+                {
+                    "name": "constant.numeric.binary.mq",
+                    "match": "\\b0b[01]+\\b"
+                },
+                {
+                    "name": "constant.numeric.float.mq",
+                    "match": "\\b[0-9]+\\.[0-9]+\\b"
+                },
+                {
+                    "name": "constant.numeric.integer.mq",
+                    "match": "\\b[0-9]+\\b"
+                }
+            ]
         }
     }
 }
