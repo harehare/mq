@@ -11,3 +11,7 @@ ignore:
 coverage:
   status:
     project: true
+comment:
+  layout: "diff, flags, files"
+  behavior: default
+
