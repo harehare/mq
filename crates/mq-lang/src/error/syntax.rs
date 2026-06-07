@@ -86,3 +86,65 @@ impl SyntaxError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Range, TokenKind, arena::ArenaId, selector};
+    use rstest::rstest;
+
+    fn eof_token() -> Token {
+        Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }
+    }
+
+    #[rstest]
+    #[case(SyntaxError::EnvNotFound(eof_token(), "VAR".into()), true)]
+    #[case(SyntaxError::UnexpectedToken(eof_token()), true)]
+    #[case(SyntaxError::UnexpectedEOFDetected(ArenaId::new(0)), false)]
+    #[case(SyntaxError::InsufficientTokens(eof_token()), true)]
+    #[case(SyntaxError::ExpectedClosingParen(eof_token(), None), true)]
+    #[case(SyntaxError::ExpectedClosingBrace(eof_token(), None), true)]
+    #[case(SyntaxError::ExpectedClosingBracket(eof_token(), None), true)]
+    #[case(SyntaxError::InvalidAssignmentTarget(eof_token()), true)]
+    #[case(SyntaxError::UnknownSelector(selector::UnknownSelector(eof_token())), true)]
+    #[case(SyntaxError::ParameterWithoutDefaultAfterDefault(eof_token()), true)]
+    #[case(SyntaxError::MacroParametersCannotHaveDefaults(eof_token()), true)]
+    #[case(SyntaxError::VariadicParameterMustBeLast(eof_token()), true)]
+    #[case(SyntaxError::MultipleVariadicParameters(eof_token()), true)]
+    #[case(SyntaxError::MacroParametersCannotBeVariadic(eof_token()), true)]
+    #[case(SyntaxError::UnexpectedEOFAfterToken(eof_token()), true)]
+    #[case(SyntaxError::UnmatchedEnd(eof_token()), true)]
+    fn test_token_presence(#[case] err: SyntaxError, #[case] has_token: bool) {
+        assert_eq!(err.token().is_some(), has_token);
+    }
+
+    #[rstest]
+    #[case(SyntaxError::UnexpectedEOFDetected(ArenaId::new(0)), "Unexpected end of input")]
+    #[case(
+        SyntaxError::MacroParametersCannotHaveDefaults(eof_token()),
+        "Macro parameters cannot have default values"
+    )]
+    #[case(
+        SyntaxError::VariadicParameterMustBeLast(eof_token()),
+        "Variadic parameter must be the last parameter"
+    )]
+    #[case(
+        SyntaxError::MultipleVariadicParameters(eof_token()),
+        "Multiple variadic parameters are not allowed"
+    )]
+    #[case(
+        SyntaxError::MacroParametersCannotBeVariadic(eof_token()),
+        "Macro parameters cannot be variadic"
+    )]
+    #[case(
+        SyntaxError::UnmatchedEnd(eof_token()),
+        "Unexpected `end` keyword — no open block to close"
+    )]
+    fn test_error_display(#[case] err: SyntaxError, #[case] expected: &str) {
+        assert_eq!(err.to_string(), expected);
+    }
+}
