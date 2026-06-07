@@ -1814,7 +1814,7 @@ export const Playground = () => {
               border: "#e0e0e0",
             };
 
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:;"><style>
 body{margin:16px;font-family:sans-serif;background:${colors.bg};color:${colors.fg};line-height:1.6}
 h1,h2,h3,h4,h5,h6{color:${colors.heading};border-bottom:1px solid ${colors.border};padding-bottom:0.3em}
 a{color:${colors.link}}
@@ -2248,7 +2248,7 @@ img{max-width:100%}
                     ? buildPreviewSrcDoc(previewHtml)
                     : buildPreviewSrcDoc("<p style='color:#888'>Click \"Run\" button to display preview</p>")
                 }
-                sandbox="allow-same-origin"
+                sandbox=""
                 style={{
                   width: "100%",
                   height: "100%",
