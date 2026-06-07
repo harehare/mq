@@ -1779,12 +1779,51 @@ export const Playground = () => {
     theme === "mq" ? "mq-branded" : isDarkMode ? "mq-dark" : "mq-light";
 
   const buildPreviewSrcDoc = (htmlFragment: string) => {
-    const bg = isDarkMode ? "#1e1e1e" : "#ffffff";
-    const fg = isDarkMode ? "#d4d4d4" : "#1a1a1a";
+    const resolvedTheme =
+      theme === "system"
+        ? window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light"
+        : theme;
+
+    const colors =
+      resolvedTheme === "mq"
+        ? {
+            bg: "#1e293b",
+            fg: "#e2e8f0",
+            preBg: "#2a3444",
+            link: "#67b8e3",
+            heading: "#e2e8f0",
+            border: "#32404f",
+          }
+        : resolvedTheme === "dark"
+          ? {
+              bg: "#1e1e1e",
+              fg: "#d4d4d4",
+              preBg: "#2d2d2d",
+              link: "#4ec9b0",
+              heading: "#d4d4d4",
+              border: "#3e3e42",
+            }
+          : {
+              bg: "#ffffff",
+              fg: "#1a1a1a",
+              preBg: "#f5f5f5",
+              link: "#0070c1",
+              heading: "#1a1a1a",
+              border: "#e0e0e0",
+            };
+
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-body{margin:16px;font-family:sans-serif;background:${bg};color:${fg};line-height:1.6}
-pre{background:${isDarkMode ? "#2d2d2d" : "#f5f5f5"};padding:12px;border-radius:4px;overflow:auto}
+body{margin:16px;font-family:sans-serif;background:${colors.bg};color:${colors.fg};line-height:1.6}
+h1,h2,h3,h4,h5,h6{color:${colors.heading};border-bottom:1px solid ${colors.border};padding-bottom:0.3em}
+a{color:${colors.link}}
+pre{background:${colors.preBg};padding:12px;border-radius:4px;overflow:auto;border:1px solid ${colors.border}}
 code{font-family:'JetBrains Mono',monospace;font-size:0.9em}
+blockquote{border-left:4px solid ${colors.border};margin:0;padding:0 1em;color:${colors.fg};opacity:0.8}
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid ${colors.border};padding:6px 12px}
+th{background:${colors.preBg}}
 img{max-width:100%}
 </style></head><body>${htmlFragment}</body></html>`;
   };
