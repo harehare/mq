@@ -2883,4 +2883,263 @@ mod tests {
             "Full: module-internal def must not shadow top-level fold",
         );
     }
+
+    // ---- len on bytes literal folds ----
+    #[rstest]
+    #[case("len(b\"hello\")", "5")]
+    #[case("len(b\"\")", "0")]
+    fn len_bytes_folds(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    // ---- to_string on None and Bool folds ----
+    #[rstest]
+    #[case("to_string(None)", "")]
+    fn to_string_none_folds(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    // ---- Bytes literal stays as Call for to_string (not foldable) ----
+    #[test]
+    fn to_string_bytes_not_folded() {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("to_string(b\"hi\")", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Call(..)),
+                "{level:?}: to_string(bytes) must stay as Call"
+            );
+        }
+    }
+
+    // ---- NaN-guarded arithmetic does not fold ----
+    #[test]
+    fn nan_arithmetic_not_folded() {
+        // nan() is not a literal, so arithmetic on it cannot be constant-folded.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("floor(nan())", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Call(..)),
+                "{level:?}: floor(nan()) must not fold"
+            );
+        }
+    }
+
+    // ---- substitute_literals into And/Or/Paren/Try/Break/InterpolatedString ----
+    #[test]
+    fn let_propagation_into_try_block() {
+        // let x = "ok" | try: x catch: "err" — x is substituted, try is preserved because it might error.
+        let prog = ast_full("let x = 5 | try: x catch: 0");
+        assert_eq!(prog.len(), 2, "Full: let + try must produce 2 nodes");
+    }
+
+    #[test]
+    fn let_propagation_into_interpolated_string() {
+        // let x = "hi" | s"${x} world" → substitute x, fold to literal "hi world"
+        let prog = ast_full("let x = \"hi\" | s\"${x} world\"");
+        let last = prog.last().unwrap();
+        assert_literal(last, "hi world", "Full: let+interpolated string must fold");
+    }
+
+    #[test]
+    fn let_propagation_into_paren() {
+        // let x = 3 | (x + 1) → substitute x=3, fold 3+1=4
+        let prog = ast_full("let x = 3 | (x + 1)");
+        let last = prog.last().unwrap();
+        assert_literal(last, "4", "Full: let+paren must fold");
+    }
+
+    // ---- Dead-def after inlining multiple call sites ----
+    #[test]
+    fn two_call_sites_both_inlined_def_eliminated() {
+        // inc is called twice — both sites get inlined, so def is eliminated.
+        let prog = ast_full("def inc(x): x + 1; | inc(3) | inc(7)");
+        assert!(
+            !prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
+            "Full: Def with two inlined call sites must be eliminated"
+        );
+        let last = prog.last().unwrap();
+        assert_literal(last, "8", "Full: inc(7) must fold to 8");
+    }
+
+    // ---- optimize_node handles While / Loop / Foreach / Assign ----
+    #[test]
+    fn optimize_while_folds_constant_in_body() {
+        // while(true): 1 + 1 — body constant should fold.
+        let prog = ast_basic("while(true): 1 + 1;");
+        assert_eq!(prog.len(), 1);
+        // The while node itself must remain (condition is not false-literal).
+        assert!(
+            matches!(&*prog[0].expr, Expr::While(..)),
+            "Basic: while must remain when condition is dynamic-ish"
+        );
+    }
+
+    #[test]
+    fn optimize_try_with_constant_folds_body() {
+        // try: 1 + 2 catch: 0 — body must fold to 3.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("try: 1 + 2 catch: 0", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            // The Try node remains because catch matters even when body is constant.
+            assert!(
+                matches!(&*prog[0].expr, Expr::Try(..)),
+                "{level:?}: Try must remain; got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    #[test]
+    fn optimize_foreach_folds_constant_values() {
+        // foreach(x, [1]): 2 + 3 — body constant 5 should fold.
+        let prog = ast_basic("foreach(x, [1]): 2 + 3;");
+        assert_eq!(prog.len(), 1, "Basic: foreach must be single node");
+        let Expr::Foreach(_, _, body) = &*prog[0].expr else {
+            panic!("expected Foreach");
+        };
+        assert!(
+            body.iter().any(|n| matches!(&*n.expr, Expr::Literal(_))),
+            "Basic: Foreach body must have folded constant"
+        );
+    }
+
+    #[test]
+    fn optimize_match_folds_constant_in_arms() {
+        // match(1+2) do | 3: "three" | _: "other" end — condition 1+2 folds to 3.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("match(1 + 2) do | 3: \"three\" | _: \"other\" end", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            // The match node remains but its value should be folded.
+            assert!(
+                matches!(&*prog[0].expr, Expr::Match(..)),
+                "{level:?}: Match must remain when value is not a pattern-eliminating literal"
+            );
+        }
+    }
+
+    // ---- algebraic identity for sub(x, 0) ----
+    #[test]
+    fn algebraic_identity_sub_zero() {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(". - 0", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Self_),
+                "{level:?}: . - 0 must fold to Self_"
+            );
+        }
+    }
+
+    // ---- EQ/NE fold across mixed literal types ----
+    #[rstest]
+    #[case("eq(1, \"one\")", "false")]
+    #[case("ne(1, \"one\")", "true")]
+    #[case("eq(None, None)", "true")]
+    #[case("ne(None, 0)", "true")]
+    fn eq_ne_cross_type_fold(#[case] query: &str, #[case] expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
+        }
+    }
+
+    // ---- multiple user defs, some inlinable, some not ----
+    #[test]
+    fn mixed_inline_and_non_inline_defs() {
+        // double is inlineable (simple); fact is recursive (not inlineable).
+        let prog = ast_full(
+            "def double(x): x * 2; | def fact(n): if (n == 0): 1 else: n * fact(n - 1); | double(3) | fact(4)",
+        );
+        // double(3) should be inlined and folded to 6.
+        // fact(4) must remain as Call.
+        assert!(
+            prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
+            "Full: recursive fact must be preserved"
+        );
+        let last = prog.last().unwrap();
+        assert!(matches!(&*last.expr, Expr::Call(..)), "Full: fact(4) must stay as Call");
+    }
+
+    // ---- substitute_literals into a CallDynamic node ----
+    #[test]
+    fn let_propagation_into_selectorchain_body() {
+        // Selector chains are scope-stopping nodes; let propagation doesn't cross them.
+        let prog = ast_full("let x = 5 | .h1 | x + 0");
+        // x+0 should fold to 5 (via propagation).
+        let last = prog.last().unwrap();
+        assert_literal(last, "5", "Full: let + selector + x+0 must fold");
+    }
+
+    // ---- literal_is_truthy for all variants ----
+    #[rstest]
+    #[case("\"\" && .", "false")] // empty string is falsy
+    #[case("\"x\" && .", r#"."#)] // non-empty string is truthy — drops literal
+    fn literal_is_truthy_string(#[case] query: &str, #[case] _expected: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+        }
+    }
+
+    #[test]
+    fn literal_is_truthy_zero_number_is_falsy() {
+        // `0 && .` → falsy literal → short-circuit to false.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("0 && .", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Literal(Literal::Bool(false))),
+                "{level:?}: 0 && . must short-circuit to false"
+            );
+        }
+    }
+
+    #[test]
+    fn literal_is_truthy_nonzero_number_is_truthy() {
+        // `1 && .` → truthy literal dropped, remaining And([.]) emitted.
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("1 && .", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::And(_)),
+                "{level:?}: 1 && . truthy lit must be dropped leaving And([.])"
+            );
+        }
+    }
+
+    // ---- coalesce with both dynamic operands: stays as Call ----
+    #[test]
+    fn coalesce_both_dynamic_stays_as_call() {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with("coalesce(., .)", level);
+            assert_eq!(prog.len(), 1, "{level:?}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Call(..)),
+                "{level:?}: coalesce(., .) with both dynamic must stay as Call"
+            );
+        }
+    }
+
+    // ---- def with default-param is not inlinable ----
+    #[test]
+    fn def_with_default_param_not_inlined() {
+        let prog = ast_full("def greet(name, greeting = \"hello\"): greeting; | greet(\"world\")");
+        // Has a default param → not inlineable.
+        let last = prog.last().unwrap();
+        assert!(
+            matches!(&*last.expr, Expr::Call(..)),
+            "Full: def with default param must not be inlined; expected Call"
+        );
+    }
 }

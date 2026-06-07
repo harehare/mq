@@ -1190,4 +1190,574 @@ mod tests {
         );
         assert_eq!(RuntimeValue::Bytes(vec![]).partial_cmp(&RuntimeValue::None), None);
     }
+
+    #[rstest]
+    #[case(RuntimeValue::None, serde_json::Value::Null)]
+    #[case(RuntimeValue::Boolean(true), serde_json::Value::Bool(true))]
+    #[case(RuntimeValue::Boolean(false), serde_json::Value::Bool(false))]
+    #[case(RuntimeValue::String("hi".to_string()), serde_json::Value::String("hi".to_string()))]
+    #[case(RuntimeValue::Symbol(Ident::new("sym")), serde_json::Value::String("sym".to_string()))]
+    #[case(RuntimeValue::NativeFunction(Ident::new("f")), serde_json::Value::Null)]
+    fn test_to_json_value_scalars(#[case] value: RuntimeValue, #[case] expected: serde_json::Value) {
+        assert_eq!(value.to_json_value(), expected);
+    }
+
+    #[test]
+    fn test_to_json_value_array() {
+        let arr = RuntimeValue::Array(vec![RuntimeValue::Boolean(true), RuntimeValue::String("x".to_string())]);
+        match arr.to_json_value() {
+            serde_json::Value::Array(items) => {
+                assert_eq!(items[0], serde_json::Value::Bool(true));
+                assert_eq!(items[1], serde_json::Value::String("x".to_string()));
+            }
+            other => panic!("expected Array, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_to_json_value_dict() {
+        let mut map = BTreeMap::new();
+        map.insert(Ident::new("k"), RuntimeValue::Boolean(false));
+        let obj = RuntimeValue::Dict(map).to_json_value();
+        match obj {
+            serde_json::Value::Object(m) => {
+                assert_eq!(m["k"], serde_json::Value::Bool(false));
+            }
+            other => panic!("expected Object, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_to_json_value_bytes_base64() {
+        let b = RuntimeValue::Bytes(vec![0x00, 0xff]);
+        match b.to_json_value() {
+            serde_json::Value::String(s) => assert!(!s.is_empty()),
+            other => panic!("expected String, got {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case(RuntimeValue::None, true)]
+    #[case(RuntimeValue::Boolean(true), false)]
+    #[case(RuntimeValue::String("".to_string()), true)]
+    #[case(RuntimeValue::Array(vec![]), true)]
+    #[case(RuntimeValue::Dict(BTreeMap::new()), true)]
+    #[case(RuntimeValue::Bytes(vec![]), true)]
+    #[case(RuntimeValue::Bytes(vec![1]), false)]
+    fn test_is_empty(#[case] value: RuntimeValue, #[case] expected: bool) {
+        assert_eq!(value.is_empty(), expected);
+    }
+
+    #[rstest]
+    #[case(RuntimeValue::None, false)]
+    #[case(RuntimeValue::Boolean(true), true)]
+    #[case(RuntimeValue::Boolean(false), false)]
+    #[case(RuntimeValue::String("hi".to_string()), true)]
+    #[case(RuntimeValue::String("".to_string()), false)]
+    #[case(RuntimeValue::Array(vec![RuntimeValue::None]), true)]
+    #[case(RuntimeValue::Array(vec![]), false)]
+    #[case(RuntimeValue::Symbol(Ident::new("s")), true)]
+    #[case(RuntimeValue::NativeFunction(Ident::new("f")), true)]
+    fn test_is_truthy_variants(#[case] value: RuntimeValue, #[case] expected: bool) {
+        assert_eq!(value.is_truthy(), expected);
+    }
+
+    #[rstest]
+    #[case(RuntimeValue::Symbol(Ident::new("abc")), 3)]
+    #[case(RuntimeValue::NativeFunction(Ident::new("f")), 0)]
+    #[case(RuntimeValue::Ast(crate::Shared::new(crate::AstNode { token_id: crate::arena::ArenaId::new(0), expr: crate::Shared::new(crate::AstExpr::Self_) })), 0)]
+    fn test_len_less_common(#[case] value: RuntimeValue, #[case] expected: usize) {
+        assert_eq!(value.len(), expected);
+    }
+
+    #[test]
+    fn test_is_none_predicate() {
+        assert!(RuntimeValue::None.is_none());
+        assert!(!RuntimeValue::Boolean(false).is_none());
+    }
+
+    #[test]
+    fn test_is_function_native() {
+        assert!(RuntimeValue::NativeFunction(Ident::new("f")).is_native_function());
+        assert!(!RuntimeValue::NativeFunction(Ident::new("f")).is_function());
+        assert!(!RuntimeValue::None.is_native_function());
+    }
+
+    #[test]
+    fn test_is_array_dict() {
+        assert!(RuntimeValue::Array(vec![]).is_array());
+        assert!(!RuntimeValue::None.is_array());
+        assert!(RuntimeValue::Dict(BTreeMap::new()).is_dict());
+        assert!(!RuntimeValue::None.is_dict());
+    }
+
+    #[test]
+    fn test_new_dict_and_new_markdown() {
+        assert!(RuntimeValue::new_dict().is_dict());
+        let node = mq_markdown::Node::Empty;
+        assert!(matches!(
+            RuntimeValue::new_markdown(node),
+            RuntimeValue::Markdown(_, None)
+        ));
+    }
+
+    #[test]
+    fn test_from_vec_runtime_value() {
+        let arr: RuntimeValue = vec![RuntimeValue::None, RuntimeValue::Boolean(true)].into();
+        assert!(arr.is_array());
+        assert_eq!(arr.len(), 2);
+    }
+
+    #[test]
+    fn test_from_btree_map() {
+        let mut map = BTreeMap::new();
+        map.insert(Ident::new("x"), RuntimeValue::Boolean(true));
+        let dict: RuntimeValue = map.into();
+        assert!(dict.is_dict());
+    }
+
+    #[test]
+    fn test_from_usize() {
+        let v: RuntimeValue = 42usize.into();
+        assert!(matches!(v, RuntimeValue::Number(_)));
+        assert_eq!(v.len(), 42);
+    }
+
+    #[test]
+    fn test_markdown_node_with_no_selector() {
+        let node = mq_markdown::Node::Empty;
+        let v = RuntimeValue::Markdown(Box::new(node), None);
+        assert!(v.markdown_node().is_some());
+    }
+
+    #[test]
+    fn test_markdown_node_non_markdown_returns_none() {
+        assert!(RuntimeValue::None.markdown_node().is_none());
+        assert!(RuntimeValue::String("x".to_string()).markdown_node().is_none());
+    }
+
+    #[test]
+    fn test_runtime_values_index() {
+        let values: RuntimeValues =
+            vec![RuntimeValue::Boolean(true), RuntimeValue::String("second".to_string())].into();
+        assert_eq!(values[0], RuntimeValue::Boolean(true));
+        assert_eq!(values[1], RuntimeValue::String("second".to_string()));
+    }
+
+    #[test]
+    fn test_runtime_values_index_mut() {
+        let mut values: RuntimeValues = vec![RuntimeValue::None, RuntimeValue::None].into();
+        values[0] = RuntimeValue::Boolean(true);
+        assert_eq!(values[0], RuntimeValue::Boolean(true));
+    }
+
+    #[test]
+    fn test_runtime_values_is_empty() {
+        let empty: RuntimeValues = vec![].into();
+        assert!(empty.is_empty());
+        let non_empty: RuntimeValues = vec![RuntimeValue::None].into();
+        assert!(!non_empty.is_empty());
+    }
+
+    fn text_node(s: &str) -> mq_markdown::Node {
+        mq_markdown::Node::Text(mq_markdown::Text {
+            value: s.to_string(),
+            position: None,
+        })
+    }
+
+    fn md(s: &str) -> RuntimeValue {
+        RuntimeValue::new_markdown(text_node(s))
+    }
+
+    #[test]
+    fn test_negated_string_reverses() {
+        let v = RuntimeValue::String("abc".to_string()).negated();
+        assert_eq!(v, RuntimeValue::String("cba".to_string()));
+    }
+
+    #[test]
+    fn test_negated_none_returns_self() {
+        assert_eq!(RuntimeValue::None.negated(), RuntimeValue::None);
+    }
+
+    #[test]
+    fn test_negated_array_returns_self() {
+        let arr = RuntimeValue::Array(vec![RuntimeValue::Number(1.into())]);
+        assert_eq!(arr.clone().negated(), arr);
+    }
+
+    #[test]
+    fn test_position_non_markdown_returns_none() {
+        assert!(RuntimeValue::None.position().is_none());
+        assert!(RuntimeValue::Number(1.into()).position().is_none());
+        assert!(RuntimeValue::String("x".to_string()).position().is_none());
+    }
+
+    #[test]
+    fn test_set_position_non_markdown_is_noop() {
+        let mut v = RuntimeValue::Number(1.into());
+        v.set_position(None); // should not panic
+        assert_eq!(v, RuntimeValue::Number(1.into()));
+    }
+
+    #[test]
+    fn test_to_cbor_value_scalars() {
+        assert_eq!(RuntimeValue::None.to_cbor_value(), ciborium::Value::Null);
+        assert_eq!(RuntimeValue::Boolean(true).to_cbor_value(), ciborium::Value::Bool(true));
+        assert_eq!(
+            RuntimeValue::Number(1.5.into()).to_cbor_value(),
+            ciborium::Value::Float(1.5)
+        );
+        assert_eq!(
+            RuntimeValue::String("hi".to_string()).to_cbor_value(),
+            ciborium::Value::Text("hi".to_string())
+        );
+        assert_eq!(
+            RuntimeValue::Symbol(Ident::new("s")).to_cbor_value(),
+            ciborium::Value::Text("s".to_string())
+        );
+        assert_eq!(
+            RuntimeValue::Bytes(vec![0x01, 0x02]).to_cbor_value(),
+            ciborium::Value::Bytes(vec![0x01, 0x02])
+        );
+    }
+
+    #[test]
+    fn test_to_cbor_value_array() {
+        let arr = RuntimeValue::Array(vec![RuntimeValue::Boolean(false)]);
+        match arr.to_cbor_value() {
+            ciborium::Value::Array(items) => {
+                assert_eq!(items[0], ciborium::Value::Bool(false));
+            }
+            other => panic!("expected Array, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_to_cbor_value_dict() {
+        let mut map = BTreeMap::new();
+        map.insert(Ident::new("k"), RuntimeValue::Boolean(true));
+        let obj = RuntimeValue::Dict(map).to_cbor_value();
+        match obj {
+            ciborium::Value::Map(pairs) => {
+                assert_eq!(pairs[0].0, ciborium::Value::Text("k".to_string()));
+                assert_eq!(pairs[0].1, ciborium::Value::Bool(true));
+            }
+            other => panic!("expected Map, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_to_cbor_value_other_is_null() {
+        let native = RuntimeValue::NativeFunction(Ident::new("f")).to_cbor_value();
+        assert_eq!(native, ciborium::Value::Null);
+    }
+
+    #[test]
+    fn test_from_yaml_scalars() {
+        assert_eq!(RuntimeValue::from(yaml_rust2::Yaml::Null), RuntimeValue::NONE);
+        assert_eq!(
+            RuntimeValue::from(yaml_rust2::Yaml::Boolean(true)),
+            RuntimeValue::Boolean(true)
+        );
+        assert_eq!(
+            RuntimeValue::from(yaml_rust2::Yaml::Integer(42)),
+            RuntimeValue::Number((42.0_f64).into())
+        );
+        assert_eq!(
+            RuntimeValue::from(yaml_rust2::Yaml::String("hi".to_string())),
+            RuntimeValue::String("hi".to_string())
+        );
+        assert_eq!(RuntimeValue::from(yaml_rust2::Yaml::BadValue), RuntimeValue::NONE);
+    }
+
+    #[test]
+    fn test_from_yaml_real() {
+        let v = RuntimeValue::from(yaml_rust2::Yaml::Real("3.14".to_string()));
+        assert!(matches!(v, RuntimeValue::Number(_)));
+    }
+
+    #[test]
+    fn test_from_yaml_array() {
+        let yaml_arr = yaml_rust2::Yaml::Array(vec![yaml_rust2::Yaml::Integer(1), yaml_rust2::Yaml::Integer(2)]);
+        let v = RuntimeValue::from(yaml_arr);
+        assert!(matches!(v, RuntimeValue::Array(_)));
+        if let RuntimeValue::Array(items) = v {
+            assert_eq!(items.len(), 2);
+        }
+    }
+
+    #[test]
+    fn test_from_yaml_hash() {
+        let mut hash = yaml_rust2::yaml::Hash::new();
+        hash.insert(
+            yaml_rust2::Yaml::String("key".to_string()),
+            yaml_rust2::Yaml::Integer(99),
+        );
+        let v = RuntimeValue::from(yaml_rust2::Yaml::Hash(hash));
+        assert!(matches!(v, RuntimeValue::Dict(_)));
+    }
+
+    #[test]
+    fn test_from_yaml_alias() {
+        let v = RuntimeValue::from(yaml_rust2::Yaml::Alias(0));
+        assert_eq!(v, RuntimeValue::NONE);
+    }
+
+    #[test]
+    fn test_from_ciborium_tag_unwraps_inner() {
+        let inner = Box::new(ciborium::Value::Bool(true));
+        let tagged = ciborium::Value::Tag(1, inner);
+        let v = RuntimeValue::from(tagged);
+        assert_eq!(v, RuntimeValue::Boolean(true));
+    }
+
+    #[test]
+    fn test_from_ciborium_integer() {
+        let v = RuntimeValue::from(ciborium::Value::Integer(42.into()));
+        assert!(matches!(v, RuntimeValue::Number(_)));
+    }
+
+    #[test]
+    fn test_from_ciborium_null_and_unknowns() {
+        assert_eq!(RuntimeValue::from(ciborium::Value::Null), RuntimeValue::NONE);
+    }
+
+    #[test]
+    fn test_from_ciborium_map() {
+        let pairs = vec![(ciborium::Value::Text("k".to_string()), ciborium::Value::Bool(false))];
+        let v = RuntimeValue::from(ciborium::Value::Map(pairs));
+        assert!(matches!(v, RuntimeValue::Dict(_)));
+    }
+
+    #[test]
+    fn test_from_ciborium_map_non_text_key() {
+        let pairs = vec![(ciborium::Value::Integer(1.into()), ciborium::Value::Bool(true))];
+        let v = RuntimeValue::from(ciborium::Value::Map(pairs));
+        assert!(matches!(v, RuntimeValue::Dict(_)));
+    }
+
+    #[rstest]
+    #[case(mq_markdown::AttrValue::String("s".to_string()), RuntimeValue::String("s".to_string()))]
+    #[case(mq_markdown::AttrValue::Number(1.0), RuntimeValue::Number(1.0.into()))]
+    #[case(mq_markdown::AttrValue::Boolean(true), RuntimeValue::Boolean(true))]
+    #[case(mq_markdown::AttrValue::Null, RuntimeValue::NONE)]
+    fn test_from_attr_value(#[case] attr: mq_markdown::AttrValue, #[case] expected: RuntimeValue) {
+        assert_eq!(RuntimeValue::from(attr), expected);
+    }
+
+    #[test]
+    fn test_from_attr_value_integer() {
+        let v = RuntimeValue::from(mq_markdown::AttrValue::Integer(42));
+        assert!(matches!(v, RuntimeValue::Number(_)));
+    }
+
+    #[test]
+    fn test_from_attr_value_array() {
+        let arr = mq_markdown::AttrValue::Array(vec![text_node("item")]);
+        let v = RuntimeValue::from(arr);
+        assert!(matches!(v, RuntimeValue::Array(_)));
+    }
+
+    #[test]
+    fn test_from_serde_json_number_f64() {
+        let n = serde_json::Number::from_f64(1.5).unwrap();
+        let v = RuntimeValue::from(serde_json::Value::Number(n));
+        assert!(matches!(v, RuntimeValue::Number(_)));
+    }
+
+    #[test]
+    fn test_from_serde_json_object() {
+        let mut obj = serde_json::Map::new();
+        obj.insert("x".to_string(), serde_json::Value::Bool(true));
+        let v = RuntimeValue::from(serde_json::Value::Object(obj));
+        assert!(matches!(v, RuntimeValue::Dict(_)));
+    }
+
+    #[test]
+    fn test_from_vec_tuple_number() {
+        let v = RuntimeValue::from(vec![("count".to_string(), Number::from(7.0))]);
+        if let RuntimeValue::Dict(map) = v {
+            assert_eq!(map.get(&Ident::new("count")), Some(&RuntimeValue::Number(7.0.into())));
+        } else {
+            panic!("expected dict");
+        }
+    }
+
+    #[test]
+    fn test_update_with_non_markdown_returns_updated() {
+        let orig: RuntimeValues = vec![RuntimeValue::Number(1.into())].into();
+        let updated: RuntimeValues = vec![RuntimeValue::Number(99.into())].into();
+        let result = orig.update_with(updated);
+        assert_eq!(result[0], RuntimeValue::Number(99.into()));
+    }
+
+    #[test]
+    fn test_update_with_markdown_to_none_returns_original() {
+        let orig: RuntimeValues = vec![md("original")].into();
+        let updated: RuntimeValues = vec![RuntimeValue::None].into();
+        let result = orig.update_with(updated);
+        assert_eq!(result[0], md("original"));
+    }
+
+    #[test]
+    fn test_update_with_markdown_to_string() {
+        let orig: RuntimeValues = vec![md("old")].into();
+        let updated: RuntimeValues = vec![RuntimeValue::String("new".to_string())].into();
+        let result = orig.update_with(updated);
+        assert_eq!(result[0].markdown_node().unwrap().value(), "new");
+    }
+
+    #[test]
+    fn test_update_with_markdown_to_number() {
+        let orig: RuntimeValues = vec![md("0")].into();
+        let updated: RuntimeValues = vec![RuntimeValue::Number(42.into())].into();
+        let result = orig.update_with(updated);
+        assert_eq!(result[0].markdown_node().unwrap().value(), "42");
+    }
+
+    #[test]
+    fn test_update_with_markdown_to_boolean() {
+        let orig: RuntimeValues = vec![md("false")].into();
+        let updated: RuntimeValues = vec![RuntimeValue::Boolean(true)].into();
+        let result = orig.update_with(updated);
+        assert_eq!(result[0].markdown_node().unwrap().value(), "true");
+    }
+
+    #[test]
+    fn test_update_with_markdown_to_symbol() {
+        let orig: RuntimeValues = vec![md("sym")].into();
+        let updated: RuntimeValues = vec![RuntimeValue::Symbol(Ident::new("hello"))].into();
+        let result = orig.update_with(updated);
+        assert_eq!(result[0].markdown_node().unwrap().value(), "hello");
+    }
+
+    #[test]
+    fn test_update_with_markdown_to_bytes() {
+        let orig: RuntimeValues = vec![md("bytes")].into();
+        let updated: RuntimeValues = vec![RuntimeValue::Bytes(vec![0xff])].into();
+        let result = orig.update_with(updated);
+        assert_eq!(result[0].markdown_node().unwrap().value(), "ff");
+    }
+
+    #[test]
+    fn test_update_with_markdown_to_array_with_none_filtered() {
+        let orig: RuntimeValues = vec![md("item")].into();
+        let updated: RuntimeValues = vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("a".to_string()),
+            RuntimeValue::None,
+            RuntimeValue::String("b".to_string()),
+        ])]
+        .into();
+        let result = orig.update_with(updated);
+        if let RuntimeValue::Array(items) = &result[0] {
+            assert_eq!(items.len(), 2);
+        } else {
+            panic!("expected Array");
+        }
+    }
+
+    #[test]
+    fn test_update_with_markdown_to_dict() {
+        let orig: RuntimeValues = vec![md("d")].into();
+        let mut map = BTreeMap::new();
+        map.insert(Ident::new("a"), RuntimeValue::String("val".to_string()));
+        map.insert(Ident::new("b"), RuntimeValue::None);
+        let updated: RuntimeValues = vec![RuntimeValue::Dict(map)].into();
+        let result = orig.update_with(updated);
+        if let RuntimeValue::Dict(m) = &result[0] {
+            assert!(m.contains_key(&Ident::new("a")));
+            assert!(!m.contains_key(&Ident::new("b"))); // None filtered out
+        } else {
+            panic!("expected Dict");
+        }
+    }
+
+    #[test]
+    fn test_update_with_markdown_to_native_function_returns_original() {
+        let orig: RuntimeValues = vec![md("orig")].into();
+        let updated: RuntimeValues = vec![RuntimeValue::NativeFunction(Ident::new("f"))].into();
+        let result = orig.update_with(updated);
+        assert_eq!(result[0], md("orig"));
+    }
+
+    #[test]
+    fn test_update_with_markdown_to_empty_markdown_returns_original() {
+        let orig: RuntimeValues = vec![md("orig")].into();
+        let updated: RuntimeValues = vec![RuntimeValue::Markdown(Box::new(mq_markdown::Node::Empty), None)].into();
+        let result = orig.update_with(updated);
+        assert_eq!(result[0], md("orig"));
+    }
+
+    #[test]
+    fn test_update_with_markdown_to_non_empty_markdown_returns_updated() {
+        let orig: RuntimeValues = vec![md("old")].into();
+        let updated: RuntimeValues = vec![md("new")].into();
+        let result = orig.update_with(updated);
+        assert_eq!(result[0].markdown_node().unwrap().value(), "new");
+    }
+
+    #[test]
+    fn test_runtime_values_compact() {
+        let values: RuntimeValues = vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::None,
+            RuntimeValue::String("".to_string()),
+            RuntimeValue::String("x".to_string()),
+        ]
+        .into();
+        let compact = values.compact();
+        assert_eq!(compact.len(), 2); // only Number(1) and String("x") survive
+    }
+
+    #[test]
+    fn test_runtime_values_values() {
+        let vals = vec![RuntimeValue::Boolean(true), RuntimeValue::None];
+        let rv: RuntimeValues = vals.clone().into();
+        assert_eq!(rv.values(), &vals);
+    }
+
+    #[test]
+    fn test_runtime_values_into_iter() {
+        let items: RuntimeValues = vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())].into();
+        let sum: Vec<_> = items.into_iter().collect();
+        assert_eq!(sum.len(), 2);
+    }
+
+    #[test]
+    fn test_module_env_name_and_len() {
+        use crate::SharedCell;
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let m = ModuleEnv::new("mymod", env);
+        assert_eq!(m.name(), "mymod");
+        assert_eq!(m.len(), 0);
+    }
+
+    #[test]
+    fn test_module_partial_cmp() {
+        use crate::SharedCell;
+        let e1 = Shared::new(SharedCell::new(Env::default()));
+        let e2 = Shared::new(SharedCell::new(Env::default()));
+        let m1 = RuntimeValue::Module(ModuleEnv::new("alpha", e1));
+        let m2 = RuntimeValue::Module(ModuleEnv::new("beta", e2));
+        assert!(m1 < m2);
+    }
+
+    #[test]
+    fn test_cross_type_partial_cmp_is_none() {
+        let n = RuntimeValue::Number(1.into());
+        let s = RuntimeValue::String("a".to_string());
+        assert_eq!(n.partial_cmp(&s), None);
+    }
+
+    #[test]
+    fn test_ast_partial_cmp_is_none() {
+        let ast = RuntimeValue::Ast(crate::Shared::new(crate::AstNode {
+            token_id: crate::arena::ArenaId::new(0),
+            expr: crate::Shared::new(crate::AstExpr::Self_),
+        }));
+        assert_eq!(ast.partial_cmp(&RuntimeValue::None), None);
+        assert_eq!(RuntimeValue::None.partial_cmp(&ast), None);
+    }
 }
