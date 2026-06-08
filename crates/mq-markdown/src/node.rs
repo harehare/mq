@@ -1768,7 +1768,11 @@ impl Node {
             node @ Self::Fragment(_) | node @ Self::Empty => node,
             #[cfg(feature = "wikilink")]
             Self::WikiLink(mut w) => {
-                w.target = value.to_string();
+                if w.text.is_some() {
+                    w.text = Some(value.to_string());
+                } else {
+                    w.target = value.to_string();
+                }
                 Self::WikiLink(w)
             }
         }
@@ -3521,6 +3525,24 @@ mod tests {
     #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), "title", None)]
     fn test_wikilink_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<AttrValue>) {
         assert_eq!(node.attr(attr), expected);
+    }
+
+    #[cfg(feature = "wikilink")]
+    #[rstest]
+    // no display text: with_value sets target
+    #[case(
+        Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}),
+        "new-target",
+        Node::WikiLink(WikiLink{target: "new-target".to_string(), text: None, position: None})
+    )]
+    // with display text: with_value sets text, not target
+    #[case(
+        Node::WikiLink(WikiLink{target: "page".to_string(), text: Some("Display Text".to_string()), position: None}),
+        "DISPLAY TEXT",
+        Node::WikiLink(WikiLink{target: "page".to_string(), text: Some("DISPLAY TEXT".to_string()), position: None})
+    )]
+    fn test_wikilink_with_value(#[case] node: Node, #[case] value: &str, #[case] expected: Node) {
+        assert_eq!(node.with_value(value), expected);
     }
 
     #[cfg(feature = "wikilink")]
