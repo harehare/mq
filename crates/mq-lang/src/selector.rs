@@ -124,10 +124,12 @@ pub enum Selector {
     ImageRef,
     /// Matches MDX JSX text elements.
     MdxJsxTextElement,
-    /// Matches link elements (e.g., `[text](url)`).
+    /// Matches link elements (e.g., `[text](url)`). Also matches wikilinks when the `wikilink` feature is enabled.
     Link,
     /// Matches link reference elements (e.g., `[text][ref]`).
     LinkRef,
+    /// Matches Obsidian-style wikilink elements (e.g., `[[target]]` or `[[target|text]]`).
+    WikiLink,
     /// Matches strong/bold elements (e.g., `**text**`).
     Strong,
     /// Matches code block elements.
@@ -287,6 +289,7 @@ impl Selector {
             ".math_inline" | ".inline_math" => Some(Selector::InlineMath),
             ".link" => Some(Selector::Link),
             ".link_ref" => Some(Selector::LinkRef),
+            ".wikilink" => Some(Selector::WikiLink),
             ".[]" | ".list" | ".li" => Some(Selector::List(None, None)),
             ".task" => Some(Selector::Task),
             ".todo" => Some(Selector::Todo),
@@ -380,6 +383,7 @@ impl Display for Selector {
             Selector::MdxJsxTextElement => write!(f, ".mdx_jsx_text_element"),
             Selector::Link => write!(f, ".link"),
             Selector::LinkRef => write!(f, ".link_ref"),
+            Selector::WikiLink => write!(f, ".wikilink"),
             Selector::Strong => write!(f, ".strong"),
             Selector::Code => write!(f, ".code"),
             Selector::Math => write!(f, ".math"),
@@ -486,6 +490,8 @@ mod tests {
     #[case::link(".link", Selector::Link, ".link")]
     // Link Reference
     #[case::link_ref(".link_ref", Selector::LinkRef, ".link_ref")]
+    // WikiLink
+    #[case::wikilink(".wikilink", Selector::WikiLink, ".wikilink")]
     // List
     #[case::list(".list", Selector::List(None, None), ".list")]
     #[case::list_bracket(".[]", Selector::List(None, None), ".list")]

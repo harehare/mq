@@ -90,6 +90,9 @@ pub use node::{
     UrlSurroundStyle, Yaml, attr_value::AttrValue,
 };
 
+#[cfg(feature = "wikilink")]
+pub use node::WikiLink;
+
 #[cfg(feature = "html-to-markdown")]
 pub use html_to_markdown::{ConversionOptions, convert_html_to_markdown};
 

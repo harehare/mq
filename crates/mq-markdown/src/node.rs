@@ -409,6 +409,22 @@ pub struct Link {
     pub position: Option<Position>,
 }
 
+/// An Obsidian-style wikilink: `[[target]]` or `[[target|text]]`.
+#[cfg(feature = "wikilink")]
+#[derive(Debug, Clone, PartialEq, Default)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
+pub struct WikiLink {
+    /// The target page or file name (e.g. `"Three laws of motion"`).
+    pub target: String,
+    /// Optional display text (the part after `|`).
+    pub text: Option<String>,
+    pub position: Option<Position>,
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
@@ -728,6 +744,8 @@ pub enum Node {
     MathInline(MathInline),
     Link(Link),
     LinkRef(LinkRef),
+    #[cfg(feature = "wikilink")]
+    WikiLink(WikiLink),
     Math(Math),
     List(List),
     TableAlign(TableAlign),
@@ -1082,6 +1100,14 @@ impl Node {
                     le
                 )
             }
+            #[cfg(feature = "wikilink")]
+            Self::WikiLink(WikiLink { target, text, .. }) => {
+                let (ls, le) = &theme.link;
+                match text.as_deref() {
+                    Some(t) if t != target.as_str() => format!("{}[[{}|{}]]{}", ls, target, t, le),
+                    _ => format!("{}[[{}]]{}", ls, target, le),
+                }
+            }
             Self::LinkRef(LinkRef { values, label, .. }) => {
                 let (ls, le) = &theme.link;
                 let ident = render_values(&values, options, theme);
@@ -1240,6 +1266,8 @@ impl Node {
             Self::MathInline(v) => v.value.to_string(),
             Self::Link(l) => l.url.as_str().to_string(),
             Self::LinkRef(l) => l.ident,
+            #[cfg(feature = "wikilink")]
+            Self::WikiLink(w) => w.text.unwrap_or(w.target),
             Self::Math(v) => v.value,
             Self::List(l) => values_to_value(l.values),
             Self::TableCell(c) => values_to_value(c.values),
@@ -1287,6 +1315,8 @@ impl Node {
             Self::MathInline(_) => "math_inline".into(),
             Self::Link(_) => "link".into(),
             Self::LinkRef(_) => "link_ref".into(),
+            #[cfg(feature = "wikilink")]
+            Self::WikiLink(_) => "wikilink".into(),
             Self::Math(_) => "math".into(),
             Self::List(_) => "list".into(),
             Self::TableAlign(_) => "table_align".into(),
@@ -1331,6 +1361,8 @@ impl Node {
             Self::MathInline(v) => v.position = pos,
             Self::Link(l) => l.position = pos,
             Self::LinkRef(l) => l.position = pos,
+            #[cfg(feature = "wikilink")]
+            Self::WikiLink(w) => w.position = pos,
             Self::Math(v) => v.position = pos,
             Self::Code(c) => c.position = pos,
             Self::TableCell(c) => c.position = pos,
@@ -1368,6 +1400,8 @@ impl Node {
             Self::MathInline(v) => v.position.clone(),
             Self::Link(l) => l.position.clone(),
             Self::LinkRef(l) => l.position.clone(),
+            #[cfg(feature = "wikilink")]
+            Self::WikiLink(w) => w.position.clone(),
             Self::Math(v) => v.position.clone(),
             Self::Code(c) => c.position.clone(),
             Self::TableCell(c) => c.position.clone(),
@@ -1449,11 +1483,24 @@ impl Node {
     }
 
     pub fn is_link(&self) -> bool {
-        matches!(self, Self::Link(_))
+        #[cfg(feature = "wikilink")]
+        {
+            matches!(self, Self::Link(_) | Self::WikiLink(_))
+        }
+        #[cfg(not(feature = "wikilink"))]
+        {
+            matches!(self, Self::Link(_))
+        }
     }
 
     pub fn is_link_ref(&self) -> bool {
         matches!(self, Self::LinkRef(_))
+    }
+
+    /// Returns `true` if this node is an Obsidian-style wikilink (`[[target]]`).
+    #[cfg(feature = "wikilink")]
+    pub fn is_wikilink(&self) -> bool {
+        matches!(self, Self::WikiLink(_))
     }
 
     pub fn is_text(&self) -> bool {
@@ -1719,6 +1766,11 @@ impl Node {
                 })
             }
             node @ Self::Fragment(_) | node @ Self::Empty => node,
+            #[cfg(feature = "wikilink")]
+            Self::WikiLink(mut w) => {
+                w.target = value.to_string();
+                Self::WikiLink(w)
+            }
         }
     }
 
@@ -1804,6 +1856,8 @@ impl Node {
                     ..mdx
                 })
             }
+            #[cfg(feature = "wikilink")]
+            a @ Self::WikiLink(_) => a,
             a => a,
         }
     }
@@ -1875,6 +1929,12 @@ impl Node {
                 attr_keys::TITLE => title.as_ref().map(|t| AttrValue::String(t.to_value())),
                 attr_keys::VALUE => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
                 attr_keys::VALUES | attr_keys::CHILDREN => Some(AttrValue::Array(values.clone())),
+                _ => None,
+            },
+            #[cfg(feature = "wikilink")]
+            Node::WikiLink(WikiLink { target, text, .. }) => match attr {
+                attr_keys::URL => Some(AttrValue::String(target.clone())),
+                attr_keys::VALUE => Some(AttrValue::String(text.clone().unwrap_or_else(|| target.clone()))),
                 _ => None,
             },
             Node::LinkRef(LinkRef { ident, label, .. }) => match attr {
@@ -2207,7 +2267,119 @@ impl Node {
             | Node::HorizontalRule(_)
             | Node::Fragment(_)
             | Node::Empty => (),
+            #[cfg(feature = "wikilink")]
+            Node::WikiLink(w) => match attr {
+                attr_keys::URL => w.target = value_str,
+                attr_keys::VALUE => w.text = if value_str.is_empty() { None } else { Some(value_str) },
+                _ => (),
+            },
         }
+    }
+
+    /// Recursively scans a node list and converts `[[target]]` / `[[target|text]]`
+    /// patterns inside `Text` nodes into `WikiLink` nodes.
+    #[cfg(feature = "wikilink")]
+    pub fn expand_wikilinks(nodes: Vec<Node>) -> Vec<Node> {
+        nodes.into_iter().flat_map(Self::expand_wikilinks_node).collect()
+    }
+
+    #[cfg(feature = "wikilink")]
+    fn expand_wikilinks_node(node: Node) -> Vec<Node> {
+        match node {
+            Node::Text(Text { value, position }) => Self::parse_wikilinks_in_text(&value, position),
+            Node::Heading(mut h) => {
+                h.values = Self::expand_wikilinks(h.values);
+                vec![Node::Heading(h)]
+            }
+            Node::Blockquote(mut b) => {
+                b.values = Self::expand_wikilinks(b.values);
+                vec![Node::Blockquote(b)]
+            }
+            Node::List(mut l) => {
+                l.values = Self::expand_wikilinks(l.values);
+                vec![Node::List(l)]
+            }
+            Node::Strong(mut s) => {
+                s.values = Self::expand_wikilinks(s.values);
+                vec![Node::Strong(s)]
+            }
+            Node::Emphasis(mut e) => {
+                e.values = Self::expand_wikilinks(e.values);
+                vec![Node::Emphasis(e)]
+            }
+            Node::Delete(mut d) => {
+                d.values = Self::expand_wikilinks(d.values);
+                vec![Node::Delete(d)]
+            }
+            Node::TableCell(mut tc) => {
+                tc.values = Self::expand_wikilinks(tc.values);
+                vec![Node::TableCell(tc)]
+            }
+            Node::TableRow(mut tr) => {
+                tr.values = Self::expand_wikilinks(tr.values);
+                vec![Node::TableRow(tr)]
+            }
+            other => vec![other],
+        }
+    }
+
+    /// Splits a text string on `[[...]]` patterns, returning a mix of `Text`
+    /// and `WikiLink` nodes.
+    #[cfg(feature = "wikilink")]
+    fn parse_wikilinks_in_text(text: &str, position: Option<Position>) -> Vec<Node> {
+        let mut result: Vec<Node> = Vec::new();
+        let mut last_end = 0;
+        let mut search_from = 0;
+
+        while let Some(open_rel) = text[search_from..].find("[[") {
+            let open = search_from + open_rel;
+            let inner_start = open + 2;
+
+            let Some(close_rel) = text[inner_start..].find("]]") else {
+                break;
+            };
+            let close = inner_start + close_rel;
+            let content = &text[inner_start..close];
+
+            if content.contains('[') || content.contains(']') {
+                // nested brackets — skip past this '[' and retry
+                search_from = open + 1;
+                continue;
+            }
+
+            if last_end < open {
+                result.push(Node::Text(Text {
+                    value: text[last_end..open].to_string(),
+                    position: position.clone(),
+                }));
+            }
+            let (target, text_part) = if let Some(pipe) = content.find('|') {
+                (content[..pipe].trim(), Some(content[pipe + 1..].trim()))
+            } else {
+                (content.trim(), None)
+            };
+            result.push(Node::WikiLink(WikiLink {
+                target: target.to_string(),
+                text: text_part.map(|t| t.to_string()),
+                position: position.clone(),
+            }));
+            last_end = close + 2;
+            search_from = close + 2;
+        }
+
+        if result.is_empty() {
+            return vec![Node::Text(Text {
+                value: text.to_string(),
+                position,
+            })];
+        }
+        if last_end < text.len() {
+            result.push(Node::Text(Text {
+                value: text[last_end..].to_string(),
+                position,
+            }));
+        }
+        result
     }
 
     pub(crate) fn from_mdast_node(node: mdast::Node) -> Vec<Node> {
@@ -3206,6 +3378,93 @@ mod tests {
         assert_eq!(node.is_blockquote(), expected);
     }
 
+    #[cfg(feature = "wikilink")]
+    #[rstest]
+    #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), true)]
+    #[case(Node::WikiLink(WikiLink{target: "Three laws of motion".to_string(), text: Some("Newton".to_string()), position: None}), true)]
+    #[case(Node::Link(Link{url: Url::new("https://example.com".to_string()), values: Vec::new(), title: None, position: None}), false)]
+    #[case(Node::Link(Link{url: Url::new("relative.md".to_string()), values: Vec::new(), title: None, position: None}), false)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    #[case(Node::Text(Text{value: "[[target]]".to_string(), position: None}), false)]
+    fn test_is_wikilink(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_wikilink(), expected);
+    }
+
+    #[cfg(feature = "wikilink")]
+    #[rstest]
+    #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), true)]
+    #[case(Node::WikiLink(WikiLink{target: "Three laws of motion".to_string(), text: Some("Newton".to_string()), position: None}), true)]
+    #[case(Node::Link(Link{url: Url::new("https://example.com".to_string()), values: Vec::new(), title: None, position: None}), true)]
+    #[case(Node::Link(Link{url: Url::new("relative.md".to_string()), values: Vec::new(), title: None, position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_link_includes_wikilink(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_link(), expected);
+    }
+
+    #[cfg(feature = "wikilink")]
+    #[rstest]
+    // no wikilinks — returns original text node unchanged
+    #[case("plain text", vec![Node::Text(Text{value: "plain text".to_string(), position: None})])]
+    // only a wikilink
+    #[case("[[target]]", vec![Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None})])]
+    // wikilink with display text
+    #[case("[[target|display]]", vec![Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display".to_string()), position: None})])]
+    // wikilink with spaces in target
+    #[case("[[Three laws of motion]]", vec![Node::WikiLink(WikiLink{target: "Three laws of motion".to_string(), text: None, position: None})])]
+    // wikilink with .md extension
+    #[case("[[target.md]]", vec![Node::WikiLink(WikiLink{target: "target.md".to_string(), text: None, position: None})])]
+    // wikilink at start
+    #[case("[[target]] after", vec![
+        Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}),
+        Node::Text(Text{value: " after".to_string(), position: None}),
+    ])]
+    // wikilink at end
+    #[case("before [[target]]", vec![
+        Node::Text(Text{value: "before ".to_string(), position: None}),
+        Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}),
+    ])]
+    // wikilink in middle
+    #[case("before [[target]] after", vec![
+        Node::Text(Text{value: "before ".to_string(), position: None}),
+        Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}),
+        Node::Text(Text{value: " after".to_string(), position: None}),
+    ])]
+    // multiple wikilinks
+    #[case("[[a]] and [[b]]", vec![
+        Node::WikiLink(WikiLink{target: "a".to_string(), text: None, position: None}),
+        Node::Text(Text{value: " and ".to_string(), position: None}),
+        Node::WikiLink(WikiLink{target: "b".to_string(), text: None, position: None}),
+    ])]
+    // unclosed [[ treated as plain text
+    #[case("[[unclosed", vec![Node::Text(Text{value: "[[unclosed".to_string(), position: None})])]
+    // nested brackets invalid — treated as plain text
+    #[case("[[in[ner]]]", vec![Node::Text(Text{value: "[[in[ner]]]".to_string(), position: None})])]
+    // multibyte characters in surrounding text
+    #[case("日本語 [[ターゲット]] テキスト", vec![
+        Node::Text(Text{value: "日本語 ".to_string(), position: None}),
+        Node::WikiLink(WikiLink{target: "ターゲット".to_string(), text: None, position: None}),
+        Node::Text(Text{value: " テキスト".to_string(), position: None}),
+    ])]
+    // multibyte characters inside wikilink target and display text
+    #[case("[[ページ|表示名]]", vec![
+        Node::WikiLink(WikiLink{target: "ページ".to_string(), text: Some("表示名".to_string()), position: None}),
+    ])]
+    fn test_parse_wikilinks_in_text(#[case] input: &str, #[case] expected: Vec<Node>) {
+        let result = Node::parse_wikilinks_in_text(input, None);
+        assert_eq!(result, expected);
+    }
+
+    #[cfg(feature = "wikilink")]
+    #[rstest]
+    #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), "url", Some(AttrValue::String("target".to_string())))]
+    #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), "value", Some(AttrValue::String("target".to_string())))]
+    #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display".to_string()), position: None}), "url", Some(AttrValue::String("target".to_string())))]
+    #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display".to_string()), position: None}), "value", Some(AttrValue::String("display".to_string())))]
+    #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), "title", None)]
+    fn test_wikilink_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<AttrValue>) {
+        assert_eq!(node.attr(attr), expected);
+    }
+
     #[rstest]
     #[case(Node::Html(Html{value: "<div>test</div>".to_string(), position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
@@ -3458,6 +3717,9 @@ mod tests {
         Node::Empty,
         Node::Empty,
     ]}), RenderOptions::default(), "")]
+    #[cfg_attr(feature = "wikilink", case::wikilink(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), RenderOptions::default(), "[[target]]"))]
+    #[cfg_attr(feature = "wikilink", case::wikilink_with_text(Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display text".to_string()), position: None}), RenderOptions::default(), "[[target|display text]]"))]
+    #[cfg_attr(feature = "wikilink", case::wikilink_same_text(Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("target".to_string()), position: None}), RenderOptions::default(), "[[target]]"))]
     fn test_to_string_with(#[case] node: Node, #[case] options: RenderOptions, #[case] expected: &str) {
         assert_eq!(node.to_string_with(&options), expected);
     }

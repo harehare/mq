@@ -2637,6 +2637,7 @@ dependencies = [
 name = "mq-markdown"
 version = "0.6.0"
 dependencies = [
+ "codspeed-divan-compat",
  "ego-tree",
  "itertools",
  "markdown",

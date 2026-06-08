@@ -23,7 +23,7 @@ chrono = {workspace = true}
 dirs = {workspace = true}
 itertools = {workspace = true}
 miette = {workspace = true}
-mq-markdown = {workspace = true, features = ["html-to-markdown"]}
+mq-markdown = {workspace = true, features = ["html-to-markdown", "wikilink"]}
 nom = {workspace = true}
 nom_locate = {workspace = true}
 percent-encoding = {workspace = true}
