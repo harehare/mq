@@ -523,6 +523,7 @@ export const Playground = () => {
     }
     setResult(isFirstRun ? "Initializing..." : "Running...");
     setAstResult("");
+    setPreviewHtml("");
     setExecutionTime(null);
 
     const startTime = performance.now();
@@ -536,15 +537,23 @@ export const Playground = () => {
         linkUrlStyle,
       });
       setResult(output);
-      setPreviewHtml(await toHtml(output));
+
+      if (activeTab === "preview") {
+        setPreviewHtml(await toHtml(output));
+      }
     } catch (e) {
-      setResult((e as Error).toString());
-      setPreviewHtml("");
+      const error = (e as Error).toString();
+      setResult(error);
+
+      if (activeTab === "preview") {
+        setPreviewHtml(error);
+      }
     } finally {
       const endTime = performance.now();
       setExecutionTime(endTime - startTime);
     }
   }, [
+    activeTab,
     code,
     markdown,
     inputFormat,
@@ -1789,30 +1798,30 @@ export const Playground = () => {
     const colors =
       resolvedTheme === "mq"
         ? {
-            bg: "#1e293b",
-            fg: "#e2e8f0",
-            preBg: "#2a3444",
-            link: "#67b8e3",
-            heading: "#e2e8f0",
-            border: "#32404f",
-          }
+          bg: "#1e293b",
+          fg: "#e2e8f0",
+          preBg: "#2a3444",
+          link: "#67b8e3",
+          heading: "#e2e8f0",
+          border: "#32404f",
+        }
         : resolvedTheme === "dark"
           ? {
-              bg: "#1e1e1e",
-              fg: "#d4d4d4",
-              preBg: "#2d2d2d",
-              link: "#4ec9b0",
-              heading: "#d4d4d4",
-              border: "#3e3e42",
-            }
+            bg: "#1e1e1e",
+            fg: "#d4d4d4",
+            preBg: "#2d2d2d",
+            link: "#4ec9b0",
+            heading: "#d4d4d4",
+            border: "#3e3e42",
+          }
           : {
-              bg: "#ffffff",
-              fg: "#1a1a1a",
-              preBg: "#f5f5f5",
-              link: "#0070c1",
-              heading: "#1a1a1a",
-              border: "#e0e0e0",
-            };
+            bg: "#ffffff",
+            fg: "#1a1a1a",
+            preBg: "#f5f5f5",
+            link: "#0070c1",
+            heading: "#1a1a1a",
+            border: "#e0e0e0",
+          };
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:;"><style>
 body{margin:16px;font-family:sans-serif;background:${colors.bg};color:${colors.fg};line-height:1.6}
@@ -2107,7 +2116,10 @@ img{max-width:100%}
             </button>
             <button
               className={`tab ${activeTab === "preview" ? "active" : ""}`}
-              onClick={() => setActiveTab("preview")}
+              onClick={async () => {
+                setPreviewHtml(await toHtml(result));
+                setActiveTab("preview")
+              }}
             >
               Preview
             </button>
