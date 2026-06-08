@@ -3,6 +3,7 @@ import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
 import "./vim.css";
 import * as mq from "mq-web";
+import { toHtml } from "mq-web";
 import { languages, editor, IPosition } from "monaco-editor";
 import LZString from "lz-string";
 import { FileTree } from "./components/FileTree";
@@ -177,8 +178,9 @@ export const Playground = () => {
                   : null;
     })(),
   );
-  const [activeTab, setActiveTab] = useState<"output" | "ast">("output");
+  const [activeTab, setActiveTab] = useState<"output" | "ast" | "preview">("output");
   const [astResult, setAstResult] = useState("");
+  const [previewHtml, setPreviewHtml] = useState("");
   const [files, setFiles] = useState<FileNode[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
@@ -521,27 +523,33 @@ export const Playground = () => {
     }
     setResult(isFirstRun ? "Initializing..." : "Running...");
     setAstResult("");
+    setPreviewHtml("");
     setExecutionTime(null);
 
     const startTime = performance.now();
 
     try {
-      setResult(
-        await mq.run(code, markdown ?? "", {
-          isUpdate,
-          inputFormat,
-          listStyle,
-          linkTitleStyle,
-          linkUrlStyle,
-        }),
-      );
+      const output = await mq.run(code, markdown ?? "", {
+        isUpdate,
+        inputFormat,
+        listStyle,
+        linkTitleStyle,
+        linkUrlStyle,
+      });
+      setResult(output);
+
+      if (activeTab === "preview") {
+        setPreviewHtml(await toHtml(output));
+      }
     } catch (e) {
       setResult((e as Error).toString());
+      setPreviewHtml("");
     } finally {
       const endTime = performance.now();
       setExecutionTime(endTime - startTime);
     }
   }, [
+    activeTab,
     code,
     markdown,
     inputFormat,
@@ -1775,6 +1783,56 @@ export const Playground = () => {
   const monacoTheme =
     theme === "mq" ? "mq-branded" : isDarkMode ? "mq-dark" : "mq-light";
 
+  const buildPreviewSrcDoc = (htmlFragment: string) => {
+    const resolvedTheme =
+      theme === "system"
+        ? window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light"
+        : theme;
+
+    const colors =
+      resolvedTheme === "mq"
+        ? {
+          bg: "#1e293b",
+          fg: "#e2e8f0",
+          preBg: "#2a3444",
+          link: "#67b8e3",
+          heading: "#e2e8f0",
+          border: "#32404f",
+        }
+        : resolvedTheme === "dark"
+          ? {
+            bg: "#1e1e1e",
+            fg: "#d4d4d4",
+            preBg: "#2d2d2d",
+            link: "#4ec9b0",
+            heading: "#d4d4d4",
+            border: "#3e3e42",
+          }
+          : {
+            bg: "#ffffff",
+            fg: "#1a1a1a",
+            preBg: "#f5f5f5",
+            link: "#0070c1",
+            heading: "#1a1a1a",
+            border: "#e0e0e0",
+          };
+
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:;"><style>
+body{margin:16px;font-family:sans-serif;background:${colors.bg};color:${colors.fg};line-height:1.6}
+h1,h2,h3,h4,h5,h6{color:${colors.heading};border-bottom:1px solid ${colors.border};padding-bottom:0.3em}
+a{color:${colors.link}}
+pre{background:${colors.preBg};padding:12px;border-radius:4px;overflow:auto;border:1px solid ${colors.border}}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em}
+blockquote{border-left:4px solid ${colors.border};margin:0;padding:0 1em;color:${colors.fg};opacity:0.8}
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid ${colors.border};padding:6px 12px}
+th{background:${colors.preBg}}
+img{max-width:100%}
+</style></head><body>${htmlFragment}</body></html>`;
+  };
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
@@ -2053,6 +2111,19 @@ export const Playground = () => {
               Output
             </button>
             <button
+              className={`tab ${activeTab === "preview" ? "active" : ""}`}
+              onClick={async () => {
+                try {
+                  setPreviewHtml(await toHtml(result));
+                } catch {
+                  setPreviewHtml("")
+                }
+                setActiveTab("preview")
+              }}
+            >
+              Preview
+            </button>
+            <button
               className={`tab ${activeTab === "ast" ? "active" : ""}`}
               onClick={() => {
                 handleGenerateAst();
@@ -2182,6 +2253,22 @@ export const Playground = () => {
                 theme={monacoTheme}
               />
             )}
+            {activeTab === "preview" && (
+              <iframe
+                srcDoc={
+                  previewHtml
+                    ? buildPreviewSrcDoc(previewHtml)
+                    : buildPreviewSrcDoc("<p style='color:#888'>Click \"Run\" button to display preview</p>")
+                }
+                sandbox=""
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  border: "none",
+                }}
+                title="Preview"
+              />
+            )}
             {activeTab === "ast" && (
               <Editor
                 height="100%"
@@ -2203,118 +2290,124 @@ export const Playground = () => {
         </div>
       </div>
 
-      {!isEmbed && (
-        <footer className="playground-footer">
-          <div className="footer-left">
-            <div
-              ref={vimStatusBarRef}
-              className="vim-status-bar"
-              style={{
-                display: vimModeEnabled ? "block" : "none",
-                minWidth: "100px",
-                fontFamily: "monospace",
-                fontSize: "11px",
-              }}
-            />
-            {currentFilePath && (
-              <>
-                <div className="footer-item">
-                  <span className="current-file-path">{currentFilePath}</span>
-                </div>
-                <div className="save-status">
-                  {saveStatus === "saved" && (
-                    <span className="save-status-item saved">
-                      <VscCheck size={14} /> Saved
-                    </span>
-                  )}
-                  {saveStatus === "saving" && (
-                    <span className="save-status-item saving">
-                      <VscLoading size={14} className="spinning" /> Saving...
-                    </span>
-                  )}
-                  {saveStatus === "unsaved" && (
-                    <span className="save-status-item unsaved">
-                      <VscSave size={14} /> Unsaved
-                    </span>
-                  )}
-                </div>
-              </>
-            )}
-            {!currentFilePath && isOPFSSupported && (
-              <span
-                style={{ color: "var(--tree-empty-color)", fontSize: "11px" }}
+      {
+        !isEmbed && (
+          <footer className="playground-footer">
+            <div className="footer-left">
+              <div
+                ref={vimStatusBarRef}
+                className="vim-status-bar"
+                style={{
+                  display: vimModeEnabled ? "block" : "none",
+                  minWidth: "100px",
+                  fontFamily: "monospace",
+                  fontSize: "11px",
+                }}
+              />
+              {currentFilePath && (
+                <>
+                  <div className="footer-item">
+                    <span className="current-file-path">{currentFilePath}</span>
+                  </div>
+                  <div className="save-status">
+                    {saveStatus === "saved" && (
+                      <span className="save-status-item saved">
+                        <VscCheck size={14} /> Saved
+                      </span>
+                    )}
+                    {saveStatus === "saving" && (
+                      <span className="save-status-item saving">
+                        <VscLoading size={14} className="spinning" /> Saving...
+                      </span>
+                    )}
+                    {saveStatus === "unsaved" && (
+                      <span className="save-status-item unsaved">
+                        <VscSave size={14} /> Unsaved
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
+              {!currentFilePath && isOPFSSupported && (
+                <span
+                  style={{ color: "var(--tree-empty-color)", fontSize: "11px" }}
+                >
+                  No file selected
+                </span>
+              )}
+            </div>
+            <div className="footer-right">
+              {diagnosticCounts.errors > 0 && (
+                <span className="footer-diagnostic footer-diagnostic-error">
+                  <VscError size={12} />
+                  {diagnosticCounts.errors}
+                </span>
+              )}
+              {diagnosticCounts.warnings > 0 && (
+                <span className="footer-diagnostic footer-diagnostic-warning">
+                  <VscWarning size={12} />
+                  {diagnosticCounts.warnings}
+                </span>
+              )}
+              <span className="cursor-position">
+                Ln {cursorPosition.line}, Col {cursorPosition.column}
+              </span>
+              <button
+                className="footer-icon-button"
+                onClick={toggleWordWrap}
+                title={
+                  wordWrap === "on" ? "Disable Word Wrap" : "Enable Word Wrap"
+                }
+                style={{ opacity: wordWrap === "on" ? 1 : 0.5 }}
               >
-                No file selected
-              </span>
-            )}
-          </div>
-          <div className="footer-right">
-            {diagnosticCounts.errors > 0 && (
-              <span className="footer-diagnostic footer-diagnostic-error">
-                <VscError size={12} />
-                {diagnosticCounts.errors}
-              </span>
-            )}
-            {diagnosticCounts.warnings > 0 && (
-              <span className="footer-diagnostic footer-diagnostic-warning">
-                <VscWarning size={12} />
-                {diagnosticCounts.warnings}
-              </span>
-            )}
-            <span className="cursor-position">
-              Ln {cursorPosition.line}, Col {cursorPosition.column}
-            </span>
-            <button
-              className="footer-icon-button"
-              onClick={toggleWordWrap}
-              title={
-                wordWrap === "on" ? "Disable Word Wrap" : "Enable Word Wrap"
-              }
-              style={{ opacity: wordWrap === "on" ? 1 : 0.5 }}
-            >
-              <VscWordWrap size={14} />
-            </button>
-            <button
-              className="footer-icon-button"
-              onClick={toggleMinimap}
-              title={minimapEnabled ? "Disable Minimap" : "Enable Minimap"}
-              style={{ opacity: minimapEnabled ? 1 : 0.5 }}
-            >
-              <VscMap size={14} />
-            </button>
-            {executionTime && (
-              <div className="execution-time">
-                {executionTime.toFixed(2)} ms
-              </div>
-            )}
-          </div>
-        </footer>
-      )}
+                <VscWordWrap size={14} />
+              </button>
+              <button
+                className="footer-icon-button"
+                onClick={toggleMinimap}
+                title={minimapEnabled ? "Disable Minimap" : "Enable Minimap"}
+                style={{ opacity: minimapEnabled ? 1 : 0.5 }}
+              >
+                <VscMap size={14} />
+              </button>
+              {executionTime && (
+                <div className="execution-time">
+                  {executionTime.toFixed(2)} ms
+                </div>
+              )}
+            </div>
+          </footer>
+        )
+      }
 
-      {deleteConfirmDialog && (
-        <ConfirmDialog
-          title="Delete File"
-          message={`Are you sure you want to delete "${deleteConfirmDialog.path}"?`}
-          confirmLabel="Delete"
-          cancelLabel="Cancel"
-          onConfirm={confirmDelete}
-          onCancel={() => setDeleteConfirmDialog(null)}
-        />
-      )}
+      {
+        deleteConfirmDialog && (
+          <ConfirmDialog
+            title="Delete File"
+            message={`Are you sure you want to delete "${deleteConfirmDialog.path}"?`}
+            confirmLabel="Delete"
+            cancelLabel="Cancel"
+            onConfirm={confirmDelete}
+            onCancel={() => setDeleteConfirmDialog(null)}
+          />
+        )
+      }
 
-      {tabCloseConfirm && (
-        <ConfirmDialog
-          title="Unsaved Changes"
-          message={`"${tabCloseConfirm.filePath}" has unsaved changes. Close anyway?`}
-          confirmLabel="Close"
-          cancelLabel="Cancel"
-          onConfirm={() => {
-            closeTab(tabCloseConfirm.tabId);
-            setTabCloseConfirm(null);
-          }}
-          onCancel={() => setTabCloseConfirm(null)}
-        />
-      )}
+      {
+        tabCloseConfirm && (
+          <ConfirmDialog
+            title="Unsaved Changes"
+            message={`"${tabCloseConfirm.filePath}" has unsaved changes. Close anyway?`}
+            confirmLabel="Close"
+            cancelLabel="Cancel"
+            onConfirm={() => {
+              closeTab(tabCloseConfirm.tabId);
+              setTabCloseConfirm(null);
+            }}
+            onCancel={() => setTabCloseConfirm(null)}
+          />
+        )
+      }
 
       <ExamplesModal
         isOpen={isExamplesOpen}
@@ -2345,6 +2438,6 @@ export const Playground = () => {
       />
 
       <ToastContainer toasts={toasts} onClose={dismissToast} />
-    </div>
+    </div >
   );
 };
