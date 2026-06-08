@@ -542,12 +542,8 @@ export const Playground = () => {
         setPreviewHtml(await toHtml(output));
       }
     } catch (e) {
-      const error = (e as Error).toString();
-      setResult(error);
-
-      if (activeTab === "preview") {
-        setPreviewHtml(error);
-      }
+      setResult((e as Error).toString());
+      setPreviewHtml("");
     } finally {
       const endTime = performance.now();
       setExecutionTime(endTime - startTime);
@@ -2117,7 +2113,11 @@ img{max-width:100%}
             <button
               className={`tab ${activeTab === "preview" ? "active" : ""}`}
               onClick={async () => {
-                setPreviewHtml(await toHtml(result));
+                try {
+                  setPreviewHtml(await toHtml(result));
+                } catch {
+                  setPreviewHtml("")
+                }
                 setActiveTab("preview")
               }}
             >
@@ -2290,118 +2290,124 @@ img{max-width:100%}
         </div>
       </div>
 
-      {!isEmbed && (
-        <footer className="playground-footer">
-          <div className="footer-left">
-            <div
-              ref={vimStatusBarRef}
-              className="vim-status-bar"
-              style={{
-                display: vimModeEnabled ? "block" : "none",
-                minWidth: "100px",
-                fontFamily: "monospace",
-                fontSize: "11px",
-              }}
-            />
-            {currentFilePath && (
-              <>
-                <div className="footer-item">
-                  <span className="current-file-path">{currentFilePath}</span>
-                </div>
-                <div className="save-status">
-                  {saveStatus === "saved" && (
-                    <span className="save-status-item saved">
-                      <VscCheck size={14} /> Saved
-                    </span>
-                  )}
-                  {saveStatus === "saving" && (
-                    <span className="save-status-item saving">
-                      <VscLoading size={14} className="spinning" /> Saving...
-                    </span>
-                  )}
-                  {saveStatus === "unsaved" && (
-                    <span className="save-status-item unsaved">
-                      <VscSave size={14} /> Unsaved
-                    </span>
-                  )}
-                </div>
-              </>
-            )}
-            {!currentFilePath && isOPFSSupported && (
-              <span
-                style={{ color: "var(--tree-empty-color)", fontSize: "11px" }}
+      {
+        !isEmbed && (
+          <footer className="playground-footer">
+            <div className="footer-left">
+              <div
+                ref={vimStatusBarRef}
+                className="vim-status-bar"
+                style={{
+                  display: vimModeEnabled ? "block" : "none",
+                  minWidth: "100px",
+                  fontFamily: "monospace",
+                  fontSize: "11px",
+                }}
+              />
+              {currentFilePath && (
+                <>
+                  <div className="footer-item">
+                    <span className="current-file-path">{currentFilePath}</span>
+                  </div>
+                  <div className="save-status">
+                    {saveStatus === "saved" && (
+                      <span className="save-status-item saved">
+                        <VscCheck size={14} /> Saved
+                      </span>
+                    )}
+                    {saveStatus === "saving" && (
+                      <span className="save-status-item saving">
+                        <VscLoading size={14} className="spinning" /> Saving...
+                      </span>
+                    )}
+                    {saveStatus === "unsaved" && (
+                      <span className="save-status-item unsaved">
+                        <VscSave size={14} /> Unsaved
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
+              {!currentFilePath && isOPFSSupported && (
+                <span
+                  style={{ color: "var(--tree-empty-color)", fontSize: "11px" }}
+                >
+                  No file selected
+                </span>
+              )}
+            </div>
+            <div className="footer-right">
+              {diagnosticCounts.errors > 0 && (
+                <span className="footer-diagnostic footer-diagnostic-error">
+                  <VscError size={12} />
+                  {diagnosticCounts.errors}
+                </span>
+              )}
+              {diagnosticCounts.warnings > 0 && (
+                <span className="footer-diagnostic footer-diagnostic-warning">
+                  <VscWarning size={12} />
+                  {diagnosticCounts.warnings}
+                </span>
+              )}
+              <span className="cursor-position">
+                Ln {cursorPosition.line}, Col {cursorPosition.column}
+              </span>
+              <button
+                className="footer-icon-button"
+                onClick={toggleWordWrap}
+                title={
+                  wordWrap === "on" ? "Disable Word Wrap" : "Enable Word Wrap"
+                }
+                style={{ opacity: wordWrap === "on" ? 1 : 0.5 }}
               >
-                No file selected
-              </span>
-            )}
-          </div>
-          <div className="footer-right">
-            {diagnosticCounts.errors > 0 && (
-              <span className="footer-diagnostic footer-diagnostic-error">
-                <VscError size={12} />
-                {diagnosticCounts.errors}
-              </span>
-            )}
-            {diagnosticCounts.warnings > 0 && (
-              <span className="footer-diagnostic footer-diagnostic-warning">
-                <VscWarning size={12} />
-                {diagnosticCounts.warnings}
-              </span>
-            )}
-            <span className="cursor-position">
-              Ln {cursorPosition.line}, Col {cursorPosition.column}
-            </span>
-            <button
-              className="footer-icon-button"
-              onClick={toggleWordWrap}
-              title={
-                wordWrap === "on" ? "Disable Word Wrap" : "Enable Word Wrap"
-              }
-              style={{ opacity: wordWrap === "on" ? 1 : 0.5 }}
-            >
-              <VscWordWrap size={14} />
-            </button>
-            <button
-              className="footer-icon-button"
-              onClick={toggleMinimap}
-              title={minimapEnabled ? "Disable Minimap" : "Enable Minimap"}
-              style={{ opacity: minimapEnabled ? 1 : 0.5 }}
-            >
-              <VscMap size={14} />
-            </button>
-            {executionTime && (
-              <div className="execution-time">
-                {executionTime.toFixed(2)} ms
-              </div>
-            )}
-          </div>
-        </footer>
-      )}
+                <VscWordWrap size={14} />
+              </button>
+              <button
+                className="footer-icon-button"
+                onClick={toggleMinimap}
+                title={minimapEnabled ? "Disable Minimap" : "Enable Minimap"}
+                style={{ opacity: minimapEnabled ? 1 : 0.5 }}
+              >
+                <VscMap size={14} />
+              </button>
+              {executionTime && (
+                <div className="execution-time">
+                  {executionTime.toFixed(2)} ms
+                </div>
+              )}
+            </div>
+          </footer>
+        )
+      }
 
-      {deleteConfirmDialog && (
-        <ConfirmDialog
-          title="Delete File"
-          message={`Are you sure you want to delete "${deleteConfirmDialog.path}"?`}
-          confirmLabel="Delete"
-          cancelLabel="Cancel"
-          onConfirm={confirmDelete}
-          onCancel={() => setDeleteConfirmDialog(null)}
-        />
-      )}
+      {
+        deleteConfirmDialog && (
+          <ConfirmDialog
+            title="Delete File"
+            message={`Are you sure you want to delete "${deleteConfirmDialog.path}"?`}
+            confirmLabel="Delete"
+            cancelLabel="Cancel"
+            onConfirm={confirmDelete}
+            onCancel={() => setDeleteConfirmDialog(null)}
+          />
+        )
+      }
 
-      {tabCloseConfirm && (
-        <ConfirmDialog
-          title="Unsaved Changes"
-          message={`"${tabCloseConfirm.filePath}" has unsaved changes. Close anyway?`}
-          confirmLabel="Close"
-          cancelLabel="Cancel"
-          onConfirm={() => {
-            closeTab(tabCloseConfirm.tabId);
-            setTabCloseConfirm(null);
-          }}
-          onCancel={() => setTabCloseConfirm(null)}
-        />
-      )}
+      {
+        tabCloseConfirm && (
+          <ConfirmDialog
+            title="Unsaved Changes"
+            message={`"${tabCloseConfirm.filePath}" has unsaved changes. Close anyway?`}
+            confirmLabel="Close"
+            cancelLabel="Cancel"
+            onConfirm={() => {
+              closeTab(tabCloseConfirm.tabId);
+              setTabCloseConfirm(null);
+            }}
+            onCancel={() => setTabCloseConfirm(null)}
+          />
+        )
+      }
 
       <ExamplesModal
         isOpen={isExamplesOpen}
@@ -2432,6 +2438,6 @@ img{max-width:100%}
       />
 
       <ToastContainer toasts={toasts} onClose={dismissToast} />
-    </div>
+    </div >
   );
 };
