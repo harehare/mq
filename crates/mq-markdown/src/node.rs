@@ -2319,6 +2319,10 @@ impl Node {
                 tr.values = Self::expand_wikilinks(tr.values);
                 vec![Node::TableRow(tr)]
             }
+            Node::Footnote(mut f) => {
+                f.values = Self::expand_wikilinks(f.values);
+                vec![Node::Footnote(f)]
+            }
             other => vec![other],
         }
     }
@@ -3463,6 +3467,36 @@ mod tests {
     #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), "title", None)]
     fn test_wikilink_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<AttrValue>) {
         assert_eq!(node.attr(attr), expected);
+    }
+
+    #[cfg(feature = "wikilink")]
+    #[rstest]
+    // footnote with no wikilinks — values unchanged
+    #[case(
+        Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::Text(Text{value: "plain text".to_string(), position: None})], position: None}),
+        vec![Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::Text(Text{value: "plain text".to_string(), position: None})], position: None})]
+    )]
+    // footnote with a wikilink in text — expanded to WikiLink node
+    #[case(
+        Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::Text(Text{value: "[[target]]".to_string(), position: None})], position: None}),
+        vec![Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None})], position: None})]
+    )]
+    // footnote with wikilink and display text
+    #[case(
+        Node::Footnote(Footnote{ident: "2".to_string(), values: vec![Node::Text(Text{value: "[[target|display]]".to_string(), position: None})], position: None}),
+        vec![Node::Footnote(Footnote{ident: "2".to_string(), values: vec![Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display".to_string()), position: None})], position: None})]
+    )]
+    // footnote with mixed text and wikilink
+    #[case(
+        Node::Footnote(Footnote{ident: "3".to_string(), values: vec![Node::Text(Text{value: "see [[note]]".to_string(), position: None})], position: None}),
+        vec![Node::Footnote(Footnote{ident: "3".to_string(), values: vec![
+            Node::Text(Text{value: "see ".to_string(), position: None}),
+            Node::WikiLink(WikiLink{target: "note".to_string(), text: None, position: None}),
+        ], position: None})]
+    )]
+    fn test_expand_wikilinks_footnote(#[case] input: Node, #[case] expected: Vec<Node>) {
+        let result = Node::expand_wikilinks(vec![input]);
+        assert_eq!(result, expected);
     }
 
     #[rstest]
