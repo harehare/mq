@@ -2280,60 +2280,103 @@ impl Node {
     /// patterns inside `Text` nodes into `WikiLink` nodes.
     #[cfg(feature = "wikilink")]
     pub fn expand_wikilinks(nodes: Vec<Node>) -> Vec<Node> {
-        nodes.into_iter().flat_map(Self::expand_wikilinks_node).collect()
+        let mut result = Vec::with_capacity(nodes.len());
+        for node in nodes {
+            Self::expand_wikilinks_into(node, &mut result);
+        }
+        result
+    }
+
+    /// Returns true if any `Text` descendant of this node contains `[[`.
+    #[cfg(feature = "wikilink")]
+    fn values_need_expansion(values: &[Node]) -> bool {
+        values.iter().any(|n| match n {
+            Node::Text(t) => t.value.contains("[["),
+            Node::Heading(h) => Self::values_need_expansion(&h.values),
+            Node::Blockquote(b) => Self::values_need_expansion(&b.values),
+            Node::List(l) => Self::values_need_expansion(&l.values),
+            Node::Strong(s) => Self::values_need_expansion(&s.values),
+            Node::Emphasis(e) => Self::values_need_expansion(&e.values),
+            Node::Delete(d) => Self::values_need_expansion(&d.values),
+            Node::TableCell(tc) => Self::values_need_expansion(&tc.values),
+            Node::TableRow(tr) => Self::values_need_expansion(&tr.values),
+            Node::Footnote(f) => Self::values_need_expansion(&f.values),
+            _ => false,
+        })
     }
 
     #[cfg(feature = "wikilink")]
-    fn expand_wikilinks_node(node: Node) -> Vec<Node> {
+    fn expand_wikilinks_into(node: Node, out: &mut Vec<Node>) {
         match node {
-            Node::Text(Text { value, position }) => Self::parse_wikilinks_in_text(&value, position),
+            Node::Text(Text { ref value, .. }) if !value.contains("[[") => out.push(node),
+            Node::Text(Text { value, position }) => {
+                Self::parse_wikilinks_into(&value, position, out);
+            }
             Node::Heading(mut h) => {
-                h.values = Self::expand_wikilinks(h.values);
-                vec![Node::Heading(h)]
+                if Self::values_need_expansion(&h.values) {
+                    h.values = Self::expand_wikilinks(h.values);
+                }
+                out.push(Node::Heading(h));
             }
             Node::Blockquote(mut b) => {
-                b.values = Self::expand_wikilinks(b.values);
-                vec![Node::Blockquote(b)]
+                if Self::values_need_expansion(&b.values) {
+                    b.values = Self::expand_wikilinks(b.values);
+                }
+                out.push(Node::Blockquote(b));
             }
             Node::List(mut l) => {
-                l.values = Self::expand_wikilinks(l.values);
-                vec![Node::List(l)]
+                if Self::values_need_expansion(&l.values) {
+                    l.values = Self::expand_wikilinks(l.values);
+                }
+                out.push(Node::List(l));
             }
             Node::Strong(mut s) => {
-                s.values = Self::expand_wikilinks(s.values);
-                vec![Node::Strong(s)]
+                if Self::values_need_expansion(&s.values) {
+                    s.values = Self::expand_wikilinks(s.values);
+                }
+                out.push(Node::Strong(s));
             }
             Node::Emphasis(mut e) => {
-                e.values = Self::expand_wikilinks(e.values);
-                vec![Node::Emphasis(e)]
+                if Self::values_need_expansion(&e.values) {
+                    e.values = Self::expand_wikilinks(e.values);
+                }
+                out.push(Node::Emphasis(e));
             }
             Node::Delete(mut d) => {
-                d.values = Self::expand_wikilinks(d.values);
-                vec![Node::Delete(d)]
+                if Self::values_need_expansion(&d.values) {
+                    d.values = Self::expand_wikilinks(d.values);
+                }
+                out.push(Node::Delete(d));
             }
             Node::TableCell(mut tc) => {
-                tc.values = Self::expand_wikilinks(tc.values);
-                vec![Node::TableCell(tc)]
+                if Self::values_need_expansion(&tc.values) {
+                    tc.values = Self::expand_wikilinks(tc.values);
+                }
+                out.push(Node::TableCell(tc));
             }
             Node::TableRow(mut tr) => {
-                tr.values = Self::expand_wikilinks(tr.values);
-                vec![Node::TableRow(tr)]
+                if Self::values_need_expansion(&tr.values) {
+                    tr.values = Self::expand_wikilinks(tr.values);
+                }
+                out.push(Node::TableRow(tr));
             }
             Node::Footnote(mut f) => {
-                f.values = Self::expand_wikilinks(f.values);
-                vec![Node::Footnote(f)]
+                if Self::values_need_expansion(&f.values) {
+                    f.values = Self::expand_wikilinks(f.values);
+                }
+                out.push(Node::Footnote(f));
             }
-            other => vec![other],
+            other => out.push(other),
         }
     }
 
-    /// Splits a text string on `[[...]]` patterns, returning a mix of `Text`
-    /// and `WikiLink` nodes.
+    /// Splits a text string on `[[...]]` patterns, pushing a mix of `Text`
+    /// and `WikiLink` nodes into `out`.
     #[cfg(feature = "wikilink")]
-    fn parse_wikilinks_in_text(text: &str, position: Option<Position>) -> Vec<Node> {
-        let mut result: Vec<Node> = Vec::new();
+    fn parse_wikilinks_into(text: &str, position: Option<Position>, out: &mut Vec<Node>) {
         let mut last_end = 0;
         let mut search_from = 0;
+        let mut found_any = false;
 
         while let Some(open_rel) = text[search_from..].find("[[") {
             let open = search_from + open_rel;
@@ -2351,8 +2394,9 @@ impl Node {
                 continue;
             }
 
+            found_any = true;
             if last_end < open {
-                result.push(Node::Text(Text {
+                out.push(Node::Text(Text {
                     value: text[last_end..open].to_string(),
                     position: position.clone(),
                 }));
@@ -2362,7 +2406,7 @@ impl Node {
             } else {
                 (content.trim(), None)
             };
-            result.push(Node::WikiLink(WikiLink {
+            out.push(Node::WikiLink(WikiLink {
                 target: target.to_string(),
                 text: text_part.map(|t| t.to_string()),
                 position: position.clone(),
@@ -2371,18 +2415,28 @@ impl Node {
             search_from = close + 2;
         }
 
-        if result.is_empty() {
-            return vec![Node::Text(Text {
+        if !found_any {
+            out.push(Node::Text(Text {
                 value: text.to_string(),
                 position,
-            })];
+            }));
+            return;
         }
+
         if last_end < text.len() {
-            result.push(Node::Text(Text {
+            out.push(Node::Text(Text {
                 value: text[last_end..].to_string(),
                 position,
             }));
         }
+    }
+
+    /// Splits a text string on `[[...]]` patterns, returning a mix of `Text`
+    /// and `WikiLink` nodes. Used only in tests.
+    #[cfg(all(feature = "wikilink", test))]
+    fn parse_wikilinks_in_text(text: &str, position: Option<Position>) -> Vec<Node> {
+        let mut result = Vec::new();
+        Self::parse_wikilinks_into(text, position, &mut result);
         result
     }
 
