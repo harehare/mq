@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
 import "./vim.css";
@@ -734,31 +734,31 @@ export const Playground = () => {
     }
   };
 
+  const tabsRef = useRef(tabs);
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
   const openOrSwitchToTab = useCallback((filePath: string, content: string) => {
-    setTabs((prevTabs) => {
-      // Check if tab already exists
-      const existingTab = prevTabs.find((tab) => tab.filePath === filePath);
-      if (existingTab) {
-        setActiveTabId(existingTab.id);
-        setEditorContent(filePath, existingTab.content);
-        return prevTabs; // Don't modify tabs
-      }
+    const existingTab = tabsRef.current.find((tab) => tab.filePath === filePath);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+      setEditorContent(filePath, existingTab.content);
+      return;
+    }
 
-      // Create new tab
-      const newTab: Tab = {
-        id: generateTabId(),
-        filePath,
-        content,
-        savedContent: content,
-        fileType: getFileType(filePath),
-        isDirty: false,
-      };
+    const newTab: Tab = {
+      id: generateTabId(),
+      filePath,
+      content,
+      savedContent: content,
+      fileType: getFileType(filePath),
+      isDirty: false,
+    };
 
-      setActiveTabId(newTab.id);
-      setEditorContent(filePath, content);
-
-      return [...prevTabs, newTab];
-    });
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+    setEditorContent(filePath, content);
   }, []);
 
   const handleTabClick = useCallback(
@@ -1358,7 +1358,7 @@ export const Playground = () => {
     setWordWrap((prev) => (prev === "on" ? "off" : "on"));
   }, []);
 
-  const beforeMount = (monaco: Monaco) => {
+  const beforeMount = useCallback((monaco: Monaco) => {
     monaco.editor.addEditorAction({
       id: "run-script",
       label: "Run Script",
@@ -1773,7 +1773,7 @@ export const Playground = () => {
         "editor.inactiveSelectionBackground": "#2a3444",
       },
     });
-  };
+  }, [handleRun]);
 
   const isDarkMode =
     theme === "system"
@@ -1832,6 +1832,38 @@ th{background:${colors.preBg}}
 img{max-width:100%}
 </style></head><body>${htmlFragment}</body></html>`;
   };
+
+  const codeEditorOptions = useMemo(() => ({
+    minimap: { enabled: minimapEnabled },
+    scrollBeyondLastLine: false,
+    fontSize,
+    automaticLayout: true,
+    fontFamily: "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
+    fontLigatures: true,
+    wordWrap,
+    lineNumbers,
+    tabSize,
+  }), [minimapEnabled, fontSize, wordWrap, lineNumbers, tabSize]);
+
+  const markdownEditorOptions = useMemo(() => ({
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    fontSize,
+    automaticLayout: true,
+    fontFamily: "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
+    fontLigatures: true,
+    lineNumbers,
+    tabSize,
+  }), [fontSize, lineNumbers, tabSize]);
+
+  const outputEditorOptions = useMemo(() => ({
+    readOnly: true,
+    domReadOnly: true,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    fontSize,
+    automaticLayout: true,
+  }), [fontSize]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -2037,18 +2069,7 @@ img{max-width:100%}
                     editorRef.current = null;
                   });
                 }}
-                options={{
-                  minimap: { enabled: minimapEnabled },
-                  scrollBeyondLastLine: false,
-                  fontSize,
-                  automaticLayout: true,
-                  fontFamily:
-                    "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
-                  fontLigatures: true,
-                  wordWrap,
-                  lineNumbers,
-                  tabSize,
-                }}
+                options={codeEditorOptions}
                 theme={monacoTheme}
               />
             </div>
@@ -2083,17 +2104,7 @@ img{max-width:100%}
                 defaultLanguage="markdown"
                 value={markdown}
                 onChange={setMarkdown}
-                options={{
-                  minimap: { enabled: false },
-                  scrollBeyondLastLine: false,
-                  fontSize,
-                  automaticLayout: true,
-                  fontFamily:
-                    "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
-                  fontLigatures: true,
-                  lineNumbers,
-                  tabSize,
-                }}
+                options={markdownEditorOptions}
                 theme={monacoTheme}
               />
             </div>
@@ -2242,14 +2253,7 @@ img{max-width:100%}
                 defaultLanguage="markdown"
                 defaultValue={`Click "Run" button to display results`}
                 value={result}
-                options={{
-                  readOnly: true,
-                  domReadOnly: true,
-                  minimap: { enabled: false },
-                  scrollBeyondLastLine: false,
-                  fontSize,
-                  automaticLayout: true,
-                }}
+                options={outputEditorOptions}
                 theme={monacoTheme}
               />
             )}
@@ -2275,14 +2279,7 @@ img{max-width:100%}
                 defaultLanguage="json"
                 defaultValue={`Click "Generate AST" button to display AST`}
                 value={astResult}
-                options={{
-                  readOnly: true,
-                  domReadOnly: true,
-                  minimap: { enabled: false },
-                  scrollBeyondLastLine: false,
-                  fontSize,
-                  automaticLayout: true,
-                }}
+                options={outputEditorOptions}
                 theme={monacoTheme}
               />
             )}
