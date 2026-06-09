@@ -3154,6 +3154,27 @@ fn engine() -> DefaultEngine {
 #[case::mul_markdown_number(r#"to_h("ab", 1) | mul(2) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
 // downcase: with Markdown input
 #[case::downcase_markdown(r#"to_h("TEST", 1) | downcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+// wikilink selector
+#[case::wikilink_select(
+    r#"to_markdown("[[target]]") | first() | .wikilink"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::WikiLink(mq_markdown::WikiLink { target: "target".to_string(), text: None, position: None }))].into()))]
+#[case::wikilink_with_text_select(
+    r#"to_markdown("[[target|display]]") | first() | .wikilink"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::WikiLink(mq_markdown::WikiLink { target: "target".to_string(), text: Some("display".to_string()), position: None }))].into()))]
+#[case::wikilink_url_attr(
+    r#"to_markdown("[[My Notes]]") | first() | .wikilink | .url"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("My Notes".to_string())].into()))]
+#[case::wikilink_value_attr(
+    r#"to_markdown("[[target|display]]") | first() | .wikilink | .value"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("display".to_string())].into()))]
+#[case::link_includes_wikilink(
+    r#"to_markdown("[[target]]") | first() | .link"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::WikiLink(mq_markdown::WikiLink { target: "target".to_string(), text: None, position: None }))].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

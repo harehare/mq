@@ -24,7 +24,12 @@ serde_yaml = {workspace = true, optional = true}
 smol_str = {workspace = true}
 
 [dev-dependencies]
+divan = {workspace = true}
 rstest = {workspace = true}
+
+[[bench]]
+harness = false
+name = "benchmark"
 
 [features]
 color = []
@@ -32,3 +37,4 @@ default = ["std"]
 html-to-markdown = ["dep:scraper", "dep:ego-tree", "dep:serde_yaml"]
 json = ["dep:serde", "dep:serde_json", "smol_str/serde"]
 std = []
+wikilink = []
