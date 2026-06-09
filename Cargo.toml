@@ -100,7 +100,7 @@ smol_str = "0.3.6"
 string-interner = "0.20"
 strsim = "0.11.1"
 strum = "0.28.0"
-tabled = {version = "0.20.0", default-features = false, features = ["std", "ansi"]}
+tabled = {version = "0.21.0", default-features = false, features = ["std", "ansi"]}
 tempfile = "3.27"
 thiserror = "2.0.18"
 tokio = "1.52.2"
