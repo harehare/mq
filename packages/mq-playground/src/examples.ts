@@ -308,6 +308,32 @@ Use the tool like this.
         format: "markdown",
       },
       {
+        name: "Extract section with depth",
+        code: `include "section" | nodes | section("API", true) | collect()`,
+        markdown: `# Introduction
+
+Some intro text.
+
+# API
+
+## Endpoints
+
+\`GET /users\`
+
+\`POST /users\`
+
+## Authentication
+
+Use Bearer tokens.
+
+# Contributing
+
+How to contribute.
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
         name: "Split by header level",
         code: `include "section" | nodes | split(2) | titles()`,
         markdown: `# Main Title
@@ -323,6 +349,28 @@ Content of section 2.
 ## Section 3
 
 Content of section 3.
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Filter by heading level",
+        code: `include "section" | nodes | sections() | by_level(2) | titles()`,
+        markdown: `# Chapter 1
+
+## Section 1.1
+
+Content here.
+
+## Section 1.2
+
+More content.
+
+# Chapter 2
+
+## Section 2.1
+
+Another section.
 `,
         isUpdate: false,
         format: "markdown",
@@ -361,6 +409,163 @@ Welcome to the project.
 ## Usage
 
 Use the tool like this.
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Map section titles",
+        code: `include "section" | nodes | map_sections(fn(h, _): to_text(h) | upcase();)`,
+        markdown: `# Introduction
+
+Welcome to the project.
+
+## Installation
+
+Run \`npm install mq\`.
+
+## Usage
+
+Use the tool like this.
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Get nth section",
+        code: `include "section" | nodes | sections() | nth(1) | body()`,
+        markdown: `# Introduction
+
+First section content.
+
+## Installation
+
+Run \`npm install mq\`.
+
+## Usage
+
+Use the tool like this.
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+    ],
+  },
+  {
+    name: "Table Module",
+    examples: [
+      {
+        name: "Extract table structures",
+        code: `include "table" | nodes | tables() | map(fn(t): t | to_markdown();) | flatten()`,
+        markdown: `# Product List
+
+| Product | Category | Price | Stock |
+|---------|----------|-------|-------|
+| Laptop  | Electronics | $1200 | 45 |
+| Monitor | Electronics | $350 | 28 |
+| Chair   | Furniture | $150 | 73 |
+| Desk    | Furniture | $200 | 14 |
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Sort table rows",
+        code: `include "table" | nodes | tables() | map(fn(t): t | sort_rows(0) | to_markdown();) | flatten()`,
+        markdown: `# Product List
+
+| Product | Category | Price | Stock |
+|---------|----------|-------|-------|
+| Laptop  | Electronics | $1200 | 45 |
+| Chair   | Furniture | $150 | 73 |
+| Monitor | Electronics | $350 | 28 |
+| Desk    | Furniture | $200 | 14 |
+| Keyboard | Accessories | $80 | 35 |
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Filter table rows",
+        code: `include "table" | nodes | tables() | map(fn(t): t | filter_rows(fn(row): contains(to_text(row[1]), "Electronics");) | to_markdown();) | flatten()`,
+        markdown: `# Product List
+
+| Product | Category | Price | Stock |
+|---------|----------|-------|-------|
+| Laptop  | Electronics | $1200 | 45 |
+| Monitor | Electronics | $350 | 28 |
+| Chair   | Furniture | $150 | 73 |
+| Desk    | Furniture | $200 | 14 |
+| Keyboard | Accessories | $80 | 35 |
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Add row to table",
+        code: `include "table" | nodes | tables() | map(fn(t): t | add_row(["Webcam", "Electronics", "$60", "55"]) | to_markdown();) | flatten()`,
+        markdown: `# Product List
+
+| Product | Category | Price | Stock |
+|---------|----------|-------|-------|
+| Laptop  | Electronics | $1200 | 45 |
+| Monitor | Electronics | $350 | 28 |
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Export table to CSV",
+        code: `include "table" | nodes | tables() | map(fn(t): t | to_csv();)`,
+        markdown: `# Product List
+
+| Product | Category | Price | Stock |
+|---------|----------|-------|-------|
+| Laptop  | Electronics | $1200 | 45 |
+| Monitor | Electronics | $350 | 28 |
+| Chair   | Furniture | $150 | 73 |
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+    ],
+  },
+  {
+    name: "Fuzzy Search",
+    examples: [
+      {
+        name: "Fuzzy match strings",
+        code: `include "fuzzy" | ["Introduction", "Installation", "Quick Start", "Configuration", "API Reference"] | fuzzy_match("instal")`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Filter by match score",
+        code: `include "fuzzy" | ["Introduction", "Installation", "Quick Start", "Configuration", "API Reference"] | fuzzy_filter("instal", 0.8)`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Best fuzzy match",
+        code: `include "fuzzy" | ["Introduction", "Installation", "Quick Start", "Configuration"] | fuzzy_best_match("instal")`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Fuzzy search headings",
+        code: `include "fuzzy" | .h | map(to_text) | fuzzy_match("instal") | filter(fn(m): m["score"] > 0.8;)`,
+        markdown: `# Introduction
+
+## Installation
+
+### Quick Start
+
+## Configuration
+
+## API Reference
 `,
         isUpdate: false,
         format: "markdown",
