@@ -103,6 +103,13 @@ Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.6.0/m
 brew install mq
 ```
 
+### Arch
+
+```sh
+# Using yay (ArchLinux)
+yay -S mq-bin
+```
+
 ### Docker
 
 ```sh
