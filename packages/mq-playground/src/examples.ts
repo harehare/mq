@@ -542,7 +542,7 @@ Use the tool like this.
       },
       {
         name: "Filter by match score",
-        code: `include "fuzzy" | ["Introduction", "Installation", "Quick Start", "Configuration", "API Reference"] | fuzzy_filter("instal", 0.8)`,
+        code: `include "fuzzy" | ["Introduction", "Installation", "Quick Start", "Configuration", "API Reference"] | fuzzy_filter("instal", 0.75)`,
         markdown: ``,
         isUpdate: false,
         format: "null",
@@ -553,22 +553,6 @@ Use the tool like this.
         markdown: ``,
         isUpdate: false,
         format: "null",
-      },
-      {
-        name: "Fuzzy search headings",
-        code: `include "fuzzy" | .h | map(to_text) | fuzzy_match("instal") | filter(fn(m): m["score"] > 0.8;)`,
-        markdown: `# Introduction
-
-## Installation
-
-### Quick Start
-
-## Configuration
-
-## API Reference
-`,
-        isUpdate: false,
-        format: "markdown",
       },
     ],
   },
