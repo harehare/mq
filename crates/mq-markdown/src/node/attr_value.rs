@@ -20,6 +20,7 @@ pub mod attr_keys {
     pub(crate) const ORDERED: &str = "ordered";
     pub(crate) const CHECKED: &str = "checked";
     pub(crate) const COLUMN: &str = "column";
+    #[cfg(feature = "callout")]
     pub(crate) const KIND: &str = "kind";
     pub(crate) const ROW: &str = "row";
 }
