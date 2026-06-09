@@ -2504,107 +2504,113 @@ impl Node {
         })
     }
 
-    /// Recursively scans a node list and converts `![[target]]` / `![[target|display]]`
-    /// patterns inside `Text` nodes into `Embed` nodes.
-    #[cfg(feature = "embed")]
-    pub fn expand_embeds(nodes: Vec<Node>) -> Vec<Node> {
-        let mut result = Vec::with_capacity(nodes.len());
-        for node in nodes {
-            Self::expand_embeds_into(node, &mut result);
-        }
-        result
-    }
-
-    /// Returns true if any `Text` descendant of this node contains `![[`.
-    #[cfg(feature = "embed")]
-    fn values_need_embed_expansion(values: &[Node]) -> bool {
+    /// Returns true if any `Text` descendant contains `[[`, covering both
+    /// embed (`![[`) and wikilink (`[[`) patterns.
+    #[cfg(any(feature = "embed", feature = "wikilink"))]
+    fn values_contain_links(values: &[Node]) -> bool {
         values.iter().any(|n| match n {
-            Node::Text(t) => t.value.contains("![["),
-            Node::Heading(h) => Self::values_need_embed_expansion(&h.values),
-            Node::Blockquote(b) => Self::values_need_embed_expansion(&b.values),
+            Node::Text(t) => t.value.contains("[["),
+            Node::Heading(h) => Self::values_contain_links(&h.values),
+            Node::Blockquote(b) => Self::values_contain_links(&b.values),
             #[cfg(feature = "callout")]
-            Node::Callout(c) => Self::values_need_embed_expansion(&c.values),
-            Node::List(l) => Self::values_need_embed_expansion(&l.values),
-            Node::Strong(s) => Self::values_need_embed_expansion(&s.values),
-            Node::Emphasis(e) => Self::values_need_embed_expansion(&e.values),
-            Node::Delete(d) => Self::values_need_embed_expansion(&d.values),
-            Node::TableCell(tc) => Self::values_need_embed_expansion(&tc.values),
-            Node::TableRow(tr) => Self::values_need_embed_expansion(&tr.values),
-            Node::Footnote(f) => Self::values_need_embed_expansion(&f.values),
+            Node::Callout(c) => Self::values_contain_links(&c.values),
+            Node::List(l) => Self::values_contain_links(&l.values),
+            Node::Strong(s) => Self::values_contain_links(&s.values),
+            Node::Emphasis(e) => Self::values_contain_links(&e.values),
+            Node::Delete(d) => Self::values_contain_links(&d.values),
+            Node::TableCell(tc) => Self::values_contain_links(&tc.values),
+            Node::TableRow(tr) => Self::values_contain_links(&tr.values),
+            Node::Footnote(f) => Self::values_contain_links(&f.values),
             _ => false,
         })
     }
 
-    #[cfg(feature = "embed")]
-    fn expand_embeds_into(node: Node, out: &mut Vec<Node>) {
+    /// Shared tree walker used by all expand functions. Recurses into container
+    /// nodes and delegates `Text` node processing to `parse_into`.
+    #[cfg(any(feature = "embed", feature = "wikilink"))]
+    fn expand_with(nodes: Vec<Node>, parse_into: fn(&str, Option<Position>, &mut Vec<Node>)) -> Vec<Node> {
+        let mut result = Vec::with_capacity(nodes.len());
+        for node in nodes {
+            Self::expand_with_into(node, &mut result, parse_into);
+        }
+        result
+    }
+
+    #[cfg(any(feature = "embed", feature = "wikilink"))]
+    fn expand_with_into(node: Node, out: &mut Vec<Node>, parse_into: fn(&str, Option<Position>, &mut Vec<Node>)) {
         match node {
-            Node::Text(Text { ref value, .. }) if !value.contains("![[") => out.push(node),
-            Node::Text(Text { value, position }) => {
-                Self::parse_embeds_into(&value, position, out);
-            }
+            Node::Text(Text { ref value, .. }) if !value.contains("[[") => out.push(node),
+            Node::Text(Text { value, position }) => parse_into(&value, position, out),
             Node::Heading(mut h) => {
-                if Self::values_need_embed_expansion(&h.values) {
-                    h.values = Self::expand_embeds(h.values);
+                if Self::values_contain_links(&h.values) {
+                    h.values = Self::expand_with(h.values, parse_into);
                 }
                 out.push(Node::Heading(h));
             }
             Node::Blockquote(mut b) => {
-                if Self::values_need_embed_expansion(&b.values) {
-                    b.values = Self::expand_embeds(b.values);
+                if Self::values_contain_links(&b.values) {
+                    b.values = Self::expand_with(b.values, parse_into);
                 }
                 out.push(Node::Blockquote(b));
             }
             #[cfg(feature = "callout")]
             Node::Callout(mut c) => {
-                if Self::values_need_embed_expansion(&c.values) {
-                    c.values = Self::expand_embeds(c.values);
+                if Self::values_contain_links(&c.values) {
+                    c.values = Self::expand_with(c.values, parse_into);
                 }
                 out.push(Node::Callout(c));
             }
             Node::List(mut l) => {
-                if Self::values_need_embed_expansion(&l.values) {
-                    l.values = Self::expand_embeds(l.values);
+                if Self::values_contain_links(&l.values) {
+                    l.values = Self::expand_with(l.values, parse_into);
                 }
                 out.push(Node::List(l));
             }
             Node::Strong(mut s) => {
-                if Self::values_need_embed_expansion(&s.values) {
-                    s.values = Self::expand_embeds(s.values);
+                if Self::values_contain_links(&s.values) {
+                    s.values = Self::expand_with(s.values, parse_into);
                 }
                 out.push(Node::Strong(s));
             }
             Node::Emphasis(mut e) => {
-                if Self::values_need_embed_expansion(&e.values) {
-                    e.values = Self::expand_embeds(e.values);
+                if Self::values_contain_links(&e.values) {
+                    e.values = Self::expand_with(e.values, parse_into);
                 }
                 out.push(Node::Emphasis(e));
             }
             Node::Delete(mut d) => {
-                if Self::values_need_embed_expansion(&d.values) {
-                    d.values = Self::expand_embeds(d.values);
+                if Self::values_contain_links(&d.values) {
+                    d.values = Self::expand_with(d.values, parse_into);
                 }
                 out.push(Node::Delete(d));
             }
             Node::TableCell(mut tc) => {
-                if Self::values_need_embed_expansion(&tc.values) {
-                    tc.values = Self::expand_embeds(tc.values);
+                if Self::values_contain_links(&tc.values) {
+                    tc.values = Self::expand_with(tc.values, parse_into);
                 }
                 out.push(Node::TableCell(tc));
             }
             Node::TableRow(mut tr) => {
-                if Self::values_need_embed_expansion(&tr.values) {
-                    tr.values = Self::expand_embeds(tr.values);
+                if Self::values_contain_links(&tr.values) {
+                    tr.values = Self::expand_with(tr.values, parse_into);
                 }
                 out.push(Node::TableRow(tr));
             }
             Node::Footnote(mut f) => {
-                if Self::values_need_embed_expansion(&f.values) {
-                    f.values = Self::expand_embeds(f.values);
+                if Self::values_contain_links(&f.values) {
+                    f.values = Self::expand_with(f.values, parse_into);
                 }
                 out.push(Node::Footnote(f));
             }
             other => out.push(other),
         }
+    }
+
+    /// Recursively scans a node list and converts `![[target]]` / `![[target|display]]`
+    /// patterns inside `Text` nodes into `Embed` nodes.
+    #[cfg(feature = "embed")]
+    pub fn expand_embeds(nodes: Vec<Node>) -> Vec<Node> {
+        Self::expand_with(nodes, Self::parse_embeds_into)
     }
 
     /// Splits a text string on `![[...]]` patterns, pushing a mix of `Text`
@@ -2675,103 +2681,7 @@ impl Node {
     /// patterns inside `Text` nodes into `WikiLink` nodes.
     #[cfg(feature = "wikilink")]
     pub fn expand_wikilinks(nodes: Vec<Node>) -> Vec<Node> {
-        let mut result = Vec::with_capacity(nodes.len());
-        for node in nodes {
-            Self::expand_wikilinks_into(node, &mut result);
-        }
-        result
-    }
-
-    /// Returns true if any `Text` descendant of this node contains `[[`.
-    #[cfg(feature = "wikilink")]
-    fn values_need_expansion(values: &[Node]) -> bool {
-        values.iter().any(|n| match n {
-            Node::Text(t) => t.value.contains("[["),
-            Node::Heading(h) => Self::values_need_expansion(&h.values),
-            Node::Blockquote(b) => Self::values_need_expansion(&b.values),
-            #[cfg(feature = "callout")]
-            Node::Callout(c) => Self::values_need_expansion(&c.values),
-            Node::List(l) => Self::values_need_expansion(&l.values),
-            Node::Strong(s) => Self::values_need_expansion(&s.values),
-            Node::Emphasis(e) => Self::values_need_expansion(&e.values),
-            Node::Delete(d) => Self::values_need_expansion(&d.values),
-            Node::TableCell(tc) => Self::values_need_expansion(&tc.values),
-            Node::TableRow(tr) => Self::values_need_expansion(&tr.values),
-            Node::Footnote(f) => Self::values_need_expansion(&f.values),
-            _ => false,
-        })
-    }
-
-    #[cfg(feature = "wikilink")]
-    fn expand_wikilinks_into(node: Node, out: &mut Vec<Node>) {
-        match node {
-            Node::Text(Text { ref value, .. }) if !value.contains("[[") => out.push(node),
-            Node::Text(Text { value, position }) => {
-                Self::parse_wikilinks_into(&value, position, out);
-            }
-            Node::Heading(mut h) => {
-                if Self::values_need_expansion(&h.values) {
-                    h.values = Self::expand_wikilinks(h.values);
-                }
-                out.push(Node::Heading(h));
-            }
-            Node::Blockquote(mut b) => {
-                if Self::values_need_expansion(&b.values) {
-                    b.values = Self::expand_wikilinks(b.values);
-                }
-                out.push(Node::Blockquote(b));
-            }
-            #[cfg(feature = "callout")]
-            Node::Callout(mut c) => {
-                if Self::values_need_expansion(&c.values) {
-                    c.values = Self::expand_wikilinks(c.values);
-                }
-                out.push(Node::Callout(c));
-            }
-            Node::List(mut l) => {
-                if Self::values_need_expansion(&l.values) {
-                    l.values = Self::expand_wikilinks(l.values);
-                }
-                out.push(Node::List(l));
-            }
-            Node::Strong(mut s) => {
-                if Self::values_need_expansion(&s.values) {
-                    s.values = Self::expand_wikilinks(s.values);
-                }
-                out.push(Node::Strong(s));
-            }
-            Node::Emphasis(mut e) => {
-                if Self::values_need_expansion(&e.values) {
-                    e.values = Self::expand_wikilinks(e.values);
-                }
-                out.push(Node::Emphasis(e));
-            }
-            Node::Delete(mut d) => {
-                if Self::values_need_expansion(&d.values) {
-                    d.values = Self::expand_wikilinks(d.values);
-                }
-                out.push(Node::Delete(d));
-            }
-            Node::TableCell(mut tc) => {
-                if Self::values_need_expansion(&tc.values) {
-                    tc.values = Self::expand_wikilinks(tc.values);
-                }
-                out.push(Node::TableCell(tc));
-            }
-            Node::TableRow(mut tr) => {
-                if Self::values_need_expansion(&tr.values) {
-                    tr.values = Self::expand_wikilinks(tr.values);
-                }
-                out.push(Node::TableRow(tr));
-            }
-            Node::Footnote(mut f) => {
-                if Self::values_need_expansion(&f.values) {
-                    f.values = Self::expand_wikilinks(f.values);
-                }
-                out.push(Node::Footnote(f));
-            }
-            other => out.push(other),
-        }
+        Self::expand_with(nodes, Self::parse_wikilinks_into)
     }
 
     /// Splits a text string on `[[...]]` patterns, pushing a mix of `Text`
@@ -2842,6 +2752,90 @@ impl Node {
         let mut result = Vec::new();
         Self::parse_wikilinks_into(text, position, &mut result);
         result
+    }
+
+    /// Recursively scans a node list and converts both `![[target]]` (embed) and
+    /// `[[target]]` (wikilink) patterns in a single tree traversal. More efficient
+    /// than running `expand_embeds` followed by `expand_wikilinks` separately, which
+    /// traverses the tree and scans each `Text` node twice.
+    #[cfg(all(feature = "embed", feature = "wikilink"))]
+    pub fn expand_inline_links(nodes: Vec<Node>) -> Vec<Node> {
+        Self::expand_with(nodes, Self::parse_inline_links_into)
+    }
+
+    /// Splits a text string on `![[...]]` and `[[...]]` patterns in a single pass,
+    /// pushing a mix of `Text`, `Embed`, and `WikiLink` nodes into `out`.
+    /// A `[[` immediately preceded by `!` is treated as an embed; otherwise as a wikilink.
+    #[cfg(all(feature = "embed", feature = "wikilink"))]
+    fn parse_inline_links_into(text: &str, position: Option<Position>, out: &mut Vec<Node>) {
+        let mut last_end = 0;
+        let mut search_from = 0;
+        let mut found_any = false;
+
+        while let Some(open_rel) = text[search_from..].find("[[") {
+            let open = search_from + open_rel;
+            let inner_start = open + 2;
+
+            let Some(close_rel) = text[inner_start..].find("]]") else {
+                break;
+            };
+            let close = inner_start + close_rel;
+            let content = &text[inner_start..close];
+
+            if content.contains('[') || content.contains(']') {
+                search_from = open + 1;
+                continue;
+            }
+
+            let is_embed = text.as_bytes()[..open].last() == Some(&b'!');
+            let token_start = if is_embed { open - 1 } else { open };
+
+            found_any = true;
+            if last_end < token_start {
+                out.push(Node::Text(Text {
+                    value: text[last_end..token_start].to_string(),
+                    position: position.clone(),
+                }));
+            }
+
+            let (target, opt_part) = if let Some(pipe) = content.find('|') {
+                (content[..pipe].trim(), Some(content[pipe + 1..].trim()))
+            } else {
+                (content.trim(), None)
+            };
+
+            if is_embed {
+                out.push(Node::Embed(Embed {
+                    target: target.to_string(),
+                    display: opt_part.map(|s| s.to_string()),
+                    position: position.clone(),
+                }));
+            } else {
+                out.push(Node::WikiLink(WikiLink {
+                    target: target.to_string(),
+                    text: opt_part.map(|s| s.to_string()),
+                    position: position.clone(),
+                }));
+            }
+
+            last_end = close + 2;
+            search_from = close + 2;
+        }
+
+        if !found_any {
+            out.push(Node::Text(Text {
+                value: text.to_string(),
+                position,
+            }));
+            return;
+        }
+
+        if last_end < text.len() {
+            out.push(Node::Text(Text {
+                value: text[last_end..].to_string(),
+                position,
+            }));
+        }
     }
 
     pub(crate) fn from_mdast_node(node: mdast::Node) -> Vec<Node> {
@@ -4007,6 +4001,61 @@ mod tests {
     )]
     fn test_expand_wikilinks_footnote(#[case] input: Node, #[case] expected: Vec<Node>) {
         let result = Node::expand_wikilinks(vec![input]);
+        assert_eq!(result, expected);
+    }
+
+    #[cfg(all(feature = "embed", feature = "wikilink"))]
+    #[rstest]
+    // embed only
+    #[case("![[note.md]]", vec![
+        Node::Embed(Embed{target: "note.md".to_string(), display: None, position: None}),
+    ])]
+    // wikilink only
+    #[case("[[target]]", vec![
+        Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}),
+    ])]
+    // embed and wikilink in same text
+    #[case("![[embed]] and [[link]]", vec![
+        Node::Embed(Embed{target: "embed".to_string(), display: None, position: None}),
+        Node::Text(Text{value: " and ".to_string(), position: None}),
+        Node::WikiLink(WikiLink{target: "link".to_string(), text: None, position: None}),
+    ])]
+    // wikilink before embed
+    #[case("[[link]] and ![[embed]]", vec![
+        Node::WikiLink(WikiLink{target: "link".to_string(), text: None, position: None}),
+        Node::Text(Text{value: " and ".to_string(), position: None}),
+        Node::Embed(Embed{target: "embed".to_string(), display: None, position: None}),
+    ])]
+    // embed with display hint
+    #[case("![[image.png|400]]", vec![
+        Node::Embed(Embed{target: "image.png".to_string(), display: Some("400".to_string()), position: None}),
+    ])]
+    // wikilink with display text
+    #[case("[[page|display]]", vec![
+        Node::WikiLink(WikiLink{target: "page".to_string(), text: Some("display".to_string()), position: None}),
+    ])]
+    // surrounding text
+    #[case("before ![[note]] after [[link]] end", vec![
+        Node::Text(Text{value: "before ".to_string(), position: None}),
+        Node::Embed(Embed{target: "note".to_string(), display: None, position: None}),
+        Node::Text(Text{value: " after ".to_string(), position: None}),
+        Node::WikiLink(WikiLink{target: "link".to_string(), text: None, position: None}),
+        Node::Text(Text{value: " end".to_string(), position: None}),
+    ])]
+    // plain text with no links
+    #[case("just plain text", vec![
+        Node::Text(Text{value: "just plain text".to_string(), position: None}),
+    ])]
+    // multibyte characters
+    #[case("日本語 ![[ファイル]] と [[ページ]]", vec![
+        Node::Text(Text{value: "日本語 ".to_string(), position: None}),
+        Node::Embed(Embed{target: "ファイル".to_string(), display: None, position: None}),
+        Node::Text(Text{value: " と ".to_string(), position: None}),
+        Node::WikiLink(WikiLink{target: "ページ".to_string(), text: None, position: None}),
+    ])]
+    fn test_parse_inline_links_into(#[case] input: &str, #[case] expected: Vec<Node>) {
+        let mut result = Vec::new();
+        Node::parse_inline_links_into(input, None, &mut result);
         assert_eq!(result, expected);
     }
 

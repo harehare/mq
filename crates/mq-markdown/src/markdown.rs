@@ -251,14 +251,21 @@ impl Markdown {
         .map_err(|e| miette!(e.reason))?;
         let nodes = Node::from_mdast_node(root);
 
-        #[cfg(feature = "embed")]
+        #[cfg(all(feature = "embed", feature = "wikilink"))]
+        let nodes = if content.contains("[[") {
+            Node::expand_inline_links(nodes)
+        } else {
+            nodes
+        };
+
+        #[cfg(all(feature = "embed", not(feature = "wikilink")))]
         let nodes = if content.contains("![[") {
             Node::expand_embeds(nodes)
         } else {
             nodes
         };
 
-        #[cfg(feature = "wikilink")]
+        #[cfg(all(feature = "wikilink", not(feature = "embed")))]
         let nodes = if content.contains("[[") {
             Node::expand_wikilinks(nodes)
         } else {
@@ -271,9 +278,9 @@ impl Markdown {
         })
     }
 
-    /// Parses markdown without running `expand_wikilinks`. Used in benchmarks to
-    /// isolate the `expand_wikilinks` step from the mdast parse cost.
-    #[cfg(feature = "wikilink")]
+    /// Parses markdown without running any expand pass. Used in benchmarks to
+    /// isolate expand cost from the mdast parse cost.
+    #[cfg(any(feature = "wikilink", feature = "embed"))]
     pub fn from_markdown_str_no_expand(content: &str) -> miette::Result<Vec<Node>> {
         let root = markdown::to_mdast(
             content,
