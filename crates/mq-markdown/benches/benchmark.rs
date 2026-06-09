@@ -108,19 +108,6 @@ fn from_markdown_str_with_embeds() -> mq_markdown::Markdown {
     mq_markdown::Markdown::from_markdown_str(&embed_doc()).unwrap()
 }
 
-// Embed: isolate expand_embeds alone.
-#[cfg(feature = "embed")]
-#[divan::bench(name = "expand_embeds/with_embeds")]
-fn expand_embeds_with(bencher: divan::Bencher) {
-    let doc = embed_doc();
-    // parse without embed expansion to isolate the step
-    let nodes = mq_markdown::Markdown::from_markdown_str(&plain_doc()).unwrap().nodes;
-    // substitute embed-containing nodes for a fair measurement
-    let embed_nodes = mq_markdown::Markdown::from_markdown_str(&doc).unwrap().nodes;
-    let _ = nodes; // suppress unused warning
-    bencher.bench(|| mq_markdown::Node::expand_embeds(embed_nodes.clone()));
-}
-
 // Early-exit check for embeds.
 #[cfg(feature = "embed")]
 #[divan::bench(name = "contains_check/with_embeds")]
