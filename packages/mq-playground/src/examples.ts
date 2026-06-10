@@ -287,7 +287,9 @@ This is a sample document with frontmatter.
     examples: [
       {
         name: "Extract section by title",
-        code: `include "section" | nodes | section("Installation") | collect()`,
+        code: `# With -A flag in CLI, import, nodes, and collect are handled automatically.
+# e.g., mq -A 'section::section("Installation")' file.md
+import "section" | nodes | section::section("Installation") | section::collect()`,
         markdown: `# Introduction
 
 Welcome to the project.
@@ -309,7 +311,9 @@ Use the tool like this.
       },
       {
         name: "Extract section with depth",
-        code: `include "section" | nodes | section("API", true) | collect()`,
+        code: `# With -A flag in CLI, import, nodes, and collect are handled automatically.
+# e.g., mq -A 'section::section("API", true)' file.md
+import "section" | nodes | section::section("API", true) | section::collect()`,
         markdown: `# Introduction
 
 Some intro text.
@@ -335,7 +339,7 @@ How to contribute.
       },
       {
         name: "Split by header level",
-        code: `include "section" | nodes | split(2) | titles()`,
+        code: `import "section" | nodes | section::split(2) | section::titles()`,
         markdown: `# Main Title
 
 ## Section 1
@@ -355,7 +359,7 @@ Content of section 3.
       },
       {
         name: "Filter by heading level",
-        code: `include "section" | nodes | sections() | by_level(2) | titles()`,
+        code: `import "section" | nodes | section::sections() | section::by_level(2) | section::titles()`,
         markdown: `# Chapter 1
 
 ## Section 1.1

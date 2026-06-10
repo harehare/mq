@@ -1195,19 +1195,23 @@ export const Playground = () => {
   // Track unsaved changes and update tab content and dirty state
   useEffect(() => {
     if (currentFilePath && code !== undefined && !isRenaming && activeTabId) {
-      setTabs((prev) => {
-        const idx = prev.findIndex((tab) => tab.id === activeTabId);
-        if (idx === -1) return prev;
-        const tab = prev[idx];
-        const isDirty = tab.savedContent !== code;
-        if (tab.content === code && tab.isDirty === isDirty) return prev;
-        if (isDirty) setSaveStatus("unsaved");
-        const updated = [...prev];
-        updated[idx] = { ...tab, content: code, isDirty };
-        return updated;
-      });
+      // Update current tab's content and dirty state
+      setTabs((prev) =>
+        prev.map((tab) => {
+          if (tab.id === activeTabId) {
+            // Check if content has changed from the saved version
+            const isDirty = tab.savedContent !== code;
+            if (isDirty) {
+              setSaveStatus("unsaved");
+            }
+            return { ...tab, content: code, isDirty };
+          }
+          return tab;
+        }),
+      );
     }
   }, [code, currentFilePath, isRenaming, activeTabId]);
+
 
   // Persist sidebar visibility to localStorage
   useEffect(() => {
@@ -1778,18 +1782,13 @@ export const Playground = () => {
     });
   };
 
-  const isDarkMode = useMemo(
-    () =>
-      theme === "system"
-        ? window.matchMedia("(prefers-color-scheme: dark)").matches
-        : theme === "dark" || theme === "mq",
-    [theme],
-  );
+  const isDarkMode =
+    theme === "system"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : theme === "dark" || theme === "mq";
 
-  const monacoTheme = useMemo(
-    () => (theme === "mq" ? "mq-branded" : isDarkMode ? "mq-dark" : "mq-light"),
-    [theme, isDarkMode],
-  );
+  const monacoTheme =
+    theme === "mq" ? "mq-branded" : isDarkMode ? "mq-dark" : "mq-light";
 
   const buildPreviewSrcDoc = (htmlFragment: string) => {
     const resolvedTheme =
@@ -1860,15 +1859,12 @@ img{max-width:100%}
 
   const isDesktopView = window.innerWidth > 768;
 
-  const previewSrcDoc = useMemo(
-    () =>
-      previewHtml
-        ? buildPreviewSrcDoc(previewHtml)
-        : buildPreviewSrcDoc(
-            "<p style='color:#888'>Click \"Run\" button to display preview</p>",
-          ),
-    [previewHtml, theme],
-  );
+  const previewSrcDoc =
+    previewHtml
+      ? buildPreviewSrcDoc(previewHtml)
+      : buildPreviewSrcDoc(
+        "<p style='color:#888'>Click \"Run\" button to display preview</p>",
+      );
 
   return (
     <div className="playground-container">
