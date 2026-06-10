@@ -287,7 +287,9 @@ This is a sample document with frontmatter.
     examples: [
       {
         name: "Extract section by title",
-        code: `include "section" | nodes | section("Installation") | collect()`,
+        code: `# With -A flag in CLI, import, nodes, and collect are handled automatically.
+# e.g., mq -A 'section::section("Installation")' file.md
+import "section" | nodes | section::section("Installation") | section::collect()`,
         markdown: `# Introduction
 
 Welcome to the project.
@@ -308,8 +310,70 @@ Use the tool like this.
         format: "markdown",
       },
       {
+        name: "Filter nodes within section",
+        code: `# Extract only code blocks inside a specific section.
+# e.g., mq -A 'section::section("Installation") | .code' file.md
+import "section" | nodes | section::section("Installation") | .code | section::collect()`,
+        markdown: `# Introduction
+
+Welcome to the project.
+
+## Installation
+
+Run the following command:
+
+\`\`\`bash
+npm install mq
+\`\`\`
+
+You can also use yarn:
+
+\`\`\`bash
+yarn add mq
+\`\`\`
+
+## Usage
+
+Use the tool like this.
+
+\`\`\`bash
+mq '.h1' file.md
+\`\`\`
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Extract section with depth",
+        code: `# With -A flag in CLI, import, nodes, and collect are handled automatically.
+# e.g., mq -A 'section::section("API", true)' file.md
+import "section" | nodes | section::section("API", true) | section::collect()`,
+        markdown: `# Introduction
+
+Some intro text.
+
+# API
+
+## Endpoints
+
+\`GET /users\`
+
+\`POST /users\`
+
+## Authentication
+
+Use Bearer tokens.
+
+# Contributing
+
+How to contribute.
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
         name: "Split by header level",
-        code: `include "section" | nodes | split(2) | titles()`,
+        code: `import "section" | nodes | section::split(2) | section::titles()`,
         markdown: `# Main Title
 
 ## Section 1
@@ -323,6 +387,28 @@ Content of section 2.
 ## Section 3
 
 Content of section 3.
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Filter by heading level",
+        code: `import "section" | nodes | section::sections() | section::by_level(2) | section::titles()`,
+        markdown: `# Chapter 1
+
+## Section 1.1
+
+Content here.
+
+## Section 1.2
+
+More content.
+
+# Chapter 2
+
+## Section 2.1
+
+Another section.
 `,
         isUpdate: false,
         format: "markdown",
@@ -364,6 +450,147 @@ Use the tool like this.
 `,
         isUpdate: false,
         format: "markdown",
+      },
+      {
+        name: "Map section titles",
+        code: `include "section" | nodes | map_sections(fn(h, _): to_text(h) | upcase();)`,
+        markdown: `# Introduction
+
+Welcome to the project.
+
+## Installation
+
+Run \`npm install mq\`.
+
+## Usage
+
+Use the tool like this.
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Get nth section",
+        code: `include "section" | nodes | sections() | nth(1) | body()`,
+        markdown: `# Introduction
+
+First section content.
+
+## Installation
+
+Run \`npm install mq\`.
+
+## Usage
+
+Use the tool like this.
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+    ],
+  },
+  {
+    name: "Table Module",
+    examples: [
+      {
+        name: "Extract table structures",
+        code: `include "table" | nodes | tables() | map(fn(t): t | to_markdown();) | flatten()`,
+        markdown: `# Product List
+
+| Product | Category | Price | Stock |
+|---------|----------|-------|-------|
+| Laptop  | Electronics | $1200 | 45 |
+| Monitor | Electronics | $350 | 28 |
+| Chair   | Furniture | $150 | 73 |
+| Desk    | Furniture | $200 | 14 |
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Sort table rows",
+        code: `include "table" | nodes | tables() | map(fn(t): t | sort_rows(0) | to_markdown();) | flatten()`,
+        markdown: `# Product List
+
+| Product | Category | Price | Stock |
+|---------|----------|-------|-------|
+| Laptop  | Electronics | $1200 | 45 |
+| Chair   | Furniture | $150 | 73 |
+| Monitor | Electronics | $350 | 28 |
+| Desk    | Furniture | $200 | 14 |
+| Keyboard | Accessories | $80 | 35 |
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Filter table rows",
+        code: `include "table" | nodes | tables() | map(fn(t): t | filter_rows(fn(row): contains(to_text(row[1]), "Electronics");) | to_markdown();) | flatten()`,
+        markdown: `# Product List
+
+| Product | Category | Price | Stock |
+|---------|----------|-------|-------|
+| Laptop  | Electronics | $1200 | 45 |
+| Monitor | Electronics | $350 | 28 |
+| Chair   | Furniture | $150 | 73 |
+| Desk    | Furniture | $200 | 14 |
+| Keyboard | Accessories | $80 | 35 |
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Add row to table",
+        code: `include "table" | nodes | tables() | map(fn(t): t | add_row(["Webcam", "Electronics", "$60", "55"]) | to_markdown();) | flatten()`,
+        markdown: `# Product List
+
+| Product | Category | Price | Stock |
+|---------|----------|-------|-------|
+| Laptop  | Electronics | $1200 | 45 |
+| Monitor | Electronics | $350 | 28 |
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Export table to CSV",
+        code: `include "table" | nodes | tables() | map(fn(t): t | to_csv();)`,
+        markdown: `# Product List
+
+| Product | Category | Price | Stock |
+|---------|----------|-------|-------|
+| Laptop  | Electronics | $1200 | 45 |
+| Monitor | Electronics | $350 | 28 |
+| Chair   | Furniture | $150 | 73 |
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+    ],
+  },
+  {
+    name: "Fuzzy Search",
+    examples: [
+      {
+        name: "Fuzzy match strings",
+        code: `include "fuzzy" | ["Introduction", "Installation", "Quick Start", "Configuration", "API Reference"] | fuzzy_match("instal")`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Filter by match score",
+        code: `include "fuzzy" | ["Introduction", "Installation", "Quick Start", "Configuration", "API Reference"] | fuzzy_filter("instal", 0.75)`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Best fuzzy match",
+        code: `include "fuzzy" | ["Introduction", "Installation", "Quick Start", "Configuration"] | fuzzy_best_match("instal")`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
       },
     ],
   },

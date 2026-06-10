@@ -14,7 +14,7 @@ import { ResizeHandle } from "./components/ResizeHandle";
 import { ToastContainer, ToastItem } from "./components/Toast";
 import { ExamplesModal } from "./components/ExamplesModal";
 import { fileSystem, FileNode, OPFSFileSystem } from "./utils/fileSystem";
-import { isMobile, isDesktop } from "./utils/deviceDetection";
+import { isDesktop, isMobile } from "./utils/deviceDetection";
 import {
   VscLayoutSidebarLeft,
   VscLayoutSidebarLeftOff,
@@ -283,6 +283,7 @@ export const Playground = () => {
   const saveCurrentFileRef = useRef<() => Promise<void>>(async () => { });
   const activeTabIdRef = useRef<string | null>(null);
   const handleTabCloseRef = useRef<(tabId: string) => void>(() => { });
+  const diagnosticsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep enableTypeCheckRef in sync with state
   useEffect(() => {
@@ -1211,6 +1212,7 @@ export const Playground = () => {
     }
   }, [code, currentFilePath, isRenaming, activeTabId]);
 
+
   // Persist sidebar visibility to localStorage
   useEffect(() => {
     localStorage.setItem(
@@ -1369,37 +1371,42 @@ export const Playground = () => {
     });
 
     monaco.editor.onDidCreateEditor((editorInstance: editor.ICodeEditor) => {
-      editorInstance.onDidChangeModelContent(async () => {
-        const model = editorInstance.getModel();
-        if (model) {
-          const modelLanguage = model.getLanguageId();
-
-          if (modelLanguage === "markdown") {
-            return;
-          }
-
-          const errors = await mq.diagnostics(
-            model.getValue(),
-            enableTypeCheckRef.current,
-          );
-          const markers = errors.map((error: mq.Diagnostic) => ({
-            startLineNumber: error.startLine,
-            startColumn: error.startColumn,
-            endLineNumber: error.endLine,
-            endColumn: error.endColumn,
-            message: error.message,
-            severity: monaco.MarkerSeverity.Error,
-          }));
-          monaco.editor.setModelMarkers(model, "mq", markers);
-          setDiagnosticCounts({
-            errors: markers.filter(
-              (m) => m.severity === monaco.MarkerSeverity.Error,
-            ).length,
-            warnings: markers.filter(
-              (m) => m.severity === monaco.MarkerSeverity.Warning,
-            ).length,
-          });
+      editorInstance.onDidChangeModelContent(() => {
+        if (diagnosticsTimerRef.current) {
+          clearTimeout(diagnosticsTimerRef.current);
         }
+        diagnosticsTimerRef.current = setTimeout(async () => {
+          const model = editorInstance.getModel();
+          if (model) {
+            const modelLanguage = model.getLanguageId();
+
+            if (modelLanguage === "markdown" || modelLanguage === "json") {
+              return;
+            }
+
+            const errors = await mq.diagnostics(
+              model.getValue(),
+              enableTypeCheckRef.current,
+            );
+            const markers = errors.map((error: mq.Diagnostic) => ({
+              startLineNumber: error.startLine,
+              startColumn: error.startColumn,
+              endLineNumber: error.endLine,
+              endColumn: error.endColumn,
+              message: error.message,
+              severity: monaco.MarkerSeverity.Error,
+            }));
+            monaco.editor.setModelMarkers(model, "mq", markers);
+            setDiagnosticCounts({
+              errors: markers.filter(
+                (m) => m.severity === monaco.MarkerSeverity.Error,
+              ).length,
+              warnings: markers.filter(
+                (m) => m.severity === monaco.MarkerSeverity.Warning,
+              ).length,
+            });
+          }
+        }, 300);
       });
     });
 
@@ -1850,6 +1857,15 @@ img{max-width:100%}
     };
   }, [code, markdown, isUpdate, enableTypeCheck, inputFormat]);
 
+  const isDesktopView = isDesktop();
+
+  const previewSrcDoc =
+    previewHtml
+      ? buildPreviewSrcDoc(previewHtml)
+      : buildPreviewSrcDoc(
+        "<p style='color:#888'>Click \"Run\" button to display preview</p>",
+      );
+
   return (
     <div className="playground-container">
       {!isEmbed && (
@@ -1914,7 +1930,7 @@ img{max-width:100%}
           <>
             <div
               className="file-tree-panel"
-              style={isDesktop() ? { width: sidebarWidth } : undefined}
+              style={isDesktopView ? { width: sidebarWidth } : undefined}
             >
               <FileTree
                 files={files}
@@ -1928,7 +1944,7 @@ img{max-width:100%}
                 selectedFile={selectedFile}
               />
             </div>
-            {isDesktop() && (
+            {isDesktopView && (
               <ResizeHandle
                 direction="horizontal"
                 onResize={handleSidebarResize}
@@ -1940,7 +1956,7 @@ img{max-width:100%}
           className="left-panel"
           ref={leftPanelRef}
           style={
-            isDesktop()
+            isDesktopView
               ? {
                 width: `calc((100% - ${isOPFSSupported && isSidebarVisible ? sidebarWidth + 4 : 0}px) * ${leftRightSplit / 100})`,
                 flex: "none",
@@ -1950,7 +1966,7 @@ img{max-width:100%}
         >
           <div
             className="editor-container"
-            style={isDesktop() ? { height: `${topBottomSplit}%` } : undefined}
+            style={isDesktopView ? { height: `${topBottomSplit}%` } : undefined}
           >
             {!isEmbed && tabs.length > 0 && (
               <TabBar
@@ -2054,7 +2070,7 @@ img{max-width:100%}
             </div>
           </div>
 
-          {isDesktop() && (
+          {isDesktopView && (
             <ResizeHandle direction="vertical" onResize={handleEditorResize} />
           )}
 
@@ -2099,7 +2115,7 @@ img{max-width:100%}
             </div>
           </div>
         </div>
-        {isDesktop() && (
+        {isDesktopView && (
           <ResizeHandle direction="horizontal" onResize={handlePanelResize} />
         )}
         <div className="right-panel">
@@ -2255,11 +2271,7 @@ img{max-width:100%}
             )}
             {activeTab === "preview" && (
               <iframe
-                srcDoc={
-                  previewHtml
-                    ? buildPreviewSrcDoc(previewHtml)
-                    : buildPreviewSrcDoc("<p style='color:#888'>Click \"Run\" button to display preview</p>")
-                }
+                srcDoc={previewSrcDoc}
                 sandbox=""
                 style={{
                   width: "100%",
