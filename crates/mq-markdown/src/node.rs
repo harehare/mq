@@ -1066,6 +1066,9 @@ impl Node {
                     _ => format!("[!{}]", kind),
                 };
                 let header_line = format!("{}> {}{}", bs, be, header);
+                if values.is_empty() {
+                    return header_line;
+                }
                 let body = render_values_block(&values, options, theme);
                 if body.trim().is_empty() {
                     header_line
@@ -2439,7 +2442,7 @@ impl Node {
             },
             #[cfg(feature = "callout")]
             Node::Callout(c) => match attr {
-                attr_keys::KIND => c.kind = value_str.to_uppercase(),
+                attr_keys::KIND => c.kind = value_str,
                 attr_keys::TITLE => c.title = if value_str.is_empty() { None } else { Some(value_str) },
                 _ => (),
             },
@@ -2458,20 +2461,33 @@ impl Node {
     /// falls back to a plain `Blockquote`.
     #[cfg(feature = "callout")]
     fn try_parse_callout(values: Vec<Node>, position: Option<Position>) -> Node {
-        let first_text = match values.first() {
-            Some(Node::Text(t)) => t.value.clone(),
-            _ => return Node::Blockquote(Blockquote { values, position }),
+        // Peek without cloning so plain blockquotes pay no allocation cost.
+        if !matches!(values.first(), Some(Node::Text(t)) if t.value.starts_with("[!")) {
+            return Node::Blockquote(Blockquote { values, position });
+        }
+
+        let mut iter = values.into_iter();
+        // SAFETY: the peek above guarantees at least one Text node exists.
+        let first_text = match iter.next().unwrap() {
+            Node::Text(t) => t.value,
+            _ => unreachable!(),
         };
 
         let Some(rest) = first_text.strip_prefix("[!") else {
-            return Node::Blockquote(Blockquote { values, position });
+            unreachable!()
         };
 
         let Some(bracket_end) = rest.find(']') else {
+            // Malformed `[!…` without closing `]` — treat as plain blockquote.
+            let mut values = vec![Node::Text(Text {
+                value: first_text,
+                position: None,
+            })];
+            values.extend(iter);
             return Node::Blockquote(Blockquote { values, position });
         };
 
-        let kind = rest[..bracket_end].to_uppercase();
+        let kind = rest[..bracket_end].to_string();
         let after_bracket = &rest[bracket_end + 1..];
 
         let (title, remaining_body) = if let Some(nl) = after_bracket.find('\n') {
@@ -2485,16 +2501,18 @@ impl Node {
             (if t.is_empty() { None } else { Some(t.to_string()) }, String::new())
         };
 
-        let mut body: Vec<Node> = values.into_iter().skip(1).collect();
-        if !remaining_body.trim().is_empty() {
-            body.insert(
-                0,
-                Node::Text(Text {
-                    value: remaining_body,
-                    position: None,
-                }),
-            );
-        }
+        let body = if !remaining_body.trim().is_empty() {
+            let rest_nodes: Vec<Node> = iter.collect();
+            let mut b = Vec::with_capacity(rest_nodes.len() + 1);
+            b.push(Node::Text(Text {
+                value: remaining_body,
+                position: None,
+            }));
+            b.extend(rest_nodes);
+            b
+        } else {
+            iter.collect()
+        };
 
         Node::Callout(Callout {
             kind,
@@ -5527,11 +5545,11 @@ mod tests {
         vec![Node::Text(Text { value: "[!TIP]".to_string(), position: None })],
         Node::Callout(Callout { kind: "TIP".to_string(), title: None, values: vec![], position: None })
     )]
-    // lowercase kind is normalised to uppercase
+    // lowercase kind is preserved as-is
     #[case(
         vec![Node::Text(Text { value: "[!note]\ncontent".to_string(), position: None })],
         Node::Callout(Callout {
-            kind: "NOTE".to_string(),
+            kind: "note".to_string(),
             title: None,
             values: vec![Node::Text(Text { value: "content".to_string(), position: None })],
             position: None,
@@ -5639,11 +5657,11 @@ mod tests {
         "kind", "WARNING",
         Node::Callout(Callout { kind: "WARNING".to_string(), title: None, values: vec![], position: None })
     )]
-    // set_attr normalises kind to uppercase
+    // set_attr stores kind as-is without case conversion
     #[case(
         Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
         "kind", "tip",
-        Node::Callout(Callout { kind: "TIP".to_string(), title: None, values: vec![], position: None })
+        Node::Callout(Callout { kind: "tip".to_string(), title: None, values: vec![], position: None })
     )]
     #[case(
         Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }),

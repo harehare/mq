@@ -3204,10 +3204,10 @@ fn engine() -> DefaultEngine {
     r#"to_markdown("> plain quote") | first() | .callout"#,
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::NONE].into()))]
-#[case::callout_kind_lowercase_normalized(
+#[case::callout_kind_lowercase_preserved(
     r#"to_markdown("> [!tip]\n> body") | first() | .callout | .kind"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("TIP".to_string())].into()))]
+    Ok(vec![RuntimeValue::String("tip".to_string())].into()))]
 // embed selector
 #[case::embed_select_type(
     r#"to_markdown("![[image.png]]") | first() | .embed | type"#,
