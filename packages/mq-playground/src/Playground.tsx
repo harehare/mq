@@ -14,7 +14,7 @@ import { ResizeHandle } from "./components/ResizeHandle";
 import { ToastContainer, ToastItem } from "./components/Toast";
 import { ExamplesModal } from "./components/ExamplesModal";
 import { fileSystem, FileNode, OPFSFileSystem } from "./utils/fileSystem";
-import { isMobile } from "./utils/deviceDetection";
+import { isDesktop, isMobile } from "./utils/deviceDetection";
 import {
   VscLayoutSidebarLeft,
   VscLayoutSidebarLeftOff,
@@ -1857,7 +1857,7 @@ img{max-width:100%}
     };
   }, [code, markdown, isUpdate, enableTypeCheck, inputFormat]);
 
-  const isDesktopView = window.innerWidth > 768;
+  const isDesktopView = isDesktop();
 
   const previewSrcDoc =
     previewHtml
