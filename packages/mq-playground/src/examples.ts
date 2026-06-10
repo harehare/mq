@@ -310,6 +310,40 @@ Use the tool like this.
         format: "markdown",
       },
       {
+        name: "Filter nodes within section",
+        code: `# Extract only code blocks inside a specific section.
+# e.g., mq -A 'section::section("Installation") | .code' file.md
+import "section" | nodes | section::section("Installation") | .code | section::collect()`,
+        markdown: `# Introduction
+
+Welcome to the project.
+
+## Installation
+
+Run the following command:
+
+\`\`\`bash
+npm install mq
+\`\`\`
+
+You can also use yarn:
+
+\`\`\`bash
+yarn add mq
+\`\`\`
+
+## Usage
+
+Use the tool like this.
+
+\`\`\`bash
+mq '.h1' file.md
+\`\`\`
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
         name: "Extract section with depth",
         code: `# With -A flag in CLI, import, nodes, and collect are handled automatically.
 # e.g., mq -A 'section::section("API", true)' file.md
