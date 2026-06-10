@@ -32,7 +32,7 @@ jobs:
           node-version-file: ".node-version"
       - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
         with:
-          version: "10"
+          version: "11"
       - name: Test mq-web
         working-directory: packages/mq-web
         run: |
@@ -55,7 +55,7 @@ jobs:
           node-version-file: ".node-version"
       - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
         with:
-          version: "10"
+          version: "11"
       - name: Lint and type-check mq-nodejs
         working-directory: packages/mq-nodejs
         run: |

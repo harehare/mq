@@ -8,11 +8,11 @@
     "url": "https://github.com/harehare/mq/issues"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^25.9.2",
     "oxlint": "^1.31.0",
     "tsup": "^8.5.1",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.8"
   },
   "files": [
     "dist"
@@ -39,10 +39,7 @@
     "lint": "oxlint .",
     "test": "vitest run"
   },
-  "packageManager": "pnpm@10.33.0",
-  "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
-  },
+  "packageManager": "pnpm@11.5.3",
   "sideEffects": false,
   "type": "module",
   "types": "dist/index.d.ts"
