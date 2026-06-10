@@ -134,7 +134,8 @@ pub(crate) fn attr_kind_to_type(attr_kind: &mq_lang::AttrKind) -> Type {
         | AttrKind::Ident
         | AttrKind::Label
         | AttrKind::Align
-        | AttrKind::Name => Type::String,
+        | AttrKind::Name
+        | AttrKind::Kind => Type::String,
         AttrKind::Depth | AttrKind::Level | AttrKind::Index | AttrKind::Column | AttrKind::Row => Type::Number,
         AttrKind::Ordered | AttrKind::Checked => Type::Bool,
         AttrKind::Values | AttrKind::Children => Type::array(Type::Markdown),

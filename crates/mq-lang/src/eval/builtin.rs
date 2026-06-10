@@ -5575,6 +5575,8 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> RuntimeVa
         Selector::Link => node.is_link(),
         Selector::LinkRef => node.is_link_ref(),
         Selector::WikiLink => node.is_wikilink(),
+        Selector::Callout => node.is_callout(),
+        Selector::Embed => node.is_embed(),
         Selector::Image => node.is_image(),
         Selector::Heading(depth) => node.is_heading(*depth),
         Selector::HorizontalRule => node.is_horizontal_rule(),

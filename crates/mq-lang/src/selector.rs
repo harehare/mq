@@ -130,6 +130,10 @@ pub enum Selector {
     LinkRef,
     /// Matches Obsidian-style wikilink elements (e.g., `[[target]]` or `[[target|text]]`).
     WikiLink,
+    /// Matches Obsidian-style callout elements (e.g., `> [!NOTE]` or `> [!WARNING] title`).
+    Callout,
+    /// Matches Obsidian-style embed elements (e.g., `![[target]]` or `![[target|display]]`).
+    Embed,
     /// Matches strong/bold elements (e.g., `**text**`).
     Strong,
     /// Matches code block elements.
@@ -229,6 +233,8 @@ pub enum AttrKind {
 
     /// The name attribute for MDX JSX elements.
     Name,
+    /// The kind/type of an Obsidian callout (e.g. `"NOTE"`, `"WARNING"`).
+    Kind,
 }
 
 impl Display for AttrKind {
@@ -254,6 +260,7 @@ impl Display for AttrKind {
             AttrKind::Row => write!(f, ".row"),
             AttrKind::Align => write!(f, ".align"),
             AttrKind::Name => write!(f, ".name"),
+            AttrKind::Kind => write!(f, ".kind"),
         }
     }
 }
@@ -290,6 +297,8 @@ impl Selector {
             ".link" => Some(Selector::Link),
             ".link_ref" => Some(Selector::LinkRef),
             ".wikilink" => Some(Selector::WikiLink),
+            ".callout" => Some(Selector::Callout),
+            ".embed" => Some(Selector::Embed),
             ".[]" | ".list" | ".li" => Some(Selector::List(None, None)),
             ".task" => Some(Selector::Task),
             ".todo" => Some(Selector::Todo),
@@ -325,6 +334,7 @@ impl Selector {
             ".row" => Some(Selector::Attr(AttrKind::Row)),
             ".align" => Some(Selector::Attr(AttrKind::Align)),
             ".name" => Some(Selector::Attr(AttrKind::Name)),
+            ".kind" => Some(Selector::Attr(AttrKind::Kind)),
             _ => None,
         }
     }
@@ -384,6 +394,8 @@ impl Display for Selector {
             Selector::Link => write!(f, ".link"),
             Selector::LinkRef => write!(f, ".link_ref"),
             Selector::WikiLink => write!(f, ".wikilink"),
+            Selector::Callout => write!(f, ".callout"),
+            Selector::Embed => write!(f, ".embed"),
             Selector::Strong => write!(f, ".strong"),
             Selector::Code => write!(f, ".code"),
             Selector::Math => write!(f, ".math"),
