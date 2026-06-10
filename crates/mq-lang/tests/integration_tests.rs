@@ -3175,6 +3175,60 @@ fn engine() -> DefaultEngine {
     r#"to_markdown("[[target]]") | first() | .link"#,
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::WikiLink(mq_markdown::WikiLink { target: "target".to_string(), text: None, position: None }))].into()))]
+// callout selector
+#[case::callout_select_type(
+    r#"to_markdown("> [!NOTE]\n> body") | first() | .callout | type"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+#[case::callout_kind_attr(
+    r#"to_markdown("> [!WARNING]\n> body") | first() | .callout | .kind"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("WARNING".to_string())].into()))]
+#[case::callout_note_kind_attr(
+    r#"to_markdown("> [!NOTE]\n> body") | first() | .callout | .kind"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("NOTE".to_string())].into()))]
+#[case::callout_title_attr(
+    r#"to_markdown("> [!NOTE] My Title\n> body") | first() | .callout | .title"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("My Title".to_string())].into()))]
+#[case::callout_no_title_attr(
+    r#"to_markdown("> [!NOTE]\n> body") | first() | .callout | .title"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::NONE].into()))]
+#[case::callout_value_attr(
+    r#"to_markdown("> [!NOTE]\n> body") | first() | .callout | .value"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("body".to_string())].into()))]
+#[case::callout_no_match_on_blockquote(
+    r#"to_markdown("> plain quote") | first() | .callout"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::NONE].into()))]
+#[case::callout_kind_lowercase_preserved(
+    r#"to_markdown("> [!tip]\n> body") | first() | .callout | .kind"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("tip".to_string())].into()))]
+// embed selector
+#[case::embed_select_type(
+    r#"to_markdown("![[image.png]]") | first() | .embed | type"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+#[case::embed_url_attr(
+    r#"to_markdown("![[image.png]]") | first() | .embed | .url"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("image.png".to_string())].into()))]
+#[case::embed_value_attr(
+    r#"to_markdown("![[image.png|300]]") | first() | .embed | .value"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("300".to_string())].into()))]
+#[case::embed_value_falls_back_to_target(
+    r#"to_markdown("![[note.md]]") | first() | .embed | .value"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("note.md".to_string())].into()))]
+#[case::embed_no_match_on_wikilink(
+    r#"to_markdown("[[target]]") | first() | .embed"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::NONE].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

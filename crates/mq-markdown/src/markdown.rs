@@ -251,7 +251,21 @@ impl Markdown {
         .map_err(|e| miette!(e.reason))?;
         let nodes = Node::from_mdast_node(root);
 
-        #[cfg(feature = "wikilink")]
+        #[cfg(all(feature = "embed", feature = "wikilink"))]
+        let nodes = if content.contains("[[") {
+            Node::expand_inline_links(nodes)
+        } else {
+            nodes
+        };
+
+        #[cfg(all(feature = "embed", not(feature = "wikilink")))]
+        let nodes = if content.contains("![[") {
+            Node::expand_embeds(nodes)
+        } else {
+            nodes
+        };
+
+        #[cfg(all(feature = "wikilink", not(feature = "embed")))]
         let nodes = if content.contains("[[") {
             Node::expand_wikilinks(nodes)
         } else {
@@ -264,9 +278,9 @@ impl Markdown {
         })
     }
 
-    /// Parses markdown without running `expand_wikilinks`. Used in benchmarks to
-    /// isolate the `expand_wikilinks` step from the mdast parse cost.
-    #[cfg(feature = "wikilink")]
+    /// Parses markdown without running any expand pass. Used in benchmarks to
+    /// isolate expand cost from the mdast parse cost.
+    #[cfg(any(feature = "wikilink", feature = "embed"))]
     pub fn from_markdown_str_no_expand(content: &str) -> miette::Result<Vec<Node>> {
         let root = markdown::to_mdast(
             content,
@@ -478,6 +492,38 @@ mod tests {
         feature = "wikilink",
         case::wikilink_in_heading("# See [[target]]", 1, "# See [[target]]\n")
     )]
+    // callout round-trips
+    #[cfg_attr(
+        feature = "callout",
+        case::callout_note("> [!NOTE]\n> body", 1, "> [!NOTE]\n> body\n")
+    )]
+    #[cfg_attr(
+        feature = "callout",
+        case::callout_with_title("> [!WARNING] My Title\n> content", 1, "> [!WARNING] My Title\n> content\n")
+    )]
+    #[cfg_attr(feature = "callout", case::callout_empty_body("> [!TIP]", 1, "> [!TIP]\n"))]
+    #[cfg_attr(
+        feature = "callout",
+        case::callout_multiline("> [!NOTE]\n> line 1\n> line 2", 1, "> [!NOTE]\n> line 1\n> line 2\n")
+    )]
+    // plain blockquote stays Blockquote — not treated as callout
+    #[cfg_attr(feature = "callout", case::plain_blockquote("> plain quote", 1, "> plain quote\n"))]
+    // plain blockquote with list items — second item must not be over-indented
+    #[case::blockquote_with_list("> - item 1\n> - item 2", 1, "> - item 1\n> - item 2\n")]
+    // embed round-trips
+    #[cfg_attr(feature = "embed", case::embed_plain("![[note.md]]", 1, "![[note.md]]\n"))]
+    #[cfg_attr(
+        feature = "embed",
+        case::embed_with_display("![[image.png|400]]", 1, "![[image.png|400]]\n")
+    )]
+    #[cfg_attr(
+        feature = "embed",
+        case::embed_in_paragraph("See ![[note]] and read more.", 3, "See ![[note]] and read more.\n")
+    )]
+    #[cfg_attr(
+        all(feature = "embed", feature = "wikilink"),
+        case::embed_and_wikilink("![[embed]] and [[link]]", 3, "![[embed]] and [[link]]\n")
+    )]
     fn test_markdown_from_str(#[case] input: &str, #[case] expected_nodes: usize, #[case] expected_output: &str) {
         let md = input.parse::<Markdown>().unwrap();
         assert_eq!(md.nodes.len(), expected_nodes);
@@ -498,6 +544,30 @@ mod tests {
         let md = Markdown::from_mdx_str(input).unwrap();
         assert_eq!(md.nodes.len(), expected_nodes);
         assert_eq!(md.to_string(), expected_output);
+    }
+
+    #[cfg(feature = "callout")]
+    #[rstest]
+    #[case("> [!NOTE]\n> body")]
+    #[case("> [!WARNING] Custom Title\n> line 1\n> line 2")]
+    #[case("> [!TIP]")]
+    #[case("> plain blockquote")]
+    fn test_callout_round_trip_idempotent(#[case] input: &str) {
+        let first = input.parse::<Markdown>().unwrap().to_string();
+        let second = first.parse::<Markdown>().unwrap().to_string();
+        assert_eq!(first, second, "callout round-trip must be idempotent for {input:?}");
+    }
+
+    #[cfg(feature = "embed")]
+    #[rstest]
+    #[case("![[note.md]]")]
+    #[case("![[image.png|400]]")]
+    #[case("![[note#Heading]]")]
+    #[case("See ![[note]] for details.")]
+    fn test_embed_round_trip_idempotent(#[case] input: &str) {
+        let first = input.parse::<Markdown>().unwrap().to_string();
+        let second = first.parse::<Markdown>().unwrap().to_string();
+        assert_eq!(first, second, "embed round-trip must be idempotent for {input:?}");
     }
 
     /// Round-tripping a link whose text equals its URL must be idempotent.
