@@ -1,0 +1,75 @@
+name: Packages CI
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "packages/**"
+      - "editors/**"
+      - ".node-version"
+      - ".github/workflows/packages-ci.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "packages/**"
+      - "editors/**"
+      - ".node-version"
+      - ".github/workflows/packages-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-ts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: ".node-version"
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          version: "10"
+      - name: Test mq-web
+        working-directory: packages/mq-web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm test
+      - name: Test mq-playground
+        working-directory: packages/mq-playground
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm test
+
+  lint-ts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: ".node-version"
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          version: "10"
+      - name: Lint and type-check mq-nodejs
+        working-directory: packages/mq-nodejs
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm lint
+          pnpm type-check
+      - name: Lint and type-check mq-web
+        working-directory: packages/mq-web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm lint
+          pnpm type-check
+      - name: Lint mq-playground
+        working-directory: packages/mq-playground
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm lint

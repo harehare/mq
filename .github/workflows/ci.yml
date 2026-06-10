@@ -3,8 +3,22 @@ name: CI
 on:
   push:
     branches: ["main"]
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "justfile"
+      - ".github/workflows/ci.yml"
   pull_request:
     branches: ["main"]
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "justfile"
+      - ".github/workflows/ci.yml"
   workflow_dispatch:
     inputs:
       os:
@@ -134,4 +148,3 @@ jobs:
             git status --porcelain docs/
             exit 1
           fi
-
