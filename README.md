@@ -9,13 +9,13 @@
 
 <h1>mq</h1>
 
-[![ci](https://img.shields.io/github/actions/workflow/status/harehare/mq/ci.yml?logo=github-actions&label=ci)](https://github.com/harehare/mq/actions/workflows/ci.yml)
-[![audit](https://img.shields.io/github/actions/workflow/status/harehare/mq/audit.yml?logo=github-actions&label=audit)](https://github.com/harehare/mq/actions/workflows/audit.yml)
-[![crates.io](https://img.shields.io/crates/v/mq-markdown?logo=rust)](https://crates.io/crates/mq-markdown)
-[![codecov](https://img.shields.io/codecov/c/github/harehare/mq?logo=codecov)](https://codecov.io/gh/harehare/mq)
-[![codspeed badge](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json?style=for-the-badge)](https://codspeed.io/harehare/mq)
-
 **Query. Filter. Transform Markdown.**
+
+[![ci](https://img.shields.io/github/actions/workflow/status/harehare/mq/ci.yml?style=flat-square&logo=github-actions&label=ci)](https://github.com/harehare/mq/actions/workflows/ci.yml)
+[![audit](https://img.shields.io/github/actions/workflow/status/harehare/mq/audit.yml?style=flat-square&logo=github-actions&label=audit)](https://github.com/harehare/mq/actions/workflows/audit.yml)
+[![crates.io](https://img.shields.io/crates/v/mq-markdown?logo=rust&style=flat-square)](https://crates.io/crates/mq-markdown)
+[![codecov](https://img.shields.io/codecov/c/github/harehare/mq?logo=codecov&style=flat-square)](https://codecov.io/gh/harehare/mq)
+[![codspeed badge](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json&style=flat-square)](https://codspeed.io/harehare/mq)
 
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
 
