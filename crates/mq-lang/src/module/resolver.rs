@@ -37,38 +37,46 @@ pub struct DefaultModuleResolver {
 
 impl ModuleResolver for DefaultModuleResolver {
     fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
-        if let Ok(content) = self.std_resolver.resolve(module_name) {
-            return Ok(content);
+        match self.std_resolver.resolve(module_name) {
+            Ok(content) => return Ok(content),
+            Err(ModuleError::NotFound(_)) => {}
+            Err(e) => return Err(e),
         }
 
-        if let Ok(content) = self.local_fs_resolver.resolve(module_name) {
-            return Ok(content);
+        match self.local_fs_resolver.resolve(module_name) {
+            Ok(content) => return Ok(content),
+            Err(ModuleError::NotFound(_)) => {}
+            Err(e) => return Err(e),
         }
 
         #[cfg(feature = "http-import")]
-        {
-            if let Ok(content) = self.http_resolver.resolve(module_name) {
-                return Ok(content);
-            }
+        match self.http_resolver.resolve(module_name) {
+            Ok(content) => return Ok(content),
+            Err(ModuleError::NotFound(_)) => {}
+            Err(e) => return Err(e),
         }
 
         Err(ModuleError::NotFound(format!("{}.mq", module_name).into()))
     }
 
     fn get_path(&self, module_name: &str) -> Result<String, ModuleError> {
-        if let Ok(path) = self.std_resolver.get_path(module_name) {
-            return Ok(path);
+        match self.std_resolver.get_path(module_name) {
+            Ok(path) => return Ok(path),
+            Err(ModuleError::NotFound(_)) => {}
+            Err(e) => return Err(e),
         }
 
-        if let Ok(path) = self.local_fs_resolver.get_path(module_name) {
-            return Ok(path);
+        match self.local_fs_resolver.get_path(module_name) {
+            Ok(path) => return Ok(path),
+            Err(ModuleError::NotFound(_)) => {}
+            Err(e) => return Err(e),
         }
 
         #[cfg(feature = "http-import")]
-        {
-            if let Ok(path) = self.http_resolver.get_path(module_name) {
-                return Ok(path);
-            }
+        match self.http_resolver.get_path(module_name) {
+            Ok(path) => return Ok(path),
+            Err(ModuleError::NotFound(_)) => {}
+            Err(e) => return Err(e),
         }
 
         Err(ModuleError::NotFound(format!("{}.mq", module_name).into()))
