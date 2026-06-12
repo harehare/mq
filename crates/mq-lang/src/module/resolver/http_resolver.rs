@@ -6,10 +6,14 @@ use crate::{ModuleError, ModuleResolver};
 ///
 /// # Caching
 ///
-/// Fetched modules are stored in `{system_cache_dir}/mq/` as `{md5(url)}.mq` files.
-/// All URLs (versioned tags, `HEAD`, `main`, `master`, or plain http(s)) are cached on first
-/// fetch and reused on subsequent resolves. Call [`HttpModuleResolver::clear_cache`]
-/// (e.g. via `--refresh-modules`) to discard all cached entries and force a re-fetch.
+/// Fetched modules are stored under `{system_cache_dir}/mq/` in one of two subdirectories:
+///
+/// - `versioned/` — URLs resolved to a specific tag (e.g. `@v0.1.0`); never cleared by
+///   [`HttpModuleResolver::clear_cache`].
+/// - `mutable/` — URLs resolved to `HEAD`, `main`, `master`, or any non-GitHub HTTP URL;
+///   cleared by [`HttpModuleResolver::clear_cache`] (i.e. `--refresh-modules`).
+///
+/// Files are named `{md5(url)}.mq` within their subdirectory.
 ///
 /// # GitHub shorthand
 ///
@@ -24,7 +28,6 @@ use crate::{ModuleError, ModuleResolver};
 #[derive(Debug, Clone)]
 pub struct HttpModuleResolver {
     pub(crate) allowed_remote_domains: Vec<String>,
-    pub(crate) client: reqwest::blocking::Client,
     pub(crate) timeout: Duration,
     cache_dir: PathBuf,
 }
@@ -33,7 +36,6 @@ impl Default for HttpModuleResolver {
     fn default() -> Self {
         Self {
             allowed_remote_domains: Vec::new(),
-            client: reqwest::blocking::Client::new(),
             timeout: Duration::from_secs(10),
             cache_dir: dirs::cache_dir().unwrap_or_default().join("mq"),
         }
@@ -43,14 +45,15 @@ impl Default for HttpModuleResolver {
 impl ModuleResolver for HttpModuleResolver {
     fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
         let url = self.to_fetch_url(module_name)?;
-        let cache_file = self.cache_dir.join(self.cache_file_name(&url));
+        let cache_subdir = self.cache_subdir(&url);
+        let cache_file = cache_subdir.join(self.cache_file_name(&url));
 
         if cache_file.exists() {
             return fs::read_to_string(&cache_file).map_err(|e| ModuleError::IOError(e.to_string().into()));
         }
 
         let content = self.fetch_url(&url)?;
-        fs::create_dir_all(&self.cache_dir).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+        fs::create_dir_all(&cache_subdir).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
         fs::write(&cache_file, content.as_bytes()).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
         Ok(content)
     }
@@ -74,7 +77,6 @@ impl HttpModuleResolver {
         let cache_dir = dirs::cache_dir().unwrap_or_default().join("mq");
         Self {
             allowed_remote_domains,
-            client: reqwest::blocking::Client::new(),
             timeout,
             cache_dir,
         }
@@ -157,6 +159,10 @@ impl HttpModuleResolver {
     /// Returns `true` if `url`'s host/path matches at least one entry in the allowlist.
     ///
     /// An empty allowlist means all URLs are permitted.
+    ///
+    /// The match requires that after the allowed domain (or domain/path prefix), the next
+    /// character is `/`, `?`, `#`, `:` (port), or the string ends — preventing a domain like
+    /// `example.com.evil.com` from bypassing an `example.com` allowlist entry.
     pub fn is_allowed_domain(&self, url: &str) -> bool {
         if self.allowed_remote_domains.is_empty() {
             return true;
@@ -165,18 +171,23 @@ impl HttpModuleResolver {
             .strip_prefix("https://")
             .or_else(|| url.strip_prefix("http://"))
             .unwrap_or(url);
-        self.allowed_remote_domains
-            .iter()
-            .any(|domain| url_without_scheme.starts_with(domain.as_str()))
+        self.allowed_remote_domains.iter().any(|domain| {
+            let rest = match url_without_scheme.strip_prefix(domain.as_str()) {
+                Some(r) => r,
+                None => return false,
+            };
+            rest.is_empty() || rest.starts_with('/') || rest.starts_with('?') || rest.starts_with('#') || rest.starts_with(':')
+        })
     }
 
-    /// Removes all locally-cached module files.
+    /// Removes only mutable-ref cached modules (HEAD/branch/non-versioned URLs).
     ///
-    /// Call this once before processing to force a re-fetch of all cached modules
-    /// on the next resolve (e.g. when `--refresh-modules` is passed on the CLI).
+    /// Versioned (tagged) modules in `{cache_dir}/versioned/` are preserved.
+    /// Call this when `--refresh-modules` is passed to force a re-fetch of HEAD/branch imports.
     pub fn clear_cache(&self) -> Result<(), ModuleError> {
-        if self.cache_dir.exists() {
-            fs::remove_dir_all(&self.cache_dir).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+        let mutable_dir = self.cache_dir.join("mutable");
+        if mutable_dir.exists() {
+            fs::remove_dir_all(&mutable_dir).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
         }
         Ok(())
     }
@@ -190,20 +201,26 @@ impl HttpModuleResolver {
             return Err(ModuleError::IOError(format!("Domain not allowed: {}", url).into()));
         }
 
-        let response = self
-            .client
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(self.timeout))
+            .build()
+            .into();
+
+        let mut response = agent
             .get(url)
-            .timeout(self.timeout)
-            .send()
+            .call()
             .map_err(|e| ModuleError::IOError(e.to_string().into()))?;
 
-        if !response.status().is_success() {
+        if response.status() != 200 {
             return Err(ModuleError::IOError(
                 format!("Failed to fetch module: {} (status: {})", url, response.status()).into(),
             ));
         }
 
-        response.text().map_err(|e| ModuleError::IOError(e.to_string().into()))
+        response
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| ModuleError::IOError(e.to_string().into()))
     }
 
     fn to_fetch_url(&self, module_name: &str) -> Result<String, ModuleError> {
@@ -237,6 +254,38 @@ impl HttpModuleResolver {
         Err(ModuleError::NotFound(Cow::Owned(module_name.to_string())))
     }
 
+    /// Returns `true` if `url` is pinned to a specific immutable version tag.
+    ///
+    /// For `raw.githubusercontent.com` URLs the ref segment (the third path component after
+    /// `{owner}/{repo}/`) is checked: `HEAD`, `main`, and `master` are mutable; everything
+    /// else (e.g. `v0.1.0`) is treated as versioned/immutable.
+    ///
+    /// All non-GitHub HTTP URLs are considered mutable.
+    pub fn is_versioned_url(url: &str) -> bool {
+        const MUTABLE_REFS: &[&str] = &["HEAD", "main", "master"];
+        let path = url
+            .strip_prefix("https://raw.githubusercontent.com/")
+            .or_else(|| url.strip_prefix("http://raw.githubusercontent.com/"));
+        match path {
+            Some(rest) => {
+                // layout: {owner}/{repo}/{ref}/{file}
+                let ref_segment = rest.splitn(4, '/').nth(2).unwrap_or("HEAD");
+                !MUTABLE_REFS.contains(&ref_segment)
+            }
+            None => false,
+        }
+    }
+
+    /// Returns the cache subdirectory for `url`:
+    /// `{cache_dir}/versioned/` for pinned tags, `{cache_dir}/mutable/` otherwise.
+    fn cache_subdir(&self, url: &str) -> PathBuf {
+        if Self::is_versioned_url(url) {
+            self.cache_dir.join("versioned")
+        } else {
+            self.cache_dir.join("mutable")
+        }
+    }
+
     fn cache_file_name(&self, url: &str) -> String {
         let hash = md5::compute(url);
         format!("{:x}.mq", hash)
@@ -253,7 +302,6 @@ mod tests {
     fn resolver_with_domains(domains: Vec<String>) -> HttpModuleResolver {
         HttpModuleResolver {
             allowed_remote_domains: domains,
-            client: reqwest::blocking::Client::new(),
             timeout: Duration::from_secs(10),
             cache_dir: PathBuf::from("/tmp/mq-test-cache"),
         }
@@ -314,18 +362,52 @@ mod tests {
     #[rstest]
     #[case("example.com/foo")]
     #[case("notgithub.com/owner/repo")]
+    // only owner, no repo component
+    #[case("github.com/owner")]
     fn test_github_to_raw_url_returns_none_for_non_github(#[case] input: &str) {
         assert!(HttpModuleResolver::github_to_raw_url(input).is_none());
+    }
+
+    #[rstest]
+    // explicit mutable-ref version tags expand correctly
+    #[case(
+        "github.com/harehare/lisp@HEAD",
+        "https://raw.githubusercontent.com/harehare/lisp/HEAD/lisp.mq"
+    )]
+    #[case(
+        "github.com/harehare/lisp@main",
+        "https://raw.githubusercontent.com/harehare/lisp/main/lisp.mq"
+    )]
+    #[case(
+        "github.com/harehare/lisp@master",
+        "https://raw.githubusercontent.com/harehare/lisp/master/lisp.mq"
+    )]
+    fn test_github_to_raw_url_explicit_mutable_refs(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(HttpModuleResolver::github_to_raw_url(input).unwrap(), expected);
     }
 
     #[rstest]
     #[case(vec![], "https://example.com/foo.mq", true)]
     #[case(vec![], "http://anything.org/bar.mq", true)]
     #[case(vec!["example.com".to_string()], "https://example.com/foo.mq", true)]
+    #[case(vec!["example.com".to_string()], "https://example.com", true)]
+    #[case(vec!["example.com".to_string()], "https://example.com:8080/foo.mq", true)]
     #[case(vec!["example.com/repo".to_string()], "https://example.com/repo/foo.mq", true)]
     #[case(vec!["example.com".to_string()], "https://other.com/foo.mq", false)]
     #[case(vec!["example.com".to_string()], "https://notexample.com/foo.mq", false)]
     #[case(vec!["example.com".to_string()], "http://example.com/foo.mq", true)]
+    // prefix-bypass: example.com.evil.com must NOT match allowlist entry "example.com"
+    #[case(vec!["example.com".to_string()], "https://example.com.evil.com/foo.mq", false)]
+    #[case(vec!["example.com".to_string()], "https://example.com.evil.com", false)]
+    #[case(vec!["example".to_string()], "https://example.com/foo.mq", false)]
+    // multiple allowlist entries: second entry matches
+    #[case(vec!["other.com".to_string(), "example.com".to_string()], "https://example.com/foo.mq", true)]
+    // multiple allowlist entries: none match
+    #[case(vec!["other.com".to_string(), "another.org".to_string()], "https://example.com/foo.mq", false)]
+    // URL with query string
+    #[case(vec!["example.com".to_string()], "https://example.com/foo.mq?v=1", true)]
+    // URL with fragment
+    #[case(vec!["example.com".to_string()], "https://example.com/foo.mq#section", true)]
     fn test_is_allowed_domain(#[case] allowed_domains: Vec<String>, #[case] url: &str, #[case] expected: bool) {
         let resolver = resolver_with_domains(allowed_domains);
         assert_eq!(resolver.is_allowed_domain(url), expected);
@@ -341,45 +423,128 @@ mod tests {
         "https://raw.githubusercontent.com/harehare/lisp/HEAD/lisp.mq"
     )]
     #[case("https://example.com/foo.mq", "https://example.com/foo.mq")]
+    // https:// GitHub URL is also expanded to raw.githubusercontent.com
+    #[case(
+        "https://github.com/harehare/lisp@v0.1.0",
+        "https://raw.githubusercontent.com/harehare/lisp/v0.1.0/lisp.mq"
+    )]
     fn test_to_fetch_url_with_empty_allowlist(#[case] input: &str, #[case] expected: &str) {
         let resolver = resolver_with_domains(vec![]);
         assert_eq!(resolver.to_fetch_url(input).unwrap(), expected);
     }
 
+    #[rstest]
+    // GitHub shorthand blocked by allowlist
+    #[case(vec!["example.com".to_string()], "github.com/harehare/lisp")]
+    // plain HTTPS URL blocked by allowlist
+    #[case(vec!["example.com".to_string()], "https://other.com/foo.mq")]
+    fn test_to_fetch_url_blocked_by_allowlist(#[case] allowed: Vec<String>, #[case] input: &str) {
+        let resolver = resolver_with_domains(allowed);
+        assert!(matches!(resolver.to_fetch_url(input), Err(ModuleError::IOError(_))));
+    }
+
+    #[rstest]
+    // non-URL, non-GitHub local name
+    #[case("local_module")]
+    fn test_to_fetch_url_returns_not_found(#[case] input: &str) {
+        let resolver = resolver_with_domains(vec![]);
+        assert!(matches!(resolver.to_fetch_url(input), Err(ModuleError::NotFound(_))));
+    }
+
+    #[test]
+    fn test_to_fetch_url_invalid_github_shorthand_returns_io_error() {
+        // "github.com/owner" has no repo component so github_to_raw_url returns None
+        let resolver = resolver_with_domains(vec![]);
+        assert!(matches!(
+            resolver.to_fetch_url("github.com/owner"),
+            Err(ModuleError::IOError(_))
+        ));
+    }
+
+    #[rstest]
+    // versioned: tag that is not HEAD/main/master
+    #[case("https://raw.githubusercontent.com/alice/mymod/v0.1.0/mymod.mq", true)]
+    #[case("https://raw.githubusercontent.com/alice/mymod/v2.0/lib/util.mq", true)]
+    #[case("https://raw.githubusercontent.com/alice/mymod/release-1.0/mymod.mq", true)]
+    // mutable: HEAD/main/master
+    #[case("https://raw.githubusercontent.com/alice/mymod/HEAD/mymod.mq", false)]
+    #[case("https://raw.githubusercontent.com/alice/mymod/main/mymod.mq", false)]
+    #[case("https://raw.githubusercontent.com/alice/mymod/master/mymod.mq", false)]
+    // http:// scheme variant of raw.githubusercontent.com
+    #[case("http://raw.githubusercontent.com/alice/mymod/v0.1.0/mymod.mq", true)]
+    #[case("http://raw.githubusercontent.com/alice/mymod/HEAD/mymod.mq", false)]
+    // non-GitHub URLs are always mutable
+    #[case("https://example.com/foo.mq", false)]
+    #[case("http://example.com/foo.mq", false)]
+    // URL with insufficient path segments defaults to mutable
+    #[case("https://raw.githubusercontent.com/alice/mymod", false)]
+    fn test_is_versioned_url(#[case] url: &str, #[case] expected: bool) {
+        assert_eq!(HttpModuleResolver::is_versioned_url(url), expected);
+    }
+
+    #[test]
+    fn test_cache_subdir_versioned() {
+        let dir = TempDir::new().unwrap();
+        let resolver = HttpModuleResolver {
+            allowed_remote_domains: vec![],
+            timeout: Duration::from_secs(10),
+            cache_dir: dir.path().to_path_buf(),
+        };
+        let subdir = resolver.cache_subdir("https://raw.githubusercontent.com/alice/mymod/v0.1.0/mymod.mq");
+        assert_eq!(subdir, dir.path().join("versioned"));
+    }
+
+    #[test]
+    fn test_cache_subdir_mutable() {
+        let dir = TempDir::new().unwrap();
+        let resolver = HttpModuleResolver {
+            allowed_remote_domains: vec![],
+            timeout: Duration::from_secs(10),
+            cache_dir: dir.path().to_path_buf(),
+        };
+        let subdir = resolver.cache_subdir("https://raw.githubusercontent.com/alice/mymod/HEAD/mymod.mq");
+        assert_eq!(subdir, dir.path().join("mutable"));
+    }
+
     #[test]
     fn test_cache_valid_when_file_exists() {
         let dir = TempDir::new().unwrap();
-        let cache_file = dir.path().join("cached.mq");
+        let mutable_dir = dir.path().join("mutable");
+        fs::create_dir_all(&mutable_dir).unwrap();
+        let cache_file = mutable_dir.join("cached.mq");
         fs::write(&cache_file, b"content").unwrap();
 
         let resolver = HttpModuleResolver {
             allowed_remote_domains: vec![],
-            client: reqwest::blocking::Client::new(),
             timeout: Duration::from_secs(10),
             cache_dir: dir.path().to_path_buf(),
         };
 
         assert!(cache_file.exists());
-        // Any cached file (versioned or mutable-ref) is valid as long as it exists
-        assert!(resolver.cache_dir.join("cached.mq").exists());
+        assert!(resolver.cache_dir.join("mutable").join("cached.mq").exists());
     }
 
     #[test]
-    fn test_clear_cache_removes_files() {
+    fn test_clear_cache_removes_only_mutable() {
         let dir = TempDir::new().unwrap();
-        let cache_file = dir.path().join("abc123.mq");
-        fs::write(&cache_file, b"cached content").unwrap();
+        let mutable_dir = dir.path().join("mutable");
+        let versioned_dir = dir.path().join("versioned");
+        fs::create_dir_all(&mutable_dir).unwrap();
+        fs::create_dir_all(&versioned_dir).unwrap();
+        let mutable_file = mutable_dir.join("abc123.mq");
+        let versioned_file = versioned_dir.join("def456.mq");
+        fs::write(&mutable_file, b"mutable content").unwrap();
+        fs::write(&versioned_file, b"versioned content").unwrap();
 
         let resolver = HttpModuleResolver {
             allowed_remote_domains: vec![],
-            client: reqwest::blocking::Client::new(),
             timeout: Duration::from_secs(10),
             cache_dir: dir.path().to_path_buf(),
         };
 
-        assert!(cache_file.exists());
         resolver.clear_cache().unwrap();
-        assert!(!dir.path().exists());
+        assert!(!mutable_dir.exists(), "mutable dir should be removed");
+        assert!(versioned_file.exists(), "versioned file should be preserved");
     }
 
     #[test]
@@ -389,12 +554,89 @@ mod tests {
 
         let resolver = HttpModuleResolver {
             allowed_remote_domains: vec![],
-            client: reqwest::blocking::Client::new(),
             timeout: Duration::from_secs(10),
             cache_dir: nonexistent,
         };
 
         assert!(resolver.clear_cache().is_ok());
+    }
+
+    #[test]
+    fn test_clear_cache_noop_when_only_versioned_exists() {
+        let dir = TempDir::new().unwrap();
+        let versioned_dir = dir.path().join("versioned");
+        fs::create_dir_all(&versioned_dir).unwrap();
+        let versioned_file = versioned_dir.join("v1.mq");
+        fs::write(&versioned_file, b"pinned").unwrap();
+
+        let resolver = HttpModuleResolver {
+            allowed_remote_domains: vec![],
+            timeout: Duration::from_secs(10),
+            cache_dir: dir.path().to_path_buf(),
+        };
+
+        resolver.clear_cache().unwrap();
+        assert!(versioned_file.exists(), "versioned file must survive clear_cache");
+    }
+
+    #[test]
+    fn test_clear_cache_removes_multiple_mutable_files() {
+        let dir = TempDir::new().unwrap();
+        let mutable_dir = dir.path().join("mutable");
+        fs::create_dir_all(&mutable_dir).unwrap();
+        for name in &["a.mq", "b.mq", "c.mq"] {
+            fs::write(mutable_dir.join(name), b"data").unwrap();
+        }
+
+        let resolver = HttpModuleResolver {
+            allowed_remote_domains: vec![],
+            timeout: Duration::from_secs(10),
+            cache_dir: dir.path().to_path_buf(),
+        };
+
+        resolver.clear_cache().unwrap();
+        assert!(!mutable_dir.exists());
+    }
+
+    #[test]
+    fn test_resolve_uses_mutable_cache_on_hit() {
+        let dir = TempDir::new().unwrap();
+        let mutable_dir = dir.path().join("mutable");
+        fs::create_dir_all(&mutable_dir).unwrap();
+
+        // Pre-populate the cache with a known URL's hash
+        let url = "https://raw.githubusercontent.com/alice/mymod/HEAD/mymod.mq";
+        let hash = format!("{:x}.mq", md5::compute(url));
+        fs::write(mutable_dir.join(&hash), b"def cached(): 42;").unwrap();
+
+        let resolver = HttpModuleResolver {
+            allowed_remote_domains: vec![],
+            timeout: Duration::from_secs(10),
+            cache_dir: dir.path().to_path_buf(),
+        };
+
+        let result = resolver.resolve("https://raw.githubusercontent.com/alice/mymod/HEAD/mymod.mq");
+        assert_eq!(result.unwrap(), "def cached(): 42;");
+    }
+
+    #[test]
+    fn test_resolve_uses_versioned_cache_on_hit() {
+        let dir = TempDir::new().unwrap();
+        let versioned_dir = dir.path().join("versioned");
+        fs::create_dir_all(&versioned_dir).unwrap();
+
+        let url = "https://raw.githubusercontent.com/alice/mymod/v0.1.0/mymod.mq";
+        let hash = format!("{:x}.mq", md5::compute(url));
+        fs::write(versioned_dir.join(&hash), b"def pinned(): 1;").unwrap();
+
+        let resolver = HttpModuleResolver {
+            allowed_remote_domains: vec![],
+            timeout: Duration::from_secs(10),
+            cache_dir: dir.path().to_path_buf(),
+        };
+
+        let result = resolver.resolve("https://raw.githubusercontent.com/alice/mymod/v0.1.0/mymod.mq");
+        assert_eq!(result.unwrap(), "def pinned(): 1;");
     }
 
     #[rstest]
