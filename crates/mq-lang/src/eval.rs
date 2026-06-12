@@ -690,13 +690,15 @@ impl<T: ModuleResolver> Evaluator<T> {
                     .load_from_file(&module_name, Shared::clone(&self.token_arena));
                 match module {
                     Ok(module) => self.import_module_with_env(module, env),
-                    Err(ModuleError::AlreadyLoaded(_)) => match resolve(&module_name, env) {
-                        Ok(value) => Ok(value),
-                        Err(_) => Err(RuntimeError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(
-                            module_name.to_string(),
-                        )))
-                        .into()),
-                    },
+                    Err(ModuleError::AlreadyLoaded(_)) => {
+                        let canonical = self.module_loader.canonical_name(&module_name).to_owned();
+                        match resolve(&canonical, env) {
+                            Ok(value) => Ok(value),
+                            Err(_) => {
+                                Err(RuntimeError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(canonical))).into())
+                            }
+                        }
+                    }
                     Err(e) => Err(RuntimeError::ModuleLoadError(e).into()),
                 }
             }

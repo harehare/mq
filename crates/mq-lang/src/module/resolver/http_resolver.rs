@@ -43,6 +43,14 @@ impl Default for HttpModuleResolver {
 }
 
 impl ModuleResolver for HttpModuleResolver {
+    fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
+        if Self::is_github_url(module_path) || Self::is_remote_url(module_path) {
+            Self::extract_module_name(module_path)
+        } else {
+            module_path
+        }
+    }
+
     fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
         let url = self.to_fetch_url(module_name)?;
         let cache_subdir = self.cache_subdir(&url);
@@ -172,7 +180,11 @@ impl HttpModuleResolver {
                 Some(r) => r,
                 None => return false,
             };
-            rest.is_empty() || rest.starts_with('/') || rest.starts_with('?') || rest.starts_with('#') || rest.starts_with(':')
+            rest.is_empty()
+                || rest.starts_with('/')
+                || rest.starts_with('?')
+                || rest.starts_with('#')
+                || rest.starts_with(':')
         })
     }
 
@@ -250,6 +262,34 @@ impl HttpModuleResolver {
         Err(ModuleError::NotFound(Cow::Owned(module_name.to_string())))
     }
 
+    /// Extracts a short module name from an HTTP URL or GitHub shorthand.
+    ///
+    /// Strips the URL scheme, domain, and path prefix, then removes any `@version`
+    /// suffix and the `.mq` file extension from the last path segment.
+    ///
+    /// # Examples
+    /// | Input | Result |
+    /// |---|---|
+    /// | `github.com/alice/mymod` | `"mymod"` |
+    /// | `github.com/alice/mymod.mq` | `"mymod"` |
+    /// | `github.com/alice/mymod.mq@v1.0` | `"mymod"` |
+    /// | `https://example.com/path/foo.mq` | `"foo"` |
+    pub fn extract_module_name(module_path: &str) -> &str {
+        let path = module_path
+            .strip_prefix("https://")
+            .or_else(|| module_path.strip_prefix("http://"))
+            .unwrap_or(module_path);
+
+        let without_version = match path.rfind('@') {
+            Some(pos) => &path[..pos],
+            None => path,
+        };
+
+        let last_segment = without_version.rsplit('/').next().unwrap_or(without_version);
+
+        last_segment.strip_suffix(".mq").unwrap_or(last_segment)
+    }
+
     /// Returns `true` if `url` is pinned to a specific immutable version tag.
     ///
     /// For `raw.githubusercontent.com` URLs the ref segment (the third path component after
@@ -265,7 +305,7 @@ impl HttpModuleResolver {
         match path {
             Some(rest) => {
                 // layout: {owner}/{repo}/{ref}/{file}
-                let ref_segment = rest.splitn(4, '/').nth(2).unwrap_or("HEAD");
+                let ref_segment = rest.split('/').nth(2).unwrap_or("HEAD");
                 !MUTABLE_REFS.contains(&ref_segment)
             }
             None => false,
@@ -301,6 +341,30 @@ mod tests {
             timeout: Duration::from_secs(10),
             cache_dir: PathBuf::from("/tmp/mq-test-cache"),
         }
+    }
+
+    #[rstest]
+    #[case("github.com/alice/mymod", "mymod")]
+    #[case("github.com/alice/mymod.mq", "mymod")]
+    #[case("github.com/alice/mymod.mq@v1.0", "mymod")]
+    #[case("github.com/alice/mymod@v1.0", "mymod")]
+    #[case("github.com/alice/repo/lib/utils.mq", "utils")]
+    #[case("https://example.com/path/foo.mq", "foo")]
+    #[case("https://example.com/foo.mq", "foo")]
+    #[case("http://example.com/bar.mq", "bar")]
+    #[case("https://example.com/noext", "noext")]
+    fn test_extract_module_name(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(HttpModuleResolver::extract_module_name(input), expected);
+    }
+
+    #[rstest]
+    #[case("github.com/alice/mymod", "mymod")]
+    #[case("github.com/alice/mymod.mq@v1.0", "mymod")]
+    #[case("https://example.com/foo.mq", "foo")]
+    #[case("local_module", "local_module")]
+    fn test_canonical_name(#[case] input: &str, #[case] expected: &str) {
+        let resolver = HttpModuleResolver::default();
+        assert_eq!(resolver.canonical_name(input), expected);
     }
 
     #[rstest]

@@ -16,6 +16,14 @@ pub trait ModuleResolver: Clone + Default {
     fn search_paths(&self) -> Vec<PathBuf>;
     /// Replaces the filesystem search directories.
     fn set_search_paths(&mut self, paths: Vec<PathBuf>);
+    /// Returns the short identifier to store the module under.
+    ///
+    /// For most resolvers this is `module_path` unchanged.  HTTP-based resolvers
+    /// strip the URL prefix and `.mq` suffix so that, for example,
+    /// `github.com/alice/mymod.mq@v1.0` becomes `"mymod"`.
+    fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
+        module_path
+    }
 }
 
 /// The default resolver, combining standard library, local filesystem, and (optionally) HTTP sources.
@@ -72,6 +80,17 @@ impl ModuleResolver for DefaultModuleResolver {
 
     fn set_search_paths(&mut self, paths: Vec<PathBuf>) {
         self.local_fs_resolver.set_search_paths(paths)
+    }
+
+    fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
+        #[cfg(feature = "http-import")]
+        {
+            use http_resolver::HttpModuleResolver;
+            if HttpModuleResolver::is_github_url(module_path) || HttpModuleResolver::is_remote_url(module_path) {
+                return self.http_resolver.canonical_name(module_path);
+            }
+        }
+        module_path
     }
 }
 

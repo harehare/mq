@@ -216,9 +216,14 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         })
     }
 
+    pub fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
+        self.resolver.canonical_name(module_path)
+    }
+
     pub fn load_from_file(&mut self, module_path: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
         let program = self.resolve(module_path)?;
-        self.load(module_path, &program, token_arena)
+        let name = self.resolver.canonical_name(module_path).to_owned();
+        self.load(&name, &program, token_arena)
     }
 
     pub fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
