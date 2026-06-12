@@ -1135,9 +1135,8 @@ mod tests {
     use crate::ast::node;
     use crate::eval::Evaluator;
     use crate::module::ModuleLoader;
-    use crate::{
-        DefaultEngine, LocalFsModuleResolver, RuntimeValue, SharedCell, Token, TokenKind, arena::Arena, parse,
-    };
+    use crate::module::resolver::DefaultModuleResolver;
+    use crate::{DefaultEngine, RuntimeValue, SharedCell, Token, TokenKind, arena::Arena, parse};
     use rstest::rstest;
 
     /// Mock MacroEvaluator for testing.
@@ -1963,7 +1962,7 @@ mod tests {
         let token_arena = create_token_arena();
         let program = parse(input, Shared::clone(&token_arena)).expect("Failed to parse program");
 
-        let module_loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        let module_loader = ModuleLoader::new(DefaultModuleResolver::default());
         let mut evaluator = Evaluator::new(module_loader, token_arena);
 
         let mut macro_expander = Macro::new();
@@ -1991,7 +1990,7 @@ mod tests {
         let token_arena = create_token_arena();
         let program = parse(input, Shared::clone(&token_arena)).expect("Failed to parse program");
 
-        let module_loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        let module_loader = ModuleLoader::new(DefaultModuleResolver::default());
         let mut evaluator = Evaluator::new(module_loader, token_arena);
 
         let mut macro_expander = Macro::new();
@@ -2019,7 +2018,7 @@ mod tests {
         let token_arena = create_token_arena();
         let program = parse(input, Shared::clone(&token_arena)).expect("Failed to parse program");
 
-        let module_loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        let module_loader = ModuleLoader::new(DefaultModuleResolver::default());
         let mut evaluator = Evaluator::new(module_loader, token_arena);
 
         let mut macro_expander = Macro::new();

@@ -7,7 +7,7 @@ use crate::{
     lexer::{self, Lexer},
     module::{
         error::ModuleError,
-        resolver::{LocalFsModuleResolver, ModuleResolver},
+        resolver::{DefaultModuleResolver, ModuleResolver},
     },
 };
 use rustc_hash::FxHashMap;
@@ -36,8 +36,29 @@ impl<T: ModuleResolver> Default for ModuleLoader<T> {
     }
 }
 
+fn get_module_name(name: &str) -> Cow<'static, str> {
+    // For common module names, use static strings to avoid allocation
+    match name {
+        "ast" => Cow::Borrowed("ast.mq"),
+        "cbor" => Cow::Borrowed("cbor.mq"),
+        "csv" => Cow::Borrowed("csv.mq"),
+        "fuzzy" => Cow::Borrowed("fuzzy.mq"),
+        "hcl" => Cow::Borrowed("hcl.mq"),
+        "json" => Cow::Borrowed("json.mq"),
+        "section" => Cow::Borrowed("section.mq"),
+        "semver" => Cow::Borrowed("semver.mq"),
+        "test" => Cow::Borrowed("test.mq"),
+        "table" => Cow::Borrowed("table.mq"),
+        "toml" => Cow::Borrowed("toml.mq"),
+        "toon" => Cow::Borrowed("toon.mq"),
+        "xml" => Cow::Borrowed("xml.mq"),
+        "yaml" => Cow::Borrowed("yaml.mq"),
+        _ => Cow::Owned(format!("{}.mq", name)),
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct ModuleLoader<T: ModuleResolver = LocalFsModuleResolver> {
+pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     pub(crate) loaded_modules: Arena<ModuleName>,
     #[cfg(feature = "debugger")]
     pub(crate) source_code: Option<String>,
@@ -201,11 +222,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 
     pub fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
-        if STANDARD_MODULES.contains_key(module_name) {
-            Ok(STANDARD_MODULES.get(module_name).map(|f| f()).unwrap().to_string())
-        } else {
-            self.resolver.resolve(module_name)
-        }
+        self.resolver.resolve(module_name)
     }
 
     pub fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Module, ModuleError> {
@@ -288,7 +305,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         let name = self.module_name(module_id);
         match name.as_ref() {
             Module::TOP_LEVEL_MODULE => String::new(),
-            other => resolver::module_name(other).to_string(),
+            other => get_module_name(other).to_string(),
         }
     }
 
@@ -317,6 +334,21 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 }
 
+#[cfg(feature = "http-import")]
+impl ModuleLoader<DefaultModuleResolver> {
+    /// Replaces the HTTP resolver's domain allowlist.
+    pub fn set_http_allowed_domains(&mut self, domains: Vec<String>) {
+        self.resolver.set_allowed_domains(domains);
+    }
+
+    /// Clears all locally-cached HTTP module files.
+    ///
+    /// Call this once before processing to force a re-fetch of all cached modules.
+    pub fn clear_http_cache(&self) -> Result<(), error::ModuleError> {
+        self.resolver.clear_http_cache()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::{fixture, rstest};
@@ -326,7 +358,7 @@ mod tests {
     use crate::{
         Range, Shared, SharedCell, Token, TokenKind,
         ast::node::{self as ast, IdentWithToken, Param},
-        module::LocalFsModuleResolver,
+        module::resolver::DefaultModuleResolver,
         range::Position,
         token_alloc,
     };
@@ -423,7 +455,7 @@ mod tests {
         #[case] expected: Result<Module, ModuleError>,
     ) {
         assert_eq!(
-            ModuleLoader::new(LocalFsModuleResolver::default()).load("test", &program, token_arena),
+            ModuleLoader::new(DefaultModuleResolver::default()).load("test", &program, token_arena),
             expected
         );
     }
@@ -441,7 +473,7 @@ mod tests {
         #[case] module_name: &str,
         #[case] expected: Result<Module, ModuleError>,
     ) {
-        let mut loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::default());
         let result = loader.load_from_file(module_name, token_arena.clone());
         // Only check that loading does not return NotFound error and returns Some(Module)
         match expected {
@@ -465,7 +497,7 @@ mod tests {
     #[test]
     fn test_load_builtin_idempotent() {
         let token_arena = token_arena();
-        let mut loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::default());
         assert!(loader.load_builtin(Shared::clone(&token_arena)).is_ok());
         // Second call on the same loader must return AlreadyLoaded, not corrupt state.
         assert!(matches!(
@@ -478,7 +510,7 @@ mod tests {
     fn test_load_builtin_non_pristine_falls_back_to_parse() {
         // Load another module first so the arenas are no longer in their initial state.
         let token_arena = token_arena();
-        let mut loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::default());
         loader
             .load("other", "def dummy(): 1;", Shared::clone(&token_arena))
             .expect("should load other module");
@@ -498,7 +530,7 @@ mod tests {
         pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
     ) {
         let arena1 = pristine_token_arena;
-        let mut loader1 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader1 = ModuleLoader::new(DefaultModuleResolver::default());
         loader1.load_builtin(Shared::clone(&arena1)).unwrap();
         #[cfg(not(feature = "sync"))]
         let size1 = arena1.borrow().len();
@@ -514,7 +546,7 @@ mod tests {
                 module_id: Module::TOP_LEVEL_MODULE_ID,
             }),
         );
-        let mut loader2 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader2 = ModuleLoader::new(DefaultModuleResolver::default());
         loader2.load_builtin(Shared::clone(&arena2)).unwrap();
         #[cfg(not(feature = "sync"))]
         let size2 = arena2.borrow().len();
@@ -530,7 +562,7 @@ mod tests {
     fn test_load_builtin_cache_module_counts_consistent(
         pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
     ) {
-        let mut loader1 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader1 = ModuleLoader::new(DefaultModuleResolver::default());
         let module1 = loader1.load_builtin(pristine_token_arena).unwrap();
 
         let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
@@ -542,7 +574,7 @@ mod tests {
                 module_id: Module::TOP_LEVEL_MODULE_ID,
             }),
         );
-        let mut loader2 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader2 = ModuleLoader::new(DefaultModuleResolver::default());
         let module2 = loader2.load_builtin(arena2).unwrap();
 
         assert_eq!(module1.name, module2.name);
@@ -558,7 +590,7 @@ mod tests {
     fn test_load_builtin_module_registered_at_id_one(
         pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
     ) {
-        let mut loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::default());
         loader.load_builtin(pristine_token_arena).unwrap();
 
         assert_eq!(loader.loaded_modules.len(), 2);
@@ -571,7 +603,7 @@ mod tests {
     fn test_load_builtin_cache_tokens_have_builtin_module_id(
         pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
     ) {
-        let mut loader1 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader1 = ModuleLoader::new(DefaultModuleResolver::default());
         loader1.load_builtin(pristine_token_arena).unwrap();
 
         // Second pristine load — this is the cache-hit path.
@@ -584,7 +616,7 @@ mod tests {
                 module_id: Module::TOP_LEVEL_MODULE_ID,
             }),
         );
-        let mut loader2 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader2 = ModuleLoader::new(DefaultModuleResolver::default());
         loader2.load_builtin(Shared::clone(&arena2)).unwrap();
 
         let builtin_module_id: crate::ModuleId = 1.into();

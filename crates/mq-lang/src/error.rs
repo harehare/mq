@@ -491,7 +491,8 @@ mod test {
     use std::{fs::File, path::PathBuf};
 
     use super::*;
-    use crate::{Arena, LocalFsModuleResolver, Range, Shared, SharedCell, Token, TokenKind, arena::ArenaId};
+    use crate::module::resolver::DefaultModuleResolver;
+    use crate::{Arena, Range, Shared, SharedCell, Token, TokenKind, arena::ArenaId};
 
     type TempDir = PathBuf;
     type TempFile = PathBuf;
@@ -683,7 +684,8 @@ mod test {
         }
 
         let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
-        let mut loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+
         loader
             .load_from_file("test_from_error_with_module_source", token_arena)
             .unwrap();

@@ -122,6 +122,70 @@ import "json"
 | json::json_parse()
 ```
 
+## HTTP Imports
+
+> **Requires the `http-import` feature flag.**
+
+When `mq` is built with the `http-import` feature, `import` and `include` accept HTTP/HTTPS URLs
+in addition to local file names.
+
+### Plain URL
+
+```mq
+import "https://example.com/mymod.mq"
+```
+
+### GitHub shorthand
+
+The scheme can be omitted for GitHub repositories.
+mq automatically maps the path to `raw.githubusercontent.com`.
+
+```
+github.com/{owner}/{path}[@{version}]
+```
+
+| Shorthand | Resolved URL |
+|---|---|
+| `github.com/alice/mymod` | `raw.githubusercontent.com/alice/mymod/HEAD/mymod.mq` |
+| `github.com/alice/mymod.mq` | `raw.githubusercontent.com/alice/mymod/HEAD/mymod.mq` |
+| `github.com/alice/mymod@v1.0` | `raw.githubusercontent.com/alice/mymod/v1.0/mymod.mq` |
+| `github.com/alice/repo/lib/util.mq@v2.0` | `raw.githubusercontent.com/alice/repo/v2.0/lib/util.mq` |
+
+**Example:**
+
+```mq
+import "github.com/harehare/lisp.mq@v0.1.0"
+| lisp::eval("(+ 1 2)")
+```
+
+### Caching
+
+Fetched modules are cached in `{system_cache_dir}/mq/` as `{md5(url)}.mq` files.
+
+- **Versioned URLs** (e.g. `@v0.1.0`): cached indefinitely — the tag content is immutable.
+- **Mutable refs** (`HEAD`, `main`, `master`, or no version): cached on first fetch.
+  Pass `--refresh` on the command line to discard the cache and re-fetch.
+
+### CLI options
+
+| Flag | Description |
+|---|---|
+| `--refresh-modules` | Discard cached mutable-ref modules and re-fetch them. |
+| `--allowed-domain <domain>` | Restrict HTTP imports to the given domain prefix. Repeat to allow multiple domains. An empty list (default) permits all domains. |
+
+**Examples:**
+
+```sh
+# Force re-fetch of any HEAD/branch modules
+mq --refresh-modules 'self' file.md
+
+# Only allow imports from example.com
+mq --allowed-domain example.com 'self' file.md
+
+# Allow multiple domains
+mq --allowed-domain example.com --allowed-domain raw.githubusercontent.com 'self' file.md
+```
+
 ## Comparison
 
 | Feature  | `module`                          | `import`                          | `include`               |

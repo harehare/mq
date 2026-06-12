@@ -42,6 +42,7 @@ url = {workspace = true}
 toon-format = { version = "0.5", default-features = false }
 quick-xml = "0.40.1"
 similar = "3.0.0"
+reqwest = { workspace = true, optional = true, features = ["blocking"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["console"] }
@@ -54,6 +55,7 @@ default = ["std"]
 file-io = []
 std = []
 sync = []
+http-import = ["dep:reqwest"]
 
 [dev-dependencies]
 divan = {workspace = true}

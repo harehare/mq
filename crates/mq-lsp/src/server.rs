@@ -528,9 +528,10 @@ impl LspConfig {
 pub async fn start(config: LspConfig) {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
+    let module_loader = mq_lang::ModuleLoader::new(mq_lang::DefaultModuleResolver::new(config.module_paths.clone()));
     let (service, socket) = LspService::new(|client| Backend {
         client,
-        hir: Arc::new(RwLock::new(mq_hir::Hir::new(config.module_paths.clone()))),
+        hir: Arc::new(RwLock::new(mq_hir::Hir::new(module_loader))),
         source_map: RwLock::new(BiMap::new()),
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),

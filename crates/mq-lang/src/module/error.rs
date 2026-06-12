@@ -4,6 +4,7 @@ use crate::Token;
 use crate::error::syntax::SyntaxError;
 use std::borrow::Cow;
 
+/// Errors that can occur while loading or resolving mq modules.
 #[derive(Debug, PartialEq, Error)]
 pub enum ModuleError {
     #[error("Module `{0}` is already loaded")]
@@ -19,6 +20,7 @@ pub enum ModuleError {
 }
 
 impl ModuleError {
+    /// Returns the token associated with a syntax error, if any.
     #[cold]
     pub fn token(&self) -> Option<&Token> {
         match self {

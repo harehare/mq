@@ -2584,6 +2584,7 @@ dependencies = [
  "proptest",
  "quick-xml",
  "regex-lite",
+ "reqwest",
  "ropey",
  "rstest",
  "rustc-hash",
