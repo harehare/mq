@@ -7,11 +7,9 @@ use crate::{ModuleError, ModuleResolver};
 /// # Caching
 ///
 /// Fetched modules are stored in `{system_cache_dir}/mq/` as `{md5(url)}.mq` files.
-///
-/// - **Versioned URLs** (tag ≠ `HEAD`/`main`/`master`): cached indefinitely — tag content is immutable.
-/// - **Mutable refs** (`HEAD`, `main`, `master`, or no version): cached on first fetch and reused
-///   on subsequent resolves. Call [`HttpModuleResolver::clear_cache`] (e.g. via `--refresh-modules`)
-///   to discard all cached entries and force a re-fetch on the next resolve.
+/// All URLs (versioned tags, `HEAD`, `main`, `master`, or plain http(s)) are cached on first
+/// fetch and reused on subsequent resolves. Call [`HttpModuleResolver::clear_cache`]
+/// (e.g. via `--refresh-modules`) to discard all cached entries and force a re-fetch.
 ///
 /// # GitHub shorthand
 ///
@@ -80,16 +78,6 @@ impl HttpModuleResolver {
             timeout,
             cache_dir,
         }
-    }
-
-    /// Updates the request timeout.
-    pub fn set_timeout(&mut self, timeout: Duration) {
-        self.timeout = timeout;
-    }
-
-    /// Adds a domain prefix to the allowlist (e.g. `"example.com/myrepo"`).
-    pub fn add_allowed_domain(&mut self, domain: String) {
-        self.allowed_remote_domains.push(domain);
     }
 
     /// Returns `true` if `url` has an `http://` or `https://` scheme.
@@ -164,18 +152,6 @@ impl HttpModuleResolver {
             "https://raw.githubusercontent.com/{}/{}/{}/{}",
             owner, repo, version, file
         ))
-    }
-
-    /// Returns `true` if `url` is pinned to an immutable git tag (not HEAD/main/master).
-    pub fn is_versioned_url(url: &str) -> bool {
-        if let Some(path) = url.strip_prefix("https://raw.githubusercontent.com/") {
-            let parts: Vec<&str> = path.splitn(4, '/').collect();
-            if parts.len() >= 3 {
-                let git_ref = parts[2];
-                return git_ref != "HEAD" && git_ref != "main" && git_ref != "master";
-            }
-        }
-        true
     }
 
     /// Returns `true` if `url`'s host/path matches at least one entry in the allowlist.
@@ -343,17 +319,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case("https://raw.githubusercontent.com/owner/repo/v0.1.0/file.mq", true)]
-    #[case("https://raw.githubusercontent.com/owner/repo/1.2.3/file.mq", true)]
-    #[case("https://raw.githubusercontent.com/owner/repo/HEAD/file.mq", false)]
-    #[case("https://raw.githubusercontent.com/owner/repo/main/file.mq", false)]
-    #[case("https://raw.githubusercontent.com/owner/repo/master/file.mq", false)]
-    #[case("https://example.com/foo.mq", true)]
-    fn test_is_versioned_url(#[case] url: &str, #[case] expected: bool) {
-        assert_eq!(HttpModuleResolver::is_versioned_url(url), expected);
-    }
-
-    #[rstest]
     #[case(vec![], "https://example.com/foo.mq", true)]
     #[case(vec![], "http://anything.org/bar.mq", true)]
     #[case(vec!["example.com".to_string()], "https://example.com/foo.mq", true)]
@@ -461,20 +426,6 @@ mod tests {
     #[test]
     fn test_search_paths_empty() {
         assert!(HttpModuleResolver::default().search_paths().is_empty());
-    }
-
-    #[test]
-    fn test_add_allowed_domain() {
-        let mut resolver = HttpModuleResolver::default();
-        resolver.add_allowed_domain("example.com".to_string());
-        assert_eq!(resolver.allowed_remote_domains, vec!["example.com"]);
-    }
-
-    #[test]
-    fn test_set_timeout() {
-        let mut resolver = HttpModuleResolver::default();
-        resolver.set_timeout(Duration::from_secs(30));
-        assert_eq!(resolver.timeout, Duration::from_secs(30));
     }
 
     #[test]
