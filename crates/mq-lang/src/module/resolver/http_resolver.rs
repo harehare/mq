@@ -106,7 +106,7 @@ impl HttpModuleResolver {
     ///
     /// Where `{path}` is one of:
     /// - `{repo}` → fetches `{repo}.mq` from the repo root at HEAD
-    /// - `{file.mq}` → fetches `{file.mq}` from the repo whose name equals the file stem
+    /// - `{repo.mq}` → fetches `{repo.mq}` from the repo named `{repo.mq}` at HEAD
     /// - `{repo}/{subpath}` → fetches `{subpath}` from the given repo
     ///
     /// `{version}` (e.g. `v0.1.0`) selects a specific git tag; omitting it uses `HEAD`.
@@ -134,15 +134,11 @@ impl HttpModuleResolver {
 
         let (owner, repo, file) = match components.as_slice() {
             [owner, name] => {
-                let (repo, file) = if let Some(stem) = name.strip_suffix(".mq") {
-                    (stem, *name)
+                let repo = *name;
+                let file = if name.ends_with(".mq") {
+                    name.to_string()
                 } else {
-                    (*name, *name)
-                };
-                let file = if file.ends_with(".mq") {
-                    file.to_string()
-                } else {
-                    format!("{}.mq", file)
+                    format!("{}.mq", name)
                 };
                 (owner.to_string(), repo.to_string(), file)
             }
@@ -337,11 +333,11 @@ mod tests {
     )]
     #[case(
         "github.com/harehare/lisp.mq",
-        "https://raw.githubusercontent.com/harehare/lisp/HEAD/lisp.mq"
+        "https://raw.githubusercontent.com/harehare/lisp.mq/HEAD/lisp.mq"
     )]
     #[case(
         "github.com/harehare/lisp.mq@v0.1.0",
-        "https://raw.githubusercontent.com/harehare/lisp/v0.1.0/lisp.mq"
+        "https://raw.githubusercontent.com/harehare/lisp.mq/v0.1.0/lisp.mq"
     )]
     #[case(
         "github.com/harehare/lisp@v0.1.0",
@@ -353,7 +349,16 @@ mod tests {
     )]
     #[case(
         "https://github.com/harehare/lisp.mq@v0.1.0",
-        "https://raw.githubusercontent.com/harehare/lisp/v0.1.0/lisp.mq"
+        "https://raw.githubusercontent.com/harehare/lisp.mq/v0.1.0/lisp.mq"
+    )]
+    // repo name contains a dot (e.g. json5.mq) — the full name is used as-is
+    #[case(
+        "github.com/harehare/json5.mq",
+        "https://raw.githubusercontent.com/harehare/json5.mq/HEAD/json5.mq"
+    )]
+    #[case(
+        "github.com/harehare/json5.mq@v0.1.0",
+        "https://raw.githubusercontent.com/harehare/json5.mq/v0.1.0/json5.mq"
     )]
     fn test_github_to_raw_url(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(HttpModuleResolver::github_to_raw_url(input).unwrap(), expected);
@@ -416,7 +421,7 @@ mod tests {
     #[rstest]
     #[case(
         "github.com/harehare/lisp.mq@v0.1.0",
-        "https://raw.githubusercontent.com/harehare/lisp/v0.1.0/lisp.mq"
+        "https://raw.githubusercontent.com/harehare/lisp.mq/v0.1.0/lisp.mq"
     )]
     #[case(
         "github.com/harehare/lisp",
