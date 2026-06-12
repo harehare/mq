@@ -62,6 +62,7 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     pub(crate) loaded_modules: Arena<ModuleName>,
     #[cfg(feature = "debugger")]
     pub(crate) source_code: Option<String>,
+    source_cache: FxHashMap<SmolStr, String>,
     resolver: T,
 }
 
@@ -121,6 +122,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             loaded_modules,
             #[cfg(feature = "debugger")]
             source_code: None,
+            source_cache: FxHashMap::default(),
             resolver,
         }
     }
@@ -223,6 +225,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     pub fn load_from_file(&mut self, module_path: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
         let program = self.resolve(module_path)?;
         let name = self.resolver.canonical_name(module_path).to_owned();
+        self.source_cache.insert(SmolStr::new(&name), program.clone());
         self.load(&name, &program, token_arena)
     }
 
@@ -292,7 +295,12 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         match name.as_ref() {
             Module::TOP_LEVEL_MODULE => Ok(self.source_code.clone().unwrap_or_default()),
             Module::BUILTIN_MODULE => Ok(BUILTIN_FILE.to_string()),
-            module_name => self.resolve(module_name),
+            module_name => {
+                if let Some(cached) = self.source_cache.get(module_name) {
+                    return Ok(cached.clone());
+                }
+                self.resolve(module_name)
+            }
         }
     }
 
@@ -301,7 +309,12 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         match name.as_ref() {
             Module::TOP_LEVEL_MODULE => Ok(source_code),
             Module::BUILTIN_MODULE => Ok(BUILTIN_FILE.to_string()),
-            module_name => self.resolve(module_name),
+            module_name => {
+                if let Some(cached) = self.source_cache.get(module_name) {
+                    return Ok(cached.clone());
+                }
+                self.resolve(module_name)
+            }
         }
     }
 
