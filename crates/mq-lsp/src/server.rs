@@ -501,6 +501,10 @@ pub struct LspConfig {
     module_paths: Vec<PathBuf>,
     enable_type_checking: bool,
     type_checker_options: mq_check::TypeCheckerOptions,
+    /// Domain allowlist for HTTP module imports (`http-import` feature).
+    /// An empty list permits all domains.
+    #[cfg(feature = "http-import")]
+    allowed_domains: Vec<String>,
 }
 
 impl LspConfig {
@@ -521,14 +525,33 @@ impl LspConfig {
             module_paths,
             enable_type_checking,
             type_checker_options,
+            #[cfg(feature = "http-import")]
+            allowed_domains: Vec::new(),
         }
+    }
+
+    /// Sets the domain allowlist for HTTP module imports.
+    ///
+    /// An empty list (default) permits all domains. Only available with the `http-import` feature.
+    #[cfg(feature = "http-import")]
+    pub fn with_allowed_domains(mut self, domains: Vec<String>) -> Self {
+        self.allowed_domains = domains;
+        self
     }
 }
 
 pub async fn start(config: LspConfig) {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
-    let module_loader = mq_lang::ModuleLoader::new(mq_lang::DefaultModuleResolver::new(config.module_paths.clone()));
+
+    #[cfg_attr(not(feature = "http-import"), allow(unused_mut))]
+    let mut resolver = mq_lang::DefaultModuleResolver::new(config.module_paths.clone());
+    #[cfg(feature = "http-import")]
+    {
+        resolver = resolver.with_http(config.allowed_domains.clone(), None);
+    }
+    let module_loader = mq_lang::ModuleLoader::new(resolver);
+
     let (service, socket) = LspService::new(|client| Backend {
         client,
         hir: Arc::new(RwLock::new(mq_hir::Hir::new(module_loader))),
