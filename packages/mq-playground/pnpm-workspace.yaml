@@ -2,3 +2,6 @@ minimumReleaseAge: 4320
 minimumReleaseAgeExclude:
 - mq-web
 
+overrides:
+  dompurify: ">=3.4.0"
+

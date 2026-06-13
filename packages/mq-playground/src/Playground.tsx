@@ -15,6 +15,7 @@ import { ToastContainer, ToastItem } from "./components/Toast";
 import { ExamplesModal } from "./components/ExamplesModal";
 import { fileSystem, FileNode, OPFSFileSystem } from "./utils/fileSystem";
 import { isDesktop, isMobile } from "./utils/deviceDetection";
+import { ProblemsPanel, DiagnosticItem } from "./components/ProblemsPanel";
 import {
   VscLayoutSidebarLeft,
   VscLayoutSidebarLeftOff,
@@ -74,6 +75,7 @@ const SIDEBAR_WIDTH_KEY = "mq-playground.sidebar-width";
 const LEFT_RIGHT_SPLIT_KEY = "mq-playground.left-right-split";
 const TOP_BOTTOM_SPLIT_KEY = "mq-playground.top-bottom-split";
 const EDITOR_SETTINGS_KEY = "mq-playground.editor-settings";
+const PROBLEMS_PANEL_HEIGHT_KEY = "mq-playground.problems-panel-height";
 
 type EditorSettings = {
   version: number;
@@ -246,9 +248,15 @@ export const Playground = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isExamplesOpen, setIsExamplesOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const [diagnosticCounts, setDiagnosticCounts] = useState({
-    errors: 0,
-    warnings: 0,
+  const [diagnostics, setDiagnostics] = useState<{
+    errors: number;
+    warnings: number;
+    items: DiagnosticItem[];
+  }>({ errors: 0, warnings: 0, items: [] });
+  const [isProblemsVisible, setIsProblemsVisible] = useState(false);
+  const [problemsPanelHeight, setProblemsPanelHeight] = useState(() => {
+    const stored = Number(localStorage.getItem(PROBLEMS_PANEL_HEIGHT_KEY));
+    return stored > 0 ? stored : 160;
   });
   const [tabCloseConfirm, setTabCloseConfirm] = useState<{
     tabId: string;
@@ -1352,6 +1360,14 @@ export const Playground = () => {
     });
   }, []);
 
+  const handleProblemsPanelResize = useCallback((delta: number) => {
+    setProblemsPanelHeight((prev) => {
+      const next = Math.max(80, Math.min(500, prev - delta));
+      localStorage.setItem(PROBLEMS_PANEL_HEIGHT_KEY, String(next));
+      return next;
+    });
+  }, []);
+
   const toggleMinimap = useCallback(() => {
     setMinimapEnabled((prev) => !prev);
   }, []);
@@ -1397,13 +1413,14 @@ export const Playground = () => {
               severity: monaco.MarkerSeverity.Error,
             }));
             monaco.editor.setModelMarkers(model, "mq", markers);
-            setDiagnosticCounts({
+            setDiagnostics({
               errors: markers.filter(
                 (m) => m.severity === monaco.MarkerSeverity.Error,
               ).length,
               warnings: markers.filter(
                 (m) => m.severity === monaco.MarkerSeverity.Warning,
               ).length,
+              items: markers,
             });
           }
         }, 300);
@@ -2302,6 +2319,21 @@ img{max-width:100%}
         </div>
       </div>
 
+      {!isEmbed && isProblemsVisible && (
+        <>
+          <ResizeHandle direction="vertical" onResize={handleProblemsPanelResize} />
+          <ProblemsPanel
+            problems={diagnostics.items}
+            height={problemsPanelHeight}
+            onProblemClick={(lineNumber, column) => {
+              editorRef.current?.revealLineInCenter(lineNumber);
+              editorRef.current?.setPosition({ lineNumber, column });
+              editorRef.current?.focus();
+            }}
+          />
+        </>
+      )}
+
       {
         !isEmbed && (
           <footer className="playground-footer">
@@ -2349,17 +2381,25 @@ img{max-width:100%}
               )}
             </div>
             <div className="footer-right">
-              {diagnosticCounts.errors > 0 && (
-                <span className="footer-diagnostic footer-diagnostic-error">
-                  <VscError size={12} />
-                  {diagnosticCounts.errors}
-                </span>
-              )}
-              {diagnosticCounts.warnings > 0 && (
-                <span className="footer-diagnostic footer-diagnostic-warning">
-                  <VscWarning size={12} />
-                  {diagnosticCounts.warnings}
-                </span>
+              {(diagnostics.errors > 0 || diagnostics.warnings > 0) && (
+                <button
+                  className={`footer-diagnostic-button${isProblemsVisible ? " active" : ""}`}
+                  onClick={() => setIsProblemsVisible((v) => !v)}
+                  title={isProblemsVisible ? "Hide Problems" : "Show Problems"}
+                >
+                  {diagnostics.errors > 0 && (
+                    <span className="footer-diagnostic footer-diagnostic-error">
+                      <VscError size={12} />
+                      {diagnostics.errors}
+                    </span>
+                  )}
+                  {diagnostics.warnings > 0 && (
+                    <span className="footer-diagnostic footer-diagnostic-warning">
+                      <VscWarning size={12} />
+                      {diagnostics.warnings}
+                    </span>
+                  )}
+                </button>
               )}
               <span className="cursor-position">
                 Ln {cursorPosition.line}, Col {cursorPosition.column}
