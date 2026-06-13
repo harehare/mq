@@ -1,4 +1,26 @@
-# Community Modules
+# Modules
+
+## Standard Library
+
+Standard modules are built into `mq` — use them with `include` or `import`, no installation needed.
+
+| Module | Description |
+|---|---|
+| `json` | JSON parser and formatter |
+| `yaml` | YAML 1.2 parser and formatter |
+| `toml` | TOML parser and formatter |
+| `xml` | XML parser and formatter |
+| `csv` | CSV / TSV parser and formatter |
+| `hcl` | HCL (HashiCorp Configuration Language) parser |
+| `cbor` | CBOR binary format support |
+| `semver` | Semantic versioning (SemVer) utilities |
+| `section` | Markdown section extraction helpers |
+| `table` | Table rendering utilities |
+| `fuzzy` | Fuzzy string matching |
+| `toon` | TOON format support |
+| `test` | Testing framework (`assert_eq`, `assert_true`, …) |
+
+## Extension Modules
 
 These modules extend mq with additional parsers, utilities, and domain-specific languages.
 All modules support [HTTP Import](../reference/modules_and_imports.md#http-imports) — no local installation required.
