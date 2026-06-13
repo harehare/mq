@@ -41,6 +41,7 @@ import "github.com/harehare/<module-name>"
 | [cron.mq](https://github.com/harehare/cron.mq) | Cron expression parser and human-readable descriptions |
 | [jwt.mq](https://github.com/harehare/jwt.mq) | JWT decoder — inspect header and payload without verification |
 
+
 ## Diagram & Graph
 
 | Module | Description |
@@ -48,6 +49,7 @@ import "github.com/harehare/<module-name>"
 | [mermaid.mq](https://github.com/harehare/mermaid.mq) | [Mermaid](https://mermaid.js.org) diagrams — flowchart, sequence, pie, class |
 | [dot.mq](https://github.com/harehare/dot.mq) | [Graphviz DOT](https://graphviz.org) — nodes, edges, attributes |
 | [graphql.mq](https://github.com/harehare/graphql.mq) | GraphQL SDL — types, enums, interfaces, unions |
+
 
 ## DevOps & Infrastructure
 
@@ -60,7 +62,6 @@ import "github.com/harehare/<module-name>"
 | Module | Description |
 |---|---|
 | [ansi.mq](https://github.com/harehare/ansi.mq) | ANSI terminal escape code utilities |
-| [regex.mq](https://github.com/harehare/regex.mq) | Regular expression engine |
 
 ## Interpreters
 
@@ -69,15 +70,4 @@ import "github.com/harehare/<module-name>"
 | [lisp.mq](https://github.com/harehare/lisp.mq) | Scheme-like Lisp interpreter |
 | [bf.mq](https://github.com/harehare/bf.mq) | Brainfuck interpreter |
 
-## Algorithms & Functional Programming
 
-| Module | Description |
-|---|---|
-| [monad.mq](https://github.com/harehare/monad.mq) | Monadic abstractions |
-| [bm25.mq](https://github.com/harehare/bm25.mq) | BM25 text ranking algorithm |
-
-## Simulations
-
-| Module | Description |
-|---|---|
-| [game-of-life.mq](https://github.com/harehare/game-of-life.mq) | Conway's Game of Life |
