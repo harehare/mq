@@ -182,6 +182,27 @@ body {
   background-color: light-dark(rgba(246, 173, 85, 0.12), rgba(246, 173, 85, 0.15));
 }
 
+.footer-diagnostic-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 3px;
+  transition: background-color 0.15s;
+}
+
+.footer-diagnostic-button:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.footer-diagnostic-button.active {
+  background-color: rgba(255, 255, 255, 0.12);
+  outline: 1px solid rgba(255, 255, 255, 0.2);
+}
+
 .file-tree-panel {
   flex-shrink: 0;
   overflow: hidden;
