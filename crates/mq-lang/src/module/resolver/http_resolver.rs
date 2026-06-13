@@ -2,6 +2,12 @@ use std::{borrow::Cow, fs, path::PathBuf, time::Duration};
 
 use crate::{ModuleError, ModuleResolver};
 
+/// Default domain that is always permitted without `--allowed-domain`.
+const DEFAULT_ALLOWED_DOMAIN: &str = "raw.githubusercontent.com/harehare";
+
+/// Maximum response body size for a fetched module (1 MiB).
+const MAX_MODULE_SIZE: u64 = 1024 * 1024;
+
 /// Resolves mq modules from HTTP/HTTPS URLs with optional domain allowlisting and local disk caching.
 ///
 /// # Caching
@@ -160,32 +166,40 @@ impl HttpModuleResolver {
         ))
     }
 
-    /// Returns `true` if `url`'s host/path matches at least one entry in the allowlist.
+    /// Returns `true` if `url`'s host/path is permitted.
     ///
-    /// An empty allowlist means all URLs are permitted.
+    /// `DEFAULT_ALLOWED_DOMAIN` (`raw.githubusercontent.com/harehare`) is always permitted.
+    /// Additional domains are granted via the `--allowed-domain` flag; an empty user list
+    /// does **not** open up all domains — only the default is allowed.
     ///
-    /// The match requires that after the allowed domain (or domain/path prefix), the next
-    /// character is `/`, `?`, `#`, `:` (port), or the string ends — preventing a domain like
-    /// `example.com.evil.com` from bypassing an `example.com` allowlist entry.
+    /// The match requires that after the domain/path prefix the next character is `/`, `?`,
+    /// `#`, `:` (port), or the string ends — preventing `example.com.evil.com` from
+    /// bypassing an `example.com` allowlist entry.
     pub fn is_allowed_domain(&self, url: &str) -> bool {
-        if self.allowed_remote_domains.is_empty() {
-            return true;
-        }
         let url_without_scheme = url
             .strip_prefix("https://")
             .or_else(|| url.strip_prefix("http://"))
             .unwrap_or(url);
-        self.allowed_remote_domains.iter().any(|domain| {
-            let rest = match url_without_scheme.strip_prefix(domain.as_str()) {
-                Some(r) => r,
-                None => return false,
-            };
-            rest.is_empty()
-                || rest.starts_with('/')
-                || rest.starts_with('?')
-                || rest.starts_with('#')
-                || rest.starts_with(':')
-        })
+
+        if Self::prefix_matches(url_without_scheme, DEFAULT_ALLOWED_DOMAIN) {
+            return true;
+        }
+
+        self.allowed_remote_domains
+            .iter()
+            .any(|domain| Self::prefix_matches(url_without_scheme, domain.as_str()))
+    }
+
+    fn prefix_matches(url_without_scheme: &str, domain: &str) -> bool {
+        let rest = match url_without_scheme.strip_prefix(domain) {
+            Some(r) => r,
+            None => return false,
+        };
+        rest.is_empty()
+            || rest.starts_with('/')
+            || rest.starts_with('?')
+            || rest.starts_with('#')
+            || rest.starts_with(':')
     }
 
     /// Removes only mutable-ref cached modules (HEAD/branch/non-versioned URLs).
@@ -201,9 +215,17 @@ impl HttpModuleResolver {
     }
 
     /// Fetches module source from the given URL without consulting the cache.
+    ///
+    /// Only HTTPS URLs are accepted; plain HTTP is rejected. Redirects are not followed.
+    /// The response body is capped at [`MAX_MODULE_SIZE`].
     pub fn fetch_url(&self, url: &str) -> Result<String, ModuleError> {
         if !Self::is_remote_url(url) {
             return Err(ModuleError::NotFound(Cow::Owned(url.to_string())));
+        }
+        if !url.starts_with("https://") {
+            return Err(ModuleError::IOError(
+                format!("Only HTTPS URLs are allowed: {}", url).into(),
+            ));
         }
         if !self.is_allowed_domain(url) {
             return Err(ModuleError::IOError(format!("Domain not allowed: {}", url).into()));
@@ -211,6 +233,8 @@ impl HttpModuleResolver {
 
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(self.timeout))
+            .https_only(true)
+            .max_redirects(0)
             .build()
             .into();
 
@@ -227,6 +251,8 @@ impl HttpModuleResolver {
 
         response
             .body_mut()
+            .with_config()
+            .limit(MAX_MODULE_SIZE)
             .read_to_string()
             .map_err(|e| ModuleError::IOError(e.to_string().into()))
     }
@@ -456,8 +482,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case(vec![], "https://example.com/foo.mq", true)]
-    #[case(vec![], "http://anything.org/bar.mq", true)]
+    // empty list: default domain always allowed
+    #[case(vec![], "https://raw.githubusercontent.com/harehare/lisp/HEAD/lisp.mq", true)]
+    #[case(vec![], "https://raw.githubusercontent.com/harehare/repo/v0.1.0/mod.mq", true)]
+    // empty list: non-default domains denied
+    #[case(vec![], "https://example.com/foo.mq", false)]
+    #[case(vec![], "http://anything.org/bar.mq", false)]
+    // user-specified domain allowed
     #[case(vec!["example.com".to_string()], "https://example.com/foo.mq", true)]
     #[case(vec!["example.com".to_string()], "https://example.com", true)]
     #[case(vec!["example.com".to_string()], "https://example.com:8080/foo.mq", true)]
@@ -465,6 +496,8 @@ mod tests {
     #[case(vec!["example.com".to_string()], "https://other.com/foo.mq", false)]
     #[case(vec!["example.com".to_string()], "https://notexample.com/foo.mq", false)]
     #[case(vec!["example.com".to_string()], "http://example.com/foo.mq", true)]
+    // default domain always allowed even when user list is non-empty
+    #[case(vec!["example.com".to_string()], "https://raw.githubusercontent.com/harehare/x/HEAD/x.mq", true)]
     // prefix-bypass: example.com.evil.com must NOT match allowlist entry "example.com"
     #[case(vec!["example.com".to_string()], "https://example.com.evil.com/foo.mq", false)]
     #[case(vec!["example.com".to_string()], "https://example.com.evil.com", false)]
@@ -483,6 +516,7 @@ mod tests {
     }
 
     #[rstest]
+    // harehare repos always allowed with empty list
     #[case(
         "github.com/harehare/lisp.mq@v0.1.0",
         "https://raw.githubusercontent.com/harehare/lisp.mq/v0.1.0/lisp.mq"
@@ -491,7 +525,6 @@ mod tests {
         "github.com/harehare/lisp",
         "https://raw.githubusercontent.com/harehare/lisp/HEAD/lisp.mq"
     )]
-    #[case("https://example.com/foo.mq", "https://example.com/foo.mq")]
     // https:// GitHub URL is also expanded to raw.githubusercontent.com
     #[case(
         "https://github.com/harehare/lisp@v0.1.0",
@@ -503,10 +536,14 @@ mod tests {
     }
 
     #[rstest]
-    // GitHub shorthand blocked by allowlist
-    #[case(vec!["example.com".to_string()], "github.com/harehare/lisp")]
+    // non-harehare GitHub shorthand blocked by empty allowlist
+    #[case(vec![], "github.com/alice/lisp")]
+    // non-harehare GitHub shorthand blocked by unrelated allowlist
+    #[case(vec!["example.com".to_string()], "github.com/alice/lisp")]
     // plain HTTPS URL blocked by allowlist
     #[case(vec!["example.com".to_string()], "https://other.com/foo.mq")]
+    // plain HTTPS URL blocked by empty allowlist
+    #[case(vec![], "https://example.com/foo.mq")]
     fn test_to_fetch_url_blocked_by_allowlist(#[case] allowed: Vec<String>, #[case] input: &str) {
         let resolver = resolver_with_domains(allowed);
         assert!(matches!(resolver.to_fetch_url(input), Err(ModuleError::IOError(_))));
@@ -674,7 +711,7 @@ mod tests {
         fs::create_dir_all(&mutable_dir).unwrap();
 
         // Pre-populate the cache with a known URL's hash
-        let url = "https://raw.githubusercontent.com/alice/mymod/HEAD/mymod.mq";
+        let url = "https://raw.githubusercontent.com/harehare/mymod/HEAD/mymod.mq";
         let hash = format!("{:x}.mq", md5::compute(url));
         fs::write(mutable_dir.join(&hash), b"def cached(): 42;").unwrap();
 
@@ -684,7 +721,7 @@ mod tests {
             cache_dir: dir.path().to_path_buf(),
         };
 
-        let result = resolver.resolve("https://raw.githubusercontent.com/alice/mymod/HEAD/mymod.mq");
+        let result = resolver.resolve("https://raw.githubusercontent.com/harehare/mymod/HEAD/mymod.mq");
         assert_eq!(result.unwrap(), "def cached(): 42;");
     }
 
@@ -694,7 +731,7 @@ mod tests {
         let versioned_dir = dir.path().join("versioned");
         fs::create_dir_all(&versioned_dir).unwrap();
 
-        let url = "https://raw.githubusercontent.com/alice/mymod/v0.1.0/mymod.mq";
+        let url = "https://raw.githubusercontent.com/harehare/mymod/v0.1.0/mymod.mq";
         let hash = format!("{:x}.mq", md5::compute(url));
         fs::write(versioned_dir.join(&hash), b"def pinned(): 1;").unwrap();
 
@@ -704,7 +741,7 @@ mod tests {
             cache_dir: dir.path().to_path_buf(),
         };
 
-        let result = resolver.resolve("https://raw.githubusercontent.com/alice/mymod/v0.1.0/mymod.mq");
+        let result = resolver.resolve("https://raw.githubusercontent.com/harehare/mymod/v0.1.0/mymod.mq");
         assert_eq!(result.unwrap(), "def pinned(): 1;");
     }
 
@@ -729,9 +766,38 @@ mod tests {
     #[rstest]
     #[case(vec!["other.com".to_string()], "https://example.com/foo.mq")]
     #[case(vec!["example.com/private".to_string()], "https://example.com/public/foo.mq")]
+    // empty allowlist blocks non-default domain
+    #[case(vec![], "https://example.com/foo.mq")]
+    #[case(vec![], "https://raw.githubusercontent.com/alice/mod/HEAD/mod.mq")]
     fn test_resolve_blocked_domain_returns_io_error(#[case] allowed: Vec<String>, #[case] url: &str) {
         let resolver = resolver_with_domains(allowed);
         assert!(matches!(resolver.resolve(url), Err(ModuleError::IOError(_))));
+    }
+
+    // fetch_url: HTTPS-only enforcement
+    #[rstest]
+    #[case("http://example.com/foo.mq")]
+    #[case("http://raw.githubusercontent.com/harehare/mod/HEAD/mod.mq")]
+    fn test_fetch_url_rejects_http(#[case] url: &str) {
+        let resolver = HttpModuleResolver::default();
+        assert!(matches!(resolver.fetch_url(url), Err(ModuleError::IOError(_))));
+    }
+
+    #[rstest]
+    #[case("local_module")]
+    #[case("csv")]
+    fn test_fetch_url_rejects_non_remote(#[case] url: &str) {
+        let resolver = HttpModuleResolver::default();
+        assert!(matches!(resolver.fetch_url(url), Err(ModuleError::NotFound(_))));
+    }
+
+    #[test]
+    fn test_fetch_url_rejects_non_default_domain_with_empty_allowlist() {
+        let resolver = resolver_with_domains(vec![]);
+        assert!(matches!(
+            resolver.fetch_url("https://example.com/foo.mq"),
+            Err(ModuleError::IOError(_))
+        ));
     }
 
     #[test]

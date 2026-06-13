@@ -302,8 +302,9 @@ struct InputArgs {
     #[arg(long, default_value_t = false)]
     stream: bool,
 
-    /// Allow HTTP imports only from the specified domain(s). Repeat to allow multiple domains.
-    /// An empty list (default) permits all domains.
+    /// Allow HTTP imports from additional domain(s) beyond the default.
+    /// By default only `raw.githubusercontent.com/harehare` is permitted.
+    /// Repeat to allow multiple extra domains.
     #[cfg(feature = "http-import")]
     #[arg(long = "allowed-domain")]
     allowed_domains: Option<Vec<String>>,

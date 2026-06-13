@@ -171,7 +171,7 @@ Fetched modules are cached in `{system_cache_dir}/mq/` as `{md5(url)}.mq` files.
 | Flag | Description |
 |---|---|
 | `--refresh-modules` | Discard cached mutable-ref modules and re-fetch them. |
-| `--allowed-domain <domain>` | Restrict HTTP imports to the given domain prefix. Repeat to allow multiple domains. An empty list (default) permits all domains. |
+| `--allowed-domain <domain>` | Allow HTTP imports from an additional domain beyond the default (`raw.githubusercontent.com/harehare`). Repeat to add multiple domains. |
 
 **Examples:**
 
