@@ -322,27 +322,25 @@ impl TypeChecker {
             unify::solve_constraints(&mut ctx);
         }
 
-        // Resolve deferred record field accesses now that variable types are known.
-        // This binds bracket access return types (e.g., v[:key]) to specific field types
-        // from Record types, enabling type error detection for subsequent operations.
+        // Bind v[:key] bracket access return types to record field types.
         if deferred::resolve_record_field_accesses(&mut ctx) {
-            // Re-run unification to propagate newly resolved record field types
             unify::solve_constraints(&mut ctx);
         }
 
         // Resolve deferred selector field accesses (.field on records)
         deferred::resolve_selector_field_accesses(&mut ctx);
 
-        // Propagate return types from user-defined function calls.
-        // After unification, the original function's return type may be concrete,
-        // allowing us to connect it to the fresh return type at each call site.
-        // This must run BEFORE deferred overload resolution so that operators using
-        // return types have concrete operands.
+        // Propagate return types from user-defined function calls so that
+        // f(x)["key"] bracket accesses below have concrete return types to inspect.
         deferred::propagate_user_call_returns(&mut ctx);
 
-        // Process deferred overload resolutions (operators with type variable operands)
-        // After return type propagation + unification, operand types may now be resolved.
-        // Unresolved overloads are stored back for later processing.
+        // Resolve f(x)["key"] bracket accesses on function return values.
+        // Must run after propagate_user_call_returns so ret_ty is concrete.
+        if deferred::resolve_deferred_call_return_accesses(&mut ctx) {
+            unify::solve_constraints(&mut ctx);
+        }
+
+        // Process deferred overload resolutions (operators with type variable operands).
         deferred::resolve_deferred_overloads(&mut ctx);
 
         // Re-run deferred tuple accesses after overload resolution, because some variable

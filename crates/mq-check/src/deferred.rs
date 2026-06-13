@@ -85,6 +85,43 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
     resolved_any
 }
 
+/// Resolves deferred bracket accesses on function call return values.
+///
+/// When the CST lowers `f(x)["key"]` as `Call(f, [x, "key"])` and the type
+/// checker detects trailing bracket keys, it defers the field lookup until
+/// after unification. This function resolves the function's return type (now
+/// concrete) and looks up the field, binding the call expression's type to it.
+pub(crate) fn resolve_deferred_call_return_accesses(ctx: &mut InferenceContext) -> bool {
+    let accesses = ctx.take_deferred_call_return_accesses();
+    if accesses.is_empty() {
+        return false;
+    }
+
+    let mut resolved_any = false;
+    for access in &accesses {
+        let return_ty = ctx.resolve_type(&access.return_type);
+
+        if let types::Type::Record(..) = &return_ty {
+            if let Some(field_ty) = find_record_field(ctx, &return_ty, &access.field_name) {
+                let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
+                resolved_any = true;
+            } else if record_row_is_closed(ctx, &return_ty) {
+                ctx.add_error(TypeError::UndefinedField {
+                    field: access.field_name.clone(),
+                    record_ty: return_ty.display_renumbered(),
+                    span: access.range.as_ref().map(unify::range_to_span),
+                    location: access.range,
+                });
+            }
+        } else if let types::Type::Dict(..) = &return_ty {
+            // Dict access: result is a fresh type variable (dynamic value type)
+            resolved_any = true;
+        }
+    }
+    resolved_any
+}
+
 /// Resolves deferred selector field accesses after unification.
 ///
 /// For each deferred selector access, resolves the piped input type (now concrete
