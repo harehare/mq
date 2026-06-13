@@ -26,12 +26,6 @@ struct Cli {
     #[arg(short = 'M', long = "module-path")]
     module_paths: Option<Vec<PathBuf>>,
 
-    /// Allow HTTP imports only from the specified domain prefix (http-import feature).
-    /// Repeat to allow multiple domains. Default: all domains are allowed.
-    #[cfg(feature = "http-import")]
-    #[arg(long = "allowed-domain")]
-    allowed_domains: Option<Vec<String>>,
-
     #[clap(flatten)]
     type_check: TypeCheckArgs,
 }
@@ -59,15 +53,10 @@ async fn main() {
         ..Default::default()
     };
 
-    #[cfg_attr(not(feature = "http-import"), allow(unused_mut))]
-    let mut config = LspConfig::new(
+    let config = LspConfig::new(
         cli.module_paths.unwrap_or_default(),
         cli.type_check.enable_type_checking,
         type_check_config,
     );
-    #[cfg(feature = "http-import")]
-    {
-        config = config.with_allowed_domains(cli.allowed_domains.unwrap_or_default());
-    }
     server::start(config).await;
 }

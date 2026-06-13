@@ -17,6 +17,12 @@ pub enum ModuleError {
     SyntaxError(#[from] SyntaxError),
     #[error("Invalid module, expected IDENT or BINDING")]
     InvalidModule,
+    /// HTTP imports are only permitted at the top level; modules may not fetch remote dependencies.
+    #[cfg(feature = "http-import")]
+    #[error(
+        "HTTP import of `{0}` is not allowed inside an imported module; HTTP imports are only permitted at the top level"
+    )]
+    HttpImportNotAllowed(Cow<'static, str>),
 }
 
 impl ModuleError {
@@ -29,6 +35,8 @@ impl ModuleError {
             ModuleError::IOError(_) => None,
             ModuleError::SyntaxError(err) => err.token(),
             ModuleError::InvalidModule => None,
+            #[cfg(feature = "http-import")]
+            ModuleError::HttpImportNotAllowed(_) => None,
         }
     }
 }

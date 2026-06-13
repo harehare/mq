@@ -585,7 +585,12 @@ impl<T: ModuleResolver> Evaluator<T> {
                 let module = self
                     .module_loader
                     .load_from_file(&module_name, Shared::clone(&self.token_arena))?;
-                self.load_module_with_env(module, env)
+                #[cfg(feature = "http-import")]
+                self.module_loader.push_http_boundary();
+                let result = self.load_module_with_env(module, env);
+                #[cfg(feature = "http-import")]
+                self.module_loader.pop_http_boundary();
+                result
             }
             _ => Err(RuntimeError::ModuleLoadError(ModuleError::InvalidModule)),
         }
@@ -689,7 +694,14 @@ impl<T: ModuleResolver> Evaluator<T> {
                     .module_loader
                     .load_from_file(&module_name, Shared::clone(&self.token_arena));
                 match module {
-                    Ok(module) => self.import_module_with_env(module, env),
+                    Ok(module) => {
+                        #[cfg(feature = "http-import")]
+                        self.module_loader.push_http_boundary();
+                        let result = self.import_module_with_env(module, env);
+                        #[cfg(feature = "http-import")]
+                        self.module_loader.pop_http_boundary();
+                        result
+                    }
                     Err(ModuleError::AlreadyLoaded(_)) => {
                         let canonical = self.module_loader.canonical_name(&module_name).to_owned();
                         match resolve(&canonical, env) {

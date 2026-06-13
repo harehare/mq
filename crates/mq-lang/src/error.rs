@@ -392,6 +392,11 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::DestructuringFailed(_)) => Some(Cow::Borrowed(
                 "Destructuring pattern did not match the value. Check that the pattern structure matches the value.",
             )),
+            #[cfg(feature = "http-import")]
+            InnerError::Module(ModuleError::HttpImportNotAllowed(_)) => Some(Cow::Borrowed(
+                "HTTP imports are only allowed at the top level. \
+                Move the HTTP import to the top-level script instead of inside an imported module.",
+            )),
         };
 
         msg.map(|m| Box::new(m) as Box<dyn std::fmt::Display>)

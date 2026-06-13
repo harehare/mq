@@ -64,6 +64,9 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     pub(crate) source_code: Option<String>,
     source_cache: FxHashMap<SmolStr, String>,
     resolver: T,
+    /// Tracks sub-module loading depth; HTTP imports are blocked when this is greater than zero.
+    #[cfg(feature = "http-import")]
+    http_depth: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -124,6 +127,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             source_code: None,
             source_cache: FxHashMap::default(),
             resolver,
+            #[cfg(feature = "http-import")]
+            http_depth: 0,
         }
     }
 
@@ -235,7 +240,28 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 
     pub fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
+        #[cfg(feature = "http-import")]
+        if self.http_depth > 0
+            && (resolver::http_resolver::HttpModuleResolver::is_remote_url(module_name)
+                || resolver::http_resolver::HttpModuleResolver::is_github_url(module_name))
+        {
+            return Err(ModuleError::HttpImportNotAllowed(std::borrow::Cow::Owned(
+                module_name.to_string(),
+            )));
+        }
         self.resolver.resolve(module_name)
+    }
+
+    /// Signals that sub-module loading has begun; HTTP imports are blocked while depth > 0.
+    #[cfg(feature = "http-import")]
+    pub fn push_http_boundary(&mut self) {
+        self.http_depth = self.http_depth.saturating_add(1);
+    }
+
+    /// Signals that sub-module loading has ended.
+    #[cfg(feature = "http-import")]
+    pub fn pop_http_boundary(&mut self) {
+        self.http_depth = self.http_depth.saturating_sub(1);
     }
 
     pub fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Module, ModuleError> {
@@ -658,5 +684,77 @@ mod tests {
                 "cached builtin token must have BUILTIN_MODULE_ID"
             );
         }
+    }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case("https://example.com/foo.mq")]
+    #[case("http://example.com/foo.mq")]
+    #[case("github.com/alice/mymod")]
+    fn test_resolve_http_blocked_inside_module(#[case] url: &str) {
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::new(vec![]));
+        loader.push_http_boundary();
+        assert!(matches!(loader.resolve(url), Err(ModuleError::HttpImportNotAllowed(_))));
+    }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case("csv")]
+    #[case("local_module")]
+    fn test_resolve_non_http_not_blocked_inside_module(#[case] name: &str) {
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::new(vec![]));
+        loader.push_http_boundary();
+        assert!(!matches!(
+            loader.resolve(name),
+            Err(ModuleError::HttpImportNotAllowed(_))
+        ));
+    }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case("https://example.com/foo.mq")]
+    #[case("github.com/alice/mod")]
+    fn test_pop_http_boundary_restores_access(#[case] url: &str) {
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::new(vec![]));
+        loader.push_http_boundary();
+        assert!(matches!(loader.resolve(url), Err(ModuleError::HttpImportNotAllowed(_))));
+        loader.pop_http_boundary();
+        assert!(!matches!(
+            loader.resolve(url),
+            Err(ModuleError::HttpImportNotAllowed(_))
+        ));
+    }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case("github.com/alice/mod", 2)]
+    #[case("https://example.com/foo.mq", 3)]
+    fn test_nested_boundaries_block_until_all_popped(#[case] url: &str, #[case] depth: usize) {
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::new(vec![]));
+        for _ in 0..depth {
+            loader.push_http_boundary();
+        }
+        assert!(matches!(loader.resolve(url), Err(ModuleError::HttpImportNotAllowed(_))));
+        for _ in 0..depth - 1 {
+            loader.pop_http_boundary();
+            assert!(matches!(loader.resolve(url), Err(ModuleError::HttpImportNotAllowed(_))));
+        }
+        loader.pop_http_boundary();
+        assert!(!matches!(
+            loader.resolve(url),
+            Err(ModuleError::HttpImportNotAllowed(_))
+        ));
+    }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case("https://example.com/foo.mq")]
+    fn test_pop_at_zero_does_not_underflow(#[case] url: &str) {
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::new(vec![]));
+        loader.pop_http_boundary();
+        assert!(!matches!(
+            loader.resolve(url),
+            Err(ModuleError::HttpImportNotAllowed(_))
+        ));
     }
 }
