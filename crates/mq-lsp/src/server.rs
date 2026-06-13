@@ -502,7 +502,8 @@ pub struct LspConfig {
     enable_type_checking: bool,
     type_checker_options: mq_check::TypeCheckerOptions,
     /// Domain allowlist for HTTP module imports (`http-import` feature).
-    /// An empty list permits all domains.
+    /// An empty list restricts access to the built-in default domain
+    /// (`raw.githubusercontent.com/harehare`) only.
     #[cfg(feature = "http-import")]
     allowed_domains: Vec<String>,
 }
@@ -532,7 +533,8 @@ impl LspConfig {
 
     /// Sets the domain allowlist for HTTP module imports.
     ///
-    /// An empty list (default) permits all domains. Only available with the `http-import` feature.
+    /// An empty list (default) restricts access to the built-in default domain
+    /// (`raw.githubusercontent.com/harehare`) only. Only available with the `http-import` feature.
     #[cfg(feature = "http-import")]
     pub fn with_allowed_domains(mut self, domains: Vec<String>) -> Self {
         self.allowed_domains = domains;
