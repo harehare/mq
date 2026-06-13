@@ -100,6 +100,27 @@ pub struct DeferredSelectorAccess {
     pub range: Option<mq_lang::Range>,
 }
 
+/// A deferred bracket access on the return value of a user-defined function call.
+///
+/// The CST represents `f(x)["key"]` as `Call(f, [x, "key"])`, so from the HIR
+/// the call appears to have one extra argument beyond the function's parameter
+/// count. When the trailing argument is a string/symbol/number key, it represents
+/// a bracket access on `f`'s return value rather than an extra function argument.
+/// This entry records the fresh return-type variable (resolved after unification)
+/// and the key so that `resolve_deferred_call_return_accesses` can look up the
+/// field type and bind the call expression's type to it.
+#[derive(Debug, Clone)]
+pub struct DeferredCallReturnAccess {
+    /// The call symbol ID (the `f(x)["key"]` expression in the HIR)
+    pub call_symbol_id: SymbolId,
+    /// Fresh return-type variable from the function's type instantiation
+    pub return_type: Type,
+    /// The field name to access (the bracket key)
+    pub field_name: String,
+    /// Source range for error reporting
+    pub range: Option<mq_lang::Range>,
+}
+
 /// A deferred tuple index access for post-unification resolution.
 ///
 /// When `v[0]` is encountered on a variable that may be a Tuple type,
@@ -188,6 +209,8 @@ pub struct InferenceContext {
     deferred_selector_accesses: Vec<DeferredSelectorAccess>,
     /// Deferred tuple index accesses for post-unification resolution
     deferred_tuple_accesses: Vec<DeferredTupleAccess>,
+    /// Deferred bracket accesses on function call return values (e.g. `f(x)["key"]`)
+    deferred_call_return_accesses: Vec<DeferredCallReturnAccess>,
     /// Type narrowings collected from type predicate conditions in if/elif expressions
     type_narrowings: Vec<TypeNarrowing>,
     /// Cross-arm narrowings collected from match expressions
@@ -218,6 +241,7 @@ impl InferenceContext {
             deferred_record_accesses: Vec::new(),
             deferred_selector_accesses: Vec::new(),
             deferred_tuple_accesses: Vec::new(),
+            deferred_call_return_accesses: Vec::new(),
             type_narrowings: Vec::new(),
             cross_arm_narrowings: Vec::new(),
             strict_array,
@@ -325,6 +349,16 @@ impl InferenceContext {
     /// Takes all deferred tuple accesses (consumes them)
     pub fn take_deferred_tuple_accesses(&mut self) -> Vec<DeferredTupleAccess> {
         std::mem::take(&mut self.deferred_tuple_accesses)
+    }
+
+    /// Adds a deferred bracket access on a function call's return value
+    pub fn add_deferred_call_return_access(&mut self, access: DeferredCallReturnAccess) {
+        self.deferred_call_return_accesses.push(access);
+    }
+
+    /// Takes all deferred call return accesses (consumes them)
+    pub fn take_deferred_call_return_accesses(&mut self) -> Vec<DeferredCallReturnAccess> {
+        std::mem::take(&mut self.deferred_call_return_accesses)
     }
 
     /// Adds a type narrowing collected from a type predicate condition

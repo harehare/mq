@@ -103,10 +103,6 @@ fn test_match_arm_body_type_mismatch() {
     );
 }
 
-// ============================================================================
-// Expected Success Cases (should always pass)
-// ============================================================================
-
 #[test]
 fn test_success_simple_literal() {
     let result = check_types("42");
@@ -188,8 +184,6 @@ fn test_success_macro_definition() {
     }
     assert!(result.is_empty(), "Macro definition should succeed");
 }
-
-// --- Type Narrowing Tests ---
 
 #[test]
 fn test_narrowing_equality_then_branch() {
@@ -475,10 +469,6 @@ fn test_array_element_access_valid() {
     );
 }
 
-// ============================================================================
-// Tuple Mode Tests
-// ============================================================================
-
 #[test]
 fn test_tuple_literal_index_number_element() {
     // In tuple mode, [1, "hello"] is Tuple(Number, String)
@@ -542,14 +532,6 @@ fn test_tuple_three_elements() {
         "v[0] + 1 on 3-element tuple should succeed: {result:?}"
     );
 }
-
-// ============================================================================
-// Union(Array(T), None) Index Access Tests
-//
-// These tests exercise the `Union` branch in `resolve_deferred_tuple_accesses`
-// which handles index access on variables whose type is `Union(Array(T), None)`
-// (e.g., produced by `try: [...] catch: none`).
-// ============================================================================
 
 #[rstest]
 #[case::array_number_none_valid(
