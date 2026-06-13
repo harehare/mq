@@ -123,7 +123,7 @@ impl HttpModuleResolver {
     /// | Input | Resolved URL |
     /// |---|---|
     /// | `github.com/alice/mymod` | `…/alice/mymod/HEAD/mymod.mq` |
-    /// | `github.com/alice/mymod.mq@v1.0` | `…/alice/mymod/v1.0/mymod.mq` |
+    /// | `github.com/alice/mymod.mq@v1.0` | `…/alice/mymod.mq/v1.0/mymod.mq` |
     /// | `github.com/alice/repo/lib/util.mq@v2.0` | `…/alice/repo/v2.0/lib/util.mq` |
     pub fn github_to_raw_url(input: &str) -> Option<String> {
         let without_scheme = input

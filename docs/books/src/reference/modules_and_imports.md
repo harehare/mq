@@ -147,7 +147,7 @@ github.com/{owner}/{path}[@{version}]
 | Shorthand | Resolved URL |
 |---|---|
 | `github.com/alice/mymod` | `raw.githubusercontent.com/alice/mymod/HEAD/mymod.mq` |
-| `github.com/alice/mymod.mq` | `raw.githubusercontent.com/alice/mymod/HEAD/mymod.mq` |
+| `github.com/alice/mymod.mq` | `raw.githubusercontent.com/alice/mymod.mq/HEAD/mymod.mq` |
 | `github.com/alice/mymod@v1.0` | `raw.githubusercontent.com/alice/mymod/v1.0/mymod.mq` |
 | `github.com/alice/repo/lib/util.mq@v2.0` | `raw.githubusercontent.com/alice/repo/v2.0/lib/util.mq` |
 
@@ -164,7 +164,7 @@ Fetched modules are cached in `{system_cache_dir}/mq/` as `{md5(url)}.mq` files.
 
 - **Versioned URLs** (e.g. `@v0.1.0`): cached indefinitely — the tag content is immutable.
 - **Mutable refs** (`HEAD`, `main`, `master`, or no version): cached on first fetch.
-  Pass `--refresh` on the command line to discard the cache and re-fetch.
+  Pass `--refresh-modules` on the command line to discard the cache and re-fetch.
 
 ### CLI options
 
