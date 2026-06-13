@@ -13,7 +13,7 @@
   - [External Subcommands](start/external_subcommands.md)
   - [Language Bindings](start/language_bindings.md)
   - [Example](start/example.md)
-  - [Modules](start/samples.md)
+  - [Modules](start/modules.md)
 - [Reference](reference/index.md)
   - [CLI](reference/cli.md)
   - [Values and Types](reference/types_and_values.md)
