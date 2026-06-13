@@ -14,6 +14,7 @@ The following projects are real-world examples built entirely with mq, demonstra
 - [ini.mq](https://github.com/harehare/ini.mq) — An INI file parser and serializer written in mq
 - [ndjson.mq](https://github.com/harehare/ndjson.mq) — An [NDJSON](https://ndjson.org) / [JSON Lines](https://jsonlines.org) parser written in mq
 - [ansi.mq](https://github.com/harehare/ansi.mq) — ANSI terminal escape code utilities written in mq
+- [mermaid.mq](https://github.com/harehare/mermaid.mq) — A [Mermaid](https://mermaid.js.org) diagram parser written in mq
 - [regex.mq](https://github.com/harehare/regex.mq) — A regular expression engine written in mq
 
 ## Functional Programming
