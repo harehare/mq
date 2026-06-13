@@ -156,6 +156,12 @@ impl DefaultModuleResolver {
     pub fn clear_http_cache(&self) -> Result<(), crate::module::error::ModuleError> {
         self.http_resolver.clear_cache()
     }
+
+    /// Clears all HTTP module cache including versioned modules and lock files.
+    #[cfg(feature = "http-import")]
+    pub fn clear_http_cache_all(&self) -> Result<(), crate::module::error::ModuleError> {
+        self.http_resolver.clear_all_cache()
+    }
 }
 
 #[cfg(test)]

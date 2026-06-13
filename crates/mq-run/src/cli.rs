@@ -316,6 +316,12 @@ struct InputArgs {
     #[cfg(feature = "http-import")]
     #[arg(long = "refresh-modules", default_value_t = false)]
     refresh_modules: bool,
+
+    /// Remove all HTTP module cache including versioned (tagged) modules and lock files.
+    /// Use this to fully reset the cache when something goes wrong.
+    #[cfg(feature = "http-import")]
+    #[arg(long = "clear-cache", default_value_t = false)]
+    clear_cache: bool,
 }
 
 #[derive(Clone, Debug, clap::Args, Default)]
@@ -714,7 +720,9 @@ impl Cli {
             if let Some(domains) = &self.input.allowed_domains {
                 engine.set_http_allowed_domains(domains.clone());
             }
-            if self.input.refresh_modules {
+            if self.input.clear_cache {
+                engine.clear_http_cache_all().map_err(|e| miette!(e.to_string()))?;
+            } else if self.input.refresh_modules {
                 engine.clear_http_cache().map_err(|e| miette!(e.to_string()))?;
             }
         }

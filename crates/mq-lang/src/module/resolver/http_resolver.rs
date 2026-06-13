@@ -273,6 +273,21 @@ impl HttpModuleResolver {
         Ok(())
     }
 
+    /// Removes all cached modules including versioned (tagged) ones, lock files, and hash sidecars.
+    ///
+    /// Unlike [`clear_cache`], this also clears `{cache_dir}/versioned/`, so the next resolve
+    /// re-fetches every module regardless of whether it was pinned to a tag.
+    /// Use `--clear-cache` on the CLI to trigger this.
+    pub fn clear_all_cache(&self) -> Result<(), ModuleError> {
+        for subdir in &["mutable", "versioned"] {
+            let dir = self.cache_dir.join(subdir);
+            if dir.exists() {
+                fs::remove_dir_all(&dir).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+            }
+        }
+        Ok(())
+    }
+
     /// Fetches module source from the given URL without consulting the cache.
     ///
     /// Only HTTPS URLs are accepted; plain HTTP is rejected. Redirects are not followed.
@@ -861,6 +876,40 @@ mod tests {
 
         resolver.clear_cache().unwrap();
         assert!(!mutable_dir.exists());
+    }
+
+    #[test]
+    fn test_clear_all_cache_removes_mutable_and_versioned() {
+        let dir = TempDir::new().unwrap();
+        let mutable_dir = dir.path().join("mutable");
+        let versioned_dir = dir.path().join("versioned");
+        fs::create_dir_all(&mutable_dir).unwrap();
+        fs::create_dir_all(&versioned_dir).unwrap();
+        fs::write(mutable_dir.join("a.mq"), b"mutable").unwrap();
+        fs::write(mutable_dir.join("a.mq.lock"), b"").unwrap();
+        fs::write(versioned_dir.join("b.mq"), b"versioned").unwrap();
+        fs::write(versioned_dir.join("b.mq.lock"), b"").unwrap();
+
+        let resolver = HttpModuleResolver {
+            allowed_remote_domains: vec![],
+            timeout: Duration::from_secs(10),
+            cache_dir: dir.path().to_path_buf(),
+        };
+
+        resolver.clear_all_cache().unwrap();
+        assert!(!mutable_dir.exists(), "mutable dir should be removed");
+        assert!(!versioned_dir.exists(), "versioned dir should be removed");
+    }
+
+    #[test]
+    fn test_clear_all_cache_noop_when_dirs_missing() {
+        let dir = TempDir::new().unwrap();
+        let resolver = HttpModuleResolver {
+            allowed_remote_domains: vec![],
+            timeout: Duration::from_secs(10),
+            cache_dir: dir.path().to_path_buf(),
+        };
+        assert!(resolver.clear_all_cache().is_ok());
     }
 
     #[test]

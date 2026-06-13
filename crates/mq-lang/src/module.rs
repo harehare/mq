@@ -370,6 +370,11 @@ impl ModuleLoader<DefaultModuleResolver> {
     pub fn clear_http_cache(&self) -> Result<(), error::ModuleError> {
         self.resolver.clear_http_cache()
     }
+
+    /// Clears all HTTP module cache including versioned modules and lock files.
+    pub fn clear_http_cache_all(&self) -> Result<(), error::ModuleError> {
+        self.resolver.clear_http_cache_all()
+    }
 }
 
 #[cfg(test)]

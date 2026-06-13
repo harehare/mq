@@ -358,6 +358,13 @@ impl Engine<DefaultModuleResolver> {
     pub fn clear_http_cache(&self) -> Result<(), crate::module::error::ModuleError> {
         self.evaluator.module_loader.clear_http_cache()
     }
+
+    /// Clears all HTTP module cache including versioned modules and lock files.
+    ///
+    /// Use this when `--clear-cache` is passed on the CLI to wipe everything.
+    pub fn clear_http_cache_all(&self) -> Result<(), crate::module::error::ModuleError> {
+        self.evaluator.module_loader.clear_http_cache_all()
+    }
 }
 
 #[cfg(test)]
