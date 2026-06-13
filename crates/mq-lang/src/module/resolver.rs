@@ -255,8 +255,7 @@ mod tests {
     #[test]
     fn test_with_http_normalizes_github_domains() {
         // with_http delegates to HttpModuleResolver::new which normalizes github.com/* entries
-        let resolver = DefaultModuleResolver::new(vec![])
-            .with_http(vec!["github.com/alice/myrepo".to_string()], None);
+        let resolver = DefaultModuleResolver::new(vec![]).with_http(vec!["github.com/alice/myrepo".to_string()], None);
         assert!(
             resolver
                 .http_resolver

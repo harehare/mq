@@ -436,10 +436,8 @@ impl HttpModuleResolver {
         if !cache_file.exists() || !hash_file.exists() {
             return Ok(None);
         }
-        let content =
-            fs::read_to_string(cache_file).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
-        let stored =
-            fs::read_to_string(hash_file).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+        let content = fs::read_to_string(cache_file).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+        let stored = fs::read_to_string(hash_file).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
         if stored.trim() == Self::compute_content_hash(&content) {
             Ok(Some(content))
         } else {
@@ -553,10 +551,7 @@ mod tests {
     // github.com/user/repo shorthand accepted via --allowed-domain
     #[test]
     fn test_to_fetch_url_allowed_via_github_shorthand_domain() {
-        let resolver = HttpModuleResolver::new(
-            vec!["github.com/alice/lisp".to_string()],
-            Duration::from_secs(10),
-        );
+        let resolver = HttpModuleResolver::new(vec!["github.com/alice/lisp".to_string()], Duration::from_secs(10));
         assert!(resolver.to_fetch_url("github.com/alice/lisp").is_ok());
         // Other repos under alice remain blocked
         assert!(resolver.to_fetch_url("github.com/alice/other").is_err());
@@ -824,7 +819,10 @@ mod tests {
         resolver.clear_cache().unwrap();
         assert!(!mutable_dir.exists(), "mutable dir should be removed");
         assert!(versioned_file.exists(), "versioned .mq file should be preserved");
-        assert!(versioned_hash.exists(), "versioned .mq.sha256 sidecar should be preserved");
+        assert!(
+            versioned_hash.exists(),
+            "versioned .mq.sha256 sidecar should be preserved"
+        );
     }
 
     #[test]
