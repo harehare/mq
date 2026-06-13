@@ -304,6 +304,8 @@ struct InputArgs {
 
     /// Allow HTTP imports from additional domain(s) beyond the default.
     /// By default only `raw.githubusercontent.com/harehare` is permitted.
+    /// Use `github.com/{user}/{repo}` to allow a specific repository (expanded automatically),
+    /// or a plain domain like `example.com` to allow any path under that host.
     /// Repeat to allow multiple extra domains.
     #[cfg(feature = "http-import")]
     #[arg(long = "allowed-domain")]

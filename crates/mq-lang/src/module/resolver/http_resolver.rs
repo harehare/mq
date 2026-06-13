@@ -1,5 +1,7 @@
 use std::{borrow::Cow, fs, path::PathBuf, time::Duration};
 
+use sha2::Digest;
+
 use crate::{ModuleError, ModuleResolver};
 
 /// Default domain that is always permitted without `--allowed-domain`.
@@ -19,7 +21,10 @@ const MAX_MODULE_SIZE: u64 = 1024 * 1024;
 /// - `mutable/` — URLs resolved to `HEAD`, `main`, `master`, or any non-GitHub HTTP URL;
 ///   cleared by [`HttpModuleResolver::clear_cache`] (i.e. `--refresh-modules`).
 ///
-/// Files are named `{md5(url)}.mq` within their subdirectory.
+/// Each cached module is accompanied by a `.mq.sha256` sidecar file for tamper detection.
+/// Files are named `{md5(url)}.mq` and `{md5(url)}.mq.sha256` within their subdirectory.
+/// If the process crashes between writing the two files, the sidecar will be absent and
+/// the next `resolve()` call will automatically re-fetch rather than serve partial data.
 ///
 /// # GitHub shorthand
 ///
@@ -61,14 +66,25 @@ impl ModuleResolver for HttpModuleResolver {
         let url = self.to_fetch_url(module_name)?;
         let cache_subdir = self.cache_subdir(&url);
         let cache_file = cache_subdir.join(self.cache_file_name(&url));
+        let hash_file = cache_subdir.join(self.cache_hash_file_name(&url));
 
-        if cache_file.exists() {
-            return fs::read_to_string(&cache_file).map_err(|e| ModuleError::IOError(e.to_string().into()));
+        if cache_file.exists() && hash_file.exists() {
+            let content =
+                fs::read_to_string(&cache_file).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+            let stored =
+                fs::read_to_string(&hash_file).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+            if stored.trim() == Self::compute_content_hash(&content) {
+                return Ok(content);
+            }
+            // Hash mismatch — cache may be corrupted or tampered; re-fetch
         }
 
         let content = self.fetch_url(&url)?;
         fs::create_dir_all(&cache_subdir).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
         fs::write(&cache_file, content.as_bytes()).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+        fs::write(&hash_file, Self::compute_content_hash(&content).as_bytes())
+            .map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+
         Ok(content)
     }
 
@@ -88,12 +104,38 @@ impl HttpModuleResolver {
     ///
     /// An empty `allowed_remote_domains` list restricts access to the built-in default domain
     /// (`raw.githubusercontent.com/harehare`) only. Additional domains must be listed explicitly.
+    ///
+    /// Entries in the form `github.com/{user}/{repo}` (with or without `https://` prefix) are
+    /// automatically expanded to `raw.githubusercontent.com/{user}/{repo}`, so callers can
+    /// use the familiar GitHub URL style instead of the raw content URL.
     pub fn new(allowed_remote_domains: Vec<String>, timeout: Duration) -> Self {
         let cache_dir = dirs::cache_dir().unwrap_or_default().join("mq");
         Self {
-            allowed_remote_domains,
+            allowed_remote_domains: allowed_remote_domains
+                .into_iter()
+                .map(|d| Self::normalize_allowed_domain(&d))
+                .collect(),
             timeout,
             cache_dir,
+        }
+    }
+
+    /// Normalizes a user-supplied allowed-domain entry.
+    ///
+    /// `github.com/{path}` (with or without `https://`/`http://` prefix) is expanded to
+    /// `raw.githubusercontent.com/{path}` so that users can write
+    /// `--allowed-domain github.com/alice/myrepo` instead of the full raw content URL.
+    /// The scheme prefix is always stripped before storing.
+    pub fn normalize_allowed_domain(domain: &str) -> String {
+        let without_scheme = domain
+            .strip_prefix("https://")
+            .or_else(|| domain.strip_prefix("http://"))
+            .unwrap_or(domain);
+
+        if let Some(rest) = without_scheme.strip_prefix("github.com/") {
+            format!("raw.githubusercontent.com/{}", rest)
+        } else {
+            without_scheme.to_string()
         }
     }
 
@@ -219,6 +261,8 @@ impl HttpModuleResolver {
     ///
     /// Only HTTPS URLs are accepted; plain HTTP is rejected. Redirects are not followed.
     /// The response body is capped at [`MAX_MODULE_SIZE`].
+    /// Returns an error if the response Content-Type is `text/html` (e.g. a 404 error page
+    /// served with status 200), giving a clearer message than a parse error would.
     pub fn fetch_url(&self, url: &str) -> Result<String, ModuleError> {
         if !Self::is_remote_url(url) {
             return Err(ModuleError::NotFound(Cow::Owned(url.to_string())));
@@ -250,43 +294,28 @@ impl HttpModuleResolver {
             ));
         }
 
+        let is_html = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.contains("text/html"))
+            .unwrap_or(false);
+        if is_html {
+            return Err(ModuleError::IOError(
+                format!(
+                    "URL returned HTML instead of mq source code: {}. Check that the URL points directly to a .mq file.",
+                    url
+                )
+                .into(),
+            ));
+        }
+
         response
             .body_mut()
             .with_config()
             .limit(MAX_MODULE_SIZE)
             .read_to_string()
             .map_err(|e| ModuleError::IOError(e.to_string().into()))
-    }
-
-    fn to_fetch_url(&self, module_name: &str) -> Result<String, ModuleError> {
-        if Self::is_github_url(module_name) && !Self::is_remote_url(module_name) {
-            let url = Self::github_to_raw_url(module_name)
-                .ok_or_else(|| ModuleError::IOError(format!("Invalid GitHub URL: {}", module_name).into()))?;
-            if !self.is_allowed_domain(&url) {
-                return Err(ModuleError::IOError(format!("Domain not allowed: {}", url).into()));
-            }
-            return Ok(url);
-        }
-
-        if Self::is_github_url(module_name)
-            && let Some(raw_url) = Self::github_to_raw_url(module_name)
-        {
-            if !self.is_allowed_domain(&raw_url) {
-                return Err(ModuleError::IOError(format!("Domain not allowed: {}", raw_url).into()));
-            }
-            return Ok(raw_url);
-        }
-
-        if Self::is_remote_url(module_name) {
-            if !self.is_allowed_domain(module_name) {
-                return Err(ModuleError::IOError(
-                    format!("Domain not allowed: {}", module_name).into(),
-                ));
-            }
-            return Ok(module_name.to_string());
-        }
-
-        Err(ModuleError::NotFound(Cow::Owned(module_name.to_string())))
     }
 
     /// Extracts a short module name from an HTTP URL or GitHub shorthand.
@@ -353,6 +382,51 @@ impl HttpModuleResolver {
         let hash = md5::compute(url);
         format!("{:x}.mq", hash)
     }
+
+    fn cache_hash_file_name(&self, url: &str) -> String {
+        let hash = md5::compute(url);
+        format!("{:x}.mq.sha256", hash)
+    }
+
+    /// Computes the SHA-256 hash of `content` and returns it as a lowercase hex string.
+    pub(crate) fn compute_content_hash(content: &str) -> String {
+        sha2::Sha256::digest(content.as_bytes())
+            .as_slice()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect()
+    }
+
+    fn to_fetch_url(&self, module_name: &str) -> Result<String, ModuleError> {
+        if Self::is_github_url(module_name) && !Self::is_remote_url(module_name) {
+            let url = Self::github_to_raw_url(module_name)
+                .ok_or_else(|| ModuleError::IOError(format!("Invalid GitHub URL: {}", module_name).into()))?;
+            if !self.is_allowed_domain(&url) {
+                return Err(ModuleError::IOError(format!("Domain not allowed: {}", url).into()));
+            }
+            return Ok(url);
+        }
+
+        if Self::is_github_url(module_name)
+            && let Some(raw_url) = Self::github_to_raw_url(module_name)
+        {
+            if !self.is_allowed_domain(&raw_url) {
+                return Err(ModuleError::IOError(format!("Domain not allowed: {}", raw_url).into()));
+            }
+            return Ok(raw_url);
+        }
+
+        if Self::is_remote_url(module_name) {
+            if !self.is_allowed_domain(module_name) {
+                return Err(ModuleError::IOError(
+                    format!("Domain not allowed: {}", module_name).into(),
+                ));
+            }
+            return Ok(module_name.to_string());
+        }
+
+        Err(ModuleError::NotFound(Cow::Owned(module_name.to_string())))
+    }
 }
 
 #[cfg(test)]
@@ -392,6 +466,41 @@ mod tests {
     fn test_canonical_name(#[case] input: &str, #[case] expected: &str) {
         let resolver = HttpModuleResolver::default();
         assert_eq!(resolver.canonical_name(input), expected);
+    }
+
+    #[rstest]
+    #[case("github.com/alice/myrepo", "raw.githubusercontent.com/alice/myrepo")]
+    #[case("github.com/alice", "raw.githubusercontent.com/alice")]
+    #[case("https://github.com/alice/myrepo", "raw.githubusercontent.com/alice/myrepo")]
+    #[case("http://github.com/alice/myrepo", "raw.githubusercontent.com/alice/myrepo")]
+    #[case("example.com", "example.com")]
+    #[case("https://example.com", "example.com")]
+    #[case("raw.githubusercontent.com/alice/repo", "raw.githubusercontent.com/alice/repo")]
+    fn test_normalize_allowed_domain(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(HttpModuleResolver::normalize_allowed_domain(input), expected);
+    }
+
+    #[rstest]
+    // github.com/user/repo shorthand is expanded to raw.githubusercontent.com at construction
+    #[case(vec!["github.com/alice/myrepo".to_string()], "https://raw.githubusercontent.com/alice/myrepo/HEAD/mod.mq", true)]
+    #[case(vec!["github.com/alice/myrepo".to_string()], "https://raw.githubusercontent.com/alice/other/HEAD/mod.mq", false)]
+    // plain domain still works
+    #[case(vec!["example.com".to_string()], "https://example.com/foo.mq", true)]
+    fn test_new_normalizes_github_domains(#[case] domains: Vec<String>, #[case] url: &str, #[case] expected: bool) {
+        let resolver = HttpModuleResolver::new(domains, Duration::from_secs(10));
+        assert_eq!(resolver.is_allowed_domain(url), expected);
+    }
+
+    // github.com/user/repo shorthand accepted via --allowed-domain
+    #[test]
+    fn test_to_fetch_url_allowed_via_github_shorthand_domain() {
+        let resolver = HttpModuleResolver::new(
+            vec!["github.com/alice/lisp".to_string()],
+            Duration::from_secs(10),
+        );
+        assert!(resolver.to_fetch_url("github.com/alice/lisp").is_ok());
+        // Other repos under alice remain blocked
+        assert!(resolver.to_fetch_url("github.com/alice/other").is_err());
     }
 
     #[rstest]
@@ -638,10 +747,14 @@ mod tests {
         let versioned_dir = dir.path().join("versioned");
         fs::create_dir_all(&mutable_dir).unwrap();
         fs::create_dir_all(&versioned_dir).unwrap();
-        let mutable_file = mutable_dir.join("abc123.mq");
+        let mutable_mq = mutable_dir.join("abc123.mq");
+        let mutable_hash = mutable_dir.join("abc123.mq.sha256");
         let versioned_file = versioned_dir.join("def456.mq");
-        fs::write(&mutable_file, b"mutable content").unwrap();
+        let versioned_hash = versioned_dir.join("def456.mq.sha256");
+        fs::write(&mutable_mq, b"mutable content").unwrap();
+        fs::write(&mutable_hash, b"deadbeef").unwrap();
         fs::write(&versioned_file, b"versioned content").unwrap();
+        fs::write(&versioned_hash, b"cafebabe").unwrap();
 
         let resolver = HttpModuleResolver {
             allowed_remote_domains: vec![],
@@ -651,7 +764,8 @@ mod tests {
 
         resolver.clear_cache().unwrap();
         assert!(!mutable_dir.exists(), "mutable dir should be removed");
-        assert!(versioned_file.exists(), "versioned file should be preserved");
+        assert!(versioned_file.exists(), "versioned .mq file should be preserved");
+        assert!(versioned_hash.exists(), "versioned .mq.sha256 sidecar should be preserved");
     }
 
     #[test]
@@ -711,10 +825,16 @@ mod tests {
         let mutable_dir = dir.path().join("mutable");
         fs::create_dir_all(&mutable_dir).unwrap();
 
-        // Pre-populate the cache with a known URL's hash
         let url = "https://raw.githubusercontent.com/harehare/mymod/HEAD/mymod.mq";
+        let content = "def cached(): 42;";
         let hash = format!("{:x}.mq", md5::compute(url));
-        fs::write(mutable_dir.join(&hash), b"def cached(): 42;").unwrap();
+        let hash256 = format!("{:x}.mq.sha256", md5::compute(url));
+        fs::write(mutable_dir.join(&hash), content.as_bytes()).unwrap();
+        fs::write(
+            mutable_dir.join(&hash256),
+            HttpModuleResolver::compute_content_hash(content).as_bytes(),
+        )
+        .unwrap();
 
         let resolver = HttpModuleResolver {
             allowed_remote_domains: vec![],
@@ -723,7 +843,58 @@ mod tests {
         };
 
         let result = resolver.resolve("https://raw.githubusercontent.com/harehare/mymod/HEAD/mymod.mq");
-        assert_eq!(result.unwrap(), "def cached(): 42;");
+        assert_eq!(result.unwrap(), content);
+    }
+
+    #[test]
+    fn test_resolve_cache_without_hash_sidecar_triggers_refetch() {
+        let dir = TempDir::new().unwrap();
+        let mutable_dir = dir.path().join("mutable");
+        fs::create_dir_all(&mutable_dir).unwrap();
+
+        let url = "https://raw.githubusercontent.com/harehare/mymod/HEAD/mymod.mq";
+        let hash = format!("{:x}.mq", md5::compute(url));
+        // Write only the content file — no .mq.sha256 sidecar
+        fs::write(mutable_dir.join(&hash), b"def foo(): 1;").unwrap();
+
+        let resolver = HttpModuleResolver {
+            allowed_remote_domains: vec![],
+            timeout: Duration::from_secs(10),
+            cache_dir: dir.path().to_path_buf(),
+        };
+
+        // No sidecar → must attempt a network re-fetch (which fails in tests)
+        let result = resolver.resolve("https://raw.githubusercontent.com/harehare/mymod/HEAD/mymod.mq");
+        assert!(result.is_err(), "cache without hash sidecar must trigger re-fetch");
+    }
+
+    #[test]
+    fn test_resolve_tampered_cache_triggers_refetch() {
+        let dir = TempDir::new().unwrap();
+        let mutable_dir = dir.path().join("mutable");
+        fs::create_dir_all(&mutable_dir).unwrap();
+
+        let url = "https://raw.githubusercontent.com/harehare/mymod/HEAD/mymod.mq";
+        let content = "def cached(): 42;";
+        let hash = format!("{:x}.mq", md5::compute(url));
+        let hash256 = format!("{:x}.mq.sha256", md5::compute(url));
+        fs::write(mutable_dir.join(&hash), content.as_bytes()).unwrap();
+        // Deliberately wrong hash
+        fs::write(
+            mutable_dir.join(&hash256),
+            b"0000000000000000000000000000000000000000000000000000000000000000",
+        )
+        .unwrap();
+
+        let resolver = HttpModuleResolver {
+            allowed_remote_domains: vec![],
+            timeout: Duration::from_secs(10),
+            cache_dir: dir.path().to_path_buf(),
+        };
+
+        // Must attempt a network re-fetch (which fails in tests) rather than return tampered content
+        let result = resolver.resolve("https://raw.githubusercontent.com/harehare/mymod/HEAD/mymod.mq");
+        assert!(result.is_err(), "tampered cache must not return cached content");
     }
 
     #[test]
@@ -733,8 +904,15 @@ mod tests {
         fs::create_dir_all(&versioned_dir).unwrap();
 
         let url = "https://raw.githubusercontent.com/harehare/mymod/v0.1.0/mymod.mq";
+        let content = "def pinned(): 1;";
         let hash = format!("{:x}.mq", md5::compute(url));
-        fs::write(versioned_dir.join(&hash), b"def pinned(): 1;").unwrap();
+        let hash256 = format!("{:x}.mq.sha256", md5::compute(url));
+        fs::write(versioned_dir.join(&hash), content.as_bytes()).unwrap();
+        fs::write(
+            versioned_dir.join(&hash256),
+            HttpModuleResolver::compute_content_hash(content).as_bytes(),
+        )
+        .unwrap();
 
         let resolver = HttpModuleResolver {
             allowed_remote_domains: vec![],
@@ -743,7 +921,7 @@ mod tests {
         };
 
         let result = resolver.resolve("https://raw.githubusercontent.com/harehare/mymod/v0.1.0/mymod.mq");
-        assert_eq!(result.unwrap(), "def pinned(): 1;");
+        assert_eq!(result.unwrap(), content);
     }
 
     #[rstest]
@@ -813,5 +991,52 @@ mod tests {
         let resolver = HttpModuleResolver::new(domains.clone(), timeout);
         assert_eq!(resolver.allowed_remote_domains, domains);
         assert_eq!(resolver.timeout, timeout);
+    }
+
+    #[test]
+    fn test_compute_content_hash_is_deterministic() {
+        let h1 = HttpModuleResolver::compute_content_hash("def foo(): 1;");
+        let h2 = HttpModuleResolver::compute_content_hash("def foo(): 1;");
+        assert_eq!(h1, h2);
+        assert_eq!(h1.len(), 64, "SHA-256 hex is 64 chars");
+    }
+
+    #[test]
+    fn test_compute_content_hash_differs_for_different_content() {
+        let h1 = HttpModuleResolver::compute_content_hash("def foo(): 1;");
+        let h2 = HttpModuleResolver::compute_content_hash("def foo(): 2;");
+        assert_ne!(h1, h2);
+    }
+
+    // Content-Type: text/html with charset parameter must still be detected as HTML
+    #[rstest]
+    #[case("text/html")]
+    #[case("text/html; charset=utf-8")]
+    #[case("text/html;charset=UTF-8")]
+    fn test_content_type_html_variants_contain_text_html(#[case] ct: &str) {
+        assert!(ct.contains("text/html"));
+    }
+
+    #[rstest]
+    #[case("text/plain")]
+    #[case("text/plain; charset=utf-8")]
+    #[case("application/octet-stream")]
+    fn test_content_type_non_html_not_detected_as_html(#[case] ct: &str) {
+        assert!(!ct.contains("text/html"));
+    }
+
+    // https://github.com/owner/repo URL form is resolved to raw.githubusercontent.com
+    #[rstest]
+    #[case(
+        "https://github.com/harehare/lisp@v0.1.0",
+        "https://raw.githubusercontent.com/harehare/lisp/v0.1.0/lisp.mq"
+    )]
+    #[case(
+        "https://github.com/harehare/lisp",
+        "https://raw.githubusercontent.com/harehare/lisp/HEAD/lisp.mq"
+    )]
+    fn test_to_fetch_url_https_github_form(#[case] input: &str, #[case] expected: &str) {
+        let resolver = resolver_with_domains(vec![]);
+        assert_eq!(resolver.to_fetch_url(input).unwrap(), expected);
     }
 }

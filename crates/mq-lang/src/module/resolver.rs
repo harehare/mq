@@ -137,9 +137,15 @@ impl DefaultModuleResolver {
     ///
     /// An empty list restricts access to the built-in default domain
     /// (`raw.githubusercontent.com/harehare`) only.
+    ///
+    /// Entries in the form `github.com/{user}/{repo}` are automatically expanded to
+    /// `raw.githubusercontent.com/{user}/{repo}`.
     #[cfg(feature = "http-import")]
     pub fn set_allowed_domains(&mut self, domains: Vec<String>) {
-        self.http_resolver.allowed_remote_domains = domains;
+        self.http_resolver.allowed_remote_domains = domains
+            .into_iter()
+            .map(|d| http_resolver::HttpModuleResolver::normalize_allowed_domain(&d))
+            .collect();
     }
 
     /// Clears all locally-cached HTTP module files.
@@ -237,5 +243,40 @@ mod tests {
         let resolver = DefaultModuleResolver::new(vec![]);
         // Either network error or module-not-found; should not panic
         assert!(resolver.resolve(url).is_err());
+    }
+
+    #[cfg(feature = "http-import")]
+    #[test]
+    fn test_with_http_normalizes_github_domains() {
+        // with_http delegates to HttpModuleResolver::new which normalizes github.com/* entries
+        let resolver = DefaultModuleResolver::new(vec![])
+            .with_http(vec!["github.com/alice/myrepo".to_string()], None);
+        assert!(
+            resolver
+                .http_resolver
+                .is_allowed_domain("https://raw.githubusercontent.com/alice/myrepo/HEAD/mod.mq")
+        );
+        assert!(
+            !resolver
+                .http_resolver
+                .is_allowed_domain("https://raw.githubusercontent.com/alice/other/HEAD/mod.mq")
+        );
+    }
+
+    #[cfg(feature = "http-import")]
+    #[test]
+    fn test_set_allowed_domains_normalizes_github_domains() {
+        let mut resolver = DefaultModuleResolver::new(vec![]);
+        resolver.set_allowed_domains(vec!["github.com/bob/myrepo".to_string()]);
+        assert!(
+            resolver
+                .http_resolver
+                .is_allowed_domain("https://raw.githubusercontent.com/bob/myrepo/HEAD/mod.mq")
+        );
+        assert!(
+            !resolver
+                .http_resolver
+                .is_allowed_domain("https://raw.githubusercontent.com/bob/other/HEAD/mod.mq")
+        );
     }
 }
