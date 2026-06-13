@@ -124,8 +124,6 @@ import "json"
 
 ## HTTP Imports
 
-> **Requires the `http-import` feature flag.**
-
 When `mq` is built with the `http-import` feature, `import` and `include` accept HTTP/HTTPS URLs
 in addition to local file names.
 
@@ -154,8 +152,8 @@ github.com/{owner}/{path}[@{version}]
 **Example:**
 
 ```mq
-import "github.com/harehare/lisp.mq@v0.1.0"
-| lisp::eval("(+ 1 2)")
+import "github.com/harehare/kdl.mq"
+| kdl::kdl_parse("title \"Hello, World!\"")
 ```
 
 ### Caching
