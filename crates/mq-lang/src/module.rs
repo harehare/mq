@@ -223,8 +223,13 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 
     pub fn load_from_file(&mut self, module_path: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
-        let program = self.resolve(module_path)?;
+        // Check before resolving to avoid unnecessary I/O (disk read or network fetch)
+        // when the same module is imported more than once.
         let name = self.resolver.canonical_name(module_path).to_owned();
+        if self.loaded_modules.contains(name.as_str().into()) {
+            return Err(ModuleError::AlreadyLoaded(Cow::Owned(name)));
+        }
+        let program = self.resolve(module_path)?;
         self.source_cache.insert(SmolStr::new(&name), program.clone());
         self.load(&name, &program, token_arena)
     }

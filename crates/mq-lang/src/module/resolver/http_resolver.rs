@@ -68,23 +68,39 @@ impl ModuleResolver for HttpModuleResolver {
         let cache_file = cache_subdir.join(self.cache_file_name(&url));
         let hash_file = cache_subdir.join(self.cache_hash_file_name(&url));
 
-        if cache_file.exists() && hash_file.exists() {
-            let content =
-                fs::read_to_string(&cache_file).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
-            let stored =
-                fs::read_to_string(&hash_file).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
-            if stored.trim() == Self::compute_content_hash(&content) {
-                return Ok(content);
-            }
-            // Hash mismatch — cache may be corrupted or tampered; re-fetch
+        // Fast path: serve from cache without acquiring any lock.
+        if let Some(content) = self.try_read_cache(&cache_file, &hash_file)? {
+            return Ok(content);
+        }
+
+        // Slow path: acquire an exclusive file lock so that only one thread/process
+        // fetches and writes the cache at a time.  Others will wait, then hit the fast
+        // path on the re-check below.
+        fs::create_dir_all(&cache_subdir).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+        let lock_path = cache_subdir.join(self.cache_lock_file_name(&url));
+        let lock_file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+        lock_file
+            .lock()
+            .map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+
+        // Re-check under lock: another engine may have populated the cache while we waited.
+        if let Some(content) = self.try_read_cache(&cache_file, &hash_file)? {
+            return Ok(content);
         }
 
         let content = self.fetch_url(&url)?;
-        fs::create_dir_all(&cache_subdir).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
         fs::write(&cache_file, content.as_bytes()).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
         fs::write(&hash_file, Self::compute_content_hash(&content).as_bytes())
             .map_err(|e| ModuleError::IOError(e.to_string().into()))?;
 
+        // Releasing the lock (drop) after both files are written keeps the invariant that
+        // any reader that obtains the lock will see both files present.
+        drop(lock_file);
         Ok(content)
     }
 
@@ -386,6 +402,34 @@ impl HttpModuleResolver {
     fn cache_hash_file_name(&self, url: &str) -> String {
         let hash = md5::compute(url);
         format!("{:x}.mq.sha256", hash)
+    }
+
+    fn cache_lock_file_name(&self, url: &str) -> String {
+        let hash = md5::compute(url);
+        format!("{:x}.mq.lock", hash)
+    }
+
+    /// Tries to read a cached module without holding any lock.
+    ///
+    /// Returns `Ok(Some(content))` on a valid cache hit, `Ok(None)` when the cache
+    /// is missing or the hash doesn't match, and `Err` only on unexpected I/O errors.
+    fn try_read_cache(
+        &self,
+        cache_file: &std::path::Path,
+        hash_file: &std::path::Path,
+    ) -> Result<Option<String>, ModuleError> {
+        if !cache_file.exists() || !hash_file.exists() {
+            return Ok(None);
+        }
+        let content =
+            fs::read_to_string(cache_file).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+        let stored =
+            fs::read_to_string(hash_file).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+        if stored.trim() == Self::compute_content_hash(&content) {
+            Ok(Some(content))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Computes the SHA-256 hash of `content` and returns it as a lowercase hex string.
