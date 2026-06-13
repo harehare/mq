@@ -9,8 +9,10 @@ The following projects are real-world examples built entirely with mq, demonstra
 
 ## Parsers
 
-- [kdl.mq](https://github.com/harehare/kdl.mq) — A [KDL](https://kdl.dev) document language parser written in mq
 - [json5.mq](https://github.com/harehare/json5.mq) — A [JSON5](https://json5.org) parser written in mq
+- [kdl.mq](https://github.com/harehare/kdl.mq) — A [KDL](https://kdl.dev) document language parser written in mq
+- [ini.mq](https://github.com/harehare/ini.mq) — An INI file parser and serializer written in mq
+- [ndjson.mq](https://github.com/harehare/ndjson.mq) — An [NDJSON](https://ndjson.org) / [JSON Lines](https://jsonlines.org) parser written in mq
 - [regex.mq](https://github.com/harehare/regex.mq) — A regular expression engine written in mq
 
 ## Functional Programming
