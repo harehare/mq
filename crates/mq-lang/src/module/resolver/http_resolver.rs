@@ -86,7 +86,8 @@ impl ModuleResolver for HttpModuleResolver {
 impl HttpModuleResolver {
     /// Creates a new resolver with the given domain allowlist and request timeout.
     ///
-    /// An empty `allowed_remote_domains` list permits all http(s) URLs.
+    /// An empty `allowed_remote_domains` list restricts access to the built-in default domain
+    /// (`raw.githubusercontent.com/harehare`) only. Additional domains must be listed explicitly.
     pub fn new(allowed_remote_domains: Vec<String>, timeout: Duration) -> Self {
         let cache_dir = dirs::cache_dir().unwrap_or_default().join("mq");
         Self {

@@ -121,7 +121,8 @@ impl DefaultModuleResolver {
 
     /// Configures the HTTP resolver with a domain allowlist and request timeout.
     ///
-    /// An empty `allowed_domains` list permits any https/http URL.
+    /// An empty `allowed_domains` list restricts access to the built-in default domain
+    /// (`raw.githubusercontent.com/harehare`) only; it does not open up all URLs.
     /// Only available when the `http-import` feature is enabled.
     #[cfg(feature = "http-import")]
     pub fn with_http(mut self, allowed_domains: Vec<String>, timeout: Option<std::time::Duration>) -> Self {
@@ -134,7 +135,8 @@ impl DefaultModuleResolver {
 
     /// Replaces the HTTP resolver's domain allowlist.
     ///
-    /// An empty list permits all URLs.
+    /// An empty list restricts access to the built-in default domain
+    /// (`raw.githubusercontent.com/harehare`) only.
     #[cfg(feature = "http-import")]
     pub fn set_allowed_domains(&mut self, domains: Vec<String>) {
         self.http_resolver.allowed_remote_domains = domains;

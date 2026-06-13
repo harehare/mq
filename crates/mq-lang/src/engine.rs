@@ -345,7 +345,8 @@ impl<T: ModuleResolver> Engine<T> {
 impl Engine<DefaultModuleResolver> {
     /// Replaces the HTTP resolver's domain allowlist.
     ///
-    /// An empty list permits all URLs.
+    /// An empty list restricts access to the built-in default domain
+    /// (`raw.githubusercontent.com/harehare`) only; it does not open up all URLs.
     pub fn set_http_allowed_domains(&mut self, domains: Vec<String>) {
         self.evaluator.module_loader.set_http_allowed_domains(domains);
     }
