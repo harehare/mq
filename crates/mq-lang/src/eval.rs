@@ -7412,6 +7412,94 @@ mod tests {
             ])])
         );
     }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case(
+        "include_http_in_module",
+        r#"include "https://example.com/dep.mq""#,
+        "https://example.com/dep.mq"
+    )]
+    #[case(
+        "include_github_in_module",
+        r#"include "github.com/alice/dep""#,
+        "github.com/alice/dep"
+    )]
+    fn test_include_http_inside_module_is_blocked(
+        #[case] module_name: &str,
+        #[case] module_content: &str,
+        #[case] blocked_url: &str,
+    ) {
+        let file_name = format!("{module_name}.mq");
+        let (temp_dir, temp_file_path) = create_file(&file_name, module_content);
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+        let program = vec![Shared::new(ast::Node {
+            token_id: 0.into(),
+            expr: Shared::new(ast::Expr::Include(ast::Literal::String(module_name.to_string()))),
+        })];
+
+        assert!(
+            matches!(
+                Evaluator::new(loader, token_arena())
+                    .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
+                Err(InnerError::Runtime(RuntimeError::ModuleLoadError(
+                    ModuleError::HttpImportNotAllowed(ref url)
+                ))) if url.as_ref() == blocked_url
+            ),
+            "expected HttpImportNotAllowed for '{blocked_url}'"
+        );
+    }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case(
+        "import_http_in_module",
+        r#"import "https://example.com/dep.mq""#,
+        "https://example.com/dep.mq"
+    )]
+    #[case(
+        "import_github_in_module",
+        r#"import "github.com/alice/dep""#,
+        "github.com/alice/dep"
+    )]
+    fn test_import_http_inside_module_is_blocked(
+        #[case] module_name: &str,
+        #[case] module_content: &str,
+        #[case] blocked_url: &str,
+    ) {
+        let file_name = format!("{module_name}.mq");
+        let (temp_dir, temp_file_path) = create_file(&file_name, module_content);
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+        let program = vec![Shared::new(ast::Node {
+            token_id: 0.into(),
+            expr: Shared::new(ast::Expr::Include(ast::Literal::String(module_name.to_string()))),
+        })];
+
+        assert!(
+            matches!(
+                Evaluator::new(loader, token_arena())
+                    .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
+                Err(InnerError::Runtime(RuntimeError::ModuleLoadError(
+                    ModuleError::HttpImportNotAllowed(ref url)
+                ))) if url.as_ref() == blocked_url
+            ),
+            "expected HttpImportNotAllowed for '{blocked_url}'"
+        );
+    }
 }
 
 /// Implementation of MacroEvaluator trait for Evaluator.
