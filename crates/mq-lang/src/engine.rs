@@ -7,8 +7,8 @@ use crate::eval::env::Env;
 #[cfg(feature = "debugger")]
 use crate::module::ModuleId;
 use crate::{
-    ArenaId, LocalFsModuleResolver, ModuleResolver, MqResult, Range, RuntimeValue, Shared, SharedCell, TokenKind,
-    token_alloc,
+    ArenaId, ModuleResolver, MqResult, Range, RuntimeValue, Shared, SharedCell, TokenKind,
+    module::resolver::DefaultModuleResolver, token_alloc,
 };
 #[cfg(feature = "debugger")]
 use crate::{Debugger, DebuggerHandler};
@@ -69,7 +69,7 @@ impl From<crate::ast::Program> for CompiledProgram {
 /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
 /// ```
 #[derive(Debug, Clone)]
-pub struct Engine<T: ModuleResolver = LocalFsModuleResolver> {
+pub struct Engine<T: ModuleResolver = DefaultModuleResolver> {
     pub(crate) evaluator: Evaluator<T>,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
     optimization_level: OptimizationLevel,
@@ -338,6 +338,32 @@ impl<T: ModuleResolver> Engine<T> {
 
     pub const fn version() -> &'static str {
         env!("CARGO_PKG_VERSION")
+    }
+}
+
+#[cfg(feature = "http-import")]
+impl Engine<DefaultModuleResolver> {
+    /// Replaces the HTTP resolver's domain allowlist.
+    ///
+    /// An empty list restricts access to the built-in default domain
+    /// (`raw.githubusercontent.com/harehare`) only; it does not open up all URLs.
+    pub fn set_http_allowed_domains(&mut self, domains: Vec<String>) {
+        self.evaluator.module_loader.set_http_allowed_domains(domains);
+    }
+
+    /// Clears all locally-cached HTTP module files.
+    ///
+    /// Call this once before processing to force a re-fetch of all cached modules
+    /// on the next resolve (e.g. when `--refresh-modules` is passed on the CLI).
+    pub fn clear_http_cache(&self) -> Result<(), crate::module::error::ModuleError> {
+        self.evaluator.module_loader.clear_http_cache()
+    }
+
+    /// Clears all HTTP module cache including versioned modules and lock files.
+    ///
+    /// Use this when `--clear-cache` is passed on the CLI to wipe everything.
+    pub fn clear_http_cache_all(&self) -> Result<(), crate::module::error::ModuleError> {
+        self.evaluator.module_loader.clear_http_cache_all()
     }
 }
 

@@ -301,6 +301,27 @@ struct InputArgs {
     /// Enable streaming mode for processing large files line by line
     #[arg(long, default_value_t = false)]
     stream: bool,
+
+    /// Allow HTTP imports from additional domain(s) beyond the default.
+    /// By default only `raw.githubusercontent.com/harehare` is permitted.
+    /// Use `github.com/{user}/{repo}` to allow a specific repository (expanded automatically),
+    /// or a plain domain like `example.com` to allow any path under that host.
+    /// Repeat to allow multiple extra domains.
+    #[cfg(feature = "http-import")]
+    #[arg(long = "allowed-domain")]
+    allowed_domains: Option<Vec<String>>,
+
+    /// Force re-fetch of mutable-ref (HEAD/branch) HTTP-imported modules, ignoring the local cache.
+    /// Versioned (tagged) modules are never re-fetched regardless of this flag.
+    #[cfg(feature = "http-import")]
+    #[arg(long = "refresh-modules", default_value_t = false)]
+    refresh_modules: bool,
+
+    /// Remove all HTTP module cache including versioned (tagged) modules and lock files.
+    /// Use this to fully reset the cache when something goes wrong.
+    #[cfg(feature = "http-import")]
+    #[arg(long = "clear-cache", default_value_t = false)]
+    clear_cache: bool,
 }
 
 #[derive(Clone, Debug, clap::Args, Default)]
@@ -691,6 +712,18 @@ impl Cli {
 
                 let content = fs::read_to_string(&path).into_diagnostic()?;
                 engine.define_string_value(&v[0], &content);
+            }
+        }
+
+        #[cfg(feature = "http-import")]
+        {
+            if let Some(domains) = &self.input.allowed_domains {
+                engine.set_http_allowed_domains(domains.clone());
+            }
+            if self.input.clear_cache {
+                engine.clear_http_cache_all().map_err(|e| miette!(e.to_string()))?;
+            } else if self.input.refresh_modules {
+                engine.clear_http_cache().map_err(|e| miette!(e.to_string()))?;
             }
         }
 

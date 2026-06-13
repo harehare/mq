@@ -7,7 +7,7 @@ use crate::{
     lexer::{self, Lexer},
     module::{
         error::ModuleError,
-        resolver::{LocalFsModuleResolver, ModuleResolver},
+        resolver::{DefaultModuleResolver, ModuleResolver},
     },
 };
 use rustc_hash::FxHashMap;
@@ -36,12 +36,37 @@ impl<T: ModuleResolver> Default for ModuleLoader<T> {
     }
 }
 
+fn get_module_name(name: &str) -> Cow<'static, str> {
+    // For common module names, use static strings to avoid allocation
+    match name {
+        "ast" => Cow::Borrowed("ast.mq"),
+        "cbor" => Cow::Borrowed("cbor.mq"),
+        "csv" => Cow::Borrowed("csv.mq"),
+        "fuzzy" => Cow::Borrowed("fuzzy.mq"),
+        "hcl" => Cow::Borrowed("hcl.mq"),
+        "json" => Cow::Borrowed("json.mq"),
+        "section" => Cow::Borrowed("section.mq"),
+        "semver" => Cow::Borrowed("semver.mq"),
+        "test" => Cow::Borrowed("test.mq"),
+        "table" => Cow::Borrowed("table.mq"),
+        "toml" => Cow::Borrowed("toml.mq"),
+        "toon" => Cow::Borrowed("toon.mq"),
+        "xml" => Cow::Borrowed("xml.mq"),
+        "yaml" => Cow::Borrowed("yaml.mq"),
+        _ => Cow::Owned(format!("{}.mq", name)),
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct ModuleLoader<T: ModuleResolver = LocalFsModuleResolver> {
+pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     pub(crate) loaded_modules: Arena<ModuleName>,
     #[cfg(feature = "debugger")]
     pub(crate) source_code: Option<String>,
+    source_cache: FxHashMap<SmolStr, String>,
     resolver: T,
+    /// Tracks sub-module loading depth; HTTP imports are blocked when this is greater than zero.
+    #[cfg(feature = "http-import")]
+    http_depth: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,7 +125,10 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             loaded_modules,
             #[cfg(feature = "debugger")]
             source_code: None,
+            source_cache: FxHashMap::default(),
             resolver,
+            #[cfg(feature = "http-import")]
+            http_depth: 0,
         }
     }
 
@@ -195,17 +223,45 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         })
     }
 
+    pub fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
+        self.resolver.canonical_name(module_path)
+    }
+
     pub fn load_from_file(&mut self, module_path: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
+        // Check before resolving to avoid unnecessary I/O (disk read or network fetch)
+        // when the same module is imported more than once.
+        let name = self.resolver.canonical_name(module_path).to_owned();
+        if self.loaded_modules.contains(name.as_str().into()) {
+            return Err(ModuleError::AlreadyLoaded(Cow::Owned(name)));
+        }
         let program = self.resolve(module_path)?;
-        self.load(module_path, &program, token_arena)
+        self.source_cache.insert(SmolStr::new(&name), program.clone());
+        self.load(&name, &program, token_arena)
     }
 
     pub fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
-        if STANDARD_MODULES.contains_key(module_name) {
-            Ok(STANDARD_MODULES.get(module_name).map(|f| f()).unwrap().to_string())
-        } else {
-            self.resolver.resolve(module_name)
+        #[cfg(feature = "http-import")]
+        if self.http_depth > 0
+            && (resolver::http_resolver::HttpModuleResolver::is_remote_url(module_name)
+                || resolver::http_resolver::HttpModuleResolver::is_github_url(module_name))
+        {
+            return Err(ModuleError::HttpImportNotAllowed(std::borrow::Cow::Owned(
+                module_name.to_string(),
+            )));
         }
+        self.resolver.resolve(module_name)
+    }
+
+    /// Signals that sub-module loading has begun; HTTP imports are blocked while depth > 0.
+    #[cfg(feature = "http-import")]
+    pub fn push_http_boundary(&mut self) {
+        self.http_depth = self.http_depth.saturating_add(1);
+    }
+
+    /// Signals that sub-module loading has ended.
+    #[cfg(feature = "http-import")]
+    pub fn pop_http_boundary(&mut self) {
+        self.http_depth = self.http_depth.saturating_sub(1);
     }
 
     pub fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Module, ModuleError> {
@@ -270,7 +326,12 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         match name.as_ref() {
             Module::TOP_LEVEL_MODULE => Ok(self.source_code.clone().unwrap_or_default()),
             Module::BUILTIN_MODULE => Ok(BUILTIN_FILE.to_string()),
-            module_name => self.resolve(module_name),
+            module_name => {
+                if let Some(cached) = self.source_cache.get(module_name) {
+                    return Ok(cached.clone());
+                }
+                self.resolve(module_name)
+            }
         }
     }
 
@@ -279,7 +340,12 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         match name.as_ref() {
             Module::TOP_LEVEL_MODULE => Ok(source_code),
             Module::BUILTIN_MODULE => Ok(BUILTIN_FILE.to_string()),
-            module_name => self.resolve(module_name),
+            module_name => {
+                if let Some(cached) = self.source_cache.get(module_name) {
+                    return Ok(cached.clone());
+                }
+                self.resolve(module_name)
+            }
         }
     }
 
@@ -288,7 +354,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         let name = self.module_name(module_id);
         match name.as_ref() {
             Module::TOP_LEVEL_MODULE => String::new(),
-            other => resolver::module_name(other).to_string(),
+            other => get_module_name(other).to_string(),
         }
     }
 
@@ -317,6 +383,26 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 }
 
+#[cfg(feature = "http-import")]
+impl ModuleLoader<DefaultModuleResolver> {
+    /// Replaces the HTTP resolver's domain allowlist.
+    pub fn set_http_allowed_domains(&mut self, domains: Vec<String>) {
+        self.resolver.set_allowed_domains(domains);
+    }
+
+    /// Clears all locally-cached HTTP module files.
+    ///
+    /// Call this once before processing to force a re-fetch of all cached modules.
+    pub fn clear_http_cache(&self) -> Result<(), error::ModuleError> {
+        self.resolver.clear_http_cache()
+    }
+
+    /// Clears all HTTP module cache including versioned modules and lock files.
+    pub fn clear_http_cache_all(&self) -> Result<(), error::ModuleError> {
+        self.resolver.clear_http_cache_all()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::{fixture, rstest};
@@ -326,7 +412,7 @@ mod tests {
     use crate::{
         Range, Shared, SharedCell, Token, TokenKind,
         ast::node::{self as ast, IdentWithToken, Param},
-        module::LocalFsModuleResolver,
+        module::resolver::DefaultModuleResolver,
         range::Position,
         token_alloc,
     };
@@ -423,7 +509,7 @@ mod tests {
         #[case] expected: Result<Module, ModuleError>,
     ) {
         assert_eq!(
-            ModuleLoader::new(LocalFsModuleResolver::default()).load("test", &program, token_arena),
+            ModuleLoader::new(DefaultModuleResolver::default()).load("test", &program, token_arena),
             expected
         );
     }
@@ -441,7 +527,7 @@ mod tests {
         #[case] module_name: &str,
         #[case] expected: Result<Module, ModuleError>,
     ) {
-        let mut loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::default());
         let result = loader.load_from_file(module_name, token_arena.clone());
         // Only check that loading does not return NotFound error and returns Some(Module)
         match expected {
@@ -465,7 +551,7 @@ mod tests {
     #[test]
     fn test_load_builtin_idempotent() {
         let token_arena = token_arena();
-        let mut loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::default());
         assert!(loader.load_builtin(Shared::clone(&token_arena)).is_ok());
         // Second call on the same loader must return AlreadyLoaded, not corrupt state.
         assert!(matches!(
@@ -478,7 +564,7 @@ mod tests {
     fn test_load_builtin_non_pristine_falls_back_to_parse() {
         // Load another module first so the arenas are no longer in their initial state.
         let token_arena = token_arena();
-        let mut loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::default());
         loader
             .load("other", "def dummy(): 1;", Shared::clone(&token_arena))
             .expect("should load other module");
@@ -498,7 +584,7 @@ mod tests {
         pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
     ) {
         let arena1 = pristine_token_arena;
-        let mut loader1 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader1 = ModuleLoader::new(DefaultModuleResolver::default());
         loader1.load_builtin(Shared::clone(&arena1)).unwrap();
         #[cfg(not(feature = "sync"))]
         let size1 = arena1.borrow().len();
@@ -514,7 +600,7 @@ mod tests {
                 module_id: Module::TOP_LEVEL_MODULE_ID,
             }),
         );
-        let mut loader2 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader2 = ModuleLoader::new(DefaultModuleResolver::default());
         loader2.load_builtin(Shared::clone(&arena2)).unwrap();
         #[cfg(not(feature = "sync"))]
         let size2 = arena2.borrow().len();
@@ -530,7 +616,7 @@ mod tests {
     fn test_load_builtin_cache_module_counts_consistent(
         pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
     ) {
-        let mut loader1 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader1 = ModuleLoader::new(DefaultModuleResolver::default());
         let module1 = loader1.load_builtin(pristine_token_arena).unwrap();
 
         let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
@@ -542,7 +628,7 @@ mod tests {
                 module_id: Module::TOP_LEVEL_MODULE_ID,
             }),
         );
-        let mut loader2 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader2 = ModuleLoader::new(DefaultModuleResolver::default());
         let module2 = loader2.load_builtin(arena2).unwrap();
 
         assert_eq!(module1.name, module2.name);
@@ -558,7 +644,7 @@ mod tests {
     fn test_load_builtin_module_registered_at_id_one(
         pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
     ) {
-        let mut loader = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::default());
         loader.load_builtin(pristine_token_arena).unwrap();
 
         assert_eq!(loader.loaded_modules.len(), 2);
@@ -571,7 +657,7 @@ mod tests {
     fn test_load_builtin_cache_tokens_have_builtin_module_id(
         pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
     ) {
-        let mut loader1 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader1 = ModuleLoader::new(DefaultModuleResolver::default());
         loader1.load_builtin(pristine_token_arena).unwrap();
 
         // Second pristine load — this is the cache-hit path.
@@ -584,7 +670,7 @@ mod tests {
                 module_id: Module::TOP_LEVEL_MODULE_ID,
             }),
         );
-        let mut loader2 = ModuleLoader::new(LocalFsModuleResolver::default());
+        let mut loader2 = ModuleLoader::new(DefaultModuleResolver::default());
         loader2.load_builtin(Shared::clone(&arena2)).unwrap();
 
         let builtin_module_id: crate::ModuleId = 1.into();
@@ -598,5 +684,77 @@ mod tests {
                 "cached builtin token must have BUILTIN_MODULE_ID"
             );
         }
+    }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case("https://example.com/foo.mq")]
+    #[case("http://example.com/foo.mq")]
+    #[case("github.com/alice/mymod")]
+    fn test_resolve_http_blocked_inside_module(#[case] url: &str) {
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::new(vec![]));
+        loader.push_http_boundary();
+        assert!(matches!(loader.resolve(url), Err(ModuleError::HttpImportNotAllowed(_))));
+    }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case("csv")]
+    #[case("local_module")]
+    fn test_resolve_non_http_not_blocked_inside_module(#[case] name: &str) {
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::new(vec![]));
+        loader.push_http_boundary();
+        assert!(!matches!(
+            loader.resolve(name),
+            Err(ModuleError::HttpImportNotAllowed(_))
+        ));
+    }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case("https://example.com/foo.mq")]
+    #[case("github.com/alice/mod")]
+    fn test_pop_http_boundary_restores_access(#[case] url: &str) {
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::new(vec![]));
+        loader.push_http_boundary();
+        assert!(matches!(loader.resolve(url), Err(ModuleError::HttpImportNotAllowed(_))));
+        loader.pop_http_boundary();
+        assert!(!matches!(
+            loader.resolve(url),
+            Err(ModuleError::HttpImportNotAllowed(_))
+        ));
+    }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case("github.com/alice/mod", 2)]
+    #[case("https://example.com/foo.mq", 3)]
+    fn test_nested_boundaries_block_until_all_popped(#[case] url: &str, #[case] depth: usize) {
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::new(vec![]));
+        for _ in 0..depth {
+            loader.push_http_boundary();
+        }
+        assert!(matches!(loader.resolve(url), Err(ModuleError::HttpImportNotAllowed(_))));
+        for _ in 0..depth - 1 {
+            loader.pop_http_boundary();
+            assert!(matches!(loader.resolve(url), Err(ModuleError::HttpImportNotAllowed(_))));
+        }
+        loader.pop_http_boundary();
+        assert!(!matches!(
+            loader.resolve(url),
+            Err(ModuleError::HttpImportNotAllowed(_))
+        ));
+    }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case("https://example.com/foo.mq")]
+    fn test_pop_at_zero_does_not_underflow(#[case] url: &str) {
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::new(vec![]));
+        loader.pop_http_boundary();
+        assert!(!matches!(
+            loader.resolve(url),
+            Err(ModuleError::HttpImportNotAllowed(_))
+        ));
     }
 }
