@@ -12,53 +12,74 @@ use rustyline::{
 };
 use std::{borrow::Cow, cell::RefCell, fs, rc::Rc};
 
-/// Highlight mq syntax with keywords and commands
+/// Highlight mq syntax with keywords and commands.
+///
+/// Collects all matches on the original string before applying any ANSI codes, then
+/// selects non-overlapping matches by priority so that later passes (e.g. operators)
+/// cannot re-match characters inside already-highlighted tokens such as strings or
+/// commands that start with `/`.
 fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
-    let mut result = line.to_string();
+    // (start, end, priority, colored_replacement) — lower priority number wins
+    let mut matches: Vec<(usize, usize, u8, String)> = Vec::new();
 
     let commands_pattern = r"^(/clear|/copy|/edit|/env|/help|/history|/quit|/load|/reset|/vars|/version)\b";
     if let Ok(re) = regex_lite::Regex::new(commands_pattern) {
-        result = re
-            .replace_all(&result, |caps: &regex_lite::Captures| {
-                caps[0].bright_green().to_string()
-            })
-            .to_string();
+        for m in re.find_iter(line) {
+            matches.push((m.start(), m.end(), 0, m.as_str().bright_green().to_string()));
+        }
+    }
+
+    if let Ok(re) = regex_lite::Regex::new(r#""([^"\\]|\\.)*""#) {
+        for m in re.find_iter(line) {
+            matches.push((m.start(), m.end(), 1, m.as_str().bright_green().to_string()));
+        }
     }
 
     let keywords_pattern = r"\b(def|let|if|elif|else|end|while|foreach|self|nodes|fn|break|continue|include|true|false|None|match|import|module|do|var|macro|quote|unquote)\b";
     if let Ok(re) = regex_lite::Regex::new(keywords_pattern) {
-        result = re
-            .replace_all(&result, |caps: &regex_lite::Captures| caps[0].bright_blue().to_string())
-            .to_string();
+        for m in re.find_iter(line) {
+            matches.push((m.start(), m.end(), 2, m.as_str().bright_blue().to_string()));
+        }
     }
 
-    // Highlight strings
-    if let Ok(re) = regex_lite::Regex::new(r#""([^"\\]|\\.)*""#) {
-        result = re
-            .replace_all(&result, |caps: &regex_lite::Captures| {
-                caps[0].bright_green().to_string()
-            })
-            .to_string();
-    }
-
-    // Highlight numbers
     if let Ok(re) = regex_lite::Regex::new(r"\b\d+\b") {
-        result = re
-            .replace_all(&result, |caps: &regex_lite::Captures| {
-                caps[0].bright_magenta().to_string()
-            })
-            .to_string();
+        for m in re.find_iter(line) {
+            matches.push((m.start(), m.end(), 3, m.as_str().bright_magenta().to_string()));
+        }
     }
 
-    // Highlight operators (after other highlighting to avoid conflicts)
     let operators_pattern =
         r"(\/\/=|<<|>>|\|\||\?\?|<=|>=|==|!=|=~|&&|\+=|-=|\*=|\/=|\|=|=|\||:|;|\?|!|\+|-|\*|\/|%|<|>|@)";
     if let Ok(re) = regex_lite::Regex::new(operators_pattern) {
-        result = re
-            .replace_all(&result, |caps: &regex_lite::Captures| {
-                caps[0].bright_yellow().to_string()
-            })
-            .to_string();
+        for m in re.find_iter(line) {
+            matches.push((m.start(), m.end(), 4, m.as_str().bright_yellow().to_string()));
+        }
+    }
+
+    // Sort by start position; ties broken by priority (lower = higher priority).
+    matches.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
+
+    // Greedily select non-overlapping matches.
+    let mut selected: Vec<(usize, usize, String)> = Vec::new();
+    let mut covered_end = 0usize;
+    for (start, end, _, replacement) in matches {
+        if start >= covered_end {
+            covered_end = end;
+            selected.push((start, end, replacement));
+        }
+    }
+
+    let mut result = String::new();
+    let mut pos = 0;
+    for (start, end, replacement) in selected {
+        if start > pos {
+            result.push_str(&line[pos..start]);
+        }
+        result.push_str(&replacement);
+        pos = end;
+    }
+    if pos < line.len() {
+        result.push_str(&line[pos..]);
     }
 
     Cow::Owned(result)
@@ -425,26 +446,53 @@ mod tests {
 
     #[test]
     fn test_highlight_mq_syntax() {
-        // Test keyword highlighting
         let result = highlight_mq_syntax("let x = 42");
         assert!(result.contains("let"));
 
-        // Test command highlighting
         let result = highlight_mq_syntax("/help");
         assert!(result.contains("help"));
 
-        // Test operator highlighting
         let result = highlight_mq_syntax("x = 1 + 2");
         assert!(result.contains("="));
         assert!(result.contains("+"));
 
-        // Test string highlighting
         let result = highlight_mq_syntax(r#""hello world""#);
         assert!(result.contains("hello world"));
 
-        // Test number highlighting
         let result = highlight_mq_syntax("42");
         assert!(result.contains("42"));
+    }
+
+    #[test]
+    fn test_highlight_string_with_slash() {
+        // The `/` inside a string literal must not be re-highlighted as an operator,
+        // which would break the ANSI codes and corrupt the display.
+        let result = highlight_mq_syntax(r#""hello/world""#);
+        assert!(
+            result.contains("hello/world"),
+            "slash inside string was broken by operator pass"
+        );
+    }
+
+    #[test]
+    fn test_highlight_command_slash_not_broken() {
+        // The leading `/` of a command must stay inside the command's color span and
+        // not be re-wrapped by the operator highlighter.
+        let result = highlight_mq_syntax("/help");
+        assert!(
+            result.contains("/help"),
+            "leading slash of command was broken by operator pass"
+        );
+    }
+
+    #[test]
+    fn test_highlight_operator_slash_outside_string() {
+        // A bare `/` that is not inside a string or command should still be highlighted.
+        let result = highlight_mq_syntax("a / b");
+        assert!(
+            result.contains("/"),
+            "bare slash operator should still appear in output"
+        );
     }
 
     #[test]
