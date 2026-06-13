@@ -1,26 +1,61 @@
-# Sample Projects
+# Community Modules
 
-The following projects are real-world examples built entirely with mq, demonstrating its expressive power for complex tasks.
+These modules extend mq with additional parsers, utilities, and domain-specific languages.
+All modules support [HTTP Import](../reference/modules_and_imports.md#http-imports) — no local installation required.
+
+```mq
+import "github.com/harehare/<module-name>"
+```
+
+## Format Parsers
+
+| Module | Description |
+|---|---|
+| [json5.mq](https://github.com/harehare/json5.mq) | [JSON5](https://json5.org) — comments, trailing commas, unquoted keys |
+| [kdl.mq](https://github.com/harehare/kdl.mq) | [KDL](https://kdl.dev) document language |
+| [ini.mq](https://github.com/harehare/ini.mq) | INI file parser and serializer |
+| [ndjson.mq](https://github.com/harehare/ndjson.mq) | [NDJSON](https://ndjson.org) / [JSON Lines](https://jsonlines.org) |
+| [logfmt.mq](https://github.com/harehare/logfmt.mq) | logfmt structured log lines (`key=value`) |
+| [cron.mq](https://github.com/harehare/cron.mq) | Cron expression parser and human-readable descriptions |
+| [jwt.mq](https://github.com/harehare/jwt.mq) | JWT decoder — inspect header and payload without verification |
+
+## Diagram & Graph
+
+| Module | Description |
+|---|---|
+| [mermaid.mq](https://github.com/harehare/mermaid.mq) | [Mermaid](https://mermaid.js.org) diagrams — flowchart, sequence, pie, class |
+| [dot.mq](https://github.com/harehare/dot.mq) | [Graphviz DOT](https://graphviz.org) — nodes, edges, attributes |
+| [graphql.mq](https://github.com/harehare/graphql.mq) | GraphQL SDL — types, enums, interfaces, unions |
+
+## DevOps & Infrastructure
+
+| Module | Description |
+|---|---|
+| [dockerfile.mq](https://github.com/harehare/dockerfile.mq) | Dockerfile instruction parser |
+
+## Terminal & Text
+
+| Module | Description |
+|---|---|
+| [ansi.mq](https://github.com/harehare/ansi.mq) | ANSI terminal escape code utilities |
+| [regex.mq](https://github.com/harehare/regex.mq) | Regular expression engine |
 
 ## Interpreters
 
-- [lisp.mq](https://github.com/harehare/lisp.mq) — A Lisp interpreter implemented in mq
-- [bf.mq](https://github.com/harehare/bf.mq) — A Brainfuck interpreter implemented in mq
+| Module | Description |
+|---|---|
+| [lisp.mq](https://github.com/harehare/lisp.mq) | Scheme-like Lisp interpreter |
+| [bf.mq](https://github.com/harehare/bf.mq) | Brainfuck interpreter |
 
-## Parsers
+## Algorithms & Functional Programming
 
-- [json5.mq](https://github.com/harehare/json5.mq) — A [JSON5](https://json5.org) parser written in mq
-- [kdl.mq](https://github.com/harehare/kdl.mq) — A [KDL](https://kdl.dev) document language parser written in mq
-- [ini.mq](https://github.com/harehare/ini.mq) — An INI file parser and serializer written in mq
-- [ndjson.mq](https://github.com/harehare/ndjson.mq) — An [NDJSON](https://ndjson.org) / [JSON Lines](https://jsonlines.org) parser written in mq
-- [ansi.mq](https://github.com/harehare/ansi.mq) — ANSI terminal escape code utilities written in mq
-- [mermaid.mq](https://github.com/harehare/mermaid.mq) — A [Mermaid](https://mermaid.js.org) diagram parser written in mq
-- [regex.mq](https://github.com/harehare/regex.mq) — A regular expression engine written in mq
-
-## Functional Programming
-
-- [monad.mq](https://github.com/harehare/monad.mq) — Monadic abstractions implemented in mq
+| Module | Description |
+|---|---|
+| [monad.mq](https://github.com/harehare/monad.mq) | Monadic abstractions |
+| [bm25.mq](https://github.com/harehare/bm25.mq) | BM25 text ranking algorithm |
 
 ## Simulations
 
-- [game-of-life.mq](https://github.com/harehare/game-of-life.mq) — Conway's Game of Life implemented in mq
+| Module | Description |
+|---|---|
+| [game-of-life.mq](https://github.com/harehare/game-of-life.mq) | Conway's Game of Life |
