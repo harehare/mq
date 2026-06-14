@@ -1269,21 +1269,13 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     "See ![icon](icon.svg) here."
 )]
 // --- <ruby> / <rt> ---
-#[case::ruby_with_rt(
-    "<ruby>漢字<rt>かんじ</rt></ruby>",
-    ConversionOptions::default(),
-    "漢字(かんじ)"
-)]
+#[case::ruby_with_rt("<ruby>漢字<rt>かんじ</rt></ruby>", ConversionOptions::default(), "漢字(かんじ)")]
 #[case::ruby_in_paragraph(
     "<p>This is <ruby>漢字<rt>かんじ</rt></ruby>.</p>",
     ConversionOptions::default(),
     "This is 漢字(かんじ)."
 )]
-#[case::ruby_no_rt(
-    "<ruby>漢字</ruby>",
-    ConversionOptions::default(),
-    "漢字"
-)]
+#[case::ruby_no_rt("<ruby>漢字</ruby>", ConversionOptions::default(), "漢字")]
 #[case::ruby_with_rp(
     "<ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>",
     ConversionOptions::default(),
@@ -1421,21 +1413,9 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     "[My Embed](https://example.com/embed \"My Embed\")"
 )]
 // --- Unicode whitespace normalization ---
-#[case::nbsp_in_paragraph(
-    "<p>text\u{00A0}content</p>",
-    ConversionOptions::default(),
-    "text content"
-)]
-#[case::narrow_nbsp_in_paragraph(
-    "<p>text\u{202F}content</p>",
-    ConversionOptions::default(),
-    "text content"
-)]
-#[case::thin_space_in_paragraph(
-    "<p>text\u{2009}content</p>",
-    ConversionOptions::default(),
-    "text content"
-)]
+#[case::nbsp_in_paragraph("<p>text\u{00A0}content</p>", ConversionOptions::default(), "text content")]
+#[case::narrow_nbsp_in_paragraph("<p>text\u{202F}content</p>", ConversionOptions::default(), "text content")]
+#[case::thin_space_in_paragraph("<p>text\u{2009}content</p>", ConversionOptions::default(), "text content")]
 // --- <details> / <summary> ---
 #[case::details_with_summary(
     "<details><summary>Summary Title</summary><p>Content here.</p></details>",
@@ -1452,62 +1432,22 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "Content"
 )]
-#[case::summary_standalone(
-    "<summary>Standalone</summary>",
-    ConversionOptions::default(),
-    "**Standalone**"
-)]
+#[case::summary_standalone("<summary>Standalone</summary>", ConversionOptions::default(), "**Standalone**")]
 // --- <sub> / <sup> ---
-#[case::sub_in_paragraph(
-    "<p>H<sub>2</sub>O</p>",
-    ConversionOptions::default(),
-    "H<sub>2</sub>O"
-)]
-#[case::sup_in_paragraph(
-    "<p>x<sup>2</sup></p>",
-    ConversionOptions::default(),
-    "x<sup>2</sup>"
-)]
-#[case::sub_standalone(
-    "<sub>2</sub>",
-    ConversionOptions::default(),
-    "<sub>2</sub>"
-)]
-#[case::sup_standalone(
-    "<sup>th</sup>",
-    ConversionOptions::default(),
-    "<sup>th</sup>"
-)]
+#[case::sub_in_paragraph("<p>H<sub>2</sub>O</p>", ConversionOptions::default(), "H<sub>2</sub>O")]
+#[case::sup_in_paragraph("<p>x<sup>2</sup></p>", ConversionOptions::default(), "x<sup>2</sup>")]
+#[case::sub_standalone("<sub>2</sub>", ConversionOptions::default(), "<sub>2</sub>")]
+#[case::sup_standalone("<sup>th</sup>", ConversionOptions::default(), "<sup>th</sup>")]
 #[case::sub_empty("<sub></sub>", ConversionOptions::default(), "<sub></sub>")]
 #[case::sup_empty("<sup></sup>", ConversionOptions::default(), "<sup></sup>")]
 // --- <q> ---
-#[case::q_in_paragraph(
-    "<p>He said <q>hello</q>.</p>",
-    ConversionOptions::default(),
-    "He said \"hello\"."
-)]
-#[case::q_standalone(
-    "<q>quoted text</q>",
-    ConversionOptions::default(),
-    "\"quoted text\""
-)]
+#[case::q_in_paragraph("<p>He said <q>hello</q>.</p>", ConversionOptions::default(), "He said \"hello\".")]
+#[case::q_standalone("<q>quoted text</q>", ConversionOptions::default(), "\"quoted text\"")]
 // --- <cite> ---
-#[case::cite_in_paragraph(
-    "<p>Read <cite>Hamlet</cite>.</p>",
-    ConversionOptions::default(),
-    "Read *Hamlet*."
-)]
-#[case::cite_standalone(
-    "<cite>Source Title</cite>",
-    ConversionOptions::default(),
-    "*Source Title*"
-)]
+#[case::cite_in_paragraph("<p>Read <cite>Hamlet</cite>.</p>", ConversionOptions::default(), "Read *Hamlet*.")]
+#[case::cite_standalone("<cite>Source Title</cite>", ConversionOptions::default(), "*Source Title*")]
 // --- <ins> ---
-#[case::ins_standalone(
-    "<ins>inserted text</ins>",
-    ConversionOptions::default(),
-    "inserted text"
-)]
+#[case::ins_standalone("<ins>inserted text</ins>", ConversionOptions::default(), "inserted text")]
 #[case::ins_in_paragraph(
     "<p>This was <ins>added</ins> here.</p>",
     ConversionOptions::default(),
@@ -1519,11 +1459,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "This is <mark>highlighted</mark>."
 )]
-#[case::mark_standalone(
-    "<mark>important</mark>",
-    ConversionOptions::default(),
-    "<mark>important</mark>"
-)]
+#[case::mark_standalone("<mark>important</mark>", ConversionOptions::default(), "<mark>important</mark>")]
 // --- <figure> / <figcaption> ---
 #[case::figure_with_img_and_caption(
     "<figure><img src=\"photo.jpg\" alt=\"A photo\"><figcaption>Caption here</figcaption></figure>",

@@ -32,10 +32,7 @@ fn extract_text_from_pre_children(nodes: &[HtmlNode]) -> String {
 }
 
 fn normalize_unicode_whitespace(text: &str) -> String {
-    if text
-        .chars()
-        .any(|c| matches!(c, '\u{00A0}' | '\u{202F}' | '\u{2009}'))
-    {
+    if text.chars().any(|c| matches!(c, '\u{00A0}' | '\u{202F}' | '\u{2009}')) {
         text.chars()
             .map(|c| match c {
                 '\u{00A0}' | '\u{202F}' | '\u{2009}' => ' ',
@@ -779,18 +776,35 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                         }
                     }
                     "svg" => markdown_blocks.push((handle_svg_element(element)?, false)),
-                    "strong" | "em" | "a" | "code" | "span" | "img" | "br" | "input" | "s" | "strike" | "del"
-                    | "kbd" | "sub" | "sup" | "q" | "cite" | "mark" | "abbr" | "picture" | "ruby"
-                    | "dfn" | "time" | "small" | "bdi" => {
+                    "a" => {
+                        // <a> without href is used as a transparent section container in some HTML.
+                        // Treat it as a block pass-through in that case so block children are preserved.
+                        if element.attributes.get("href").and_then(|v| v.as_deref()).is_some() {
+                            let inline_md = convert_children_to_string(&[HtmlNode::Element(element.clone())])?;
+                            if !inline_md.is_empty() {
+                                markdown_blocks.push((inline_md.trim().to_string(), true));
+                            }
+                        } else {
+                            let block_md = convert_nodes_to_markdown(&element.children, options)?;
+                            if !block_md.is_empty() {
+                                markdown_blocks.push((block_md, false));
+                            }
+                        }
+                    }
+                    "strong" | "em" | "code" | "span" | "img" | "br" | "input" | "s" | "strike" | "del" | "kbd"
+                    | "sub" | "sup" | "q" | "cite" | "mark" | "abbr" | "picture" | "ruby" | "dfn" | "time"
+                    | "small" | "bdi" => {
                         let inline_md = convert_children_to_string(&[HtmlNode::Element(element.clone())])?;
                         if !inline_md.is_empty() {
                             markdown_blocks.push((inline_md.trim().to_string(), true));
                         }
                     }
                     _ => {
-                        let children_content_str = convert_children_to_string(&element.children)?;
-                        if !children_content_str.is_empty() {
-                            markdown_blocks.push((children_content_str, false));
+                        // Unknown/custom elements (e.g. <astro-island>, <button>, web components):
+                        // recurse as blocks so any block-level children are preserved correctly.
+                        let block_md = convert_nodes_to_markdown(&element.children, options)?;
+                        if !block_md.is_empty() {
+                            markdown_blocks.push((block_md, false));
                         }
                     }
                 }

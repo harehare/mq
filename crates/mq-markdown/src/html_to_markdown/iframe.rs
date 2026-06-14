@@ -18,9 +18,7 @@ pub(super) fn detect_embed(src: &str) -> Option<(String, String)> {
 fn path_segment_after<'a>(src: &'a str, needle: &str) -> Option<&'a str> {
     let start = src.find(needle).map(|i| i + needle.len())?;
     let rest = &src[start..];
-    let end = rest
-        .find(['/', '?', '#'])
-        .unwrap_or(rest.len());
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let segment = &rest[..end];
     if segment.is_empty() { None } else { Some(segment) }
 }
@@ -54,10 +52,7 @@ fn detect_vimeo(src: &str) -> Option<(String, String)> {
         return None;
     }
     let video_id = path_segment_after(src, "/video/")?;
-    Some((
-        "Vimeo Video".to_string(),
-        format!("https://vimeo.com/{}", video_id),
-    ))
+    Some(("Vimeo Video".to_string(), format!("https://vimeo.com/{}", video_id)))
 }
 
 fn detect_instagram(src: &str) -> Option<(String, String)> {
@@ -100,10 +95,7 @@ fn detect_twitch(src: &str) -> Option<(String, String)> {
     if src.contains("clips.twitch.tv")
         && let Some(clip) = query_param(src, "clip")
     {
-        return Some((
-            "Twitch Clip".to_string(),
-            format!("https://clips.twitch.tv/{}", clip),
-        ));
+        return Some(("Twitch Clip".to_string(), format!("https://clips.twitch.tv/{}", clip)));
     }
     None
 }
@@ -123,10 +115,7 @@ fn detect_spotify(src: &str) -> Option<(String, String)> {
         "show" => "Spotify Podcast",
         _ => "Spotify",
     };
-    Some((
-        label.to_string(),
-        format!("https://open.spotify.com/{}/{}", kind, id),
-    ))
+    Some((label.to_string(), format!("https://open.spotify.com/{}/{}", kind, id)))
 }
 
 fn detect_vk(src: &str) -> Option<(String, String)> {
@@ -135,10 +124,7 @@ fn detect_vk(src: &str) -> Option<(String, String)> {
     }
     let oid = query_param(src, "oid")?;
     let vid = query_param(src, "id")?;
-    Some((
-        "VK Video".to_string(),
-        format!("https://vk.com/video{}_{}", oid, vid),
-    ))
+    Some(("VK Video".to_string(), format!("https://vk.com/video{}_{}", oid, vid)))
 }
 
 fn detect_google_docs(src: &str) -> Option<(String, String)> {
@@ -191,10 +177,7 @@ mod tests {
     #[case("https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms/htmlview", Some(("Google Sheets", "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms/")))]
     #[case("https://example.com/embed/video/abc", None)]
     #[case("https://www.youtube.com/watch?v=dQw4w9WgXcQ", None)]
-    fn test_detect_embed(
-        #[case] src: &str,
-        #[case] expected: Option<(&str, &str)>,
-    ) {
+    fn test_detect_embed(#[case] src: &str, #[case] expected: Option<(&str, &str)>) {
         let result = detect_embed(src);
         match (result, expected) {
             (Some((desc, url)), Some((exp_desc, exp_url))) => {
