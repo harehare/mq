@@ -338,6 +338,10 @@ impl WasmModuleResolver {
 
 impl mq_lang::ModuleResolver for WasmModuleResolver {
     fn resolve(&self, module_name: &str) -> Result<String, mq_lang::ModuleError> {
+        if let Some(content_fn) = mq_lang::STANDARD_MODULES.get(module_name) {
+            return Ok(content_fn().to_string());
+        }
+
         #[cfg(feature = "opfs")]
         return self.cache.borrow().get(module_name).cloned().ok_or_else(|| {
             mq_lang::ModuleError::NotFound(std::borrow::Cow::Owned(format!(
