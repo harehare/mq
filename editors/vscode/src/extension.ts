@@ -704,7 +704,7 @@ function downloadFile(url: string, dest: string): Promise<void> {
 
     const request = (targetUrl: string) => {
       https
-        .get(targetUrl, (response) => {
+        .get(targetUrl, (response: import("http").IncomingMessage) => {
           if (
             response.statusCode === 301 ||
             response.statusCode === 302 ||
@@ -733,7 +733,7 @@ function downloadFile(url: string, dest: string): Promise<void> {
             resolve();
           });
         })
-        .on("error", (err) => {
+        .on("error", (err: Error) => {
           file.close();
           fs.unlink(dest, () => {});
           reject(err);
