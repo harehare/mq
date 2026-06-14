@@ -3623,7 +3623,7 @@ mod tests {
             ast_call("floor", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Number((-43).into())]))]
-    #[case::floor_erro(vec!["42.9".to_string().into()],
+    #[case::floor_error(vec!["42.9".to_string().into()],
         vec![
             ast_call("floor", SmallVec::new())
         ],

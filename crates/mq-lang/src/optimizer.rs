@@ -2374,7 +2374,7 @@ mod tests {
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
                 matches!(&*prog[0].expr, Expr::Call(..)),
-                "{level:?}: unparseable to_number must stay as Call, got {:?}",
+                "{level:?}: unparsable to_number must stay as Call, got {:?}",
                 prog[0].expr
             );
         }
