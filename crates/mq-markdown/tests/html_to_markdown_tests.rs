@@ -563,7 +563,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::dl_with_inline_elements(
     "<dl><dt><strong>Term</strong></dt><dd><em>Definition</em></dd></dl>",
     ConversionOptions::default(),
-    "****Term****\n  *Definition*"
+    "**Term**\n  *Definition*"
 )]
 #[case::dl_dd_with_paragraph(
     "<dl><dt>Term</dt><dd><p>Paragraph in definition.</p></dd></dl>",
@@ -1209,6 +1209,337 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     "> Q\n\nP"
 )]
 #[case::pre_spacing("<pre>code</pre><p>P</p>", ConversionOptions::default(), "```\ncode\n```\n\nP")]
+// --- <dt> double-bold fix ---
+#[case::dl_dt_with_strong_no_double_bold(
+    "<dl><dt><strong>Term</strong></dt><dd>Definition</dd></dl>",
+    ConversionOptions::default(),
+    "**Term**\n  Definition"
+)]
+#[case::dl_dt_with_em_wraps_in_bold(
+    "<dl><dt><em>italic term</em></dt><dd>Definition</dd></dl>",
+    ConversionOptions::default(),
+    "***italic term***\n  Definition"
+)]
+// --- <table> <caption> ---
+#[case::table_with_caption(
+    "<table><caption>Monthly Sales</caption><thead><tr><th>Month</th><th>Amount</th></tr></thead><tbody><tr><td>Jan</td><td>100</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "Monthly Sales\n\n| Month | Amount |\n|---|---|\n| Jan | 100 |"
+)]
+#[case::table_with_caption_inline_elements(
+    "<table><caption><strong>Bold</strong> Caption</caption><thead><tr><th>H</th></tr></thead><tbody><tr><td>C</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "**Bold** Caption\n\n| H |\n|---|\n| C |"
+)]
+#[case::table_without_caption_unchanged(
+    "<table><thead><tr><th>H</th></tr></thead><tbody><tr><td>C</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| C |"
+)]
+// --- <abbr> ---
+#[case::abbr_with_title(
+    "<p>The <abbr title=\"HyperText Markup Language\">HTML</abbr> standard.</p>",
+    ConversionOptions::default(),
+    "The HTML (HyperText Markup Language) standard."
+)]
+#[case::abbr_without_title(
+    "<p>Use <abbr>CSS</abbr> for styling.</p>",
+    ConversionOptions::default(),
+    "Use CSS for styling."
+)]
+#[case::abbr_standalone(
+    "<abbr title=\"Cascading Style Sheets\">CSS</abbr>",
+    ConversionOptions::default(),
+    "CSS (Cascading Style Sheets)"
+)]
+// --- <picture> ---
+#[case::picture_with_source_and_img(
+    "<picture><source srcset=\"img.webp\" type=\"image/webp\"><img src=\"img.png\" alt=\"A photo\"></picture>",
+    ConversionOptions::default(),
+    "![A photo](img.png)"
+)]
+#[case::picture_img_only(
+    "<picture><img src=\"photo.jpg\" alt=\"Landscape\"></picture>",
+    ConversionOptions::default(),
+    "![Landscape](photo.jpg)"
+)]
+#[case::picture_in_paragraph(
+    "<p>See <picture><img src=\"icon.svg\" alt=\"icon\"></picture> here.</p>",
+    ConversionOptions::default(),
+    "See ![icon](icon.svg) here."
+)]
+// --- <ruby> / <rt> ---
+#[case::ruby_with_rt(
+    "<ruby>漢字<rt>かんじ</rt></ruby>",
+    ConversionOptions::default(),
+    "漢字(かんじ)"
+)]
+#[case::ruby_in_paragraph(
+    "<p>This is <ruby>漢字<rt>かんじ</rt></ruby>.</p>",
+    ConversionOptions::default(),
+    "This is 漢字(かんじ)."
+)]
+#[case::ruby_no_rt(
+    "<ruby>漢字</ruby>",
+    ConversionOptions::default(),
+    "漢字"
+)]
+#[case::ruby_with_rp(
+    "<ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>",
+    ConversionOptions::default(),
+    "漢字(かんじ)"
+)]
+// --- <time> ---
+#[case::time_with_datetime(
+    "<time datetime=\"2024-01-01\">January 1, 2024</time>",
+    ConversionOptions::default(),
+    "January 1, 2024"
+)]
+#[case::time_in_paragraph(
+    "<p>Published on <time datetime=\"2024-06-14\">June 14, 2024</time>.</p>",
+    ConversionOptions::default(),
+    "Published on June 14, 2024."
+)]
+// --- <small> ---
+#[case::small_in_paragraph(
+    "<p>Normal text <small>fine print</small>.</p>",
+    ConversionOptions::default(),
+    "Normal text fine print."
+)]
+// --- <address> ---
+#[case::address_block(
+    "<address>John Doe, 123 Main St, Springfield</address>",
+    ConversionOptions::default(),
+    "*John Doe, 123 Main St, Springfield*"
+)]
+#[case::address_with_links(
+    "<address>Contact: <a href=\"mailto:test@example.com\">test@example.com</a></address>",
+    ConversionOptions::default(),
+    "*Contact: [test@example.com](mailto:test@example.com)*"
+)]
+// --- <dfn> ---
+#[case::dfn_in_paragraph(
+    "<p>The term <dfn>Markdown</dfn> refers to a markup language.</p>",
+    ConversionOptions::default(),
+    "The term *Markdown* refers to a markup language."
+)]
+// --- <bdi> ---
+#[case::bdi_in_paragraph(
+    "<p>Hello <bdi>مرحبا</bdi> world.</p>",
+    ConversionOptions::default(),
+    "Hello مرحبا world."
+)]
+// --- iframe platform detection ---
+#[case::iframe_youtube(
+    "<iframe src=\"https://www.youtube.com/embed/dQw4w9WgXcQ\"></iframe>",
+    ConversionOptions::default(),
+    "[YouTube Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)"
+)]
+#[case::iframe_youtube_with_params(
+    "<iframe src=\"https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1\"></iframe>",
+    ConversionOptions::default(),
+    "[YouTube Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)"
+)]
+#[case::iframe_youtube_nocookie(
+    "<iframe src=\"https://www.youtube-nocookie.com/embed/abc123XYZ\"></iframe>",
+    ConversionOptions::default(),
+    "[YouTube Video](https://www.youtube.com/watch?v=abc123XYZ)"
+)]
+#[case::iframe_vimeo(
+    "<iframe src=\"https://player.vimeo.com/video/123456789\"></iframe>",
+    ConversionOptions::default(),
+    "[Vimeo Video](https://vimeo.com/123456789)"
+)]
+#[case::iframe_vimeo_with_hash(
+    "<iframe src=\"https://player.vimeo.com/video/987654321?h=abcdef&badge=0\"></iframe>",
+    ConversionOptions::default(),
+    "[Vimeo Video](https://vimeo.com/987654321)"
+)]
+#[case::iframe_instagram(
+    "<iframe src=\"https://www.instagram.com/p/B1BKr9Wo8YX/embed/\"></iframe>",
+    ConversionOptions::default(),
+    "[Instagram Post](https://www.instagram.com/p/B1BKr9Wo8YX/)"
+)]
+#[case::iframe_dailymotion(
+    "<iframe src=\"https://www.dailymotion.com/embed/video/x7zflst\"></iframe>",
+    ConversionOptions::default(),
+    "[Dailymotion Video](https://www.dailymotion.com/video/x7zflst)"
+)]
+#[case::iframe_twitch_channel(
+    "<iframe src=\"https://player.twitch.tv/?channel=monstercat&parent=example.com\"></iframe>",
+    ConversionOptions::default(),
+    "[Twitch Stream](https://www.twitch.tv/monstercat)"
+)]
+#[case::iframe_twitch_video(
+    "<iframe src=\"https://player.twitch.tv/?video=v123456789&parent=example.com\"></iframe>",
+    ConversionOptions::default(),
+    "[Twitch Video](https://www.twitch.tv/videos/v123456789)"
+)]
+#[case::iframe_twitch_clip(
+    "<iframe src=\"https://clips.twitch.tv/embed?clip=FuriousObliqueDonutDansGame\"></iframe>",
+    ConversionOptions::default(),
+    "[Twitch Clip](https://clips.twitch.tv/FuriousObliqueDonutDansGame)"
+)]
+#[case::iframe_spotify_track(
+    "<iframe src=\"https://open.spotify.com/embed/track/4iV5W9uYEdYUVa79Axb7Rh\"></iframe>",
+    ConversionOptions::default(),
+    "[Spotify Track](https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh)"
+)]
+#[case::iframe_spotify_playlist(
+    "<iframe src=\"https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M\"></iframe>",
+    ConversionOptions::default(),
+    "[Spotify Playlist](https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M)"
+)]
+#[case::iframe_spotify_episode(
+    "<iframe src=\"https://open.spotify.com/embed/episode/64Q5MbCIFuuEaCf6fxJblG\"></iframe>",
+    ConversionOptions::default(),
+    "[Spotify Episode](https://open.spotify.com/episode/64Q5MbCIFuuEaCf6fxJblG)"
+)]
+#[case::iframe_vk_video(
+    "<iframe src=\"https://vk.com/video_ext.php?oid=-49423435&id=456245092&hash=e1611aefe899c4f8\"></iframe>",
+    ConversionOptions::default(),
+    "[VK Video](https://vk.com/video-49423435_456245092)"
+)]
+#[case::iframe_google_slides(
+    "<iframe src=\"https://docs.google.com/presentation/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms/embed\"></iframe>",
+    ConversionOptions::default(),
+    "[Google Slides](https://docs.google.com/presentation/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms/)"
+)]
+#[case::iframe_google_docs(
+    "<iframe src=\"https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms/preview\"></iframe>",
+    ConversionOptions::default(),
+    "[Google Docs](https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms/)"
+)]
+#[case::iframe_google_sheets(
+    "<iframe src=\"https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms/htmlview\"></iframe>",
+    ConversionOptions::default(),
+    "[Google Sheets](https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms/)"
+)]
+#[case::iframe_unknown_falls_back_to_title(
+    "<iframe src=\"https://example.com/embed\" title=\"My Embed\"></iframe>",
+    ConversionOptions::default(),
+    "[My Embed](https://example.com/embed \"My Embed\")"
+)]
+// --- Unicode whitespace normalization ---
+#[case::nbsp_in_paragraph(
+    "<p>text\u{00A0}content</p>",
+    ConversionOptions::default(),
+    "text content"
+)]
+#[case::narrow_nbsp_in_paragraph(
+    "<p>text\u{202F}content</p>",
+    ConversionOptions::default(),
+    "text content"
+)]
+#[case::thin_space_in_paragraph(
+    "<p>text\u{2009}content</p>",
+    ConversionOptions::default(),
+    "text content"
+)]
+// --- <details> / <summary> ---
+#[case::details_with_summary(
+    "<details><summary>Summary Title</summary><p>Content here.</p></details>",
+    ConversionOptions::default(),
+    "**Summary Title**\n\nContent here."
+)]
+#[case::details_without_summary(
+    "<details><p>Content only</p></details>",
+    ConversionOptions::default(),
+    "Content only"
+)]
+#[case::details_summary_empty(
+    "<details><summary></summary><p>Content</p></details>",
+    ConversionOptions::default(),
+    "Content"
+)]
+#[case::summary_standalone(
+    "<summary>Standalone</summary>",
+    ConversionOptions::default(),
+    "**Standalone**"
+)]
+// --- <sub> / <sup> ---
+#[case::sub_in_paragraph(
+    "<p>H<sub>2</sub>O</p>",
+    ConversionOptions::default(),
+    "H<sub>2</sub>O"
+)]
+#[case::sup_in_paragraph(
+    "<p>x<sup>2</sup></p>",
+    ConversionOptions::default(),
+    "x<sup>2</sup>"
+)]
+#[case::sub_standalone(
+    "<sub>2</sub>",
+    ConversionOptions::default(),
+    "<sub>2</sub>"
+)]
+#[case::sup_standalone(
+    "<sup>th</sup>",
+    ConversionOptions::default(),
+    "<sup>th</sup>"
+)]
+#[case::sub_empty("<sub></sub>", ConversionOptions::default(), "<sub></sub>")]
+#[case::sup_empty("<sup></sup>", ConversionOptions::default(), "<sup></sup>")]
+// --- <q> ---
+#[case::q_in_paragraph(
+    "<p>He said <q>hello</q>.</p>",
+    ConversionOptions::default(),
+    "He said \"hello\"."
+)]
+#[case::q_standalone(
+    "<q>quoted text</q>",
+    ConversionOptions::default(),
+    "\"quoted text\""
+)]
+// --- <cite> ---
+#[case::cite_in_paragraph(
+    "<p>Read <cite>Hamlet</cite>.</p>",
+    ConversionOptions::default(),
+    "Read *Hamlet*."
+)]
+#[case::cite_standalone(
+    "<cite>Source Title</cite>",
+    ConversionOptions::default(),
+    "*Source Title*"
+)]
+// --- <ins> ---
+#[case::ins_standalone(
+    "<ins>inserted text</ins>",
+    ConversionOptions::default(),
+    "inserted text"
+)]
+#[case::ins_in_paragraph(
+    "<p>This was <ins>added</ins> here.</p>",
+    ConversionOptions::default(),
+    "This was added here."
+)]
+// --- <mark> ---
+#[case::mark_in_paragraph(
+    "<p>This is <mark>highlighted</mark>.</p>",
+    ConversionOptions::default(),
+    "This is <mark>highlighted</mark>."
+)]
+#[case::mark_standalone(
+    "<mark>important</mark>",
+    ConversionOptions::default(),
+    "<mark>important</mark>"
+)]
+// --- <figure> / <figcaption> ---
+#[case::figure_with_img_and_caption(
+    "<figure><img src=\"photo.jpg\" alt=\"A photo\"><figcaption>Caption here</figcaption></figure>",
+    ConversionOptions::default(),
+    "![A photo](photo.jpg)\n\nCaption here"
+)]
+#[case::figure_img_only(
+    "<figure><img src=\"photo.jpg\" alt=\"A photo\"></figure>",
+    ConversionOptions::default(),
+    "![A photo](photo.jpg)"
+)]
+#[case::figcaption_standalone(
+    "<figcaption>Just a caption</figcaption>",
+    ConversionOptions::default(),
+    "Just a caption"
+)]
 fn test_html_to_markdown(#[case] html: &str, #[case] options: ConversionOptions, #[case] expected: &str) {
     assert_conversion_with_options(html, expected, options);
 }

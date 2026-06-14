@@ -1,5 +1,6 @@
 #![cfg(feature = "html-to-markdown")]
 pub mod converter;
+mod iframe;
 pub mod node;
 pub mod options;
 pub mod parser;

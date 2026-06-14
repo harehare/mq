@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use miette::miette;
 
+use super::iframe::detect_embed;
 use super::node::HtmlElement;
 use super::node::HtmlNode;
 use super::options::ConversionOptions;
@@ -28,6 +29,22 @@ fn extract_text_from_pre_children(nodes: &[HtmlNode]) -> String {
         }
     }
     text_content
+}
+
+fn normalize_unicode_whitespace(text: &str) -> String {
+    if text
+        .chars()
+        .any(|c| matches!(c, '\u{00A0}' | '\u{202F}' | '\u{2009}'))
+    {
+        text.chars()
+            .map(|c| match c {
+                '\u{00A0}' | '\u{202F}' | '\u{2009}' => ' ',
+                _ => c,
+            })
+            .collect()
+    } else {
+        text.to_owned()
+    }
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -68,6 +85,20 @@ fn escape_table_cell_content(content: &str) -> String {
 }
 
 fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result<String> {
+    let mut caption_text: Option<String> = None;
+    for node in &table_element.children {
+        if let HtmlNode::Element(el) = node
+            && el.tag_name == "caption"
+        {
+            let text = convert_children_to_string(&el.children)?;
+            let trimmed = text.trim().to_string();
+            if !trimmed.is_empty() {
+                caption_text = Some(trimmed);
+            }
+            break;
+        }
+    }
+
     let mut header_cells: Vec<String> = Vec::new();
     let mut header_alignments: Vec<Alignment> = Vec::new();
     let mut body_rows: Vec<Vec<String>> = Vec::new();
@@ -188,7 +219,12 @@ fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result
         }
         markdown_table.push_str(" |\n");
     }
-    Ok(markdown_table.trim_end_matches('\n').to_string())
+    let table_md = markdown_table.trim_end_matches('\n').to_string();
+    if let Some(caption) = caption_text {
+        Ok(format!("{}\n\n{}", caption, table_md))
+    } else {
+        Ok(table_md)
+    }
 }
 
 fn process_url_for_markdown(url: &str) -> String {
@@ -271,7 +307,14 @@ fn handle_dl_element(element: &HtmlElement, options: ConversionOptions) -> miett
         match child_node {
             HtmlNode::Element(dt_el) if dt_el.tag_name == "dt" => {
                 let dt_text = convert_children_to_string(&dt_el.children)?;
-                dl_content_parts.push(format!("**{}**", dt_text.trim()));
+                let dt_trimmed = dt_text.trim();
+                // Avoid double-bold when <dt> already contains <strong>
+                let dt_formatted = if dt_trimmed.starts_with("**") && dt_trimmed.ends_with("**") {
+                    dt_trimmed.to_string()
+                } else {
+                    format!("**{}**", dt_trimmed)
+                };
+                dl_content_parts.push(dt_formatted);
             }
             HtmlNode::Element(dd_el) if dd_el.tag_name == "dd" => {
                 let dd_markdown_block = convert_nodes_to_markdown(&dd_el.children, options)?;
@@ -332,7 +375,16 @@ fn handle_embedded_content_element(element: &HtmlElement) -> miette::Result<Opti
     let mut src_url: Option<String> = None;
     let mut additional_info = String::new();
     match tag_name {
-        "iframe" | "embed" => src_url = element.attributes.get("src").and_then(|opt| opt.as_ref().cloned()),
+        "iframe" => {
+            let src = element.attributes.get("src").and_then(|opt| opt.as_ref().cloned());
+            if let Some(ref s) = src
+                && let Some((description, canonical_url)) = detect_embed(s)
+            {
+                return Ok(Some(format!("[{}]({})", description, canonical_url)));
+            }
+            src_url = src;
+        }
+        "embed" => src_url = element.attributes.get("src").and_then(|opt| opt.as_ref().cloned()),
         "video" | "audio" => {
             src_url = element.attributes.get("src").and_then(|opt| opt.as_ref().cloned());
             if src_url.is_none() {
@@ -469,19 +521,19 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
     for node in nodes {
         match node {
             HtmlNode::Text(text) => {
-                let trimmed = text.trim_start_matches('\n').trim_end_matches('\n');
-                let trimmed = if trimmed.starts_with(" ") {
+                let normalized = normalize_unicode_whitespace(text);
+                let trimmed = normalized.trim_start_matches('\n').trim_end_matches('\n');
+                let trimmed = if trimmed.starts_with(' ') {
                     format!(" {}", trimmed.trim_start())
                 } else {
                     trimmed.to_owned()
                 };
-                let trimmed = if trimmed.ends_with(" ") {
+                let trimmed = if trimmed.ends_with(' ') {
                     format!("{} ", trimmed.trim_end())
                 } else {
-                    trimmed.to_owned()
+                    trimmed
                 };
-
-                parts.push(trimmed.to_string());
+                parts.push(trimmed);
             }
             HtmlNode::Element(element) => {
                 let link_text = convert_children_to_string(&element.children)?;
@@ -573,6 +625,75 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                     "u" => {
                         parts.push(format!("<u>{}</u>", link_text));
                     }
+                    "sub" => parts.push(format!("<sub>{}</sub>", link_text)),
+                    "sup" => parts.push(format!("<sup>{}</sup>", link_text)),
+                    "q" => {
+                        if !link_text.is_empty() {
+                            parts.push(format!("\"{}\"", link_text));
+                        }
+                    }
+                    "cite" => {
+                        if !link_text.is_empty() {
+                            parts.push(format!("*{}*", link_text));
+                        }
+                    }
+                    "ins" => {
+                        if !link_text.is_empty() {
+                            parts.push(link_text);
+                        }
+                    }
+                    "mark" => parts.push(format!("<mark>{}</mark>", link_text)),
+                    "summary" => {
+                        if !link_text.is_empty() {
+                            parts.push(format!("**{}**", link_text));
+                        }
+                    }
+                    "abbr" => {
+                        if !link_text.is_empty() {
+                            if let Some(Some(title)) = element.attributes.get("title")
+                                && !title.is_empty()
+                            {
+                                parts.push(format!("{} ({})", link_text, title));
+                            } else {
+                                parts.push(link_text);
+                            }
+                        }
+                    }
+                    "picture" => parts.push(link_text),
+                    "ruby" => {
+                        let mut base = String::new();
+                        let mut annotation = String::new();
+                        for child in &element.children {
+                            match child {
+                                HtmlNode::Text(t) => base.push_str(t),
+                                HtmlNode::Element(el) if el.tag_name == "rt" => {
+                                    annotation.push_str(&convert_children_to_string(&el.children)?);
+                                }
+                                HtmlNode::Element(el) if el.tag_name == "rp" => {}
+                                HtmlNode::Element(el) => {
+                                    base.push_str(&convert_children_to_string(&el.children)?);
+                                }
+                                HtmlNode::Comment(_) => {}
+                            }
+                        }
+                        let base = base.trim();
+                        let annotation = annotation.trim();
+                        if !annotation.is_empty() {
+                            parts.push(format!("{}({})", base, annotation));
+                        } else if !base.is_empty() {
+                            parts.push(base.to_string());
+                        }
+                    }
+                    "dfn" => {
+                        if !link_text.is_empty() {
+                            parts.push(format!("*{}*", link_text));
+                        }
+                    }
+                    "time" | "small" | "bdi" => {
+                        if !link_text.is_empty() {
+                            parts.push(link_text);
+                        }
+                    }
                     "span" => parts.push(link_text),
                     "nav" | "aside" | "noscript" => {} // skip
                     _ => parts.push(link_text),
@@ -601,7 +722,7 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                         // Skip navigational/sidebar/noscript noise entirely
                     }
                     "html" | "head" | "header" | "footer" | "body" | "div" | "main" | "article" | "section"
-                    | "hgroup" => {
+                    | "hgroup" | "details" | "figure" => {
                         let markdown_block = convert_nodes_to_markdown(&element.children, options)?;
 
                         if !markdown_block.is_empty() {
@@ -628,6 +749,24 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                             markdown_blocks.push((dl_md, false));
                         }
                     }
+                    "summary" => {
+                        let summary_text = convert_children_to_string(&element.children)?;
+                        if !summary_text.is_empty() {
+                            markdown_blocks.push((format!("**{}**", summary_text.trim()), false));
+                        }
+                    }
+                    "figcaption" => {
+                        let caption = handle_paragraph_element(element)?;
+                        if !caption.is_empty() {
+                            markdown_blocks.push((caption, false));
+                        }
+                    }
+                    "address" => {
+                        let content = convert_children_to_string(&element.children)?;
+                        if !content.is_empty() {
+                            markdown_blocks.push((format!("*{}*", content.trim()), false));
+                        }
+                    }
                     "script" => {
                         if let Some(script_md) = handle_script_element(element, options)? {
                             markdown_blocks.push((script_md, false));
@@ -641,7 +780,8 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                     }
                     "svg" => markdown_blocks.push((handle_svg_element(element)?, false)),
                     "strong" | "em" | "a" | "code" | "span" | "img" | "br" | "input" | "s" | "strike" | "del"
-                    | "kbd" => {
+                    | "kbd" | "sub" | "sup" | "q" | "cite" | "mark" | "abbr" | "picture" | "ruby"
+                    | "dfn" | "time" | "small" | "bdi" => {
                         let inline_md = convert_children_to_string(&[HtmlNode::Element(element.clone())])?;
                         if !inline_md.is_empty() {
                             markdown_blocks.push((inline_md.trim().to_string(), true));
