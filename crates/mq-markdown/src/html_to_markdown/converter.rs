@@ -644,7 +644,12 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                         }
                     }
                     "input" => {
-                        if let Some(Some(type_attr)) = element.attributes.get("type") {
+                        // Skip inputs used as CSS toggle triggers (not actual form inputs)
+                        let is_ui_toggle = element.attributes.get("role").and_then(|v| v.as_deref()) == Some("button")
+                            || element.attributes.get("aria-haspopup").and_then(|v| v.as_deref()) == Some("true");
+                        if is_ui_toggle {
+                            // nothing
+                        } else if let Some(Some(type_attr)) = element.attributes.get("type") {
                             match type_attr.to_lowercase().as_str() {
                                 "checkbox" | "radio" => {
                                     if element.attributes.contains_key("checked") {
@@ -751,6 +756,67 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
     Ok(parts.join("").to_string())
 }
 
+/// Returns true if the element is a CSS-only UI widget (dropdown or tab switcher).
+///
+/// Two patterns are detected:
+/// 1. A direct child `<input>` with `role="button"` or `aria-haspopup` — used for CSS dropdowns
+///    (e.g., Wikipedia's language switcher).
+/// 2. All direct children are `<input>` or `<label>` elements — used for CSS-only tabs/toggles
+///    (e.g., tab bars built with radio inputs and labels).
+fn is_css_dropdown_widget(element: &HtmlElement) -> bool {
+    // Pattern 1: checkbox/radio used as dropdown toggle trigger
+    let has_toggle_input = element.children.iter().any(|child| {
+        matches!(child, HtmlNode::Element(el)
+            if el.tag_name == "input"
+            && (el.attributes.get("role").and_then(|v| v.as_deref()) == Some("button")
+                || el.attributes.get("aria-haspopup").and_then(|v| v.as_deref()) == Some("true")))
+    });
+    if has_toggle_input {
+        return true;
+    }
+
+    // Pattern 2: CSS tab/toggle widget built from alternating <input> and <label> siblings.
+    // Both element types must be present; a lone <input> (e.g. standalone checkbox) is not a widget.
+    let has_any_input = element
+        .children
+        .iter()
+        .any(|child| matches!(child, HtmlNode::Element(el) if el.tag_name == "input"));
+    let has_any_label = element
+        .children
+        .iter()
+        .any(|child| matches!(child, HtmlNode::Element(el) if el.tag_name == "label"));
+    if has_any_input && has_any_label {
+        return element.children.iter().all(|child| match child {
+            HtmlNode::Text(t) => t.trim().is_empty(),
+            HtmlNode::Comment(_) => true,
+            HtmlNode::Element(el) => matches!(el.tag_name.as_str(), "input" | "label"),
+        });
+    }
+
+    false
+}
+
+/// Returns true if the element wraps a heading with only auxiliary UI siblings.
+/// In this pattern (e.g., Wikipedia's `<div class="mw-heading">`), the heading is the
+/// meaningful content and the siblings are UI chrome (edit links, toggle buttons, etc.).
+fn is_heading_with_aux_siblings(element: &HtmlElement) -> bool {
+    let has_heading = element.children.iter().any(|child| {
+        matches!(child, HtmlNode::Element(el)
+            if matches!(el.tag_name.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6"))
+    });
+    if !has_heading {
+        return false;
+    }
+    element.children.iter().all(|child| match child {
+        HtmlNode::Text(t) => t.trim().is_empty(),
+        HtmlNode::Comment(_) => true,
+        HtmlNode::Element(el) => matches!(
+            el.tag_name.as_str(),
+            "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "span" | "input" | "label" | "button"
+        ),
+    })
+}
+
 pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions) -> miette::Result<String> {
     let mut markdown_blocks: Vec<MarkdownBlock> = Vec::new();
     for node in nodes {
@@ -767,10 +833,22 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                     }
                     "html" | "head" | "header" | "footer" | "body" | "div" | "main" | "article" | "section"
                     | "hgroup" | "details" | "figure" => {
-                        let markdown_block = convert_nodes_to_markdown(&element.children, options)?;
-
-                        if !markdown_block.is_empty() {
-                            markdown_blocks.push((markdown_block, false));
+                        if is_css_dropdown_widget(element) {
+                            // Skip CSS-only dropdown widgets (language switchers, nav menus, etc.)
+                        } else if is_heading_with_aux_siblings(element) {
+                            // Heading wrapper div: only extract the heading, drop UI chrome siblings
+                            for child in &element.children {
+                                if let HtmlNode::Element(el) = child
+                                    && matches!(el.tag_name.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6")
+                                {
+                                    markdown_blocks.push((handle_heading_element(el)?, false));
+                                }
+                            }
+                        } else {
+                            let markdown_block = convert_nodes_to_markdown(&element.children, options)?;
+                            if !markdown_block.is_empty() {
+                                markdown_blocks.push((markdown_block, false));
+                            }
                         }
                     }
                     "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {

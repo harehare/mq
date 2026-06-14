@@ -1484,6 +1484,18 @@ fn test_html_to_markdown(#[case] html: &str, #[case] options: ConversionOptions,
 #[case::nav_skipped("<html><body><nav><a href='/'>Home</a></nav><p>Content</p></body></html>", "")]
 #[case::aside_skipped("<html><body><aside>Sidebar</aside><p>Content</p></body></html>", "")]
 #[case::noscript_skipped("<html><body><noscript>Enable JavaScript</noscript><p>Content</p></body></html>", "")]
+#[case::css_dropdown_skipped(
+    r#"<div><input type="checkbox" role="button" aria-haspopup="true"><label>Menu</label><div class="content"><ul><li>Item</li></ul></div></div>"#,
+    "Item"
+)]
+#[case::css_tab_widget_skipped(
+    r#"<div class="tabs"><input type="radio" id="tab1"><label for="tab1">Tab 1</label><input type="radio" id="tab2"><label for="tab2">Tab 2</label></div><p>Content</p>"#,
+    "Tab 1"
+)]
+#[case::heading_wrapper_strips_edit_link(
+    r#"<div class="mw-heading"><h2 id="Intro">Intro</h2><span class="mw-editsection"><span>[</span><a href="/edit">edit</a><span>]</span></span></div>"#,
+    "[edit]"
+)]
 fn test_noisy_elements_skipped(#[case] html: &str, #[case] expected_excluded: &str) {
     let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
     assert!(
