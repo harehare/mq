@@ -2627,6 +2627,8 @@ fn engine() -> DefaultEngine {
 #[case::paren_free_fn_as_value_preserved("map([\"a\", \"b\"], upcase)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("A".to_string()), RuntimeValue::String("B".to_string())])].into()))]
 // paren-free calls: passing user-defined function as value to map (no spurious auto-call)
 #[case::paren_free_user_fn_as_value_preserved("def double(x): x * 2; | map([1, 2, 3], double)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(6.into())])].into()))]
+// pipeline expressions inside function arguments are treated like implicit do...end blocks
+#[case::pipeline_expr_as_function_arg(r#"array("a" | upcase(), "b" | upcase())"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("A".to_string()), RuntimeValue::String("B".to_string())])].into()))]
 // shadowing builtin: user-defined function with same name as builtin calls the native builtin inside its body
 #[case::shadow_builtin_upcase("def upcase: upcase() | ltrimstr(\"HELLO\"); | \"hello\" | upcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("".to_string())].into()))]
 // shadowing builtin: user function wraps builtin and adds extra transformation

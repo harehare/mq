@@ -145,6 +145,15 @@ multiply(10, 3)
 - Default values are evaluated when the function is called, not when it is defined
 - Default values can be any valid expression
 
+## Pipeline Expressions As Arguments
+
+Pipeline expressions can be passed directly as function arguments. The pipeline is treated as one argument until the next comma or closing parenthesis.
+
+```mq
+array("a" | upcase(), "b" | upcase())
+# Output: ["A", "B"]
+```
+
 ## Parenthesis-Free Calls
 
 Functions with 0 or 1 required parameters can be called without parentheses when used as pipeline steps.
