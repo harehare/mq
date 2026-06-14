@@ -591,7 +591,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::dl_ignore_comments_and_whitespace_nodes(
     "<dl>\n  <!-- comment --> <dt>Term</dt> \n <dd>Def</dd> </dl>",
     ConversionOptions::default(),
-    "<!-- comment -->\n**Term**\n  Def"
+    "**Term**\n  Def"
 )]
 #[case::ol_nested(
     "<ol><li>Parent 1<ol><li>Child A</li><li>Child B</li></ol></li><li>Parent 2</li></ol>",
@@ -1168,7 +1168,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::dl_with_comment_and_whitespace(
     "<dl><dt>Term</dt><!-- comment --><dd>Def</dd>   </dl>",
     ConversionOptions::default(),
-    "**Term**\n<!-- comment -->\n  Def"
+    "**Term**\n  Def"
 )]
 #[case::dl_with_unexpected_element(
     "<dl><dt>Term</dt><p>Unexpected</p><dd>Def</dd></dl>",
@@ -1526,12 +1526,12 @@ fn test_smart_extraction_falls_back_to_full_document() {
 }
 
 #[test]
-fn test_html_comment_preserved() {
-    // This tests the parser's Comment handling
+fn test_html_comment_stripped() {
+    // HTML comments are stripped from the Markdown output.
     let html = "<p>Text</p><!-- Comment --><p>More</p>";
     let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
     assert!(md.contains("Text"));
-    assert!(md.contains("<!-- Comment -->"));
+    assert!(!md.contains("<!--"));
     assert!(md.contains("More"));
 }
 

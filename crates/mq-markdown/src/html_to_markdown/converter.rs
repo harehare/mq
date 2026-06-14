@@ -21,11 +21,7 @@ fn extract_text_from_pre_children(nodes: &[HtmlNode]) -> String {
             HtmlNode::Element(el) => {
                 text_content.push_str(&extract_text_from_pre_children(&el.children));
             }
-            HtmlNode::Comment(comment) => {
-                text_content.push_str("<!--");
-                text_content.push_str(comment);
-                text_content.push_str("-->");
-            }
+            HtmlNode::Comment(_) => {}
         }
     }
     text_content
@@ -263,11 +259,43 @@ fn handle_blockquote_element(element: &HtmlElement, options: ConversionOptions) 
     }
 }
 
+/// Strips the common leading whitespace (dedent) from a multi-line string.
+/// Lines that are entirely whitespace are ignored when computing the minimum indent.
+fn dedent(text: &str) -> String {
+    let min_indent = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| line.len() - line.trim_start().len())
+        .min()
+        .unwrap_or(0);
+    if min_indent == 0 {
+        return text.to_owned();
+    }
+    text.lines()
+        .map(|line| {
+            if line.len() >= min_indent {
+                &line[min_indent..]
+            } else {
+                line.trim_start()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn handle_pre_element(element: &HtmlElement, _options: ConversionOptions) -> miette::Result<String> {
     let mut lang_specifier = String::new();
-    let text_content = if let Some(HtmlNode::Element(code_element)) = element.children.first()
-        && code_element.tag_name == "code"
-    {
+    // Find <code> among children, skipping leading whitespace-only text nodes.
+    let code_child = element.children.iter().find_map(|n| {
+        if let HtmlNode::Element(el) = n
+            && el.tag_name == "code"
+        {
+            Some(el)
+        } else {
+            None
+        }
+    });
+    let text_content = if let Some(code_element) = code_child {
         if let Some(Some(class_attr)) = code_element.attributes.get("class") {
             for class_name in class_attr.split_whitespace() {
                 if let Some(lang) = class_name.strip_prefix("language-") {
@@ -279,19 +307,24 @@ fn handle_pre_element(element: &HtmlElement, _options: ConversionOptions) -> mie
                 }
             }
         }
+        // Extract code content plus any sibling text nodes outside <code> (e.g. <pre><code>…</code>\nextra</pre>).
         let mut text = extract_text_from_pre_children(&code_element.children);
-        text.push_str(&extract_text_from_pre_children(&element.children[1..]));
+        let non_code: Vec<&HtmlNode> = element
+            .children
+            .iter()
+            .filter(|n| !matches!(n, HtmlNode::Element(el) if el.tag_name == "code"))
+            .collect();
+        text.push_str(&extract_text_from_pre_children(
+            non_code.iter().copied().cloned().collect::<Vec<_>>().as_slice(),
+        ));
         text
     } else {
         extract_text_from_pre_children(&element.children)
     };
 
     let text_content = text_content.strip_prefix('\n').unwrap_or(&text_content);
-    Ok(format!(
-        "```{}\n{}\n```",
-        lang_specifier,
-        text_content.trim_end_matches('\n')
-    ))
+    let text_content = dedent(text_content.trim_end_matches('\n'));
+    Ok(format!("```{}\n{}\n```", lang_specifier, text_content))
 }
 
 fn handle_table_element(element: &HtmlElement, _options: ConversionOptions) -> miette::Result<String> {
@@ -322,9 +355,7 @@ fn handle_dl_element(element: &HtmlElement, options: ConversionOptions) -> miett
                 }
             }
             HtmlNode::Text(text) if text.trim().is_empty() => {}
-            HtmlNode::Comment(comment) => {
-                dl_content_parts.push(format!("<!--{}-->", comment));
-            }
+            HtmlNode::Comment(_) => {}
             _ => {
                 let unexpected_block = convert_nodes_to_markdown(std::slice::from_ref(child_node), options)?;
                 if !unexpected_block.is_empty() {
@@ -520,17 +551,35 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
             HtmlNode::Text(text) => {
                 let normalized = normalize_unicode_whitespace(text);
                 let trimmed = normalized.trim_start_matches('\n').trim_end_matches('\n');
-                let trimmed = if trimmed.starts_with(' ') {
-                    format!(" {}", trimmed.trim_start())
+                // Collapse internal newline+whitespace sequences (HTML whitespace collapsing).
+                let collapsed = if trimmed.contains('\n') {
+                    let leading_space = trimmed.starts_with(' ');
+                    let trailing_space = trimmed.ends_with(' ');
+                    let inner = trimmed
+                        .split('\n')
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    match (leading_space, trailing_space) {
+                        (true, true) => format!(" {} ", inner),
+                        (true, false) => format!(" {}", inner),
+                        (false, true) => format!("{} ", inner),
+                        (false, false) => inner,
+                    }
                 } else {
-                    trimmed.to_owned()
+                    let trimmed = if trimmed.starts_with(' ') {
+                        format!(" {}", trimmed.trim_start())
+                    } else {
+                        trimmed.to_owned()
+                    };
+                    if trimmed.ends_with(' ') {
+                        format!("{} ", trimmed.trim_end())
+                    } else {
+                        trimmed
+                    }
                 };
-                let trimmed = if trimmed.ends_with(' ') {
-                    format!("{} ", trimmed.trim_end())
-                } else {
-                    trimmed
-                };
-                parts.push(trimmed);
+                parts.push(collapsed);
             }
             HtmlNode::Element(element) => {
                 let link_text = convert_children_to_string(&element.children)?;
@@ -696,9 +745,7 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                     _ => parts.push(link_text),
                 }
             }
-            HtmlNode::Comment(comment) => {
-                parts.push(format!("<!--{}-->", comment));
-            }
+            HtmlNode::Comment(_) => {}
         }
     }
     Ok(parts.join("").to_string())
@@ -791,9 +838,13 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                             }
                         }
                     }
-                    "strong" | "em" | "code" | "span" | "img" | "br" | "input" | "s" | "strike" | "del" | "kbd"
-                    | "sub" | "sup" | "q" | "cite" | "mark" | "abbr" | "picture" | "ruby" | "dfn" | "time"
-                    | "small" | "bdi" => {
+                    "br" => {
+                        // Hard line break — must not be trimmed or it becomes empty.
+                        markdown_blocks.push(("  \n".to_string(), true));
+                    }
+                    "strong" | "em" | "code" | "span" | "img" | "input" | "s" | "strike" | "del" | "kbd" | "sub"
+                    | "sup" | "q" | "cite" | "mark" | "abbr" | "picture" | "ruby" | "dfn" | "time" | "small"
+                    | "bdi" => {
                         let inline_md = convert_children_to_string(&[HtmlNode::Element(element.clone())])?;
                         if !inline_md.is_empty() {
                             markdown_blocks.push((inline_md.trim().to_string(), true));
@@ -809,9 +860,7 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                     }
                 }
             }
-            HtmlNode::Comment(comment) => {
-                markdown_blocks.push((format!("<!--{}-->", comment), false));
-            }
+            HtmlNode::Comment(_) => {}
         }
     }
 
