@@ -158,7 +158,7 @@ fn merge_ranges(ranges: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
 fn to_nodes(value: &mq_lang::RuntimeValue) -> Vec<mq_markdown::Node> {
     match value {
         mq_lang::RuntimeValue::Markdown(node, _) => vec![(**node).clone()],
-        mq_lang::RuntimeValue::Array(_) | mq_lang::RuntimeValue::Dict(_) => flattern(value)
+        mq_lang::RuntimeValue::Array(_) | mq_lang::RuntimeValue::Dict(_) => flatten(value)
             .into_iter()
             .map(|(i, v)| format!("{}: {}", i, v).into())
             .collect(),
@@ -174,12 +174,12 @@ fn join_key(prefix: &str, suffix: &str) -> String {
     }
 }
 
-fn flattern(value: &mq_lang::RuntimeValue) -> Vec<(String, mq_lang::RuntimeValue)> {
+fn flatten(value: &mq_lang::RuntimeValue) -> Vec<(String, mq_lang::RuntimeValue)> {
     match value {
         mq_lang::RuntimeValue::Dict(map) => map
             .iter()
             .flat_map(|(k, v)| {
-                let nested = flattern(v);
+                let nested = flatten(v);
                 if nested.is_empty() {
                     vec![(k.as_str(), v.clone())]
                 } else {
@@ -195,7 +195,7 @@ fn flattern(value: &mq_lang::RuntimeValue) -> Vec<(String, mq_lang::RuntimeValue
             .enumerate()
             .flat_map(|(i, v)| {
                 let prefix = format!("[{}]", i);
-                let nested = flattern(v);
+                let nested = flatten(v);
                 if nested.is_empty() {
                     vec![(prefix, v.clone())]
                 } else {
@@ -272,25 +272,25 @@ mod tests {
         ]),
         vec![("[0][0]".to_string(), mq_lang::RuntimeValue::String("nested".to_string()))]
     )]
-    fn test_flattern(#[case] input: mq_lang::RuntimeValue, #[case] expected: Vec<(String, mq_lang::RuntimeValue)>) {
-        assert_eq!(flattern(&input), expected);
+    fn test_flatten(#[case] input: mq_lang::RuntimeValue, #[case] expected: Vec<(String, mq_lang::RuntimeValue)>) {
+        assert_eq!(flatten(&input), expected);
     }
 
     #[test]
-    fn test_flattern_flat_dict() {
+    fn test_flatten_flat_dict() {
         let mut m = BTreeMap::new();
         m.insert(
             mq_lang::Ident::new("key"),
             mq_lang::RuntimeValue::String("val".to_string()),
         );
         assert_eq!(
-            flattern(&mq_lang::RuntimeValue::Dict(m)),
+            flatten(&mq_lang::RuntimeValue::Dict(m)),
             vec![("key".to_string(), mq_lang::RuntimeValue::String("val".to_string()))]
         );
     }
 
     #[test]
-    fn test_flattern_nested_dict() {
+    fn test_flatten_nested_dict() {
         let mut inner = BTreeMap::new();
         inner.insert(
             mq_lang::Ident::new("b"),
@@ -299,13 +299,13 @@ mod tests {
         let mut outer = BTreeMap::new();
         outer.insert(mq_lang::Ident::new("a"), mq_lang::RuntimeValue::Dict(inner));
         assert_eq!(
-            flattern(&mq_lang::RuntimeValue::Dict(outer)),
+            flatten(&mq_lang::RuntimeValue::Dict(outer)),
             vec![("a.b".to_string(), mq_lang::RuntimeValue::String("deep".to_string()))]
         );
     }
 
     #[test]
-    fn test_flattern_dict_with_array() {
+    fn test_flatten_dict_with_array() {
         // dict["key"][0] → "key[0]"
         let mut m = BTreeMap::new();
         m.insert(
@@ -313,13 +313,13 @@ mod tests {
             mq_lang::RuntimeValue::Array(vec![mq_lang::RuntimeValue::String("val".to_string())]),
         );
         assert_eq!(
-            flattern(&mq_lang::RuntimeValue::Dict(m)),
+            flatten(&mq_lang::RuntimeValue::Dict(m)),
             vec![("key[0]".to_string(), mq_lang::RuntimeValue::String("val".to_string()))]
         );
     }
 
     #[test]
-    fn test_flattern_array_with_dict() {
+    fn test_flatten_array_with_dict() {
         // [0].key → "[0].key"
         let mut m = BTreeMap::new();
         m.insert(
@@ -328,7 +328,7 @@ mod tests {
         );
         let input = mq_lang::RuntimeValue::Array(vec![mq_lang::RuntimeValue::Dict(m)]);
         assert_eq!(
-            flattern(&input),
+            flatten(&input),
             vec![("[0].b".to_string(), mq_lang::RuntimeValue::String("val".to_string()))]
         );
     }

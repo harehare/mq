@@ -149,7 +149,7 @@ impl<T: ModuleResolver> Engine<T> {
             .expect("Failed to load builtin module");
     }
 
-    /// Imoprt an external module by name.
+    /// Import an external module by name.
     ///
     /// The module will be searched for in the configured search paths
     /// and made available for use in mq code.
