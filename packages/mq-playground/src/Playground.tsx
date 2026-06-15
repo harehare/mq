@@ -180,7 +180,9 @@ export const Playground = () => {
                   : null;
     })(),
   );
-  const [activeTab, setActiveTab] = useState<"output" | "ast" | "preview">("output");
+  const [activeTab, setActiveTab] = useState<"output" | "ast" | "preview">(
+    "output",
+  );
   const [astResult, setAstResult] = useState("");
   const [previewHtml, setPreviewHtml] = useState("");
   const [files, setFiles] = useState<FileNode[]>([]);
@@ -288,10 +290,20 @@ export const Playground = () => {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const vimStatusBarRef = useRef<HTMLDivElement>(null);
   // Refs to allow vim Ex commands to access the latest callbacks without re-registering
-  const saveCurrentFileRef = useRef<() => Promise<void>>(async () => { });
+  const saveCurrentFileRef = useRef<() => Promise<void>>(async () => {});
   const activeTabIdRef = useRef<string | null>(null);
-  const handleTabCloseRef = useRef<(tabId: string) => void>(() => { });
-  const diagnosticsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleTabCloseRef = useRef<(tabId: string) => void>(() => {});
+  const diagnosticsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  const showToast = useCallback(
+    (message: string, type: ToastItem["type"] = "success") => {
+      const id = `toast-${Date.now()}`;
+      setToasts((prev) => [...prev, { id, message, type }]);
+    },
+    [],
+  );
 
   // Keep enableTypeCheckRef in sync with state
   useEffect(() => {
@@ -452,8 +464,7 @@ export const Playground = () => {
           if (parsedData.type !== "all-files") {
             const options = parsedData.options || {};
             const data: SharedData = {
-              code:
-                typeof parsedData.code === "string" ? parsedData.code : "",
+              code: typeof parsedData.code === "string" ? parsedData.code : "",
               markdown:
                 typeof parsedData.markdown === "string"
                   ? parsedData.markdown
@@ -476,7 +487,7 @@ export const Playground = () => {
           }
         }
       } catch {
-        alert("Failed to load shared playground");
+        showToast("Failed to load shared playground", "error");
       }
     }
 
@@ -511,14 +522,6 @@ export const Playground = () => {
   }, [loadFiles]);
 
   const [isFirstRun, setIsFirstRun] = useState(true);
-
-  const showToast = useCallback(
-    (message: string, type: ToastItem["type"] = "success") => {
-      const id = `toast-${Date.now()}`;
-      setToasts((prev) => [...prev, { id, message, type }]);
-    },
-    [],
-  );
 
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -786,11 +789,11 @@ export const Playground = () => {
               prev.map((tab) =>
                 tab.id === activeTabId
                   ? {
-                    ...tab,
-                    content: code,
-                    savedContent: code,
-                    isDirty: false,
-                  }
+                      ...tab,
+                      content: code,
+                      savedContent: code,
+                      isDirty: false,
+                    }
                   : tab,
               ),
             );
@@ -859,7 +862,7 @@ export const Playground = () => {
         localStorage.setItem(SELECTED_FILE_KEY, path);
       } catch (error) {
         console.error("Failed to read file:", error);
-        alert(`Failed to read file: ${error}`);
+        showToast(`Failed to read file: ${error}`, "error");
       }
     },
     [openOrSwitchToTab],
@@ -885,9 +888,11 @@ export const Playground = () => {
         localStorage.setItem(SELECTED_FILE_KEY, path);
       } catch (error) {
         console.error("Failed to create file:", error);
-        alert(
-          `Failed to create file: ${error instanceof Error ? error.message : String(error)
+        showToast(
+          `Failed to create file: ${
+            error instanceof Error ? error.message : String(error)
           }`,
+          "error",
         );
       }
     },
@@ -910,9 +915,11 @@ export const Playground = () => {
         await loadFiles();
       } catch (error) {
         console.error("Failed to create folder:", error);
-        alert(
-          `Failed to create folder: ${error instanceof Error ? error.message : String(error)
+        showToast(
+          `Failed to create folder: ${
+            error instanceof Error ? error.message : String(error)
           }`,
+          "error",
         );
       }
     },
@@ -933,7 +940,7 @@ export const Playground = () => {
       // Check if it's a directory or file
       const parts = path.split("/").filter(Boolean);
       if (parts.length === 0) {
-        alert("Cannot delete root directory");
+        showToast("Cannot delete root directory", "error");
         return;
       }
 
@@ -961,7 +968,7 @@ export const Playground = () => {
       }
     } catch (error) {
       console.error("Failed to delete:", error);
-      alert("Failed to delete");
+      showToast("Failed to delete", "error");
     }
   }, [deleteConfirmDialog, loadFiles, selectedFile, tabs, handleTabClose]);
 
@@ -978,7 +985,7 @@ export const Playground = () => {
 
       // Validate filename
       if (trimmedNewName.includes("/")) {
-        alert("Filename cannot contain '/'");
+        showToast("Filename cannot contain '/'", "error");
         return;
       }
 
@@ -991,8 +998,9 @@ export const Playground = () => {
 
         // Prevent converting directory to file or vice versa
         if (isDirectory && hasExtension && !currentHasExtension) {
-          alert(
+          showToast(
             "Cannot rename a folder to a file name. Folders cannot have file extensions.",
+            "error",
           );
           setIsRenaming(false);
           return;
@@ -1044,9 +1052,11 @@ export const Playground = () => {
         }
       } catch (error) {
         console.error("Failed to rename:", error);
-        alert(
-          `Failed to rename: ${error instanceof Error ? error.message : String(error)
+        showToast(
+          `Failed to rename: ${
+            error instanceof Error ? error.message : String(error)
           }`,
+          "error",
         );
         // Reload files to ensure UI is in sync
         await loadFiles();
@@ -1073,8 +1083,9 @@ export const Playground = () => {
         const exists = await fileSystem.fileExists(newPath);
         if (exists) {
           const targetLocation = targetPath ? targetPath : "root";
-          alert(
+          showToast(
             `A file or folder named "${fileName}" already exists in "${targetLocation}"`,
+            "error",
           );
           return;
         }
@@ -1123,8 +1134,9 @@ export const Playground = () => {
         }
       } catch (error) {
         console.error("Failed to move:", error);
-        alert(
-          `Failed to move: ${error instanceof Error ? error.message : String(error)
+        showToast(
+          `Failed to move: ${
+            (error instanceof Error ? error.message : String(error), "error")
           }`,
         );
         // Reload files to ensure UI is in sync
@@ -1219,7 +1231,6 @@ export const Playground = () => {
       );
     }
   }, [code, currentFilePath, isRenaming, activeTabId]);
-
 
   // Persist sidebar visibility to localStorage
   useEffect(() => {
@@ -1458,10 +1469,11 @@ export const Playground = () => {
                       : monaco.languages.CompletionItemKind.Property,
               insertText:
                 value.valueType === "Function"
-                  ? `${value.name}(${value.args
-                    ?.map((name: string, i: number) => `$\{${i}:${name}}`)
-                    .join(", ") || ""
-                  })`
+                  ? `${value.name}(${
+                      value.args
+                        ?.map((name: string, i: number) => `$\{${i}:${name}}`)
+                        .join(", ") || ""
+                    })`
                   : value.name,
               insertTextRules:
                 monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
@@ -1663,7 +1675,7 @@ export const Playground = () => {
     monaco.languages.registerInlayHintsProvider("mq", {
       provideInlayHints: async (model: editor.ITextModel) => {
         if (!enableTypeCheckRef.current) {
-          return { hints: [], dispose: () => { } };
+          return { hints: [], dispose: () => {} };
         }
         const hints = await mq.inlayHints(model.getValue());
         return {
@@ -1675,7 +1687,7 @@ export const Playground = () => {
             label: hint.label,
             kind: monaco.languages.InlayHintKind.Type,
           })),
-          dispose: () => { },
+          dispose: () => {},
         };
       },
     });
@@ -1818,30 +1830,30 @@ export const Playground = () => {
     const colors =
       resolvedTheme === "mq"
         ? {
-          bg: "#1e293b",
-          fg: "#e2e8f0",
-          preBg: "#2a3444",
-          link: "#67b8e3",
-          heading: "#e2e8f0",
-          border: "#32404f",
-        }
+            bg: "#1e293b",
+            fg: "#e2e8f0",
+            preBg: "#2a3444",
+            link: "#67b8e3",
+            heading: "#e2e8f0",
+            border: "#32404f",
+          }
         : resolvedTheme === "dark"
           ? {
-            bg: "#1e1e1e",
-            fg: "#d4d4d4",
-            preBg: "#2d2d2d",
-            link: "#4ec9b0",
-            heading: "#d4d4d4",
-            border: "#3e3e42",
-          }
+              bg: "#1e1e1e",
+              fg: "#d4d4d4",
+              preBg: "#2d2d2d",
+              link: "#4ec9b0",
+              heading: "#d4d4d4",
+              border: "#3e3e42",
+            }
           : {
-            bg: "#ffffff",
-            fg: "#1a1a1a",
-            preBg: "#f5f5f5",
-            link: "#0070c1",
-            heading: "#1a1a1a",
-            border: "#e0e0e0",
-          };
+              bg: "#ffffff",
+              fg: "#1a1a1a",
+              preBg: "#f5f5f5",
+              link: "#0070c1",
+              heading: "#1a1a1a",
+              border: "#e0e0e0",
+            };
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:;"><style>
 body{margin:16px;font-family:sans-serif;background:${colors.bg};color:${colors.fg};line-height:1.6}
@@ -1876,10 +1888,9 @@ img{max-width:100%}
 
   const isDesktopView = isDesktop();
 
-  const previewSrcDoc =
-    previewHtml
-      ? buildPreviewSrcDoc(previewHtml)
-      : buildPreviewSrcDoc(
+  const previewSrcDoc = previewHtml
+    ? buildPreviewSrcDoc(previewHtml)
+    : buildPreviewSrcDoc(
         "<p style='color:#888'>Click \"Run\" button to display preview</p>",
       );
 
@@ -1975,9 +1986,9 @@ img{max-width:100%}
           style={
             isDesktopView
               ? {
-                width: `calc((100% - ${isOPFSSupported && isSidebarVisible ? sidebarWidth + 4 : 0}px) * ${leftRightSplit / 100})`,
-                flex: "none",
-              }
+                  width: `calc((100% - ${isOPFSSupported && isSidebarVisible ? sidebarWidth + 4 : 0}px) * ${leftRightSplit / 100})`,
+                  flex: "none",
+                }
               : undefined
           }
         >
@@ -2149,9 +2160,9 @@ img{max-width:100%}
                 try {
                   setPreviewHtml(await toHtml(result));
                 } catch {
-                  setPreviewHtml("")
+                  setPreviewHtml("");
                 }
-                setActiveTab("preview")
+                setActiveTab("preview");
               }}
             >
               Preview
@@ -2321,7 +2332,10 @@ img{max-width:100%}
 
       {!isEmbed && isProblemsVisible && (
         <>
-          <ResizeHandle direction="vertical" onResize={handleProblemsPanelResize} />
+          <ResizeHandle
+            direction="vertical"
+            onResize={handleProblemsPanelResize}
+          />
           <ProblemsPanel
             problems={diagnostics.items}
             height={problemsPanelHeight}
@@ -2334,132 +2348,126 @@ img{max-width:100%}
         </>
       )}
 
-      {
-        !isEmbed && (
-          <footer className="playground-footer">
-            <div className="footer-left">
-              <div
-                ref={vimStatusBarRef}
-                className="vim-status-bar"
-                style={{
-                  display: vimModeEnabled ? "block" : "none",
-                  minWidth: "100px",
-                  fontFamily: "monospace",
-                  fontSize: "11px",
-                }}
-              />
-              {currentFilePath && (
-                <>
-                  <div className="footer-item">
-                    <span className="current-file-path">{currentFilePath}</span>
-                  </div>
-                  <div className="save-status">
-                    {saveStatus === "saved" && (
-                      <span className="save-status-item saved">
-                        <VscCheck size={14} /> Saved
-                      </span>
-                    )}
-                    {saveStatus === "saving" && (
-                      <span className="save-status-item saving">
-                        <VscLoading size={14} className="spinning" /> Saving...
-                      </span>
-                    )}
-                    {saveStatus === "unsaved" && (
-                      <span className="save-status-item unsaved">
-                        <VscSave size={14} /> Unsaved
-                      </span>
-                    )}
-                  </div>
-                </>
-              )}
-              {!currentFilePath && isOPFSSupported && (
-                <span
-                  style={{ color: "var(--tree-empty-color)", fontSize: "11px" }}
-                >
-                  No file selected
-                </span>
-              )}
-            </div>
-            <div className="footer-right">
-              {(diagnostics.errors > 0 || diagnostics.warnings > 0) && (
-                <button
-                  className={`footer-diagnostic-button${isProblemsVisible ? " active" : ""}`}
-                  onClick={() => setIsProblemsVisible((v) => !v)}
-                  title={isProblemsVisible ? "Hide Problems" : "Show Problems"}
-                >
-                  {diagnostics.errors > 0 && (
-                    <span className="footer-diagnostic footer-diagnostic-error">
-                      <VscError size={12} />
-                      {diagnostics.errors}
-                    </span>
-                  )}
-                  {diagnostics.warnings > 0 && (
-                    <span className="footer-diagnostic footer-diagnostic-warning">
-                      <VscWarning size={12} />
-                      {diagnostics.warnings}
-                    </span>
-                  )}
-                </button>
-              )}
-              <span className="cursor-position">
-                Ln {cursorPosition.line}, Col {cursorPosition.column}
-              </span>
-              <button
-                className="footer-icon-button"
-                onClick={toggleWordWrap}
-                title={
-                  wordWrap === "on" ? "Disable Word Wrap" : "Enable Word Wrap"
-                }
-                style={{ opacity: wordWrap === "on" ? 1 : 0.5 }}
-              >
-                <VscWordWrap size={14} />
-              </button>
-              <button
-                className="footer-icon-button"
-                onClick={toggleMinimap}
-                title={minimapEnabled ? "Disable Minimap" : "Enable Minimap"}
-                style={{ opacity: minimapEnabled ? 1 : 0.5 }}
-              >
-                <VscMap size={14} />
-              </button>
-              {executionTime && (
-                <div className="execution-time">
-                  {executionTime.toFixed(2)} ms
+      {!isEmbed && (
+        <footer className="playground-footer">
+          <div className="footer-left">
+            <div
+              ref={vimStatusBarRef}
+              className="vim-status-bar"
+              style={{
+                display: vimModeEnabled ? "block" : "none",
+                minWidth: "100px",
+                fontFamily: "monospace",
+                fontSize: "11px",
+              }}
+            />
+            {currentFilePath && (
+              <>
+                <div className="footer-item">
+                  <span className="current-file-path">{currentFilePath}</span>
                 </div>
-              )}
-            </div>
-          </footer>
-        )
-      }
+                <div className="save-status">
+                  {saveStatus === "saved" && (
+                    <span className="save-status-item saved">
+                      <VscCheck size={14} /> Saved
+                    </span>
+                  )}
+                  {saveStatus === "saving" && (
+                    <span className="save-status-item saving">
+                      <VscLoading size={14} className="spinning" /> Saving...
+                    </span>
+                  )}
+                  {saveStatus === "unsaved" && (
+                    <span className="save-status-item unsaved">
+                      <VscSave size={14} /> Unsaved
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+            {!currentFilePath && isOPFSSupported && (
+              <span
+                style={{ color: "var(--tree-empty-color)", fontSize: "11px" }}
+              >
+                No file selected
+              </span>
+            )}
+          </div>
+          <div className="footer-right">
+            {(diagnostics.errors > 0 || diagnostics.warnings > 0) && (
+              <button
+                className={`footer-diagnostic-button${isProblemsVisible ? " active" : ""}`}
+                onClick={() => setIsProblemsVisible((v) => !v)}
+                title={isProblemsVisible ? "Hide Problems" : "Show Problems"}
+              >
+                {diagnostics.errors > 0 && (
+                  <span className="footer-diagnostic footer-diagnostic-error">
+                    <VscError size={12} />
+                    {diagnostics.errors}
+                  </span>
+                )}
+                {diagnostics.warnings > 0 && (
+                  <span className="footer-diagnostic footer-diagnostic-warning">
+                    <VscWarning size={12} />
+                    {diagnostics.warnings}
+                  </span>
+                )}
+              </button>
+            )}
+            <span className="cursor-position">
+              Ln {cursorPosition.line}, Col {cursorPosition.column}
+            </span>
+            <button
+              className="footer-icon-button"
+              onClick={toggleWordWrap}
+              title={
+                wordWrap === "on" ? "Disable Word Wrap" : "Enable Word Wrap"
+              }
+              style={{ opacity: wordWrap === "on" ? 1 : 0.5 }}
+            >
+              <VscWordWrap size={14} />
+            </button>
+            <button
+              className="footer-icon-button"
+              onClick={toggleMinimap}
+              title={minimapEnabled ? "Disable Minimap" : "Enable Minimap"}
+              style={{ opacity: minimapEnabled ? 1 : 0.5 }}
+            >
+              <VscMap size={14} />
+            </button>
+            {executionTime && (
+              <div className="execution-time">
+                {executionTime.toFixed(2)} ms
+              </div>
+            )}
+          </div>
+        </footer>
+      )}
 
-      {
-        deleteConfirmDialog && (
-          <ConfirmDialog
-            title="Delete File"
-            message={`Are you sure you want to delete "${deleteConfirmDialog.path}"?`}
-            confirmLabel="Delete"
-            cancelLabel="Cancel"
-            onConfirm={confirmDelete}
-            onCancel={() => setDeleteConfirmDialog(null)}
-          />
-        )
-      }
+      {deleteConfirmDialog && (
+        <ConfirmDialog
+          title="Delete File"
+          message={`Are you sure you want to delete "${deleteConfirmDialog.path}"?`}
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteConfirmDialog(null)}
+        />
+      )}
 
-      {
-        tabCloseConfirm && (
-          <ConfirmDialog
-            title="Unsaved Changes"
-            message={`"${tabCloseConfirm.filePath}" has unsaved changes. Close anyway?`}
-            confirmLabel="Close"
-            cancelLabel="Cancel"
-            onConfirm={() => {
-              closeTab(tabCloseConfirm.tabId);
-              setTabCloseConfirm(null);
-            }}
-            onCancel={() => setTabCloseConfirm(null)}
-          />
-        )
-      }
+      {tabCloseConfirm && (
+        <ConfirmDialog
+          title="Unsaved Changes"
+          message={`"${tabCloseConfirm.filePath}" has unsaved changes. Close anyway?`}
+          confirmLabel="Close"
+          cancelLabel="Cancel"
+          onConfirm={() => {
+            closeTab(tabCloseConfirm.tabId);
+            setTabCloseConfirm(null);
+          }}
+          onCancel={() => setTabCloseConfirm(null)}
+        />
+      )}
 
       <ExamplesModal
         isOpen={isExamplesOpen}
@@ -2490,6 +2498,6 @@ img{max-width:100%}
       />
 
       <ToastContainer toasts={toasts} onClose={dismissToast} />
-    </div >
+    </div>
   );
 };
