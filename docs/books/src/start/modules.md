@@ -60,6 +60,7 @@ import "github.com/harehare/<module-name>"
 | [k8s.mq](https://github.com/harehare/k8s.mq) | [Kubernetes](https://kubernetes.io) manifest parser — metadata, containers, images, ports, resources |
 | [gha.mq](https://github.com/harehare/gha.mq) | [GitHub Actions](https://docs.github.com/en/actions) workflow parser — jobs, steps, triggers, matrix |
 | [openapi.mq](https://github.com/harehare/openapi.mq) | [OpenAPI 3.x](https://spec.openapis.org/oas/v3.1.0) spec parser — paths, operations, schemas, security schemes |
+| [aws.mq](https://github.com/harehare/aws.mq) | AWS CLI / SDK JSON response processor — filter, extract, and render Markdown tables for EC2, S3, IAM, Lambda, RDS, ECS, EKS, and 50+ other services |
 
 ## Terminal & Text
 

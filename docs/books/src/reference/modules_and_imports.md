@@ -127,6 +127,9 @@ import "json"
 When `mq` is built with the `http-import` feature, `import` and `include` accept HTTP/HTTPS URLs
 in addition to local file names.
 
+> **Security note:** By default, only URLs under `github.com/harehare` (resolved to `raw.githubusercontent.com/harehare`) are allowed.
+> Importing from any other domain requires explicitly enabling it with the `--allowed-domain` flag.
+
 ### Plain URL
 
 ```mq
