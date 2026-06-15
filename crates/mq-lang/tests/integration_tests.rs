@@ -3553,3 +3553,42 @@ mod ast_json {
         assert!(result.is_err());
     }
 }
+
+#[cfg(feature = "cst")]
+mod implicit_pipeline_cst {
+    use mq_lang::{CstNodeKind, parse_recovery};
+    use rstest::rstest;
+
+    fn has_no_errors(code: &str) -> bool {
+        let (_, errors) = parse_recovery(code);
+        !errors.has_errors()
+    }
+
+    fn first_arg_kind(code: &str) -> CstNodeKind {
+        let (nodes, _) = parse_recovery(code);
+        let call = &nodes[0];
+        let arg = call
+            .children
+            .iter()
+            .find(|c| !matches!(c.kind, CstNodeKind::Token | CstNodeKind::Eof));
+        arg.unwrap().kind.clone()
+    }
+
+    #[rstest]
+    #[case::single_pipe("foo(a | b)")]
+    #[case::multi_step_pipe("foo(a | b | c)")]
+    #[case::pipe_as_second_arg("foo(x, a | b)")]
+    #[case::multiline_pipe("foo(a\n| b)")]
+    #[case::call_exprs_in_pipeline("foo(bar() | baz())")]
+    #[case::explicit_do_end_still_works("foo(do a | b end)")]
+    fn parses_without_error(#[case] code: &str) {
+        assert!(has_no_errors(code));
+    }
+
+    #[rstest]
+    #[case::pipeline_arg_is_block("foo(a | b)", CstNodeKind::Block)]
+    #[case::single_expr_arg_is_not_block("foo(a)", CstNodeKind::Ident)]
+    fn first_arg_node_kind(#[case] code: &str, #[case] expected: CstNodeKind) {
+        assert_eq!(first_arg_kind(code), expected);
+    }
+}
