@@ -34,6 +34,7 @@ import "github.com/harehare/<module-name>"
 | Module | Description |
 |---|---|
 | [json5.mq](https://github.com/harehare/json5.mq) | [JSON5](https://json5.org) — comments, trailing commas, unquoted keys |
+| [pkl.mq](https://github.com/harehare/pkl.mq) | [PKL](https://pkl-lang.org) — Apple's configuration language, with type annotations and collection literals |
 | [kdl.mq](https://github.com/harehare/kdl.mq) | [KDL](https://kdl.dev) document language |
 | [ini.mq](https://github.com/harehare/ini.mq) | INI file parser and serializer |
 | [ndjson.mq](https://github.com/harehare/ndjson.mq) | [NDJSON](https://ndjson.org) / [JSON Lines](https://jsonlines.org) |
@@ -56,6 +57,9 @@ import "github.com/harehare/<module-name>"
 | Module | Description |
 |---|---|
 | [dockerfile.mq](https://github.com/harehare/dockerfile.mq) | Dockerfile instruction parser |
+| [k8s.mq](https://github.com/harehare/k8s.mq) | [Kubernetes](https://kubernetes.io) manifest parser — metadata, containers, images, ports, resources |
+| [gha.mq](https://github.com/harehare/gha.mq) | [GitHub Actions](https://docs.github.com/en/actions) workflow parser — jobs, steps, triggers, matrix |
+| [openapi.mq](https://github.com/harehare/openapi.mq) | [OpenAPI 3.x](https://spec.openapis.org/oas/v3.1.0) spec parser — paths, operations, schemas, security schemes |
 
 ## Terminal & Text
 
