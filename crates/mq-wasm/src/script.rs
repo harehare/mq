@@ -1013,7 +1013,7 @@ async fn write_opfs_http_cache(root: &opfs::persistent::DirectoryHandle, subdir:
     .await;
 }
 
-/// Parses `code` and returns all import paths that look like HTTP or GitHub URLs.
+/// Parses `code` and returns all import/include paths that look like HTTP or GitHub URLs.
 fn extract_http_import_urls(code: &str) -> Vec<String> {
     let token_arena = mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
     let Ok(program) = mq_lang::parse(code, token_arena) else {
@@ -1023,12 +1023,13 @@ fn extract_http_import_urls(code: &str) -> Vec<String> {
     program
         .iter()
         .filter_map(|node| {
-            if let mq_lang::AstExpr::Import(mq_lang::AstLiteral::String(url)) = &*node.expr {
-                if mq_lang::http_import::is_remote_url(url) || mq_lang::http_import::is_github_url(url) {
-                    Some(url.clone())
-                } else {
-                    None
-                }
+            let url = match &*node.expr {
+                mq_lang::AstExpr::Import(mq_lang::AstLiteral::String(url)) => url,
+                mq_lang::AstExpr::Include(mq_lang::AstLiteral::String(url)) => url,
+                _ => return None,
+            };
+            if mq_lang::http_import::is_remote_url(url) || mq_lang::http_import::is_github_url(url) {
+                Some(url.clone())
             } else {
                 None
             }
@@ -1434,6 +1435,85 @@ mod tests {
         assert_eq!(output.join(""), "Hello, World!");
 
         // Note: File cleanup is skipped as OPFS persistent storage is isolated per origin
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_http_import_urls_import_https() {
+        let code = r#"import "https://example.com/foo.mq""#;
+        let urls = extract_http_import_urls(code);
+        assert_eq!(urls, vec!["https://example.com/foo.mq"]);
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_http_import_urls_include_https() {
+        let code = r#"include "https://example.com/foo.mq""#;
+        let urls = extract_http_import_urls(code);
+        assert_eq!(urls, vec!["https://example.com/foo.mq"]);
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_http_import_urls_import_github() {
+        let code = r#"import "github.com/alice/mymod""#;
+        let urls = extract_http_import_urls(code);
+        assert_eq!(urls, vec!["github.com/alice/mymod"]);
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_http_import_urls_include_github() {
+        let code = r#"include "github.com/alice/mymod""#;
+        let urls = extract_http_import_urls(code);
+        assert_eq!(urls, vec!["github.com/alice/mymod"]);
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_http_import_urls_local_import_excluded() {
+        let code = r#"import "local_module""#;
+        let urls = extract_http_import_urls(code);
+        assert!(urls.is_empty());
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_http_import_urls_local_include_excluded() {
+        let code = r#"include "local_module""#;
+        let urls = extract_http_import_urls(code);
+        assert!(urls.is_empty());
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_http_import_urls_multiple_mixed() {
+        let code = r#"
+            import "https://example.com/a.mq"
+            include "github.com/alice/b"
+            import "local_mod"
+            include "https://example.com/c.mq"
+        "#;
+        let urls = extract_http_import_urls(code);
+        assert!(urls.contains(&"https://example.com/a.mq".to_string()));
+        assert!(urls.contains(&"github.com/alice/b".to_string()));
+        assert!(urls.contains(&"https://example.com/c.mq".to_string()));
+        assert!(!urls.contains(&"local_mod".to_string()));
+        assert_eq!(urls.len(), 3);
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_http_import_urls_invalid_syntax_returns_empty() {
+        let urls = extract_http_import_urls("import =>");
+        assert!(urls.is_empty());
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_http_import_urls_empty_code() {
+        let urls = extract_http_import_urls("");
+        assert!(urls.is_empty());
     }
 
     #[allow(unused)]
