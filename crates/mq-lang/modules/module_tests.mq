@@ -514,6 +514,27 @@ def test_semver_parse_with_pre_and_build():
   | assert_eq(v["build"], "exp.sha.5114f85")
 end
 
+def test_semver_parse_with_lowercase_v_prefix():
+  let v = semver::semver_parse("v1.2.3")
+  | assert_eq(v["major"], 1)
+  | assert_eq(v["minor"], 2)
+  | assert_eq(v["patch"], 3)
+end
+
+def test_semver_parse_with_uppercase_v_prefix():
+  let v = semver::semver_parse("V1.2.3")
+  | assert_eq(v["major"], 1)
+  | assert_eq(v["minor"], 2)
+  | assert_eq(v["patch"], 3)
+end
+
+def test_semver_parse_with_v_prefix_and_prerelease():
+  let v = semver::semver_parse("v1.0.0-alpha.1+build.5")
+  | assert_eq(v["major"], 1)
+  | assert_eq(v["pre"], "alpha.1")
+  | assert_eq(v["build"], "build.5")
+end
+
 def test_semver_to_string_basic():
   let v = semver::semver_parse("1.2.3")
   | assert_eq(semver::semver_to_string(v), "1.2.3")

@@ -57,7 +57,8 @@ end
 
 # Parses a SemVer string into a dict with major, minor, patch, pre, and build fields.
 def semver_parse(s):
-  let v = to_string(s)
+  let raw = to_string(s)
+  | let v = ltrimstr(ltrimstr(raw, "v"), "V")
   | let build_parts = split(v, "\\+")
   | let build = if (len(build_parts) > 1): build_parts[1] else: ""
   | let pre_parts = split(build_parts[0], "-")
