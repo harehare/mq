@@ -227,6 +227,29 @@ body {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  position: relative;
+}
+
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: light-dark(rgba(103, 184, 227, 0.12), rgba(103, 184, 227, 0.12));
+  border: 2px dashed light-dark(#67b8e3, #67b8e3);
+  pointer-events: none;
+}
+
+.drop-overlay-content {
+  font-size: 13px;
+  font-weight: 600;
+  color: light-dark(#2b6cb0, #67b8e3);
+  background-color: light-dark(rgba(255, 255, 255, 0.9), rgba(30, 41, 59, 0.9));
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid light-dark(#67b8e3, #67b8e3);
 }
 
 .editor {
