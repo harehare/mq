@@ -1,14 +1,12 @@
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
+use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
 use wasm_bindgen::prelude::*;
 
 #[cfg(feature = "opfs")]
 use futures::StreamExt;
 #[cfg(feature = "opfs")]
 use opfs::{DirectoryHandle, FileHandle};
-#[cfg(feature = "opfs")]
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_CUSTOM_SECTION: &'static str = r#"
@@ -52,6 +50,10 @@ export function diagnostics(code: string, enableTypeCheck?: boolean): Promise<Re
 export function hover(code: string, line: number, column: number): Promise<HoverResult | null>;
 export function inlayHints(code: string): Promise<ReadonlyArray<InlayHint>>;
 export function run(code: string, content: string, options: Options): Promise<string>;
+/** Clears mutable HTTP module cache (HEAD/branch imports). Versioned (tagged) cache is preserved. */
+export function clearHttpCache(): Promise<void>;
+/** Clears all HTTP module cache including versioned (tagged) imports. */
+export function clearAllHttpCache(): Promise<void>;
 "#;
 
 #[derive(Serialize, Deserialize)]
@@ -226,6 +228,8 @@ impl From<ConversionOptions> for mq_markdown::ConversionOptions {
 
 #[derive(Debug, Clone, Default)]
 pub struct WasmModuleResolver {
+    /// Cache for HTTP-fetched modules, keyed by the original import path (URL or github shorthand).
+    http_cache: Rc<RefCell<HashMap<String, String>>>,
     #[cfg(feature = "opfs")]
     /// Cache of preloaded module contents, keyed by module name
     cache: Rc<RefCell<HashMap<String, String>>>,
@@ -334,21 +338,123 @@ impl WasmModuleResolver {
         #[cfg(feature = "opfs")]
         self.cache.borrow_mut().clear();
     }
+
+    /// Pre-fetches all HTTP/GitHub import URLs found in `code` (and their transitive imports).
+    ///
+    /// Mirrors CLI caching behaviour:
+    /// - Versioned URLs (`@v1.0`) are cached persistently in OPFS `http_cache/versioned/`.
+    /// - Mutable URLs (HEAD/branch) are cached in OPFS `http_cache/mutable/`.
+    /// - Each cached file has a SHA-256 sidecar for tamper detection.
+    /// - Results are also kept in `http_cache` for the lifetime of this session.
+    pub async fn preload_http_modules(&self, code: &str) {
+        const MAX_DEPTH: usize = 5;
+
+        #[cfg(feature = "opfs")]
+        let root = self.root_dir.borrow().clone();
+
+        // HTTP import requires OPFS for caching; skip if OPFS is unavailable.
+        #[cfg(feature = "opfs")]
+        if root.is_none() {
+            return;
+        }
+
+        let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut pending = extract_http_import_urls(code);
+
+        for _ in 0..MAX_DEPTH {
+            if pending.is_empty() {
+                break;
+            }
+
+            let mut next = Vec::new();
+
+            for module_path in pending {
+                if visited.contains(&module_path) {
+                    continue;
+                }
+                visited.insert(module_path.clone());
+
+                if self.http_cache.borrow().contains_key(&module_path) {
+                    continue;
+                }
+
+                let fetch_url = if is_github_url(&module_path) {
+                    match github_to_raw_url(&module_path) {
+                        Some(u) => u,
+                        None => continue,
+                    }
+                } else if is_http_url(&module_path) {
+                    module_path.clone()
+                } else {
+                    continue;
+                };
+
+                let subdir = if is_versioned_url(&fetch_url) { "versioned" } else { "mutable" };
+                let stem = cache_file_stem(&fetch_url);
+
+                // Fast path: OPFS cache hit
+                #[cfg(feature = "opfs")]
+                if let Some(ref r) = root {
+                    if let Some(content) = try_read_opfs_http_cache(r, subdir, &stem).await {
+                        next.extend(extract_http_import_urls(&content));
+                        self.http_cache.borrow_mut().insert(module_path, content);
+                        continue;
+                    }
+                }
+
+                // Slow path: fetch from network
+                if let Ok(content) = fetch_text(&fetch_url).await {
+                    #[cfg(feature = "opfs")]
+                    if let Some(ref r) = root {
+                        write_opfs_http_cache(r, subdir, &stem, &content).await;
+                    }
+                    next.extend(extract_http_import_urls(&content));
+                    self.http_cache.borrow_mut().insert(module_path, content);
+                }
+            }
+
+            pending = next;
+        }
+    }
 }
 
 impl mq_lang::ModuleResolver for WasmModuleResolver {
+    fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
+        if is_github_url(module_path) || is_http_url(module_path) {
+            extract_module_name(module_path)
+        } else {
+            module_path
+        }
+    }
+
     fn resolve(&self, module_name: &str) -> Result<String, mq_lang::ModuleError> {
         if let Some(content_fn) = mq_lang::STANDARD_MODULES.get(module_name) {
             return Ok(content_fn().to_string());
         }
 
+        if let Some(content) = self.http_cache.borrow().get(module_name).cloned() {
+            return Ok(content);
+        }
+
         #[cfg(feature = "opfs")]
-        return self.cache.borrow().get(module_name).cloned().ok_or_else(|| {
-            mq_lang::ModuleError::NotFound(std::borrow::Cow::Owned(format!(
-                "Module '{}' not found in cache. Use preload_modules() to load it first.",
-                module_name
-            )))
-        });
+        {
+            if (is_http_url(module_name) || is_github_url(module_name))
+                && self.root_dir.borrow().is_none()
+            {
+                return Err(mq_lang::ModuleError::IOError(std::borrow::Cow::Owned(
+                    format!(
+                        "HTTP import of '{}' is not available: OPFS is not supported in this environment.",
+                        module_name
+                    ),
+                )));
+            }
+            return self.cache.borrow().get(module_name).cloned().ok_or_else(|| {
+                mq_lang::ModuleError::NotFound(std::borrow::Cow::Owned(format!(
+                    "Module '{}' not found in cache. Use preload_modules() to load it first.",
+                    module_name
+                )))
+            });
+        }
         #[cfg(not(feature = "opfs"))]
         return Err(mq_lang::ModuleError::NotFound(std::borrow::Cow::Owned(format!(
             "Module '{}' not found. Module resolution is not supported in this environment.",
@@ -357,6 +463,11 @@ impl mq_lang::ModuleResolver for WasmModuleResolver {
     }
 
     fn get_path(&self, module_name: &str) -> Result<String, mq_lang::ModuleError> {
+        if is_github_url(module_name) {
+            return github_to_raw_url(module_name)
+                .map(Ok)
+                .unwrap_or_else(|| Ok(module_name.to_string()));
+        }
         Ok(module_name.to_string())
     }
 
@@ -369,11 +480,54 @@ impl mq_lang::ModuleResolver for WasmModuleResolver {
     }
 }
 
+/// Removes mutable HTTP module cache (HEAD/branch imports).
+/// Versioned (tagged) cached modules are preserved, matching `--refresh-modules` CLI behaviour.
+#[wasm_bindgen(js_name=clearHttpCache)]
+pub async fn clear_http_cache() -> Result<(), JsValue> {
+    #[cfg(feature = "opfs")]
+    {
+        use opfs::DirectoryHandle as _;
+
+        let root = opfs::persistent::app_specific_dir()
+            .await
+            .map_err(|e| JsValue::from_str(&format!("OPFS unavailable: {:?}", e)))?;
+
+        if let Ok(mut cache_dir) = root
+            .get_directory_handle_with_options(HTTP_CACHE_DIR, &opfs::GetDirectoryHandleOptions { create: false })
+            .await
+        {
+            let _ = cache_dir
+                .remove_entry_with_options("mutable", &opfs::FileSystemRemoveOptions { recursive: true })
+                .await;
+        }
+    }
+    Ok(())
+}
+
+/// Removes all HTTP module cache including versioned (tagged) imports, matching `--clear-cache` CLI behaviour.
+#[wasm_bindgen(js_name=clearAllHttpCache)]
+pub async fn clear_all_http_cache() -> Result<(), JsValue> {
+    #[cfg(feature = "opfs")]
+    {
+        use opfs::DirectoryHandle as _;
+
+        let mut root = opfs::persistent::app_specific_dir()
+            .await
+            .map_err(|e| JsValue::from_str(&format!("OPFS unavailable: {:?}", e)))?;
+
+        let _ = root
+            .remove_entry_with_options(HTTP_CACHE_DIR, &opfs::FileSystemRemoveOptions { recursive: true })
+            .await;
+    }
+    Ok(())
+}
+
 #[wasm_bindgen(js_name=run, skip_typescript)]
 pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValue> {
     let resolver = WasmModuleResolver::new();
     resolver.initialize().await;
     resolver.preload_modules().await;
+    resolver.preload_http_modules(code).await;
 
     let options: Options = serde_wasm_bindgen::from_value(options)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse options: {}", e)))?;
@@ -715,6 +869,250 @@ pub async fn hover(code: &str, line: u32, column: u32) -> JsValue {
         content: format_hover_content(&signature, &symbol.doc, deprecated),
     };
     serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
+}
+
+/// Name of the OPFS subdirectory used to store cached HTTP modules.
+const HTTP_CACHE_DIR: &str = "http_cache";
+
+fn is_http_url(url: &str) -> bool {
+    url.starts_with("https://") || url.starts_with("http://")
+}
+
+fn is_github_url(url: &str) -> bool {
+    let s = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    s.starts_with("github.com/")
+}
+
+/// Converts a GitHub shorthand (`[https://]github.com/{owner}/{repo}[@{version}]`) to a
+/// `raw.githubusercontent.com` HTTPS URL.
+fn github_to_raw_url(input: &str) -> Option<String> {
+    let without_scheme = input
+        .strip_prefix("https://")
+        .or_else(|| input.strip_prefix("http://"))
+        .unwrap_or(input);
+
+    let rest = without_scheme.strip_prefix("github.com/")?;
+
+    let (path_part, version) = match rest.rfind('@') {
+        Some(pos) => (&rest[..pos], &rest[pos + 1..]),
+        None => (rest, "HEAD"),
+    };
+
+    let components: Vec<&str> = path_part.splitn(3, '/').collect();
+
+    let (owner, repo, file) = match components.as_slice() {
+        [owner, name] => {
+            let file = if name.ends_with(".mq") {
+                name.to_string()
+            } else {
+                format!("{}.mq", name)
+            };
+            (owner.to_string(), name.to_string(), file)
+        }
+        [owner, repo, subpath] => (owner.to_string(), repo.to_string(), subpath.to_string()),
+        _ => return None,
+    };
+
+    Some(format!(
+        "https://raw.githubusercontent.com/{}/{}/{}/{}",
+        owner, repo, version, file
+    ))
+}
+
+/// Returns `true` if `url` is pinned to a specific immutable version tag (same logic as CLI).
+fn is_versioned_url(url: &str) -> bool {
+    const MUTABLE_REFS: &[&str] = &["HEAD", "main", "master"];
+    let path = url
+        .strip_prefix("https://raw.githubusercontent.com/")
+        .or_else(|| url.strip_prefix("http://raw.githubusercontent.com/"));
+    match path {
+        Some(rest) => {
+            let ref_segment = rest.split('/').nth(2).unwrap_or("HEAD");
+            !MUTABLE_REFS.contains(&ref_segment)
+        }
+        None => false,
+    }
+}
+
+/// Returns the MD5 hex string of `url`, used as the cache file stem.
+fn cache_file_stem(url: &str) -> String {
+    format!("{:x}", md5::compute(url))
+}
+
+/// Computes SHA-256 of `content` as a lowercase hex string.
+fn compute_content_hash(content: &str) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(content.as_bytes())
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect()
+}
+
+/// Tries to read a cached module from OPFS. Returns `None` on any error or hash mismatch.
+#[cfg(feature = "opfs")]
+async fn try_read_opfs_http_cache(
+    root: &opfs::persistent::DirectoryHandle,
+    subdir: &str,
+    stem: &str,
+) -> Option<String> {
+    use opfs::{DirectoryHandle as _, FileHandle as _};
+
+    let cache_dir = root
+        .get_directory_handle_with_options(HTTP_CACHE_DIR, &opfs::GetDirectoryHandleOptions { create: false })
+        .await
+        .ok()?;
+    let sub = cache_dir
+        .get_directory_handle_with_options(subdir, &opfs::GetDirectoryHandleOptions { create: false })
+        .await
+        .ok()?;
+
+    let content_fh = sub
+        .get_file_handle_with_options(&format!("{}.mq", stem), &opfs::GetFileHandleOptions { create: false })
+        .await
+        .ok()?;
+    let hash_fh = sub
+        .get_file_handle_with_options(&format!("{}.mq.sha256", stem), &opfs::GetFileHandleOptions { create: false })
+        .await
+        .ok()?;
+
+    let content = String::from_utf8(content_fh.read().await.ok()?).ok()?;
+    let stored = String::from_utf8(hash_fh.read().await.ok()?).ok()?;
+
+    if stored.trim() == compute_content_hash(&content) {
+        Some(content)
+    } else {
+        None
+    }
+}
+
+/// Writes `content` and its SHA-256 sidecar to the OPFS HTTP cache. Silently ignores errors.
+#[cfg(feature = "opfs")]
+async fn write_opfs_http_cache(
+    root: &opfs::persistent::DirectoryHandle,
+    subdir: &str,
+    stem: &str,
+    content: &str,
+) {
+    async fn write_file(
+        dir: &opfs::persistent::DirectoryHandle,
+        name: &str,
+        data: &[u8],
+    ) -> Option<()> {
+        use opfs::{DirectoryHandle as _, FileHandle as _, WritableFileStream as _};
+        let mut fh = dir
+            .get_file_handle_with_options(name, &opfs::GetFileHandleOptions { create: true })
+            .await
+            .ok()?;
+        let mut w = fh
+            .create_writable_with_options(&opfs::CreateWritableOptions { keep_existing_data: false })
+            .await
+            .ok()?;
+        w.write_at_cursor_pos(data).await.ok()?;
+        w.close().await.ok()
+    }
+
+    let Ok(cache_dir) = root
+        .get_directory_handle_with_options(HTTP_CACHE_DIR, &opfs::GetDirectoryHandleOptions { create: true })
+        .await
+    else {
+        return;
+    };
+    let Ok(sub) = cache_dir
+        .get_directory_handle_with_options(subdir, &opfs::GetDirectoryHandleOptions { create: true })
+        .await
+    else {
+        return;
+    };
+
+    let _ = write_file(&sub, &format!("{}.mq", stem), content.as_bytes()).await;
+    let _ = write_file(&sub, &format!("{}.mq.sha256", stem), compute_content_hash(content).as_bytes()).await;
+}
+
+/// Extracts a short module name from an HTTP URL or GitHub shorthand.
+fn extract_module_name(module_path: &str) -> &str {
+    let path = module_path
+        .strip_prefix("https://")
+        .or_else(|| module_path.strip_prefix("http://"))
+        .unwrap_or(module_path);
+
+    let without_version = match path.rfind('@') {
+        Some(pos) => &path[..pos],
+        None => path,
+    };
+
+    let last_segment = without_version.rsplit('/').next().unwrap_or(without_version);
+    last_segment.strip_suffix(".mq").unwrap_or(last_segment)
+}
+
+/// Parses `code` and returns all import paths that look like HTTP or GitHub URLs.
+fn extract_http_import_urls(code: &str) -> Vec<String> {
+    let token_arena = mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
+    let Ok(program) = mq_lang::parse(code, token_arena) else {
+        return vec![];
+    };
+
+    program
+        .iter()
+        .filter_map(|node| {
+            if let mq_lang::AstExpr::Import(mq_lang::AstLiteral::String(url)) = &*node.expr {
+                if is_http_url(url) || is_github_url(url) {
+                    Some(url.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Fetches the text content of a HTTPS URL.
+///
+/// Uses the global `fetch` function, which is available in browsers (`window.fetch`),
+/// Node.js 18+, and Deno — so the same implementation works across all WASM hosts.
+async fn fetch_text(url: &str) -> Result<String, String> {
+    if !url.starts_with("https://") {
+        return Err(format!("only HTTPS URLs are supported: {}", url));
+    }
+
+    let global = js_sys::global();
+    let fetch_val = js_sys::Reflect::get(&global, &JsValue::from_str("fetch"))
+        .map_err(|_| "global fetch is not available".to_string())?;
+
+    if !fetch_val.is_function() {
+        return Err("fetch is not available in this environment".to_string());
+    }
+
+    let fetch_fn: js_sys::Function = fetch_val.unchecked_into();
+    let fetch_promise: js_sys::Promise = fetch_fn
+        .call1(&JsValue::UNDEFINED, &JsValue::from_str(url))
+        .map_err(|e| format!("fetch() call failed: {:?}", e))?
+        .unchecked_into();
+
+    let response_val = wasm_bindgen_futures::JsFuture::from(fetch_promise)
+        .await
+        .map_err(|e| format!("fetch request failed: {:?}", e))?;
+
+    let response: web_sys::Response = response_val
+        .dyn_into()
+        .map_err(|_| "failed to cast fetch result to Response".to_string())?;
+
+    if !response.ok() {
+        return Err(format!("HTTP {} fetching {}", response.status(), url));
+    }
+
+    let text_promise = response.text().map_err(|e| format!("{:?}", e))?;
+    let text_val = wasm_bindgen_futures::JsFuture::from(text_promise)
+        .await
+        .map_err(|e| format!("failed to read response body: {:?}", e))?;
+
+    text_val
+        .as_string()
+        .ok_or_else(|| "response body is not a string".to_string())
 }
 
 #[cfg(test)]

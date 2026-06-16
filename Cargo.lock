@@ -2706,6 +2706,7 @@ dependencies = [
  "futures",
  "itertools",
  "js-sys",
+ "md5",
  "mq-check",
  "mq-formatter",
  "mq-hir",
@@ -2715,9 +2716,11 @@ dependencies = [
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
+ "sha2 0.11.0",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
+ "web-sys",
 ]
 
 [[package]]
