@@ -268,6 +268,8 @@ export const Playground = () => {
     line: 1,
     column: 1,
   });
+  const [isDraggingOverCode, setIsDraggingOverCode] = useState(false);
+  const [isDraggingOverMarkdown, setIsDraggingOverMarkdown] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const [tabs, setTabs] = useState<Tab[]>(() => {
@@ -1168,6 +1170,83 @@ export const Playground = () => {
     }
   }, [currentFilePath, code, activeTabId]);
 
+  const readDroppedFile = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+
+  const handleCodeEditorDrop = useCallback(
+    async (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setIsDraggingOverCode(false);
+      const file = e.dataTransfer.files[0];
+      if (!file) return;
+
+      try {
+        const content = await readDroppedFile(file);
+        setCode(content);
+
+        if (isOPFSSupported) {
+          const path = `/${file.name}`;
+          await fileSystem.writeFile(path, content);
+          await loadFiles();
+          openOrSwitchToTab(path, content);
+          setSelectedFile(path);
+          localStorage.setItem(CURRENT_FILE_PATH_KEY, path);
+          localStorage.setItem(SELECTED_FILE_KEY, path);
+        }
+
+        showToast(`Imported "${file.name}"`, "success");
+      } catch {
+        showToast(`Failed to import "${file.name}"`, "error");
+      }
+    },
+    [isOPFSSupported, loadFiles, openOrSwitchToTab, showToast],
+  );
+
+  const handleMarkdownEditorDrop = useCallback(
+    async (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setIsDraggingOverMarkdown(false);
+      const file = e.dataTransfer.files[0];
+      if (!file) return;
+
+      try {
+        const content = await readDroppedFile(file);
+        const ext = file.name.split(".").pop()?.toLowerCase();
+        setMarkdown(content);
+
+        if (ext === "mdx") {
+          setInputFormat("mdx");
+        } else if (ext === "html") {
+          setInputFormat("html");
+        } else if (ext === "txt") {
+          setInputFormat("text");
+        } else {
+          setInputFormat("markdown");
+        }
+
+        if (isOPFSSupported) {
+          const path = `/${file.name}`;
+          await fileSystem.writeFile(path, content);
+          await loadFiles();
+          openOrSwitchToTab(path, content);
+          setSelectedFile(path);
+          localStorage.setItem(CURRENT_FILE_PATH_KEY, path);
+          localStorage.setItem(SELECTED_FILE_KEY, path);
+        }
+
+        showToast(`Imported "${file.name}"`, "success");
+      } catch {
+        showToast(`Failed to import "${file.name}"`, "error");
+      }
+    },
+    [isOPFSSupported, loadFiles, openOrSwitchToTab, showToast],
+  );
+
   // Keep vim-accessible refs in sync with latest callbacks and state
   useEffect(() => {
     saveCurrentFileRef.current = saveCurrentFile;
@@ -1995,7 +2074,22 @@ img{max-width:100%}
           <div
             className="editor-container"
             style={isDesktopView ? { height: `${topBottomSplit}%` } : undefined}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDraggingOverCode(true);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                setIsDraggingOverCode(false);
+              }
+            }}
+            onDrop={handleCodeEditorDrop}
           >
+            {isDraggingOverCode && (
+              <div className="drop-overlay">
+                <div className="drop-overlay-content">Drop file to import</div>
+              </div>
+            )}
             {!isEmbed && tabs.length > 0 && (
               <TabBar
                 tabs={tabs}
@@ -2102,7 +2196,25 @@ img{max-width:100%}
             <ResizeHandle direction="vertical" onResize={handleEditorResize} />
           )}
 
-          <div className="editor-container" style={{ flex: 1 }}>
+          <div
+            className="editor-container"
+            style={{ flex: 1 }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDraggingOverMarkdown(true);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                setIsDraggingOverMarkdown(false);
+              }
+            }}
+            onDrop={handleMarkdownEditorDrop}
+          >
+            {isDraggingOverMarkdown && (
+              <div className="drop-overlay">
+                <div className="drop-overlay-content">Drop file to import</div>
+              </div>
+            )}
             <div className="editor-header">
               <label className="label">
                 <select
