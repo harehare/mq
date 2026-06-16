@@ -24,7 +24,7 @@ md5 = {workspace = true}
 mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
 mq-check = {workspace = true}
-mq-lang = {workspace = true, features = ["ast-json"]}
+mq-lang = {workspace = true, features = ["ast-json", "http-import"]}
 sha2 = {workspace = true}
 mq-markdown = {workspace = true}
 opfs = {workspace = true, optional = true}

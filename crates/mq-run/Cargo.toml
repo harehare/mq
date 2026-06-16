@@ -15,7 +15,7 @@ default-run = "mq"
 [features]
 debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite", "mq-dap"]
 default = ["std", "use_mimalloc", "http-import"]
-http-import = ["mq-lang/http-import"]
+http-import = ["mq-lang/http-import-ureq"]
 std = []
 use_mimalloc = ["mimalloc"]
 

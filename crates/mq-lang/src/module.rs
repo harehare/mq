@@ -242,8 +242,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     pub fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
         #[cfg(feature = "http-import")]
         if self.http_depth > 0
-            && (resolver::http_resolver::HttpModuleResolver::is_remote_url(module_name)
-                || resolver::http_resolver::HttpModuleResolver::is_github_url(module_name))
+            && (resolver::http_import::is_remote_url(module_name) || resolver::http_import::is_github_url(module_name))
         {
             return Err(ModuleError::HttpImportNotAllowed(std::borrow::Cow::Owned(
                 module_name.to_string(),
@@ -383,7 +382,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 }
 
-#[cfg(feature = "http-import")]
+#[cfg(feature = "http-import-ureq")]
 impl ModuleLoader<DefaultModuleResolver> {
     /// Replaces the HTTP resolver's domain allowlist.
     pub fn set_http_allowed_domains(&mut self, domains: Vec<String>) {

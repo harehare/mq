@@ -55,7 +55,8 @@ default = ["std"]
 file-io = []
 std = []
 sync = []
-http-import = ["dep:ureq"]
+http-import = []
+http-import-ureq = ["http-import", "dep:ureq"]
 
 [dev-dependencies]
 divan = {workspace = true}

@@ -341,7 +341,7 @@ impl<T: ModuleResolver> Engine<T> {
     }
 }
 
-#[cfg(feature = "http-import")]
+#[cfg(feature = "http-import-ureq")]
 impl Engine<DefaultModuleResolver> {
     /// Replaces the HTTP resolver's domain allowlist.
     ///

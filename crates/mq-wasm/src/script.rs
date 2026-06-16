@@ -43,6 +43,8 @@ export interface Options {
     listStyle: 'dash' | 'plus' | 'star' | null,
     linkTitleStyle: 'double' | 'single' | 'paren' | null,
     linkUrlStyle: 'angle' | 'none' | null,
+    /** Domains permitted for HTTP module imports in addition to github.com/harehare (always allowed). */
+    allowedDomains?: string[],
 }
 
 export function definedValues(code: string, module?: string): Promise<ReadonlyArray<DefinedValue>>;
@@ -106,6 +108,7 @@ struct Options {
     list_style: Option<ListStyle>,
     link_title_style: Option<TitleSurroundStyle>,
     link_url_style: Option<UrlSurroundStyle>,
+    allowed_domains: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -226,10 +229,32 @@ impl From<ConversionOptions> for mq_markdown::ConversionOptions {
     }
 }
 
+/// Sync HTTP fetcher for WASM that reads from a pre-populated in-memory cache.
+///
+/// Content is inserted by [`WasmModuleResolver::preload_http_modules`] (async, keyed by raw HTTPS URL)
+/// and then read synchronously by [`mq_lang::ModuleResolver::resolve`].
 #[derive(Debug, Clone, Default)]
+struct WasmFetcher {
+    /// Keyed by the normalized raw HTTPS URL (e.g. `https://raw.githubusercontent.com/...`).
+    cache: Rc<RefCell<HashMap<String, String>>>,
+}
+
+impl mq_lang::HttpFetcher for WasmFetcher {
+    fn fetch(&self, url: &str) -> Result<String, mq_lang::ModuleError> {
+        self.cache
+            .borrow()
+            .get(url)
+            .cloned()
+            .ok_or_else(|| mq_lang::ModuleError::NotFound(std::borrow::Cow::Owned(url.to_string())))
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct WasmModuleResolver {
-    /// Cache for HTTP-fetched modules, keyed by the original import path (URL or github shorthand).
-    http_cache: Rc<RefCell<HashMap<String, String>>>,
+    /// HTTP resolver: handles URL normalization, domain allow-list, and delegates fetch to WasmFetcher.
+    http_resolver: Rc<RefCell<mq_lang::HttpModuleResolver<WasmFetcher>>>,
+    /// Shared reference into WasmFetcher's cache for direct insertion during async preload.
+    fetcher_cache: Rc<RefCell<HashMap<String, String>>>,
     #[cfg(feature = "opfs")]
     /// Cache of preloaded module contents, keyed by module name
     cache: Rc<RefCell<HashMap<String, String>>>,
@@ -241,9 +266,37 @@ pub struct WasmModuleResolver {
     is_available: Rc<RefCell<bool>>,
 }
 
+impl Default for WasmModuleResolver {
+    fn default() -> Self {
+        let fetcher_cache: Rc<RefCell<HashMap<String, String>>> = Rc::new(RefCell::new(HashMap::new()));
+        let fetcher = WasmFetcher {
+            cache: Rc::clone(&fetcher_cache),
+        };
+        Self {
+            http_resolver: Rc::new(RefCell::new(mq_lang::HttpModuleResolver::new(vec![], fetcher))),
+            fetcher_cache,
+            #[cfg(feature = "opfs")]
+            cache: Rc::new(RefCell::new(HashMap::new())),
+            #[cfg(feature = "opfs")]
+            root_dir: Rc::new(RefCell::new(None)),
+            #[cfg(feature = "opfs")]
+            is_available: Rc::new(RefCell::new(false)),
+        }
+    }
+}
+
 impl WasmModuleResolver {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sets the list of additional allowed domains for HTTP imports.
+    ///
+    /// `github.com/{path}` entries are automatically expanded to `raw.githubusercontent.com/{path}`.
+    /// `DEFAULT_ALLOWED_DOMAIN` (`raw.githubusercontent.com/harehare`) is always permitted
+    /// regardless of this list.
+    pub fn set_allowed_domains(&self, domains: Vec<String>) {
+        self.http_resolver.borrow_mut().set_allowed_domains(domains);
     }
 
     /// Initializes the OPFS root directory handle
@@ -339,16 +392,17 @@ impl WasmModuleResolver {
         self.cache.borrow_mut().clear();
     }
 
-    /// Pre-fetches all HTTP/GitHub import URLs found in `code` (and their transitive imports).
+    /// Pre-fetches HTTP/GitHub import URLs found directly in `code` (top-level only).
     ///
-    /// Mirrors CLI caching behaviour:
+    /// Only imports written in the user's own code are resolved; HTTP imports inside
+    /// fetched modules are intentionally ignored.
+    ///
+    /// Caching behaviour:
     /// - Versioned URLs (`@v1.0`) are cached persistently in OPFS `http_cache/versioned/`.
     /// - Mutable URLs (HEAD/branch) are cached in OPFS `http_cache/mutable/`.
     /// - Each cached file has a SHA-256 sidecar for tamper detection.
     /// - Results are also kept in `http_cache` for the lifetime of this session.
     pub async fn preload_http_modules(&self, code: &str) {
-        const MAX_DEPTH: usize = 5;
-
         #[cfg(feature = "opfs")]
         let root = self.root_dir.borrow().clone();
 
@@ -358,70 +412,58 @@ impl WasmModuleResolver {
             return;
         }
 
-        let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut pending = extract_http_import_urls(code);
+        for module_path in extract_http_import_urls(code) {
+            let fetch_url = if mq_lang::http_import::is_github_url(&module_path) {
+                match mq_lang::http_import::github_to_raw_url(&module_path) {
+                    Some(u) => u,
+                    None => continue,
+                }
+            } else if mq_lang::http_import::is_remote_url(&module_path) {
+                module_path.clone()
+            } else {
+                continue;
+            };
 
-        for _ in 0..MAX_DEPTH {
-            if pending.is_empty() {
-                break;
+            if self.fetcher_cache.borrow().contains_key(&fetch_url) {
+                continue;
             }
 
-            let mut next = Vec::new();
+            if !self.http_resolver.borrow().is_allowed_domain(&fetch_url) {
+                continue;
+            }
 
-            for module_path in pending {
-                if visited.contains(&module_path) {
-                    continue;
-                }
-                visited.insert(module_path.clone());
+            let subdir = if mq_lang::http_import::is_versioned_url(&fetch_url) {
+                "versioned"
+            } else {
+                "mutable"
+            };
+            let stem = cache_file_stem(&fetch_url);
 
-                if self.http_cache.borrow().contains_key(&module_path) {
-                    continue;
-                }
+            // Fast path: OPFS cache hit
+            #[cfg(feature = "opfs")]
+            if let Some(ref r) = root
+                && let Some(content) = try_read_opfs_http_cache(r, subdir, &stem).await
+            {
+                self.fetcher_cache.borrow_mut().insert(fetch_url, content);
+                continue;
+            }
 
-                let fetch_url = if is_github_url(&module_path) {
-                    match github_to_raw_url(&module_path) {
-                        Some(u) => u,
-                        None => continue,
-                    }
-                } else if is_http_url(&module_path) {
-                    module_path.clone()
-                } else {
-                    continue;
-                };
-
-                let subdir = if is_versioned_url(&fetch_url) { "versioned" } else { "mutable" };
-                let stem = cache_file_stem(&fetch_url);
-
-                // Fast path: OPFS cache hit
+            // Slow path: fetch from network
+            if let Ok(content) = fetch_text(&fetch_url).await {
                 #[cfg(feature = "opfs")]
                 if let Some(ref r) = root {
-                    if let Some(content) = try_read_opfs_http_cache(r, subdir, &stem).await {
-                        next.extend(extract_http_import_urls(&content));
-                        self.http_cache.borrow_mut().insert(module_path, content);
-                        continue;
-                    }
+                    write_opfs_http_cache(r, subdir, &stem, &content).await;
                 }
-
-                // Slow path: fetch from network
-                if let Ok(content) = fetch_text(&fetch_url).await {
-                    #[cfg(feature = "opfs")]
-                    if let Some(ref r) = root {
-                        write_opfs_http_cache(r, subdir, &stem, &content).await;
-                    }
-                    next.extend(extract_http_import_urls(&content));
-                    self.http_cache.borrow_mut().insert(module_path, content);
-                }
+                self.fetcher_cache.borrow_mut().insert(fetch_url, content);
             }
-
-            pending = next;
         }
     }
 }
 
 impl mq_lang::ModuleResolver for WasmModuleResolver {
     fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
-        if is_github_url(module_path) || is_http_url(module_path) {
-            extract_module_name(module_path)
+        if mq_lang::http_import::is_github_url(module_path) || mq_lang::http_import::is_remote_url(module_path) {
+            mq_lang::http_import::extract_module_name(module_path)
         } else {
             module_path
         }
@@ -432,43 +474,42 @@ impl mq_lang::ModuleResolver for WasmModuleResolver {
             return Ok(content_fn().to_string());
         }
 
-        if let Some(content) = self.http_cache.borrow().get(module_name).cloned() {
-            return Ok(content);
+        #[cfg(feature = "opfs")]
+        if let Some(content) = self.cache.borrow().get(module_name) {
+            return Ok(content.clone());
+        }
+
+        let is_http =
+            mq_lang::http_import::is_remote_url(module_name) || mq_lang::http_import::is_github_url(module_name);
+
+        if is_http {
+            #[cfg(feature = "opfs")]
+            if self.root_dir.borrow().is_none() {
+                return Err(mq_lang::ModuleError::IOError(std::borrow::Cow::Owned(format!(
+                    "HTTP import of '{}' is not available: OPFS is not supported in this environment.",
+                    module_name
+                ))));
+            }
+            return self.http_resolver.borrow().resolve(module_name);
         }
 
         #[cfg(feature = "opfs")]
-        {
-            if (is_http_url(module_name) || is_github_url(module_name))
-                && self.root_dir.borrow().is_none()
-            {
-                return Err(mq_lang::ModuleError::IOError(std::borrow::Cow::Owned(
-                    format!(
-                        "HTTP import of '{}' is not available: OPFS is not supported in this environment.",
-                        module_name
-                    ),
-                )));
-            }
-            return self.cache.borrow().get(module_name).cloned().ok_or_else(|| {
-                mq_lang::ModuleError::NotFound(std::borrow::Cow::Owned(format!(
-                    "Module '{}' not found in cache. Use preload_modules() to load it first.",
-                    module_name
-                )))
-            });
-        }
-        #[cfg(not(feature = "opfs"))]
         return Err(mq_lang::ModuleError::NotFound(std::borrow::Cow::Owned(format!(
-            "Module '{}' not found. Module resolution is not supported in this environment.",
+            "Module '{}' not found in cache. Use preload_modules() to load it first.",
             module_name
         ))));
+        #[cfg(not(feature = "opfs"))]
+        Err(mq_lang::ModuleError::NotFound(std::borrow::Cow::Owned(format!(
+            "Module '{}' not found. Module resolution is not supported in this environment.",
+            module_name
+        ))))
     }
 
     fn get_path(&self, module_name: &str) -> Result<String, mq_lang::ModuleError> {
-        if is_github_url(module_name) {
-            return github_to_raw_url(module_name)
-                .map(Ok)
-                .unwrap_or_else(|| Ok(module_name.to_string()));
+        match self.http_resolver.borrow().get_path(module_name) {
+            Ok(path) => Ok(path),
+            Err(_) => Ok(module_name.to_string()),
         }
-        Ok(module_name.to_string())
     }
 
     fn search_paths(&self) -> Vec<std::path::PathBuf> {
@@ -524,13 +565,16 @@ pub async fn clear_all_http_cache() -> Result<(), JsValue> {
 
 #[wasm_bindgen(js_name=run, skip_typescript)]
 pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValue> {
+    let options: Options = serde_wasm_bindgen::from_value(options)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse options: {}", e)))?;
+
     let resolver = WasmModuleResolver::new();
     resolver.initialize().await;
     resolver.preload_modules().await;
+    if let Some(ref domains) = options.allowed_domains {
+        resolver.set_allowed_domains(domains.clone());
+    }
     resolver.preload_http_modules(code).await;
-
-    let options: Options = serde_wasm_bindgen::from_value(options)
-        .map_err(|e| JsValue::from_str(&format!("Failed to parse options: {}", e)))?;
 
     let is_update = options.is_update;
     let mut engine = mq_lang::Engine::new(resolver);
@@ -874,69 +918,6 @@ pub async fn hover(code: &str, line: u32, column: u32) -> JsValue {
 /// Name of the OPFS subdirectory used to store cached HTTP modules.
 const HTTP_CACHE_DIR: &str = "http_cache";
 
-fn is_http_url(url: &str) -> bool {
-    url.starts_with("https://") || url.starts_with("http://")
-}
-
-fn is_github_url(url: &str) -> bool {
-    let s = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-        .unwrap_or(url);
-    s.starts_with("github.com/")
-}
-
-/// Converts a GitHub shorthand (`[https://]github.com/{owner}/{repo}[@{version}]`) to a
-/// `raw.githubusercontent.com` HTTPS URL.
-fn github_to_raw_url(input: &str) -> Option<String> {
-    let without_scheme = input
-        .strip_prefix("https://")
-        .or_else(|| input.strip_prefix("http://"))
-        .unwrap_or(input);
-
-    let rest = without_scheme.strip_prefix("github.com/")?;
-
-    let (path_part, version) = match rest.rfind('@') {
-        Some(pos) => (&rest[..pos], &rest[pos + 1..]),
-        None => (rest, "HEAD"),
-    };
-
-    let components: Vec<&str> = path_part.splitn(3, '/').collect();
-
-    let (owner, repo, file) = match components.as_slice() {
-        [owner, name] => {
-            let file = if name.ends_with(".mq") {
-                name.to_string()
-            } else {
-                format!("{}.mq", name)
-            };
-            (owner.to_string(), name.to_string(), file)
-        }
-        [owner, repo, subpath] => (owner.to_string(), repo.to_string(), subpath.to_string()),
-        _ => return None,
-    };
-
-    Some(format!(
-        "https://raw.githubusercontent.com/{}/{}/{}/{}",
-        owner, repo, version, file
-    ))
-}
-
-/// Returns `true` if `url` is pinned to a specific immutable version tag (same logic as CLI).
-fn is_versioned_url(url: &str) -> bool {
-    const MUTABLE_REFS: &[&str] = &["HEAD", "main", "master"];
-    let path = url
-        .strip_prefix("https://raw.githubusercontent.com/")
-        .or_else(|| url.strip_prefix("http://raw.githubusercontent.com/"));
-    match path {
-        Some(rest) => {
-            let ref_segment = rest.split('/').nth(2).unwrap_or("HEAD");
-            !MUTABLE_REFS.contains(&ref_segment)
-        }
-        None => false,
-    }
-}
-
 /// Returns the MD5 hex string of `url`, used as the cache file stem.
 fn cache_file_stem(url: &str) -> String {
     format!("{:x}", md5::compute(url))
@@ -974,7 +955,10 @@ async fn try_read_opfs_http_cache(
         .await
         .ok()?;
     let hash_fh = sub
-        .get_file_handle_with_options(&format!("{}.mq.sha256", stem), &opfs::GetFileHandleOptions { create: false })
+        .get_file_handle_with_options(
+            &format!("{}.mq.sha256", stem),
+            &opfs::GetFileHandleOptions { create: false },
+        )
         .await
         .ok()?;
 
@@ -990,24 +974,17 @@ async fn try_read_opfs_http_cache(
 
 /// Writes `content` and its SHA-256 sidecar to the OPFS HTTP cache. Silently ignores errors.
 #[cfg(feature = "opfs")]
-async fn write_opfs_http_cache(
-    root: &opfs::persistent::DirectoryHandle,
-    subdir: &str,
-    stem: &str,
-    content: &str,
-) {
-    async fn write_file(
-        dir: &opfs::persistent::DirectoryHandle,
-        name: &str,
-        data: &[u8],
-    ) -> Option<()> {
+async fn write_opfs_http_cache(root: &opfs::persistent::DirectoryHandle, subdir: &str, stem: &str, content: &str) {
+    async fn write_file(dir: &opfs::persistent::DirectoryHandle, name: &str, data: &[u8]) -> Option<()> {
         use opfs::{DirectoryHandle as _, FileHandle as _, WritableFileStream as _};
         let mut fh = dir
             .get_file_handle_with_options(name, &opfs::GetFileHandleOptions { create: true })
             .await
             .ok()?;
         let mut w = fh
-            .create_writable_with_options(&opfs::CreateWritableOptions { keep_existing_data: false })
+            .create_writable_with_options(&opfs::CreateWritableOptions {
+                keep_existing_data: false,
+            })
             .await
             .ok()?;
         w.write_at_cursor_pos(data).await.ok()?;
@@ -1028,23 +1005,12 @@ async fn write_opfs_http_cache(
     };
 
     let _ = write_file(&sub, &format!("{}.mq", stem), content.as_bytes()).await;
-    let _ = write_file(&sub, &format!("{}.mq.sha256", stem), compute_content_hash(content).as_bytes()).await;
-}
-
-/// Extracts a short module name from an HTTP URL or GitHub shorthand.
-fn extract_module_name(module_path: &str) -> &str {
-    let path = module_path
-        .strip_prefix("https://")
-        .or_else(|| module_path.strip_prefix("http://"))
-        .unwrap_or(module_path);
-
-    let without_version = match path.rfind('@') {
-        Some(pos) => &path[..pos],
-        None => path,
-    };
-
-    let last_segment = without_version.rsplit('/').next().unwrap_or(without_version);
-    last_segment.strip_suffix(".mq").unwrap_or(last_segment)
+    let _ = write_file(
+        &sub,
+        &format!("{}.mq.sha256", stem),
+        compute_content_hash(content).as_bytes(),
+    )
+    .await;
 }
 
 /// Parses `code` and returns all import paths that look like HTTP or GitHub URLs.
@@ -1058,7 +1024,7 @@ fn extract_http_import_urls(code: &str) -> Vec<String> {
         .iter()
         .filter_map(|node| {
             if let mq_lang::AstExpr::Import(mq_lang::AstLiteral::String(url)) = &*node.expr {
-                if is_http_url(url) || is_github_url(url) {
+                if mq_lang::http_import::is_remote_url(url) || mq_lang::http_import::is_github_url(url) {
                     Some(url.clone())
                 } else {
                     None
@@ -1133,6 +1099,7 @@ mod tests {
                 list_style: None,
                 link_title_style: None,
                 link_url_style: None,
+                allowed_domains: None,
             })
             .unwrap(),
         );
@@ -1151,6 +1118,7 @@ mod tests {
                 list_style: Some(ListStyle::Star),
                 link_title_style: None,
                 link_url_style: None,
+                allowed_domains: None,
             })
             .unwrap(),
         );
@@ -1169,6 +1137,7 @@ mod tests {
                 list_style: None,
                 link_title_style: None,
                 link_url_style: Some(UrlSurroundStyle::Angle),
+                allowed_domains: None,
             })
             .unwrap(),
         );
@@ -1188,6 +1157,7 @@ mod tests {
                     list_style: None,
                     link_title_style: None,
                     link_url_style: None,
+                    allowed_domains: None,
                 })
                 .unwrap()
             )
