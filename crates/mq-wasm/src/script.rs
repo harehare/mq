@@ -231,12 +231,59 @@ impl From<ConversionOptions> for mq_markdown::ConversionOptions {
 
 /// Sync HTTP fetcher for WASM that reads from a pre-populated in-memory cache.
 ///
-/// Content is inserted by [`WasmModuleResolver::preload_http_modules`] (async, keyed by raw HTTPS URL)
+/// Content is inserted by [`WasmFetcher::preload_url`] (async, keyed by raw HTTPS URL)
 /// and then read synchronously by [`mq_lang::ModuleResolver::resolve`].
+///
+/// When the `opfs` feature is enabled and an OPFS root handle is set, `preload_url` also
+/// maintains a persistent on-disk cache with SHA-256 sidecar files for tamper detection.
+/// HTTP imports are blocked entirely when OPFS is compiled in but unavailable at runtime.
 #[derive(Debug, Clone, Default)]
 struct WasmFetcher {
     /// Keyed by the normalized raw HTTPS URL (e.g. `https://raw.githubusercontent.com/...`).
     cache: Rc<RefCell<HashMap<String, String>>>,
+    #[cfg(feature = "opfs")]
+    /// OPFS root handle shared with `WasmModuleResolver`. `None` means OPFS is unavailable.
+    root_dir: Rc<RefCell<Option<opfs::persistent::DirectoryHandle>>>,
+}
+
+impl WasmFetcher {
+    #[cfg(feature = "opfs")]
+    fn is_opfs_available(&self) -> bool {
+        self.root_dir.borrow().is_some()
+    }
+
+    /// Ensures `fetch_url` is in the in-memory cache, using OPFS as a persistent backing store.
+    ///
+    /// - If the URL is already in the memory cache, returns immediately.
+    /// - Otherwise checks the OPFS `http_cache/{subdir}` directory for a cached copy with a valid
+    ///   SHA-256 sidecar.  On a hit the content is loaded into memory.
+    /// - On an OPFS miss the URL is fetched from the network, written to OPFS, then cached in memory.
+    #[cfg(feature = "opfs")]
+    async fn preload_url(&self, fetch_url: &str) {
+        if self.cache.borrow().contains_key(fetch_url) {
+            return;
+        }
+
+        let root = self.root_dir.borrow().clone();
+        let Some(ref r) = root else { return };
+
+        let subdir = if mq_lang::http_import::is_versioned_url(fetch_url) {
+            "versioned"
+        } else {
+            "mutable"
+        };
+        let stem = cache_file_stem(fetch_url);
+
+        if let Some(content) = try_read_opfs_http_cache(r, subdir, &stem).await {
+            self.cache.borrow_mut().insert(fetch_url.to_string(), content);
+            return;
+        }
+
+        if let Ok(content) = fetch_text(fetch_url).await {
+            write_opfs_http_cache(r, subdir, &stem, &content).await;
+            self.cache.borrow_mut().insert(fetch_url.to_string(), content);
+        }
+    }
 }
 
 impl mq_lang::HttpFetcher for WasmFetcher {
@@ -253,32 +300,38 @@ impl mq_lang::HttpFetcher for WasmFetcher {
 pub struct WasmModuleResolver {
     /// HTTP resolver: handles URL normalization, domain allow-list, and delegates fetch to WasmFetcher.
     http_resolver: Rc<RefCell<mq_lang::HttpModuleResolver<WasmFetcher>>>,
-    /// Shared reference into WasmFetcher's cache for direct insertion during async preload.
-    fetcher_cache: Rc<RefCell<HashMap<String, String>>>,
+    /// Direct handle to the WasmFetcher; shares the same Rc data as the clone held by `http_resolver`.
+    fetcher: WasmFetcher,
     #[cfg(feature = "opfs")]
-    /// Cache of preloaded module contents, keyed by module name
+    /// Cache of preloaded local `.mq` module contents (from OPFS), keyed by module name.
     cache: Rc<RefCell<HashMap<String, String>>>,
     #[cfg(feature = "opfs")]
-    /// Root directory handle for OPFS access
+    /// OPFS root handle shared with `fetcher.root_dir`.
     root_dir: Rc<RefCell<Option<opfs::persistent::DirectoryHandle>>>,
     #[cfg(feature = "opfs")]
-    /// Flag indicating whether OPFS is available
+    /// Whether OPFS was successfully initialized.
     is_available: Rc<RefCell<bool>>,
 }
 
 impl Default for WasmModuleResolver {
     fn default() -> Self {
-        let fetcher_cache: Rc<RefCell<HashMap<String, String>>> = Rc::new(RefCell::new(HashMap::new()));
+        #[cfg(feature = "opfs")]
+        let root_dir: Rc<RefCell<Option<opfs::persistent::DirectoryHandle>>> = Rc::new(RefCell::new(None));
+
         let fetcher = WasmFetcher {
-            cache: Rc::clone(&fetcher_cache),
+            cache: Rc::new(RefCell::new(HashMap::new())),
+            #[cfg(feature = "opfs")]
+            root_dir: Rc::clone(&root_dir),
         };
+        let http_resolver = mq_lang::HttpModuleResolver::new(vec![], fetcher.clone());
+
         Self {
-            http_resolver: Rc::new(RefCell::new(mq_lang::HttpModuleResolver::new(vec![], fetcher))),
-            fetcher_cache,
+            http_resolver: Rc::new(RefCell::new(http_resolver)),
+            fetcher,
             #[cfg(feature = "opfs")]
             cache: Rc::new(RefCell::new(HashMap::new())),
             #[cfg(feature = "opfs")]
-            root_dir: Rc::new(RefCell::new(None)),
+            root_dir,
             #[cfg(feature = "opfs")]
             is_available: Rc::new(RefCell::new(false)),
         }
@@ -397,18 +450,14 @@ impl WasmModuleResolver {
     /// Only imports written in the user's own code are resolved; HTTP imports inside
     /// fetched modules are intentionally ignored.
     ///
-    /// Caching behaviour:
-    /// - Versioned URLs (`@v1.0`) are cached persistently in OPFS `http_cache/versioned/`.
-    /// - Mutable URLs (HEAD/branch) are cached in OPFS `http_cache/mutable/`.
-    /// - Each cached file has a SHA-256 sidecar for tamper detection.
-    /// - Results are also kept in `http_cache` for the lifetime of this session.
+    /// When the `opfs` feature is enabled, HTTP imports require OPFS to be available —
+    /// this method returns immediately (without fetching) if OPFS is unavailable.
+    /// Versioned URLs (`@v1.0`) are persisted in `http_cache/versioned/` and mutable URLs
+    /// in `http_cache/mutable/`, each with a SHA-256 sidecar for tamper detection.
     pub async fn preload_http_modules(&self, code: &str) {
-        #[cfg(feature = "opfs")]
-        let root = self.root_dir.borrow().clone();
-
         // HTTP import requires OPFS for caching; skip if OPFS is unavailable.
         #[cfg(feature = "opfs")]
-        if root.is_none() {
+        if !self.fetcher.is_opfs_available() {
             return;
         }
 
@@ -424,37 +473,21 @@ impl WasmModuleResolver {
                 continue;
             };
 
-            if self.fetcher_cache.borrow().contains_key(&fetch_url) {
-                continue;
-            }
-
             if !self.http_resolver.borrow().is_allowed_domain(&fetch_url) {
                 continue;
             }
 
-            let subdir = if mq_lang::http_import::is_versioned_url(&fetch_url) {
-                "versioned"
-            } else {
-                "mutable"
-            };
-            let stem = cache_file_stem(&fetch_url);
-
-            // Fast path: OPFS cache hit
             #[cfg(feature = "opfs")]
-            if let Some(ref r) = root
-                && let Some(content) = try_read_opfs_http_cache(r, subdir, &stem).await
-            {
-                self.fetcher_cache.borrow_mut().insert(fetch_url, content);
-                continue;
-            }
+            self.fetcher.preload_url(&fetch_url).await;
 
-            // Slow path: fetch from network
-            if let Ok(content) = fetch_text(&fetch_url).await {
-                #[cfg(feature = "opfs")]
-                if let Some(ref r) = root {
-                    write_opfs_http_cache(r, subdir, &stem, &content).await;
+            #[cfg(not(feature = "opfs"))]
+            {
+                if self.fetcher.cache.borrow().contains_key(&fetch_url) {
+                    continue;
                 }
-                self.fetcher_cache.borrow_mut().insert(fetch_url, content);
+                if let Ok(content) = fetch_text(&fetch_url).await {
+                    self.fetcher.cache.borrow_mut().insert(fetch_url, content);
+                }
             }
         }
     }
@@ -484,7 +517,7 @@ impl mq_lang::ModuleResolver for WasmModuleResolver {
 
         if is_http {
             #[cfg(feature = "opfs")]
-            if self.root_dir.borrow().is_none() {
+            if !self.fetcher.is_opfs_available() {
                 return Err(mq_lang::ModuleError::IOError(std::borrow::Cow::Owned(format!(
                     "HTTP import of '{}' is not available: OPFS is not supported in this environment.",
                     module_name
