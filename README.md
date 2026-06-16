@@ -128,7 +128,7 @@ You can install the Neovim plugin by following the instructions in the [mq.nvim 
 
 ### Zed
 
-You can install the Zed extension from the [harehare/zed-mq](https://github.com/harehare/zed-mq) repository.
+You can install the Zed extension from the [zed-mq](https://github.com/harehare/mq/blob/main/editors/zed/README.md) repository.
 
 ### GitHub Actions
 
@@ -323,7 +323,7 @@ mq 'select(.[] || .h) | select(contains("name"))' docs.md
 mq '.code | select(.code.lang != "js")' examples.md
 
 # Convert CSV to markdown table
-mq 'include "csv" | csv_parse(true) | csv_to_markdown_table()' example.csv
+mq 'csv::csv_to_markdown_table' example.csv
 
 # Extract a section by title
 mq -A 'section::section("Installation")' README.md
