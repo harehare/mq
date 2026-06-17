@@ -96,7 +96,7 @@ test-fuzz:
 # Run WebAssembly tests in Chrome
 [working-directory: 'crates/mq-wasm']
 test-wasm:
-    wasm-pack test --chrome
+    wasm-pack test --chrome --headless
 
 # Run formatter and linter
 lint:

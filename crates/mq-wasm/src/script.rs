@@ -389,8 +389,7 @@ impl WasmModuleResolver {
             };
 
             let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
-            let mut queue: std::collections::VecDeque<String> =
-                extract_local_import_names(code).into_iter().collect();
+            let mut queue: std::collections::VecDeque<String> = extract_local_import_names(code).into_iter().collect();
 
             while let Some(name) = queue.pop_front() {
                 if visited.contains(&name) {
@@ -1299,10 +1298,10 @@ mod tests {
         let resolver = WasmModuleResolver::new();
 
         // Manually add a module to cache
-        resolver.add_module("test", "def foo(x): x | upcase();".to_string());
+        resolver.add_module("my_module", "def foo(x): x | upcase();".to_string());
 
         // Should be able to resolve it
-        let result = mq_lang::ModuleResolver::resolve(&resolver, "test");
+        let result = mq_lang::ModuleResolver::resolve(&resolver, "my_module");
         #[cfg(feature = "opfs")]
         {
             assert!(result.is_ok());
@@ -1328,15 +1327,15 @@ mod tests {
         let resolver = WasmModuleResolver::new();
 
         // Add a module
-        resolver.add_module("test", "content".to_string());
+        resolver.add_module("my_module", "content".to_string());
         #[cfg(feature = "opfs")]
-        assert!(mq_lang::ModuleResolver::resolve(&resolver, "test").is_ok());
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "my_module").is_ok());
 
         // Clear cache
         resolver.clear_cache();
 
         // Should no longer be resolvable
-        assert!(mq_lang::ModuleResolver::resolve(&resolver, "test").is_err());
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "my_module").is_err());
     }
 
     #[cfg(feature = "opfs")]
@@ -1388,8 +1387,8 @@ mod tests {
         }
 
         let code = r#"
-            let tm = import "test_module"
-            | tm::upcase_exclaim()
+            import "test_module"
+            | test_module::upcase_exclaim()
         "#;
 
         resolver.preload_modules(code).await;
@@ -1694,7 +1693,9 @@ mod tests {
             .await
             .expect("get_file_handle");
         let mut w = fh
-            .create_writable_with_options(&opfs::CreateWritableOptions { keep_existing_data: false })
+            .create_writable_with_options(&opfs::CreateWritableOptions {
+                keep_existing_data: false,
+            })
             .await
             .expect("create_writable");
         w.write_at_cursor_pos(content.as_bytes()).await.expect("write");
@@ -1894,15 +1895,17 @@ mod tests {
     #[wasm_bindgen_test]
     async fn test_canonical_name_local_module_unchanged() {
         let resolver = WasmModuleResolver::new();
-        assert_eq!(mq_lang::ModuleResolver::canonical_name(&resolver, "local_mod"), "local_mod");
+        assert_eq!(
+            mq_lang::ModuleResolver::canonical_name(&resolver, "local_mod"),
+            "local_mod"
+        );
     }
 
     #[allow(unused)]
     #[wasm_bindgen_test]
     async fn test_get_path_harehare_github_url_expands_to_raw_url() {
         let resolver = WasmModuleResolver::new();
-        let path =
-            mq_lang::ModuleResolver::get_path(&resolver, "github.com/harehare/mymod").unwrap();
+        let path = mq_lang::ModuleResolver::get_path(&resolver, "github.com/harehare/mymod").unwrap();
         assert!(path.starts_with("https://raw.githubusercontent.com/harehare/mymod/"));
     }
 
@@ -1930,10 +1933,8 @@ mod tests {
     async fn test_resolve_https_url_without_opfs_returns_io_error() {
         let resolver = WasmModuleResolver::new();
         // initialize() not called → OPFS unavailable
-        let result = mq_lang::ModuleResolver::resolve(
-            &resolver,
-            "https://raw.githubusercontent.com/harehare/mod/HEAD/mod.mq",
-        );
+        let result =
+            mq_lang::ModuleResolver::resolve(&resolver, "https://raw.githubusercontent.com/harehare/mod/HEAD/mod.mq");
         assert!(
             matches!(result, Err(mq_lang::ModuleError::IOError(_))),
             "expected IOError when OPFS is unavailable, got: {:?}",
@@ -2057,10 +2058,8 @@ mod tests {
             result
         );
         // alice/other is still blocked
-        let blocked = mq_lang::ModuleResolver::resolve(
-            &resolver,
-            "https://raw.githubusercontent.com/alice/other/HEAD/other.mq",
-        );
+        let blocked =
+            mq_lang::ModuleResolver::resolve(&resolver, "https://raw.githubusercontent.com/alice/other/HEAD/other.mq");
         assert!(matches!(blocked, Err(mq_lang::ModuleError::IOError(_))));
     }
 
@@ -2072,11 +2071,13 @@ mod tests {
         resolver.preload_http_modules("").await;
         // nothing cached; http resolve of any URL still fails
         #[cfg(feature = "opfs")]
-        assert!(mq_lang::ModuleResolver::resolve(
-            &resolver,
-            "https://raw.githubusercontent.com/harehare/test/HEAD/test.mq"
-        )
-        .is_err());
+        assert!(
+            mq_lang::ModuleResolver::resolve(
+                &resolver,
+                "https://raw.githubusercontent.com/harehare/test/HEAD/test.mq"
+            )
+            .is_err()
+        );
     }
 
     #[allow(unused)]
@@ -2087,11 +2088,13 @@ mod tests {
         resolver.preload_http_modules(r#"import "local_mod""#).await;
         // local_mod is not an HTTP URL → skipped; HTTP resolve still fails
         #[cfg(feature = "opfs")]
-        assert!(mq_lang::ModuleResolver::resolve(
-            &resolver,
-            "https://raw.githubusercontent.com/harehare/test/HEAD/test.mq"
-        )
-        .is_err());
+        assert!(
+            mq_lang::ModuleResolver::resolve(
+                &resolver,
+                "https://raw.githubusercontent.com/harehare/test/HEAD/test.mq"
+            )
+            .is_err()
+        );
     }
 
     #[cfg(feature = "opfs")]
@@ -2101,9 +2104,7 @@ mod tests {
         let resolver = WasmModuleResolver::new();
         // initialize() not called → OPFS unavailable → preload_http_modules returns early
         resolver
-            .preload_http_modules(
-                r#"import "https://raw.githubusercontent.com/harehare/test/HEAD/test.mq""#,
-            )
+            .preload_http_modules(r#"import "https://raw.githubusercontent.com/harehare/test/HEAD/test.mq""#)
             .await;
         // resolve should still fail with OPFS-unavailable error, not a domain error
         let result = mq_lang::ModuleResolver::resolve(
