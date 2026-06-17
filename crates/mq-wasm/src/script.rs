@@ -4,9 +4,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
 use wasm_bindgen::prelude::*;
 
 #[cfg(feature = "opfs")]
-use futures::StreamExt;
-#[cfg(feature = "opfs")]
-use opfs::{DirectoryHandle, FileHandle};
+use opfs::DirectoryHandle;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_CUSTOM_SECTION: &'static str = r#"
@@ -370,65 +368,64 @@ impl WasmModuleResolver {
         }
     }
 
-    /// Preloads all `.mq` modules from OPFS into the cache
+    /// Loads and caches only the `.mq` modules that `code` actually imports (directly or
+    /// transitively through other local modules).
     ///
-    /// This method scans the OPFS root directory for all `.mq` files and loads them into cache.
-    /// Module names are stored without the `.mq` extension (e.g., `csv.mq` becomes `csv`).
+    /// Only modules reachable from the imports in `code` are read from OPFS, so queries that
+    /// use a small subset of the available modules pay only for what they need. Cycles
+    /// (e.g. A imports B, B imports A) are handled safely via a visited set.
     ///
     /// If OPFS is not available, this method returns immediately without error.
-    pub async fn preload_modules(&self) {
+    pub async fn preload_modules(&self, code: &str) {
         #[cfg(feature = "opfs")]
         {
-            // Skip if OPFS is not available
             if !*self.is_available.borrow() {
                 return;
             }
 
-            let root = match self.root_dir.borrow().as_ref() {
-                Some(r) => r.clone(),
-                None => return, // Should not happen if is_available is true, but be defensive
+            let root = match self.root_dir.borrow().clone() {
+                Some(r) => r,
+                None => return,
             };
 
-            let mut entries = match root.entries().await {
-                Ok(e) => e,
-                Err(_) => return, // Failed to get directory entries
-            };
+            let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut queue: std::collections::VecDeque<String> =
+                extract_local_import_names(code).into_iter().collect();
 
-            while let Some(result) = entries.next().await {
-                let (name, entry) = match result {
-                    Ok(e) => e,
-                    Err(_) => continue, // Skip entries that fail to read
+            while let Some(name) = queue.pop_front() {
+                if visited.contains(&name) {
+                    continue;
+                }
+                visited.insert(name.clone());
+
+                let content = if let Some(cached) = self.cache.borrow().get(&name).cloned() {
+                    cached
+                } else if let Some(c) = self.load_module_from_opfs(&name, &root).await {
+                    self.cache.borrow_mut().insert(name.clone(), c.clone());
+                    c
+                } else {
+                    continue;
                 };
 
-                match entry {
-                    opfs::DirectoryEntry::File(file_handle) => {
-                        // Only process .mq files
-                        if !name.ends_with(".mq") {
-                            continue;
-                        }
-
-                        // Read file contents
-                        let data = match file_handle.read().await {
-                            Ok(d) => d,
-                            Err(_) => continue, // Skip files that fail to read
-                        };
-
-                        let contents = match String::from_utf8(data) {
-                            Ok(c) => c,
-                            Err(_) => continue, // Skip files that are not valid UTF-8
-                        };
-
-                        // Store with module name (without .mq extension)
-                        let module_name = name.strip_suffix(".mq").unwrap_or(&name);
-                        self.cache.borrow_mut().insert(module_name.to_string(), contents);
-                    }
-                    opfs::DirectoryEntry::Directory(_) => {
-                        // Skip directories for now
-                        continue;
+                for dep in extract_local_import_names(&content) {
+                    if !visited.contains(&dep) {
+                        queue.push_back(dep);
                     }
                 }
             }
         }
+    }
+
+    /// Reads `{name}.mq` from the OPFS root and returns its content, or `None` on any error.
+    #[cfg(feature = "opfs")]
+    async fn load_module_from_opfs(&self, name: &str, root: &opfs::persistent::DirectoryHandle) -> Option<String> {
+        use opfs::{DirectoryHandle as _, FileHandle as _};
+        let file_handle = root
+            .get_file_handle_with_options(&format!("{}.mq", name), &opfs::GetFileHandleOptions { create: false })
+            .await
+            .ok()?;
+        let data = file_handle.read().await.ok()?;
+        String::from_utf8(data).ok()
     }
 
     /// Manually adds a module to the cache
@@ -603,10 +600,10 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
 
     let resolver = WasmModuleResolver::new();
     resolver.initialize().await;
-    resolver.preload_modules().await;
     if let Some(ref domains) = options.allowed_domains {
         resolver.set_allowed_domains(domains.clone());
     }
+    resolver.preload_modules(code).await;
     resolver.preload_http_modules(code).await;
 
     let is_update = options.is_update;
@@ -1046,6 +1043,30 @@ async fn write_opfs_http_cache(root: &opfs::persistent::DirectoryHandle, subdir:
     .await;
 }
 
+/// Parses `code` and returns all import/include paths that are local module names (not URLs).
+fn extract_local_import_names(code: &str) -> Vec<String> {
+    let token_arena = mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
+    let Ok(program) = mq_lang::parse(code, token_arena) else {
+        return vec![];
+    };
+
+    program
+        .iter()
+        .filter_map(|node| {
+            let path = match &*node.expr {
+                mq_lang::AstExpr::Import(mq_lang::AstLiteral::String(p)) => p,
+                mq_lang::AstExpr::Include(mq_lang::AstLiteral::String(p)) => p,
+                _ => return None,
+            };
+            if !mq_lang::http_import::is_remote_url(path) && !mq_lang::http_import::is_github_url(path) {
+                Some(path.clone())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 /// Parses `code` and returns all import/include paths that look like HTTP or GitHub URLs.
 fn extract_http_import_urls(code: &str) -> Vec<String> {
     let token_arena = mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
@@ -1366,19 +1387,16 @@ mod tests {
             writer.close().await.expect("Failed to close writer");
         }
 
-        // Preload modules from OPFS
-        resolver.preload_modules().await;
-
-        // Verify the module was loaded into cache
-        let resolved_content =
-            mq_lang::ModuleResolver::resolve(&resolver, "test_module").expect("Module should be found in cache");
-        assert_eq!(resolved_content, module_content);
-
-        // Test using the imported module in code execution
         let code = r#"
             let tm = import "test_module"
             | tm::upcase_exclaim()
         "#;
+
+        resolver.preload_modules(code).await;
+
+        let resolved_content =
+            mq_lang::ModuleResolver::resolve(&resolver, "test_module").expect("Module should be found in cache");
+        assert_eq!(resolved_content, module_content);
 
         let mut engine = mq_lang::Engine::new(resolver.clone());
         engine.load_builtin_module();
@@ -1444,18 +1462,16 @@ mod tests {
                 .unwrap_or_else(|_| panic!("Failed to close writer for {}", file_name));
         }
 
-        // Preload all modules
-        resolver.preload_modules().await;
-
-        // Verify all modules are loaded
-        assert!(mq_lang::ModuleResolver::resolve(&resolver, "math").is_ok());
-        assert!(mq_lang::ModuleResolver::resolve(&resolver, "string").is_ok());
-
-        // Test using multiple imported modules
         let code = r#"
+            import "math"
             import "string"
             | string::greet("World")
         "#;
+
+        resolver.preload_modules(code).await;
+
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "math").is_ok());
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "string").is_ok());
 
         let mut engine = mq_lang::Engine::new(resolver.clone());
         engine.load_builtin_module();
@@ -1547,6 +1563,649 @@ mod tests {
     async fn test_extract_http_import_urls_empty_code() {
         let urls = extract_http_import_urls("");
         assert!(urls.is_empty());
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_local_import_names_import() {
+        let code = r#"import "mymod""#;
+        let names = extract_local_import_names(code);
+        assert_eq!(names, vec!["mymod"]);
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_local_import_names_include() {
+        let code = r#"include "utils""#;
+        let names = extract_local_import_names(code);
+        assert_eq!(names, vec!["utils"]);
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_local_import_names_excludes_urls() {
+        let code = r#"
+            import "local_mod"
+            import "https://example.com/foo.mq"
+            include "github.com/alice/mymod"
+        "#;
+        let names = extract_local_import_names(code);
+        assert_eq!(names, vec!["local_mod"]);
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_local_import_names_empty_code() {
+        assert!(extract_local_import_names("").is_empty());
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_local_import_names_invalid_syntax_returns_empty() {
+        assert!(extract_local_import_names("import =>").is_empty());
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_local_import_names_multiple_local() {
+        let code = r#"
+            import "modA"
+            include "modB"
+            import "modC"
+        "#;
+        let names = extract_local_import_names(code);
+        assert_eq!(names.len(), 3);
+        assert!(names.contains(&"modA".to_string()));
+        assert!(names.contains(&"modB".to_string()));
+        assert!(names.contains(&"modC".to_string()));
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_local_import_names_only_urls_returns_empty() {
+        let code = r#"
+            import "https://example.com/foo.mq"
+            include "github.com/alice/mymod"
+        "#;
+        assert!(extract_local_import_names(code).is_empty());
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_local_import_names_no_imports_in_expression_code() {
+        // expressions without any import/include
+        assert!(extract_local_import_names("upcase() | trim()").is_empty());
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_extract_local_import_names_standard_module_name_treated_as_local() {
+        // standard module names (csv, json) are syntactically local; resolve() handles them
+        let names = extract_local_import_names(r#"import "csv""#);
+        assert_eq!(names, vec!["csv"]);
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_modules_without_opfs_available() {
+        // do NOT call initialize() → OPFS stays unavailable
+        let resolver = WasmModuleResolver::new();
+        resolver.preload_modules(r#"import "mymod""#).await;
+        // OPFS unavailable, so nothing should be cached
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "mymod").is_err());
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_modules_empty_code_loads_nothing() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        resolver.preload_modules("").await;
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "anything").is_err());
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_modules_no_imports_in_code_loads_nothing() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        resolver.preload_modules("upcase() | trim()").await;
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "anything").is_err());
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_modules_uses_already_cached_module() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        // Pre-populate cache directly — should survive without touching OPFS
+        resolver.add_module("pre_cached", "def pre(): 1;".to_string());
+        resolver.preload_modules(r#"import "pre_cached""#).await;
+        let content = mq_lang::ModuleResolver::resolve(&resolver, "pre_cached").unwrap();
+        assert_eq!(content, "def pre(): 1;");
+    }
+
+    /// Writes `content` to `{name}` under the OPFS root. Panics on any failure.
+    #[cfg(feature = "opfs")]
+    async fn write_opfs_file(root: &opfs::persistent::DirectoryHandle, name: &str, content: &str) {
+        use opfs::{DirectoryHandle as _, FileHandle as _, WritableFileStream as _};
+        let mut fh = root
+            .get_file_handle_with_options(name, &opfs::GetFileHandleOptions { create: true })
+            .await
+            .expect("get_file_handle");
+        let mut w = fh
+            .create_writable_with_options(&opfs::CreateWritableOptions { keep_existing_data: false })
+            .await
+            .expect("create_writable");
+        w.write_at_cursor_pos(content.as_bytes()).await.expect("write");
+        w.close().await.expect("close");
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_modules_loads_imported_module_from_opfs() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+        let root = opfs::persistent::app_specific_dir().await.unwrap();
+        write_opfs_file(&root, "pll_single.mq", "def hello(): \"hello\";").await;
+
+        resolver.preload_modules(r#"import "pll_single""#).await;
+
+        let content = mq_lang::ModuleResolver::resolve(&resolver, "pll_single").unwrap();
+        assert_eq!(content, "def hello(): \"hello\";");
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_modules_does_not_load_nonimported_module() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+        let root = opfs::persistent::app_specific_dir().await.unwrap();
+        write_opfs_file(&root, "pll_wanted.mq", "def wanted(): 1;").await;
+        write_opfs_file(&root, "pll_unwanted.mq", "def unwanted(): 2;").await;
+
+        // only pll_wanted is in the import list
+        resolver.preload_modules(r#"import "pll_wanted""#).await;
+
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "pll_wanted").is_ok());
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "pll_unwanted").is_err());
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_modules_loads_multiple_direct_imports() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+        let root = opfs::persistent::app_specific_dir().await.unwrap();
+        write_opfs_file(&root, "pll_multi_a.mq", "def fa(x): x;").await;
+        write_opfs_file(&root, "pll_multi_b.mq", "def fb(x): x;").await;
+
+        let code = r#"import "pll_multi_a" import "pll_multi_b""#;
+        resolver.preload_modules(code).await;
+
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "pll_multi_a").is_ok());
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "pll_multi_b").is_ok());
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_modules_resolves_transitive_dependencies() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+        let root = opfs::persistent::app_specific_dir().await.unwrap();
+        // pll_trans_a imports pll_trans_b
+        write_opfs_file(&root, "pll_trans_a.mq", "import \"pll_trans_b\"\ndef fa(x): x;").await;
+        write_opfs_file(&root, "pll_trans_b.mq", "def fb(x): x;").await;
+
+        // user code only imports pll_trans_a
+        resolver.preload_modules(r#"import "pll_trans_a""#).await;
+
+        // pll_trans_b should be loaded transitively
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "pll_trans_a").is_ok());
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "pll_trans_b").is_ok());
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_modules_handles_circular_dependencies() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+        let root = opfs::persistent::app_specific_dir().await.unwrap();
+        // pll_circ_a → pll_circ_b → pll_circ_a (cycle)
+        write_opfs_file(&root, "pll_circ_a.mq", "import \"pll_circ_b\"\ndef fca(x): x;").await;
+        write_opfs_file(&root, "pll_circ_b.mq", "import \"pll_circ_a\"\ndef fcb(x): x;").await;
+
+        // must terminate without infinite loop
+        resolver.preload_modules(r#"import "pll_circ_a""#).await;
+
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "pll_circ_a").is_ok());
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "pll_circ_b").is_ok());
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_modules_missing_module_skipped_gracefully() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+        // "pll_ghost" does not exist in OPFS
+        resolver.preload_modules(r#"import "pll_ghost""#).await;
+        // should not panic; module stays unresolvable
+        assert!(mq_lang::ModuleResolver::resolve(&resolver, "pll_ghost").is_err());
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_modules_duplicate_import_loaded_once() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+        let root = opfs::persistent::app_specific_dir().await.unwrap();
+        write_opfs_file(&root, "pll_dup.mq", "def fdup(x): x;").await;
+
+        // same module listed twice in imports
+        let code = r#"import "pll_dup" import "pll_dup""#;
+        resolver.preload_modules(code).await;
+
+        // resolve must succeed and content is correct
+        let content = mq_lang::ModuleResolver::resolve(&resolver, "pll_dup").unwrap();
+        assert_eq!(content, "def fdup(x): x;");
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_modules_cached_content_not_overwritten_from_opfs() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+        let root = opfs::persistent::app_specific_dir().await.unwrap();
+        // write one version to OPFS
+        write_opfs_file(&root, "pll_override.mq", "def opfs_version(): 2;").await;
+        // pre-populate cache with a different version
+        resolver.add_module("pll_override", "def cache_version(): 1;".to_string());
+
+        resolver.preload_modules(r#"import "pll_override""#).await;
+
+        // cache takes precedence; OPFS file should not overwrite it
+        let content = mq_lang::ModuleResolver::resolve(&resolver, "pll_override").unwrap();
+        assert_eq!(content, "def cache_version(): 1;");
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_canonical_name_https_url_returns_module_name() {
+        let resolver = WasmModuleResolver::new();
+        assert_eq!(
+            mq_lang::ModuleResolver::canonical_name(&resolver, "https://example.com/mymod.mq"),
+            "mymod"
+        );
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_canonical_name_github_shorthand_returns_module_name() {
+        let resolver = WasmModuleResolver::new();
+        assert_eq!(
+            mq_lang::ModuleResolver::canonical_name(&resolver, "github.com/alice/mymod"),
+            "mymod"
+        );
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_canonical_name_github_versioned_strips_version_and_extension() {
+        let resolver = WasmModuleResolver::new();
+        assert_eq!(
+            mq_lang::ModuleResolver::canonical_name(&resolver, "github.com/alice/mymod.mq@v1.0"),
+            "mymod"
+        );
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_canonical_name_local_module_unchanged() {
+        let resolver = WasmModuleResolver::new();
+        assert_eq!(mq_lang::ModuleResolver::canonical_name(&resolver, "local_mod"), "local_mod");
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_get_path_harehare_github_url_expands_to_raw_url() {
+        let resolver = WasmModuleResolver::new();
+        let path =
+            mq_lang::ModuleResolver::get_path(&resolver, "github.com/harehare/mymod").unwrap();
+        assert!(path.starts_with("https://raw.githubusercontent.com/harehare/mymod/"));
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_get_path_non_allowed_github_url_falls_back_to_module_name() {
+        // github.com/other-user/... is not in the default allowlist, so to_fetch_url returns
+        // IOError; WasmModuleResolver::get_path falls back to the module name itself.
+        let resolver = WasmModuleResolver::new();
+        let path = mq_lang::ModuleResolver::get_path(&resolver, "github.com/other/mymod").unwrap();
+        assert_eq!(path, "github.com/other/mymod");
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_get_path_local_module_returns_name() {
+        let resolver = WasmModuleResolver::new();
+        let path = mq_lang::ModuleResolver::get_path(&resolver, "my_local_mod").unwrap();
+        assert_eq!(path, "my_local_mod");
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_resolve_https_url_without_opfs_returns_io_error() {
+        let resolver = WasmModuleResolver::new();
+        // initialize() not called → OPFS unavailable
+        let result = mq_lang::ModuleResolver::resolve(
+            &resolver,
+            "https://raw.githubusercontent.com/harehare/mod/HEAD/mod.mq",
+        );
+        assert!(
+            matches!(result, Err(mq_lang::ModuleError::IOError(_))),
+            "expected IOError when OPFS is unavailable, got: {:?}",
+            result
+        );
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_resolve_github_url_without_opfs_returns_io_error() {
+        let resolver = WasmModuleResolver::new();
+        let result = mq_lang::ModuleResolver::resolve(&resolver, "github.com/harehare/mymod");
+        assert!(matches!(result, Err(mq_lang::ModuleError::IOError(_))));
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_resolve_non_allowlisted_domain_returns_io_error() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+        // example.com is not in the default allowlist
+        let result = mq_lang::ModuleResolver::resolve(&resolver, "https://example.com/mod.mq");
+        assert!(
+            matches!(result, Err(mq_lang::ModuleError::IOError(_))),
+            "expected IOError for disallowed domain, got: {:?}",
+            result
+        );
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_resolve_default_allowed_domain_not_in_cache_returns_not_found() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+        // raw.githubusercontent.com/harehare is always allowed; fetcher cache is empty
+        let result = mq_lang::ModuleResolver::resolve(
+            &resolver,
+            "https://raw.githubusercontent.com/harehare/test/HEAD/test.mq",
+        );
+        assert!(
+            matches!(result, Err(mq_lang::ModuleError::NotFound(_))),
+            "expected NotFound when URL is allowed but not cached, got: {:?}",
+            result
+        );
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_resolve_non_harehare_github_url_blocked_by_empty_allowlist() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+        // raw.githubusercontent.com/other-user does not match the default allowed domain prefix
+        let result = mq_lang::ModuleResolver::resolve(
+            &resolver,
+            "https://raw.githubusercontent.com/other-user/mod/HEAD/mod.mq",
+        );
+        assert!(matches!(result, Err(mq_lang::ModuleError::IOError(_))));
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_set_allowed_domains_changes_domain_error_to_not_found() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+
+        let url = "https://example.com/mod.mq";
+        // before: domain blocked → IOError
+        let before = mq_lang::ModuleResolver::resolve(&resolver, url);
+        assert!(
+            matches!(before, Err(mq_lang::ModuleError::IOError(_))),
+            "expected IOError before setting domain, got: {:?}",
+            before
+        );
+
+        // after: domain allowed → domain check passes, fetcher cache empty → NotFound
+        resolver.set_allowed_domains(vec!["example.com".to_string()]);
+        let after = mq_lang::ModuleResolver::resolve(&resolver, url);
+        assert!(
+            matches!(after, Err(mq_lang::ModuleError::NotFound(_))),
+            "expected NotFound after setting domain, got: {:?}",
+            after
+        );
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_set_allowed_domains_github_shorthand_expands_correctly() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+        // github.com/alice/repo shorthand should expand to raw.githubusercontent.com/alice/repo
+        resolver.set_allowed_domains(vec!["github.com/alice/myrepo".to_string()]);
+        // Now alice/myrepo is allowed; fetcher cache empty → NotFound (not IOError)
+        let result = mq_lang::ModuleResolver::resolve(
+            &resolver,
+            "https://raw.githubusercontent.com/alice/myrepo/HEAD/myrepo.mq",
+        );
+        assert!(
+            matches!(result, Err(mq_lang::ModuleError::NotFound(_))),
+            "expected NotFound after allowing github.com/alice/myrepo, got: {:?}",
+            result
+        );
+        // alice/other is still blocked
+        let blocked = mq_lang::ModuleResolver::resolve(
+            &resolver,
+            "https://raw.githubusercontent.com/alice/other/HEAD/other.mq",
+        );
+        assert!(matches!(blocked, Err(mq_lang::ModuleError::IOError(_))));
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_http_modules_empty_code_is_noop() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        resolver.preload_http_modules("").await;
+        // nothing cached; http resolve of any URL still fails
+        #[cfg(feature = "opfs")]
+        assert!(mq_lang::ModuleResolver::resolve(
+            &resolver,
+            "https://raw.githubusercontent.com/harehare/test/HEAD/test.mq"
+        )
+        .is_err());
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_http_modules_local_only_imports_do_not_affect_http_cache() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        resolver.preload_http_modules(r#"import "local_mod""#).await;
+        // local_mod is not an HTTP URL → skipped; HTTP resolve still fails
+        #[cfg(feature = "opfs")]
+        assert!(mq_lang::ModuleResolver::resolve(
+            &resolver,
+            "https://raw.githubusercontent.com/harehare/test/HEAD/test.mq"
+        )
+        .is_err());
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_http_modules_without_opfs_is_noop() {
+        let resolver = WasmModuleResolver::new();
+        // initialize() not called → OPFS unavailable → preload_http_modules returns early
+        resolver
+            .preload_http_modules(
+                r#"import "https://raw.githubusercontent.com/harehare/test/HEAD/test.mq""#,
+            )
+            .await;
+        // resolve should still fail with OPFS-unavailable error, not a domain error
+        let result = mq_lang::ModuleResolver::resolve(
+            &resolver,
+            "https://raw.githubusercontent.com/harehare/test/HEAD/test.mq",
+        );
+        assert!(matches!(result, Err(mq_lang::ModuleError::IOError(_))));
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_http_modules_disallowed_domain_not_cached() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+        // example.com is not in the allowlist → preload_http_modules skips it
+        resolver
+            .preload_http_modules(r#"import "https://example.com/mod.mq""#)
+            .await;
+        let result = mq_lang::ModuleResolver::resolve(&resolver, "https://example.com/mod.mq");
+        // still IOError (domain not allowed), not NotFound — URL was not cached
+        assert!(matches!(result, Err(mq_lang::ModuleError::IOError(_))));
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_clear_http_cache_succeeds_when_no_cache_exists() {
+        // Calling clear when there is nothing to clear should succeed silently.
+        let result = clear_http_cache().await;
+        assert!(result.is_ok());
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_clear_all_http_cache_succeeds_when_no_cache_exists() {
+        let result = clear_all_http_cache().await;
+        assert!(result.is_ok());
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_clear_http_cache_removes_mutable_subdir() {
+        use opfs::{DirectoryHandle as _, FileHandle as _, WritableFileStream as _};
+
+        let root = match opfs::persistent::app_specific_dir().await {
+            Ok(r) => r,
+            Err(_) => return, // OPFS unavailable in this environment
+        };
+
+        // Seed a mutable cache file
+        let cache_dir = root
+            .get_directory_handle_with_options(HTTP_CACHE_DIR, &opfs::GetDirectoryHandleOptions { create: true })
+            .await
+            .unwrap();
+        let mutable_dir = cache_dir
+            .get_directory_handle_with_options("mutable", &opfs::GetDirectoryHandleOptions { create: true })
+            .await
+            .unwrap();
+        write_opfs_file(&mutable_dir, "sentinel.mq", "test").await;
+
+        // Clear only mutable cache
+        clear_http_cache().await.expect("clear_http_cache failed");
+
+        // mutable/ should no longer exist (or sentinel is gone)
+        let still_exists = cache_dir
+            .get_directory_handle_with_options("mutable", &opfs::GetDirectoryHandleOptions { create: false })
+            .await
+            .is_ok();
+        assert!(!still_exists, "mutable/ cache dir should have been removed");
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_clear_all_http_cache_removes_entire_cache_dir() {
+        use opfs::DirectoryHandle as _;
+
+        let mut root = match opfs::persistent::app_specific_dir().await {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+
+        // Ensure the http_cache dir exists with something in it
+        let cache_dir = root
+            .get_directory_handle_with_options(HTTP_CACHE_DIR, &opfs::GetDirectoryHandleOptions { create: true })
+            .await
+            .unwrap();
+        let _ = cache_dir
+            .get_directory_handle_with_options("versioned", &opfs::GetDirectoryHandleOptions { create: true })
+            .await;
+
+        clear_all_http_cache().await.expect("clear_all_http_cache failed");
+
+        let still_exists = root
+            .get_directory_handle_with_options(HTTP_CACHE_DIR, &opfs::GetDirectoryHandleOptions { create: false })
+            .await
+            .is_ok();
+        assert!(!still_exists, "http_cache/ dir should have been fully removed");
     }
 
     #[allow(unused)]
