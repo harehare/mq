@@ -86,6 +86,10 @@ pub use eval::runtime_value::{RuntimeValue, RuntimeValues};
 pub use ident::Ident;
 pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
+#[cfg(feature = "http-import")]
+pub use module::resolver::http_import;
+#[cfg(feature = "http-import")]
+pub use module::resolver::http_resolver::{HttpFetcher, HttpModuleResolver};
 pub use module::{
     BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, STANDARD_MODULES, error::ModuleError,
     resolver::DefaultModuleResolver, resolver::ModuleResolver,

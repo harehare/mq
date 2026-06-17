@@ -1,5 +1,7 @@
 #[cfg(feature = "http-import")]
-pub(crate) mod http_resolver;
+pub mod http_import;
+#[cfg(feature = "http-import")]
+pub mod http_resolver;
 pub(crate) mod local_fs_resolver;
 pub(crate) mod std_resolver;
 
@@ -31,8 +33,8 @@ pub trait ModuleResolver: Clone + Default {
 pub struct DefaultModuleResolver {
     local_fs_resolver: local_fs_resolver::LocalFsModuleResolver,
     std_resolver: std_resolver::StdModuleResolver,
-    #[cfg(feature = "http-import")]
-    http_resolver: http_resolver::HttpModuleResolver,
+    #[cfg(feature = "http-import-ureq")]
+    http_resolver: http_resolver::HttpModuleResolver<http_resolver::UreqFetcher>,
 }
 
 impl ModuleResolver for DefaultModuleResolver {
@@ -49,7 +51,7 @@ impl ModuleResolver for DefaultModuleResolver {
             Err(e) => return Err(e),
         }
 
-        #[cfg(feature = "http-import")]
+        #[cfg(feature = "http-import-ureq")]
         match self.http_resolver.resolve(module_name) {
             Ok(content) => return Ok(content),
             Err(ModuleError::NotFound(_)) => {}
@@ -72,7 +74,7 @@ impl ModuleResolver for DefaultModuleResolver {
             Err(e) => return Err(e),
         }
 
-        #[cfg(feature = "http-import")]
+        #[cfg(feature = "http-import-ureq")]
         match self.http_resolver.get_path(module_name) {
             Ok(path) => return Ok(path),
             Err(ModuleError::NotFound(_)) => {}
@@ -91,10 +93,9 @@ impl ModuleResolver for DefaultModuleResolver {
     }
 
     fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
-        #[cfg(feature = "http-import")]
+        #[cfg(feature = "http-import-ureq")]
         {
-            use http_resolver::HttpModuleResolver;
-            if HttpModuleResolver::is_github_url(module_path) || HttpModuleResolver::is_remote_url(module_path) {
+            if http_import::is_github_url(module_path) || http_import::is_remote_url(module_path) {
                 return self.http_resolver.canonical_name(module_path);
             }
         }
@@ -114,7 +115,7 @@ impl DefaultModuleResolver {
                 Some(paths)
             }),
             std_resolver: std_resolver::StdModuleResolver,
-            #[cfg(feature = "http-import")]
+            #[cfg(feature = "http-import-ureq")]
             http_resolver: http_resolver::HttpModuleResolver::default(),
         }
     }
@@ -123,42 +124,33 @@ impl DefaultModuleResolver {
     ///
     /// An empty `allowed_domains` list restricts access to the built-in default domain
     /// (`raw.githubusercontent.com/harehare`) only; it does not open up all URLs.
-    /// Only available when the `http-import` feature is enabled.
-    #[cfg(feature = "http-import")]
+    /// Only available when the `http-import-ureq` feature is enabled.
+    #[cfg(feature = "http-import-ureq")]
     pub fn with_http(mut self, allowed_domains: Vec<String>, timeout: Option<std::time::Duration>) -> Self {
         self.http_resolver = http_resolver::HttpModuleResolver::new(
             allowed_domains,
-            timeout.unwrap_or(std::time::Duration::from_secs(10)),
+            http_resolver::UreqFetcher::new(timeout.unwrap_or(std::time::Duration::from_secs(10))),
         );
         self
     }
 
     /// Replaces the HTTP resolver's domain allowlist.
     ///
-    /// An empty list restricts access to the built-in default domain
-    /// (`raw.githubusercontent.com/harehare`) only.
-    ///
-    /// Entries in the form `github.com/{user}/{repo}` are automatically expanded to
-    /// `raw.githubusercontent.com/{user}/{repo}`.
-    #[cfg(feature = "http-import")]
+    /// An empty list restricts access to the built-in default domain only.
+    /// Entries in the form `github.com/{user}/{repo}` are automatically expanded.
+    #[cfg(feature = "http-import-ureq")]
     pub fn set_allowed_domains(&mut self, domains: Vec<String>) {
-        self.http_resolver.allowed_remote_domains = domains
-            .into_iter()
-            .map(|d| http_resolver::HttpModuleResolver::normalize_allowed_domain(&d))
-            .collect();
+        self.http_resolver.set_allowed_domains(domains);
     }
 
-    /// Clears all locally-cached HTTP module files.
-    ///
-    /// Call this once before processing to force a re-fetch of all cached modules
-    /// on the next resolve.
-    #[cfg(feature = "http-import")]
+    /// Clears all locally-cached HTTP module files (mutable/HEAD only).
+    #[cfg(feature = "http-import-ureq")]
     pub fn clear_http_cache(&self) -> Result<(), crate::module::error::ModuleError> {
         self.http_resolver.clear_cache()
     }
 
-    /// Clears all HTTP module cache including versioned modules and lock files.
-    #[cfg(feature = "http-import")]
+    /// Clears all HTTP module cache including versioned modules.
+    #[cfg(feature = "http-import-ureq")]
     pub fn clear_http_cache_all(&self) -> Result<(), crate::module::error::ModuleError> {
         self.http_resolver.clear_all_cache()
     }
@@ -215,7 +207,6 @@ mod tests {
         write_module(&dir, "csv", "def foo(): 1;");
 
         let resolver = DefaultModuleResolver::new(vec![dir.path().to_path_buf()]);
-        // standard module should win over local file with the same name
         let content = resolver.resolve("csv").unwrap();
         assert!(!content.contains("def foo(): 1;"));
     }
@@ -241,20 +232,17 @@ mod tests {
         assert_eq!(resolver.search_paths(), paths);
     }
 
-    #[cfg(feature = "http-import")]
+    #[cfg(feature = "http-import-ureq")]
     #[rstest]
     #[case("https://nonexistent.invalid/foo.mq")]
     fn test_http_url_not_in_local(#[case] url: &str) {
-        // Without an HTTP resolver configured, should fall through to error
         let resolver = DefaultModuleResolver::new(vec![]);
-        // Either network error or module-not-found; should not panic
         assert!(resolver.resolve(url).is_err());
     }
 
-    #[cfg(feature = "http-import")]
+    #[cfg(feature = "http-import-ureq")]
     #[test]
     fn test_with_http_normalizes_github_domains() {
-        // with_http delegates to HttpModuleResolver::new which normalizes github.com/* entries
         let resolver = DefaultModuleResolver::new(vec![]).with_http(vec!["github.com/alice/myrepo".to_string()], None);
         assert!(
             resolver
@@ -268,7 +256,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "http-import")]
+    #[cfg(feature = "http-import-ureq")]
     #[test]
     fn test_set_allowed_domains_normalizes_github_domains() {
         let mut resolver = DefaultModuleResolver::new(vec![]);
