@@ -26,3 +26,4 @@ cbindgen = {workspace = true}
 [features]
 default = ["html-to-markdown"]
 html-to-markdown = ["mq-markdown/html-to-markdown"]
+http-import = ["mq-lang/http-import-ureq"]

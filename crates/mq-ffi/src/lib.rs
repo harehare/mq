@@ -63,6 +63,7 @@ use mq_markdown::{ConversionOptions, convert_html_to_markdown};
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::os::raw::c_char;
+use std::path::PathBuf;
 use std::ptr;
 
 pub type MqContext = c_void;
@@ -110,6 +111,21 @@ unsafe fn c_str_to_rust_str_slice<'a>(s: *const c_char) -> Result<&'a str, std::
         return Ok("");
     }
     unsafe { CStr::from_ptr(s).to_str() }
+}
+
+// Helper function to convert a C array of C strings into a Vec<String>.
+// Invalid UTF-8 entries are skipped rather than aborting the whole conversion.
+unsafe fn c_str_array_to_strings(items: *const *const c_char, items_len: usize) -> Vec<String> {
+    if items.is_null() || items_len == 0 {
+        return Vec::new();
+    }
+
+    let item_ptrs = unsafe { std::slice::from_raw_parts(items, items_len) };
+    item_ptrs
+        .iter()
+        .filter_map(|&p| unsafe { c_str_to_rust_str_slice(p) }.ok())
+        .map(|s| s.to_string())
+        .collect()
 }
 
 /// Creates a new mq_lang engine.
@@ -416,6 +432,210 @@ pub unsafe extern "C" fn mq_html_to_markdown(
         }
     }
 }
+/// Returns the mq-ffi library version as a static, null-terminated string.
+#[unsafe(no_mangle)]
+pub extern "C" fn mq_version() -> *const c_char {
+    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr() as *const c_char
+}
+
+/// C-compatible optimization level for AST transformations applied before evaluation.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub enum MqOptimizationLevel {
+    None = 0,
+    Basic = 1,
+    Full = 2,
+}
+
+impl From<MqOptimizationLevel> for mq_lang::OptimizationLevel {
+    fn from(level: MqOptimizationLevel) -> Self {
+        match level {
+            MqOptimizationLevel::None => mq_lang::OptimizationLevel::None,
+            MqOptimizationLevel::Basic => mq_lang::OptimizationLevel::Basic,
+            MqOptimizationLevel::Full => mq_lang::OptimizationLevel::Full,
+        }
+    }
+}
+
+/// Sets the optimization level for AST transformations applied before evaluation.
+/// Has no effect if `engine_ptr` is null.
+#[unsafe(no_mangle)]
+pub extern "C" fn mq_set_optimization_level(engine_ptr: *mut MqContext, level: MqOptimizationLevel) {
+    if engine_ptr.is_null() {
+        return;
+    }
+    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+    engine.set_optimization_level(level.into());
+}
+
+/// Sets the maximum call stack depth for function calls, to guard against
+/// runaway recursion in untrusted mq code. Has no effect if `engine_ptr` is null.
+#[unsafe(no_mangle)]
+pub extern "C" fn mq_set_max_call_stack_depth(engine_ptr: *mut MqContext, max_call_stack_depth: u32) {
+    if engine_ptr.is_null() {
+        return;
+    }
+    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+    engine.set_max_call_stack_depth(max_call_stack_depth);
+}
+
+/// Sets the search paths used to resolve modules loaded via `mq_import_module`
+/// or `mq_load_module`. Has no effect if `engine_ptr` is null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mq_set_search_paths(
+    engine_ptr: *mut MqContext,
+    paths: *const *const c_char,
+    paths_len: usize,
+) {
+    if engine_ptr.is_null() {
+        return;
+    }
+    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+    let search_paths = unsafe { c_str_array_to_strings(paths, paths_len) }
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
+    engine.set_search_paths(search_paths);
+}
+
+/// Defines a string variable that can be referenced from mq code evaluated
+/// afterwards by `mq_eval`, allowing values from the host environment to be
+/// injected without building query strings by hand.
+/// Has no effect if `engine_ptr` is null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mq_define_string_value(
+    engine_ptr: *mut MqContext,
+    name_c: *const c_char,
+    value_c: *const c_char,
+) {
+    if engine_ptr.is_null() {
+        return;
+    }
+    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+
+    let name = match unsafe { c_str_to_rust_str_slice(name_c) } {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let value = match unsafe { c_str_to_rust_str_slice(value_c) } {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    engine.define_string_value(name, value);
+}
+
+/// Imports an external module by name, searched for in the paths configured via
+/// `mq_set_search_paths`, making its exported definitions available to subsequent
+/// `mq_eval` calls on the same engine.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mq_import_module(engine_ptr: *mut MqContext, module_name_c: *const c_char) -> *mut c_char {
+    if engine_ptr.is_null() {
+        return to_c_string("Engine pointer is null".to_string());
+    }
+    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+
+    let module_name = match unsafe { c_str_to_rust_str_slice(module_name_c) } {
+        Ok(s) => s,
+        Err(_) => return to_c_string("Invalid UTF-8 sequence in module_name".to_string()),
+    };
+
+    match engine.import_module(module_name) {
+        Ok(()) => ptr::null_mut(),
+        Err(e) => to_c_string(format!("Error importing module: {}", e)),
+    }
+}
+
+/// Loads an external module by name, searched for in the paths configured via
+/// `mq_set_search_paths`, making its exported definitions available to subsequent
+/// `mq_eval` calls on the same engine.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mq_load_module(engine_ptr: *mut MqContext, module_name_c: *const c_char) -> *mut c_char {
+    if engine_ptr.is_null() {
+        return to_c_string("Engine pointer is null".to_string());
+    }
+    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+
+    let module_name = match unsafe { c_str_to_rust_str_slice(module_name_c) } {
+        Ok(s) => s,
+        Err(_) => return to_c_string("Invalid UTF-8 sequence in module_name".to_string()),
+    };
+
+    match engine.load_module(module_name) {
+        Ok(()) => ptr::null_mut(),
+        Err(e) => to_c_string(format!("Error loading module: {}", e)),
+    }
+}
+
+/// Replaces the HTTP resolver's domain allowlist used when importing modules
+/// over HTTP(S) via `mq_import_module` / `mq_load_module`. An empty list restricts
+/// access to the built-in default domain only; it does not open up all URLs.
+/// Has no effect if `engine_ptr` is null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mq_set_http_allowed_domains(
+    engine_ptr: *mut MqContext,
+    domains: *const *const c_char,
+    domains_len: usize,
+) {
+    #[cfg(feature = "http-import")]
+    {
+        if engine_ptr.is_null() {
+            return;
+        }
+        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+        let domains = unsafe { c_str_array_to_strings(domains, domains_len) };
+        engine.set_http_allowed_domains(domains);
+    }
+    #[cfg(not(feature = "http-import"))]
+    {
+        let _ = (engine_ptr, domains, domains_len);
+    }
+}
+
+/// Clears locally-cached HTTP module files, forcing a re-fetch of all cached
+/// modules on the next import. Has no effect if `engine_ptr` is null.
+#[unsafe(no_mangle)]
+pub extern "C" fn mq_clear_http_cache(engine_ptr: *mut MqContext) -> *mut c_char {
+    #[cfg(feature = "http-import")]
+    {
+        if engine_ptr.is_null() {
+            return ptr::null_mut();
+        }
+        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+        match engine.clear_http_cache() {
+            Ok(()) => ptr::null_mut(),
+            Err(e) => to_c_string(format!("Error clearing HTTP cache: {}", e)),
+        }
+    }
+    #[cfg(not(feature = "http-import"))]
+    {
+        let _ = engine_ptr;
+        to_c_string("This library was built without the http-import feature".to_string())
+    }
+}
+
+/// Clears all HTTP module cache including versioned modules and lock files.
+/// Has no effect if `engine_ptr` is null.
+#[unsafe(no_mangle)]
+pub extern "C" fn mq_clear_http_cache_all(engine_ptr: *mut MqContext) -> *mut c_char {
+    #[cfg(feature = "http-import")]
+    {
+        if engine_ptr.is_null() {
+            return ptr::null_mut();
+        }
+        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+        match engine.clear_http_cache_all() {
+            Ok(()) => ptr::null_mut(),
+            Err(e) => to_c_string(format!("Error clearing HTTP cache: {}", e)),
+        }
+    }
+    #[cfg(not(feature = "http-import"))]
+    {
+        let _ = engine_ptr;
+        to_c_string("This library was built without the http-import feature".to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -902,5 +1122,406 @@ mod tests {
         assert!(rust_options.extract_scripts_as_code_blocks);
         assert!(rust_options.generate_front_matter);
         assert!(rust_options.use_title_as_h1);
+    }
+
+    #[test]
+    fn test_mq_version() {
+        let version_c = mq_version();
+        assert!(!version_c.is_null());
+        let version = unsafe { CStr::from_ptr(version_c) }.to_str().unwrap();
+        assert!(!version.is_empty());
+        assert_eq!(version, env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn test_mq_version_is_stable_across_calls() {
+        // The pointer must remain valid and comparable across multiple calls,
+        // since callers are told not to free it.
+        let first = unsafe { CStr::from_ptr(mq_version()) }.to_str().unwrap();
+        let second = unsafe { CStr::from_ptr(mq_version()) }.to_str().unwrap();
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn test_optimization_level_conversion() {
+        assert!(matches!(
+            mq_lang::OptimizationLevel::from(MqOptimizationLevel::None),
+            mq_lang::OptimizationLevel::None
+        ));
+        assert!(matches!(
+            mq_lang::OptimizationLevel::from(MqOptimizationLevel::Basic),
+            mq_lang::OptimizationLevel::Basic
+        ));
+        assert!(matches!(
+            mq_lang::OptimizationLevel::from(MqOptimizationLevel::Full),
+            mq_lang::OptimizationLevel::Full
+        ));
+    }
+
+    #[test]
+    fn test_set_optimization_level() {
+        let engine = mq_create();
+        mq_set_optimization_level(engine, MqOptimizationLevel::None);
+        mq_set_optimization_level(engine, MqOptimizationLevel::Basic);
+        mq_set_optimization_level(engine, MqOptimizationLevel::Full);
+
+        // Evaluation must still succeed after switching optimization levels.
+        let code = make_c_string("len()");
+        let input = make_c_string("abc");
+        let format = make_c_string("text");
+        let result = unsafe { mq_eval(engine, code, input, format) };
+        assert!(result.error_msg.is_null());
+        mq_free_result(result);
+        unsafe {
+            mq_free_string(code as *mut c_char);
+            mq_free_string(input as *mut c_char);
+            mq_free_string(format as *mut c_char);
+        }
+
+        // Should not crash when the engine pointer is null.
+        mq_set_optimization_level(ptr::null_mut(), MqOptimizationLevel::None);
+
+        mq_destroy(engine);
+    }
+
+    #[test]
+    fn test_set_max_call_stack_depth() {
+        let engine = mq_create();
+        mq_set_max_call_stack_depth(engine, 16);
+
+        // Should not crash when the engine pointer is null.
+        mq_set_max_call_stack_depth(ptr::null_mut(), 16);
+
+        mq_destroy(engine);
+    }
+
+    #[test]
+    fn test_set_max_call_stack_depth_enforced() {
+        let engine = mq_create();
+        mq_set_max_call_stack_depth(engine, 2);
+
+        let code = make_c_string("def rec(): rec(); rec()");
+        let input = make_c_string("test");
+        let format = make_c_string("text");
+        let result = unsafe { mq_eval(engine, code, input, format) };
+
+        assert!(!result.error_msg.is_null());
+
+        mq_free_result(result);
+        mq_destroy(engine);
+        unsafe {
+            mq_free_string(code as *mut c_char);
+            mq_free_string(input as *mut c_char);
+            mq_free_string(format as *mut c_char);
+        }
+    }
+
+    #[test]
+    fn test_define_string_value_and_use_in_eval() {
+        let engine = mq_create();
+        let name = make_c_string("greeting");
+        let value = make_c_string("hello");
+
+        unsafe {
+            mq_define_string_value(engine, name, value);
+        }
+
+        let code = make_c_string("greeting");
+        let input = make_c_string("test");
+        let format = make_c_string("text");
+        let result = unsafe { mq_eval(engine, code, input, format) };
+
+        assert!(result.error_msg.is_null());
+        assert_eq!(result.values_len, 1);
+        unsafe {
+            let values_slice = std::slice::from_raw_parts(result.values, result.values_len);
+            assert_eq!(c_string_to_rust_string(values_slice[0]), "hello");
+        }
+
+        mq_free_result(result);
+        mq_destroy(engine);
+        unsafe {
+            mq_free_string(name as *mut c_char);
+            mq_free_string(value as *mut c_char);
+            mq_free_string(code as *mut c_char);
+            mq_free_string(input as *mut c_char);
+            mq_free_string(format as *mut c_char);
+        }
+    }
+
+    #[test]
+    fn test_load_module_with_search_paths() {
+        use std::fs::File;
+        use std::io::Write;
+
+        let temp_dir = std::env::temp_dir();
+        let module_path = temp_dir.join("mq_ffi_test_module.mq");
+        let mut file = File::create(&module_path).unwrap();
+        file.write_all(b"def double(x): x * 2;").unwrap();
+
+        let engine = mq_create();
+        let temp_dir_c = make_c_string(temp_dir.to_str().unwrap());
+        let paths: [*const c_char; 1] = [temp_dir_c];
+
+        unsafe {
+            mq_set_search_paths(engine, paths.as_ptr(), paths.len());
+        }
+
+        let module_name = make_c_string("mq_ffi_test_module");
+        let error_msg = unsafe { mq_load_module(engine, module_name) };
+        assert!(error_msg.is_null());
+
+        std::fs::remove_file(&module_path).ok();
+        mq_destroy(engine);
+        unsafe {
+            mq_free_string(temp_dir_c as *mut c_char);
+            mq_free_string(module_name as *mut c_char);
+        }
+    }
+
+    #[test]
+    fn test_import_module_missing_returns_error() {
+        let engine = mq_create();
+        let module_name = make_c_string("nonexistent_module_for_test");
+
+        let error_msg = unsafe { mq_import_module(engine, module_name) };
+        assert!(!error_msg.is_null());
+
+        unsafe {
+            mq_free_string(error_msg);
+            mq_free_string(module_name as *mut c_char);
+        }
+        mq_destroy(engine);
+    }
+
+    #[test]
+    fn test_import_module_null_engine() {
+        let module_name = make_c_string("anything");
+        let error_msg = unsafe { mq_import_module(ptr::null_mut(), module_name) };
+        assert!(!error_msg.is_null());
+
+        let error_str = unsafe { c_string_to_rust_string(error_msg) };
+        assert_eq!(error_str, "Engine pointer is null");
+
+        unsafe {
+            mq_free_string(error_msg);
+            mq_free_string(module_name as *mut c_char);
+        }
+    }
+
+    #[test]
+    fn test_load_module_null_engine() {
+        let module_name = make_c_string("anything");
+        let error_msg = unsafe { mq_load_module(ptr::null_mut(), module_name) };
+        assert!(!error_msg.is_null());
+
+        let error_str = unsafe { c_string_to_rust_string(error_msg) };
+        assert_eq!(error_str, "Engine pointer is null");
+
+        unsafe {
+            mq_free_string(error_msg);
+            mq_free_string(module_name as *mut c_char);
+        }
+    }
+
+    #[test]
+    fn test_load_module_missing_returns_error() {
+        let engine = mq_create();
+        let module_name = make_c_string("nonexistent_module_for_test_load");
+
+        let error_msg = unsafe { mq_load_module(engine, module_name) };
+        assert!(!error_msg.is_null());
+
+        unsafe {
+            mq_free_string(error_msg);
+            mq_free_string(module_name as *mut c_char);
+        }
+        mq_destroy(engine);
+    }
+
+    #[test]
+    fn test_import_module_with_search_paths() {
+        use std::fs::File;
+        use std::io::Write;
+
+        let temp_dir = std::env::temp_dir();
+        let module_path = temp_dir.join("mq_ffi_test_import_module.mq");
+        let mut file = File::create(&module_path).unwrap();
+        file.write_all(b"def triple(x): x * 3;").unwrap();
+
+        let engine = mq_create();
+        let temp_dir_c = make_c_string(temp_dir.to_str().unwrap());
+        let paths: [*const c_char; 1] = [temp_dir_c];
+
+        unsafe {
+            mq_set_search_paths(engine, paths.as_ptr(), paths.len());
+        }
+
+        let module_name = make_c_string("mq_ffi_test_import_module");
+        let error_msg = unsafe { mq_import_module(engine, module_name) };
+        assert!(error_msg.is_null());
+
+        // Imported modules are namespaced, unlike `mq_load_module` which defines
+        // functions directly in the calling scope.
+        let code = make_c_string("mq_ffi_test_import_module::triple(2)");
+        let input = make_c_string("test");
+        let format = make_c_string("text");
+        let result = unsafe { mq_eval(engine, code, input, format) };
+        assert!(result.error_msg.is_null());
+        unsafe {
+            let values_slice = std::slice::from_raw_parts(result.values, result.values_len);
+            assert_eq!(c_string_to_rust_string(values_slice[0]), "6");
+        }
+
+        std::fs::remove_file(&module_path).ok();
+        mq_free_result(result);
+        mq_destroy(engine);
+        unsafe {
+            mq_free_string(temp_dir_c as *mut c_char);
+            mq_free_string(module_name as *mut c_char);
+            mq_free_string(code as *mut c_char);
+            mq_free_string(input as *mut c_char);
+            mq_free_string(format as *mut c_char);
+        }
+    }
+
+    #[test]
+    fn test_set_search_paths_null_engine_does_not_crash() {
+        let path = make_c_string("/tmp");
+        let paths: [*const c_char; 1] = [path];
+        unsafe {
+            mq_set_search_paths(ptr::null_mut(), paths.as_ptr(), paths.len());
+            mq_free_string(path as *mut c_char);
+        }
+    }
+
+    #[test]
+    fn test_set_search_paths_empty_does_not_crash() {
+        let engine = mq_create();
+        unsafe {
+            mq_set_search_paths(engine, ptr::null(), 0);
+        }
+        mq_destroy(engine);
+    }
+
+    #[test]
+    fn test_define_string_value_null_engine_does_not_crash() {
+        let name = make_c_string("x");
+        let value = make_c_string("y");
+        unsafe {
+            mq_define_string_value(ptr::null_mut(), name, value);
+            mq_free_string(name as *mut c_char);
+            mq_free_string(value as *mut c_char);
+        }
+    }
+
+    #[test]
+    fn test_define_string_value_invalid_utf8_does_not_crash() {
+        let engine = mq_create();
+        let invalid = [0x66, 0x6f, 0x80, 0x6f, 0x00]; // "fo\x80o"
+        let value = make_c_string("y");
+
+        unsafe {
+            mq_define_string_value(engine, invalid.as_ptr() as *const c_char, value);
+            mq_free_string(value as *mut c_char);
+        }
+
+        mq_destroy(engine);
+    }
+
+    #[test]
+    fn test_define_string_value_overwrites_previous() {
+        let engine = mq_create();
+        let name = make_c_string("v");
+        let first = make_c_string("first");
+        let second = make_c_string("second");
+
+        unsafe {
+            mq_define_string_value(engine, name, first);
+            mq_define_string_value(engine, name, second);
+        }
+
+        let code = make_c_string("v");
+        let input = make_c_string("test");
+        let format = make_c_string("text");
+        let result = unsafe { mq_eval(engine, code, input, format) };
+        assert!(result.error_msg.is_null());
+        unsafe {
+            let values_slice = std::slice::from_raw_parts(result.values, result.values_len);
+            assert_eq!(c_string_to_rust_string(values_slice[0]), "second");
+        }
+
+        mq_free_result(result);
+        mq_destroy(engine);
+        unsafe {
+            mq_free_string(name as *mut c_char);
+            mq_free_string(first as *mut c_char);
+            mq_free_string(second as *mut c_char);
+            mq_free_string(code as *mut c_char);
+            mq_free_string(input as *mut c_char);
+            mq_free_string(format as *mut c_char);
+        }
+    }
+
+    // These run regardless of the `http-import` feature: the symbols are always
+    // exported (so linking against `mq.h` succeeds either way), but their
+    // behavior differs depending on whether HTTP module support was compiled in.
+
+    #[test]
+    fn test_set_http_allowed_domains_does_not_crash() {
+        let engine = mq_create();
+        let domain = make_c_string("example.com");
+        let domains: [*const c_char; 1] = [domain];
+
+        unsafe {
+            mq_set_http_allowed_domains(engine, domains.as_ptr(), domains.len());
+            mq_set_http_allowed_domains(engine, ptr::null(), 0);
+            mq_set_http_allowed_domains(ptr::null_mut(), domains.as_ptr(), domains.len());
+            mq_free_string(domain as *mut c_char);
+        }
+
+        mq_destroy(engine);
+    }
+
+    #[test]
+    fn test_clear_http_cache() {
+        let engine = mq_create();
+        let error_msg = mq_clear_http_cache(engine);
+
+        if cfg!(feature = "http-import") {
+            assert!(error_msg.is_null());
+        } else {
+            assert!(!error_msg.is_null());
+            unsafe { mq_free_string(error_msg) };
+        }
+
+        // Should not crash when the engine pointer is null.
+        let error_msg_null = mq_clear_http_cache(ptr::null_mut());
+        if !error_msg_null.is_null() {
+            unsafe { mq_free_string(error_msg_null) };
+        }
+
+        mq_destroy(engine);
+    }
+
+    #[test]
+    fn test_clear_http_cache_all() {
+        let engine = mq_create();
+        let error_msg = mq_clear_http_cache_all(engine);
+
+        if cfg!(feature = "http-import") {
+            assert!(error_msg.is_null());
+        } else {
+            assert!(!error_msg.is_null());
+            unsafe { mq_free_string(error_msg) };
+        }
+
+        // Should not crash when the engine pointer is null.
+        let error_msg_null = mq_clear_http_cache_all(ptr::null_mut());
+        if !error_msg_null.is_null() {
+            unsafe { mq_free_string(error_msg_null) };
+        }
+
+        mq_destroy(engine);
     }
 }
