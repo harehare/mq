@@ -2703,7 +2703,6 @@ dependencies = [
 name = "mq-wasm"
 version = "0.6.1"
 dependencies = [
- "futures",
  "itertools",
  "js-sys",
  "md5",

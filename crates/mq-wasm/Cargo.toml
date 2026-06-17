@@ -17,7 +17,6 @@ crate-type = ["cdylib"]
 path = "src/lib.rs"
 
 [dependencies]
-futures = {workspace = true}
 itertools = {workspace = true}
 js-sys = {workspace = true}
 md5 = {workspace = true}
