@@ -43,6 +43,7 @@
             cargo-codspeed
             cargo-deny
             cargo-edit
+            cargo-fuzz
             cargo-llvm-cov
             cargo-udeps
             cargo-nextest
@@ -52,6 +53,7 @@
             nodejs_24
             openssl
             pkg-config
+            pnpm
             python314
             rust-analyzer
             rustToolchain
