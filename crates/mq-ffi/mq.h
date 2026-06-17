@@ -152,14 +152,29 @@ void mq_set_max_call_stack_depth(mq_context_t *engine_ptr, uint32_t max_call_sta
 /**
  * Sets the search paths used to resolve modules loaded via `mq_import_module`
  * or `mq_load_module`. Has no effect if `engine_ptr` is null.
+ *
+ * # Safety
+ *
+ * This function is unsafe because it dereferences raw pointers. The caller must ensure:
+ * - `engine_ptr` must be a valid pointer to an `Engine` created by `mq_create`, or null
+ * - `paths` must be a valid pointer to an array of `paths_len` null-terminated C strings, or null if `paths_len` is 0
  */
-void mq_set_search_paths(mq_context_t *engine_ptr, const char *const *paths, uintptr_t paths_len);
+void mq_set_search_paths(mq_context_t *engine_ptr,
+                         const char *const *paths,
+                         uintptr_t paths_len);
 
 /**
  * Defines a string variable that can be referenced from mq code evaluated
  * afterwards by `mq_eval`, allowing values from the host environment to be
  * injected without building query strings by hand.
  * Has no effect if `engine_ptr` is null.
+ *
+ * # Safety
+ *
+ * This function is unsafe because it dereferences raw pointers. The caller must ensure:
+ * - `engine_ptr` must be a valid pointer to an `Engine` created by `mq_create`, or null
+ * - `name_c` must be a valid pointer to a null-terminated C string
+ * - `value_c` must be a valid pointer to a null-terminated C string
  */
 void mq_define_string_value(mq_context_t *engine_ptr, const char *name_c, const char *value_c);
 
@@ -167,6 +182,13 @@ void mq_define_string_value(mq_context_t *engine_ptr, const char *name_c, const 
  * Imports an external module by name, searched for in the paths configured via
  * `mq_set_search_paths`, making its exported definitions available to subsequent
  * `mq_eval` calls on the same engine.
+ *
+ * # Safety
+ *
+ * This function is unsafe because it dereferences raw pointers. The caller must ensure:
+ * - `engine_ptr` must be a valid pointer to an `Engine` created by `mq_create`, or null
+ * - `module_name_c` must be a valid pointer to a null-terminated C string
+ * - The returned pointer, if non-null, must be freed with `mq_free_string`
  */
 char *mq_import_module(mq_context_t *engine_ptr, const char *module_name_c);
 
@@ -174,6 +196,13 @@ char *mq_import_module(mq_context_t *engine_ptr, const char *module_name_c);
  * Loads an external module by name, searched for in the paths configured via
  * `mq_set_search_paths`, making its exported definitions available to subsequent
  * `mq_eval` calls on the same engine.
+ *
+ * # Safety
+ *
+ * This function is unsafe because it dereferences raw pointers. The caller must ensure:
+ * - `engine_ptr` must be a valid pointer to an `Engine` created by `mq_create`, or null
+ * - `module_name_c` must be a valid pointer to a null-terminated C string
+ * - The returned pointer, if non-null, must be freed with `mq_free_string`
  */
 char *mq_load_module(mq_context_t *engine_ptr, const char *module_name_c);
 
@@ -182,6 +211,12 @@ char *mq_load_module(mq_context_t *engine_ptr, const char *module_name_c);
  * over HTTP(S) via `mq_import_module` / `mq_load_module`. An empty list restricts
  * access to the built-in default domain only; it does not open up all URLs.
  * Has no effect if `engine_ptr` is null.
+ *
+ * # Safety
+ *
+ * This function is unsafe because it dereferences raw pointers. The caller must ensure:
+ * - `engine_ptr` must be a valid pointer to an `Engine` created by `mq_create`, or null
+ * - `domains` must be a valid pointer to an array of `domains_len` null-terminated C strings, or null if `domains_len` is 0
  */
 void mq_set_http_allowed_domains(mq_context_t *engine_ptr,
                                  const char *const *domains,

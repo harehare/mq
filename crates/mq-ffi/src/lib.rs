@@ -481,6 +481,12 @@ pub extern "C" fn mq_set_max_call_stack_depth(engine_ptr: *mut MqContext, max_ca
 
 /// Sets the search paths used to resolve modules loaded via `mq_import_module`
 /// or `mq_load_module`. Has no effect if `engine_ptr` is null.
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences raw pointers. The caller must ensure:
+/// - `engine_ptr` must be a valid pointer to an `Engine` created by `mq_create`, or null
+/// - `paths` must be a valid pointer to an array of `paths_len` null-terminated C strings, or null if `paths_len` is 0
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_set_search_paths(
     engine_ptr: *mut MqContext,
@@ -502,6 +508,13 @@ pub unsafe extern "C" fn mq_set_search_paths(
 /// afterwards by `mq_eval`, allowing values from the host environment to be
 /// injected without building query strings by hand.
 /// Has no effect if `engine_ptr` is null.
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences raw pointers. The caller must ensure:
+/// - `engine_ptr` must be a valid pointer to an `Engine` created by `mq_create`, or null
+/// - `name_c` must be a valid pointer to a null-terminated C string
+/// - `value_c` must be a valid pointer to a null-terminated C string
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_define_string_value(
     engine_ptr: *mut MqContext,
@@ -528,6 +541,13 @@ pub unsafe extern "C" fn mq_define_string_value(
 /// Imports an external module by name, searched for in the paths configured via
 /// `mq_set_search_paths`, making its exported definitions available to subsequent
 /// `mq_eval` calls on the same engine.
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences raw pointers. The caller must ensure:
+/// - `engine_ptr` must be a valid pointer to an `Engine` created by `mq_create`, or null
+/// - `module_name_c` must be a valid pointer to a null-terminated C string
+/// - The returned pointer, if non-null, must be freed with `mq_free_string`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_import_module(engine_ptr: *mut MqContext, module_name_c: *const c_char) -> *mut c_char {
     if engine_ptr.is_null() {
@@ -549,6 +569,13 @@ pub unsafe extern "C" fn mq_import_module(engine_ptr: *mut MqContext, module_nam
 /// Loads an external module by name, searched for in the paths configured via
 /// `mq_set_search_paths`, making its exported definitions available to subsequent
 /// `mq_eval` calls on the same engine.
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences raw pointers. The caller must ensure:
+/// - `engine_ptr` must be a valid pointer to an `Engine` created by `mq_create`, or null
+/// - `module_name_c` must be a valid pointer to a null-terminated C string
+/// - The returned pointer, if non-null, must be freed with `mq_free_string`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_load_module(engine_ptr: *mut MqContext, module_name_c: *const c_char) -> *mut c_char {
     if engine_ptr.is_null() {
@@ -571,6 +598,12 @@ pub unsafe extern "C" fn mq_load_module(engine_ptr: *mut MqContext, module_name_
 /// over HTTP(S) via `mq_import_module` / `mq_load_module`. An empty list restricts
 /// access to the built-in default domain only; it does not open up all URLs.
 /// Has no effect if `engine_ptr` is null.
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences raw pointers. The caller must ensure:
+/// - `engine_ptr` must be a valid pointer to an `Engine` created by `mq_create`, or null
+/// - `domains` must be a valid pointer to an array of `domains_len` null-terminated C strings, or null if `domains_len` is 0
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_set_http_allowed_domains(
     engine_ptr: *mut MqContext,
