@@ -1,4 +1,4 @@
-name: mq-ffi C tests
+name: ffi C tests
 
 on:
   push:
