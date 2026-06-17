@@ -12,7 +12,7 @@
  */
 
 // Re-export everything from core and types
-export { run, format, diagnostics, inlayHints, definedValues, hover, toAst, toHtml, htmlToMarkdown } from "./core.js";
+export { run, format, diagnostics, inlayHints, definedValues, hover, toAst, toHtml, htmlToMarkdown, clearHttpCache, clearAllHttpCache } from "./core.js";
 
 export type {
   Options,
