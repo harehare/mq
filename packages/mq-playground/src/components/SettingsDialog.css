@@ -106,18 +106,22 @@ input[type="checkbox"] {
 }
 
 .cache-clear-btn {
-    padding: 4px 12px;
+    padding: 6px 12px;
     border-radius: 4px;
     border: 1px solid light-dark(#cbd5e0, #3e3e42);
     background-color: light-dark(#f7fafc, #2d2d30);
     color: light-dark(#2d3748, #d4d4d4);
     font-size: 0.85rem;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color 0.2s, border-color 0.2s;
 }
 
 .cache-clear-btn:hover {
     background-color: light-dark(#edf2f7, #3e3e42);
+}
+
+.cache-clear-btn:active {
+    transform: translateY(1px);
 }
 
 .cache-clear-btn--danger {

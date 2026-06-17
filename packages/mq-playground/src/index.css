@@ -858,6 +858,25 @@ body {
   color: #e2e8f0;
 }
 
+[data-theme="mq"] .cache-clear-btn {
+  background-color: #2a3444;
+  border: 1px solid #4a5568;
+  color: #e2e8f0;
+}
+
+[data-theme="mq"] .cache-clear-btn:hover {
+  background-color: #32404f;
+}
+
+[data-theme="mq"] .cache-clear-btn--danger {
+  border-color: #e53e3e;
+  color: #fc8181;
+}
+
+[data-theme="mq"] .cache-clear-btn--danger:hover {
+  background-color: #3d1515;
+}
+
 [data-theme="mq"] .dropdown {
   background-color: #2a3444;
   border: 1px solid #4a5568;
