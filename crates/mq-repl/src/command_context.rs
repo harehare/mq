@@ -28,15 +28,16 @@ pub enum Command {
     Copy,
     Edit,
     Env(String, String),
+    Eval(String),
     Help,
     History,
-    Quit,
     LoadFile(String),
-    Reset,
-    Vars,
-    Eval(String),
-    Version,
     NotFound(String),
+    Quit,
+    Reset,
+    SaveFile(String),
+    Vars,
+    Version,
 }
 
 /// List of language keywords used for REPL completions.
@@ -44,7 +45,7 @@ pub enum Command {
 /// This list must be kept in sync with the keyword definitions in
 /// `crates/mq-lang/src/lexer.rs` (see the lexer keyword table around
 /// lines 207–260).
-const KEYWORDS: &[&str] = &[
+const KEYWORDS: &[&str; 28] = &[
     "def", "let", "if", "elif", "else", "end", "while", "loop", "foreach", "self", "nodes", "fn", "break", "continue",
     "include", "true", "false", "None", "match", "try", "catch", "import", "module", "do", "var", "macro", "quote",
     "unquote",
@@ -61,6 +62,7 @@ impl fmt::Display for Command {
             Command::History => write!(f, "/history"),
             Command::Quit => write!(f, "/quit"),
             Command::LoadFile(_) => write!(f, "/load"),
+            Command::SaveFile(_) => write!(f, "/save"),
             Command::Reset => write!(f, "/reset"),
             Command::Vars => write!(f, "/vars"),
             Command::Eval(_) => write!(f, "/eval"),
@@ -81,6 +83,7 @@ impl Command {
             Command::History => format!("{:<12}{}", "/history", "Show command history"),
             Command::Quit => format!("{:<12}{}", "/quit", "Quit evaluation and exit"),
             Command::LoadFile(_) => format!("{:<12}{}", "/load", "Load a markdown file"),
+            Command::SaveFile(_) => format!("{:<12}{}", "/save", "Save a current result to a file"),
             Command::Reset => format!("{:<12}{}", "/reset", "Reset REPL state (clear variables and input)"),
             Command::Vars => format!("{:<12}{}", "/vars", "List bound variables"),
             Command::Eval(_) => format!("{:<12}{}", "/eval", ""),
@@ -101,6 +104,7 @@ impl From<String> for Command {
             ["/history"] => Command::History,
             ["/quit"] => Command::Quit,
             ["/load", file_path] => Command::LoadFile(file_path.to_string()),
+            ["/save", file_path] => Command::SaveFile(file_path.to_string()),
             ["/reset"] => Command::Reset,
             ["/vars"] => Command::Vars,
             ["/version"] => Command::Version,
@@ -354,6 +358,11 @@ impl CommandContext {
                         Ok(CommandOutput::None)
                     })
             }
+            Command::SaveFile(file_path) => {
+                let content = self.input.iter().map(|v| v.to_string()).collect::<Vec<_>>().join("\n");
+                fs::write(file_path, content).into_diagnostic()?;
+                Ok(CommandOutput::None)
+            }
             Command::Vars => Ok(CommandOutput::String(
                 self.hir
                     .symbols()
@@ -499,6 +508,7 @@ mod tests {
                 Command::Vars => assert!(help.contains("/vars")),
                 Command::Version => assert!(help.contains("/version")),
                 Command::LoadFile(_) => assert!(help.contains("/load")),
+                Command::SaveFile(_) => assert!(help.contains("/save")),
                 Command::Env(_, _) => assert!(help.contains("/env")),
                 Command::Eval(_) => assert!(help.contains("/eval")),
                 Command::NotFound(_) => assert!(help.contains("/not_found")),
@@ -650,6 +660,28 @@ mod tests {
 
         let list_items = ctx.input.iter().filter(|v| v.to_string().contains("List item")).count();
         assert_eq!(list_items, 2);
+    }
+
+    #[test]
+    fn test_execute_save_file() {
+        let engine = mq_lang::DefaultEngine::default();
+        let mut ctx = CommandContext::new(
+            engine,
+            vec!["# Header".to_string().into(), "Paragraph text.".to_string().into()],
+        );
+        let temp_file_path = std::env::temp_dir().join("test_execute_save_file.md");
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let result = ctx.execute(&format!("/save {}", temp_file_path.to_str().unwrap()));
+        assert!(matches!(result, Ok(CommandOutput::None)));
+
+        let saved_content = std::fs::read_to_string(&temp_file_path).expect("Failed to read saved file");
+        assert_eq!(saved_content, "# Header\nParagraph text.");
     }
 
     #[test]
