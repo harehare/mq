@@ -50,6 +50,7 @@ import "github.com/harehare/<module-name>"
 | [mermaid.mq](https://github.com/harehare/mermaid.mq) | [Mermaid](https://mermaid.js.org) diagrams — flowchart, sequence, pie, class |
 | [dot.mq](https://github.com/harehare/dot.mq) | [Graphviz DOT](https://graphviz.org) — nodes, edges, attributes |
 | [graphql.mq](https://github.com/harehare/graphql.mq) | GraphQL SDL — types, enums, interfaces, unions |
+| [tree.mq](https://github.com/harehare/tree.mq) | A tree-rendering utility module for mq |
 
 
 ## DevOps & Infrastructure
