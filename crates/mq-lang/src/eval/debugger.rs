@@ -54,7 +54,7 @@ pub struct DebugContext {
     /// Current AST node being evaluated
     pub current_node: Shared<ast::Node>,
     /// Current token being evaluated
-    pub token: Shared<Token>,
+    pub token: Token,
     /// Call stack of AST nodes representing the current execution path
     pub call_stack: Vec<Shared<ast::Node>>,
     /// Current evaluation environment info
@@ -71,11 +71,11 @@ impl Default for DebugContext {
                 token_id: crate::ast::TokenId::new(0),
                 expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(0.0.into()))),
             }),
-            token: Shared::new(Token {
+            token: Token {
                 kind: crate::TokenKind::Eof,
                 range: crate::Range::default(),
                 module_id: crate::eval::module::ModuleId::new(0),
-            }),
+            },
             call_stack: Vec::new(),
             env: Shared::new(SharedCell::new(Env::default())),
             source: Source::default(),
@@ -195,7 +195,7 @@ impl Debugger {
     }
 
     /// Returns the breakpoint that was hit at the current token location, if any.
-    pub fn get_hit_breakpoint(&self, context: &DebugContext, token: Shared<Token>) -> Option<Breakpoint> {
+    pub fn get_hit_breakpoint(&self, context: &DebugContext, token: Token) -> Option<Breakpoint> {
         if !self.active {
             return None;
         }
@@ -437,8 +437,8 @@ mod tests {
 
     use super::*;
 
-    fn make_token(line: usize, column: usize) -> Shared<Token> {
-        Shared::new(Token {
+    fn make_token(line: usize, column: usize) -> Token {
+        Token {
             kind: TokenKind::Ident("dummy".into()),
             range: Range {
                 start: crate::Position {
@@ -451,7 +451,7 @@ mod tests {
                 },
             },
             module_id: ModuleId::new(0),
-        })
+        }
     }
 
     fn make_node(token_id: TokenId) -> Shared<ast::Node> {
@@ -464,12 +464,12 @@ mod tests {
     fn make_debug_context(line: usize, column: usize) -> DebugContext {
         let mut arena = Arena::new(10);
         let token = make_token(line, column);
-        let token_id = arena.alloc(Shared::clone(&token));
+        let token_id = arena.alloc(token.clone());
         let node = make_node(token_id);
         DebugContext {
             current_value: RuntimeValue::NONE,
             current_node: node,
-            token: Shared::clone(&token),
+            token: token.clone(),
             call_stack: Vec::new(),
             env: Shared::new(SharedCell::new(Env::default())),
             source: Source::default(),

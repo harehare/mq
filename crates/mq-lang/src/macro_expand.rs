@@ -1153,16 +1153,16 @@ mod tests {
         }
     }
 
-    fn create_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
+    fn create_token_arena() -> Shared<SharedCell<Arena<Token>>> {
         let token_arena = Shared::new(SharedCell::new(Arena::new(10240)));
         // Ensure at least one token for ArenaId::new(0)
         crate::token_alloc(
             &token_arena,
-            &Shared::new(Token {
+            &Token {
                 kind: TokenKind::Eof,
                 range: crate::range::Range::default(),
                 module_id: crate::arena::ArenaId::new(0),
-            }),
+            },
         );
         token_arena
     }

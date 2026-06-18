@@ -71,11 +71,11 @@ impl From<crate::ast::Program> for CompiledProgram {
 #[derive(Debug, Clone)]
 pub struct Engine<T: ModuleResolver = DefaultModuleResolver> {
     pub(crate) evaluator: Evaluator<T>,
-    token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+    token_arena: Shared<SharedCell<Arena<Token>>>,
     optimization_level: OptimizationLevel,
 }
 
-fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
+fn create_default_token_arena() -> Shared<SharedCell<Arena<Token>>> {
     let token_arena = Shared::new(SharedCell::new(Arena::new(2048)));
     token_alloc(
         &token_arena,
@@ -296,7 +296,7 @@ impl<T: ModuleResolver> Engine<T> {
     }
 
     #[cfg(feature = "debugger")]
-    pub fn token_arena(&self) -> Shared<SharedCell<Arena<Shared<Token>>>> {
+    pub fn token_arena(&self) -> Shared<SharedCell<Arena<Token>>> {
         Shared::clone(&self.token_arena)
     }
 

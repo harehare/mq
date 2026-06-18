@@ -128,7 +128,7 @@ impl Default for Options {
 #[derive(Debug)]
 pub struct Evaluator<T: ModuleResolver = DefaultModuleResolver> {
     env: Shared<SharedCell<Env>>,
-    token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+    token_arena: Shared<SharedCell<Arena<Token>>>,
 
     call_stack_depth: u32,
     pub(crate) options: Options,
@@ -177,10 +177,7 @@ impl<T: ModuleResolver> Clone for Evaluator<T> {
 }
 
 impl<T: ModuleResolver> Evaluator<T> {
-    pub(crate) fn new(
-        module_loader: module::ModuleLoader<T>,
-        token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
-    ) -> Self {
+    pub(crate) fn new(module_loader: module::ModuleLoader<T>, token_arena: Shared<SharedCell<Arena<Token>>>) -> Self {
         Self {
             module_loader,
             token_arena,
@@ -189,10 +186,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     #[allow(unused)]
-    pub(crate) fn with_env(
-        token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
-        env: Shared<SharedCell<Env>>,
-    ) -> Self {
+    pub(crate) fn with_env(token_arena: Shared<SharedCell<Arena<Token>>>, env: Shared<SharedCell<Env>>) -> Self {
         Self {
             token_arena,
             env: Shared::clone(&env),
@@ -401,9 +395,10 @@ impl<T: ModuleResolver> Evaluator<T> {
                     .eval_import(module_path.to_owned(), env)
                     .map_err(|e| e.into_runtime_error())?,
                 _ => {
-                    return Err(RuntimeError::InternalError(
-                        (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
-                    ));
+                    return Err(RuntimeError::InternalError(get_token(
+                        Shared::clone(&self.token_arena),
+                        node.token_id,
+                    )));
                 }
             };
         }
@@ -433,15 +428,16 @@ impl<T: ModuleResolver> Evaluator<T> {
                             }
                         }
                         None => {
-                            let token = (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone();
+                            let token = get_token(Shared::clone(&self.token_arena), node.token_id);
                             return Err(RuntimeError::DestructuringFailed(token));
                         }
                     }
                 }
             } else {
-                return Err(RuntimeError::InternalError(
-                    (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
-                ));
+                return Err(RuntimeError::InternalError(get_token(
+                    Shared::clone(&self.token_arena),
+                    node.token_id,
+                )));
             }
         }
 
@@ -547,7 +543,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         let debug_context = DebugContext {
             current_value: runtime_value.clone(),
             current_node: Shared::clone(&node),
-            token: Shared::clone(&token),
+            token: token.clone(),
             call_stack: current_call_stack,
             env: Shared::clone(&env),
             source: Source {
@@ -636,7 +632,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                                 }
                             }
                             None => {
-                                let token = (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone();
+                                let token = get_token(Shared::clone(&self.token_arena), node.token_id);
                                 return Err(RuntimeError::DestructuringFailed(token).into());
                             }
                         }
@@ -731,7 +727,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             self.eval_ident(first_module.name, token_id, env)?
         } else {
             let token = get_token(Shared::clone(&self.token_arena), token_id);
-            return Err(RuntimeError::InternalError((*token).clone()).into());
+            return Err(RuntimeError::InternalError(token.clone()).into());
         };
 
         // Traverse nested modules
@@ -750,7 +746,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 }
                 _ => {
                     let token = get_token(Shared::clone(&self.token_arena), token_id);
-                    return Err(RuntimeError::NotDefined((*token).clone(), module_ident.name.to_string()).into());
+                    return Err(RuntimeError::NotDefined(token.clone(), module_ident.name.to_string()).into());
                 }
             }
         }
@@ -783,7 +779,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                                     .as_ref()
                                     .cloned()
                                     .unwrap_or(get_token(Shared::clone(&self.token_arena), token_id));
-                                Err(RuntimeError::NotDefined((*token).clone(), func_name.name.to_string()).into())
+                                Err(RuntimeError::NotDefined(token.clone(), func_name.name.to_string()).into())
                             }
                         }
                     }
@@ -806,7 +802,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     .map(|m| (m.token.clone(), m.name.to_string()))
                     .unwrap_or_default();
                 let token = token.unwrap_or(get_token(Shared::clone(&self.token_arena), token_id));
-                Err(RuntimeError::NotDefined((*token).clone(), last_module).into())
+                Err(RuntimeError::NotDefined(token.clone(), last_module).into())
             }
         }
     }
@@ -991,7 +987,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     ast::StringSegment::Env(env_var) => {
                         acc.push_str(&std::env::var(env_var).map_err(|_| {
                             RuntimeError::EnvNotFound(
-                                (*get_token(Shared::clone(&self.token_arena), token_id)).clone(),
+                                get_token(Shared::clone(&self.token_arena), token_id),
                                 env_var.clone(),
                             )
                         })?);
@@ -1019,7 +1015,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             let debug_context = DebugContext {
                 current_value: runtime_value.clone(),
                 current_node: Shared::clone(node),
-                token: Shared::clone(token),
+                token: token.clone(),
                 call_stack,
                 env: Shared::clone(env),
                 source: Source {
@@ -1039,7 +1035,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 .debugger
                 .read()
                 .unwrap()
-                .get_hit_breakpoint(&debug_context, Shared::clone(token));
+                .get_hit_breakpoint(&debug_context, token.clone());
 
             if let Some(breakpoint) = breakpoint {
                 let next_action = self
@@ -1119,7 +1115,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                             }
                         }
                         None => {
-                            let token = (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone();
+                            let token = get_token(Shared::clone(&self.token_arena), node.token_id);
                             return Err(RuntimeError::DestructuringFailed(token).into());
                         }
                     }
@@ -1138,7 +1134,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                             }
                         }
                         None => {
-                            let token = (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone();
+                            let token = get_token(Shared::clone(&self.token_arena), node.token_id);
                             return Err(RuntimeError::DestructuringFailed(token).into());
                         }
                     }
@@ -1154,8 +1150,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                             ident
                                 .token
                                 .as_ref()
-                                .map(|t| (**t).clone())
-                                .unwrap_or((*get_token(Shared::clone(&self.token_arena), node.token_id)).clone()),
+                                .cloned()
+                                .unwrap_or(get_token(Shared::clone(&self.token_arena), node.token_id)),
                         )
                     })?;
                 }
@@ -1167,8 +1163,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                             ident
                                 .token
                                 .as_ref()
-                                .map(|t| (**t).clone())
-                                .unwrap_or((*get_token(Shared::clone(&self.token_arena), node.token_id)).clone()),
+                                .cloned()
+                                .unwrap_or(get_token(Shared::clone(&self.token_arena), node.token_id)),
                         )
                     })?;
                 }
@@ -1199,17 +1195,17 @@ impl<T: ModuleResolver> Evaluator<T> {
                     Some(node) => Some(Box::new(self.eval_expr(runtime_value, node, env)?)),
                     None => None,
                 };
-                Err(EvalError::Flow(ControlFlow::Break((*token).clone(), value)))
+                Err(EvalError::Flow(ControlFlow::Break(token.clone(), value)))
             }
             ast::Expr::Continue => {
                 let token = get_token(Shared::clone(&self.token_arena), node.token_id);
-                Err(EvalError::Flow(ControlFlow::Continue((*token).clone())))
+                Err(EvalError::Flow(ControlFlow::Continue(token.clone())))
             }
             ast::Expr::Paren(expr) => self.eval_expr(runtime_value, expr, env),
             ast::Expr::Quote(inner) => self.eval_quote(inner, env),
             ast::Expr::Unquote(_) => {
                 let token = get_token(Shared::clone(&self.token_arena), node.token_id);
-                Err(RuntimeError::UnquoteNotAllowedOutsideQuote((*token).clone()).into())
+                Err(RuntimeError::UnquoteNotAllowedOutsideQuote(token.clone()).into())
             }
         }
     }
@@ -1306,7 +1302,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             }
             _ => {
                 return Err(RuntimeError::InvalidTypes {
-                    token: (*get_token(Shared::clone(&self.token_arena), token_id)).clone(),
+                    token: get_token(Shared::clone(&self.token_arena), token_id),
                     name: TokenKind::Foreach.to_string(),
                     args: vec![values.to_string().into()],
                 }
@@ -1546,7 +1542,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             Ok(value)
         } else {
             let token = get_token(Shared::clone(&self.token_arena), node.token_id);
-            Err(RuntimeError::InvalidMacroResultAst((*token).clone()).into())
+            Err(RuntimeError::InvalidMacroResultAst(token.clone()).into())
         }
     }
 
@@ -1780,7 +1776,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     true
                 } else {
                     return Err(RuntimeError::InvalidNumberOfArguments {
-                        token: (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
+                        token: get_token(Shared::clone(&self.token_arena), node.token_id),
                         name: ident.to_string(),
                         expected: required_params as u8,
                         actual: args.len() as u8,
@@ -1794,7 +1790,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             } else {
                 // arg_count > param_count: too many arguments
                 return Err(RuntimeError::InvalidNumberOfArguments {
-                    token: (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
+                    token: get_token(Shared::clone(&self.token_arena), node.token_id),
                     name: ident.to_string(),
                     expected: params.len() as u8,
                     actual: args.len() as u8,
@@ -1825,7 +1821,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     define(&new_env, param.ident.name, val);
                 } else {
                     return Err(RuntimeError::InvalidNumberOfArguments {
-                        token: (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
+                        token: get_token(Shared::clone(&self.token_arena), node.token_id),
                         name: ident.to_string(),
                         expected: params.len() as u8,
                         actual: args.len() as u8,
@@ -1844,7 +1840,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             self.eval_builtin(runtime_value, node, ident, args, env)
         } else {
             Err(RuntimeError::InvalidDefinition(
-                (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
+                get_token(Shared::clone(&self.token_arena), node.token_id),
                 ident.to_string(),
             )
             .into())
@@ -1922,7 +1918,7 @@ mod tests {
     }
 
     #[fixture]
-    fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
+    fn token_arena() -> Shared<SharedCell<Arena<Token>>> {
         let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
 
         token_alloc(
@@ -6655,7 +6651,7 @@ mod tests {
         Ok(vec![RuntimeValue::String("other".to_string())])
     )]
     fn test_eval(
-        token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+        token_arena: Shared<SharedCell<Arena<Token>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
         #[case] program: Program,
         #[case] expected: Result<Vec<RuntimeValue>, InnerError>,
@@ -6824,7 +6820,7 @@ mod tests {
         Ok(vec![RuntimeValue::Number(42.into())])
     )]
     fn test_import_qualified_access_paren_free(
-        token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+        token_arena: Shared<SharedCell<Arena<Token>>>,
         #[case] module_name: &str,
         #[case] module_content: &str,
         #[case] member_name: &str,
@@ -6851,7 +6847,7 @@ mod tests {
     /// A 2-arg function accessed via QualifiedAccess must NOT be auto-called;
     /// the function value itself should be the pipeline output.
     #[rstest]
-    fn test_import_qualified_access_paren_free_skips_multi_arg(token_arena: Shared<SharedCell<Arena<Shared<Token>>>>) {
+    fn test_import_qualified_access_paren_free_skips_multi_arg(token_arena: Shared<SharedCell<Arena<Token>>>) {
         let (temp_dir, temp_file_path) = create_file("qa_pf_multi_skip.mq", r#"def add(a, b): a + b;"#);
 
         defer! {
@@ -7138,7 +7134,7 @@ mod tests {
         Ok(vec![RuntimeValue::String("Is true: true".to_string())])
     )]
     fn test_interpolated_string_eval(
-        token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+        token_arena: Shared<SharedCell<Arena<Token>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
         #[case] program: Program,
         #[case] expected: Result<Vec<RuntimeValue>, InnerError>,
@@ -7538,7 +7534,7 @@ mod debugger_tests {
     use crate::{AstNode, DebuggerAction, IdentWithToken, ModuleLoader, Range, token_alloc};
 
     #[fixture]
-    fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
+    fn token_arena() -> Shared<SharedCell<Arena<Token>>> {
         let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
 
         token_alloc(
@@ -7600,7 +7596,7 @@ mod debugger_tests {
     }
 
     #[rstest]
-    fn test_eval_debugger_breakpoint_call(token_arena: Shared<SharedCell<Arena<Shared<Token>>>>) {
+    fn test_eval_debugger_breakpoint_call(token_arena: Shared<SharedCell<Arena<Token>>>) {
         let handler = Shared::new(SharedCell::new(
             Box::new(TestDebuggerHandler::new(DebuggerAction::Continue)) as Box<dyn DebuggerHandler>,
         ));

@@ -3432,7 +3432,7 @@ mod ast_json {
     use rstest::rstest;
     use smallvec::smallvec;
 
-    fn default_token_id() -> ArenaId<Shared<mq_lang::Token>> {
+    fn default_token_id() -> ArenaId<mq_lang::Token> {
         ArenaId::new(0)
     }
 

@@ -86,7 +86,7 @@ impl Node {
         serde_json::from_str(json_str)
     }
 
-    pub fn range(&self, arena: Shared<Arena<Shared<Token>>>) -> Range {
+    pub fn range(&self, arena: Shared<Arena<Token>>) -> Range {
         match &*self.expr {
             Expr::Block(program)
             | Expr::Def(_, _, program)
@@ -214,7 +214,7 @@ impl Node {
 pub struct IdentWithToken {
     pub name: Ident,
     #[cfg_attr(feature = "ast-json", serde(skip_serializing_if = "Option::is_none", default))]
-    pub token: Option<Shared<Token>>,
+    pub token: Option<Token>,
 }
 
 impl Hash for IdentWithToken {
@@ -240,7 +240,7 @@ impl IdentWithToken {
         Self::new_with_token(name, None)
     }
 
-    pub fn new_with_token(name: &str, token: Option<Shared<Token>>) -> Self {
+    pub fn new_with_token(name: &str, token: Option<Token>) -> Self {
         Self {
             name: name.into(),
             token,
@@ -414,12 +414,12 @@ mod tests {
     use rstest::rstest;
     use smallvec::smallvec;
 
-    fn create_token(range: Range) -> Shared<Token> {
-        Shared::new(Token {
+    fn create_token(range: Range) -> Token {
+        Token {
             range,
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        })
+        }
     }
 
     #[rstest]
@@ -702,7 +702,7 @@ mod tests {
         })
     }
 
-    fn single_token_arena(range: Range) -> Shared<Arena<Shared<Token>>> {
+    fn single_token_arena(range: Range) -> Shared<Arena<Token>> {
         let mut arena = Arena::new(10);
         arena.alloc(create_token(range));
         Shared::new(arena)

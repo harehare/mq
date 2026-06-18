@@ -139,7 +139,7 @@ pub type SharedCell<T> = RefCell<T>;
 #[cfg(feature = "sync")]
 pub type SharedCell<T> = RwLock<T>;
 
-pub(crate) type TokenArena = Shared<SharedCell<Arena<Shared<Token>>>>;
+pub(crate) type TokenArena = Shared<SharedCell<Arena<Token>>>;
 
 #[cfg(feature = "cst")]
 pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
@@ -171,13 +171,9 @@ pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::
         }
     };
 
-    AstParser::new(
-        tokens.into_iter().map(Shared::new).collect::<Vec<_>>().iter(),
-        &mut token_arena,
-        Module::TOP_LEVEL_MODULE_ID,
-    )
-    .parse()
-    .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))
+    AstParser::new(tokens.iter(), &mut token_arena, Module::TOP_LEVEL_MODULE_ID)
+        .parse()
+        .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))
 }
 
 /// Parses an MDX string and returns an iterator over `Value` nodes.
@@ -226,28 +222,28 @@ pub fn bytes_input(bytes: &[u8]) -> Vec<RuntimeValue> {
 }
 
 #[inline(always)]
-pub(crate) fn token_alloc(arena: &TokenArena, token: &Shared<Token>) -> TokenId {
+pub(crate) fn token_alloc(arena: &TokenArena, token: &Token) -> TokenId {
     #[cfg(not(feature = "sync"))]
     {
-        arena.borrow_mut().alloc(Shared::clone(token))
+        arena.borrow_mut().alloc(token.clone())
     }
 
     #[cfg(feature = "sync")]
     {
-        arena.write().unwrap().alloc(Shared::clone(token))
+        arena.write().unwrap().alloc(token.clone())
     }
 }
 
 #[inline(always)]
-pub(crate) fn get_token(arena: TokenArena, token_id: TokenId) -> Shared<Token> {
+pub(crate) fn get_token(arena: TokenArena, token_id: TokenId) -> Token {
     #[cfg(not(feature = "sync"))]
     {
-        Shared::clone(&arena.borrow()[token_id])
+        arena.borrow()[token_id].clone()
     }
 
     #[cfg(feature = "sync")]
     {
-        Shared::clone(&arena.read().unwrap()[token_id])
+        arena.read().unwrap()[token_id].clone()
     }
 }
 

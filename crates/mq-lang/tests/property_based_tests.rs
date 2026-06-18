@@ -6,11 +6,11 @@ use mq_lang::{
 use proptest::prelude::*;
 use smallvec::smallvec;
 
-fn create_token_arena() -> Shared<SharedCell<Arena<Shared<mq_lang::Token>>>> {
+fn create_token_arena() -> Shared<SharedCell<Arena<mq_lang::Token>>> {
     Shared::new(SharedCell::new(Arena::new(1024)))
 }
 
-fn default_token_id() -> mq_lang::ArenaId<Shared<mq_lang::Token>> {
+fn default_token_id() -> mq_lang::ArenaId<mq_lang::Token> {
     mq_lang::ArenaId::new(0)
 }
 

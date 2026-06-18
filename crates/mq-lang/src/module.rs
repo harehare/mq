@@ -17,7 +17,7 @@ use std::{borrow::Cow, cell::RefCell, path::PathBuf, sync::LazyLock};
 use crate::Token;
 
 struct BuiltinCache {
-    tokens: Vec<Shared<Token>>,
+    tokens: Vec<Token>,
     module: Module,
 }
 
@@ -305,7 +305,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
                 let arena = token_arena.borrow();
                 #[cfg(feature = "sync")]
                 let arena = token_arena.read().unwrap();
-                arena.as_slice()[1..].iter().map(Shared::clone).collect::<Vec<_>>()
+                arena.as_slice()[1..].to_vec()
             };
 
             BUILTIN_CACHE.with(|cache| {
@@ -371,12 +371,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             }
         };
 
-        let program = Parser::new(
-            tokens.into_iter().map(Shared::new).collect::<Vec<_>>().iter(),
-            &mut token_arena,
-            module_id,
-        )
-        .parse()?;
+        let program = Parser::new(tokens.iter(), &mut token_arena, module_id).parse()?;
 
         Ok(program)
     }
@@ -419,22 +414,22 @@ mod tests {
     use super::{Module, ModuleError, ModuleLoader};
 
     #[fixture]
-    fn token_arena() -> Shared<SharedCell<crate::arena::Arena<Shared<Token>>>> {
+    fn token_arena() -> Shared<SharedCell<crate::arena::Arena<Token>>> {
         Shared::new(SharedCell::new(crate::arena::Arena::new(10)))
     }
 
     /// Arena that mirrors the engine's initial state: one dummy EOF token at index 0.
     /// Required to exercise the "pristine" cache path in `load_builtin`.
     #[fixture]
-    fn pristine_token_arena() -> Shared<SharedCell<crate::arena::Arena<Shared<Token>>>> {
+    fn pristine_token_arena() -> Shared<SharedCell<crate::arena::Arena<Token>>> {
         let arena = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
         token_alloc(
             &arena,
-            &Shared::new(Token {
+            &Token {
                 kind: TokenKind::Eof,
                 range: Range::default(),
                 module_id: Module::TOP_LEVEL_MODULE_ID,
-            }),
+            },
         );
         arena
     }
@@ -447,11 +442,11 @@ mod tests {
         modules: Vec::new(),
         vars: vec![
             Shared::new(ast::Node{token_id: 0.into(), expr: Shared::new(ast::Expr::Let(
-                ast::Pattern::Ident(IdentWithToken::new_with_token("test", Some(Shared::new(Token{
+                ast::Pattern::Ident(IdentWithToken::new_with_token("test", Some(Token{
                     kind: TokenKind::Ident(SmolStr::new("test")),
                     range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
                     module_id: 1.into()
-                })))),
+                }))),
                 Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::String("value".to_string())))})
             ))})],
         macros: Vec::new(),
@@ -461,11 +456,11 @@ mod tests {
         modules: Vec::new(),
         functions: vec![
             Shared::new(ast::Node{token_id: 0.into(), expr: Shared::new(ast::Expr::Def(
-            IdentWithToken::new_with_token("test", Some(Shared::new(Token{
+            IdentWithToken::new_with_token("test", Some(Token{
                 kind: TokenKind::Ident(SmolStr::new("test")),
                 range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
                 module_id: 1.into()
-            }))),
+            })),
             SmallVec::new(),
             vec![
                 Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(1.into())))})
@@ -479,22 +474,22 @@ mod tests {
         modules: Vec::new(),
         functions: vec![
             Shared::new(ast::Node{token_id: 0.into(), expr: Shared::new(ast::Expr::Def(
-                IdentWithToken::new_with_token("test", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()}))),
+                IdentWithToken::new_with_token("test", Some(Token{kind: TokenKind::Ident(SmolStr::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()})),
                 smallvec![
-                    Param::new(IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()})))),
-                    Param::new(IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()})))),
+                    Param::new(IdentWithToken::new_with_token("a", Some(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()}))),
+                    Param::new(IdentWithToken::new_with_token("b", Some(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()}))),
                 ],
                 vec![
                     Shared::new(ast::Node{token_id: 4.into(), expr: Shared::new(ast::Expr::Call(
-                    IdentWithToken::new_with_token("add", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("add")), range: Range{start: Position{line: 1, column: 17}, end: Position{line: 1, column: 20}}, module_id: 1.into()}))),
+                    IdentWithToken::new_with_token("add", Some(Token{kind: TokenKind::Ident(SmolStr::new("add")), range: Range{start: Position{line: 1, column: 17}, end: Position{line: 1, column: 20}}, module_id: 1.into()})),
                     smallvec![
                         Shared::new(ast::Node{token_id: 2.into(),
                             expr: Shared::new(
-                                ast::Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 21}, end: Position{line: 1, column: 22}}, module_id: 1.into()}))))
+                                ast::Expr::Ident(IdentWithToken::new_with_token("a", Some(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 21}, end: Position{line: 1, column: 22}}, module_id: 1.into()})))
                                 )}),
                         Shared::new(ast::Node{token_id: 3.into(),
                             expr: Shared::new(
-                                ast::Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 24}, end: Position{line: 1, column: 25}}, module_id: 1.into()}))))
+                                ast::Expr::Ident(IdentWithToken::new_with_token("b", Some(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 24}, end: Position{line: 1, column: 25}}, module_id: 1.into()})))
                             )})
                     ],
                 ))})]
@@ -503,7 +498,7 @@ mod tests {
         macros: Vec::new(),
     }))]
     fn test_load(
-        token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+        token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
         #[case] program: String,
         #[case] expected: Result<Module, ModuleError>,
     ) {
@@ -522,7 +517,7 @@ mod tests {
         macros: Vec::new(),
     }))]
     fn test_load_standard_module(
-        token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+        token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
         #[case] module_name: &str,
         #[case] expected: Result<Module, ModuleError>,
     ) {
@@ -580,7 +575,7 @@ mod tests {
     /// parse or replayed from the thread-local cache.
     #[rstest]
     fn test_load_builtin_cache_arena_size_consistent(
-        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
     ) {
         let arena1 = pristine_token_arena;
         let mut loader1 = ModuleLoader::new(DefaultModuleResolver::default());
@@ -593,11 +588,11 @@ mod tests {
         let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
         token_alloc(
             &arena2,
-            &Shared::new(Token {
+            &Token {
                 kind: TokenKind::Eof,
                 range: Range::default(),
                 module_id: Module::TOP_LEVEL_MODULE_ID,
-            }),
+            },
         );
         let mut loader2 = ModuleLoader::new(DefaultModuleResolver::default());
         loader2.load_builtin(Shared::clone(&arena2)).unwrap();
@@ -613,7 +608,7 @@ mod tests {
     /// The module returned from cache must have the same function/var/macro counts as a fresh parse.
     #[rstest]
     fn test_load_builtin_cache_module_counts_consistent(
-        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
     ) {
         let mut loader1 = ModuleLoader::new(DefaultModuleResolver::default());
         let module1 = loader1.load_builtin(pristine_token_arena).unwrap();
@@ -621,11 +616,11 @@ mod tests {
         let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
         token_alloc(
             &arena2,
-            &Shared::new(Token {
+            &Token {
                 kind: TokenKind::Eof,
                 range: Range::default(),
                 module_id: Module::TOP_LEVEL_MODULE_ID,
-            }),
+            },
         );
         let mut loader2 = ModuleLoader::new(DefaultModuleResolver::default());
         let module2 = loader2.load_builtin(arena2).unwrap();
@@ -641,7 +636,7 @@ mod tests {
     /// (TOP_LEVEL_MODULE is always 0).
     #[rstest]
     fn test_load_builtin_module_registered_at_id_one(
-        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
     ) {
         let mut loader = ModuleLoader::new(DefaultModuleResolver::default());
         loader.load_builtin(pristine_token_arena).unwrap();
@@ -654,7 +649,7 @@ mod tests {
     /// so that error diagnostics resolve to the builtin source file rather than garbage.
     #[rstest]
     fn test_load_builtin_cache_tokens_have_builtin_module_id(
-        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
     ) {
         let mut loader1 = ModuleLoader::new(DefaultModuleResolver::default());
         loader1.load_builtin(pristine_token_arena).unwrap();
@@ -663,11 +658,11 @@ mod tests {
         let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
         token_alloc(
             &arena2,
-            &Shared::new(Token {
+            &Token {
                 kind: TokenKind::Eof,
                 range: Range::default(),
                 module_id: Module::TOP_LEVEL_MODULE_ID,
-            }),
+            },
         );
         let mut loader2 = ModuleLoader::new(DefaultModuleResolver::default());
         loader2.load_builtin(Shared::clone(&arena2)).unwrap();

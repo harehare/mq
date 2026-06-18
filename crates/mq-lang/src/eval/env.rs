@@ -35,13 +35,13 @@ impl EnvError {
     pub fn to_runtime_error(&self, token_id: TokenId, token_arena: TokenArena) -> RuntimeError {
         match self {
             EnvError::InvalidDefinition(def) => {
-                RuntimeError::InvalidDefinition((*get_token(token_arena, token_id)).clone(), def.to_string())
+                RuntimeError::InvalidDefinition(get_token(token_arena, token_id), def.to_string())
             }
             EnvError::AssignToImmutable(var) => {
-                RuntimeError::AssignToImmutable((*get_token(token_arena, token_id)).clone(), var.to_string())
+                RuntimeError::AssignToImmutable(get_token(token_arena, token_id), var.to_string())
             }
             EnvError::UndefinedVariable(var) => {
-                RuntimeError::UndefinedVariable((*get_token(token_arena, token_id)).clone(), var.to_string())
+                RuntimeError::UndefinedVariable(get_token(token_arena, token_id), var.to_string())
             }
         }
     }
