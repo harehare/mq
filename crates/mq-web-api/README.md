@@ -107,7 +107,6 @@ curl "http://localhost:8080/api/query/diagnostics?query=invalid%20query"
 - **CORS support** - Configurable CORS origins for web applications
 - **Structured logging** - JSON and text format logging with tracing
 - **OpenAPI documentation** - Auto-generated API documentation
-- **Database connection pooling** - Efficient database connections with deadpool-libsql
 
 ## Support
 
