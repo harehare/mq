@@ -107,7 +107,6 @@ mod tests {
         let code = "def func1(): 1; | func1()";
         let (hir, url, source_map) = setup(code);
 
-        // Position on the `func1` definition (column 4, 0-based).
         let result = response(hir, url, Position::new(0, 5), "renamed", &source_map);
 
         assert!(result.is_some());
@@ -122,7 +121,6 @@ mod tests {
         let code = "def func1(): 1; | func1()";
         let (hir, url, source_map) = setup(code);
 
-        // Position on the call site `func1()`.
         let result = response(hir, url, Position::new(0, 20), "renamed", &source_map);
 
         assert!(result.is_some());
@@ -136,7 +134,6 @@ mod tests {
         let code = "\"hello\" | len";
         let (hir, url, source_map) = setup(code);
 
-        // Position on the builtin `len` call.
         let result = response(hir, url, Position::new(0, 11), "renamed", &source_map);
         assert!(result.is_none());
     }
@@ -153,7 +150,6 @@ mod tests {
         let code = "let val1 = 1 | val1";
         let (hir, url, source_map) = setup(code);
 
-        // Position on the `val1` definition.
         let result = response(hir, url, Position::new(0, 5), "renamed_val", &source_map);
 
         assert!(result.is_some());
@@ -167,7 +163,6 @@ mod tests {
         let code = "let val1 = 1 | val1";
         let (hir, url, source_map) = setup(code);
 
-        // Position on the `val1` usage (not the definition).
         let result = response(hir, url, Position::new(0, 16), "renamed_val", &source_map);
 
         assert!(result.is_some());
@@ -180,7 +175,6 @@ mod tests {
         let code = "def func1(x): x + 1;";
         let (hir, url, source_map) = setup(code);
 
-        // Position on the parameter declaration `x`.
         let result = response(hir, url, Position::new(0, 10), "renamed_param", &source_map);
 
         assert!(result.is_some());
@@ -195,7 +189,6 @@ mod tests {
         let code = "macro inc(x): x + 1 | inc(2)";
         let (hir, url, source_map) = setup(code);
 
-        // Position on the macro definition's name.
         let result = response(hir, url, Position::new(0, 7), "increment", &source_map);
 
         assert!(result.is_some());
@@ -247,7 +240,6 @@ mod tests {
         source_map.insert(main_url.to_string(), main_source_id);
         source_map.insert(module_url.to_string(), module_source_id);
 
-        // Position on the `csv_parse` call site (`include "csv" | csv_parse(...)`).
         let result = response(
             Arc::new(RwLock::new(hir)),
             main_url.clone(),

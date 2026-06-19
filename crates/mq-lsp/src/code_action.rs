@@ -65,17 +65,6 @@ fn add_module_statement_action(
 }
 
 /// Builds quick fixes for diagnostics in the request range:
-/// - For an unresolved bare call/ref whose name matches an export of one of the
-///   standard modules, suggests `include "<module>"`.
-/// - For an unresolved qualified access (`module::func()`) where `module` is a
-///   recognized standard module that simply hasn't been imported yet, suggests
-///   `import "<module>"`. The module name comes directly from the qualifier the
-///   user already wrote, rather than from a function-name lookup.
-///
-/// Unresolved symbols are looked up via `Hir::errors()` rather than
-/// `find_symbol_in_position`, because that helper follows `Call`/`Ref` symbols to
-/// their resolved definition and therefore returns `None` for symbols that are
-/// unresolved by definition.
 pub(crate) fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
     url: Url,
