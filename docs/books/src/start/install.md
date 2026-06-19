@@ -94,6 +94,44 @@ curl -L https://github.com/harehare/mq/releases/download/v0.6.1/mq-lsp-aarch64-u
 Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.6.1/mq-lsp-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq-lsp.exe"
 ```
 
+## Shell Completion
+
+mq can generate shell completion scripts via the `completion` subcommand. Supported shells: `bash`, `elvish`, `fish`, `nushell`, `powershell`, `zsh`.
+
+```sh
+# Bash (add to ~/.bashrc)
+echo 'source <(mq completion bash)' >> ~/.bashrc
+
+# Zsh (add to ~/.zshrc)
+echo 'source <(mq completion zsh)' >> ~/.zshrc
+
+# Fish
+mq completion fish > ~/.config/fish/completions/mq.fish
+
+# Elvish (add to ~/.config/elvish/rc.elv)
+mq completion elvish >> ~/.config/elvish/rc.elv
+
+# PowerShell (add to your PowerShell profile)
+mq completion powershell >> $PROFILE
+```
+
+### Nushell
+
+Generate the completion script and source it from your `config.nu`:
+
+```sh
+mkdir -p ~/.config/nushell/completions
+mq completion nushell > ~/.config/nushell/completions/mq.nu
+```
+
+Then add the following line to `~/.config/nushell/config.nu`:
+
+```nu
+source ~/.config/nushell/completions/mq.nu
+```
+
+Restart Nushell (or run `source ~/.config/nushell/config.nu`) to enable completions.
+
 ## Visual Studio Code Extension
 
 You can install the VSCode extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq).

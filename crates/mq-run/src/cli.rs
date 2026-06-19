@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use colored::Colorize;
 use miette::IntoDiagnostic;
 use miette::miette;
@@ -399,6 +399,24 @@ enum Commands {
     /// Start a debug adapter for mq
     #[cfg(feature = "debugger")]
     Dap,
+    /// Generate a shell completion script and print it to stdout
+    Completion {
+        /// Shell to generate the completion script for
+        #[arg(value_enum)]
+        shell: CompletionShell,
+    },
+}
+
+/// Shell targets supported by the `completion` subcommand.
+#[derive(Clone, Debug, clap::ValueEnum)]
+enum CompletionShell {
+    Bash,
+    Elvish,
+    Fish,
+    Nushell,
+    #[value(name = "powershell")]
+    PowerShell,
+    Zsh,
 }
 
 impl Cli {
@@ -546,6 +564,10 @@ impl Cli {
                 "  {} - Start a REPL session for interactive query execution",
                 "repl".green()
             ),
+            format!(
+                "  {} - Generate a shell completion script and print it to stdout",
+                "completion".green()
+            ),
         ];
 
         #[cfg(feature = "debugger")]
@@ -564,6 +586,35 @@ impl Cli {
         }
 
         println!("{}", output.join("\n"));
+        Ok(())
+    }
+
+    /// Generate a shell completion script for the given shell and print it to stdout.
+    fn generate_completion(shell: &CompletionShell) -> miette::Result<()> {
+        let mut command = Cli::command();
+        let name = command.get_name().to_string();
+
+        match shell {
+            CompletionShell::Bash => {
+                clap_complete::generate(clap_complete::Shell::Bash, &mut command, name, &mut io::stdout())
+            }
+            CompletionShell::Elvish => {
+                clap_complete::generate(clap_complete::Shell::Elvish, &mut command, name, &mut io::stdout())
+            }
+            CompletionShell::Fish => {
+                clap_complete::generate(clap_complete::Shell::Fish, &mut command, name, &mut io::stdout())
+            }
+            CompletionShell::Nushell => {
+                clap_complete::generate(clap_complete_nushell::Nushell, &mut command, name, &mut io::stdout())
+            }
+            CompletionShell::PowerShell => {
+                clap_complete::generate(clap_complete::Shell::PowerShell, &mut command, name, &mut io::stdout())
+            }
+            CompletionShell::Zsh => {
+                clap_complete::generate(clap_complete::Shell::Zsh, &mut command, name, &mut io::stdout())
+            }
+        }
+
         Ok(())
     }
 
@@ -640,6 +691,7 @@ impl Cli {
             }
             #[cfg(feature = "debugger")]
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
+            Some(Commands::Completion { shell }) => Self::generate_completion(shell),
             None => {
                 if self.input.stream {
                     self.process_streaming()
