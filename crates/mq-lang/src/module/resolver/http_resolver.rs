@@ -224,6 +224,43 @@ impl UreqFetcher {
 #[cfg(feature = "http-import-ureq")]
 const MAX_MODULE_SIZE: u64 = 1024 * 1024;
 
+/// DNS resolver that drops any resolved address that isn't publicly routable.
+///
+/// Domain allowlisting only checks the *name* in the URL; without this, an
+/// allowlisted domain could still resolve (at connect time, or via a later
+/// DNS rebind) to a loopback/private/link-local address and reach internal
+/// services. Filtering at the resolver level pins the connection to the
+/// addresses validated here, so a later re-resolution can't smuggle in an
+/// internal address.
+#[cfg(feature = "http-import-ureq")]
+#[derive(Debug, Default)]
+struct SsrfSafeResolver(ureq::unversioned::resolver::DefaultResolver);
+
+#[cfg(feature = "http-import-ureq")]
+impl ureq::unversioned::resolver::Resolver for SsrfSafeResolver {
+    fn resolve(
+        &self,
+        uri: &ureq::http::Uri,
+        config: &ureq::config::Config,
+        timeout: ureq::unversioned::transport::NextTimeout,
+    ) -> Result<ureq::unversioned::resolver::ResolvedSocketAddrs, ureq::Error> {
+        let resolved = self.0.resolve(uri, config, timeout)?;
+
+        let mut safe = self.empty();
+        for addr in resolved.iter() {
+            if super::http_import::is_global_ip(addr.ip()) {
+                safe.push(*addr);
+            }
+        }
+
+        if safe.is_empty() {
+            Err(ureq::Error::HostNotFound)
+        } else {
+            Ok(safe)
+        }
+    }
+}
+
 #[cfg(feature = "http-import-ureq")]
 impl HttpFetcher for UreqFetcher {
     fn fetch(&self, url: &str) -> Result<String, ModuleError> {
@@ -258,12 +295,16 @@ impl HttpFetcher for UreqFetcher {
             return Ok(content);
         }
 
-        let agent: ureq::Agent = ureq::Agent::config_builder()
+        let config = ureq::Agent::config_builder()
             .timeout_global(Some(self.timeout))
             .https_only(true)
             .max_redirects(0)
-            .build()
-            .into();
+            .build();
+        let agent = ureq::Agent::with_parts(
+            config,
+            ureq::unversioned::transport::DefaultConnector::default(),
+            SsrfSafeResolver::default(),
+        );
 
         let mut response = agent
             .get(url)
@@ -581,6 +622,23 @@ mod tests {
     fn test_fetch_rejects_http(#[case] url: &str) {
         let fetcher = UreqFetcher::default();
         assert!(matches!(fetcher.fetch(url), Err(ModuleError::IOError(_))));
+    }
+
+    #[test]
+    #[cfg(feature = "http-import-ureq")]
+    fn test_fetch_rejects_loopback_address() {
+        // "localhost" resolves to a loopback address via the OS hosts file
+        // (no network access needed), so the SSRF-safe resolver must reject
+        // it before any connection is attempted.
+        let dir = TempDir::new().unwrap();
+        let fetcher = UreqFetcher {
+            cache_dir: dir.path().to_path_buf(),
+            ..UreqFetcher::default()
+        };
+        assert!(matches!(
+            fetcher.fetch("https://localhost/foo.mq"),
+            Err(ModuleError::IOError(_))
+        ));
     }
 
     #[test]
