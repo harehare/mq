@@ -42,6 +42,8 @@ chromiumoxide = {version = "0.9", default-features = false}
 chrono = "0.4.44"
 ciborium = "0.2.2"
 clap = "4.6.1"
+clap_complete = "4.6.5"
+clap_complete_nushell = "4.6.0"
 colored = "3.1.1"
 crossbeam = "0.8.4"
 crossbeam-channel = "0.5.15"
