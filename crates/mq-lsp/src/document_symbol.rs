@@ -5,7 +5,7 @@ use tower_lsp_server::ls_types::{DocumentSymbol, DocumentSymbolResponse, Positio
 use url::Url;
 
 #[allow(deprecated)]
-pub fn response(
+pub(crate) fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
     url: Url,
     source_map: &BiMap<String, mq_hir::SourceId>,

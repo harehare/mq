@@ -93,7 +93,7 @@ fn format_hover_content(
     sections.join("\n\n")
 }
 
-pub fn response(
+pub(crate) fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
     url: Url,
     type_env: Option<mq_check::TypeEnv>,

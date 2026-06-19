@@ -2600,6 +2600,7 @@ dependencies = [
  "mq-markdown",
  "rustc-hash",
  "serde_json",
+ "smol_str",
  "tokio",
  "tower-lsp-server",
  "url",
