@@ -7,7 +7,7 @@ use bimap::BiMap;
 use tower_lsp_server::ls_types::{self, Location, Position, Range};
 use url::Url;
 
-pub fn response(
+pub(crate) fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
     url: Url,
     position: Position,

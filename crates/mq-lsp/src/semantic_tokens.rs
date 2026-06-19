@@ -4,7 +4,7 @@ use itertools::Itertools;
 use tower_lsp_server::ls_types::{self, SemanticToken, SemanticTokenModifier, SemanticTokenType};
 use url::Url;
 
-pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
+pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
     let mut pre_line = 0;
     let mut pre_start = 0;
 

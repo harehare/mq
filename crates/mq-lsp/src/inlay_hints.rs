@@ -8,7 +8,7 @@ use url::Url;
 /// When type checking is enabled and a `TypeEnv` is provided, this function
 /// produces inlay hints showing the inferred type for variable bindings and
 /// function definitions within the given range.
-pub fn response(
+pub(crate) fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
     url: Url,
     type_env: Option<mq_check::TypeEnv>,
