@@ -1736,6 +1736,7 @@ pub(super) fn generate_symbol_constraints(
                     // Check if arms have different concrete types (heterogeneous match)
                     let resolved: Vec<Type> = arm_body_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
                     let concrete: Vec<&Type> = resolved.iter().filter(|ty| !ty.is_var()).collect();
+                    let var_tys: Vec<&Type> = resolved.iter().filter(|ty| ty.is_var()).collect();
 
                     // Check if all concrete types are the same
                     let all_same = if concrete.len() >= 2 {
@@ -1750,6 +1751,22 @@ pub(super) fn generate_symbol_constraints(
                         // Different concrete types in arms — use Union type
                         let unique_types: Vec<Type> = concrete.into_iter().cloned().collect();
                         let union_ty = Type::union(unique_types);
+                        ctx.set_symbol_type(symbol_id, union_ty);
+                    } else if concrete.len() == 1 && !var_tys.is_empty() {
+                        // One concrete arm (e.g. `None`) plus still-unresolved arms — union
+                        // them instead of unifying, or the unresolved type collapses to the
+                        // concrete one. Mirrors `merge_loop_types`.
+                        let mut unified_var = var_tys[0].clone();
+                        for ty in &var_tys[1..] {
+                            ctx.add_constraint(Constraint::Equal(
+                                unified_var.clone(),
+                                (*ty).clone(),
+                                range,
+                                ConstraintOrigin::General,
+                            ));
+                        }
+                        unified_var = ctx.resolve_type(&unified_var);
+                        let union_ty = Type::union(vec![concrete[0].clone(), unified_var]);
                         ctx.set_symbol_type(symbol_id, union_ty);
                     } else {
                         let result_ty_var = ctx.fresh_var();

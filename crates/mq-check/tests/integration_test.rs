@@ -1859,6 +1859,43 @@ fn test_builtin_mq_has_no_type_errors() {
     );
 }
 
+#[test]
+fn test_match_none_arm_does_not_collapse_polymorphic_arm() {
+    // Regression: a `None` arm must not collapse a sibling arm whose type still
+    // depends on an unresolved generic function parameter down to `none`.
+    let code = r#"
+        def walk2(v, f):
+          match (v):
+            | :dict:
+              do
+                var result = {}
+                | var ks = keys(v)
+                | var i = 0
+                | while (i < len(ks)):
+                    let key = ks[i]
+                    | let new_value = walk2(v, f)
+                    | result[key] = new_value
+                    | i += 1
+                  end
+                | f(result)
+              end
+            | :none: None
+            | _: f(v)
+          end
+        end
+    "#;
+    let errors = check_types_with_builtins(code);
+    let type_errors: Vec<_> = errors
+        .iter()
+        .filter(|e| !matches!(e, mq_check::TypeError::UnreachableCode { .. }))
+        .collect();
+    assert!(
+        type_errors.is_empty(),
+        "match arms mixing a concrete `None` arm with generic-parameter-derived arms should not error, got: {:?}",
+        type_errors
+    );
+}
+
 #[rstest]
 #[case(r#"none ?? "default""#, true, "none ?? string returns string")]
 #[case(r#""hello" ?? "default""#, true, "string ?? string returns string")]
