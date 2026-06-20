@@ -32,6 +32,9 @@ def callout(value, kind, title = ""): to_callout(value, kind, title);
 # Creates a horizontal rule node.
 def hr(): to_hr();
 
+# Creates a blank line between the surrounding elements in a `doc()`/`to_md_fragment()` call.
+def br(): to_md_text("");
+
 # Wraps `value` in a math block node.
 def math(value): to_math(value);
 

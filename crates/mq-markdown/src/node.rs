@@ -1305,8 +1305,8 @@ impl Node {
             }
             Self::Fragment(Fragment { values }) => values
                 .iter()
+                .filter(|value| !value.is_empty())
                 .map(|value| value.render_with_theme(options, theme))
-                .filter(|s| !s.is_empty())
                 .join("\n"),
             Self::Empty => String::new(),
         }
@@ -4329,6 +4329,11 @@ mod tests {
         Node::Empty,
         Node::Empty,
     ]}), RenderOptions::default(), "")]
+    #[case::fragment_empty_text_as_blank_line(Node::Fragment(Fragment{values: vec![
+        Node::Text(Text{value: "hello".to_string(), position: None}),
+        Node::Text(Text{value: "".to_string(), position: None}),
+        Node::Text(Text{value: "world".to_string(), position: None})
+    ]}), RenderOptions::default(), "hello\n\nworld")]
     #[cfg_attr(feature = "wikilink", case::wikilink(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), RenderOptions::default(), "[[target]]"))]
     #[cfg_attr(feature = "wikilink", case::wikilink_with_text(Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display text".to_string()), position: None}), RenderOptions::default(), "[[target|display text]]"))]
     #[cfg_attr(feature = "wikilink", case::wikilink_same_text(Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("target".to_string()), position: None}), RenderOptions::default(), "[[target]]"))]
