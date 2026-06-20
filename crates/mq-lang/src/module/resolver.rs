@@ -172,6 +172,7 @@ mod tests {
     #[case("json")]
     #[case("yaml")]
     #[case("toml")]
+    #[case("md")]
     fn test_resolve_standard_module(#[case] name: &str) {
         let resolver = DefaultModuleResolver::default();
         assert!(resolver.resolve(name).is_ok());
@@ -180,6 +181,7 @@ mod tests {
     #[rstest]
     #[case("csv")]
     #[case("json")]
+    #[case("md")]
     fn test_get_path_standard_module(#[case] name: &str) {
         let resolver = DefaultModuleResolver::default();
         assert!(resolver.get_path(name).is_ok());

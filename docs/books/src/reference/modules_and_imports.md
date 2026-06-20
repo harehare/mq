@@ -122,6 +122,24 @@ import "json"
 | json::json_parse()
 ```
 
+## Markdown Builder (`md`)
+
+The `md` module provides functions for constructing markdown nodes from scratch, rather than
+filtering or transforming existing ones. Each function returns a markdown value that can be
+combined with others using `md::doc()`, which merges an array of nodes into a single markdown
+value.
+
+> **Note:** This module is under development. APIs and behavior may change without notice.
+
+```mq
+import "md"
+| md::doc([
+    md::h("My Project", 1),
+    md::text("Run `cargo install mq`."),
+    md::code("cargo install mq", "bash"),
+  ])
+```
+
 ## HTTP Imports
 
 When `mq` is built with the `http-import` feature, `import` and `include` accept HTTP/HTTPS URLs

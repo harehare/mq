@@ -45,6 +45,7 @@ fn get_module_name(name: &str) -> Cow<'static, str> {
         "fuzzy" => Cow::Borrowed("fuzzy.mq"),
         "hcl" => Cow::Borrowed("hcl.mq"),
         "json" => Cow::Borrowed("json.mq"),
+        "md" => Cow::Borrowed("md.mq"),
         "section" => Cow::Borrowed("section.mq"),
         "semver" => Cow::Borrowed("semver.mq"),
         "test" => Cow::Borrowed("test.mq"),
@@ -102,6 +103,7 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     std_module!(fuzzy);
     std_module!(hcl);
     std_module!(json);
+    std_module!(md);
     std_module!(section);
     std_module!(semver);
     std_module!(test);
@@ -545,6 +547,13 @@ mod tests {
         assert!(super::STANDARD_MODULES.contains_key("csv"));
         let csv_content = super::STANDARD_MODULES.get("csv").unwrap()();
         assert!(csv_content.contains("")); // Just check it's a string, optionally check for expected content
+    }
+
+    #[test]
+    fn test_standard_modules_contains_md() {
+        assert!(super::STANDARD_MODULES.contains_key("md"));
+        let md_content = super::STANDARD_MODULES.get("md").unwrap()();
+        assert!(md_content.contains("def doc("));
     }
 
     #[test]

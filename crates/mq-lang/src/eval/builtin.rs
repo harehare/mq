@@ -2222,6 +2222,75 @@ fn to_em_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<
     }
 }
 
+#[mq_macros::mq_fn(name = "to_blockquote", params = Fixed(1))]
+fn to_blockquote_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [RuntimeValue::Markdown(node, _)] => Ok(mq_markdown::Node::Blockquote(mq_markdown::Blockquote {
+            values: node.node_values(),
+            position: None,
+        })
+        .into()),
+        [a] if !a.is_none() => Ok(mq_markdown::Node::Blockquote(mq_markdown::Blockquote {
+            values: vec![a.to_string().into()],
+            position: None,
+        })
+        .into()),
+        _ => Ok(RuntimeValue::NONE),
+    }
+}
+
+#[mq_macros::mq_fn(name = "to_delete", params = Fixed(1))]
+fn to_delete_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [RuntimeValue::Markdown(node, _)] => Ok(mq_markdown::Node::Delete(mq_markdown::Delete {
+            values: node.node_values(),
+            position: None,
+        })
+        .into()),
+        [a] if !a.is_none() => Ok(mq_markdown::Node::Delete(mq_markdown::Delete {
+            values: vec![a.to_string().into()],
+            position: None,
+        })
+        .into()),
+        _ => Ok(RuntimeValue::NONE),
+    }
+}
+
+#[mq_macros::mq_fn(name = "to_callout", params = Fixed(3))]
+fn to_callout_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [
+            RuntimeValue::Markdown(node, _),
+            RuntimeValue::String(kind),
+            RuntimeValue::String(title),
+        ] => Ok(mq_markdown::Node::Callout(mq_markdown::Callout {
+            kind: kind.to_uppercase(),
+            title: if title.is_empty() {
+                None
+            } else {
+                Some(title.to_string())
+            },
+            values: node.node_values(),
+            position: None,
+        })
+        .into()),
+        [a, RuntimeValue::String(kind), RuntimeValue::String(title)] if !a.is_none() => {
+            Ok(mq_markdown::Node::Callout(mq_markdown::Callout {
+                kind: kind.to_uppercase(),
+                title: if title.is_empty() {
+                    None
+                } else {
+                    Some(title.to_string())
+                },
+                values: vec![a.to_string().into()],
+                position: None,
+            })
+            .into())
+        }
+        _ => Ok(RuntimeValue::NONE),
+    }
+}
+
 #[mq_macros::mq_fn(name = "to_md_text", params = Fixed(1))]
 fn to_md_text_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
@@ -2317,6 +2386,31 @@ fn to_md_table_cell_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &Shared
             vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
         )),
         _ => unreachable!("to_md_table_cell should always receive exactly three arguments"),
+    }
+}
+
+fn node_from_runtime_value(value: &RuntimeValue) -> mq_markdown::Node {
+    match value {
+        RuntimeValue::Markdown(node, _) => (**node).clone(),
+        _ => mq_markdown::Node::Text(mq_markdown::Text {
+            value: value.to_string(),
+            position: None,
+        }),
+    }
+}
+
+#[mq_macros::mq_fn(name = "to_md_fragment", params = Fixed(1))]
+fn to_md_fragment_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [RuntimeValue::Array(values)] => Ok(mq_markdown::Node::Fragment(mq_markdown::Fragment {
+            values: values.iter().map(node_from_runtime_value).collect(),
+        })
+        .into()),
+        [a @ RuntimeValue::Markdown(_, _)] => Ok(mq_markdown::Node::Fragment(mq_markdown::Fragment {
+            values: vec![node_from_runtime_value(a)],
+        })
+        .into()),
+        _ => Ok(RuntimeValue::NONE),
     }
 }
 
@@ -3689,10 +3783,14 @@ mq_macros::builtin_dispatch! {
     SET_LIST_ORDERED,
     TO_STRONG,
     TO_EM,
+    TO_BLOCKQUOTE,
+    TO_DELETE,
+    TO_CALLOUT,
     TO_MD_TEXT,
     TO_MD_LIST,
     TO_MD_TABLE_ROW,
     TO_MD_TABLE_CELL,
+    TO_MD_FRAGMENT,
     GET_TITLE,
     GET_URL,
     SET_CHECK,
@@ -4999,6 +5097,34 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown emphasis (italic) node with the given value.",
             params: &["value"],
+        },
+    );
+    map.insert(
+        SmolStr::new("to_blockquote"),
+        BuiltinFunctionDoc {
+            description: "Creates a markdown blockquote node with the given value.",
+            params: &["value"],
+        },
+    );
+    map.insert(
+        SmolStr::new("to_delete"),
+        BuiltinFunctionDoc {
+            description: "Creates a markdown delete (strikethrough) node with the given value.",
+            params: &["value"],
+        },
+    );
+    map.insert(
+        SmolStr::new("to_callout"),
+        BuiltinFunctionDoc {
+            description: "Creates a markdown callout node with the given value, kind, and title.",
+            params: &["value", "kind", "title"],
+        },
+    );
+    map.insert(
+        SmolStr::new("to_md_fragment"),
+        BuiltinFunctionDoc {
+            description: "Creates a markdown fragment node that groups an array of markdown nodes into a single value.",
+            params: &["values"],
         },
     );
     map.insert(

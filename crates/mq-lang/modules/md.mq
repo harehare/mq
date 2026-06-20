@@ -1,0 +1,48 @@
+# Builder functions for constructing markdown nodes from scratch.
+# This module is under development. APIs and behavior may change without notice.
+
+# Wraps `value` in a heading node at the given `depth` (1-6).
+def h(value, depth): to_h(value, depth);
+
+# Wraps `value` in a fenced code block with the given `lang`.
+def code(value, lang): to_code(value, lang);
+
+# Wraps `value` in an inline code span.
+def code_inline(value): to_code_inline(value);
+
+# Creates a plain text node from `value`.
+def text(value): to_md_text(value);
+
+# Wraps `value` in a strong (bold) node.
+def strong(value): to_strong(value);
+
+# Wraps `value` in an emphasis (italic) node.
+def em(value): to_em(value);
+
+# Wraps `value` in a delete (strikethrough) node.
+def delete(value): to_delete(value);
+
+# Wraps `value` in a blockquote node.
+def blockquote(value): to_blockquote(value);
+
+# Wraps `value` in a callout node of the given `kind` (e.g. "note", "warning"),
+# with an optional custom `title`.
+def callout(value, kind, title = ""): to_callout(value, kind, title);
+
+# Creates a horizontal rule node.
+def hr(): to_hr();
+
+# Wraps `value` in a math block node.
+def math(value): to_math(value);
+
+# Wraps `value` in an inline math node.
+def math_inline(value): to_math_inline(value);
+
+# Creates a link node pointing to `url` with link text `value` and an optional `title`.
+def link(url, value, title = ""): to_link(url, value, title);
+
+# Creates an image node pointing to `url` with `alt` text and an optional `title`.
+def image(url, alt, title = ""): to_image(url, alt, title);
+
+# Combines an array of markdown nodes into a single markdown value.
+def doc(values): to_md_fragment(values);
