@@ -162,7 +162,7 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 
 ### Markdown Manipulation
 
-`set_attr(node, attr, val)`, `attr(node, attr)`, `set_check(list, checked)`, `set_ref(node, ref_id)`, `set_code_block_lang(code, lang)`, `set_list_ordered(list, ordered)`, `increase_header_level(h)`, `decrease_header_level(h)`, `to_text(node)`, `to_markdown_string(node)`, `to_html(node)`, `to_md_name(node)`
+`set_attr(node, attr, val)`, `attr(node, attr)`, `set_children(node, children)`, `set_check(list, checked)`, `set_ref(node, ref_id)`, `set_code_block_lang(code, lang)`, `set_list_ordered(list, ordered)`, `increase_header_level(h)`, `decrease_header_level(h)`, `to_text(node)`, `to_markdown_string(node)`, `to_html(node)`, `to_md_name(node)`
 
 ### Type, I/O & Utility
 

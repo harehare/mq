@@ -2489,6 +2489,8 @@ fn engine() -> DefaultEngine {
 ]))].into()))]
 #[case::is_debug_mode_simple("is_debug_mode()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(cfg!(feature = "debugger"))].into()))]
 #[case::set_check_simple(r##"to_markdown("- [ ] task") | first() | set_check(true) | .list.checked"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::set_children_simple(r##"to_markdown("# heading") | first() | set_children(["new"]) | to_text()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("new".to_string())].into()))]
+#[case::set_children_with_markdown_node(r##"to_markdown("# heading") | first() | set_children([to_strong("bold")]) | to_html()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("<h1><strong>bold</strong></h1>".to_string())].into()))]
 #[case::stderr_simple(r##"stderr("test stderr")"##, vec![RuntimeValue::String("val".to_string())], Ok(vec![RuntimeValue::String("val".to_string())].into()))]
 #[case::to_image_simple(r##"to_image("url", "alt", "title")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "url".to_string(), alt: "alt".to_string(), title: Some("title".to_string()), position: None}))].into()))]
 #[case::to_link_simple(r##"to_link("url", "text", "title")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{url: mq_markdown::Url::new("url".to_string()), title: Some(mq_markdown::Title::new("title".to_string())), values: vec!["text".to_string().into()], position: None}))].into()))]
@@ -3040,6 +3042,10 @@ fn engine() -> DefaultEngine {
 #[case::set_code_block_lang_non_code(r#"set_code_block_lang("not_a_code", "rust")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("not_a_code".to_string())].into()))]
 // set_attr: non-markdown → returns first arg
 #[case::set_attr_non_markdown(r#"set_attr("not_markdown", "key", "value")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("not_markdown".to_string())].into()))]
+// set_children: non-markdown → returns first arg
+#[case::set_children_non_markdown(r#"set_children("not_markdown", ["x"])"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("not_markdown".to_string())].into()))]
+// set_children: leaf node (no children) → unchanged
+#[case::set_children_leaf_node(r##"to_markdown("plain text") | first() | set_children(["ignored"]) | to_text()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("plain text".to_string())].into()))]
 // attr: non-markdown → returns first arg
 #[case::attr_non_markdown(r#"attr("not_markdown", "key")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("not_markdown".to_string())].into()))]
 // set_variable with symbol key
