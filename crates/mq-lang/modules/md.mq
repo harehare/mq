@@ -44,5 +44,22 @@ def link(url, value, title = ""): to_link(url, value, title);
 # Creates an image node pointing to `url` with `alt` text and an optional `title`.
 def image(url, alt, title = ""): to_image(url, alt, title);
 
-# Combines an array of markdown nodes into a single markdown value.
+# Wraps `value` in a list item node at the given `level` (0-indexed nesting), optionally
+# `ordered` (numbered) and/or `checked` (checkbox); pass `checked = None` for a plain item.
+def list(value, level = 0, ordered = false, checked = None):
+  to_md_list(value, level) | set_list_ordered(ordered) | set_check(checked);
+
+# Creates a table row node from an array of cell values.
+def table_row(cells): to_md_table_row(cells);
+
+# Creates a single table cell node at the given `row`/`column`.
+def table_cell(value, row, column): to_md_table_cell(value, row, column);
+
+# Creates a table alignment (header separator) row node from an array of alignments
+# (e.g. ["left", "right", "center"]).
+def table_align(aligns): to_md_table_align(aligns);
+
+# Combines an array of markdown nodes into a single markdown value. Nested arrays
+# (e.g. from `map()`) are flattened automatically, so components can return plain
+# arrays of nodes and be spliced in as children.
 def doc(values): to_md_fragment(values);

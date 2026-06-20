@@ -3833,6 +3833,41 @@ mod tests {
             mq_markdown::Node::Text(mq_markdown::Text{value: "first".to_string(), position: None}),
             mq_markdown::Node::Text(mq_markdown::Text{value: "second".to_string(), position: None}),
         ]}))]))]
+    #[case::to_md_fragment_flattens_nested_arrays(vec![RuntimeValue::Array(vec![
+            RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "first".to_string(), position: None})),
+            RuntimeValue::Array(vec![
+                RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "second".to_string(), position: None})),
+                RuntimeValue::Array(vec![
+                    RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "third".to_string(), position: None})),
+                ]),
+            ]),
+        ])],
+        vec![
+              ast_call("to_md_fragment", SmallVec::new()),
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Fragment(mq_markdown::Fragment{values: vec![
+            mq_markdown::Node::Text(mq_markdown::Text{value: "first".to_string(), position: None}),
+            mq_markdown::Node::Text(mq_markdown::Text{value: "second".to_string(), position: None}),
+            mq_markdown::Node::Text(mq_markdown::Text{value: "third".to_string(), position: None}),
+        ]}))]))]
+    #[case::to_md_table_align(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("left".to_string()),
+            RuntimeValue::String("right".to_string()),
+            RuntimeValue::String("center".to_string()),
+            RuntimeValue::String("none".to_string()),
+        ])],
+        vec![
+              ast_call("to_md_table_align", SmallVec::new()),
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::TableAlign(mq_markdown::TableAlign{
+            align: vec![
+                mq_markdown::TableAlignKind::Left,
+                mq_markdown::TableAlignKind::Right,
+                mq_markdown::TableAlignKind::Center,
+                mq_markdown::TableAlignKind::None,
+            ],
+            position: None,
+        }))]))]
     #[case::set_check(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: None, position: None}))],
         vec![
               ast_call("set_check", smallvec![

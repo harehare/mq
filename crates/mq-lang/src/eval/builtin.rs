@@ -2389,6 +2389,18 @@ fn to_md_table_cell_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &Shared
     }
 }
 
+#[mq_macros::mq_fn(name = "to_md_table_align", params = Fixed(1))]
+fn to_md_table_align_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [RuntimeValue::Array(values)] => Ok(mq_markdown::Node::TableAlign(mq_markdown::TableAlign {
+            align: values.iter().map(|v| v.to_string().as_str().into()).collect(),
+            position: None,
+        })
+        .into()),
+        _ => Ok(RuntimeValue::NONE),
+    }
+}
+
 fn node_from_runtime_value(value: &RuntimeValue) -> mq_markdown::Node {
     match value {
         RuntimeValue::Markdown(node, _) => (**node).clone(),
@@ -2399,17 +2411,25 @@ fn node_from_runtime_value(value: &RuntimeValue) -> mq_markdown::Node {
     }
 }
 
+fn flatten_into_nodes(value: &RuntimeValue, out: &mut Vec<mq_markdown::Node>) {
+    match value {
+        RuntimeValue::Array(values) => {
+            for value in values {
+                flatten_into_nodes(value, out);
+            }
+        }
+        _ => out.push(node_from_runtime_value(value)),
+    }
+}
+
 #[mq_macros::mq_fn(name = "to_md_fragment", params = Fixed(1))]
 fn to_md_fragment_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
-        [RuntimeValue::Array(values)] => Ok(mq_markdown::Node::Fragment(mq_markdown::Fragment {
-            values: values.iter().map(node_from_runtime_value).collect(),
-        })
-        .into()),
-        [a @ RuntimeValue::Markdown(_, _)] => Ok(mq_markdown::Node::Fragment(mq_markdown::Fragment {
-            values: vec![node_from_runtime_value(a)],
-        })
-        .into()),
+        [a @ (RuntimeValue::Array(_) | RuntimeValue::Markdown(_, _))] => {
+            let mut values = Vec::new();
+            flatten_into_nodes(a, &mut values);
+            Ok(mq_markdown::Node::Fragment(mq_markdown::Fragment { values }).into())
+        }
         _ => Ok(RuntimeValue::NONE),
     }
 }
@@ -3790,6 +3810,7 @@ mq_macros::builtin_dispatch! {
     TO_MD_LIST,
     TO_MD_TABLE_ROW,
     TO_MD_TABLE_CELL,
+    TO_MD_TABLE_ALIGN,
     TO_MD_FRAGMENT,
     GET_TITLE,
     GET_URL,
@@ -5160,6 +5181,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown table cell node with the given value at the specified row and column.",
             params: &["value", "row", "column"],
+        },
+    );
+    map.insert(
+        SmolStr::new("to_md_table_align"),
+        BuiltinFunctionDoc {
+            description: "Creates a markdown table alignment row node from an array of alignments (\"left\", \"right\", \"center\", \"none\").",
+            params: &["aligns"],
         },
     );
 
