@@ -1067,6 +1067,16 @@ fn register_markdown(ctx: &mut InferenceContext) {
         Type::Markdown,
     );
 
+    // (markdown, array) -> markdown
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "set_children",
+        Type::Markdown,
+        Type::array(Type::Var(a)),
+        Type::Markdown,
+    );
+
     // (string, string, string) -> markdown
     register_ternary(ctx, "to_link", Type::String, Type::String, Type::String, Type::Markdown);
     register_ternary(
@@ -2044,6 +2054,7 @@ mod tests {
     #[rstest]
     #[case::attr("to_markdown(\"[link](url)\") | first() | attr(\"href\")", true)]
     #[case::set_attr("to_markdown(\"[link](url)\") | first() | set_attr(\"href\", \"new\")", true)]
+    #[case::set_children("to_markdown(\"# heading\") | first() | set_children([\"new\"])", true)]
     #[case::get_title("to_markdown(\"[link](url)\") | first() | get_title", true)]
     #[case::get_url("to_markdown(\"[link](url)\") | first() | get_url", true)]
     #[case::set_check("to_markdown(\"- [ ] task\") | first() | set_check(true)", true)]
@@ -2146,6 +2157,11 @@ mod tests {
         "to_md_table_cell expects number row"
     )]
     #[case::set_check_wrong_type("to_markdown(\"- [ ] task\") | set_check(42)", false, "set_check expects bool")]
+    #[case::set_children_wrong_type(
+        "to_markdown(\"# heading\") | set_children(\"not_an_array\")",
+        false,
+        "set_children expects array"
+    )]
     #[case::set_list_ordered_wrong_type(
         "to_markdown(\"- item\") | set_list_ordered(42)",
         false,

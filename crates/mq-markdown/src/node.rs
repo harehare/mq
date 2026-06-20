@@ -1445,6 +1445,29 @@ impl Node {
         }
     }
 
+    /// Sets the children nodes of the current node, if the node supports children.
+    /// Nodes without children (e.g. `Text`, `Code`, `Image`) are left unchanged.
+    pub fn set_children(&mut self, children: Vec<Node>) {
+        match self {
+            Node::Footnote(f) => f.values = children,
+            Node::Link(l) => l.values = children,
+            #[cfg(feature = "callout")]
+            Node::Callout(c) => c.values = children,
+            Node::Heading(h) => h.values = children,
+            Node::List(l) => l.values = children,
+            Node::TableCell(c) => c.values = children,
+            Node::TableRow(r) => r.values = children,
+            Node::Strong(s) => s.values = children,
+            Node::Blockquote(b) => b.values = children,
+            Node::Delete(d) => d.values = children,
+            Node::Emphasis(e) => e.values = children,
+            Node::Fragment(f) => f.values = children,
+            Node::MdxJsxFlowElement(m) => m.children = children,
+            Node::MdxJsxTextElement(m) => m.children = children,
+            _ => (),
+        }
+    }
+
     pub fn set_position(&mut self, pos: Option<Position>) {
         match self {
             Self::Blockquote(v) => v.position = pos,
@@ -2176,12 +2199,14 @@ impl Node {
                 attr_keys::VALUE => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
-            Node::MdxJsxFlowElement(MdxJsxFlowElement { name, .. }) => match attr {
+            Node::MdxJsxFlowElement(MdxJsxFlowElement { name, children, .. }) => match attr {
                 attr_keys::NAME => name.clone().map(AttrValue::String),
+                attr_keys::VALUES | attr_keys::CHILDREN => Some(AttrValue::Array(children.clone())),
                 _ => None,
             },
-            Node::MdxJsxTextElement(MdxJsxTextElement { name, .. }) => match attr {
+            Node::MdxJsxTextElement(MdxJsxTextElement { name, children, .. }) => match attr {
                 attr_keys::NAME => name.as_ref().map(|n| AttrValue::String(n.to_string())),
+                attr_keys::VALUES | attr_keys::CHILDREN => Some(AttrValue::Array(children.clone())),
                 _ => None,
             },
             Node::Strong(Strong { values, .. })
@@ -5220,6 +5245,90 @@ mod tests {
         )]
     fn test_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<AttrValue>) {
         assert_eq!(node.attr(attr), expected);
+    }
+
+    #[rstest]
+    #[case::heading(
+        Node::Heading(Heading{depth: 1, values: vec![], position: None}),
+        vec![Node::Text(Text{value: "child".to_string(), position: None})],
+        Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "child".to_string(), position: None})], position: None})
+    )]
+    #[case::list(
+        Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec![], position: None}),
+        vec![Node::Text(Text{value: "item".to_string(), position: None})],
+        Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Text(Text{value: "item".to_string(), position: None})], position: None})
+    )]
+    #[case::blockquote(
+        Node::Blockquote(Blockquote{values: vec![], position: None}),
+        vec![Node::Text(Text{value: "quote".to_string(), position: None})],
+        Node::Blockquote(Blockquote{values: vec![Node::Text(Text{value: "quote".to_string(), position: None})], position: None})
+    )]
+    #[case::link(
+        Node::Link(Link{url: Url::new(attr_keys::URL.to_string()), title: None, values: vec![], position: None}),
+        vec![Node::Text(Text{value: "link".to_string(), position: None})],
+        Node::Link(Link{url: Url::new(attr_keys::URL.to_string()), title: None, values: vec![Node::Text(Text{value: "link".to_string(), position: None})], position: None})
+    )]
+    #[case::footnote(
+        Node::Footnote(Footnote{ident: "1".to_string(), values: vec![], position: None}),
+        vec![Node::Text(Text{value: "note".to_string(), position: None})],
+        Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::Text(Text{value: "note".to_string(), position: None})], position: None})
+    )]
+    #[case::table_cell(
+        Node::TableCell(TableCell{column: 0, row: 0, values: vec![], position: None}),
+        vec![Node::Text(Text{value: "cell".to_string(), position: None})],
+        Node::TableCell(TableCell{column: 0, row: 0, values: vec![Node::Text(Text{value: "cell".to_string(), position: None})], position: None})
+    )]
+    #[case::table_row(
+        Node::TableRow(TableRow{values: vec![], position: None}),
+        vec![Node::Text(Text{value: "row".to_string(), position: None})],
+        Node::TableRow(TableRow{values: vec![Node::Text(Text{value: "row".to_string(), position: None})], position: None})
+    )]
+    #[case::strong(
+        Node::Strong(Strong{values: vec![], position: None}),
+        vec![Node::Text(Text{value: "bold".to_string(), position: None})],
+        Node::Strong(Strong{values: vec![Node::Text(Text{value: "bold".to_string(), position: None})], position: None})
+    )]
+    #[case::delete(
+        Node::Delete(Delete{values: vec![], position: None}),
+        vec![Node::Text(Text{value: "del".to_string(), position: None})],
+        Node::Delete(Delete{values: vec![Node::Text(Text{value: "del".to_string(), position: None})], position: None})
+    )]
+    #[case::emphasis(
+        Node::Emphasis(Emphasis{values: vec![], position: None}),
+        vec![Node::Text(Text{value: "em".to_string(), position: None})],
+        Node::Emphasis(Emphasis{values: vec![Node::Text(Text{value: "em".to_string(), position: None})], position: None})
+    )]
+    #[case::fragment(
+        Node::Fragment(Fragment{values: vec![]}),
+        vec![Node::Text(Text{value: "frag".to_string(), position: None})],
+        Node::Fragment(Fragment{values: vec![Node::Text(Text{value: "frag".to_string(), position: None})]})
+    )]
+    #[case::mdx_jsx_flow_element(
+        Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: Vec::new(), children: vec![], position: None}),
+        vec![Node::Text(Text{value: "mdx".to_string(), position: None})],
+        Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: Vec::new(), children: vec![Node::Text(Text{value: "mdx".to_string(), position: None})], position: None})
+    )]
+    #[case::mdx_jsx_text_element(
+        Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: vec![], position: None}),
+        vec![Node::Text(Text{value: "mdx".to_string(), position: None})],
+        Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: vec![Node::Text(Text{value: "mdx".to_string(), position: None})], position: None})
+    )]
+    #[case::leaf_node_is_noop(
+        Node::Text(Text{value: "leaf".to_string(), position: None}),
+        vec![Node::Text(Text{value: "ignored".to_string(), position: None})],
+        Node::Text(Text{value: "leaf".to_string(), position: None})
+    )]
+    fn test_set_children(#[case] mut node: Node, #[case] children: Vec<Node>, #[case] expected: Node) {
+        node.set_children(children.clone());
+        assert_eq!(node, expected);
+        assert_eq!(
+            node.children(),
+            if matches!(expected, Node::Text(_)) {
+                Vec::new()
+            } else {
+                children
+            }
+        );
     }
 
     #[rstest]

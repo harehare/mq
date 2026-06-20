@@ -2033,6 +2033,26 @@ fn set_attr_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
     }
 }
 
+#[mq_macros::mq_fn(name = "set_children", params = Fixed(2))]
+fn set_children_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Markdown(node, selector), RuntimeValue::Array(children)] => {
+            let mut new_node = std::mem::take(node);
+            let children = children
+                .iter_mut()
+                .map(|child| match child {
+                    RuntimeValue::Markdown(node, _) => (**node).clone(),
+                    value => std::mem::take(value).to_string().into(),
+                })
+                .collect();
+            new_node.set_children(children);
+            Ok(RuntimeValue::Markdown(new_node, selector.take()))
+        }
+        [a, ..] => Ok(std::mem::take(a)),
+        _ => unreachable!("set_children should always receive at least two arguments"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "to_code", params = Fixed(2))]
 fn to_code_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
@@ -3677,6 +3697,7 @@ mq_macros::builtin_dispatch! {
     NOT,
     ATTR,
     SET_ATTR,
+    SET_CHILDREN,
     TO_CODE,
     TO_CODE_INLINE,
     TO_H,
@@ -4922,6 +4943,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Sets the value of the specified attribute on a markdown node.",
             params: &["markdown", "attribute", "value"],
+        },
+    );
+    map.insert(
+        SmolStr::new("set_children"),
+        BuiltinFunctionDoc {
+            description: "Sets the children nodes of a markdown node. Nodes without children (e.g. text, code) are left unchanged.",
+            params: &["markdown", "children"],
         },
     );
     map.insert(
