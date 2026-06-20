@@ -1,0 +1,68 @@
+# Builder functions for constructing markdown nodes from scratch.
+# This module is under development. APIs and behavior may change without notice.
+
+# Wraps `value` in a heading node at the given `depth` (1-6).
+def h(value, depth): to_h(value, depth);
+
+# Wraps `value` in a fenced code block with the given `lang`.
+def code(value, lang): to_code(value, lang);
+
+# Wraps `value` in an inline code span.
+def code_inline(value): to_code_inline(value);
+
+# Creates a plain text node from `value`.
+def text(value): to_md_text(value);
+
+# Wraps `value` in a strong (bold) node.
+def strong(value): to_strong(value);
+
+# Wraps `value` in an emphasis (italic) node.
+def em(value): to_em(value);
+
+# Wraps `value` in a delete (strikethrough) node.
+def delete(value): to_delete(value);
+
+# Wraps `value` in a blockquote node.
+def blockquote(value): to_blockquote(value);
+
+# Wraps `value` in a callout node of the given `kind` (e.g. "note", "warning"),
+# with an optional custom `title`.
+def callout(value, kind, title = ""): to_callout(value, kind, title);
+
+# Creates a horizontal rule node.
+def hr(): to_hr();
+
+# Creates a blank line between the surrounding elements in a `doc()`/`to_md_fragment()` call.
+def br(): to_md_text("");
+
+# Wraps `value` in a math block node.
+def math(value): to_math(value);
+
+# Wraps `value` in an inline math node.
+def math_inline(value): to_math_inline(value);
+
+# Creates a link node pointing to `url` with link text `value` and an optional `title`.
+def link(url, value, title = ""): to_link(url, value, title);
+
+# Creates an image node pointing to `url` with `alt` text and an optional `title`.
+def image(url, alt, title = ""): to_image(url, alt, title);
+
+# Wraps `value` in a list item node at the given `level` (0-indexed nesting), optionally
+# `ordered` (numbered) and/or `checked` (checkbox); pass `checked = None` for a plain item.
+def list(value, level = 0, ordered = false, checked = None):
+  to_md_list(value, level) | set_list_ordered(ordered) | set_check(checked);
+
+# Creates a table row node from an array of cell values.
+def table_row(cells): to_md_table_row(cells);
+
+# Creates a single table cell node at the given `row`/`column`.
+def table_cell(value, row, column): to_md_table_cell(value, row, column);
+
+# Creates a table alignment (header separator) row node from an array of alignments
+# (e.g. ["left", "right", "center"]).
+def table_align(aligns): to_md_table_align(aligns);
+
+# Combines an array of markdown nodes into a single markdown value. Nested arrays
+# (e.g. from `map()`) are flattened automatically, so components can return plain
+# arrays of nodes and be spliced in as children.
+def doc(values): to_md_fragment(values);

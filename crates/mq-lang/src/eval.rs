@@ -3745,6 +3745,24 @@ mod tests {
               ast_call("to_em", SmallVec::new()),
         ],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Emphasis(mq_markdown::Emphasis{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "Italic text".to_string(), position: None})], position: None}))]))]
+    #[case::to_blockquote(vec![RuntimeValue::String("Quoted text".to_string())],
+        vec![
+              ast_call("to_blockquote", SmallVec::new()),
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Blockquote(mq_markdown::Blockquote{values: vec!["Quoted text".to_string().into()], position: None}))]))]
+    #[case::to_delete(vec![RuntimeValue::String("Deleted text".to_string())],
+        vec![
+              ast_call("to_delete", SmallVec::new()),
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Delete(mq_markdown::Delete{values: vec!["Deleted text".to_string().into()], position: None}))]))]
+    #[case::to_callout(vec![RuntimeValue::String("Heads up".to_string())],
+        vec![
+              ast_call("to_callout", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("note".to_string()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::String("Title".to_string()))),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Callout(mq_markdown::Callout{kind: "NOTE".to_string(), title: Some("Title".to_string()), values: vec!["Heads up".to_string().into()], position: None}))]))]
     #[case::to_image(vec![RuntimeValue::String("Image Alt".to_string())],
         vec![
               ast_call("to_image", smallvec![
@@ -3804,6 +3822,52 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(
             mq_markdown::List{values: vec!["list".to_string().into()], ordered: false, index: 0, level: 1_u8, checked: None, position: None}))]))]
+    #[case::to_md_fragment(vec![RuntimeValue::Array(vec![
+            RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "first".to_string(), position: None})),
+            RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "second".to_string(), position: None})),
+        ])],
+        vec![
+              ast_call("to_md_fragment", SmallVec::new()),
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Fragment(mq_markdown::Fragment{values: vec![
+            mq_markdown::Node::Text(mq_markdown::Text{value: "first".to_string(), position: None}),
+            mq_markdown::Node::Text(mq_markdown::Text{value: "second".to_string(), position: None}),
+        ]}))]))]
+    #[case::to_md_fragment_flattens_nested_arrays(vec![RuntimeValue::Array(vec![
+            RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "first".to_string(), position: None})),
+            RuntimeValue::Array(vec![
+                RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "second".to_string(), position: None})),
+                RuntimeValue::Array(vec![
+                    RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "third".to_string(), position: None})),
+                ]),
+            ]),
+        ])],
+        vec![
+              ast_call("to_md_fragment", SmallVec::new()),
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Fragment(mq_markdown::Fragment{values: vec![
+            mq_markdown::Node::Text(mq_markdown::Text{value: "first".to_string(), position: None}),
+            mq_markdown::Node::Text(mq_markdown::Text{value: "second".to_string(), position: None}),
+            mq_markdown::Node::Text(mq_markdown::Text{value: "third".to_string(), position: None}),
+        ]}))]))]
+    #[case::to_md_table_align(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("left".to_string()),
+            RuntimeValue::String("right".to_string()),
+            RuntimeValue::String("center".to_string()),
+            RuntimeValue::String("none".to_string()),
+        ])],
+        vec![
+              ast_call("to_md_table_align", SmallVec::new()),
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::TableAlign(mq_markdown::TableAlign{
+            align: vec![
+                mq_markdown::TableAlignKind::Left,
+                mq_markdown::TableAlignKind::Right,
+                mq_markdown::TableAlignKind::Center,
+                mq_markdown::TableAlignKind::None,
+            ],
+            position: None,
+        }))]))]
     #[case::set_check(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: None, position: None}))],
         vec![
               ast_call("set_check", smallvec![
