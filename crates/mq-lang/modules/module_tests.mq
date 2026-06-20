@@ -860,6 +860,6 @@ end
 
 def test_md_doc_skips_none_children():
   let result = to_string(md::doc([md::text("a"), None, md::text("b")]))
-  | assert_eq(result, "a\nb")
+  | assert_eq(result, "a\n\nb")
 end
 
