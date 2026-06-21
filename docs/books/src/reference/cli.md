@@ -33,6 +33,12 @@ Options:
           Sets file contents that can be referenced at runtime
       --stream
           Enable streaming mode for processing large files line by line
+      --allowed-domain <ALLOWED_DOMAINS>
+          Allow HTTP imports from additional domain(s) beyond the default. By default only `raw.githubusercontent.com/harehare` is permitted. Use `github.com/{user}/{repo}` to allow a specific repository (expanded automatically), or a plain domain like `example.com` to allow any path under that host. Repeat to allow multiple extra domains
+      --refresh-modules
+          Force re-fetch of mutable-ref (HEAD/branch) HTTP-imported modules, ignoring the local cache. Versioned (tagged) modules are never re-fetched regardless of this flag
+      --clear-cache
+          Remove all HTTP module cache including versioned (tagged) modules and lock files. Use this to fully reset the cache when something goes wrong
   -F, --output-format <OUTPUT_FORMAT>
           Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, raw, none]
   -U, --update
@@ -59,10 +65,14 @@ Options:
           Show NUM nodes before and after each match. Only effective with -F grep
       --list
           List all available subcommands (built-in and external)
+      --doc
+          Use the built-in reference document as input instead of a file
   -P <PARALLEL_THRESHOLD>
           Number of files to process before switching to parallel processing [default: 10]
       --argv [<ARGV>...]
           Positional string arguments, available as ARGS."positional" in queries
+  -O, --optimize-level <OPTIMIZE_LEVEL>
+          Optimization level for AST transformations (none = no changes, basic = constant folding and dead-branch elimination, full = all passes) [default: none] [possible values: none, basic, full]
   -h, --help
           Print help
   -V, --version

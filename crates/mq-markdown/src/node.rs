@@ -409,6 +409,56 @@ pub struct Link {
     pub position: Option<Position>,
 }
 
+/// An Obsidian-style callout (admonition): `> [!TYPE]` or `> [!TYPE] title`.
+#[cfg(feature = "callout")]
+#[derive(Debug, Clone, PartialEq, Default)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
+pub struct Callout {
+    /// The callout type in uppercase (e.g. `"NOTE"`, `"WARNING"`, `"TIP"`).
+    pub kind: String,
+    /// Optional custom title after the `[!TYPE]` marker.
+    pub title: Option<String>,
+    /// Body content nodes (the lines after the header).
+    pub values: Vec<Node>,
+    pub position: Option<Position>,
+}
+
+/// An Obsidian-style file embed: `![[target]]` or `![[target|display]]`.
+#[cfg(feature = "embed")]
+#[derive(Debug, Clone, PartialEq, Default)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
+pub struct Embed {
+    /// The target file or note name (e.g. `"image.png"`, `"note.md"`).
+    pub target: String,
+    /// Optional display hint after `|` (size for images, heading for notes).
+    pub display: Option<String>,
+    pub position: Option<Position>,
+}
+
+/// An Obsidian-style wikilink: `[[target]]` or `[[target|text]]`.
+#[cfg(feature = "wikilink")]
+#[derive(Debug, Clone, PartialEq, Default)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
+pub struct WikiLink {
+    /// The target page or file name (e.g. `"Three laws of motion"`).
+    pub target: String,
+    /// Optional display text (the part after `|`).
+    pub text: Option<String>,
+    pub position: Option<Position>,
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
@@ -713,6 +763,10 @@ pub struct HorizontalRule {
 pub enum Node {
     Blockquote(Blockquote),
     Break(Break),
+    #[cfg(feature = "callout")]
+    Callout(Callout),
+    #[cfg(feature = "embed")]
+    Embed(Embed),
     Definition(Definition),
     Delete(Delete),
     Heading(Heading),
@@ -728,6 +782,8 @@ pub enum Node {
     MathInline(MathInline),
     Link(Link),
     LinkRef(LinkRef),
+    #[cfg(feature = "wikilink")]
+    WikiLink(WikiLink),
     Math(Math),
     List(List),
     TableAlign(TableAlign),
@@ -875,6 +931,8 @@ impl Node {
             | Node::Delete(Delete { values, .. })
             | Node::Emphasis(Emphasis { values, .. })
             | Node::Strong(Strong { values, .. }) => Self::Fragment(Fragment { values }),
+            #[cfg(feature = "callout")]
+            Node::Callout(Callout { values, .. }) => Self::Fragment(Fragment { values }),
             node @ Node::Fragment(_) => node,
             _ => Self::Empty,
         }
@@ -897,6 +955,27 @@ impl Node {
             | Node::Delete(Delete { values, .. })
             | Node::Emphasis(Emphasis { values, .. })
             | Node::Strong(Strong { values, .. }) => {
+                if let Node::Fragment(Fragment { values: new_values }) = fragment {
+                    let new_values = values
+                        .iter()
+                        .zip(new_values)
+                        .map(|(current_value, new_value)| {
+                            if new_value.is_empty() {
+                                current_value.clone()
+                            } else if new_value.is_fragment() {
+                                let mut current_value = current_value.clone();
+                                Self::_apply_fragment(&mut current_value, new_value);
+                                current_value
+                            } else {
+                                new_value
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    *values = new_values;
+                }
+            }
+            #[cfg(feature = "callout")]
+            Node::Callout(Callout { values, .. }) => {
                 if let Node::Fragment(Fragment { values: new_values }) = fragment {
                     let new_values = values
                         .iter()
@@ -972,11 +1051,40 @@ impl Node {
             }
             Self::Blockquote(Blockquote { values, .. }) => {
                 let (bs, be) = &theme.blockquote_marker;
-                render_values(&values, options, theme)
+                render_values_block(&values, options, theme)
                     .split('\n')
                     .map(|line| format!("{}> {}{}", bs, be, line))
                     .join("\n")
             }
+            #[cfg(feature = "callout")]
+            Self::Callout(Callout {
+                kind, title, values, ..
+            }) => {
+                let (bs, be) = &theme.blockquote_marker;
+                let header = match title.as_deref() {
+                    Some(t) if !t.is_empty() => format!("[!{}] {}", kind, t),
+                    _ => format!("[!{}]", kind),
+                };
+                let header_line = format!("{}> {}{}", bs, be, header);
+                if values.is_empty() {
+                    return header_line;
+                }
+                let body = render_values_block(&values, options, theme);
+                if body.trim().is_empty() {
+                    header_line
+                } else {
+                    let body_lines = body
+                        .split('\n')
+                        .map(|line| format!("{}> {}{}", bs, be, line))
+                        .join("\n");
+                    format!("{}\n{}", header_line, body_lines)
+                }
+            }
+            #[cfg(feature = "embed")]
+            Self::Embed(Embed { target, display, .. }) => match display.as_deref() {
+                Some(d) if !d.is_empty() => format!("![[{}|{}]]", target, d),
+                _ => format!("![[{}]]", target),
+            },
             Self::Code(Code {
                 value,
                 lang,
@@ -1081,6 +1189,14 @@ impl Node {
                         .unwrap_or_default(),
                     le
                 )
+            }
+            #[cfg(feature = "wikilink")]
+            Self::WikiLink(WikiLink { target, text, .. }) => {
+                let (ls, le) = &theme.link;
+                match text.as_deref() {
+                    Some(t) if t != target.as_str() => format!("{}[[{}|{}]]{}", ls, target, t, le),
+                    _ => format!("{}[[{}]]{}", ls, target, le),
+                }
             }
             Self::LinkRef(LinkRef { values, label, .. }) => {
                 let (ls, le) = &theme.link;
@@ -1189,8 +1305,8 @@ impl Node {
             }
             Self::Fragment(Fragment { values }) => values
                 .iter()
+                .filter(|value| !value.is_empty())
                 .map(|value| value.render_with_theme(options, theme))
-                .filter(|s| !s.is_empty())
                 .join("\n"),
             Self::Empty => String::new(),
         }
@@ -1204,6 +1320,8 @@ impl Node {
             Self::Emphasis(v) => v.values,
             Self::List(l) => l.values,
             Self::Strong(v) => v.values,
+            #[cfg(feature = "callout")]
+            Self::Callout(v) => v.values,
             _ => vec![self.clone()],
         }
     }
@@ -1218,6 +1336,8 @@ impl Node {
             Self::List(v) => v.values.get(index).cloned(),
             Self::TableCell(v) => v.values.get(index).cloned(),
             Self::TableRow(v) => v.values.get(index).cloned(),
+            #[cfg(feature = "callout")]
+            Self::Callout(v) => v.values.get(index).cloned(),
             _ => None,
         }
     }
@@ -1240,6 +1360,12 @@ impl Node {
             Self::MathInline(v) => v.value.to_string(),
             Self::Link(l) => l.url.as_str().to_string(),
             Self::LinkRef(l) => l.ident,
+            #[cfg(feature = "wikilink")]
+            Self::WikiLink(w) => w.text.unwrap_or(w.target),
+            #[cfg(feature = "callout")]
+            Self::Callout(v) => values_to_value(v.values),
+            #[cfg(feature = "embed")]
+            Self::Embed(e) => e.display.unwrap_or(e.target),
             Self::Math(v) => v.value,
             Self::List(l) => values_to_value(l.values),
             Self::TableCell(c) => values_to_value(c.values),
@@ -1287,6 +1413,12 @@ impl Node {
             Self::MathInline(_) => "math_inline".into(),
             Self::Link(_) => "link".into(),
             Self::LinkRef(_) => "link_ref".into(),
+            #[cfg(feature = "wikilink")]
+            Self::WikiLink(_) => "wikilink".into(),
+            #[cfg(feature = "callout")]
+            Self::Callout(_) => "callout".into(),
+            #[cfg(feature = "embed")]
+            Self::Embed(_) => "embed".into(),
             Self::Math(_) => "math".into(),
             Self::List(_) => "list".into(),
             Self::TableAlign(_) => "table_align".into(),
@@ -1313,6 +1445,29 @@ impl Node {
         }
     }
 
+    /// Sets the children nodes of the current node, if the node supports children.
+    /// Nodes without children (e.g. `Text`, `Code`, `Image`) are left unchanged.
+    pub fn set_children(&mut self, children: Vec<Node>) {
+        match self {
+            Node::Footnote(f) => f.values = children,
+            Node::Link(l) => l.values = children,
+            #[cfg(feature = "callout")]
+            Node::Callout(c) => c.values = children,
+            Node::Heading(h) => h.values = children,
+            Node::List(l) => l.values = children,
+            Node::TableCell(c) => c.values = children,
+            Node::TableRow(r) => r.values = children,
+            Node::Strong(s) => s.values = children,
+            Node::Blockquote(b) => b.values = children,
+            Node::Delete(d) => d.values = children,
+            Node::Emphasis(e) => e.values = children,
+            Node::Fragment(f) => f.values = children,
+            Node::MdxJsxFlowElement(m) => m.children = children,
+            Node::MdxJsxTextElement(m) => m.children = children,
+            _ => (),
+        }
+    }
+
     pub fn set_position(&mut self, pos: Option<Position>) {
         match self {
             Self::Blockquote(v) => v.position = pos,
@@ -1331,6 +1486,12 @@ impl Node {
             Self::MathInline(v) => v.position = pos,
             Self::Link(l) => l.position = pos,
             Self::LinkRef(l) => l.position = pos,
+            #[cfg(feature = "wikilink")]
+            Self::WikiLink(w) => w.position = pos,
+            #[cfg(feature = "callout")]
+            Self::Callout(c) => c.position = pos,
+            #[cfg(feature = "embed")]
+            Self::Embed(e) => e.position = pos,
             Self::Math(v) => v.position = pos,
             Self::Code(c) => c.position = pos,
             Self::TableCell(c) => c.position = pos,
@@ -1368,6 +1529,12 @@ impl Node {
             Self::MathInline(v) => v.position.clone(),
             Self::Link(l) => l.position.clone(),
             Self::LinkRef(l) => l.position.clone(),
+            #[cfg(feature = "wikilink")]
+            Self::WikiLink(w) => w.position.clone(),
+            #[cfg(feature = "callout")]
+            Self::Callout(c) => c.position.clone(),
+            #[cfg(feature = "embed")]
+            Self::Embed(e) => e.position.clone(),
             Self::Math(v) => v.position.clone(),
             Self::Code(c) => c.position.clone(),
             Self::TableCell(c) => c.position.clone(),
@@ -1449,11 +1616,36 @@ impl Node {
     }
 
     pub fn is_link(&self) -> bool {
-        matches!(self, Self::Link(_))
+        #[cfg(feature = "wikilink")]
+        {
+            matches!(self, Self::Link(_) | Self::WikiLink(_))
+        }
+        #[cfg(not(feature = "wikilink"))]
+        {
+            matches!(self, Self::Link(_))
+        }
     }
 
     pub fn is_link_ref(&self) -> bool {
         matches!(self, Self::LinkRef(_))
+    }
+
+    /// Returns `true` if this node is an Obsidian-style wikilink (`[[target]]`).
+    #[cfg(feature = "wikilink")]
+    pub fn is_wikilink(&self) -> bool {
+        matches!(self, Self::WikiLink(_))
+    }
+
+    /// Returns `true` if this node is an Obsidian-style callout (`> [!TYPE]`).
+    #[cfg(feature = "callout")]
+    pub fn is_callout(&self) -> bool {
+        matches!(self, Self::Callout(_))
+    }
+
+    /// Returns `true` if this node is an Obsidian-style embed (`![[target]]`).
+    #[cfg(feature = "embed")]
+    pub fn is_embed(&self) -> bool {
+        matches!(self, Self::Embed(_))
     }
 
     pub fn is_text(&self) -> bool {
@@ -1719,6 +1911,31 @@ impl Node {
                 })
             }
             node @ Self::Fragment(_) | node @ Self::Empty => node,
+            #[cfg(feature = "wikilink")]
+            Self::WikiLink(mut w) => {
+                if w.text.is_some() {
+                    w.text = Some(value.to_string());
+                } else {
+                    w.target = value.to_string();
+                }
+                Self::WikiLink(w)
+            }
+            #[cfg(feature = "callout")]
+            Self::Callout(mut c) => {
+                if let Some(node) = c.values.first() {
+                    c.values[0] = node.with_value(value);
+                }
+                Self::Callout(c)
+            }
+            #[cfg(feature = "embed")]
+            Self::Embed(mut e) => {
+                if e.display.is_some() {
+                    e.display = Some(value.to_string());
+                } else {
+                    e.target = value.to_string();
+                }
+                Self::Embed(e)
+            }
         }
     }
 
@@ -1804,6 +2021,17 @@ impl Node {
                     ..mdx
                 })
             }
+            #[cfg(feature = "wikilink")]
+            a @ Self::WikiLink(_) => a,
+            #[cfg(feature = "callout")]
+            Self::Callout(mut c) => {
+                if c.values.get(index).is_some() {
+                    c.values[index] = c.values[index].with_value(value);
+                }
+                Self::Callout(c)
+            }
+            #[cfg(feature = "embed")]
+            a @ Self::Embed(_) => a,
             a => a,
         }
     }
@@ -1875,6 +2103,28 @@ impl Node {
                 attr_keys::TITLE => title.as_ref().map(|t| AttrValue::String(t.to_value())),
                 attr_keys::VALUE => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
                 attr_keys::VALUES | attr_keys::CHILDREN => Some(AttrValue::Array(values.clone())),
+                _ => None,
+            },
+            #[cfg(feature = "wikilink")]
+            Node::WikiLink(WikiLink { target, text, .. }) => match attr {
+                attr_keys::URL => Some(AttrValue::String(target.clone())),
+                attr_keys::VALUE => Some(AttrValue::String(text.clone().unwrap_or_else(|| target.clone()))),
+                _ => None,
+            },
+            #[cfg(feature = "callout")]
+            Node::Callout(Callout {
+                kind, title, values, ..
+            }) => match attr {
+                attr_keys::KIND => Some(AttrValue::String(kind.clone())),
+                attr_keys::TITLE => title.clone().map(AttrValue::String),
+                attr_keys::VALUE => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                attr_keys::VALUES | attr_keys::CHILDREN => Some(AttrValue::Array(values.clone())),
+                _ => None,
+            },
+            #[cfg(feature = "embed")]
+            Node::Embed(Embed { target, display, .. }) => match attr {
+                attr_keys::URL => Some(AttrValue::String(target.clone())),
+                attr_keys::VALUE => Some(AttrValue::String(display.clone().unwrap_or_else(|| target.clone()))),
                 _ => None,
             },
             Node::LinkRef(LinkRef { ident, label, .. }) => match attr {
@@ -1949,12 +2199,14 @@ impl Node {
                 attr_keys::VALUE => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
-            Node::MdxJsxFlowElement(MdxJsxFlowElement { name, .. }) => match attr {
+            Node::MdxJsxFlowElement(MdxJsxFlowElement { name, children, .. }) => match attr {
                 attr_keys::NAME => name.clone().map(AttrValue::String),
+                attr_keys::VALUES | attr_keys::CHILDREN => Some(AttrValue::Array(children.clone())),
                 _ => None,
             },
-            Node::MdxJsxTextElement(MdxJsxTextElement { name, .. }) => match attr {
+            Node::MdxJsxTextElement(MdxJsxTextElement { name, children, .. }) => match attr {
                 attr_keys::NAME => name.as_ref().map(|n| AttrValue::String(n.to_string())),
+                attr_keys::VALUES | attr_keys::CHILDREN => Some(AttrValue::Array(children.clone())),
                 _ => None,
             },
             Node::Strong(Strong { values, .. })
@@ -2207,6 +2459,425 @@ impl Node {
             | Node::HorizontalRule(_)
             | Node::Fragment(_)
             | Node::Empty => (),
+            #[cfg(feature = "wikilink")]
+            Node::WikiLink(w) => match attr {
+                attr_keys::URL => w.target = value_str,
+                attr_keys::VALUE => w.text = if value_str.is_empty() { None } else { Some(value_str) },
+                _ => (),
+            },
+            #[cfg(feature = "callout")]
+            Node::Callout(c) => match attr {
+                attr_keys::KIND => c.kind = value_str,
+                attr_keys::TITLE => c.title = if value_str.is_empty() { None } else { Some(value_str) },
+                _ => (),
+            },
+            #[cfg(feature = "embed")]
+            Node::Embed(e) => match attr {
+                attr_keys::URL => e.target = value_str,
+                attr_keys::VALUE => e.display = if value_str.is_empty() { None } else { Some(value_str) },
+                _ => (),
+            },
+        }
+    }
+
+    /// Tries to parse a `Blockquote`'s converted nodes as an Obsidian callout.
+    ///
+    /// Returns a `Callout` node when the first text starts with `[!TYPE]`, otherwise
+    /// falls back to a plain `Blockquote`.
+    #[cfg(feature = "callout")]
+    fn try_parse_callout(values: Vec<Node>, position: Option<Position>) -> Node {
+        // Peek without cloning so plain blockquotes pay no allocation cost.
+        if !matches!(values.first(), Some(Node::Text(t)) if t.value.starts_with("[!")) {
+            return Node::Blockquote(Blockquote { values, position });
+        }
+
+        let mut iter = values.into_iter();
+        // SAFETY: the peek above guarantees at least one Text node exists.
+        let first_text = match iter.next().unwrap() {
+            Node::Text(t) => t.value,
+            _ => unreachable!(),
+        };
+
+        let Some(rest) = first_text.strip_prefix("[!") else {
+            unreachable!()
+        };
+
+        let Some(bracket_end) = rest.find(']') else {
+            // Malformed `[!…` without closing `]` — treat as plain blockquote.
+            let mut values = vec![Node::Text(Text {
+                value: first_text,
+                position: None,
+            })];
+            values.extend(iter);
+            return Node::Blockquote(Blockquote { values, position });
+        };
+
+        let kind = rest[..bracket_end].to_string();
+        let after_bracket = &rest[bracket_end + 1..];
+
+        let (title, remaining_body) = if let Some(nl) = after_bracket.find('\n') {
+            let t = after_bracket[..nl].trim();
+            (
+                if t.is_empty() { None } else { Some(t.to_string()) },
+                after_bracket[nl + 1..].to_string(),
+            )
+        } else {
+            let t = after_bracket.trim();
+            (if t.is_empty() { None } else { Some(t.to_string()) }, String::new())
+        };
+
+        let body = if !remaining_body.trim().is_empty() {
+            let rest_nodes: Vec<Node> = iter.collect();
+            let mut b = Vec::with_capacity(rest_nodes.len() + 1);
+            b.push(Node::Text(Text {
+                value: remaining_body,
+                position: None,
+            }));
+            b.extend(rest_nodes);
+            b
+        } else {
+            iter.collect()
+        };
+
+        Node::Callout(Callout {
+            kind,
+            title,
+            values: body,
+            position,
+        })
+    }
+
+    /// Returns true if any `Text` descendant contains `[[`, covering both
+    /// embed (`![[`) and wikilink (`[[`) patterns.
+    #[cfg(any(feature = "embed", feature = "wikilink"))]
+    fn values_contain_links(values: &[Node]) -> bool {
+        values.iter().any(|n| match n {
+            Node::Text(t) => t.value.contains("[["),
+            Node::Heading(h) => Self::values_contain_links(&h.values),
+            Node::Blockquote(b) => Self::values_contain_links(&b.values),
+            #[cfg(feature = "callout")]
+            Node::Callout(c) => Self::values_contain_links(&c.values),
+            Node::List(l) => Self::values_contain_links(&l.values),
+            Node::Strong(s) => Self::values_contain_links(&s.values),
+            Node::Emphasis(e) => Self::values_contain_links(&e.values),
+            Node::Delete(d) => Self::values_contain_links(&d.values),
+            Node::TableCell(tc) => Self::values_contain_links(&tc.values),
+            Node::TableRow(tr) => Self::values_contain_links(&tr.values),
+            Node::Footnote(f) => Self::values_contain_links(&f.values),
+            _ => false,
+        })
+    }
+
+    /// Shared tree walker used by all expand functions. Recurses into container
+    /// nodes and delegates `Text` node processing to `parse_into`.
+    #[cfg(any(feature = "embed", feature = "wikilink"))]
+    fn expand_with(nodes: Vec<Node>, parse_into: fn(&str, Option<Position>, &mut Vec<Node>)) -> Vec<Node> {
+        let mut result = Vec::with_capacity(nodes.len());
+        for node in nodes {
+            Self::expand_with_into(node, &mut result, parse_into);
+        }
+        result
+    }
+
+    #[cfg(any(feature = "embed", feature = "wikilink"))]
+    fn expand_with_into(node: Node, out: &mut Vec<Node>, parse_into: fn(&str, Option<Position>, &mut Vec<Node>)) {
+        match node {
+            Node::Text(Text { ref value, .. }) if !value.contains("[[") => out.push(node),
+            Node::Text(Text { value, position }) => parse_into(&value, position, out),
+            Node::Heading(mut h) => {
+                if Self::values_contain_links(&h.values) {
+                    h.values = Self::expand_with(h.values, parse_into);
+                }
+                out.push(Node::Heading(h));
+            }
+            Node::Blockquote(mut b) => {
+                if Self::values_contain_links(&b.values) {
+                    b.values = Self::expand_with(b.values, parse_into);
+                }
+                out.push(Node::Blockquote(b));
+            }
+            #[cfg(feature = "callout")]
+            Node::Callout(mut c) => {
+                if Self::values_contain_links(&c.values) {
+                    c.values = Self::expand_with(c.values, parse_into);
+                }
+                out.push(Node::Callout(c));
+            }
+            Node::List(mut l) => {
+                if Self::values_contain_links(&l.values) {
+                    l.values = Self::expand_with(l.values, parse_into);
+                }
+                out.push(Node::List(l));
+            }
+            Node::Strong(mut s) => {
+                if Self::values_contain_links(&s.values) {
+                    s.values = Self::expand_with(s.values, parse_into);
+                }
+                out.push(Node::Strong(s));
+            }
+            Node::Emphasis(mut e) => {
+                if Self::values_contain_links(&e.values) {
+                    e.values = Self::expand_with(e.values, parse_into);
+                }
+                out.push(Node::Emphasis(e));
+            }
+            Node::Delete(mut d) => {
+                if Self::values_contain_links(&d.values) {
+                    d.values = Self::expand_with(d.values, parse_into);
+                }
+                out.push(Node::Delete(d));
+            }
+            Node::TableCell(mut tc) => {
+                if Self::values_contain_links(&tc.values) {
+                    tc.values = Self::expand_with(tc.values, parse_into);
+                }
+                out.push(Node::TableCell(tc));
+            }
+            Node::TableRow(mut tr) => {
+                if Self::values_contain_links(&tr.values) {
+                    tr.values = Self::expand_with(tr.values, parse_into);
+                }
+                out.push(Node::TableRow(tr));
+            }
+            Node::Footnote(mut f) => {
+                if Self::values_contain_links(&f.values) {
+                    f.values = Self::expand_with(f.values, parse_into);
+                }
+                out.push(Node::Footnote(f));
+            }
+            other => out.push(other),
+        }
+    }
+
+    /// Recursively scans a node list and converts `![[target]]` / `![[target|display]]`
+    /// patterns inside `Text` nodes into `Embed` nodes.
+    #[cfg(feature = "embed")]
+    pub fn expand_embeds(nodes: Vec<Node>) -> Vec<Node> {
+        Self::expand_with(nodes, Self::parse_embeds_into)
+    }
+
+    /// Splits a text string on `![[...]]` patterns, pushing a mix of `Text`
+    /// and `Embed` nodes into `out`.
+    #[cfg(feature = "embed")]
+    fn parse_embeds_into(text: &str, position: Option<Position>, out: &mut Vec<Node>) {
+        let mut last_end = 0;
+        let mut search_from = 0;
+        let mut found_any = false;
+
+        while let Some(bang_rel) = text[search_from..].find("![[") {
+            let bang = search_from + bang_rel;
+            let inner_start = bang + 3;
+
+            let Some(close_rel) = text[inner_start..].find("]]") else {
+                search_from = bang + 1;
+                continue;
+            };
+            let close = inner_start + close_rel;
+            let content = &text[inner_start..close];
+
+            if content.contains('[') || content.contains(']') {
+                search_from = bang + 1;
+                continue;
+            }
+
+            found_any = true;
+            if last_end < bang {
+                out.push(Node::Text(Text {
+                    value: text[last_end..bang].to_string(),
+                    position: position.clone(),
+                }));
+            }
+            let (target, display) = if let Some(pipe) = content.find('|') {
+                (
+                    content[..pipe].trim().to_string(),
+                    Some(content[pipe + 1..].trim().to_string()),
+                )
+            } else {
+                (content.trim().to_string(), None)
+            };
+            out.push(Node::Embed(Embed {
+                target,
+                display,
+                position: position.clone(),
+            }));
+            last_end = close + 2;
+            search_from = close + 2;
+        }
+
+        if !found_any {
+            out.push(Node::Text(Text {
+                value: text.to_string(),
+                position,
+            }));
+            return;
+        }
+
+        if last_end < text.len() {
+            out.push(Node::Text(Text {
+                value: text[last_end..].to_string(),
+                position,
+            }));
+        }
+    }
+
+    /// Recursively scans a node list and converts `[[target]]` / `[[target|text]]`
+    /// patterns inside `Text` nodes into `WikiLink` nodes.
+    #[cfg(feature = "wikilink")]
+    pub fn expand_wikilinks(nodes: Vec<Node>) -> Vec<Node> {
+        Self::expand_with(nodes, Self::parse_wikilinks_into)
+    }
+
+    /// Splits a text string on `[[...]]` patterns, pushing a mix of `Text`
+    /// and `WikiLink` nodes into `out`.
+    #[cfg(feature = "wikilink")]
+    fn parse_wikilinks_into(text: &str, position: Option<Position>, out: &mut Vec<Node>) {
+        let mut last_end = 0;
+        let mut search_from = 0;
+        let mut found_any = false;
+
+        while let Some(open_rel) = text[search_from..].find("[[") {
+            let open = search_from + open_rel;
+            let inner_start = open + 2;
+
+            let Some(close_rel) = text[inner_start..].find("]]") else {
+                break;
+            };
+            let close = inner_start + close_rel;
+            let content = &text[inner_start..close];
+
+            if content.contains('[') || content.contains(']') {
+                // nested brackets — skip past this '[' and retry
+                search_from = open + 1;
+                continue;
+            }
+
+            found_any = true;
+            if last_end < open {
+                out.push(Node::Text(Text {
+                    value: text[last_end..open].to_string(),
+                    position: position.clone(),
+                }));
+            }
+            let (target, text_part) = if let Some(pipe) = content.find('|') {
+                (content[..pipe].trim(), Some(content[pipe + 1..].trim()))
+            } else {
+                (content.trim(), None)
+            };
+            out.push(Node::WikiLink(WikiLink {
+                target: target.to_string(),
+                text: text_part.map(|t| t.to_string()),
+                position: position.clone(),
+            }));
+            last_end = close + 2;
+            search_from = close + 2;
+        }
+
+        if !found_any {
+            out.push(Node::Text(Text {
+                value: text.to_string(),
+                position,
+            }));
+            return;
+        }
+
+        if last_end < text.len() {
+            out.push(Node::Text(Text {
+                value: text[last_end..].to_string(),
+                position,
+            }));
+        }
+    }
+
+    /// Splits a text string on `[[...]]` patterns, returning a mix of `Text`
+    /// and `WikiLink` nodes. Used only in tests.
+    #[cfg(all(feature = "wikilink", test))]
+    fn parse_wikilinks_in_text(text: &str, position: Option<Position>) -> Vec<Node> {
+        let mut result = Vec::new();
+        Self::parse_wikilinks_into(text, position, &mut result);
+        result
+    }
+
+    /// Recursively scans a node list and converts both `![[target]]` (embed) and
+    /// `[[target]]` (wikilink) patterns in a single tree traversal. More efficient
+    /// than running `expand_embeds` followed by `expand_wikilinks` separately, which
+    /// traverses the tree and scans each `Text` node twice.
+    #[cfg(all(feature = "embed", feature = "wikilink"))]
+    pub fn expand_inline_links(nodes: Vec<Node>) -> Vec<Node> {
+        Self::expand_with(nodes, Self::parse_inline_links_into)
+    }
+
+    /// Splits a text string on `![[...]]` and `[[...]]` patterns in a single pass,
+    /// pushing a mix of `Text`, `Embed`, and `WikiLink` nodes into `out`.
+    /// A `[[` immediately preceded by `!` is treated as an embed; otherwise as a wikilink.
+    #[cfg(all(feature = "embed", feature = "wikilink"))]
+    fn parse_inline_links_into(text: &str, position: Option<Position>, out: &mut Vec<Node>) {
+        let mut last_end = 0;
+        let mut search_from = 0;
+        let mut found_any = false;
+
+        while let Some(open_rel) = text[search_from..].find("[[") {
+            let open = search_from + open_rel;
+            let inner_start = open + 2;
+
+            let Some(close_rel) = text[inner_start..].find("]]") else {
+                break;
+            };
+            let close = inner_start + close_rel;
+            let content = &text[inner_start..close];
+
+            if content.contains('[') || content.contains(']') {
+                search_from = open + 1;
+                continue;
+            }
+
+            let is_embed = text.as_bytes()[..open].last() == Some(&b'!');
+            let token_start = if is_embed { open - 1 } else { open };
+
+            found_any = true;
+            if last_end < token_start {
+                out.push(Node::Text(Text {
+                    value: text[last_end..token_start].to_string(),
+                    position: position.clone(),
+                }));
+            }
+
+            let (target, opt_part) = if let Some(pipe) = content.find('|') {
+                (content[..pipe].trim(), Some(content[pipe + 1..].trim()))
+            } else {
+                (content.trim(), None)
+            };
+
+            if is_embed {
+                out.push(Node::Embed(Embed {
+                    target: target.to_string(),
+                    display: opt_part.map(|s| s.to_string()),
+                    position: position.clone(),
+                }));
+            } else {
+                out.push(Node::WikiLink(WikiLink {
+                    target: target.to_string(),
+                    text: opt_part.map(|s| s.to_string()),
+                    position: position.clone(),
+                }));
+            }
+
+            last_end = close + 2;
+            search_from = close + 2;
+        }
+
+        if !found_any {
+            out.push(Node::Text(Text {
+                value: text.to_string(),
+                position,
+            }));
+            return;
+        }
+
+        if last_end < text.len() {
+            out.push(Node::Text(Text {
+                value: text[last_end..].to_string(),
+                position,
+            }));
         }
     }
 
@@ -2303,10 +2974,16 @@ impl Node {
                 }
             },
             mdast::Node::Blockquote(mdast::Blockquote { position, .. }) => {
-                vec![Self::Blockquote(Blockquote {
-                    values: Self::mdast_children_to_node(node),
-                    position: position.map(|p| p.clone().into()),
-                })]
+                let values = Self::mdast_children_to_node(node);
+                let pos = position.map(|p| p.clone().into());
+                #[cfg(feature = "callout")]
+                {
+                    vec![Self::try_parse_callout(values, pos)]
+                }
+                #[cfg(not(feature = "callout"))]
+                {
+                    vec![Self::Blockquote(Blockquote { values, position: pos })]
+                }
             }
             mdast::Node::Definition(mdast::Definition {
                 url,
@@ -2766,6 +3443,35 @@ pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &Co
         .collect::<String>()
 }
 
+/// Like `render_values` but without column-offset–based indentation.
+///
+/// Inside blockquotes and callouts, node positions include the `> ` prefix offset,
+/// so applying column-based spacing causes double-indentation. This variant preserves
+/// blank lines between values (via newline counting) but ignores the column position.
+pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
+    let mut pre_position: Option<Position> = None;
+    values
+        .iter()
+        .map(|value| {
+            if let Some(pos) = value.position() {
+                let new_line_count = pre_position
+                    .as_ref()
+                    .map(|p: &Position| pos.start.line - p.end.line)
+                    .unwrap_or_default();
+                pre_position = Some(pos);
+                format!(
+                    "{}{}",
+                    "\n".repeat(new_line_count),
+                    value.render_with_theme(options, theme)
+                )
+            } else {
+                pre_position = None;
+                value.render_with_theme(options, theme)
+            }
+        })
+        .collect::<String>()
+}
+
 fn values_to_value(values: Vec<Node>) -> String {
     values.iter().map(|value| value.value()).collect::<String>()
 }
@@ -3206,6 +3912,196 @@ mod tests {
         assert_eq!(node.is_blockquote(), expected);
     }
 
+    #[cfg(feature = "wikilink")]
+    #[rstest]
+    #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), true)]
+    #[case(Node::WikiLink(WikiLink{target: "Three laws of motion".to_string(), text: Some("Newton".to_string()), position: None}), true)]
+    #[case(Node::Link(Link{url: Url::new("https://example.com".to_string()), values: Vec::new(), title: None, position: None}), false)]
+    #[case(Node::Link(Link{url: Url::new("relative.md".to_string()), values: Vec::new(), title: None, position: None}), false)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    #[case(Node::Text(Text{value: "[[target]]".to_string(), position: None}), false)]
+    fn test_is_wikilink(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_wikilink(), expected);
+    }
+
+    #[cfg(feature = "wikilink")]
+    #[rstest]
+    #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), true)]
+    #[case(Node::WikiLink(WikiLink{target: "Three laws of motion".to_string(), text: Some("Newton".to_string()), position: None}), true)]
+    #[case(Node::Link(Link{url: Url::new("https://example.com".to_string()), values: Vec::new(), title: None, position: None}), true)]
+    #[case(Node::Link(Link{url: Url::new("relative.md".to_string()), values: Vec::new(), title: None, position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_link_includes_wikilink(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_link(), expected);
+    }
+
+    #[cfg(feature = "wikilink")]
+    #[rstest]
+    // no wikilinks — returns original text node unchanged
+    #[case("plain text", vec![Node::Text(Text{value: "plain text".to_string(), position: None})])]
+    // only a wikilink
+    #[case("[[target]]", vec![Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None})])]
+    // wikilink with display text
+    #[case("[[target|display]]", vec![Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display".to_string()), position: None})])]
+    // wikilink with spaces in target
+    #[case("[[Three laws of motion]]", vec![Node::WikiLink(WikiLink{target: "Three laws of motion".to_string(), text: None, position: None})])]
+    // wikilink with .md extension
+    #[case("[[target.md]]", vec![Node::WikiLink(WikiLink{target: "target.md".to_string(), text: None, position: None})])]
+    // wikilink at start
+    #[case("[[target]] after", vec![
+        Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}),
+        Node::Text(Text{value: " after".to_string(), position: None}),
+    ])]
+    // wikilink at end
+    #[case("before [[target]]", vec![
+        Node::Text(Text{value: "before ".to_string(), position: None}),
+        Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}),
+    ])]
+    // wikilink in middle
+    #[case("before [[target]] after", vec![
+        Node::Text(Text{value: "before ".to_string(), position: None}),
+        Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}),
+        Node::Text(Text{value: " after".to_string(), position: None}),
+    ])]
+    // multiple wikilinks
+    #[case("[[a]] and [[b]]", vec![
+        Node::WikiLink(WikiLink{target: "a".to_string(), text: None, position: None}),
+        Node::Text(Text{value: " and ".to_string(), position: None}),
+        Node::WikiLink(WikiLink{target: "b".to_string(), text: None, position: None}),
+    ])]
+    // unclosed [[ treated as plain text
+    #[case("[[unclosed", vec![Node::Text(Text{value: "[[unclosed".to_string(), position: None})])]
+    // nested brackets invalid — treated as plain text
+    #[case("[[in[ner]]]", vec![Node::Text(Text{value: "[[in[ner]]]".to_string(), position: None})])]
+    // multibyte characters in surrounding text
+    #[case("日本語 [[ターゲット]] テキスト", vec![
+        Node::Text(Text{value: "日本語 ".to_string(), position: None}),
+        Node::WikiLink(WikiLink{target: "ターゲット".to_string(), text: None, position: None}),
+        Node::Text(Text{value: " テキスト".to_string(), position: None}),
+    ])]
+    // multibyte characters inside wikilink target and display text
+    #[case("[[ページ|表示名]]", vec![
+        Node::WikiLink(WikiLink{target: "ページ".to_string(), text: Some("表示名".to_string()), position: None}),
+    ])]
+    fn test_parse_wikilinks_in_text(#[case] input: &str, #[case] expected: Vec<Node>) {
+        let result = Node::parse_wikilinks_in_text(input, None);
+        assert_eq!(result, expected);
+    }
+
+    #[cfg(feature = "wikilink")]
+    #[rstest]
+    #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), "url", Some(AttrValue::String("target".to_string())))]
+    #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), "value", Some(AttrValue::String("target".to_string())))]
+    #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display".to_string()), position: None}), "url", Some(AttrValue::String("target".to_string())))]
+    #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display".to_string()), position: None}), "value", Some(AttrValue::String("display".to_string())))]
+    #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), "title", None)]
+    fn test_wikilink_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<AttrValue>) {
+        assert_eq!(node.attr(attr), expected);
+    }
+
+    #[cfg(feature = "wikilink")]
+    #[rstest]
+    // no display text: with_value sets target
+    #[case(
+        Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}),
+        "new-target",
+        Node::WikiLink(WikiLink{target: "new-target".to_string(), text: None, position: None})
+    )]
+    // with display text: with_value sets text, not target
+    #[case(
+        Node::WikiLink(WikiLink{target: "page".to_string(), text: Some("Display Text".to_string()), position: None}),
+        "DISPLAY TEXT",
+        Node::WikiLink(WikiLink{target: "page".to_string(), text: Some("DISPLAY TEXT".to_string()), position: None})
+    )]
+    fn test_wikilink_with_value(#[case] node: Node, #[case] value: &str, #[case] expected: Node) {
+        assert_eq!(node.with_value(value), expected);
+    }
+
+    #[cfg(feature = "wikilink")]
+    #[rstest]
+    // footnote with no wikilinks — values unchanged
+    #[case(
+        Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::Text(Text{value: "plain text".to_string(), position: None})], position: None}),
+        vec![Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::Text(Text{value: "plain text".to_string(), position: None})], position: None})]
+    )]
+    // footnote with a wikilink in text — expanded to WikiLink node
+    #[case(
+        Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::Text(Text{value: "[[target]]".to_string(), position: None})], position: None}),
+        vec![Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None})], position: None})]
+    )]
+    // footnote with wikilink and display text
+    #[case(
+        Node::Footnote(Footnote{ident: "2".to_string(), values: vec![Node::Text(Text{value: "[[target|display]]".to_string(), position: None})], position: None}),
+        vec![Node::Footnote(Footnote{ident: "2".to_string(), values: vec![Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display".to_string()), position: None})], position: None})]
+    )]
+    // footnote with mixed text and wikilink
+    #[case(
+        Node::Footnote(Footnote{ident: "3".to_string(), values: vec![Node::Text(Text{value: "see [[note]]".to_string(), position: None})], position: None}),
+        vec![Node::Footnote(Footnote{ident: "3".to_string(), values: vec![
+            Node::Text(Text{value: "see ".to_string(), position: None}),
+            Node::WikiLink(WikiLink{target: "note".to_string(), text: None, position: None}),
+        ], position: None})]
+    )]
+    fn test_expand_wikilinks_footnote(#[case] input: Node, #[case] expected: Vec<Node>) {
+        let result = Node::expand_wikilinks(vec![input]);
+        assert_eq!(result, expected);
+    }
+
+    #[cfg(all(feature = "embed", feature = "wikilink"))]
+    #[rstest]
+    // embed only
+    #[case("![[note.md]]", vec![
+        Node::Embed(Embed{target: "note.md".to_string(), display: None, position: None}),
+    ])]
+    // wikilink only
+    #[case("[[target]]", vec![
+        Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}),
+    ])]
+    // embed and wikilink in same text
+    #[case("![[embed]] and [[link]]", vec![
+        Node::Embed(Embed{target: "embed".to_string(), display: None, position: None}),
+        Node::Text(Text{value: " and ".to_string(), position: None}),
+        Node::WikiLink(WikiLink{target: "link".to_string(), text: None, position: None}),
+    ])]
+    // wikilink before embed
+    #[case("[[link]] and ![[embed]]", vec![
+        Node::WikiLink(WikiLink{target: "link".to_string(), text: None, position: None}),
+        Node::Text(Text{value: " and ".to_string(), position: None}),
+        Node::Embed(Embed{target: "embed".to_string(), display: None, position: None}),
+    ])]
+    // embed with display hint
+    #[case("![[image.png|400]]", vec![
+        Node::Embed(Embed{target: "image.png".to_string(), display: Some("400".to_string()), position: None}),
+    ])]
+    // wikilink with display text
+    #[case("[[page|display]]", vec![
+        Node::WikiLink(WikiLink{target: "page".to_string(), text: Some("display".to_string()), position: None}),
+    ])]
+    // surrounding text
+    #[case("before ![[note]] after [[link]] end", vec![
+        Node::Text(Text{value: "before ".to_string(), position: None}),
+        Node::Embed(Embed{target: "note".to_string(), display: None, position: None}),
+        Node::Text(Text{value: " after ".to_string(), position: None}),
+        Node::WikiLink(WikiLink{target: "link".to_string(), text: None, position: None}),
+        Node::Text(Text{value: " end".to_string(), position: None}),
+    ])]
+    // plain text with no links
+    #[case("just plain text", vec![
+        Node::Text(Text{value: "just plain text".to_string(), position: None}),
+    ])]
+    // multibyte characters
+    #[case("日本語 ![[ファイル]] と [[ページ]]", vec![
+        Node::Text(Text{value: "日本語 ".to_string(), position: None}),
+        Node::Embed(Embed{target: "ファイル".to_string(), display: None, position: None}),
+        Node::Text(Text{value: " と ".to_string(), position: None}),
+        Node::WikiLink(WikiLink{target: "ページ".to_string(), text: None, position: None}),
+    ])]
+    fn test_parse_inline_links_into(#[case] input: &str, #[case] expected: Vec<Node>) {
+        let mut result = Vec::new();
+        Node::parse_inline_links_into(input, None, &mut result);
+        assert_eq!(result, expected);
+    }
+
     #[rstest]
     #[case(Node::Html(Html{value: "<div>test</div>".to_string(), position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
@@ -3458,6 +4354,14 @@ mod tests {
         Node::Empty,
         Node::Empty,
     ]}), RenderOptions::default(), "")]
+    #[case::fragment_empty_text_as_blank_line(Node::Fragment(Fragment{values: vec![
+        Node::Text(Text{value: "hello".to_string(), position: None}),
+        Node::Text(Text{value: "".to_string(), position: None}),
+        Node::Text(Text{value: "world".to_string(), position: None})
+    ]}), RenderOptions::default(), "hello\n\nworld")]
+    #[cfg_attr(feature = "wikilink", case::wikilink(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), RenderOptions::default(), "[[target]]"))]
+    #[cfg_attr(feature = "wikilink", case::wikilink_with_text(Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display text".to_string()), position: None}), RenderOptions::default(), "[[target|display text]]"))]
+    #[cfg_attr(feature = "wikilink", case::wikilink_same_text(Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("target".to_string()), position: None}), RenderOptions::default(), "[[target]]"))]
     fn test_to_string_with(#[case] node: Node, #[case] options: RenderOptions, #[case] expected: &str) {
         assert_eq!(node.to_string_with(&options), expected);
     }
@@ -4349,6 +5253,90 @@ mod tests {
     }
 
     #[rstest]
+    #[case::heading(
+        Node::Heading(Heading{depth: 1, values: vec![], position: None}),
+        vec![Node::Text(Text{value: "child".to_string(), position: None})],
+        Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "child".to_string(), position: None})], position: None})
+    )]
+    #[case::list(
+        Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec![], position: None}),
+        vec![Node::Text(Text{value: "item".to_string(), position: None})],
+        Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Text(Text{value: "item".to_string(), position: None})], position: None})
+    )]
+    #[case::blockquote(
+        Node::Blockquote(Blockquote{values: vec![], position: None}),
+        vec![Node::Text(Text{value: "quote".to_string(), position: None})],
+        Node::Blockquote(Blockquote{values: vec![Node::Text(Text{value: "quote".to_string(), position: None})], position: None})
+    )]
+    #[case::link(
+        Node::Link(Link{url: Url::new(attr_keys::URL.to_string()), title: None, values: vec![], position: None}),
+        vec![Node::Text(Text{value: "link".to_string(), position: None})],
+        Node::Link(Link{url: Url::new(attr_keys::URL.to_string()), title: None, values: vec![Node::Text(Text{value: "link".to_string(), position: None})], position: None})
+    )]
+    #[case::footnote(
+        Node::Footnote(Footnote{ident: "1".to_string(), values: vec![], position: None}),
+        vec![Node::Text(Text{value: "note".to_string(), position: None})],
+        Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::Text(Text{value: "note".to_string(), position: None})], position: None})
+    )]
+    #[case::table_cell(
+        Node::TableCell(TableCell{column: 0, row: 0, values: vec![], position: None}),
+        vec![Node::Text(Text{value: "cell".to_string(), position: None})],
+        Node::TableCell(TableCell{column: 0, row: 0, values: vec![Node::Text(Text{value: "cell".to_string(), position: None})], position: None})
+    )]
+    #[case::table_row(
+        Node::TableRow(TableRow{values: vec![], position: None}),
+        vec![Node::Text(Text{value: "row".to_string(), position: None})],
+        Node::TableRow(TableRow{values: vec![Node::Text(Text{value: "row".to_string(), position: None})], position: None})
+    )]
+    #[case::strong(
+        Node::Strong(Strong{values: vec![], position: None}),
+        vec![Node::Text(Text{value: "bold".to_string(), position: None})],
+        Node::Strong(Strong{values: vec![Node::Text(Text{value: "bold".to_string(), position: None})], position: None})
+    )]
+    #[case::delete(
+        Node::Delete(Delete{values: vec![], position: None}),
+        vec![Node::Text(Text{value: "del".to_string(), position: None})],
+        Node::Delete(Delete{values: vec![Node::Text(Text{value: "del".to_string(), position: None})], position: None})
+    )]
+    #[case::emphasis(
+        Node::Emphasis(Emphasis{values: vec![], position: None}),
+        vec![Node::Text(Text{value: "em".to_string(), position: None})],
+        Node::Emphasis(Emphasis{values: vec![Node::Text(Text{value: "em".to_string(), position: None})], position: None})
+    )]
+    #[case::fragment(
+        Node::Fragment(Fragment{values: vec![]}),
+        vec![Node::Text(Text{value: "frag".to_string(), position: None})],
+        Node::Fragment(Fragment{values: vec![Node::Text(Text{value: "frag".to_string(), position: None})]})
+    )]
+    #[case::mdx_jsx_flow_element(
+        Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: Vec::new(), children: vec![], position: None}),
+        vec![Node::Text(Text{value: "mdx".to_string(), position: None})],
+        Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: Vec::new(), children: vec![Node::Text(Text{value: "mdx".to_string(), position: None})], position: None})
+    )]
+    #[case::mdx_jsx_text_element(
+        Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: vec![], position: None}),
+        vec![Node::Text(Text{value: "mdx".to_string(), position: None})],
+        Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: vec![Node::Text(Text{value: "mdx".to_string(), position: None})], position: None})
+    )]
+    #[case::leaf_node_is_noop(
+        Node::Text(Text{value: "leaf".to_string(), position: None}),
+        vec![Node::Text(Text{value: "ignored".to_string(), position: None})],
+        Node::Text(Text{value: "leaf".to_string(), position: None})
+    )]
+    fn test_set_children(#[case] mut node: Node, #[case] children: Vec<Node>, #[case] expected: Node) {
+        node.set_children(children.clone());
+        assert_eq!(node, expected);
+        assert_eq!(
+            node.children(),
+            if matches!(expected, Node::Text(_)) {
+                Vec::new()
+            } else {
+                children
+            }
+        );
+    }
+
+    #[rstest]
     #[case(
         Node::Text(Text{value: "old".to_string(), position: None}),
         attr_keys::VALUE,
@@ -4640,5 +5628,477 @@ mod tests {
     #[case(AttrValue::Boolean(false), Some(0))]
     fn test_attr_value_as_i64(#[case] value: AttrValue, #[case] expected: Option<i64>) {
         assert_eq!(value.as_i64(), expected);
+    }
+
+    // --- Callout tests ---
+
+    #[cfg(feature = "callout")]
+    #[rstest]
+    // basic [!NOTE] with body on next line
+    #[case(
+        vec![Node::Text(Text { value: "[!NOTE]\nbody text".to_string(), position: None })],
+        Node::Callout(Callout {
+            kind: "NOTE".to_string(),
+            title: None,
+            values: vec![Node::Text(Text { value: "body text".to_string(), position: None })],
+            position: None,
+        })
+    )]
+    // [!WARNING] with custom title
+    #[case(
+        vec![Node::Text(Text { value: "[!WARNING] My Title\nbody".to_string(), position: None })],
+        Node::Callout(Callout {
+            kind: "WARNING".to_string(),
+            title: Some("My Title".to_string()),
+            values: vec![Node::Text(Text { value: "body".to_string(), position: None })],
+            position: None,
+        })
+    )]
+    // [!TIP] with no body
+    #[case(
+        vec![Node::Text(Text { value: "[!TIP]".to_string(), position: None })],
+        Node::Callout(Callout { kind: "TIP".to_string(), title: None, values: vec![], position: None })
+    )]
+    // lowercase kind is preserved as-is
+    #[case(
+        vec![Node::Text(Text { value: "[!note]\ncontent".to_string(), position: None })],
+        Node::Callout(Callout {
+            kind: "note".to_string(),
+            title: None,
+            values: vec![Node::Text(Text { value: "content".to_string(), position: None })],
+            position: None,
+        })
+    )]
+    // not a callout — plain text stays Blockquote
+    #[case(
+        vec![Node::Text(Text { value: "plain quote".to_string(), position: None })],
+        Node::Blockquote(Blockquote {
+            values: vec![Node::Text(Text { value: "plain quote".to_string(), position: None })],
+            position: None,
+        })
+    )]
+    // [! without closing ] — stays Blockquote
+    #[case(
+        vec![Node::Text(Text { value: "[!UNCLOSED".to_string(), position: None })],
+        Node::Blockquote(Blockquote {
+            values: vec![Node::Text(Text { value: "[!UNCLOSED".to_string(), position: None })],
+            position: None,
+        })
+    )]
+    // first node is not Text — stays Blockquote
+    #[case(
+        vec![Node::Code(Code { value: "code".to_string(), lang: None, fence: true, meta: None, position: None })],
+        Node::Blockquote(Blockquote {
+            values: vec![Node::Code(Code { value: "code".to_string(), lang: None, fence: true, meta: None, position: None })],
+            position: None,
+        })
+    )]
+    // multi-paragraph callout (header-only node + separate body node)
+    #[case(
+        vec![
+            Node::Text(Text { value: "[!NOTE]".to_string(), position: None }),
+            Node::Text(Text { value: "second paragraph".to_string(), position: None }),
+        ],
+        Node::Callout(Callout {
+            kind: "NOTE".to_string(),
+            title: None,
+            values: vec![Node::Text(Text { value: "second paragraph".to_string(), position: None })],
+            position: None,
+        })
+    )]
+    fn test_try_parse_callout(#[case] values: Vec<Node>, #[case] expected: Node) {
+        let result = Node::try_parse_callout(values, None);
+        assert_eq!(result, expected);
+    }
+
+    #[cfg(feature = "callout")]
+    #[rstest]
+    // basic render
+    #[case(
+        Node::Callout(Callout { kind: "NOTE".to_string(), title: None,
+            values: vec![Node::Text(Text { value: "content".to_string(), position: None })],
+            position: None }),
+        "> [!NOTE]\n> content"
+    )]
+    // with title
+    #[case(
+        Node::Callout(Callout { kind: "WARNING".to_string(), title: Some("Heads up".to_string()),
+            values: vec![Node::Text(Text { value: "watch out".to_string(), position: None })],
+            position: None }),
+        "> [!WARNING] Heads up\n> watch out"
+    )]
+    // empty body
+    #[case(
+        Node::Callout(Callout { kind: "TIP".to_string(), title: None, values: vec![], position: None }),
+        "> [!TIP]"
+    )]
+    // multiline body: single Text with embedded '\n' — each line prefixed with "> "
+    #[case(
+        Node::Callout(Callout { kind: "INFO".to_string(), title: None,
+            values: vec![Node::Text(Text { value: "line one\nline two".to_string(), position: None })],
+            position: None }),
+        "> [!INFO]\n> line one\n> line two"
+    )]
+    // two separate position-less Text values are concatenated inline (no implicit newline)
+    #[case(
+        Node::Callout(Callout { kind: "INFO".to_string(), title: None,
+            values: vec![
+                Node::Text(Text { value: "part a".to_string(), position: None }),
+                Node::Text(Text { value: "part b".to_string(), position: None }),
+            ],
+            position: None }),
+        "> [!INFO]\n> part apart b"
+    )]
+    fn test_callout_render(#[case] node: Node, #[case] expected: &str) {
+        assert_eq!(node.to_string_with(&RenderOptions::default()), expected);
+    }
+
+    #[cfg(feature = "callout")]
+    #[rstest]
+    #[case(Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }), "kind", Some(AttrValue::String("NOTE".to_string())))]
+    #[case(Node::Callout(Callout { kind: "WARNING".to_string(), title: Some("Title".to_string()), values: vec![], position: None }), "title", Some(AttrValue::String("Title".to_string())))]
+    #[case(Node::Callout(Callout { kind: "TIP".to_string(), title: None, values: vec![], position: None }), "title", None)]
+    #[case(Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![Node::Text(Text { value: "body".to_string(), position: None })], position: None }), "value", Some(AttrValue::String("body".to_string())))]
+    #[case(Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![Node::Text(Text { value: "body".to_string(), position: None })], position: None }), "children", Some(AttrValue::Array(vec![Node::Text(Text { value: "body".to_string(), position: None })])))]
+    fn test_callout_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<AttrValue>) {
+        assert_eq!(node.attr(attr), expected);
+    }
+
+    #[cfg(feature = "callout")]
+    #[rstest]
+    #[case(
+        Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
+        "kind", "WARNING",
+        Node::Callout(Callout { kind: "WARNING".to_string(), title: None, values: vec![], position: None })
+    )]
+    // set_attr stores kind as-is without case conversion
+    #[case(
+        Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
+        "kind", "tip",
+        Node::Callout(Callout { kind: "tip".to_string(), title: None, values: vec![], position: None })
+    )]
+    #[case(
+        Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
+        "title", "My title",
+        Node::Callout(Callout { kind: "NOTE".to_string(), title: Some("My title".to_string()), values: vec![], position: None })
+    )]
+    // empty string clears title
+    #[case(
+        Node::Callout(Callout { kind: "NOTE".to_string(), title: Some("old".to_string()), values: vec![], position: None }),
+        "title", "",
+        Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None })
+    )]
+    fn test_callout_set_attr(#[case] mut node: Node, #[case] attr: &str, #[case] value: &str, #[case] expected: Node) {
+        node.set_attr(attr, value);
+        assert_eq!(node, expected);
+    }
+
+    #[cfg(feature = "callout")]
+    #[rstest]
+    // with_value changes first body node
+    #[case(
+        Node::Callout(Callout { kind: "NOTE".to_string(), title: None,
+            values: vec![Node::Text(Text { value: "old".to_string(), position: None })],
+            position: None }),
+        "new",
+        Node::Callout(Callout { kind: "NOTE".to_string(), title: None,
+            values: vec![Node::Text(Text { value: "new".to_string(), position: None })],
+            position: None })
+    )]
+    fn test_callout_with_value(#[case] node: Node, #[case] value: &str, #[case] expected: Node) {
+        assert_eq!(node.with_value(value), expected);
+    }
+
+    #[cfg(feature = "callout")]
+    #[rstest]
+    #[case(Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }), "callout")]
+    fn test_callout_name(#[case] node: Node, #[case] expected: &str) {
+        assert_eq!(node.name(), expected);
+    }
+
+    #[cfg(feature = "callout")]
+    #[rstest]
+    #[case(
+        Node::Callout(Callout { kind: "NOTE".to_string(), title: None,
+            values: vec![Node::Text(Text { value: "body".to_string(), position: None })],
+            position: None }),
+        "body"
+    )]
+    fn test_callout_value(#[case] node: Node, #[case] expected: &str) {
+        assert_eq!(node.value(), expected);
+    }
+
+    #[cfg(feature = "callout")]
+    #[rstest]
+    #[case(Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }), true)]
+    #[case(Node::Blockquote(Blockquote { values: vec![], position: None }), false)]
+    #[case(Node::Text(Text { value: "test".to_string(), position: None }), false)]
+    fn test_is_callout(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_callout(), expected);
+    }
+
+    #[cfg(feature = "callout")]
+    #[test]
+    fn test_callout_end_to_end() {
+        use crate::Markdown;
+        // plain blockquote stays as Blockquote
+        let plain = Markdown::from_markdown_str("> just a quote").unwrap();
+        assert!(plain.nodes[0].is_blockquote());
+
+        // [!NOTE] is parsed as Callout
+        let note = Markdown::from_markdown_str("> [!NOTE]\n> body").unwrap();
+        assert!(note.nodes[0].is_callout());
+        assert_eq!(note.nodes[0].attr("kind"), Some(AttrValue::String("NOTE".to_string())));
+
+        // [!WARNING] with title
+        let warn = Markdown::from_markdown_str("> [!WARNING] Watch out\n> content").unwrap();
+        assert!(warn.nodes[0].is_callout());
+        assert_eq!(
+            warn.nodes[0].attr("title"),
+            Some(AttrValue::String("Watch out".to_string()))
+        );
+    }
+
+    // --- Embed tests ---
+
+    #[cfg(feature = "embed")]
+    #[rstest]
+    // plain embed
+    #[case("![[target]]", vec![Node::Embed(Embed { target: "target".to_string(), display: None, position: None })])]
+    // embed with display hint (image size)
+    #[case("![[image.png|400]]", vec![Node::Embed(Embed { target: "image.png".to_string(), display: Some("400".to_string()), position: None })])]
+    // embed with section reference in target
+    #[case("![[note#Heading]]", vec![Node::Embed(Embed { target: "note#Heading".to_string(), display: None, position: None })])]
+    // embed at start of text
+    #[case("![[note]] rest", vec![
+        Node::Embed(Embed { target: "note".to_string(), display: None, position: None }),
+        Node::Text(Text { value: " rest".to_string(), position: None }),
+    ])]
+    // embed in middle
+    #[case("before ![[note]] after", vec![
+        Node::Text(Text { value: "before ".to_string(), position: None }),
+        Node::Embed(Embed { target: "note".to_string(), display: None, position: None }),
+        Node::Text(Text { value: " after".to_string(), position: None }),
+    ])]
+    // multiple embeds
+    #[case("![[a]] and ![[b]]", vec![
+        Node::Embed(Embed { target: "a".to_string(), display: None, position: None }),
+        Node::Text(Text { value: " and ".to_string(), position: None }),
+        Node::Embed(Embed { target: "b".to_string(), display: None, position: None }),
+    ])]
+    // multibyte target
+    #[case("![[ノート]]", vec![Node::Embed(Embed { target: "ノート".to_string(), display: None, position: None })])]
+    // no embed — plain text unchanged
+    #[case("plain text", vec![Node::Text(Text { value: "plain text".to_string(), position: None })])]
+    // unclosed embed — treated as plain text
+    #[case("![[unclosed", vec![Node::Text(Text { value: "![[unclosed".to_string(), position: None })])]
+    // lone ! before non-embed — treated as plain text
+    #[case("! not an embed", vec![Node::Text(Text { value: "! not an embed".to_string(), position: None })])]
+    fn test_parse_embeds_in_text(#[case] input: &str, #[case] expected: Vec<Node>) {
+        let mut result = Vec::new();
+        Node::parse_embeds_into(input, None, &mut result);
+        assert_eq!(result, expected);
+    }
+
+    #[cfg(feature = "embed")]
+    #[rstest]
+    // plain embed renders without display
+    #[case(
+        Node::Embed(Embed { target: "note.md".to_string(), display: None, position: None }),
+        "![[note.md]]"
+    )]
+    // embed with display hint
+    #[case(
+        Node::Embed(Embed { target: "image.png".to_string(), display: Some("400".to_string()), position: None }),
+        "![[image.png|400]]"
+    )]
+    // embed with section reference
+    #[case(
+        Node::Embed(Embed { target: "note#Intro".to_string(), display: None, position: None }),
+        "![[note#Intro]]"
+    )]
+    fn test_embed_render(#[case] node: Node, #[case] expected: &str) {
+        assert_eq!(node.to_string_with(&RenderOptions::default()), expected);
+    }
+
+    #[cfg(feature = "embed")]
+    #[rstest]
+    #[case(Node::Embed(Embed { target: "note".to_string(), display: None, position: None }), "url", Some(AttrValue::String("note".to_string())))]
+    // value returns target when no display
+    #[case(Node::Embed(Embed { target: "note".to_string(), display: None, position: None }), "value", Some(AttrValue::String("note".to_string())))]
+    // url always returns target regardless of display
+    #[case(Node::Embed(Embed { target: "note".to_string(), display: Some("400".to_string()), position: None }), "url", Some(AttrValue::String("note".to_string())))]
+    // value returns display when present
+    #[case(Node::Embed(Embed { target: "note".to_string(), display: Some("400".to_string()), position: None }), "value", Some(AttrValue::String("400".to_string())))]
+    // unknown attr returns None
+    #[case(Node::Embed(Embed { target: "note".to_string(), display: None, position: None }), "unknown", None)]
+    fn test_embed_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<AttrValue>) {
+        assert_eq!(node.attr(attr), expected);
+    }
+
+    #[cfg(feature = "embed")]
+    #[rstest]
+    // set url changes target
+    #[case(
+        Node::Embed(Embed { target: "old".to_string(), display: None, position: None }),
+        "url", "new",
+        Node::Embed(Embed { target: "new".to_string(), display: None, position: None })
+    )]
+    // set value changes display
+    #[case(
+        Node::Embed(Embed { target: "note".to_string(), display: None, position: None }),
+        "value", "800",
+        Node::Embed(Embed { target: "note".to_string(), display: Some("800".to_string()), position: None })
+    )]
+    // empty value clears display
+    #[case(
+        Node::Embed(Embed { target: "note".to_string(), display: Some("400".to_string()), position: None }),
+        "value", "",
+        Node::Embed(Embed { target: "note".to_string(), display: None, position: None })
+    )]
+    fn test_embed_set_attr(#[case] mut node: Node, #[case] attr: &str, #[case] value: &str, #[case] expected: Node) {
+        node.set_attr(attr, value);
+        assert_eq!(node, expected);
+    }
+
+    #[cfg(feature = "embed")]
+    #[rstest]
+    // no display: with_value sets target
+    #[case(
+        Node::Embed(Embed { target: "old".to_string(), display: None, position: None }),
+        "new",
+        Node::Embed(Embed { target: "new".to_string(), display: None, position: None })
+    )]
+    // with display: with_value sets display
+    #[case(
+        Node::Embed(Embed { target: "note".to_string(), display: Some("400".to_string()), position: None }),
+        "800",
+        Node::Embed(Embed { target: "note".to_string(), display: Some("800".to_string()), position: None })
+    )]
+    fn test_embed_with_value(#[case] node: Node, #[case] value: &str, #[case] expected: Node) {
+        assert_eq!(node.with_value(value), expected);
+    }
+
+    #[cfg(feature = "embed")]
+    #[rstest]
+    #[case(Node::Embed(Embed { target: "note".to_string(), display: None, position: None }), "embed")]
+    fn test_embed_name(#[case] node: Node, #[case] expected: &str) {
+        assert_eq!(node.name(), expected);
+    }
+
+    #[cfg(feature = "embed")]
+    #[rstest]
+    // value returns display when present
+    #[case(Node::Embed(Embed { target: "note".to_string(), display: Some("400".to_string()), position: None }), "400")]
+    // value returns target when no display
+    #[case(Node::Embed(Embed { target: "note".to_string(), display: None, position: None }), "note")]
+    fn test_embed_value(#[case] node: Node, #[case] expected: &str) {
+        assert_eq!(node.value(), expected);
+    }
+
+    #[cfg(feature = "embed")]
+    #[rstest]
+    #[case(Node::Embed(Embed { target: "note".to_string(), display: None, position: None }), true)]
+    #[case(Node::Text(Text { value: "test".to_string(), position: None }), false)]
+    #[case(Node::Image(Image { alt: "".to_string(), url: "img.png".to_string(), title: None, position: None }), false)]
+    fn test_is_embed(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_embed(), expected);
+    }
+
+    #[cfg(feature = "embed")]
+    #[test]
+    fn test_embed_end_to_end() {
+        use crate::Markdown;
+        let md = Markdown::from_markdown_str("See ![[note.md]] for details.").unwrap();
+        let embed = md.nodes.iter().find(|n| n.is_embed());
+        assert!(embed.is_some());
+        assert_eq!(
+            embed.unwrap().attr("url"),
+            Some(AttrValue::String("note.md".to_string()))
+        );
+    }
+
+    #[cfg(all(feature = "callout", feature = "wikilink"))]
+    #[rstest]
+    // callout body containing a wikilink
+    #[case("> [!NOTE]\n> See [[note]]", 1, "> [!NOTE]\n> See [[note]]\n")]
+    fn test_callout_with_wikilink(#[case] input: &str, #[case] expected_nodes: usize, #[case] expected_output: &str) {
+        use crate::Markdown;
+        let md = Markdown::from_markdown_str(input).unwrap();
+        assert_eq!(md.nodes.len(), expected_nodes);
+        assert_eq!(md.to_string(), expected_output);
+    }
+
+    #[cfg(feature = "callout")]
+    #[rstest]
+    // callout body with bold
+    #[case("> [!NOTE]\n> **important**", 1, "> [!NOTE]\n> **important**\n")]
+    // callout body with inline code
+    #[case("> [!NOTE]\n> Use `code`", 1, "> [!NOTE]\n> Use `code`\n")]
+    // multiple callouts in one document
+    #[case(
+        "> [!NOTE]\n> first\n\n> [!WARNING]\n> second",
+        2,
+        "> [!NOTE]\n> first\n\n> [!WARNING]\n> second\n"
+    )]
+    // callout after heading
+    #[case("# Title\n\n> [!NOTE]\n> body", 2, "# Title\n\n> [!NOTE]\n> body\n")]
+    // callout body with a multi-item list — second item must not be over-indented
+    #[case("> [!NOTE]\n> - item 1\n> - item 2", 1, "> [!NOTE]\n> - item 1\n> - item 2\n")]
+    fn test_callout_combined_with_other_nodes(
+        #[case] input: &str,
+        #[case] expected_nodes: usize,
+        #[case] expected_output: &str,
+    ) {
+        use crate::Markdown;
+        let md = Markdown::from_markdown_str(input).unwrap();
+        assert_eq!(md.nodes.len(), expected_nodes);
+        assert_eq!(md.to_string(), expected_output);
+    }
+
+    #[cfg(feature = "embed")]
+    #[rstest]
+    // embed inside list item
+    #[case("- ![[note.md]]", 1, "- ![[note.md]]\n")]
+    // embed inside heading
+    #[case("# See ![[note]]", 1, "# See ![[note]]\n")]
+    // embed inside bold
+    #[case("**![[note]]**", 1, "**![[note]]**\n")]
+    fn test_embed_combined_with_other_nodes(
+        #[case] input: &str,
+        #[case] expected_nodes: usize,
+        #[case] expected_output: &str,
+    ) {
+        use crate::Markdown;
+        let md = Markdown::from_markdown_str(input).unwrap();
+        assert_eq!(md.nodes.len(), expected_nodes);
+        assert_eq!(md.to_string(), expected_output);
+    }
+
+    #[cfg(all(feature = "callout", feature = "embed"))]
+    #[rstest]
+    // wikilink inside callout body + embed as separate node
+    #[case("> [!NOTE]\n> [[link]]\n\n![[embed]]", 2, "> [!NOTE]\n> [[link]]\n\n![[embed]]\n")]
+    fn test_callout_and_embed_together(
+        #[case] input: &str,
+        #[case] expected_nodes: usize,
+        #[case] expected_output: &str,
+    ) {
+        use crate::Markdown;
+        let md = Markdown::from_markdown_str(input).unwrap();
+        assert_eq!(md.nodes.len(), expected_nodes);
+        assert_eq!(md.to_string(), expected_output);
+    }
+
+    #[cfg(all(feature = "embed", feature = "wikilink"))]
+    #[test]
+    fn test_embed_does_not_conflict_with_wikilink() {
+        use crate::Markdown;
+        // ![[embed]] must become Embed, not WikiLink with preceding "!"
+        let md = Markdown::from_markdown_str("![[embed]] and [[link]]").unwrap();
+        let embed = md.nodes.iter().find(|n| n.is_embed());
+        let wikilink = md.nodes.iter().find(|n| n.is_wikilink());
+        assert!(embed.is_some(), "expected Embed node");
+        assert!(wikilink.is_some(), "expected WikiLink node");
     }
 }

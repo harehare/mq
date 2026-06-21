@@ -31,6 +31,8 @@ interface WasmModule {
     options?: ConversionOptions,
   ): Promise<string>;
   toHtml(markdown_input: string): Promise<string>;
+  clearHttpCache(): Promise<void>;
+  clearAllHttpCache(): Promise<void>;
 }
 
 let wasmModule: WasmModule | null = null;
@@ -55,6 +57,8 @@ async function initWasm(): Promise<WasmModule> {
         definedValues: wasmImport.definedValues,
         htmlToMarkdown: wasmImport.htmlToMarkdown,
         toHtml: wasmImport.toHtml,
+        clearHttpCache: wasmImport.clearHttpCache,
+        clearAllHttpCache: wasmImport.clearAllHttpCache,
       };
     } catch (error) {
       throw new Error(`Failed to initialize mq WebAssembly module: ${error}`);
@@ -162,4 +166,21 @@ export async function htmlToMarkdown(
 export async function toHtml(markdownInput: string): Promise<string> {
   const wasm = await initWasm();
   return await wasm.toHtml(markdownInput);
+}
+
+/**
+ * Clears mutable HTTP module cache (HEAD/branch imports).
+ * Versioned (tagged) cache is preserved.
+ */
+export async function clearHttpCache(): Promise<void> {
+  const wasm = await initWasm();
+  return await wasm.clearHttpCache();
+}
+
+/**
+ * Clears all HTTP module cache including versioned (tagged) imports.
+ */
+export async function clearAllHttpCache(): Promise<void> {
+  const wasm = await initWasm();
+  return await wasm.clearAllHttpCache();
 }

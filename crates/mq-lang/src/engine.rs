@@ -7,8 +7,8 @@ use crate::eval::env::Env;
 #[cfg(feature = "debugger")]
 use crate::module::ModuleId;
 use crate::{
-    ArenaId, LocalFsModuleResolver, ModuleResolver, MqResult, Range, RuntimeValue, Shared, SharedCell, TokenKind,
-    token_alloc,
+    ArenaId, ModuleResolver, MqResult, Range, RuntimeValue, Shared, SharedCell, TokenKind,
+    module::resolver::DefaultModuleResolver, token_alloc,
 };
 #[cfg(feature = "debugger")]
 use crate::{Debugger, DebuggerHandler};
@@ -18,6 +18,7 @@ use crate::{
     arena::Arena,
     error::{self},
     eval::Evaluator,
+    optimizer::{OptimizationLevel, Optimizer},
     parse,
 };
 
@@ -68,9 +69,10 @@ impl From<crate::ast::Program> for CompiledProgram {
 /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
 /// ```
 #[derive(Debug, Clone)]
-pub struct Engine<T: ModuleResolver = LocalFsModuleResolver> {
+pub struct Engine<T: ModuleResolver = DefaultModuleResolver> {
     pub(crate) evaluator: Evaluator<T>,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+    optimization_level: OptimizationLevel,
 }
 
 fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
@@ -99,7 +101,13 @@ impl<T: ModuleResolver> Engine<T> {
         Self {
             evaluator: Evaluator::new(ModuleLoader::new(module_resolver), Shared::clone(&token_arena)),
             token_arena,
+            optimization_level: OptimizationLevel::default(),
         }
+    }
+
+    /// Set the optimization level for AST transformations applied before evaluation.
+    pub fn set_optimization_level(&mut self, level: OptimizationLevel) {
+        self.optimization_level = level;
     }
 
     /// Set the maximum call stack depth for function calls.
@@ -141,7 +149,7 @@ impl<T: ModuleResolver> Engine<T> {
             .expect("Failed to load builtin module");
     }
 
-    /// Imoprt an external module by name.
+    /// Import an external module by name.
     ///
     /// The module will be searched for in the configured search paths
     /// and made available for use in mq code.
@@ -207,6 +215,7 @@ impl<T: ModuleResolver> Engine<T> {
         }
 
         let program = parse(code, Shared::clone(&self.token_arena))?;
+        let program = Optimizer::with_level(self.optimization_level).optimize(program);
 
         #[cfg(feature = "debugger")]
         self.evaluator.module_loader.set_source_code(code.to_string());
@@ -228,6 +237,7 @@ impl<T: ModuleResolver> Engine<T> {
             });
         }
         let program = parse(code, Shared::clone(&self.token_arena))?;
+        let program = Optimizer::with_level(self.optimization_level).optimize(program);
         Ok(CompiledProgram {
             source: code.to_string(),
             program,
@@ -304,6 +314,7 @@ impl<T: ModuleResolver> Engine<T> {
         Self {
             evaluator: Evaluator::with_env(Shared::clone(&token_arena), Shared::clone(&env)),
             token_arena: Shared::clone(&token_arena),
+            optimization_level: self.optimization_level,
         }
     }
 
@@ -327,6 +338,32 @@ impl<T: ModuleResolver> Engine<T> {
 
     pub const fn version() -> &'static str {
         env!("CARGO_PKG_VERSION")
+    }
+}
+
+#[cfg(feature = "http-import-ureq")]
+impl Engine<DefaultModuleResolver> {
+    /// Replaces the HTTP resolver's domain allowlist.
+    ///
+    /// An empty list restricts access to the built-in default domain
+    /// (`raw.githubusercontent.com/harehare`) only; it does not open up all URLs.
+    pub fn set_http_allowed_domains(&mut self, domains: Vec<String>) {
+        self.evaluator.module_loader.set_http_allowed_domains(domains);
+    }
+
+    /// Clears all locally-cached HTTP module files.
+    ///
+    /// Call this once before processing to force a re-fetch of all cached modules
+    /// on the next resolve (e.g. when `--refresh-modules` is passed on the CLI).
+    pub fn clear_http_cache(&self) -> Result<(), crate::module::error::ModuleError> {
+        self.evaluator.module_loader.clear_http_cache()
+    }
+
+    /// Clears all HTTP module cache including versioned modules and lock files.
+    ///
+    /// Use this when `--clear-cache` is passed on the CLI to wipe everything.
+    pub fn clear_http_cache_all(&self) -> Result<(), crate::module::error::ModuleError> {
+        self.evaluator.module_loader.clear_http_cache_all()
     }
 }
 

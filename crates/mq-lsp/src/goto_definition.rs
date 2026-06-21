@@ -6,7 +6,7 @@ use std::{
 use tower_lsp_server::ls_types::{self, GotoDefinitionResponse, Location, Position, Range};
 use url::Url;
 
-pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> Option<GotoDefinitionResponse> {
+pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> Option<GotoDefinitionResponse> {
     let hir_guard = hir.read().unwrap();
     let source = hir_guard.source_by_url(&url);
 

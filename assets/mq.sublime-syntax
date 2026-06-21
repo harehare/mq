@@ -11,6 +11,7 @@ contexts:
     - include: keywords
     - include: symbols
     - include: strings-interpolated
+    - include: strings-bytes
     - include: strings
     - include: numbers
     - include: functions
@@ -22,9 +23,9 @@ contexts:
       scope: comment.line.number-sign.mq
 
   keywords:
-    - match: '\b(def|do|let|if|elif|else|end|while|foreach|self|nodes|match|fn|break|continue|include|import|module|var|macro|quote|unquote|loop)\b'
+    - match: '\b(def|do|let|if|elif|else|end|while|foreach|self|nodes|match|fn|break|continue|include|import|module|var|macro|quote|unquote|loop|try|catch|as)\b'
       scope: keyword.control.mq
-    - match: '(<<|>>|<=|>=|==|!=|=~|\|\||&&|\?\?|=|<|>|\||:|;|\?|!|\+|\-|\*|/|%|@|->)'
+    - match: '(//=|<<|>>|<=|>=|==|!=|=~|!~|\|\||&&|\?\?|::|\.\.|\|=|\+=|-=|\*=|/=|%=|->|=|<|>|\||:|;|\?|!|\+|-|\*|/|%|@)'
       scope: keyword.operator.mq
     - match: '\b(true|false)\b'
       scope: constant.language.boolean.mq
@@ -86,6 +87,25 @@ contexts:
       scope: punctuation.section.interpolation.end.mq
       pop: true
 
+  strings-bytes:
+    - match: 'b"'
+      scope: punctuation.definition.string.begin.mq
+      push: string-bytes-content
+
+  string-bytes-content:
+    - meta_scope: string.quoted.double.bytes.mq
+    - match: '\\x[0-9a-fA-F]{2}|\\.'
+      scope: constant.character.escape.mq
+    - match: '"'
+      scope: punctuation.definition.string.end.mq
+      pop: true
+
   numbers:
+    - match: '\b0x[0-9a-fA-F]+\b'
+      scope: constant.numeric.hex.mq
+    - match: '\b0b[01]+\b'
+      scope: constant.numeric.binary.mq
+    - match: '\b[0-9]+\.[0-9]+\b'
+      scope: constant.numeric.float.mq
     - match: '\b[0-9]+\b'
-      scope: constant.numeric.mq
+      scope: constant.numeric.integer.mq

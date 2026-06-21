@@ -531,7 +531,7 @@ fold([1, 2, 3, 4], 0, fn(acc, x): acc + x;)
 Convert CSV data to a formatted markdown table:
 
 ```bash
-$ mq 'include "csv" | csv_parse(true) | csv_to_markdown_table()' example.csv
+$ mq 'csv::csv_to_markdown_table()' example.csv
 ```
 
 **Use case**: Convert spreadsheet data to markdown format for documentation. The `csv_parse(true)` treats the first row as headers.

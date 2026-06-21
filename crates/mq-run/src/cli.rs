@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use colored::Colorize;
 use miette::IntoDiagnostic;
 use miette::miette;
@@ -89,6 +89,10 @@ pub struct Cli {
     /// Positional string arguments, available as ARGS."positional" in queries.
     #[arg(long = "argv", num_args = 0..)]
     argv: Option<Vec<String>>,
+
+    /// Optimization level for AST transformations (none = no changes, basic = constant folding and dead-branch elimination, full = all passes).
+    #[arg(short='O', long = "optimize-level", value_enum, default_value_t = OptimizeLevel::None)]
+    optimize_level: OptimizeLevel,
 }
 
 #[cfg(unix)]
@@ -213,6 +217,24 @@ impl From<Vec<u8>> for ContentData {
 }
 
 #[derive(Clone, Debug, Default, clap::ValueEnum)]
+enum OptimizeLevel {
+    #[default]
+    None,
+    Basic,
+    Full,
+}
+
+impl From<OptimizeLevel> for mq_lang::OptimizationLevel {
+    fn from(level: OptimizeLevel) -> Self {
+        match level {
+            OptimizeLevel::None => mq_lang::OptimizationLevel::None,
+            OptimizeLevel::Basic => mq_lang::OptimizationLevel::Basic,
+            OptimizeLevel::Full => mq_lang::OptimizationLevel::Full,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, clap::ValueEnum)]
 enum OutputFormat {
     #[default]
     Markdown,
@@ -286,6 +308,27 @@ struct InputArgs {
     /// Enable streaming mode for processing large files line by line
     #[arg(long, default_value_t = false)]
     stream: bool,
+
+    /// Allow HTTP imports from additional domain(s) beyond the default.
+    /// By default only `raw.githubusercontent.com/harehare` is permitted.
+    /// Use `github.com/{user}/{repo}` to allow a specific repository (expanded automatically),
+    /// or a plain domain like `example.com` to allow any path under that host.
+    /// Repeat to allow multiple extra domains.
+    #[cfg(feature = "http-import")]
+    #[arg(long = "allowed-domain")]
+    allowed_domains: Option<Vec<String>>,
+
+    /// Force re-fetch of mutable-ref (HEAD/branch) HTTP-imported modules, ignoring the local cache.
+    /// Versioned (tagged) modules are never re-fetched regardless of this flag.
+    #[cfg(feature = "http-import")]
+    #[arg(long = "refresh-modules", default_value_t = false)]
+    refresh_modules: bool,
+
+    /// Remove all HTTP module cache including versioned (tagged) modules and lock files.
+    /// Use this to fully reset the cache when something goes wrong.
+    #[cfg(feature = "http-import")]
+    #[arg(long = "clear-cache", default_value_t = false)]
+    clear_cache: bool,
 }
 
 #[derive(Clone, Debug, clap::Args, Default)]
@@ -368,6 +411,24 @@ enum Commands {
     /// Start a debug adapter for mq
     #[cfg(feature = "debugger")]
     Dap,
+    /// Generate a shell completion script and print it to stdout
+    Completion {
+        /// Shell to generate the completion script for
+        #[arg(value_enum)]
+        shell: CompletionShell,
+    },
+}
+
+/// Shell targets supported by the `completion` subcommand.
+#[derive(Clone, Debug, clap::ValueEnum)]
+enum CompletionShell {
+    Bash,
+    Elvish,
+    Fish,
+    Nushell,
+    #[value(name = "powershell")]
+    PowerShell,
+    Zsh,
 }
 
 impl Cli {
@@ -515,6 +576,10 @@ impl Cli {
                 "  {} - Start a REPL session for interactive query execution",
                 "repl".green()
             ),
+            format!(
+                "  {} - Generate a shell completion script and print it to stdout",
+                "completion".green()
+            ),
         ];
 
         #[cfg(feature = "debugger")]
@@ -533,6 +598,35 @@ impl Cli {
         }
 
         println!("{}", output.join("\n"));
+        Ok(())
+    }
+
+    /// Generate a shell completion script for the given shell and print it to stdout.
+    fn generate_completion(shell: &CompletionShell) -> miette::Result<()> {
+        let mut command = Cli::command();
+        let name = command.get_name().to_string();
+
+        match shell {
+            CompletionShell::Bash => {
+                clap_complete::generate(clap_complete::Shell::Bash, &mut command, name, &mut io::stdout())
+            }
+            CompletionShell::Elvish => {
+                clap_complete::generate(clap_complete::Shell::Elvish, &mut command, name, &mut io::stdout())
+            }
+            CompletionShell::Fish => {
+                clap_complete::generate(clap_complete::Shell::Fish, &mut command, name, &mut io::stdout())
+            }
+            CompletionShell::Nushell => {
+                clap_complete::generate(clap_complete_nushell::Nushell, &mut command, name, &mut io::stdout())
+            }
+            CompletionShell::PowerShell => {
+                clap_complete::generate(clap_complete::Shell::PowerShell, &mut command, name, &mut io::stdout())
+            }
+            CompletionShell::Zsh => {
+                clap_complete::generate(clap_complete::Shell::Zsh, &mut command, name, &mut io::stdout())
+            }
+        }
+
         Ok(())
     }
 
@@ -609,6 +703,7 @@ impl Cli {
             }
             #[cfg(feature = "debugger")]
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
+            Some(Commands::Completion { shell }) => Self::generate_completion(shell),
             None => {
                 let result = if self.input.stream {
                     self.process_streaming()
@@ -635,6 +730,7 @@ impl Cli {
     fn create_engine(&self) -> miette::Result<DefaultEngine> {
         let mut engine = mq_lang::DefaultEngine::default();
         engine.load_builtin_module();
+        engine.set_optimization_level(self.optimize_level.clone().into());
 
         if self.input.aggregate {
             engine.import_module("section").map_err(|e| *e)?;
@@ -693,6 +789,18 @@ impl Cli {
 
                 let content = fs::read_to_string(&path).into_diagnostic()?;
                 engine.define_string_value(&v[0], &content);
+            }
+        }
+
+        #[cfg(feature = "http-import")]
+        {
+            if let Some(domains) = &self.input.allowed_domains {
+                engine.set_http_allowed_domains(domains.clone());
+            }
+            if self.input.clear_cache {
+                engine.clear_http_cache_all().map_err(|e| miette!(e.to_string()))?;
+            } else if self.input.refresh_modules {
+                engine.clear_http_cache().map_err(|e| miette!(e.to_string()))?;
             }
         }
 

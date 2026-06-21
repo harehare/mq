@@ -1,21 +1,21 @@
 <div align="center">
   <img src="assets/logo.svg" style="width: 128px; height: 128px;"/>
 
-  <a href="https://mqlang.org">Visit the site 🌐</a>
-  &mdash;
-  <a href="https://mqlang.org/book">Read the book 📖</a>
-  &mdash;
-  <a href="https://mqlang.org/playground">Playground 🎮</a>
+<a href="https://mqlang.org">Visit the site 🌐</a>
+—
+<a href="https://mqlang.org/book">Read the book 📖</a>
+—
+<a href="https://mqlang.org/playground">Playground 🎮</a>
 
 <h1>mq</h1>
 
-[![ci](https://img.shields.io/github/actions/workflow/status/harehare/mq/ci.yml?logo=github-actions&label=ci)](https://github.com/harehare/mq/actions/workflows/ci.yml)
-[![audit](https://img.shields.io/github/actions/workflow/status/harehare/mq/audit.yml?logo=github-actions&label=audit)](https://github.com/harehare/mq/actions/workflows/audit.yml)
-[![crates.io](https://img.shields.io/crates/v/mq-markdown?logo=rust)](https://crates.io/crates/mq-markdown)
-[![codecov](https://img.shields.io/codecov/c/github/harehare/mq?logo=codecov)](https://codecov.io/gh/harehare/mq)
-[![codspeed badge](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json?style=for-the-badge)](https://codspeed.io/harehare/mq)
-
 **Query. Filter. Transform Markdown.**
+
+[![ci](https://img.shields.io/github/actions/workflow/status/harehare/mq/ci.yml?style=flat-square&logo=github-actions&label=ci)](https://github.com/harehare/mq/actions/workflows/ci.yml)
+[![audit](https://img.shields.io/github/actions/workflow/status/harehare/mq/audit.yml?style=flat-square&logo=github-actions&label=audit)](https://github.com/harehare/mq/actions/workflows/audit.yml)
+[![crates.io](https://img.shields.io/crates/v/mq-markdown?logo=rust&style=flat-square)](https://crates.io/crates/mq-markdown)
+[![codecov](https://img.shields.io/codecov/c/github/harehare/mq?logo=codecov&style=flat-square)](https://codecov.io/gh/harehare/mq)
+[![codspeed badge](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json&style=flat-square)](https://codspeed.io/harehare/mq)
 
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
 
@@ -72,13 +72,13 @@ The installer will:
 # Install from crates.io
 cargo install mq-run
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.31
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.6.1
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 # Install using binstall
-cargo binstall mq-run@0.5.31
+cargo binstall mq-run@0.6.1
 ```
 
 ### Binaries
@@ -87,13 +87,13 @@ You can download pre-built binaries from the [GitHub releases page](https://gith
 
 ```sh
 # macOS (Apple Silicon)
-curl -L https://github.com/harehare/mq/releases/download/v0.5.31/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.6.1/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux x86_64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.31/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.6.1/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux arm64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.31/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.6.1/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.31/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
+Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.6.1/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
 ```
 
 ### Homebrew
@@ -103,10 +103,17 @@ Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.31/
 brew install mq
 ```
 
+### Arch
+
+```sh
+# Using yay (ArchLinux)
+yay -S mq-bin
+```
+
 ### Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.5.31
+$ docker run --rm ghcr.io/harehare/mq:0.6.1
 ```
 
 ### Visual Studio Code Extension
@@ -121,7 +128,7 @@ You can install the Neovim plugin by following the instructions in the [mq.nvim 
 
 ### Zed
 
-You can install the Zed extension from the [harehare/zed-mq](https://github.com/harehare/zed-mq) repository.
+You can install the Zed extension from the [zed-mq](https://github.com/harehare/mq/blob/main/editors/zed/README.md) repository.
 
 ### GitHub Actions
 
@@ -167,8 +174,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]
-  [FILES]...
+  [QUERY OR FILE]  
+  [FILES]...       
 
 Options:
   -A, --aggregate
@@ -189,6 +196,12 @@ Options:
           Sets file contents that can be referenced at runtime
       --stream
           Enable streaming mode for processing large files line by line
+      --allowed-domain <ALLOWED_DOMAINS>
+          Allow HTTP imports from additional domain(s) beyond the default. By default only `raw.githubusercontent.com/harehare` is permitted. Use `github.com/{user}/{repo}` to allow a specific repository (expanded automatically), or a plain domain like `example.com` to allow any path under that host. Repeat to allow multiple extra domains
+      --refresh-modules
+          Force re-fetch of mutable-ref (HEAD/branch) HTTP-imported modules, ignoring the local cache. Versioned (tagged) modules are never re-fetched regardless of this flag
+      --clear-cache
+          Remove all HTTP module cache including versioned (tagged) modules and lock files. Use this to fully reset the cache when something goes wrong
   -F, --output-format <OUTPUT_FORMAT>
           Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, raw, none]
   -U, --update
@@ -215,10 +228,14 @@ Options:
           Show NUM nodes before and after each match. Only effective with -F grep
       --list
           List all available subcommands (built-in and external)
+      --doc
+          Use the built-in reference document as input instead of a file
   -P <PARALLEL_THRESHOLD>
           Number of files to process before switching to parallel processing [default: 10]
       --argv [<ARGV>...]
           Positional string arguments, available as ARGS."positional" in queries
+  -O, --optimize-level <OPTIMIZE_LEVEL>
+          Optimization level for AST transformations (none = no changes, basic = constant folding and dead-branch elimination, full = all passes) [default: none] [possible values: none, basic, full]
   -h, --help
           Print help
   -V, --version
@@ -306,7 +323,7 @@ mq 'select(.[] || .h) | select(contains("name"))' docs.md
 mq '.code | select(.code.lang != "js")' examples.md
 
 # Convert CSV to markdown table
-mq 'include "csv" | csv_parse(true) | csv_to_markdown_table()' example.csv
+mq 'csv::csv_to_markdown_table' example.csv
 
 # Extract a section by title
 mq -A 'section::section("Installation")' README.md

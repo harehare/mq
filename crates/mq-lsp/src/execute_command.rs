@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use tower_lsp_server::jsonrpc;
 use tower_lsp_server::ls_types::ExecuteCommandParams;
 
-pub fn response(params: ExecuteCommandParams) -> jsonrpc::Result<Option<serde_json::Value>> {
+pub(crate) fn response(params: ExecuteCommandParams) -> jsonrpc::Result<Option<serde_json::Value>> {
     if params.arguments.is_empty() {
         return Err(jsonrpc::Error {
             code: jsonrpc::ErrorCode::InvalidParams,

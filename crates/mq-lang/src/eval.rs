@@ -11,6 +11,7 @@ use crate::ast::constants;
 use crate::eval::debugger::DefaultDebuggerHandler;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::Source;
+use crate::module::resolver::DefaultModuleResolver;
 use crate::{
     Ident, Program, Shared, SharedCell, Token, TokenKind,
     arena::Arena,
@@ -23,7 +24,7 @@ use crate::{
     macro_expand::{Macro, MacroEvaluator},
 };
 use crate::{
-    IdentWithToken, LocalFsModuleResolver, ModuleResolver,
+    IdentWithToken, ModuleResolver,
     error::runtime::RuntimeError,
     eval::{env::EnvError, runtime_value::ModuleEnv},
     module::{self, error::ModuleError},
@@ -125,7 +126,7 @@ impl Default for Options {
 /// Evaluates abstract syntax trees and manages the runtime environment,
 /// including variable bindings, function calls, and module loading.
 #[derive(Debug)]
-pub struct Evaluator<T: ModuleResolver = LocalFsModuleResolver> {
+pub struct Evaluator<T: ModuleResolver = DefaultModuleResolver> {
     env: Shared<SharedCell<Env>>,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
 
@@ -584,7 +585,12 @@ impl<T: ModuleResolver> Evaluator<T> {
                 let module = self
                     .module_loader
                     .load_from_file(&module_name, Shared::clone(&self.token_arena))?;
-                self.load_module_with_env(module, env)
+                #[cfg(feature = "http-import")]
+                self.module_loader.push_http_boundary();
+                let result = self.load_module_with_env(module, env);
+                #[cfg(feature = "http-import")]
+                self.module_loader.pop_http_boundary();
+                result
             }
             _ => Err(RuntimeError::ModuleLoadError(ModuleError::InvalidModule)),
         }
@@ -688,14 +694,23 @@ impl<T: ModuleResolver> Evaluator<T> {
                     .module_loader
                     .load_from_file(&module_name, Shared::clone(&self.token_arena));
                 match module {
-                    Ok(module) => self.import_module_with_env(module, env),
-                    Err(ModuleError::AlreadyLoaded(_)) => match resolve(&module_name, env) {
-                        Ok(value) => Ok(value),
-                        Err(_) => Err(RuntimeError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(
-                            module_name.to_string(),
-                        )))
-                        .into()),
-                    },
+                    Ok(module) => {
+                        #[cfg(feature = "http-import")]
+                        self.module_loader.push_http_boundary();
+                        let result = self.import_module_with_env(module, env);
+                        #[cfg(feature = "http-import")]
+                        self.module_loader.pop_http_boundary();
+                        result
+                    }
+                    Err(ModuleError::AlreadyLoaded(_)) => {
+                        let canonical = self.module_loader.canonical_name(&module_name).to_owned();
+                        match resolve(&canonical, env) {
+                            Ok(value) => Ok(value),
+                            Err(_) => {
+                                Err(RuntimeError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(canonical))).into())
+                            }
+                        }
+                    }
                     Err(e) => Err(RuntimeError::ModuleLoadError(e).into()),
                 }
             }
@@ -1041,6 +1056,9 @@ impl<T: ModuleResolver> Evaluator<T> {
 
         match &*node.expr {
             ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
+            ast::Expr::SelectorChain(selectors) => Ok(selectors
+                .iter()
+                .fold(runtime_value.clone(), |v, sel| Self::eval_selector_expr(&v, sel))),
             ast::Expr::SelectorCall(selector, args) => {
                 let evaluated_args = args
                     .iter()
@@ -3605,7 +3623,7 @@ mod tests {
             ast_call("floor", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Number((-43).into())]))]
-    #[case::floor_erro(vec!["42.9".to_string().into()],
+    #[case::floor_error(vec!["42.9".to_string().into()],
         vec![
             ast_call("floor", SmallVec::new())
         ],
@@ -3727,6 +3745,24 @@ mod tests {
               ast_call("to_em", SmallVec::new()),
         ],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Emphasis(mq_markdown::Emphasis{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "Italic text".to_string(), position: None})], position: None}))]))]
+    #[case::to_blockquote(vec![RuntimeValue::String("Quoted text".to_string())],
+        vec![
+              ast_call("to_blockquote", SmallVec::new()),
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Blockquote(mq_markdown::Blockquote{values: vec!["Quoted text".to_string().into()], position: None}))]))]
+    #[case::to_delete(vec![RuntimeValue::String("Deleted text".to_string())],
+        vec![
+              ast_call("to_delete", SmallVec::new()),
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Delete(mq_markdown::Delete{values: vec!["Deleted text".to_string().into()], position: None}))]))]
+    #[case::to_callout(vec![RuntimeValue::String("Heads up".to_string())],
+        vec![
+              ast_call("to_callout", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("note".to_string()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::String("Title".to_string()))),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Callout(mq_markdown::Callout{kind: "NOTE".to_string(), title: Some("Title".to_string()), values: vec!["Heads up".to_string().into()], position: None}))]))]
     #[case::to_image(vec![RuntimeValue::String("Image Alt".to_string())],
         vec![
               ast_call("to_image", smallvec![
@@ -3786,6 +3822,52 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(
             mq_markdown::List{values: vec!["list".to_string().into()], ordered: false, index: 0, level: 1_u8, checked: None, position: None}))]))]
+    #[case::to_md_fragment(vec![RuntimeValue::Array(vec![
+            RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "first".to_string(), position: None})),
+            RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "second".to_string(), position: None})),
+        ])],
+        vec![
+              ast_call("to_md_fragment", SmallVec::new()),
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Fragment(mq_markdown::Fragment{values: vec![
+            mq_markdown::Node::Text(mq_markdown::Text{value: "first".to_string(), position: None}),
+            mq_markdown::Node::Text(mq_markdown::Text{value: "second".to_string(), position: None}),
+        ]}))]))]
+    #[case::to_md_fragment_flattens_nested_arrays(vec![RuntimeValue::Array(vec![
+            RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "first".to_string(), position: None})),
+            RuntimeValue::Array(vec![
+                RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "second".to_string(), position: None})),
+                RuntimeValue::Array(vec![
+                    RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "third".to_string(), position: None})),
+                ]),
+            ]),
+        ])],
+        vec![
+              ast_call("to_md_fragment", SmallVec::new()),
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Fragment(mq_markdown::Fragment{values: vec![
+            mq_markdown::Node::Text(mq_markdown::Text{value: "first".to_string(), position: None}),
+            mq_markdown::Node::Text(mq_markdown::Text{value: "second".to_string(), position: None}),
+            mq_markdown::Node::Text(mq_markdown::Text{value: "third".to_string(), position: None}),
+        ]}))]))]
+    #[case::to_md_table_align(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("left".to_string()),
+            RuntimeValue::String("right".to_string()),
+            RuntimeValue::String("center".to_string()),
+            RuntimeValue::String("none".to_string()),
+        ])],
+        vec![
+              ast_call("to_md_table_align", SmallVec::new()),
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::TableAlign(mq_markdown::TableAlign{
+            align: vec![
+                mq_markdown::TableAlignKind::Left,
+                mq_markdown::TableAlignKind::Right,
+                mq_markdown::TableAlignKind::Center,
+                mq_markdown::TableAlignKind::None,
+            ],
+            position: None,
+        }))]))]
     #[case::set_check(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: None, position: None}))],
         vec![
               ast_call("set_check", smallvec![
@@ -6658,7 +6740,8 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -6687,7 +6770,8 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -6721,7 +6805,8 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -6818,7 +6903,8 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+
         let program = make_paren_free_qa_program(module_name, member_name);
         assert_eq!(
             Evaluator::new(loader, token_arena).eval(&program, vec![input].into_iter()),
@@ -6838,7 +6924,8 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+
         let program = make_paren_free_qa_program("qa_pf_multi_skip", "add");
         let result =
             Evaluator::new(loader, token_arena).eval(&program, vec![RuntimeValue::Number(1.into())].into_iter());
@@ -6859,7 +6946,8 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -6899,7 +6987,7 @@ mod tests {
             Evaluator::new(loader, token_arena())
                 .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
             Err(InnerError::Runtime(RuntimeError::ModuleLoadError(
-                ModuleError::IOError(Cow::Borrowed("Module `not_found.mq` not found"))
+                ModuleError::NotFound(Cow::Owned("not_found.mq".to_string()))
             )))
         );
     }
@@ -7143,7 +7231,8 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -7185,7 +7274,8 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -7384,6 +7474,94 @@ mod tests {
                 RuntimeValue::Number(4.into()),
                 RuntimeValue::Number(3.into())
             ])])
+        );
+    }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case(
+        "include_http_in_module",
+        r#"include "https://example.com/dep.mq""#,
+        "https://example.com/dep.mq"
+    )]
+    #[case(
+        "include_github_in_module",
+        r#"include "github.com/alice/dep""#,
+        "github.com/alice/dep"
+    )]
+    fn test_include_http_inside_module_is_blocked(
+        #[case] module_name: &str,
+        #[case] module_content: &str,
+        #[case] blocked_url: &str,
+    ) {
+        let file_name = format!("{module_name}.mq");
+        let (temp_dir, temp_file_path) = create_file(&file_name, module_content);
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+        let program = vec![Shared::new(ast::Node {
+            token_id: 0.into(),
+            expr: Shared::new(ast::Expr::Include(ast::Literal::String(module_name.to_string()))),
+        })];
+
+        assert!(
+            matches!(
+                Evaluator::new(loader, token_arena())
+                    .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
+                Err(InnerError::Runtime(RuntimeError::ModuleLoadError(
+                    ModuleError::HttpImportNotAllowed(ref url)
+                ))) if url.as_ref() == blocked_url
+            ),
+            "expected HttpImportNotAllowed for '{blocked_url}'"
+        );
+    }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case(
+        "import_http_in_module",
+        r#"import "https://example.com/dep.mq""#,
+        "https://example.com/dep.mq"
+    )]
+    #[case(
+        "import_github_in_module",
+        r#"import "github.com/alice/dep""#,
+        "github.com/alice/dep"
+    )]
+    fn test_import_http_inside_module_is_blocked(
+        #[case] module_name: &str,
+        #[case] module_content: &str,
+        #[case] blocked_url: &str,
+    ) {
+        let file_name = format!("{module_name}.mq");
+        let (temp_dir, temp_file_path) = create_file(&file_name, module_content);
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+        let program = vec![Shared::new(ast::Node {
+            token_id: 0.into(),
+            expr: Shared::new(ast::Expr::Include(ast::Literal::String(module_name.to_string()))),
+        })];
+
+        assert!(
+            matches!(
+                Evaluator::new(loader, token_arena())
+                    .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
+                Err(InnerError::Runtime(RuntimeError::ModuleLoadError(
+                    ModuleError::HttpImportNotAllowed(ref url)
+                ))) if url.as_ref() == blocked_url
+            ),
+            "expected HttpImportNotAllowed for '{blocked_url}'"
         );
     }
 }

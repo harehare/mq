@@ -23,14 +23,18 @@ def csv_stringify(data, delimiter):
   let headers = if (is_array(data) && len(data) > 0 && is_dict(first(data))):
     keys(first(data))
   else: first(data)
-  | let header_line = join(headers, delimiter)
+  | let header_line = join(map(headers, fn(header):
+      let s = to_string(header)
+      | if (csv_needs_quote(header, delimiter)):
+          "\"" + replace(s, "\"", "\"\"") + "\""
+        else: s;), delimiter)
   | let data = if (is_dict(first(data))): data else: data[1:len(data)]
   | let process_row = fn(row):
       if (is_dict(row)):
         join(map(headers, fn(header):
           if (row[header]):
             if (csv_needs_quote(row[header], delimiter)):
-              "\"" + to_string(row[header]) + "\""
+              "\"" + replace(to_string(row[header]), "\"", "\"\"") + "\""
             else:
               to_string(row[header])
           else:
@@ -39,7 +43,7 @@ def csv_stringify(data, delimiter):
         join(map(row, fn(field):
           let s = to_string(field)
           | if (csv_needs_quote(field, delimiter)):
-              s"\"${s}\""
+              "\"" + replace(s, "\"", "\"\"") + "\""
             else: s;), delimiter)
     end
   | let data_lines = map(data, process_row)

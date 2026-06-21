@@ -8,7 +8,7 @@ keywords = ["markdown", "jq", "query", "test"]
 license = "MIT"
 name = "mq-test"
 repository = "https://github.com/harehare/mq"
-version = "0.5.31"
+version = "0.6.1"
 
 [dependencies]
 clap = {workspace = true, features = ["derive"]}

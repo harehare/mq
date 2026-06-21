@@ -124,10 +124,16 @@ pub enum Selector {
     ImageRef,
     /// Matches MDX JSX text elements.
     MdxJsxTextElement,
-    /// Matches link elements (e.g., `[text](url)`).
+    /// Matches link elements (e.g., `[text](url)`). Also matches wikilinks when the `wikilink` feature is enabled.
     Link,
     /// Matches link reference elements (e.g., `[text][ref]`).
     LinkRef,
+    /// Matches Obsidian-style wikilink elements (e.g., `[[target]]` or `[[target|text]]`).
+    WikiLink,
+    /// Matches Obsidian-style callout elements (e.g., `> [!NOTE]` or `> [!WARNING] title`).
+    Callout,
+    /// Matches Obsidian-style embed elements (e.g., `![[target]]` or `![[target|display]]`).
+    Embed,
     /// Matches strong/bold elements (e.g., `**text**`).
     Strong,
     /// Matches code block elements.
@@ -227,6 +233,8 @@ pub enum AttrKind {
 
     /// The name attribute for MDX JSX elements.
     Name,
+    /// The kind/type of an Obsidian callout (e.g. `"NOTE"`, `"WARNING"`).
+    Kind,
 }
 
 impl Display for AttrKind {
@@ -252,6 +260,7 @@ impl Display for AttrKind {
             AttrKind::Row => write!(f, ".row"),
             AttrKind::Align => write!(f, ".align"),
             AttrKind::Name => write!(f, ".name"),
+            AttrKind::Kind => write!(f, ".kind"),
         }
     }
 }
@@ -287,6 +296,9 @@ impl Selector {
             ".math_inline" | ".inline_math" => Some(Selector::InlineMath),
             ".link" => Some(Selector::Link),
             ".link_ref" => Some(Selector::LinkRef),
+            ".wikilink" => Some(Selector::WikiLink),
+            ".callout" => Some(Selector::Callout),
+            ".embed" => Some(Selector::Embed),
             ".[]" | ".list" | ".li" => Some(Selector::List(None, None)),
             ".task" => Some(Selector::Task),
             ".todo" => Some(Selector::Todo),
@@ -322,6 +334,7 @@ impl Selector {
             ".row" => Some(Selector::Attr(AttrKind::Row)),
             ".align" => Some(Selector::Attr(AttrKind::Align)),
             ".name" => Some(Selector::Attr(AttrKind::Name)),
+            ".kind" => Some(Selector::Attr(AttrKind::Kind)),
             _ => None,
         }
     }
@@ -380,6 +393,9 @@ impl Display for Selector {
             Selector::MdxJsxTextElement => write!(f, ".mdx_jsx_text_element"),
             Selector::Link => write!(f, ".link"),
             Selector::LinkRef => write!(f, ".link_ref"),
+            Selector::WikiLink => write!(f, ".wikilink"),
+            Selector::Callout => write!(f, ".callout"),
+            Selector::Embed => write!(f, ".embed"),
             Selector::Strong => write!(f, ".strong"),
             Selector::Code => write!(f, ".code"),
             Selector::Math => write!(f, ".math"),
@@ -486,6 +502,8 @@ mod tests {
     #[case::link(".link", Selector::Link, ".link")]
     // Link Reference
     #[case::link_ref(".link_ref", Selector::LinkRef, ".link_ref")]
+    // WikiLink
+    #[case::wikilink(".wikilink", Selector::WikiLink, ".wikilink")]
     // List
     #[case::list(".list", Selector::List(None, None), ".list")]
     #[case::list_bracket(".[]", Selector::List(None, None), ".list")]

@@ -4,7 +4,9 @@ import "csv"
 | import "yaml"
 | import "xml"
 | import "fuzzy"
+| import "md"
 | import "section"
+| import "semver"
 | import "table"
 | import "toon"
 | include "test"
@@ -31,6 +33,47 @@ end
 def test_csv_to_json_for_array():
   let result = csv::csv_to_json(csv::csv_parse(csv_input, false))
   | assert_eq(result, "[[\"a\",\"b\",\"c\"],[\"1,2\",\"2,3\",\"3,4\"],[\"4\",\"5\",\"6\"],[\"multi\\nline\",\"7\",\"8\"],[\"9\",\"10\",\"quoted,comma\"],[\"\",\"11\",\"12\"],[\"13\",\"14\",\"15\"]]")
+end
+
+def test_csv_stringify_plain_for_array():
+  let result = csv::csv_stringify([["a", "b"], ["1", "2"], ["3", "4"]], ",")
+  | assert_eq(result, "a,b\n1,2\n3,4")
+end
+
+def test_csv_stringify_plain_for_dict():
+  let result = csv::csv_stringify([{"a": "1", "b": "2"}, {"a": "3", "b": "4"}], ",")
+  | assert_eq(result, "a,b\n1,2\n3,4")
+end
+
+def test_csv_stringify_escapes_quotes_for_array():
+  let result = csv::csv_stringify([["a", "b"], ["he said \"hi\"", "plain"]], ",")
+  | assert_eq(result, "a,b\n\"he said \"\"hi\"\"\",plain")
+end
+
+def test_csv_stringify_escapes_quotes_for_dict():
+  let result = csv::csv_stringify([{"a": "he said \"hi\"", "b": "plain"}], ",")
+  | assert_eq(result, "a,b\n\"he said \"\"hi\"\"\",plain")
+end
+
+def test_csv_stringify_escapes_multiple_quotes():
+  let result = csv::csv_stringify([["a"], ["\"\"\""]], ",")
+  | assert_eq(result, "a\n\"\"\"\"\"\"\"\"")
+end
+
+def test_csv_stringify_escapes_quote_and_delimiter_together():
+  let result = csv::csv_stringify([["a", "b"], ["x\",y", "plain"]], ",")
+  | assert_eq(result, "a,b\n\"x\"\",y\",plain")
+end
+
+def test_csv_stringify_escapes_quotes_in_header():
+  let result = csv::csv_stringify([["he said \"hi\""], ["v"]], ",")
+  | assert_eq(result, "\"he said \"\"hi\"\"\"\nv")
+end
+
+def test_csv_stringify_roundtrip_with_quotes():
+  let original = [{"a": "he said \"hi\"", "b": "x,y"}]
+  | let result = csv::csv_parse(csv::csv_stringify(original, ","), true)
+  | assert_eq(result, original)
 end
 
 | let psv_input = "a|b|c\n\"1,2\"|\"2,3\"|\"3,4\"\n4|5|6\n\"multi\nline\"|7|8\n9|10|\"quoted,comma\"\n\"\"|11|12\n13|14|15\n" |
@@ -364,7 +407,10 @@ def test_section_by_level_empty():
 end
 
 | let table_md = "| Name | Age | City |\n| --- | --- | --- |\n| Alice | 30 | Tokyo |\n| Bob | 25 | Osaka |\n"
-| let table_nodes = to_markdown(table_md) |
+| let table_nodes = to_markdown(table_md)
+| let table_md_followed_by_paragraph = "| N | A |\n| - | - |\n| x | 1 |\n| y | 2 |\n\nText.\n"
+| let table_md_followed_by_heading = "| N | A |\n| - | - |\n| x | 1 |\n| y | 2 |\n\n# H\n"
+| let table_md_followed_by_break = "| N | A |\n| - | - |\n| x | 1 |\n| y | 2 |\n\n---\n" |
 
 def test_table_tables():
   let result = table::tables(table_nodes)
@@ -378,6 +424,37 @@ end
 def test_table_tables_empty():
   let result = table::tables([])
   | assert_eq(result, [])
+end
+
+def test_table_tables_followed_by_paragraph():
+  let md_nodes = to_markdown(table_md_followed_by_paragraph)
+  | let result = table::tables(md_nodes)
+  | assert_eq(len(result), 1)
+  | let t = result[0]
+  | assert_eq(len(t[:rows]), 2)
+end
+
+def test_table_tables_followed_by_heading():
+  let md_nodes = to_markdown(table_md_followed_by_heading)
+  | let result = table::tables(md_nodes)
+  | assert_eq(len(result), 1)
+  | let t = result[0]
+  | assert_eq(len(t[:rows]), 2)
+end
+
+def test_table_tables_followed_by_break():
+  let md_nodes = to_markdown(table_md_followed_by_break)
+  | let result = table::tables(md_nodes)
+  | assert_eq(len(result), 1)
+  | let t = result[0]
+  | assert_eq(len(t[:rows]), 2)
+end
+
+def test_table_to_csv_followed_by_paragraph():
+  let md_nodes = to_markdown(table_md_followed_by_paragraph)
+  | let t = first(table::tables(md_nodes))
+  | let result = table::to_csv(t)
+  | assert_eq(result, "N,A\nx,1\ny,2")
 end
 
 def test_table_set_align():
@@ -444,5 +521,350 @@ def test_table_sort_rows():
 
   | let md_result = table::sort_rows(t)
   | assert_eq(to_string(md_result[:rows][0][0]), "Alice")
+end
+
+# -- SemVer Tests --
+
+def test_semver_parse_basic():
+  let v = semver::semver_parse("1.2.3")
+  | assert_eq(v["major"], 1)
+  | assert_eq(v["minor"], 2)
+  | assert_eq(v["patch"], 3)
+  | assert_eq(v["pre"], "")
+  | assert_eq(v["build"], "")
+end
+
+def test_semver_parse_with_prerelease():
+  let v = semver::semver_parse("1.0.0-alpha.1")
+  | assert_eq(v["major"], 1)
+  | assert_eq(v["minor"], 0)
+  | assert_eq(v["patch"], 0)
+  | assert_eq(v["pre"], "alpha.1")
+  | assert_eq(v["build"], "")
+end
+
+def test_semver_parse_with_build():
+  let v = semver::semver_parse("1.0.0+build.123")
+  | assert_eq(v["major"], 1)
+  | assert_eq(v["pre"], "")
+  | assert_eq(v["build"], "build.123")
+end
+
+def test_semver_parse_with_pre_and_build():
+  let v = semver::semver_parse("1.0.0-beta.2+exp.sha.5114f85")
+  | assert_eq(v["pre"], "beta.2")
+  | assert_eq(v["build"], "exp.sha.5114f85")
+end
+
+def test_semver_parse_with_lowercase_v_prefix():
+  let v = semver::semver_parse("v1.2.3")
+  | assert_eq(v["major"], 1)
+  | assert_eq(v["minor"], 2)
+  | assert_eq(v["patch"], 3)
+end
+
+def test_semver_parse_with_uppercase_v_prefix():
+  let v = semver::semver_parse("V1.2.3")
+  | assert_eq(v["major"], 1)
+  | assert_eq(v["minor"], 2)
+  | assert_eq(v["patch"], 3)
+end
+
+def test_semver_parse_with_v_prefix_and_prerelease():
+  let v = semver::semver_parse("v1.0.0-alpha.1+build.5")
+  | assert_eq(v["major"], 1)
+  | assert_eq(v["pre"], "alpha.1")
+  | assert_eq(v["build"], "build.5")
+end
+
+def test_semver_to_string_basic():
+  let v = semver::semver_parse("1.2.3")
+  | assert_eq(semver::semver_to_string(v), "1.2.3")
+end
+
+def test_semver_to_string_with_pre():
+  let v = semver::semver_parse("2.0.0-rc.1")
+  | assert_eq(semver::semver_to_string(v), "2.0.0-rc.1")
+end
+
+def test_semver_to_string_with_build():
+  let v = semver::semver_parse("1.0.0+sha.abc123")
+  | assert_eq(semver::semver_to_string(v), "1.0.0+sha.abc123")
+end
+
+def test_semver_compare_equal():
+  let a = semver::semver_parse("1.2.3")
+  | let b = semver::semver_parse("1.2.3")
+  | assert_eq(semver::semver_compare(a, b), 0)
+end
+
+def test_semver_compare_major():
+  let a = semver::semver_parse("2.0.0")
+  | let b = semver::semver_parse("1.9.9")
+  | assert_eq(semver::semver_compare(a, b), 1)
+  | assert_eq(semver::semver_compare(b, a), -1)
+end
+
+def test_semver_compare_minor():
+  let a = semver::semver_parse("1.3.0")
+  | let b = semver::semver_parse("1.2.9")
+  | assert_eq(semver::semver_compare(a, b), 1)
+end
+
+def test_semver_compare_patch():
+  let a = semver::semver_parse("1.2.4")
+  | let b = semver::semver_parse("1.2.3")
+  | assert_eq(semver::semver_compare(a, b), 1)
+end
+
+def test_semver_compare_pre_vs_release():
+  let release = semver::semver_parse("1.0.0")
+  | let pre = semver::semver_parse("1.0.0-alpha")
+  | assert_true(semver::semver_gt(release, pre))
+end
+
+def test_semver_compare_pre_numeric():
+  let a = semver::semver_parse("1.0.0-alpha.2")
+  | let b = semver::semver_parse("1.0.0-alpha.1")
+  | assert_true(semver::semver_gt(a, b))
+end
+
+def test_semver_compare_pre_string():
+  let a = semver::semver_parse("1.0.0-beta")
+  | let b = semver::semver_parse("1.0.0-alpha")
+  | assert_true(semver::semver_gt(a, b))
+end
+
+def test_semver_compare_build_ignored():
+  let a = semver::semver_parse("1.0.0+build.1")
+  | let b = semver::semver_parse("1.0.0+build.2")
+  | assert_eq(semver::semver_compare(a, b), 0)
+end
+
+def test_semver_gt():
+  let a = semver::semver_parse("2.0.0")
+  | let b = semver::semver_parse("1.0.0")
+  | assert_true(semver::semver_gt(a, b))
+  | assert_false(semver::semver_gt(b, a))
+end
+
+def test_semver_lt():
+  let a = semver::semver_parse("1.0.0")
+  | let b = semver::semver_parse("2.0.0")
+  | assert_true(semver::semver_lt(a, b))
+  | assert_false(semver::semver_lt(b, a))
+end
+
+def test_semver_eq():
+  let a = semver::semver_parse("1.2.3")
+  | let b = semver::semver_parse("1.2.3")
+  | assert_true(semver::semver_eq(a, b))
+end
+
+def test_semver_gte():
+  let a = semver::semver_parse("1.2.3")
+  | let b = semver::semver_parse("1.2.3")
+  | assert_true(semver::semver_gte(a, b))
+  | let c = semver::semver_parse("1.2.4")
+  | assert_true(semver::semver_gte(c, a))
+end
+
+def test_semver_lte():
+  let a = semver::semver_parse("1.2.3")
+  | let b = semver::semver_parse("1.2.3")
+  | assert_true(semver::semver_lte(a, b))
+  | let c = semver::semver_parse("1.2.2")
+  | assert_true(semver::semver_lte(c, a))
+end
+
+def test_semver_bump_major():
+  let v = semver::semver_parse("1.2.3")
+  | let bumped = semver::semver_bump_major(v)
+  | assert_eq(bumped["major"], 2)
+  | assert_eq(bumped["minor"], 0)
+  | assert_eq(bumped["patch"], 0)
+  | assert_eq(bumped["pre"], "")
+end
+
+def test_semver_bump_minor():
+  let v = semver::semver_parse("1.2.3")
+  | let bumped = semver::semver_bump_minor(v)
+  | assert_eq(bumped["major"], 1)
+  | assert_eq(bumped["minor"], 3)
+  | assert_eq(bumped["patch"], 0)
+  | assert_eq(bumped["pre"], "")
+end
+
+def test_semver_bump_patch():
+  let v = semver::semver_parse("1.2.3")
+  | let bumped = semver::semver_bump_patch(v)
+  | assert_eq(bumped["major"], 1)
+  | assert_eq(bumped["minor"], 2)
+  | assert_eq(bumped["patch"], 4)
+  | assert_eq(bumped["pre"], "")
+end
+
+def test_semver_bump_clears_pre():
+  let v = semver::semver_parse("1.2.3-alpha")
+  | let bumped = semver::semver_bump_patch(v)
+  | assert_eq(bumped["pre"], "")
+end
+
+def test_semver_sort():
+  let versions = map(["1.0.0", "2.0.0", "1.5.0", "1.0.1"], semver::semver_parse)
+  | let sorted = semver::semver_sort(versions)
+  | assert_eq(semver::semver_to_string(sorted[0]), "1.0.0")
+  | assert_eq(semver::semver_to_string(sorted[1]), "1.0.1")
+  | assert_eq(semver::semver_to_string(sorted[2]), "1.5.0")
+  | assert_eq(semver::semver_to_string(sorted[3]), "2.0.0")
+end
+
+def test_semver_max():
+  let versions = map(["1.0.0", "3.0.0", "2.0.0"], semver::semver_parse)
+  | let max = semver::semver_max(versions)
+  | assert_eq(semver::semver_to_string(max), "3.0.0")
+end
+
+def test_semver_min():
+  let versions = map(["1.0.0", "3.0.0", "2.0.0"], semver::semver_parse)
+  | let min = semver::semver_min(versions)
+  | assert_eq(semver::semver_to_string(min), "1.0.0")
+end
+
+# -- Markdown Builder (md) Tests --
+
+def test_md_h():
+  let result = to_string(md::h("Title", 2))
+  | assert_eq(result, "## Title")
+end
+
+def test_md_code():
+  let result = to_string(md::code("let x = 1;", "rust"))
+  | assert_eq(result, "```rust\nlet x = 1;\n```")
+end
+
+def test_md_code_inline():
+  let result = to_string(md::code_inline("x"))
+  | assert_eq(result, "`x`")
+end
+
+def test_md_text():
+  let result = to_string(md::text("plain"))
+  | assert_eq(result, "plain")
+end
+
+def test_md_strong():
+  let result = to_string(md::strong("bold"))
+  | assert_eq(result, "**bold**")
+end
+
+def test_md_em():
+  let result = to_string(md::em("italic"))
+  | assert_eq(result, "*italic*")
+end
+
+def test_md_delete():
+  let result = to_string(md::delete("gone"))
+  | assert_eq(result, "~~gone~~")
+end
+
+def test_md_blockquote():
+  let result = to_string(md::blockquote("quote"))
+  | assert_eq(result, "> quote")
+end
+
+def test_md_callout():
+  let result = to_string(md::callout("note body", "note"))
+  | assert_eq(result, "> [!NOTE]\n> note body")
+end
+
+def test_md_callout_with_title():
+  let result = to_string(md::callout("warn body", "warning", "Careful"))
+  | assert_eq(result, "> [!WARNING] Careful\n> warn body")
+end
+
+def test_md_hr():
+  let result = to_string(md::hr())
+  | assert_eq(result, "---")
+end
+
+def test_md_math():
+  let result = to_string(md::math("E=mc^2"))
+  | assert_eq(result, "$$\nE=mc^2\n$$")
+end
+
+def test_md_math_inline():
+  let result = to_string(md::math_inline("x^2"))
+  | assert_eq(result, "$x^2$")
+end
+
+def test_md_link():
+  let result = to_string(md::link("https://example.com", "Example"))
+  | assert_eq(result, "[Example](https://example.com)")
+end
+
+def test_md_image():
+  let result = to_string(md::image("https://example.com/a.png", "Alt"))
+  | assert_eq(result, "![Alt](https://example.com/a.png \"\")")
+end
+
+def test_md_list():
+  let result = to_string(md::list("Item"))
+  | assert_eq(result, "- Item")
+end
+
+def test_md_list_nested():
+  let result = to_string(md::list("Nested", 1))
+  | assert_eq(result, "  - Nested")
+end
+
+def test_md_list_ordered():
+  let result = to_string(md::list("Ordered", 0, true))
+  | assert_eq(result, "1. Ordered")
+end
+
+def test_md_list_checked():
+  let result = to_string(md::list("Checked", 0, false, true))
+  | assert_eq(result, "- [x] Checked")
+end
+
+def test_md_table_row():
+  let result = to_string(md::table_row(["A", "B"]))
+  | assert_eq(result, "|A|B|")
+end
+
+def test_md_table_cell():
+  let result = md::table_cell("v", 1, 2)
+  | assert_eq(to_string(result), "v")
+  | assert_eq(result.row, 1)
+  | assert_eq(result.column, 2)
+end
+
+def test_md_table_align():
+  let result = to_string(md::table_align(["left", "right"]))
+  | assert_eq(result, "|:---|---:|")
+end
+
+def test_md_doc():
+  let result = to_string(md::doc(md::text("a"), md::text("b")))
+  | assert_eq(result, "a\nb")
+end
+
+def test_md_doc_array_arg():
+  let result = to_string(md::doc([md::text("a"), md::text("b")]))
+  | assert_eq(result, "a\nb")
+end
+
+def test_md_doc_flattens_nested_arrays():
+  let result = to_string(md::doc(
+    md::h("Items", 2),
+    map(["a", "b"], fn(x): md::list(x);),
+  ))
+  | assert_eq(result, "## Items\n- a\n- b")
+end
+
+def test_md_doc_skips_none_children():
+  let result = to_string(md::doc(md::text("a"), None, md::text("b")))
+  | assert_eq(result, "a\n\nb")
 end
 

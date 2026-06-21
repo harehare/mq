@@ -5,6 +5,8 @@
 #include <assert.h>
 #include "mq.h"
 
+#define TEST_MODULE_DIR "/tmp"
+
 // Test helper functions
 void assert_not_null(void *ptr, const char *msg) {
     if (ptr == NULL) {
@@ -248,6 +250,237 @@ void test_html_to_markdown_null_input() {
     printf("PASS\n");
 }
 
+void test_version() {
+    printf("Test 11: mq_version... ");
+
+    const char *version = mq_version();
+    assert_not_null((void *)version, "Version should not be null");
+    assert(strlen(version) > 0);
+
+    printf("PASS\n");
+}
+
+void test_set_optimization_level() {
+    printf("Test 12: mq_set_optimization_level... ");
+
+    mq_context_t *engine = mq_create();
+
+    mq_set_optimization_level(engine, None);
+    mq_set_optimization_level(engine, Basic);
+    mq_set_optimization_level(engine, Full);
+
+    // Evaluation must still succeed after switching optimization levels.
+    struct mq_result_t result = mq_eval(engine, "len()", "abc", "text");
+    assert_null(result.error_msg, "Should not have error");
+    mq_free_result(result);
+
+    // Should not crash with a null engine.
+    mq_set_optimization_level(NULL, None);
+
+    mq_destroy(engine);
+
+    printf("PASS\n");
+}
+
+void test_set_max_call_stack_depth() {
+    printf("Test 13: mq_set_max_call_stack_depth... ");
+
+    mq_context_t *engine = mq_create();
+    mq_set_max_call_stack_depth(engine, 2);
+
+    struct mq_result_t result = mq_eval(engine, "def rec(): rec(); rec()", "test", "text");
+    assert_not_null(result.error_msg, "Should have error due to stack depth limit");
+    mq_free_result(result);
+
+    // Should not crash with a null engine.
+    mq_set_max_call_stack_depth(NULL, 2);
+
+    mq_destroy(engine);
+
+    printf("PASS\n");
+}
+
+void test_define_string_value() {
+    printf("Test 14: mq_define_string_value... ");
+
+    mq_context_t *engine = mq_create();
+    mq_define_string_value(engine, "greeting", "hello");
+
+    struct mq_result_t result = mq_eval(engine, "greeting", "test", "text");
+    assert_null(result.error_msg, "Should not have error");
+    assert_equals(result.values_len, 1, "Should have 1 value");
+    assert_str_equals(result.values[0], "hello", "Value mismatch");
+
+    mq_free_result(result);
+
+    // Should not crash with a null engine.
+    mq_define_string_value(NULL, "greeting", "hello");
+
+    mq_destroy(engine);
+
+    printf("PASS\n");
+}
+
+void test_load_module() {
+    printf("Test 15: mq_set_search_paths + mq_load_module... ");
+
+    const char *module_path = TEST_MODULE_DIR "/mq_ffi_c_test_module.mq";
+    FILE *f = fopen(module_path, "w");
+    assert_not_null(f, "Should be able to create temp module file");
+    fputs("def double(x): x * 2;", f);
+    fclose(f);
+
+    mq_context_t *engine = mq_create();
+    const char *paths[] = {TEST_MODULE_DIR};
+    mq_set_search_paths(engine, paths, 1);
+
+    char *error_msg = mq_load_module(engine, "mq_ffi_c_test_module");
+    assert_null(error_msg, "Should not have error loading module");
+
+    struct mq_result_t result = mq_eval(engine, "double(21)", "test", "text");
+    assert_null(result.error_msg, "Should not have error calling loaded function");
+    assert_str_equals(result.values[0], "42", "double(21) should be 42");
+
+    mq_free_result(result);
+    mq_destroy(engine);
+    remove(module_path);
+
+    printf("PASS\n");
+}
+
+void test_load_module_missing() {
+    printf("Test 16: mq_load_module with missing module... ");
+
+    mq_context_t *engine = mq_create();
+    char *error_msg = mq_load_module(engine, "nonexistent_module_for_c_test");
+    assert_not_null(error_msg, "Should have error for missing module");
+
+    mq_free_string(error_msg);
+    mq_destroy(engine);
+
+    printf("PASS\n");
+}
+
+void test_load_module_null_engine() {
+    printf("Test 17: mq_load_module with null engine... ");
+
+    char *error_msg = mq_load_module(NULL, "anything");
+    assert_not_null(error_msg, "Should have error message");
+    assert_str_equals(error_msg, "Engine pointer is null", "Error message mismatch");
+
+    mq_free_string(error_msg);
+
+    printf("PASS\n");
+}
+
+void test_import_module() {
+    printf("Test 18: mq_set_search_paths + mq_import_module... ");
+
+    const char *module_path = TEST_MODULE_DIR "/mq_ffi_c_test_import_module.mq";
+    FILE *f = fopen(module_path, "w");
+    assert_not_null(f, "Should be able to create temp module file");
+    fputs("def triple(x): x * 3;", f);
+    fclose(f);
+
+    mq_context_t *engine = mq_create();
+    const char *paths[] = {TEST_MODULE_DIR};
+    mq_set_search_paths(engine, paths, 1);
+
+    char *error_msg = mq_import_module(engine, "mq_ffi_c_test_import_module");
+    assert_null(error_msg, "Should not have error importing module");
+
+    // Imported modules are namespaced, unlike mq_load_module.
+    struct mq_result_t result = mq_eval(engine, "mq_ffi_c_test_import_module::triple(2)", "test", "text");
+    assert_null(result.error_msg, "Should not have error calling imported function");
+    assert_str_equals(result.values[0], "6", "triple(2) should be 6");
+
+    mq_free_result(result);
+    mq_destroy(engine);
+    remove(module_path);
+
+    printf("PASS\n");
+}
+
+void test_import_module_missing() {
+    printf("Test 19: mq_import_module with missing module... ");
+
+    mq_context_t *engine = mq_create();
+    char *error_msg = mq_import_module(engine, "nonexistent_module_for_c_test");
+    assert_not_null(error_msg, "Should have error for missing module");
+
+    mq_free_string(error_msg);
+    mq_destroy(engine);
+
+    printf("PASS\n");
+}
+
+void test_import_module_null_engine() {
+    printf("Test 20: mq_import_module with null engine... ");
+
+    char *error_msg = mq_import_module(NULL, "anything");
+    assert_not_null(error_msg, "Should have error message");
+    assert_str_equals(error_msg, "Engine pointer is null", "Error message mismatch");
+
+    mq_free_string(error_msg);
+
+    printf("PASS\n");
+}
+
+void test_set_search_paths_edge_cases() {
+    printf("Test 21: mq_set_search_paths edge cases... ");
+
+    mq_context_t *engine = mq_create();
+
+    // Should not crash with an empty/null paths array.
+    mq_set_search_paths(engine, NULL, 0);
+
+    // Should not crash with a null engine.
+    const char *paths[] = {TEST_MODULE_DIR};
+    mq_set_search_paths(NULL, paths, 1);
+
+    mq_destroy(engine);
+
+    printf("PASS\n");
+}
+
+void test_http_allowed_domains_does_not_crash() {
+    printf("Test 22: mq_set_http_allowed_domains... ");
+
+    mq_context_t *engine = mq_create();
+    const char *domains[] = {"example.com"};
+
+    // The symbol must always be present regardless of build features; it
+    // should never crash, even with a null engine or empty domain list.
+    mq_set_http_allowed_domains(engine, domains, 1);
+    mq_set_http_allowed_domains(engine, NULL, 0);
+    mq_set_http_allowed_domains(NULL, domains, 1);
+
+    mq_destroy(engine);
+
+    printf("PASS\n");
+}
+
+void test_clear_http_cache_does_not_crash() {
+    printf("Test 23: mq_clear_http_cache / mq_clear_http_cache_all... ");
+
+    mq_context_t *engine = mq_create();
+
+    // These symbols must always be present regardless of build features.
+    // This build does not enable `http-import`, so they are expected to
+    // report that HTTP module support is unavailable rather than crash.
+    char *error_msg = mq_clear_http_cache(engine);
+    assert_not_null(error_msg, "Should report http-import is unavailable");
+    mq_free_string(error_msg);
+
+    char *error_msg_all = mq_clear_http_cache_all(engine);
+    assert_not_null(error_msg_all, "Should report http-import is unavailable");
+    mq_free_string(error_msg_all);
+
+    mq_destroy(engine);
+
+    printf("PASS\n");
+}
+
 int main() {
     printf("Running mq-ffi C tests...\n\n");
 
@@ -261,6 +494,19 @@ int main() {
     test_html_to_markdown();
     test_html_to_markdown_with_options();
     test_html_to_markdown_null_input();
+    test_version();
+    test_set_optimization_level();
+    test_set_max_call_stack_depth();
+    test_define_string_value();
+    test_load_module();
+    test_load_module_missing();
+    test_load_module_null_engine();
+    test_import_module();
+    test_import_module_missing();
+    test_import_module_null_engine();
+    test_set_search_paths_edge_cases();
+    test_http_allowed_domains_does_not_crash();
+    test_clear_http_cache_does_not_crash();
 
     printf("\nAll tests passed!\n");
     return 0;

@@ -20,8 +20,6 @@ fn check_types(code: &str) -> Vec<TypeError> {
     checker.check(&hir)
 }
 
-// Success Cases - These should type check successfully
-
 #[test]
 fn test_literal_types() {
     // Numbers
@@ -120,14 +118,7 @@ fn test_match_different_types_creates_union() {
     );
 }
 
-// Exhaustiveness tests
-//
-// Each case: (mq code, is_exhaustive, description)
-// is_exhaustive=true  → expect no NonExhaustiveMatch error
-// is_exhaustive=false → expect at least one NonExhaustiveMatch error
-
 #[rstest]
-// ── Wildcard / variable-binding catch-alls ───────────────────────────────────
 #[case::wildcard_only(r#"match (42): | _: 0 end"#, true, "wildcard-only arm covers everything")]
 #[case::wildcard_after_literal(
     r#"match (42): | 0: "zero" | _: "other" end"#,
@@ -140,7 +131,6 @@ fn test_match_different_types_creates_union() {
     true,
     "variable-binding after literal arm covers remaining"
 )]
-// ── Bool: both arms present ──────────────────────────────────────────────────
 #[case::bool_true_then_false(
     r#"match (true): | true: 1 | false: 0 end"#,
     true,
@@ -161,13 +151,11 @@ fn test_match_different_types_creates_union() {
     true,
     "bool with false then wildcard is exhaustive"
 )]
-// ── Guarded arm followed by unguarded catch-all ──────────────────────────────
 #[case::guarded_then_unguarded_wildcard(
     r#"match (42): | x if (eq(x, 0)): "zero" | _: "other" end"#,
     true,
     "guarded arm + unguarded wildcard is exhaustive"
 )]
-// ── Non-exhaustive: bool ─────────────────────────────────────────────────────
 #[case::bool_only_true(
     r#"match (true): | true: 1 end"#,
     false,
@@ -193,14 +181,12 @@ fn test_match_different_types_creates_union() {
     false,
     "true arm + guarded wildcard — false not unconditionally covered"
 )]
-// ── Non-exhaustive: number (infinite domain) ─────────────────────────────────
 #[case::number_single_literal(r#"match (42): | 0: "zero" end"#, false, "single number literal — no wildcard")]
 #[case::number_multiple_literals(
     r#"match (42): | 0: "zero" | 1: "one" | 2: "two" end"#,
     false,
     "multiple number literals without wildcard — not exhaustive"
 )]
-// ── Non-exhaustive: string (infinite domain) ─────────────────────────────────
 #[case::string_single_literal(r#"match ("a"): | "a": 1 end"#, false, "single string literal without wildcard")]
 #[case::string_multiple_literals(
     r#"match ("a"): | "a": 1 | "b": 2 end"#,
@@ -216,8 +202,6 @@ fn test_match_exhaustiveness(#[case] code: &str, #[case] is_exhaustive: bool, #[
         description, result
     );
 }
-
-// ── Type-label pattern tests ─────────────────────────────────────────────────
 
 #[test]
 fn test_match_type_label_array() {
@@ -849,8 +833,6 @@ fn test_match_pattern_type_errors(#[case] code: &str, #[case] should_succeed: bo
     );
 }
 
-// Function Arity Errors
-
 #[rstest]
 #[case::too_many_for_one_param("def f(x): x + 1; | f(1, 2)", false, "2 args to 1-param function")]
 #[case::too_many_for_two_params("def f(x, y): x + y; | f(1, 2, 3)", false, "3 args to 2-param function")]
@@ -869,8 +851,6 @@ fn test_function_arity_errors(#[case] code: &str, #[case] should_succeed: bool, 
         result
     );
 }
-
-// Chained Expression Type Errors
 
 #[rstest]
 #[case::chained_sub_then_invalid(r#"let x = 10 - 3 | x - "str""#, false, "chained: number sub then minus string")]
@@ -1257,8 +1237,6 @@ fn test_match_same_type_arithmetic_ok() {
     );
 }
 
-// --- Record type (row polymorphism) tests ---
-
 #[test]
 fn test_record_heterogeneous_values() {
     // Record type: each field has its own type
@@ -1314,8 +1292,6 @@ fn test_record_inferred_types() {
     }
 }
 
-// --- Dict bracket access type resolution tests ---
-
 #[test]
 fn test_dict_bracket_access_type_error() {
     // v[:key] returns int (value of "key" field), so int + true should fail
@@ -1338,8 +1314,6 @@ fn test_dict_bracket_access_valid() {
         result
     );
 }
-
-// --- Undefined field access tests ---
 
 #[test]
 fn test_selector_undefined_field_on_closed_record() {
@@ -1389,7 +1363,33 @@ fn test_bracket_access_defined_field_on_closed_record() {
     );
 }
 
-// --- Variable reassignment tests ---
+#[rstest]
+#[case::dict_return_string_key(
+    r#"def f(x): {"key": 1, "val": "hello"}; | f("a")["key"] + 1"#,
+    true,
+    "f(x)[\"key\"] on dict-returning function, int field + 1"
+)]
+#[case::dict_return_type_mismatch(
+    r#"def f(x): {"key": 1}; | f("a")["key"] + true"#,
+    false,
+    "f(x)[\"key\"] + bool should fail when field is int"
+)]
+#[case::symbol_key(
+    r#"def f(x): {"key": 1}; | f("a")[:key] + 1"#,
+    true,
+    "f(x)[:key] with symbol key on dict return"
+)]
+fn test_function_call_bracket_access(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: Code='{}' Errors={:?}",
+        description,
+        code,
+        result
+    );
+}
 
 #[test]
 fn test_var_reassignment_same_type() {
@@ -1447,8 +1447,6 @@ fn test_var_reassignment_type_error_after() {
         result
     );
 }
-
-// --- Type Narrowing Tests ---
 
 #[rstest]
 #[case::is_string_narrows_then_branch(
@@ -1675,7 +1673,6 @@ fn test_let_binding_with_piped_function_call(
     );
 }
 
-// ── Dead code / unreachable branch detection ─────────────────────────────────
 #[rstest]
 // Union exhaustion: all array members match is_array → else-branch is dead
 #[case::union_all_array_exhausted_by_is_array(
@@ -1722,13 +1719,8 @@ fn test_dead_code_detection(#[case] code: &str, #[case] should_succeed: bool, #[
     );
 }
 
-// ── Parameter polymorphism: no false dead-code positives ──────────────────────
-//
-// Function parameters are polymorphic — the type inferred from one branch's
-// usage must not cause predicate checks on the parameter to be flagged as dead.
-// These tests verify that `detect_dead_then_branch` skips `SymbolKind::Parameter`
-// definitions, matching the fix for false positives in builtin.mq functions
-// (`contains`, `map`, `flat_map`).
+// `detect_dead_then_branch` skips `SymbolKind::Parameter` to avoid false
+// positives for polymorphic params in builtin.mq (`contains`, `map`, `flat_map`).
 #[rstest]
 // is_dict on a parameter used as string in else-branch (mirrors `contains`)
 #[case::param_is_dict_no_false_positive(
@@ -1863,6 +1855,43 @@ fn test_builtin_mq_has_no_type_errors() {
     assert!(
         type_errors.is_empty(),
         "builtin.mq should have no type errors, got: {:?}",
+        type_errors
+    );
+}
+
+#[test]
+fn test_match_none_arm_does_not_collapse_polymorphic_arm() {
+    // Regression: a `None` arm must not collapse a sibling arm whose type still
+    // depends on an unresolved generic function parameter down to `none`.
+    let code = r#"
+        def walk2(v, f):
+          match (v):
+            | :dict:
+              do
+                var result = {}
+                | var ks = keys(v)
+                | var i = 0
+                | while (i < len(ks)):
+                    let key = ks[i]
+                    | let new_value = walk2(v, f)
+                    | result[key] = new_value
+                    | i += 1
+                  end
+                | f(result)
+              end
+            | :none: None
+            | _: f(v)
+          end
+        end
+    "#;
+    let errors = check_types_with_builtins(code);
+    let type_errors: Vec<_> = errors
+        .iter()
+        .filter(|e| !matches!(e, mq_check::TypeError::UnreachableCode { .. }))
+        .collect();
+    assert!(
+        type_errors.is_empty(),
+        "match arms mixing a concrete `None` arm with generic-parameter-derived arms should not error, got: {:?}",
         type_errors
     );
 }

@@ -117,3 +117,59 @@ impl RuntimeError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Range, TokenKind, arena::ArenaId};
+    use rstest::rstest;
+
+    fn eof_token() -> Token {
+        Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }
+    }
+
+    #[rstest]
+    #[case(RuntimeError::UserDefined { message: "msg".to_string(), token: eof_token() }, true)]
+    #[case(RuntimeError::InvalidBase64String(eof_token(), "bad".to_string()), true)]
+    #[case(RuntimeError::NotDefined(eof_token(), "f".to_string()), true)]
+    #[case(RuntimeError::DateTimeFormatError(eof_token(), "err".to_string()), true)]
+    #[case(RuntimeError::IndexOutOfBounds(eof_token(), Number::from(1.0)), true)]
+    #[case(RuntimeError::InvalidDefinition(eof_token(), "d".to_string()), true)]
+    #[case(RuntimeError::RecursionError(10), false)]
+    #[case(RuntimeError::InvalidTypes { token: eof_token(), name: "f".to_string(), args: vec![] }, true)]
+    #[case(RuntimeError::InvalidNumberOfArguments { token: eof_token(), name: "f".to_string(), expected: 1, actual: 0 }, true)]
+    #[case(RuntimeError::InvalidRegularExpression(eof_token(), "pat".to_string()), true)]
+    #[case(RuntimeError::InternalError(eof_token()), true)]
+    #[case(RuntimeError::Runtime(eof_token(), "err".to_string()), true)]
+    #[case(RuntimeError::ZeroDivision(eof_token()), true)]
+    #[case(RuntimeError::UnexpectedBreak(eof_token()), true)]
+    #[case(RuntimeError::UnexpectedContinue(eof_token()), true)]
+    #[case(RuntimeError::EnvNotFound(eof_token(), "VAR".into()), true)]
+    #[case(RuntimeError::AssignToImmutable(eof_token(), "x".to_string()), true)]
+    #[case(RuntimeError::UndefinedVariable(eof_token(), "y".to_string()), true)]
+    #[case(RuntimeError::QuoteNotAllowedInRuntimeContext(eof_token()), true)]
+    #[case(RuntimeError::UnquoteNotAllowedOutsideQuote(eof_token()), true)]
+    #[case(RuntimeError::UndefinedMacro(Ident::new("m")), false)]
+    #[case(RuntimeError::ArityMismatch { macro_name: Ident::new("m"), expected: 1, got: 0 }, false)]
+    #[case(RuntimeError::RecursionLimit, false)]
+    #[case(RuntimeError::InvalidMacroResultAst(eof_token()), true)]
+    #[case(RuntimeError::InvalidMacroResult(eof_token()), true)]
+    #[case(RuntimeError::InvalidConvert(eof_token(), "msg".to_string()), true)]
+    #[case(RuntimeError::DestructuringFailed(eof_token()), true)]
+    fn test_token_presence(#[case] err: RuntimeError, #[case] has_token: bool) {
+        assert_eq!(err.token().is_some(), has_token);
+    }
+
+    #[rstest]
+    #[case(RuntimeError::RecursionError(42), "Maximum recursion depth exceeded (42)")]
+    #[case(RuntimeError::RecursionLimit, "Maximum macro recursion depth exceeded")]
+    #[case(RuntimeError::UndefinedMacro(Ident::new("foo")), "Undefined macro: foo")]
+    #[case(RuntimeError::ArityMismatch { macro_name: Ident::new("bar"), expected: 2, got: 1 }, "Macro bar expects 2 arguments, got 1")]
+    fn test_error_display(#[case] err: RuntimeError, #[case] expected: &str) {
+        assert_eq!(err.to_string(), expected);
+    }
+}

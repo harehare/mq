@@ -37,25 +37,28 @@
           };
       };
 
+      formatter = forEachSupportedSystem ({ pkgs }: pkgs.nixfmt);
+
       devShells = forEachSupportedSystem ({ pkgs }: {
         default = pkgs.mkShell {
             packages = with pkgs; [
             cargo-codspeed
             cargo-deny
             cargo-edit
+            cargo-fuzz
             cargo-llvm-cov
+            cargo-machete
             cargo-udeps
             cargo-nextest
             cargo-watch
             just
-            maturin
+            nixfmt
             nodejs_24
             openssl
             pkg-config
-            python314
+            pnpm
             rust-analyzer
             rustToolchain
-            twine
             wasm-pack
             ];
 

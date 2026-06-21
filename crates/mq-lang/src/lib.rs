@@ -51,6 +51,7 @@ mod lexer;
 mod macro_expand;
 mod module;
 mod number;
+mod optimizer;
 mod range;
 mod selector;
 
@@ -85,15 +86,20 @@ pub use eval::runtime_value::{RuntimeValue, RuntimeValues};
 pub use ident::Ident;
 pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
+#[cfg(feature = "http-import")]
+pub use module::resolver::http_import;
+#[cfg(feature = "http-import")]
+pub use module::resolver::http_resolver::{HttpFetcher, HttpModuleResolver};
 pub use module::{
     BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, STANDARD_MODULES, error::ModuleError,
-    resolver::LocalFsModuleResolver, resolver::ModuleResolver, resolver::module_name,
+    resolver::DefaultModuleResolver, resolver::ModuleResolver,
 };
+pub use optimizer::OptimizationLevel;
 pub use range::{Position, Range};
 pub use selector::{AttrKind, Selector};
 
-pub type DefaultEngine = Engine<LocalFsModuleResolver>;
-pub type DefaultModuleLoader = ModuleLoader<LocalFsModuleResolver>;
+pub type DefaultEngine = Engine<DefaultModuleResolver>;
+pub type DefaultModuleLoader = ModuleLoader<DefaultModuleResolver>;
 
 #[cfg(feature = "cst")]
 pub use cst::incremental::{IncrementalParser, TextEdit};

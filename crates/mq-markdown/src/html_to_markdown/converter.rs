@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use miette::miette;
 
+use super::iframe::detect_embed;
 use super::node::HtmlElement;
 use super::node::HtmlNode;
 use super::options::ConversionOptions;
@@ -20,14 +21,23 @@ fn extract_text_from_pre_children(nodes: &[HtmlNode]) -> String {
             HtmlNode::Element(el) => {
                 text_content.push_str(&extract_text_from_pre_children(&el.children));
             }
-            HtmlNode::Comment(comment) => {
-                text_content.push_str("<!--");
-                text_content.push_str(comment);
-                text_content.push_str("-->");
-            }
+            HtmlNode::Comment(_) => {}
         }
     }
     text_content
+}
+
+fn normalize_unicode_whitespace(text: &str) -> String {
+    if text.chars().any(|c| matches!(c, '\u{00A0}' | '\u{202F}' | '\u{2009}')) {
+        text.chars()
+            .map(|c| match c {
+                '\u{00A0}' | '\u{202F}' | '\u{2009}' => ' ',
+                _ => c,
+            })
+            .collect()
+    } else {
+        text.to_owned()
+    }
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -68,6 +78,20 @@ fn escape_table_cell_content(content: &str) -> String {
 }
 
 fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result<String> {
+    let mut caption_text: Option<String> = None;
+    for node in &table_element.children {
+        if let HtmlNode::Element(el) = node
+            && el.tag_name == "caption"
+        {
+            let text = convert_children_to_string(&el.children)?;
+            let trimmed = text.trim().to_string();
+            if !trimmed.is_empty() {
+                caption_text = Some(trimmed);
+            }
+            break;
+        }
+    }
+
     let mut header_cells: Vec<String> = Vec::new();
     let mut header_alignments: Vec<Alignment> = Vec::new();
     let mut body_rows: Vec<Vec<String>> = Vec::new();
@@ -188,7 +212,12 @@ fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result
         }
         markdown_table.push_str(" |\n");
     }
-    Ok(markdown_table.trim_end_matches('\n').to_string())
+    let table_md = markdown_table.trim_end_matches('\n').to_string();
+    if let Some(caption) = caption_text {
+        Ok(format!("{}\n\n{}", caption, table_md))
+    } else {
+        Ok(table_md)
+    }
 }
 
 fn process_url_for_markdown(url: &str) -> String {
@@ -230,11 +259,43 @@ fn handle_blockquote_element(element: &HtmlElement, options: ConversionOptions) 
     }
 }
 
+/// Strips the common leading whitespace (dedent) from a multi-line string.
+/// Lines that are entirely whitespace are ignored when computing the minimum indent.
+fn dedent(text: &str) -> String {
+    let min_indent = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| line.len() - line.trim_start().len())
+        .min()
+        .unwrap_or(0);
+    if min_indent == 0 {
+        return text.to_owned();
+    }
+    text.lines()
+        .map(|line| {
+            if line.len() >= min_indent {
+                &line[min_indent..]
+            } else {
+                line.trim_start()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn handle_pre_element(element: &HtmlElement, _options: ConversionOptions) -> miette::Result<String> {
     let mut lang_specifier = String::new();
-    let text_content = if let Some(HtmlNode::Element(code_element)) = element.children.first()
-        && code_element.tag_name == "code"
-    {
+    // Find <code> among children, skipping leading whitespace-only text nodes.
+    let code_child = element.children.iter().find_map(|n| {
+        if let HtmlNode::Element(el) = n
+            && el.tag_name == "code"
+        {
+            Some(el)
+        } else {
+            None
+        }
+    });
+    let text_content = if let Some(code_element) = code_child {
         if let Some(Some(class_attr)) = code_element.attributes.get("class") {
             for class_name in class_attr.split_whitespace() {
                 if let Some(lang) = class_name.strip_prefix("language-") {
@@ -246,19 +307,24 @@ fn handle_pre_element(element: &HtmlElement, _options: ConversionOptions) -> mie
                 }
             }
         }
+        // Extract code content plus any sibling text nodes outside <code> (e.g. <pre><code>…</code>\nextra</pre>).
         let mut text = extract_text_from_pre_children(&code_element.children);
-        text.push_str(&extract_text_from_pre_children(&element.children[1..]));
+        let non_code: Vec<&HtmlNode> = element
+            .children
+            .iter()
+            .filter(|n| !matches!(n, HtmlNode::Element(el) if el.tag_name == "code"))
+            .collect();
+        text.push_str(&extract_text_from_pre_children(
+            non_code.iter().copied().cloned().collect::<Vec<_>>().as_slice(),
+        ));
         text
     } else {
         extract_text_from_pre_children(&element.children)
     };
 
     let text_content = text_content.strip_prefix('\n').unwrap_or(&text_content);
-    Ok(format!(
-        "```{}\n{}\n```",
-        lang_specifier,
-        text_content.trim_end_matches('\n')
-    ))
+    let text_content = dedent(text_content.trim_end_matches('\n'));
+    Ok(format!("```{}\n{}\n```", lang_specifier, text_content))
 }
 
 fn handle_table_element(element: &HtmlElement, _options: ConversionOptions) -> miette::Result<String> {
@@ -271,7 +337,14 @@ fn handle_dl_element(element: &HtmlElement, options: ConversionOptions) -> miett
         match child_node {
             HtmlNode::Element(dt_el) if dt_el.tag_name == "dt" => {
                 let dt_text = convert_children_to_string(&dt_el.children)?;
-                dl_content_parts.push(format!("**{}**", dt_text.trim()));
+                let dt_trimmed = dt_text.trim();
+                // Avoid double-bold when <dt> already contains <strong>
+                let dt_formatted = if dt_trimmed.starts_with("**") && dt_trimmed.ends_with("**") {
+                    dt_trimmed.to_string()
+                } else {
+                    format!("**{}**", dt_trimmed)
+                };
+                dl_content_parts.push(dt_formatted);
             }
             HtmlNode::Element(dd_el) if dd_el.tag_name == "dd" => {
                 let dd_markdown_block = convert_nodes_to_markdown(&dd_el.children, options)?;
@@ -282,9 +355,7 @@ fn handle_dl_element(element: &HtmlElement, options: ConversionOptions) -> miett
                 }
             }
             HtmlNode::Text(text) if text.trim().is_empty() => {}
-            HtmlNode::Comment(comment) => {
-                dl_content_parts.push(format!("<!--{}-->", comment));
-            }
+            HtmlNode::Comment(_) => {}
             _ => {
                 let unexpected_block = convert_nodes_to_markdown(std::slice::from_ref(child_node), options)?;
                 if !unexpected_block.is_empty() {
@@ -332,7 +403,16 @@ fn handle_embedded_content_element(element: &HtmlElement) -> miette::Result<Opti
     let mut src_url: Option<String> = None;
     let mut additional_info = String::new();
     match tag_name {
-        "iframe" | "embed" => src_url = element.attributes.get("src").and_then(|opt| opt.as_ref().cloned()),
+        "iframe" => {
+            let src = element.attributes.get("src").and_then(|opt| opt.as_ref().cloned());
+            if let Some(ref s) = src
+                && let Some((description, canonical_url)) = detect_embed(s)
+            {
+                return Ok(Some(format!("[{}]({})", description, canonical_url)));
+            }
+            src_url = src;
+        }
+        "embed" => src_url = element.attributes.get("src").and_then(|opt| opt.as_ref().cloned()),
         "video" | "audio" => {
             src_url = element.attributes.get("src").and_then(|opt| opt.as_ref().cloned());
             if src_url.is_none() {
@@ -469,19 +549,37 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
     for node in nodes {
         match node {
             HtmlNode::Text(text) => {
-                let trimmed = text.trim_start_matches('\n').trim_end_matches('\n');
-                let trimmed = if trimmed.starts_with(" ") {
-                    format!(" {}", trimmed.trim_start())
+                let normalized = normalize_unicode_whitespace(text);
+                let trimmed = normalized.trim_start_matches('\n').trim_end_matches('\n');
+                // Collapse internal newline+whitespace sequences (HTML whitespace collapsing).
+                let collapsed = if trimmed.contains('\n') {
+                    let leading_space = trimmed.starts_with(' ');
+                    let trailing_space = trimmed.ends_with(' ');
+                    let inner = trimmed
+                        .split('\n')
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    match (leading_space, trailing_space) {
+                        (true, true) => format!(" {} ", inner),
+                        (true, false) => format!(" {}", inner),
+                        (false, true) => format!("{} ", inner),
+                        (false, false) => inner,
+                    }
                 } else {
-                    trimmed.to_owned()
+                    let trimmed = if trimmed.starts_with(' ') {
+                        format!(" {}", trimmed.trim_start())
+                    } else {
+                        trimmed.to_owned()
+                    };
+                    if trimmed.ends_with(' ') {
+                        format!("{} ", trimmed.trim_end())
+                    } else {
+                        trimmed
+                    }
                 };
-                let trimmed = if trimmed.ends_with(" ") {
-                    format!("{} ", trimmed.trim_end())
-                } else {
-                    trimmed.to_owned()
-                };
-
-                parts.push(trimmed.to_string());
+                parts.push(collapsed);
             }
             HtmlNode::Element(element) => {
                 let link_text = convert_children_to_string(&element.children)?;
@@ -546,7 +644,12 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                         }
                     }
                     "input" => {
-                        if let Some(Some(type_attr)) = element.attributes.get("type") {
+                        // Skip inputs used as CSS toggle triggers (not actual form inputs)
+                        let is_ui_toggle = element.attributes.get("role").and_then(|v| v.as_deref()) == Some("button")
+                            || element.attributes.get("aria-haspopup").and_then(|v| v.as_deref()) == Some("true");
+                        if is_ui_toggle {
+                            // nothing
+                        } else if let Some(Some(type_attr)) = element.attributes.get("type") {
                             match type_attr.to_lowercase().as_str() {
                                 "checkbox" | "radio" => {
                                     if element.attributes.contains_key("checked") {
@@ -573,17 +676,145 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                     "u" => {
                         parts.push(format!("<u>{}</u>", link_text));
                     }
+                    "sub" => parts.push(format!("<sub>{}</sub>", link_text)),
+                    "sup" => parts.push(format!("<sup>{}</sup>", link_text)),
+                    "q" => {
+                        if !link_text.is_empty() {
+                            parts.push(format!("\"{}\"", link_text));
+                        }
+                    }
+                    "cite" => {
+                        if !link_text.is_empty() {
+                            parts.push(format!("*{}*", link_text));
+                        }
+                    }
+                    "ins" => {
+                        if !link_text.is_empty() {
+                            parts.push(link_text);
+                        }
+                    }
+                    "mark" => parts.push(format!("<mark>{}</mark>", link_text)),
+                    "summary" => {
+                        if !link_text.is_empty() {
+                            parts.push(format!("**{}**", link_text));
+                        }
+                    }
+                    "abbr" => {
+                        if !link_text.is_empty() {
+                            if let Some(Some(title)) = element.attributes.get("title")
+                                && !title.is_empty()
+                            {
+                                parts.push(format!("{} ({})", link_text, title));
+                            } else {
+                                parts.push(link_text);
+                            }
+                        }
+                    }
+                    "picture" => parts.push(link_text),
+                    "ruby" => {
+                        let mut base = String::new();
+                        let mut annotation = String::new();
+                        for child in &element.children {
+                            match child {
+                                HtmlNode::Text(t) => base.push_str(t),
+                                HtmlNode::Element(el) if el.tag_name == "rt" => {
+                                    annotation.push_str(&convert_children_to_string(&el.children)?);
+                                }
+                                HtmlNode::Element(el) if el.tag_name == "rp" => {}
+                                HtmlNode::Element(el) => {
+                                    base.push_str(&convert_children_to_string(&el.children)?);
+                                }
+                                HtmlNode::Comment(_) => {}
+                            }
+                        }
+                        let base = base.trim();
+                        let annotation = annotation.trim();
+                        if !annotation.is_empty() {
+                            parts.push(format!("{}({})", base, annotation));
+                        } else if !base.is_empty() {
+                            parts.push(base.to_string());
+                        }
+                    }
+                    "dfn" => {
+                        if !link_text.is_empty() {
+                            parts.push(format!("*{}*", link_text));
+                        }
+                    }
+                    "time" | "small" | "bdi" => {
+                        if !link_text.is_empty() {
+                            parts.push(link_text);
+                        }
+                    }
                     "span" => parts.push(link_text),
                     "nav" | "aside" | "noscript" => {} // skip
                     _ => parts.push(link_text),
                 }
             }
-            HtmlNode::Comment(comment) => {
-                parts.push(format!("<!--{}-->", comment));
-            }
+            HtmlNode::Comment(_) => {}
         }
     }
     Ok(parts.join("").to_string())
+}
+
+/// Returns true if the element is a CSS-only UI widget (dropdown or tab switcher).
+///
+/// Two patterns are detected:
+/// 1. A direct child `<input>` with `role="button"` or `aria-haspopup` — used for CSS dropdowns
+///    (e.g., Wikipedia's language switcher).
+/// 2. All direct children are `<input>` or `<label>` elements — used for CSS-only tabs/toggles
+///    (e.g., tab bars built with radio inputs and labels).
+fn is_css_dropdown_widget(element: &HtmlElement) -> bool {
+    // Pattern 1: checkbox/radio used as dropdown toggle trigger
+    let has_toggle_input = element.children.iter().any(|child| {
+        matches!(child, HtmlNode::Element(el)
+            if el.tag_name == "input"
+            && (el.attributes.get("role").and_then(|v| v.as_deref()) == Some("button")
+                || el.attributes.get("aria-haspopup").and_then(|v| v.as_deref()) == Some("true")))
+    });
+    if has_toggle_input {
+        return true;
+    }
+
+    // Pattern 2: CSS tab/toggle widget built from alternating <input> and <label> siblings.
+    // Both element types must be present; a lone <input> (e.g. standalone checkbox) is not a widget.
+    let has_any_input = element
+        .children
+        .iter()
+        .any(|child| matches!(child, HtmlNode::Element(el) if el.tag_name == "input"));
+    let has_any_label = element
+        .children
+        .iter()
+        .any(|child| matches!(child, HtmlNode::Element(el) if el.tag_name == "label"));
+    if has_any_input && has_any_label {
+        return element.children.iter().all(|child| match child {
+            HtmlNode::Text(t) => t.trim().is_empty(),
+            HtmlNode::Comment(_) => true,
+            HtmlNode::Element(el) => matches!(el.tag_name.as_str(), "input" | "label"),
+        });
+    }
+
+    false
+}
+
+/// Returns true if the element wraps a heading with only auxiliary UI siblings.
+/// In this pattern (e.g., Wikipedia's `<div class="mw-heading">`), the heading is the
+/// meaningful content and the siblings are UI chrome (edit links, toggle buttons, etc.).
+fn is_heading_with_aux_siblings(element: &HtmlElement) -> bool {
+    let has_heading = element.children.iter().any(|child| {
+        matches!(child, HtmlNode::Element(el)
+            if matches!(el.tag_name.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6"))
+    });
+    if !has_heading {
+        return false;
+    }
+    element.children.iter().all(|child| match child {
+        HtmlNode::Text(t) => t.trim().is_empty(),
+        HtmlNode::Comment(_) => true,
+        HtmlNode::Element(el) => matches!(
+            el.tag_name.as_str(),
+            "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "span" | "input" | "label" | "button"
+        ),
+    })
 }
 
 pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions) -> miette::Result<String> {
@@ -601,11 +832,23 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                         // Skip navigational/sidebar/noscript noise entirely
                     }
                     "html" | "head" | "header" | "footer" | "body" | "div" | "main" | "article" | "section"
-                    | "hgroup" => {
-                        let markdown_block = convert_nodes_to_markdown(&element.children, options)?;
-
-                        if !markdown_block.is_empty() {
-                            markdown_blocks.push((markdown_block, false));
+                    | "hgroup" | "details" | "figure" => {
+                        if is_css_dropdown_widget(element) {
+                            // Skip CSS-only dropdown widgets (language switchers, nav menus, etc.)
+                        } else if is_heading_with_aux_siblings(element) {
+                            // Heading wrapper div: only extract the heading, drop UI chrome siblings
+                            for child in &element.children {
+                                if let HtmlNode::Element(el) = child
+                                    && matches!(el.tag_name.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6")
+                                {
+                                    markdown_blocks.push((handle_heading_element(el)?, false));
+                                }
+                            }
+                        } else {
+                            let markdown_block = convert_nodes_to_markdown(&element.children, options)?;
+                            if !markdown_block.is_empty() {
+                                markdown_blocks.push((markdown_block, false));
+                            }
                         }
                     }
                     "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
@@ -628,6 +871,24 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                             markdown_blocks.push((dl_md, false));
                         }
                     }
+                    "summary" => {
+                        let summary_text = convert_children_to_string(&element.children)?;
+                        if !summary_text.is_empty() {
+                            markdown_blocks.push((format!("**{}**", summary_text.trim()), false));
+                        }
+                    }
+                    "figcaption" => {
+                        let caption = handle_paragraph_element(element)?;
+                        if !caption.is_empty() {
+                            markdown_blocks.push((caption, false));
+                        }
+                    }
+                    "address" => {
+                        let content = convert_children_to_string(&element.children)?;
+                        if !content.is_empty() {
+                            markdown_blocks.push((format!("*{}*", content.trim()), false));
+                        }
+                    }
                     "script" => {
                         if let Some(script_md) = handle_script_element(element, options)? {
                             markdown_blocks.push((script_md, false));
@@ -640,24 +901,44 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions)
                         }
                     }
                     "svg" => markdown_blocks.push((handle_svg_element(element)?, false)),
-                    "strong" | "em" | "a" | "code" | "span" | "img" | "br" | "input" | "s" | "strike" | "del"
-                    | "kbd" => {
+                    "a" => {
+                        // <a> without href is used as a transparent section container in some HTML.
+                        // Treat it as a block pass-through in that case so block children are preserved.
+                        if element.attributes.get("href").and_then(|v| v.as_deref()).is_some() {
+                            let inline_md = convert_children_to_string(&[HtmlNode::Element(element.clone())])?;
+                            if !inline_md.is_empty() {
+                                markdown_blocks.push((inline_md.trim().to_string(), true));
+                            }
+                        } else {
+                            let block_md = convert_nodes_to_markdown(&element.children, options)?;
+                            if !block_md.is_empty() {
+                                markdown_blocks.push((block_md, false));
+                            }
+                        }
+                    }
+                    "br" => {
+                        // Hard line break — must not be trimmed or it becomes empty.
+                        markdown_blocks.push(("  \n".to_string(), true));
+                    }
+                    "strong" | "em" | "code" | "span" | "img" | "input" | "s" | "strike" | "del" | "kbd" | "sub"
+                    | "sup" | "q" | "cite" | "mark" | "abbr" | "picture" | "ruby" | "dfn" | "time" | "small"
+                    | "bdi" => {
                         let inline_md = convert_children_to_string(&[HtmlNode::Element(element.clone())])?;
                         if !inline_md.is_empty() {
                             markdown_blocks.push((inline_md.trim().to_string(), true));
                         }
                     }
                     _ => {
-                        let children_content_str = convert_children_to_string(&element.children)?;
-                        if !children_content_str.is_empty() {
-                            markdown_blocks.push((children_content_str, false));
+                        // Unknown/custom elements (e.g. <astro-island>, <button>, web components):
+                        // recurse as blocks so any block-level children are preserved correctly.
+                        let block_md = convert_nodes_to_markdown(&element.children, options)?;
+                        if !block_md.is_empty() {
+                            markdown_blocks.push((block_md, false));
                         }
                     }
                 }
             }
-            HtmlNode::Comment(comment) => {
-                markdown_blocks.push((format!("<!--{}-->", comment), false));
-            }
+            HtmlNode::Comment(_) => {}
         }
     }
 

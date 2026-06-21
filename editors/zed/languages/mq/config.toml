@@ -1,0 +1,11 @@
+name = "mq"
+grammar = "mq"
+path_suffixes = ["mq"]
+line_comments = ["# "]
+block_comment = ["/*", "*/"]
+brackets = [
+  { start = "[", end = "]", close = true, newline = true },
+  { start = "(", end = ")", close = true, newline = true },
+  { start = "\"", end = "\"", close = true, newline = false, not_in = ["string"] },
+]
+word_characters = ["_"]

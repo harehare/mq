@@ -21,6 +21,12 @@ fn check_types(code: &str) -> Vec<TypeError> {
     checker.check(&hir)
 }
 
+fn check_types_with_builtins(code: &str) -> Vec<TypeError> {
+    let mut hir = Hir::default();
+    hir.add_code(None, code);
+    TypeChecker::new().check(&hir)
+}
+
 #[test]
 fn test_binary_op_type_mismatch() {
     let result = check_types(r#"1 + true"#);
@@ -96,10 +102,6 @@ fn test_match_arm_body_type_mismatch() {
         result
     );
 }
-
-// ============================================================================
-// Expected Success Cases (should always pass)
-// ============================================================================
 
 #[test]
 fn test_success_simple_literal() {
@@ -182,8 +184,6 @@ fn test_success_macro_definition() {
     }
     assert!(result.is_empty(), "Macro definition should succeed");
 }
-
-// --- Type Narrowing Tests ---
 
 #[test]
 fn test_narrowing_equality_then_branch() {
@@ -469,10 +469,6 @@ fn test_array_element_access_valid() {
     );
 }
 
-// ============================================================================
-// Tuple Mode Tests
-// ============================================================================
-
 #[test]
 fn test_tuple_literal_index_number_element() {
     // In tuple mode, [1, "hello"] is Tuple(Number, String)
@@ -536,14 +532,6 @@ fn test_tuple_three_elements() {
         "v[0] + 1 on 3-element tuple should succeed: {result:?}"
     );
 }
-
-// ============================================================================
-// Union(Array(T), None) Index Access Tests
-//
-// These tests exercise the `Union` branch in `resolve_deferred_tuple_accesses`
-// which handles index access on variables whose type is `Union(Array(T), None)`
-// (e.g., produced by `try: [...] catch: none`).
-// ============================================================================
 
 #[rstest]
 #[case::array_number_none_valid(
@@ -611,5 +599,80 @@ fn test_union_tuple_index_access(#[case] code: &str, #[case] should_succeed: boo
 )]
 fn test_dict_destructuring_type_check(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
+    assert_eq!(result.is_empty(), should_succeed, "{}: {result:?}", description);
+}
+
+#[rstest]
+// After `| none:`, wildcard arm narrows x away from None → String only → upcase is valid
+#[case::none_then_wildcard_valid(
+    r#"def f(x): match (x): | none: "nothing" | _: upcase(x) end"#,
+    true,
+    "wildcard arm after none arm: x narrowed to non-None, upcase should succeed"
+)]
+// After `| :string::`, wildcard arm narrows x away from String → no upcase
+#[case::type_label_then_wildcard_valid(
+    r#"def f(x): match (x): | :string:: upcase(x) | _: x end"#,
+    true,
+    "wildcard arm after :string: arm should succeed (x is non-String)"
+)]
+// String literal `"foo"` does NOT trigger subtraction; x in wildcard can still be String
+#[case::string_literal_no_subtraction(
+    r#"def f(x): match (x): | "foo": "got foo" | _: upcase(x) end"#,
+    true,
+    "literal string pattern should not subtract String type from wildcard arm"
+)]
+// Multiple preceding whole-type arms still don't break string-only operations in wildcard
+#[case::two_whole_type_arms_before_wildcard(
+    r#"def f(x): match (x): | none: 0 | :string:: upcase(x) | _: x end"#,
+    true,
+    "multiple whole-type arms before wildcard should not cause errors"
+)]
+fn test_cross_arm_narrowing(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types(code);
+    assert_eq!(result.is_empty(), should_succeed, "{}: {result:?}", description);
+}
+
+#[rstest]
+// dot and self resolve to dynamic() at root level
+#[case::dot_at_root(".", true, "dot is dynamic()")]
+#[case::self_at_root("self", true, "self is dynamic()")]
+// dynamic() satisfies string parameters
+#[case::upcase_dot("upcase(.)", true, "dynamic -> string")]
+#[case::upcase_ref("upcase", true, "ref uses dynamic piped input")]
+#[case::downcase_dot("downcase(.)", true, "dynamic -> string")]
+#[case::trim_dot("trim(.)", true, "dynamic -> string")]
+#[case::ltrim_dot("ltrim(.)", true, "dynamic -> string")]
+#[case::rtrim_dot("rtrim(.)", true, "dynamic -> string")]
+// dynamic() satisfies number parameters
+#[case::abs_dot("abs(.)", true, "dynamic -> number")]
+#[case::floor_dot("floor(.)", true, "dynamic -> number")]
+#[case::ceil_dot("ceil(.)", true, "dynamic -> number")]
+// dynamic() satisfies polymorphic parameters
+#[case::to_number_dot("to_number(.)", true, "dynamic satisfies any")]
+#[case::to_string_dot("to_string(.)", true, "dynamic satisfies any")]
+// 0-arg calls use dynamic() as implicit first arg
+#[case::len_zero_args("len()", true, "dynamic as implicit arg")]
+#[case::trim_zero_args("trim()", true, "dynamic as implicit arg")]
+// binary calls: dynamic piped + explicit args
+#[case::split_dot("split(., \"x\")", true, "dynamic as string, separator explicit")]
+#[case::starts_with_dot("starts_with(., \"hello\")", true, "dynamic as string")]
+#[case::replace_two_explicit("replace(\"l\", \"r\")", true, "dynamic piped + 2 explicit = 3 args")]
+// pipe chains: dynamic pinned to concrete type, then further typed ops
+#[case::chain_to_len("upcase(.) | len", true, "dynamic -> string -> number")]
+#[case::chain_two_string_ops("upcase(.) | trim(.)", true, "string -> string")]
+#[case::chain_len_to_abs("len() | abs(.)", true, "number -> number")]
+#[case::chain_floor_to_string("floor(.) | to_string", true, "number -> string")]
+#[case::chain_three_ops("upcase(.) | trim(.) | len", true, "three-op chain")]
+#[case::chain_len_to_to_string("len() | to_string", true, "number -> string")]
+// errors: concrete type mismatch — dynamic() does not shield downstream errors
+#[case::concrete_type_error("1 + true", false, "concrete: bool ≠ number")]
+#[case::number_piped_to_string("42 | upcase(.)", false, "number piped, upcase needs string")]
+#[case::string_piped_to_number("\"hello\" | abs(.)", false, "string piped, abs needs number")]
+#[case::bool_piped_to_string("true | downcase", false, "bool piped, downcase needs string")]
+#[case::string_pinned_abs_fails("upcase(.) | abs(.)", false, "upcase pins to string, abs needs number")]
+#[case::number_pinned_upcase_fails("len() | upcase(.)", false, "len pins to number, upcase needs string")]
+#[case::replace_arity_error("replace(\"l\")", false, "1 explicit + dynamic = 2, needs 3")]
+fn test_dynamic_piped_input(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types_with_builtins(code);
     assert_eq!(result.is_empty(), should_succeed, "{}: {result:?}", description);
 }

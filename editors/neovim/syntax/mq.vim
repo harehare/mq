@@ -7,7 +7,7 @@ syn match mqComment "#.*$" contains=mqTodo
 syn keyword mqTodo contained TODO FIXME XXX NOTE
 
 " Keywords (use \< and \> for word boundaries to avoid partial matches)
-syn match mqKeywordControl "\<\(def\|do\|if\|elif\|else\|end\|while\|foreach\|fn\|break\|continue\|match\|macro\|quote\|unquote\|loop\)\>"
+syn match mqKeywordControl "\<\(def\|do\|if\|elif\|else\|end\|while\|foreach\|fn\|break\|continue\|match\|macro\|quote\|unquote\|loop\|try\|catch\|as\)\>"
 syn match mqKeywordInclude "\<\(include\|module\|import\)\>"
 syn match mqKeywordSpecial "\<\(self\|nodes\)\>"
 syn match mqKeywordLetVar "\<\(let\|var\)\>" nextgroup=mqVariableDef skipwhite
@@ -40,7 +40,11 @@ syn match mqOperator "\*="
 syn match mqOperator "\/="
 syn match mqOperator "\/\/="
 syn match mqOperator "\|="
-syn match mqOperator "=~"
+syn match mqOperator "=\~"
+syn match mqOperator "!\~"
+syn match mqOperator "::"
+syn match mqOperator "\.\."
+syn match mqOperator "->"
 syn match mqOperator "@"
 syn match mqOperator "<<"
 syn match mqOperator ">>"
@@ -54,6 +58,10 @@ syn match mqNumber "\v<0b[01]+>"
 " Strings
 syn region mqString start='"' end='"' skip='\\"' contains=mqEscape
 syn match mqEscape "\\." contained
+
+" Bytes literal strings
+syn region mqStringBytes start='b"' end='"' skip='\\"' contains=mqBytesEscape
+syn match mqBytesEscape "\\x[0-9a-fA-F]\{2\}\|\\." contained
 
 " Interpolated strings
 syn region mqStringInterpolate start='s"' end='"' skip='\\"' contains=mqInterpolation,mqEscape
@@ -108,8 +116,10 @@ hi def link mqOperator Operator
 hi def link mqNumber Number
 
 hi def link mqString String
+hi def link mqStringBytes String
 hi def link mqStringInterpolate String
 hi def link mqEscape SpecialChar
+hi def link mqBytesEscape SpecialChar
 hi def link mqInterpolationDelimiter Delimiter
 hi def link mqVariableRef Identifier
 

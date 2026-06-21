@@ -28,6 +28,14 @@ impl Node {
             Expr::Selector(selector) => {
                 write!(buf, "{}", selector).unwrap();
             }
+            Expr::SelectorChain(selectors) => {
+                for (i, sel) in selectors.iter().enumerate() {
+                    if i > 0 {
+                        buf.push_str(" | ");
+                    }
+                    write!(buf, "{}", sel).unwrap();
+                }
+            }
             Expr::SelectorCall(selector, args) => {
                 write!(buf, "{}", selector).unwrap();
                 buf.push('(');

@@ -12,11 +12,14 @@
 //! - **Document Symbols**: Lists all symbols in a document.
 //! - **Semantic Tokens**: Provides semantic tokens for syntax highlighting.
 //! - **Formatting**: Formats the document according to the MDQ language formatting rules.
+//! - **Code Actions**: Suggests quick fixes, such as adding a missing `include` for an unresolved standard library function call, or a missing `import` for an unresolved `module::func()` qualified access.
+//! - **Rename**: Renames a symbol and all of its references across files.
 //!
 //! # Usage
 //!
 //! To use this LSP server, you need to integrate it with an LSP client. The server reads from stdin and writes to stdout, making it compatible with various editors and IDEs that support LSP.
 pub mod capabilities;
+pub mod code_action;
 pub mod completions;
 pub mod document_symbol;
 pub mod error;
@@ -25,6 +28,7 @@ pub mod goto_definition;
 pub mod hover;
 pub mod inlay_hints;
 pub mod references;
+pub mod rename;
 pub mod semantic_tokens;
 pub mod server;
 

@@ -343,9 +343,24 @@ impl Formatter {
         // Output module name
         self.output.push_str(&node.to_string());
 
+        // Re-derive from the actual line when inline, since the caller's
+        // indent_level may not match where this node was written (mirrors format_call).
+        let current_line_indent = if indent_level == 0 {
+            self.current_line_indent()
+        } else {
+            indent_level
+        };
+
         // Output children (::, identifier, optional args)
         node.children.iter().for_each(|child| {
-            self.format_node(mq_lang::Shared::clone(child), 0);
+            self.format_node(
+                mq_lang::Shared::clone(child),
+                if child.has_new_line() {
+                    current_line_indent + 1
+                } else {
+                    current_line_indent
+                },
+            );
         });
     }
 
@@ -524,6 +539,14 @@ impl Formatter {
         }
         self.output.push_str(&node.to_string());
 
+        // Re-derive from the actual line when inline, since the parent's
+        // block_indent_level may not match where this node was written.
+        let block_indent_level = if indent_level == 0 {
+            self.current_line_indent()
+        } else {
+            block_indent_level
+        };
+
         if append_space_after_keyword {
             self.append_space();
         }
@@ -531,11 +554,16 @@ impl Formatter {
         // Check for 'do' keyword or colon
         let do_index = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::Do));
         let colon_index = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::Colon));
-        let uses_do_syntax = do_index.is_some();
+        // uses_do_syntax is true only when 'do' appears before ':' (or when there's no ':')
+        let uses_do_syntax = do_index.is_some_and(|di| colon_index.is_none_or(|ci| di < ci));
 
         // If there's no colon or do, split before the right parenthesis
-        let expr_index = if let Some(index) = do_index.or(colon_index) {
-            index
+        let expr_index = if uses_do_syntax {
+            do_index.unwrap()
+        } else if let Some(ci) = colon_index {
+            ci
+        } else if let Some(di) = do_index {
+            di
         } else {
             Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::RParen))
                 .map(|index| index + 1)
@@ -1050,8 +1078,9 @@ impl Formatter {
         // Check for 'do' keyword or colon
         let do_pos = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::Do));
         let colon_pos = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::Colon));
-        let uses_do_syntax = do_pos.is_some();
-        let separator_pos = do_pos.or(colon_pos).unwrap_or(0);
+        // uses_do_syntax is true only when 'do' appears before ':' (or when there's no ':')
+        let uses_do_syntax = do_pos.is_some_and(|di| colon_pos.is_none_or(|ci| di < ci));
+        let separator_pos = if uses_do_syntax { do_pos } else { colon_pos }.unwrap_or(0);
 
         // Format arguments (lparen, value, rparen)
         for child in node.children.iter().take(separator_pos) {
@@ -2853,6 +2882,109 @@ end
     #[case::as_binding_basic("42 as x | x", "42 as x | x")]
     #[case::as_binding_spaces("42  as  x  |  x", "42 as x | x")]
     #[case::as_binding_selector(".text as title | title", ".text as title | title")]
+    #[case::def_with_do_block_body(
+        r#"def test(x):
+  do
+    step1(x)
+    | step2(x)
+  end;"#,
+        r#"def test(x):
+  do
+    step1(x)
+    | step2(x)
+  end;
+"#
+    )]
+    #[case::foreach_colon_with_do_block_body(
+        r#"foreach(x, items):
+  do
+    process(x)
+  end;"#,
+        r#"foreach (x, items):
+  do
+    process(x)
+  end;
+"#
+    )]
+    #[case::foreach_do_with_nested_do_block(
+        r#"foreach(row, arr) do
+  do
+    process(row)
+  end
+end"#,
+        r#"foreach (row, arr) do
+  do
+    process(row)
+  end
+end
+"#
+    )]
+    #[case::fn_multiline_params_as_first_array_element(
+        "let fns = [fn(
+  a,
+  b
+): a + b;, fn(c): c;]",
+        "let fns = [fn(
+  a,
+  b
+): a + b;, fn(c): c;]
+"
+    )]
+    #[case::fn_multiline_variadic_params_as_first_array_element(
+        "let fns = [fn(
+  a,
+  *rest
+): rest;, fn(c): c;]",
+        "let fns = [fn(
+  a,
+  *rest
+): rest;, fn(c): c;]
+"
+    )]
+    #[case::fn_multiline_params_as_non_first_array_element(
+        "let fns = [first, fn(
+  a,
+  b
+): a + b;]",
+        "let fns = [first, fn(
+  a,
+  b
+): a + b;]
+"
+    )]
+    #[case::fn_multiline_params_in_nested_array(
+        "let xs = [[fn(
+  a,
+  b
+): a + b;]]",
+        "let xs = [[fn(
+  a,
+  b
+): a + b;]]
+"
+    )]
+    #[case::fn_multiline_params_as_call_arg(
+        "map(arr, fn(
+  a,
+  b
+): a + b;)",
+        "map(arr, fn(
+  a,
+  b
+): a + b;)
+"
+    )]
+    #[case::qualified_call_multiline_args_nested_in_call(
+        "let result = to_string(md::doc(
+    md::h(\"Items\", 2),
+    map([\"a\", \"b\"], fn(x): md::list(x);),
+  ))",
+        "let result = to_string(md::doc(
+  md::h(\"Items\", 2),
+  map([\"a\", \"b\"], fn(x): md::list(x);),
+))
+"
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

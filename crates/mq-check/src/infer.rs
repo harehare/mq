@@ -100,6 +100,27 @@ pub struct DeferredSelectorAccess {
     pub range: Option<mq_lang::Range>,
 }
 
+/// A deferred bracket access on the return value of a user-defined function call.
+///
+/// The CST represents `f(x)["key"]` as `Call(f, [x, "key"])`, so from the HIR
+/// the call appears to have one extra argument beyond the function's parameter
+/// count. When the trailing argument is a string/symbol/number key, it represents
+/// a bracket access on `f`'s return value rather than an extra function argument.
+/// This entry records the fresh return-type variable (resolved after unification)
+/// and the key so that `resolve_deferred_call_return_accesses` can look up the
+/// field type and bind the call expression's type to it.
+#[derive(Debug, Clone)]
+pub struct DeferredCallReturnAccess {
+    /// The call symbol ID (the `f(x)["key"]` expression in the HIR)
+    pub call_symbol_id: SymbolId,
+    /// Fresh return-type variable from the function's type instantiation
+    pub return_type: Type,
+    /// The field name to access (the bracket key)
+    pub field_name: String,
+    /// Source range for error reporting
+    pub range: Option<mq_lang::Range>,
+}
+
 /// A deferred tuple index access for post-unification resolution.
 ///
 /// When `v[0]` is encountered on a variable that may be a Tuple type,
@@ -150,6 +171,15 @@ pub struct TypeNarrowing {
     pub else_branch_ids: Vec<SymbolId>,
 }
 
+/// Cross-arm narrowing for match: subtract preceding arms' whole-type patterns from subsequent arms.
+#[derive(Debug, Clone)]
+pub struct CrossArmNarrowing {
+    pub def_id: SymbolId,
+    /// Types from preceding arms to subtract (only whole-type patterns like `none`, `:string:`)
+    pub exclude_types: Vec<Type>,
+    pub branch_id: SymbolId,
+}
+
 /// Inference context maintains state during type inference
 pub struct InferenceContext {
     /// Type variable context for generating fresh variables
@@ -179,8 +209,12 @@ pub struct InferenceContext {
     deferred_selector_accesses: Vec<DeferredSelectorAccess>,
     /// Deferred tuple index accesses for post-unification resolution
     deferred_tuple_accesses: Vec<DeferredTupleAccess>,
+    /// Deferred bracket accesses on function call return values (e.g. `f(x)["key"]`)
+    deferred_call_return_accesses: Vec<DeferredCallReturnAccess>,
     /// Type narrowings collected from type predicate conditions in if/elif expressions
     type_narrowings: Vec<TypeNarrowing>,
+    /// Cross-arm narrowings collected from match expressions
+    cross_arm_narrowings: Vec<CrossArmNarrowing>,
     /// When true, heterogeneous arrays produce a type error
     strict_array: bool,
 }
@@ -207,7 +241,9 @@ impl InferenceContext {
             deferred_record_accesses: Vec::new(),
             deferred_selector_accesses: Vec::new(),
             deferred_tuple_accesses: Vec::new(),
+            deferred_call_return_accesses: Vec::new(),
             type_narrowings: Vec::new(),
+            cross_arm_narrowings: Vec::new(),
             strict_array,
         }
     }
@@ -315,6 +351,16 @@ impl InferenceContext {
         std::mem::take(&mut self.deferred_tuple_accesses)
     }
 
+    /// Adds a deferred bracket access on a function call's return value
+    pub fn add_deferred_call_return_access(&mut self, access: DeferredCallReturnAccess) {
+        self.deferred_call_return_accesses.push(access);
+    }
+
+    /// Takes all deferred call return accesses (consumes them)
+    pub fn take_deferred_call_return_accesses(&mut self) -> Vec<DeferredCallReturnAccess> {
+        std::mem::take(&mut self.deferred_call_return_accesses)
+    }
+
     /// Adds a type narrowing collected from a type predicate condition
     pub fn add_type_narrowing(&mut self, narrowing: TypeNarrowing) {
         self.type_narrowings.push(narrowing);
@@ -323,6 +369,16 @@ impl InferenceContext {
     /// Takes all collected type narrowings (consumes them)
     pub fn take_type_narrowings(&mut self) -> Vec<TypeNarrowing> {
         std::mem::take(&mut self.type_narrowings)
+    }
+
+    /// Adds a cross-arm narrowing from a match expression
+    pub fn add_cross_arm_narrowing(&mut self, narrowing: CrossArmNarrowing) {
+        self.cross_arm_narrowings.push(narrowing);
+    }
+
+    /// Takes all cross-arm narrowings (consumes them)
+    pub fn take_cross_arm_narrowings(&mut self) -> Vec<CrossArmNarrowing> {
+        std::mem::take(&mut self.cross_arm_narrowings)
     }
 
     /// Reports a type mismatch error between two types.

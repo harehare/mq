@@ -5,6 +5,7 @@ use clap::Parser;
 use crate::server::LspConfig;
 
 pub mod capabilities;
+pub mod code_action;
 pub mod completions;
 pub mod document_symbol;
 pub mod error;
@@ -13,6 +14,7 @@ pub mod goto_definition;
 pub mod hover;
 pub mod inlay_hints;
 pub mod references;
+pub mod rename;
 pub mod semantic_tokens;
 pub mod server;
 

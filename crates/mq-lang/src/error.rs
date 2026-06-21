@@ -392,6 +392,11 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::DestructuringFailed(_)) => Some(Cow::Borrowed(
                 "Destructuring pattern did not match the value. Check that the pattern structure matches the value.",
             )),
+            #[cfg(feature = "http-import")]
+            InnerError::Module(ModuleError::HttpImportNotAllowed(_)) => Some(Cow::Borrowed(
+                "HTTP imports are only allowed at the top level. \
+                Move the HTTP import to the top-level script instead of inside an imported module.",
+            )),
         };
 
         msg.map(|m| Box::new(m) as Box<dyn std::fmt::Display>)
@@ -491,7 +496,8 @@ mod test {
     use std::{fs::File, path::PathBuf};
 
     use super::*;
-    use crate::{Arena, LocalFsModuleResolver, Range, Shared, SharedCell, Token, TokenKind, arena::ArenaId};
+    use crate::module::resolver::DefaultModuleResolver;
+    use crate::{Arena, Range, Shared, SharedCell, Token, TokenKind, arena::ArenaId};
 
     type TempDir = PathBuf;
     type TempFile = PathBuf;
@@ -683,7 +689,8 @@ mod test {
         }
 
         let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
-        let mut loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+
         loader
             .load_from_file("test_from_error_with_module_source", token_arena)
             .unwrap();

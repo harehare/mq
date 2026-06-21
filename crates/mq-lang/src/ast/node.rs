@@ -192,6 +192,7 @@ impl Node {
             Expr::Literal(_)
             | Expr::Ident(_)
             | Expr::Selector(_)
+            | Expr::SelectorChain(_)
             | Expr::Include(_)
             | Expr::Import(_)
             | Expr::InterpolatedString(_)
@@ -350,6 +351,11 @@ pub enum Expr {
     Ident(IdentWithToken),
     InterpolatedString(Vec<StringSegment>),
     Selector(Selector),
+    /// A sequence of selectors merged by the optimizer to reduce pipeline overhead.
+    ///
+    /// Equivalent to applying each selector in order, but evaluated in a single
+    /// `eval_expr` call instead of N separate pipeline steps.
+    SelectorChain(SmallVec<[Selector; 4]>),
     /// A selector with runtime-evaluated arguments for filtered matching.
     ///
     /// Supports `.h(1..2)`, `.h(1, 2)`, `.code("rust")`, etc.
@@ -687,5 +693,435 @@ mod tests {
             expr: Shared::new(expr),
         };
         assert_eq!(node.range(Shared::new(arena)), expected);
+    }
+
+    fn make_node(token_id: u32) -> Shared<Node> {
+        Shared::new(Node {
+            token_id: ArenaId::new(token_id),
+            expr: Shared::new(Expr::Literal(Literal::None)),
+        })
+    }
+
+    fn single_token_arena(range: Range) -> Shared<Arena<Shared<Token>>> {
+        let mut arena = Arena::new(10);
+        arena.alloc(create_token(range));
+        Shared::new(arena)
+    }
+
+    #[test]
+    fn test_range_loop_uses_program() {
+        let r0 = Range {
+            start: Position::new(1, 1),
+            end: Position::new(1, 5),
+        };
+        let r1 = Range {
+            start: Position::new(2, 1),
+            end: Position::new(2, 5),
+        };
+        let mut arena = Arena::new(10);
+        arena.alloc(create_token(r0));
+        arena.alloc(create_token(r1));
+        let expr = Expr::Loop(vec![make_node(0), make_node(1)]);
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        let got = node.range(Shared::new(arena));
+        assert_eq!(got.start, r0.start);
+        assert_eq!(got.end, r1.end);
+    }
+
+    #[test]
+    fn test_range_module_uses_program() {
+        let r0 = Range {
+            start: Position::new(10, 1),
+            end: Position::new(10, 5),
+        };
+        let r1 = Range {
+            start: Position::new(11, 1),
+            end: Position::new(11, 5),
+        };
+        let mut arena = Arena::new(10);
+        arena.alloc(create_token(r0));
+        arena.alloc(create_token(r1));
+        let expr = Expr::Module(IdentWithToken::new("m"), vec![make_node(0), make_node(1)]);
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        let got = node.range(Shared::new(arena));
+        assert_eq!(got.start, r0.start);
+        assert_eq!(got.end, r1.end);
+    }
+
+    #[test]
+    fn test_range_empty_block_uses_default() {
+        let r0 = Range {
+            start: Position::new(5, 1),
+            end: Position::new(5, 5),
+        };
+        let arena = single_token_arena(r0);
+        let expr = Expr::Block(vec![]);
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        let got = node.range(arena);
+        assert_eq!(got, Range::default());
+    }
+
+    #[test]
+    fn test_range_as_delegates_to_inner() {
+        let r0 = Range {
+            start: Position::new(20, 1),
+            end: Position::new(20, 8),
+        };
+        let arena = single_token_arena(r0);
+        let expr = Expr::As(IdentWithToken::new("x"), make_node(0));
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        assert_eq!(node.range(arena), r0);
+    }
+
+    #[test]
+    fn test_range_var_delegates_to_inner() {
+        let r0 = Range {
+            start: Position::new(21, 1),
+            end: Position::new(21, 8),
+        };
+        let arena = single_token_arena(r0);
+        let expr = Expr::Var(Pattern::Wildcard, make_node(0));
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        assert_eq!(node.range(arena), r0);
+    }
+
+    #[test]
+    fn test_range_assign_delegates_to_inner() {
+        let r0 = Range {
+            start: Position::new(22, 1),
+            end: Position::new(22, 8),
+        };
+        let arena = single_token_arena(r0);
+        let expr = Expr::Assign(IdentWithToken::new("v"), make_node(0));
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        assert_eq!(node.range(arena), r0);
+    }
+
+    #[test]
+    fn test_range_quote_delegates_to_inner() {
+        let r0 = Range {
+            start: Position::new(23, 1),
+            end: Position::new(23, 8),
+        };
+        let arena = single_token_arena(r0);
+        let expr = Expr::Quote(make_node(0));
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        assert_eq!(node.range(arena), r0);
+    }
+
+    #[test]
+    fn test_range_unquote_delegates_to_inner() {
+        let r0 = Range {
+            start: Position::new(24, 1),
+            end: Position::new(24, 8),
+        };
+        let arena = single_token_arena(r0);
+        let expr = Expr::Unquote(make_node(0));
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        assert_eq!(node.range(arena), r0);
+    }
+
+    #[test]
+    fn test_range_and_empty_falls_back_to_token() {
+        let r0 = Range {
+            start: Position::new(30, 1),
+            end: Position::new(30, 5),
+        };
+        let arena = single_token_arena(r0);
+        let expr = Expr::And(vec![]);
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        assert_eq!(node.range(arena), r0);
+    }
+
+    #[test]
+    fn test_range_or_empty_falls_back_to_token() {
+        let r0 = Range {
+            start: Position::new(31, 1),
+            end: Position::new(31, 5),
+        };
+        let arena = single_token_arena(r0);
+        let expr = Expr::Or(vec![]);
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        assert_eq!(node.range(arena), r0);
+    }
+
+    #[test]
+    fn test_range_and_non_empty() {
+        let r0 = Range {
+            start: Position::new(40, 1),
+            end: Position::new(40, 5),
+        };
+        let r1 = Range {
+            start: Position::new(41, 1),
+            end: Position::new(41, 5),
+        };
+        let mut arena = Arena::new(10);
+        arena.alloc(create_token(r0));
+        arena.alloc(create_token(r1));
+        let expr = Expr::And(vec![make_node(0), make_node(1)]);
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        let got = node.range(Shared::new(arena));
+        assert_eq!(got.start, r0.start);
+        assert_eq!(got.end, r1.end);
+    }
+
+    #[test]
+    fn test_range_break_with_value() {
+        let r0 = Range {
+            start: Position::new(50, 1),
+            end: Position::new(50, 3),
+        };
+        let r1 = Range {
+            start: Position::new(50, 5),
+            end: Position::new(50, 8),
+        };
+        let mut arena = Arena::new(10);
+        arena.alloc(create_token(r0));
+        arena.alloc(create_token(r1));
+        let expr = Expr::Break(Some(make_node(1)));
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        let got = node.range(Shared::new(arena));
+        assert_eq!(got.start, r0.start);
+        assert_eq!(got.end, r1.end);
+    }
+
+    #[test]
+    fn test_range_selector_call_with_args() {
+        use crate::selector::Selector;
+        let r0 = Range {
+            start: Position::new(60, 1),
+            end: Position::new(60, 3),
+        };
+        let r1 = Range {
+            start: Position::new(60, 4),
+            end: Position::new(60, 6),
+        };
+        let mut arena = Arena::new(10);
+        arena.alloc(create_token(r0));
+        arena.alloc(create_token(r1));
+        let expr = Expr::SelectorCall(Selector::Heading(None), smallvec![make_node(1)]);
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        let got = node.range(Shared::new(arena));
+        assert_eq!(got.start, r0.start);
+        assert_eq!(got.end, r1.end);
+    }
+
+    #[test]
+    fn test_range_terminal_exprs_use_token() {
+        let r0 = Range {
+            start: Position::new(70, 1),
+            end: Position::new(70, 5),
+        };
+
+        for expr in [
+            Expr::Literal(Literal::None),
+            Expr::Nodes,
+            Expr::Self_,
+            Expr::Break(None),
+            Expr::Continue,
+        ] {
+            let arena = single_token_arena(r0);
+            let node = Node {
+                token_id: ArenaId::new(0),
+                expr: Shared::new(expr),
+            };
+            assert_eq!(node.range(arena), r0, "terminal expr should use token range");
+        }
+    }
+
+    #[test]
+    fn test_range_macro_with_params() {
+        let r0 = Range {
+            start: Position::new(80, 1),
+            end: Position::new(80, 5),
+        };
+        let r1 = Range {
+            start: Position::new(81, 1),
+            end: Position::new(81, 5),
+        };
+        let mut arena = Arena::new(10);
+        arena.alloc(create_token(r0));
+        arena.alloc(create_token(r1));
+        let param = Param::new(IdentWithToken::new_with_token("p", Some(create_token(r0))));
+        let body = make_node(1);
+        let expr = Expr::Macro(IdentWithToken::new("m"), smallvec![param], body);
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        let got = node.range(Shared::new(arena));
+        assert_eq!(got.start, r0.start);
+        assert_eq!(got.end, r1.end);
+    }
+
+    #[test]
+    fn test_range_macro_no_params_uses_body() {
+        let r0 = Range {
+            start: Position::new(90, 1),
+            end: Position::new(90, 5),
+        };
+        let arena = single_token_arena(r0);
+        let body = make_node(0);
+        let expr = Expr::Macro(IdentWithToken::new("m"), smallvec![], body);
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        assert_eq!(node.range(arena), r0);
+    }
+
+    #[test]
+    fn test_range_call_empty_args_is_default() {
+        let r0 = Range {
+            start: Position::new(1, 1),
+            end: Position::new(1, 5),
+        };
+        let arena = single_token_arena(r0);
+        let expr = Expr::Call(IdentWithToken::new("f"), smallvec![]);
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        assert_eq!(node.range(arena), Range::default());
+    }
+
+    #[test]
+    fn test_is_nodes() {
+        let r = Range::default();
+        let arena = single_token_arena(r);
+        let nodes_node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(Expr::Nodes),
+        };
+        assert!(nodes_node.is_nodes());
+        let other = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(Expr::Self_),
+        };
+        assert!(!other.is_nodes());
+        let _ = arena;
+    }
+
+    #[test]
+    fn test_param_new_and_display() {
+        let p = Param::new(IdentWithToken::new("x"));
+        assert_eq!(p.to_string(), "x");
+        assert!(!p.is_variadic);
+        assert!(p.default.is_none());
+    }
+
+    #[test]
+    fn test_param_variadic_display() {
+        let p = Param::variadic(IdentWithToken::new("args"));
+        assert!(p.is_variadic);
+        assert_eq!(p.to_string(), "*args");
+    }
+
+    #[test]
+    fn test_param_with_default() {
+        let default_node = make_node(0);
+        let p = Param::with_default(IdentWithToken::new("x"), Some(default_node));
+        assert!(p.default.is_some());
+    }
+
+    #[rstest]
+    #[case(Literal::String("hello".to_string()), "hello")]
+    #[case(Literal::Number(crate::number::Number::from(42.0)), "42")]
+    #[case(Literal::Bool(true), "true")]
+    #[case(Literal::Bool(false), "false")]
+    #[case(Literal::None, "none")]
+    fn test_literal_display(#[case] lit: Literal, #[case] expected: &str) {
+        assert_eq!(lit.to_string(), expected);
+    }
+
+    #[test]
+    fn test_literal_bytes_display_ascii() {
+        let lit = Literal::Bytes(b"hello".to_vec());
+        assert_eq!(lit.to_string(), "b\"hello\"");
+    }
+
+    #[test]
+    fn test_literal_bytes_display_non_ascii() {
+        let lit = Literal::Bytes(vec![0x00, 0xff]);
+        assert_eq!(lit.to_string(), "b\"\\x00\\xff\"");
+    }
+
+    #[test]
+    fn test_ident_with_token_display() {
+        let ident = IdentWithToken::new("foo");
+        assert_eq!(ident.to_string(), "foo");
+    }
+
+    #[test]
+    fn test_ident_with_token_ord() {
+        let a = IdentWithToken::new("a");
+        let b = IdentWithToken::new("b");
+        assert!(a < b);
+    }
+
+    #[cfg(feature = "debugger")]
+    #[test]
+    fn test_expr_display_call() {
+        let call = Expr::Call(IdentWithToken::new("func"), smallvec![make_node(0), make_node(1)]);
+        let s = format!("{call}");
+        assert!(s.starts_with("func("), "expected func(...), got: {s}");
+    }
+
+    #[cfg(feature = "debugger")]
+    #[test]
+    fn test_expr_display_call_dynamic() {
+        let callee = Shared::new(Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(Expr::Literal(Literal::None)),
+        });
+        let dynamic = Expr::CallDynamic(callee, smallvec![]);
+        let s = format!("{dynamic}");
+        assert!(s.contains('('), "expected parens in: {s}");
+    }
+
+    #[cfg(feature = "debugger")]
+    #[test]
+    fn test_expr_display_other_is_empty() {
+        let lit = Expr::Literal(Literal::None);
+        assert_eq!(format!("{lit}"), "");
     }
 }

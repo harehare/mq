@@ -10,8 +10,8 @@ use url::Url;
 
 use crate::error::LspError;
 use crate::{
-    capabilities, completions, document_symbol, execute_command, goto_definition, hover, inlay_hints, references,
-    semantic_tokens,
+    capabilities, code_action, completions, document_symbol, execute_command, goto_definition, hover, inlay_hints,
+    references, rename, semantic_tokens,
 };
 use tower_lsp_server::{Client, LanguageServer, LspService, Server, jsonrpc, ls_types};
 
@@ -195,6 +195,28 @@ impl LanguageServer for Backend {
         params: ls_types::ExecuteCommandParams,
     ) -> jsonrpc::Result<Option<serde_json::Value>> {
         execute_command::response(params)
+    }
+
+    async fn code_action(
+        &self,
+        params: ls_types::CodeActionParams,
+    ) -> jsonrpc::Result<Option<ls_types::CodeActionResponse>> {
+        let url = to_url(&params.text_document.uri.clone());
+        Ok(code_action::response(Arc::clone(&self.hir), url, params))
+    }
+
+    async fn rename(&self, params: ls_types::RenameParams) -> jsonrpc::Result<Option<ls_types::WorkspaceEdit>> {
+        let url = to_url(&params.text_document_position.text_document.uri);
+        let position = params.text_document_position.position;
+
+        let source_map_guard = self.source_map.read().unwrap();
+        Ok(rename::response(
+            Arc::clone(&self.hir),
+            url,
+            position,
+            &params.new_name,
+            &source_map_guard,
+        ))
     }
 
     async fn formatting(
@@ -528,9 +550,13 @@ impl LspConfig {
 pub async fn start(config: LspConfig) {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
+
+    let resolver = mq_lang::DefaultModuleResolver::new(config.module_paths.clone());
+    let module_loader = mq_lang::ModuleLoader::new(resolver);
+
     let (service, socket) = LspService::new(|client| Backend {
         client,
-        hir: Arc::new(RwLock::new(mq_hir::Hir::new(config.module_paths.clone()))),
+        hir: Arc::new(RwLock::new(mq_hir::Hir::new(module_loader))),
         source_map: RwLock::new(BiMap::new()),
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
@@ -818,6 +844,312 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_code_action_suggests_include() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        backend
+            .did_open(ls_types::DidOpenTextDocumentParams {
+                text_document: ls_types::TextDocumentItem {
+                    uri: to_uri(&uri),
+                    language_id: "mq".to_string(),
+                    version: 1,
+                    text: "csv_parse(\"a,b\", false)".to_string(),
+                },
+            })
+            .await;
+
+        let range = ls_types::Range::new(ls_types::Position::new(0, 0), ls_types::Position::new(0, 9));
+        let result = backend
+            .code_action(ls_types::CodeActionParams {
+                text_document: TextDocumentIdentifier { uri: to_uri(&uri) },
+                range,
+                context: ls_types::CodeActionContext {
+                    diagnostics: vec![ls_types::Diagnostic::new_simple(
+                        range,
+                        "Unresolved symbol: csv_parse".to_string(),
+                    )],
+                    only: None,
+                    trigger_kind: None,
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+        let actions = result.unwrap().unwrap();
+        assert!(actions.iter().any(|action| match action {
+            ls_types::CodeActionOrCommand::CodeAction(action) => action.title.contains("csv"),
+            _ => false,
+        }));
+    }
+
+    #[tokio::test]
+    async fn test_code_action_using_real_diagnostics_from_pipeline() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        backend
+            .did_open(ls_types::DidOpenTextDocumentParams {
+                text_document: ls_types::TextDocumentItem {
+                    uri: to_uri(&uri),
+                    language_id: "mq".to_string(),
+                    version: 1,
+                    text: "json_parse(\"{}\")".to_string(),
+                },
+            })
+            .await;
+
+        // Build the diagnostic the exact same way `diagnostics()` does, instead of
+        // hand-computing a range, so this test exercises the real HIR error pipeline.
+        let diagnostics: Vec<ls_types::Diagnostic> = {
+            let hir_guard = backend.hir.read().unwrap();
+            hir_guard
+                .error_ranges()
+                .into_iter()
+                .map(|(message, item)| {
+                    ls_types::Diagnostic::new_simple(
+                        ls_types::Range::new(
+                            ls_types::Position::new(item.start.line - 1, (item.start.column - 1) as u32),
+                            ls_types::Position::new(item.end.line - 1, (item.end.column - 1) as u32),
+                        ),
+                        message,
+                    )
+                })
+                .collect()
+        };
+        assert_eq!(
+            diagnostics.len(),
+            1,
+            "expected exactly one unresolved-symbol diagnostic"
+        );
+
+        let result = backend
+            .code_action(ls_types::CodeActionParams {
+                text_document: TextDocumentIdentifier { uri: to_uri(&uri) },
+                range: diagnostics[0].range,
+                context: ls_types::CodeActionContext {
+                    diagnostics,
+                    only: None,
+                    trigger_kind: None,
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+        let actions = result.unwrap().unwrap();
+        assert!(actions.iter().any(|action| match action {
+            ls_types::CodeActionOrCommand::CodeAction(action) => action.title.contains("json"),
+            _ => false,
+        }));
+    }
+
+    #[tokio::test]
+    async fn test_code_action_no_actions_for_clean_file() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        backend
+            .did_open(ls_types::DidOpenTextDocumentParams {
+                text_document: ls_types::TextDocumentItem {
+                    uri: to_uri(&uri),
+                    language_id: "mq".to_string(),
+                    version: 1,
+                    text: "def main(): 1;".to_string(),
+                },
+            })
+            .await;
+
+        let result = backend
+            .code_action(ls_types::CodeActionParams {
+                text_document: TextDocumentIdentifier { uri: to_uri(&uri) },
+                range: ls_types::Range::new(ls_types::Position::new(0, 0), ls_types::Position::new(0, 0)),
+                context: ls_types::CodeActionContext {
+                    diagnostics: vec![],
+                    only: None,
+                    trigger_kind: None,
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_capabilities_advertise_code_action_and_rename_shape() {
+        let capabilities = capabilities::server_capabilities();
+
+        match capabilities.code_action_provider {
+            Some(ls_types::CodeActionProviderCapability::Options(options)) => {
+                assert_eq!(
+                    options.code_action_kinds,
+                    Some(vec![ls_types::CodeActionKind::QUICKFIX])
+                );
+            }
+            other => panic!("expected CodeActionProviderCapability::Options, got {other:?}"),
+        }
+
+        match capabilities.rename_provider {
+            Some(ls_types::OneOf::Right(options)) => {
+                assert_eq!(options.prepare_provider, Some(false));
+            }
+            other => panic!("expected rename_provider OneOf::Right(RenameOptions), got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rename() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        let code = "def test_func(): 1;\ndef main(): test_func();";
+        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+
+        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+
+        let result = backend
+            .rename(ls_types::RenameParams {
+                text_document_position: ls_types::TextDocumentPositionParams {
+                    text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                    position: ls_types::Position::new(0, 6),
+                },
+                new_name: "renamed_func".to_string(),
+                work_done_progress_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+        let edit = result.unwrap().unwrap();
+        let edits = edit.changes.unwrap().into_values().next().unwrap();
+        assert_eq!(edits.len(), 2);
+        assert!(edits.iter().all(|e| e.new_text == "renamed_func"));
+    }
+
+    #[tokio::test]
+    async fn test_rename_across_two_tracked_sources() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///main.mq").unwrap();
+
+        backend
+            .did_open(ls_types::DidOpenTextDocumentParams {
+                text_document: ls_types::TextDocumentItem {
+                    uri: to_uri(&uri),
+                    language_id: "mq".to_string(),
+                    version: 1,
+                    text: "include \"csv\" | csv_parse(\"a,b\", false)".to_string(),
+                },
+            })
+            .await;
+
+        // `did_open` only registers the opened file's own URI in `source_map`. The
+        // included module gets lowered into its own HIR source/url too (see
+        // hir/lower.rs::add_include_expr); track it here the same way a client would
+        // if it had that module file open as well.
+        let module_source_id = {
+            let hir_guard = backend.hir.read().unwrap();
+            hir_guard
+                .symbols()
+                .find_map(|(_, symbol)| match symbol.kind {
+                    mq_hir::SymbolKind::Include(module_source_id) => Some(module_source_id),
+                    _ => None,
+                })
+                .expect("expected an Include symbol for the csv module")
+        };
+        let module_url = backend
+            .hir
+            .read()
+            .unwrap()
+            .url_by_source(&module_source_id)
+            .unwrap()
+            .clone();
+        backend
+            .source_map
+            .write()
+            .unwrap()
+            .insert(module_url.to_string(), module_source_id);
+
+        let result = backend
+            .rename(ls_types::RenameParams {
+                text_document_position: ls_types::TextDocumentPositionParams {
+                    text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                    position: ls_types::Position::new(0, 18),
+                },
+                new_name: "csv_load".to_string(),
+                work_done_progress_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+        let changes = result.unwrap().unwrap().changes.unwrap();
+        assert_eq!(
+            changes.len(),
+            2,
+            "expected edits in both the main file and the csv module source"
+        );
+        for edits in changes.values() {
+            assert_eq!(edits.len(), 1);
+            assert_eq!(edits[0].new_text, "csv_load");
+        }
+    }
+
+    #[tokio::test]
     async fn test_document_symbol() {
         let (service, _) = LspService::new(|client| Backend {
             client,
@@ -1021,6 +1353,8 @@ mod tests {
         assert!(capabilities.text_document_sync.is_some());
         assert!(capabilities.hover_provider.is_some());
         assert!(capabilities.completion_provider.is_some());
+        assert!(capabilities.code_action_provider.is_some());
+        assert!(capabilities.rename_provider.is_some());
 
         // Test shutdown
         let shutdown_result = backend.shutdown().await;

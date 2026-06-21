@@ -1,0 +1,175 @@
+# Semantic Versioning (SemVer) Implementation in mq
+# Based on the Semantic Versioning 2.0.0 specification: https://semver.org/
+
+def _semver_compare_int(a, b):
+  if (a < b): -1
+  elif (a > b): 1
+  else: 0
+end
+
+def _semver_parse_pre_parts(pre):
+  if (is_empty(pre)): []
+  else: split(pre, "\\.")
+end
+
+def _semver_compare_pre_part(a, b):
+  let a_num = is_regex_match(a, "^[0-9]+$")
+  | let b_num = is_regex_match(b, "^[0-9]+$")
+  | if (a_num && b_num):
+      _semver_compare_int(to_number(a), to_number(b))
+    elif (a_num):
+      -1
+    elif (b_num):
+      1
+    elif (a < b):
+      -1
+    elif (a > b):
+      1
+    else:
+      0
+end
+
+def _semver_compare_pre(a_pre, b_pre):
+  let a_parts = _semver_parse_pre_parts(a_pre)
+  | let b_parts = _semver_parse_pre_parts(b_pre)
+  | let a_len = len(a_parts)
+  | let b_len = len(b_parts)
+  | if (is_empty(a_pre) && is_empty(b_pre)):
+      0
+    elif (is_empty(a_pre)):
+      1
+    elif (is_empty(b_pre)):
+      -1
+    else:
+      do
+        let min_len = if (a_len < b_len): a_len else: b_len
+        | var i = 0
+        | var result = 0
+        | let _ = while (i < min_len && result == 0):
+                  result = _semver_compare_pre_part(a_parts[i], b_parts[i]) | i += 1 | result
+                end
+        | if (result != 0): result
+          elif (a_len < b_len): -1
+          elif (a_len > b_len): 1
+          else: 0
+      end
+end
+
+# Parses a SemVer string into a dict with major, minor, patch, pre, and build fields.
+def semver_parse(s):
+  let raw = to_string(s)
+  | let v = ltrimstr(ltrimstr(raw, "v"), "V")
+  | let build_parts = split(v, "\\+")
+  | let build = if (len(build_parts) > 1): build_parts[1] else: ""
+  | let pre_parts = split(build_parts[0], "-")
+  | let pre = if (len(pre_parts) > 1): join(pre_parts[1:len(pre_parts)], "-") else: ""
+  | let core = pre_parts[0]
+  | let parts = split(core, "\\.")
+  | if (len(parts) != 3):
+      error("semver: invalid version string: " + v)
+    else:
+      do
+        let major = to_number(parts[0])
+        | let minor = to_number(parts[1])
+        | let patch = to_number(parts[2])
+        | if (major < 0 || minor < 0 || patch < 0):
+            error("semver: version components must be non-negative: " + v)
+          else:
+            {type: "semver", major: major, minor: minor, patch: patch, pre: pre, build: build}
+      end
+end
+
+# Converts a parsed SemVer dict back to a version string.
+def semver_to_string(v):
+  let base = to_string(v[:major]) + "." + to_string(v[:minor]) + "." + to_string(v[:patch])
+  | let with_pre = if (is_empty(v[:pre])): base else: base + "-" + v[:pre]
+  | if (is_empty(v[:build])): with_pre else: with_pre + "+" + v[:build]
+end
+
+# Compares two parsed SemVer dicts. Returns -1 if a < b, 0 if a == b, 1 if a > b.
+def semver_compare(a, b):
+  let major_cmp = _semver_compare_int(a[:major], b[:major])
+  | if (major_cmp != 0): major_cmp
+    else:
+      do
+        let minor_cmp = _semver_compare_int(a[:minor], b[:minor])
+        | if (minor_cmp != 0): minor_cmp
+          else:
+            do
+              let patch_cmp = _semver_compare_int(a[:patch], b[:patch])
+              | if (patch_cmp != 0): patch_cmp
+                else: _semver_compare_pre(a[:pre], b[:pre])
+            end
+      end
+end
+
+# Returns true if version a is greater than version b.
+def semver_gt(a, b): semver_compare(a, b) == 1;
+
+# Returns true if version a is less than version b.
+def semver_lt(a, b): semver_compare(a, b) == -1;
+
+# Returns true if version a equals version b (ignoring build metadata).
+def semver_eq(a, b): semver_compare(a, b) == 0;
+
+# Returns true if version a is greater than or equal to version b.
+def semver_gte(a, b): semver_compare(a, b) >= 0;
+
+# Returns true if version a is less than or equal to version b.
+def semver_lte(a, b): semver_compare(a, b) <= 0;
+
+# Increments the major version and resets minor, patch, and pre-release.
+def semver_bump_major(v):
+  {type: "semver", major: v[:major] + 1, minor: 0, patch: 0, pre: "", build: ""}
+end
+
+# Increments the minor version and resets patch and pre-release.
+def semver_bump_minor(v):
+  {type: "semver", major: v[:major], minor: v[:minor] + 1, patch: 0, pre: "", build: ""}
+end
+
+# Increments the patch version and clears pre-release.
+def semver_bump_patch(v):
+  {type: "semver", major: v[:major], minor: v[:minor], patch: v[:patch] + 1, pre: "", build: ""}
+end
+
+# Sorts an array of parsed SemVer dicts in ascending order.
+def semver_sort(versions):
+  let n = len(versions)
+  | if (n <= 1): versions
+    else:
+      do
+        var arr = versions
+        | var i = 0
+        | let _ = while (i < n - 1):
+                  var j = 0
+                  | let _ = while (j < n - i - 1):
+                                      let cmp = semver_compare(arr[j], arr[j + 1])
+                                      | if (cmp > 0):
+                                          do
+                                            let tmp = arr[j]
+                                            | arr = set(arr, j, arr[j + 1])
+                                            | arr = set(arr, j + 1, tmp)
+                                            | arr
+                                          end
+                                        else:
+                                          arr
+                                      | j += 1
+                                      | arr
+                                    end
+                  | i += 1
+                  | arr
+                end
+        | arr
+      end
+end
+
+# Returns the maximum version from an array of parsed SemVer dicts.
+def semver_max(versions):
+  fold(versions[1:len(versions)], versions[0], fn(acc, v): if (semver_gt(v, acc)): v else: acc;)
+end
+
+# Returns the minimum version from an array of parsed SemVer dicts.
+def semver_min(versions):
+  fold(versions[1:len(versions)], versions[0], fn(acc, v): if (semver_lt(v, acc)): v else: acc;)
+end

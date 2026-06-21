@@ -251,10 +251,84 @@ impl Markdown {
         .map_err(|e| miette!(e.reason))?;
         let nodes = Node::from_mdast_node(root);
 
+        #[cfg(all(feature = "embed", feature = "wikilink"))]
+        let nodes = if content.contains("[[") {
+            Node::expand_inline_links(nodes)
+        } else {
+            nodes
+        };
+
+        #[cfg(all(feature = "embed", not(feature = "wikilink")))]
+        let nodes = if content.contains("![[") {
+            Node::expand_embeds(nodes)
+        } else {
+            nodes
+        };
+
+        #[cfg(all(feature = "wikilink", not(feature = "embed")))]
+        let nodes = if content.contains("[[") {
+            Node::expand_wikilinks(nodes)
+        } else {
+            nodes
+        };
+
         Ok(Self {
             nodes,
             options: RenderOptions::default(),
         })
+    }
+
+    /// Parses markdown without running any expand pass. Used in benchmarks to
+    /// isolate expand cost from the mdast parse cost.
+    #[cfg(any(feature = "wikilink", feature = "embed"))]
+    pub fn from_markdown_str_no_expand(content: &str) -> miette::Result<Vec<Node>> {
+        let root = markdown::to_mdast(
+            content,
+            &markdown::ParseOptions {
+                gfm_strikethrough_single_tilde: true,
+                math_text_single_dollar: true,
+                mdx_expression_parse: None,
+                mdx_esm_parse: None,
+                constructs: markdown::Constructs {
+                    attention: true,
+                    autolink: true,
+                    block_quote: true,
+                    character_escape: true,
+                    character_reference: true,
+                    code_indented: true,
+                    code_fenced: true,
+                    code_text: true,
+                    definition: true,
+                    frontmatter: true,
+                    gfm_autolink_literal: true,
+                    gfm_label_start_footnote: true,
+                    gfm_footnote_definition: true,
+                    gfm_strikethrough: true,
+                    gfm_table: true,
+                    gfm_task_list_item: true,
+                    hard_break_escape: true,
+                    hard_break_trailing: true,
+                    heading_atx: true,
+                    heading_setext: true,
+                    html_flow: true,
+                    html_text: true,
+                    label_start_image: true,
+                    label_start_link: true,
+                    label_end: true,
+                    list_item: true,
+                    math_flow: true,
+                    math_text: true,
+                    mdx_esm: false,
+                    mdx_expression_flow: false,
+                    mdx_expression_text: false,
+                    mdx_jsx_flow: false,
+                    mdx_jsx_text: false,
+                    thematic_break: true,
+                },
+            },
+        )
+        .map_err(|e| miette::miette!(e.reason))?;
+        Ok(Node::from_mdast_node(root))
     }
 }
 
@@ -381,6 +455,75 @@ mod tests {
         1,
         "[https://example.com](https://example.com)\n"
     )]
+    #[cfg_attr(feature = "wikilink", case::wikilink("[[target]]", 1, "[[target]]\n"))]
+    #[cfg_attr(
+        feature = "wikilink",
+        case::wikilink_with_text("[[target|display text]]", 1, "[[target|display text]]\n")
+    )]
+    #[cfg_attr(
+        feature = "wikilink",
+        case::wikilink_same_text("[[target|target]]", 1, "[[target]]\n")
+    )]
+    #[cfg_attr(
+        feature = "wikilink",
+        case::wikilink_with_md_ext("[[target.md]]", 1, "[[target.md]]\n")
+    )]
+    #[cfg_attr(
+        feature = "wikilink",
+        case::wikilink_spaces("[[Three laws of motion]]", 1, "[[Three laws of motion]]\n")
+    )]
+    #[cfg_attr(
+        feature = "wikilink",
+        case::wikilink_in_paragraph("before [[target]] after", 3, "before [[target]] after\n")
+    )]
+    #[cfg_attr(
+        feature = "wikilink",
+        case::wikilink_at_start("[[target]] after", 2, "[[target]] after\n")
+    )]
+    #[cfg_attr(
+        feature = "wikilink",
+        case::wikilink_at_end("before [[target]]", 2, "before [[target]]\n")
+    )]
+    #[cfg_attr(
+        feature = "wikilink",
+        case::wikilink_multiple("[[a]] and [[b]]", 3, "[[a]] and [[b]]\n")
+    )]
+    #[cfg_attr(
+        feature = "wikilink",
+        case::wikilink_in_heading("# See [[target]]", 1, "# See [[target]]\n")
+    )]
+    // callout round-trips
+    #[cfg_attr(
+        feature = "callout",
+        case::callout_note("> [!NOTE]\n> body", 1, "> [!NOTE]\n> body\n")
+    )]
+    #[cfg_attr(
+        feature = "callout",
+        case::callout_with_title("> [!WARNING] My Title\n> content", 1, "> [!WARNING] My Title\n> content\n")
+    )]
+    #[cfg_attr(feature = "callout", case::callout_empty_body("> [!TIP]", 1, "> [!TIP]\n"))]
+    #[cfg_attr(
+        feature = "callout",
+        case::callout_multiline("> [!NOTE]\n> line 1\n> line 2", 1, "> [!NOTE]\n> line 1\n> line 2\n")
+    )]
+    // plain blockquote stays Blockquote — not treated as callout
+    #[cfg_attr(feature = "callout", case::plain_blockquote("> plain quote", 1, "> plain quote\n"))]
+    // plain blockquote with list items — second item must not be over-indented
+    #[case::blockquote_with_list("> - item 1\n> - item 2", 1, "> - item 1\n> - item 2\n")]
+    // embed round-trips
+    #[cfg_attr(feature = "embed", case::embed_plain("![[note.md]]", 1, "![[note.md]]\n"))]
+    #[cfg_attr(
+        feature = "embed",
+        case::embed_with_display("![[image.png|400]]", 1, "![[image.png|400]]\n")
+    )]
+    #[cfg_attr(
+        feature = "embed",
+        case::embed_in_paragraph("See ![[note]] and read more.", 3, "See ![[note]] and read more.\n")
+    )]
+    #[cfg_attr(
+        all(feature = "embed", feature = "wikilink"),
+        case::embed_and_wikilink("![[embed]] and [[link]]", 3, "![[embed]] and [[link]]\n")
+    )]
     fn test_markdown_from_str(#[case] input: &str, #[case] expected_nodes: usize, #[case] expected_output: &str) {
         let md = input.parse::<Markdown>().unwrap();
         assert_eq!(md.nodes.len(), expected_nodes);
@@ -401,6 +544,30 @@ mod tests {
         let md = Markdown::from_mdx_str(input).unwrap();
         assert_eq!(md.nodes.len(), expected_nodes);
         assert_eq!(md.to_string(), expected_output);
+    }
+
+    #[cfg(feature = "callout")]
+    #[rstest]
+    #[case("> [!NOTE]\n> body")]
+    #[case("> [!WARNING] Custom Title\n> line 1\n> line 2")]
+    #[case("> [!TIP]")]
+    #[case("> plain blockquote")]
+    fn test_callout_round_trip_idempotent(#[case] input: &str) {
+        let first = input.parse::<Markdown>().unwrap().to_string();
+        let second = first.parse::<Markdown>().unwrap().to_string();
+        assert_eq!(first, second, "callout round-trip must be idempotent for {input:?}");
+    }
+
+    #[cfg(feature = "embed")]
+    #[rstest]
+    #[case("![[note.md]]")]
+    #[case("![[image.png|400]]")]
+    #[case("![[note#Heading]]")]
+    #[case("See ![[note]] for details.")]
+    fn test_embed_round_trip_idempotent(#[case] input: &str) {
+        let first = input.parse::<Markdown>().unwrap().to_string();
+        let second = first.parse::<Markdown>().unwrap().to_string();
+        assert_eq!(first, second, "embed round-trip must be idempotent for {input:?}");
     }
 
     /// Round-tripping a link whose text equals its URL must be idempotent.

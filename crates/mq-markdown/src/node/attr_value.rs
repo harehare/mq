@@ -20,6 +20,8 @@ pub mod attr_keys {
     pub(crate) const ORDERED: &str = "ordered";
     pub(crate) const CHECKED: &str = "checked";
     pub(crate) const COLUMN: &str = "column";
+    #[cfg(feature = "callout")]
+    pub(crate) const KIND: &str = "kind";
     pub(crate) const ROW: &str = "row";
 }
 
@@ -143,5 +145,144 @@ impl AttrValue {
     /// Returns `true` if the attribute value is null.
     pub fn is_null(&self) -> bool {
         matches!(self, AttrValue::Null)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Node;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case("hello".to_string(), AttrValue::String("hello".to_string()))]
+    #[case("".to_string(), AttrValue::String("".to_string()))]
+    fn test_from_string(#[case] input: String, #[case] expected: AttrValue) {
+        assert_eq!(AttrValue::from(input), expected);
+    }
+
+    #[rstest]
+    #[case("world", AttrValue::String("world".to_string()))]
+    #[case("", AttrValue::String("".to_string()))]
+    fn test_from_str(#[case] input: &str, #[case] expected: AttrValue) {
+        assert_eq!(AttrValue::from(input), expected);
+    }
+
+    #[rstest]
+    #[case(1.5f64, AttrValue::Number(1.5))]
+    #[case(0.0f64, AttrValue::Number(0.0))]
+    #[case(-1.5f64, AttrValue::Number(-1.5))]
+    fn test_from_f64(#[case] input: f64, #[case] expected: AttrValue) {
+        assert_eq!(AttrValue::from(input), expected);
+    }
+
+    #[rstest]
+    #[case(42i64, AttrValue::Integer(42))]
+    #[case(0i64, AttrValue::Integer(0))]
+    #[case(-1i64, AttrValue::Integer(-1))]
+    fn test_from_i64(#[case] input: i64, #[case] expected: AttrValue) {
+        assert_eq!(AttrValue::from(input), expected);
+    }
+
+    #[rstest]
+    #[case(7i32, AttrValue::Integer(7))]
+    #[case(-3i32, AttrValue::Integer(-3))]
+    fn test_from_i32(#[case] input: i32, #[case] expected: AttrValue) {
+        assert_eq!(AttrValue::from(input), expected);
+    }
+
+    #[rstest]
+    #[case(0usize, AttrValue::Integer(0))]
+    #[case(100usize, AttrValue::Integer(100))]
+    fn test_from_usize(#[case] input: usize, #[case] expected: AttrValue) {
+        assert_eq!(AttrValue::from(input), expected);
+    }
+
+    #[rstest]
+    #[case(0u8, AttrValue::Integer(0))]
+    #[case(255u8, AttrValue::Integer(255))]
+    fn test_from_u8(#[case] input: u8, #[case] expected: AttrValue) {
+        assert_eq!(AttrValue::from(input), expected);
+    }
+
+    #[rstest]
+    #[case(true, AttrValue::Boolean(true))]
+    #[case(false, AttrValue::Boolean(false))]
+    fn test_from_bool(#[case] input: bool, #[case] expected: AttrValue) {
+        assert_eq!(AttrValue::from(input), expected);
+    }
+
+    #[rstest]
+    #[case(AttrValue::String("hi".to_string()), "hi")]
+    #[case(AttrValue::Number(1.5), "1.5")]
+    #[case(AttrValue::Integer(-3), "-3")]
+    #[case(AttrValue::Boolean(true), "true")]
+    #[case(AttrValue::Boolean(false), "false")]
+    #[case(AttrValue::Null, "")]
+    fn test_as_string(#[case] input: AttrValue, #[case] expected: &str) {
+        assert_eq!(input.as_string(), expected);
+    }
+
+    #[test]
+    fn test_as_string_array() {
+        assert_eq!(AttrValue::Array(vec![]).as_string(), "");
+        assert_eq!(AttrValue::Array(vec![Node::Empty]).as_string(), "");
+    }
+
+    #[rstest]
+    #[case(AttrValue::String("42".to_string()), Some(42i64))]
+    #[case(AttrValue::String("-5".to_string()), Some(-5i64))]
+    #[case(AttrValue::String("bad".to_string()), None)]
+    #[case(AttrValue::Number(9.9), Some(9i64))]
+    #[case(AttrValue::Integer(100), Some(100i64))]
+    #[case(AttrValue::Boolean(true), Some(1i64))]
+    #[case(AttrValue::Boolean(false), Some(0i64))]
+    #[case(AttrValue::Null, None)]
+    fn test_as_i64(#[case] input: AttrValue, #[case] expected: Option<i64>) {
+        assert_eq!(input.as_i64(), expected);
+    }
+
+    #[test]
+    fn test_as_i64_array() {
+        assert_eq!(AttrValue::Array(vec![]).as_i64(), Some(0));
+        assert_eq!(AttrValue::Array(vec![Node::Empty, Node::Empty]).as_i64(), Some(2));
+    }
+
+    #[rstest]
+    #[case(AttrValue::String("1.5".to_string()), Some(1.5f64))]
+    #[case(AttrValue::String("bad".to_string()), None)]
+    #[case(AttrValue::Number(2.5), Some(2.5f64))]
+    #[case(AttrValue::Integer(5), Some(5.0f64))]
+    #[case(AttrValue::Boolean(true), None)]
+    #[case(AttrValue::Null, None)]
+    fn test_as_f64(#[case] input: AttrValue, #[case] expected: Option<f64>) {
+        assert_eq!(input.as_f64(), expected);
+    }
+
+    #[test]
+    fn test_as_f64_array() {
+        assert_eq!(AttrValue::Array(vec![]).as_f64(), Some(0.0));
+        assert_eq!(AttrValue::Array(vec![Node::Empty]).as_f64(), Some(1.0));
+    }
+
+    #[rstest]
+    #[case(AttrValue::String("s".to_string()), true, false, false, false, false)]
+    #[case(AttrValue::Number(1.0), false, true, false, false, false)]
+    #[case(AttrValue::Integer(1), false, false, true, false, false)]
+    #[case(AttrValue::Boolean(false), false, false, false, true, false)]
+    #[case(AttrValue::Null, false, false, false, false, true)]
+    fn test_type_predicates(
+        #[case] value: AttrValue,
+        #[case] is_str: bool,
+        #[case] is_num: bool,
+        #[case] is_int: bool,
+        #[case] is_bool: bool,
+        #[case] is_null: bool,
+    ) {
+        assert_eq!(value.is_string(), is_str);
+        assert_eq!(value.is_number(), is_num);
+        assert_eq!(value.is_integer(), is_int);
+        assert_eq!(value.is_boolean(), is_bool);
+        assert_eq!(value.is_null(), is_null);
     }
 }

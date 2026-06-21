@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
 use smol_str::SmolStr;
@@ -40,7 +38,7 @@ pub struct Hir {
 
 impl Default for Hir {
     fn default() -> Self {
-        Self::new(vec![])
+        Self::new(mq_lang::ModuleLoader::default())
     }
 }
 
@@ -48,10 +46,8 @@ impl Hir {
     /// Creates a new `Hir` instance.
     ///
     /// # Parameters
-    /// - `module_paths`: A list of filesystem paths to search for modules when resolving imports.
-    ///   These paths are used by the module loader to locate and load external modules.
-    ///   Providing additional paths can affect how and where modules are resolved during compilation.
-    pub fn new(module_paths: Vec<PathBuf>) -> Self {
+    /// - `module_loader`: The module loader used to resolve and load external modules during compilation.
+    pub fn new(module_loader: mq_lang::ModuleLoader) -> Self {
         let mut sources = SlotMap::default();
         let mut scopes = SlotMap::default();
 
@@ -70,7 +66,7 @@ impl Hir {
             symbols: SlotMap::default(),
             sources,
             scopes,
-            module_loader: mq_lang::ModuleLoader::new(mq_lang::LocalFsModuleResolver::new(Some(module_paths))),
+            module_loader,
             source_scopes,
             references: FxHashMap::default(),
             source_symbols: FxHashMap::default(),

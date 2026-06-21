@@ -48,6 +48,9 @@ pub fn unify(
         // Never (bottom type) unifies with anything without error
         (Type::Never, _) | (_, Type::Never) => {}
 
+        // Dynamic unifies with anything without constraining either side
+        (Type::Dynamic, _) | (_, Type::Dynamic) => {}
+
         // Same concrete types unify trivially
         (Type::Int, Type::Int)
         | (Type::Float, Type::Float)

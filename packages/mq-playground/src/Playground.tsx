@@ -3,6 +3,7 @@ import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
 import "./vim.css";
 import * as mq from "mq-web";
+import { toHtml } from "mq-web";
 import { languages, editor, IPosition } from "monaco-editor";
 import LZString from "lz-string";
 import { FileTree } from "./components/FileTree";
@@ -13,7 +14,8 @@ import { ResizeHandle } from "./components/ResizeHandle";
 import { ToastContainer, ToastItem } from "./components/Toast";
 import { ExamplesModal } from "./components/ExamplesModal";
 import { fileSystem, FileNode, OPFSFileSystem } from "./utils/fileSystem";
-import { isMobile, isDesktop } from "./utils/deviceDetection";
+import { isDesktop, isMobile } from "./utils/deviceDetection";
+import { ProblemsPanel, DiagnosticItem } from "./components/ProblemsPanel";
 import {
   VscLayoutSidebarLeft,
   VscLayoutSidebarLeftOff,
@@ -73,6 +75,7 @@ const SIDEBAR_WIDTH_KEY = "mq-playground.sidebar-width";
 const LEFT_RIGHT_SPLIT_KEY = "mq-playground.left-right-split";
 const TOP_BOTTOM_SPLIT_KEY = "mq-playground.top-bottom-split";
 const EDITOR_SETTINGS_KEY = "mq-playground.editor-settings";
+const PROBLEMS_PANEL_HEIGHT_KEY = "mq-playground.problems-panel-height";
 
 type EditorSettings = {
   version: number;
@@ -177,8 +180,11 @@ export const Playground = () => {
                   : null;
     })(),
   );
-  const [activeTab, setActiveTab] = useState<"output" | "ast">("output");
+  const [activeTab, setActiveTab] = useState<"output" | "ast" | "preview">(
+    "output",
+  );
   const [astResult, setAstResult] = useState("");
+  const [previewHtml, setPreviewHtml] = useState("");
   const [files, setFiles] = useState<FileNode[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
@@ -244,9 +250,15 @@ export const Playground = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isExamplesOpen, setIsExamplesOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const [diagnosticCounts, setDiagnosticCounts] = useState({
-    errors: 0,
-    warnings: 0,
+  const [diagnostics, setDiagnostics] = useState<{
+    errors: number;
+    warnings: number;
+    items: DiagnosticItem[];
+  }>({ errors: 0, warnings: 0, items: [] });
+  const [isProblemsVisible, setIsProblemsVisible] = useState(false);
+  const [problemsPanelHeight, setProblemsPanelHeight] = useState(() => {
+    const stored = Number(localStorage.getItem(PROBLEMS_PANEL_HEIGHT_KEY));
+    return stored > 0 ? stored : 160;
   });
   const [tabCloseConfirm, setTabCloseConfirm] = useState<{
     tabId: string;
@@ -256,6 +268,8 @@ export const Playground = () => {
     line: 1,
     column: 1,
   });
+  const [isDraggingOverCode, setIsDraggingOverCode] = useState(false);
+  const [isDraggingOverMarkdown, setIsDraggingOverMarkdown] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const [tabs, setTabs] = useState<Tab[]>(() => {
@@ -278,9 +292,20 @@ export const Playground = () => {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const vimStatusBarRef = useRef<HTMLDivElement>(null);
   // Refs to allow vim Ex commands to access the latest callbacks without re-registering
-  const saveCurrentFileRef = useRef<() => Promise<void>>(async () => { });
+  const saveCurrentFileRef = useRef<() => Promise<void>>(async () => {});
   const activeTabIdRef = useRef<string | null>(null);
-  const handleTabCloseRef = useRef<(tabId: string) => void>(() => { });
+  const handleTabCloseRef = useRef<(tabId: string) => void>(() => {});
+  const diagnosticsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  const showToast = useCallback(
+    (message: string, type: ToastItem["type"] = "success") => {
+      const id = `toast-${Date.now()}`;
+      setToasts((prev) => [...prev, { id, message, type }]);
+    },
+    [],
+  );
 
   // Keep enableTypeCheckRef in sync with state
   useEffect(() => {
@@ -441,8 +466,7 @@ export const Playground = () => {
           if (parsedData.type !== "all-files") {
             const options = parsedData.options || {};
             const data: SharedData = {
-              code:
-                typeof parsedData.code === "string" ? parsedData.code : "",
+              code: typeof parsedData.code === "string" ? parsedData.code : "",
               markdown:
                 typeof parsedData.markdown === "string"
                   ? parsedData.markdown
@@ -465,7 +489,7 @@ export const Playground = () => {
           }
         }
       } catch {
-        alert("Failed to load shared playground");
+        showToast("Failed to load shared playground", "error");
       }
     }
 
@@ -501,14 +525,6 @@ export const Playground = () => {
 
   const [isFirstRun, setIsFirstRun] = useState(true);
 
-  const showToast = useCallback(
-    (message: string, type: ToastItem["type"] = "success") => {
-      const id = `toast-${Date.now()}`;
-      setToasts((prev) => [...prev, { id, message, type }]);
-    },
-    [],
-  );
-
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
@@ -521,27 +537,33 @@ export const Playground = () => {
     }
     setResult(isFirstRun ? "Initializing..." : "Running...");
     setAstResult("");
+    setPreviewHtml("");
     setExecutionTime(null);
 
     const startTime = performance.now();
 
     try {
-      setResult(
-        await mq.run(code, markdown ?? "", {
-          isUpdate,
-          inputFormat,
-          listStyle,
-          linkTitleStyle,
-          linkUrlStyle,
-        }),
-      );
+      const output = await mq.run(code, markdown ?? "", {
+        isUpdate,
+        inputFormat,
+        listStyle,
+        linkTitleStyle,
+        linkUrlStyle,
+      });
+      setResult(output);
+
+      if (activeTab === "preview") {
+        setPreviewHtml(await toHtml(output));
+      }
     } catch (e) {
       setResult((e as Error).toString());
+      setPreviewHtml("");
     } finally {
       const endTime = performance.now();
       setExecutionTime(endTime - startTime);
     }
   }, [
+    activeTab,
     code,
     markdown,
     inputFormat,
@@ -769,11 +791,11 @@ export const Playground = () => {
               prev.map((tab) =>
                 tab.id === activeTabId
                   ? {
-                    ...tab,
-                    content: code,
-                    savedContent: code,
-                    isDirty: false,
-                  }
+                      ...tab,
+                      content: code,
+                      savedContent: code,
+                      isDirty: false,
+                    }
                   : tab,
               ),
             );
@@ -842,7 +864,7 @@ export const Playground = () => {
         localStorage.setItem(SELECTED_FILE_KEY, path);
       } catch (error) {
         console.error("Failed to read file:", error);
-        alert(`Failed to read file: ${error}`);
+        showToast(`Failed to read file: ${error}`, "error");
       }
     },
     [openOrSwitchToTab],
@@ -868,9 +890,11 @@ export const Playground = () => {
         localStorage.setItem(SELECTED_FILE_KEY, path);
       } catch (error) {
         console.error("Failed to create file:", error);
-        alert(
-          `Failed to create file: ${error instanceof Error ? error.message : String(error)
+        showToast(
+          `Failed to create file: ${
+            error instanceof Error ? error.message : String(error)
           }`,
+          "error",
         );
       }
     },
@@ -893,9 +917,11 @@ export const Playground = () => {
         await loadFiles();
       } catch (error) {
         console.error("Failed to create folder:", error);
-        alert(
-          `Failed to create folder: ${error instanceof Error ? error.message : String(error)
+        showToast(
+          `Failed to create folder: ${
+            error instanceof Error ? error.message : String(error)
           }`,
+          "error",
         );
       }
     },
@@ -916,7 +942,7 @@ export const Playground = () => {
       // Check if it's a directory or file
       const parts = path.split("/").filter(Boolean);
       if (parts.length === 0) {
-        alert("Cannot delete root directory");
+        showToast("Cannot delete root directory", "error");
         return;
       }
 
@@ -944,7 +970,7 @@ export const Playground = () => {
       }
     } catch (error) {
       console.error("Failed to delete:", error);
-      alert("Failed to delete");
+      showToast("Failed to delete", "error");
     }
   }, [deleteConfirmDialog, loadFiles, selectedFile, tabs, handleTabClose]);
 
@@ -961,7 +987,7 @@ export const Playground = () => {
 
       // Validate filename
       if (trimmedNewName.includes("/")) {
-        alert("Filename cannot contain '/'");
+        showToast("Filename cannot contain '/'", "error");
         return;
       }
 
@@ -974,8 +1000,9 @@ export const Playground = () => {
 
         // Prevent converting directory to file or vice versa
         if (isDirectory && hasExtension && !currentHasExtension) {
-          alert(
+          showToast(
             "Cannot rename a folder to a file name. Folders cannot have file extensions.",
+            "error",
           );
           setIsRenaming(false);
           return;
@@ -1027,9 +1054,11 @@ export const Playground = () => {
         }
       } catch (error) {
         console.error("Failed to rename:", error);
-        alert(
-          `Failed to rename: ${error instanceof Error ? error.message : String(error)
+        showToast(
+          `Failed to rename: ${
+            error instanceof Error ? error.message : String(error)
           }`,
+          "error",
         );
         // Reload files to ensure UI is in sync
         await loadFiles();
@@ -1056,8 +1085,9 @@ export const Playground = () => {
         const exists = await fileSystem.fileExists(newPath);
         if (exists) {
           const targetLocation = targetPath ? targetPath : "root";
-          alert(
+          showToast(
             `A file or folder named "${fileName}" already exists in "${targetLocation}"`,
+            "error",
           );
           return;
         }
@@ -1106,8 +1136,9 @@ export const Playground = () => {
         }
       } catch (error) {
         console.error("Failed to move:", error);
-        alert(
-          `Failed to move: ${error instanceof Error ? error.message : String(error)
+        showToast(
+          `Failed to move: ${
+            (error instanceof Error ? error.message : String(error), "error")
           }`,
         );
         // Reload files to ensure UI is in sync
@@ -1138,6 +1169,83 @@ export const Playground = () => {
       setSaveStatus("unsaved");
     }
   }, [currentFilePath, code, activeTabId]);
+
+  const readDroppedFile = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+
+  const handleCodeEditorDrop = useCallback(
+    async (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setIsDraggingOverCode(false);
+      const file = e.dataTransfer.files[0];
+      if (!file) return;
+
+      try {
+        const content = await readDroppedFile(file);
+        setCode(content);
+
+        if (isOPFSSupported) {
+          const path = `/${file.name}`;
+          await fileSystem.writeFile(path, content);
+          await loadFiles();
+          openOrSwitchToTab(path, content);
+          setSelectedFile(path);
+          localStorage.setItem(CURRENT_FILE_PATH_KEY, path);
+          localStorage.setItem(SELECTED_FILE_KEY, path);
+        }
+
+        showToast(`Imported "${file.name}"`, "success");
+      } catch {
+        showToast(`Failed to import "${file.name}"`, "error");
+      }
+    },
+    [isOPFSSupported, loadFiles, openOrSwitchToTab, showToast],
+  );
+
+  const handleMarkdownEditorDrop = useCallback(
+    async (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setIsDraggingOverMarkdown(false);
+      const file = e.dataTransfer.files[0];
+      if (!file) return;
+
+      try {
+        const content = await readDroppedFile(file);
+        const ext = file.name.split(".").pop()?.toLowerCase();
+        setMarkdown(content);
+
+        if (ext === "mdx") {
+          setInputFormat("mdx");
+        } else if (ext === "html") {
+          setInputFormat("html");
+        } else if (ext === "txt") {
+          setInputFormat("text");
+        } else {
+          setInputFormat("markdown");
+        }
+
+        if (isOPFSSupported) {
+          const path = `/${file.name}`;
+          await fileSystem.writeFile(path, content);
+          await loadFiles();
+          openOrSwitchToTab(path, content);
+          setSelectedFile(path);
+          localStorage.setItem(CURRENT_FILE_PATH_KEY, path);
+          localStorage.setItem(SELECTED_FILE_KEY, path);
+        }
+
+        showToast(`Imported "${file.name}"`, "success");
+      } catch {
+        showToast(`Failed to import "${file.name}"`, "error");
+      }
+    },
+    [isOPFSSupported, loadFiles, openOrSwitchToTab, showToast],
+  );
 
   // Keep vim-accessible refs in sync with latest callbacks and state
   useEffect(() => {
@@ -1342,6 +1450,14 @@ export const Playground = () => {
     });
   }, []);
 
+  const handleProblemsPanelResize = useCallback((delta: number) => {
+    setProblemsPanelHeight((prev) => {
+      const next = Math.max(80, Math.min(500, prev - delta));
+      localStorage.setItem(PROBLEMS_PANEL_HEIGHT_KEY, String(next));
+      return next;
+    });
+  }, []);
+
   const toggleMinimap = useCallback(() => {
     setMinimapEnabled((prev) => !prev);
   }, []);
@@ -1361,37 +1477,43 @@ export const Playground = () => {
     });
 
     monaco.editor.onDidCreateEditor((editorInstance: editor.ICodeEditor) => {
-      editorInstance.onDidChangeModelContent(async () => {
-        const model = editorInstance.getModel();
-        if (model) {
-          const modelLanguage = model.getLanguageId();
-
-          if (modelLanguage === "markdown") {
-            return;
-          }
-
-          const errors = await mq.diagnostics(
-            model.getValue(),
-            enableTypeCheckRef.current,
-          );
-          const markers = errors.map((error: mq.Diagnostic) => ({
-            startLineNumber: error.startLine,
-            startColumn: error.startColumn,
-            endLineNumber: error.endLine,
-            endColumn: error.endColumn,
-            message: error.message,
-            severity: monaco.MarkerSeverity.Error,
-          }));
-          monaco.editor.setModelMarkers(model, "mq", markers);
-          setDiagnosticCounts({
-            errors: markers.filter(
-              (m) => m.severity === monaco.MarkerSeverity.Error,
-            ).length,
-            warnings: markers.filter(
-              (m) => m.severity === monaco.MarkerSeverity.Warning,
-            ).length,
-          });
+      editorInstance.onDidChangeModelContent(() => {
+        if (diagnosticsTimerRef.current) {
+          clearTimeout(diagnosticsTimerRef.current);
         }
+        diagnosticsTimerRef.current = setTimeout(async () => {
+          const model = editorInstance.getModel();
+          if (model) {
+            const modelLanguage = model.getLanguageId();
+
+            if (modelLanguage === "markdown" || modelLanguage === "json") {
+              return;
+            }
+
+            const errors = await mq.diagnostics(
+              model.getValue(),
+              enableTypeCheckRef.current,
+            );
+            const markers = errors.map((error: mq.Diagnostic) => ({
+              startLineNumber: error.startLine,
+              startColumn: error.startColumn,
+              endLineNumber: error.endLine,
+              endColumn: error.endColumn,
+              message: error.message,
+              severity: monaco.MarkerSeverity.Error,
+            }));
+            monaco.editor.setModelMarkers(model, "mq", markers);
+            setDiagnostics({
+              errors: markers.filter(
+                (m) => m.severity === monaco.MarkerSeverity.Error,
+              ).length,
+              warnings: markers.filter(
+                (m) => m.severity === monaco.MarkerSeverity.Warning,
+              ).length,
+              items: markers,
+            });
+          }
+        }, 300);
       });
     });
 
@@ -1426,10 +1548,11 @@ export const Playground = () => {
                       : monaco.languages.CompletionItemKind.Property,
               insertText:
                 value.valueType === "Function"
-                  ? `${value.name}(${value.args
-                    ?.map((name: string, i: number) => `$\{${i}:${name}}`)
-                    .join(", ") || ""
-                  })`
+                  ? `${value.name}(${
+                      value.args
+                        ?.map((name: string, i: number) => `$\{${i}:${name}}`)
+                        .join(", ") || ""
+                    })`
                   : value.name,
               insertTextRules:
                 monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
@@ -1631,7 +1754,7 @@ export const Playground = () => {
     monaco.languages.registerInlayHintsProvider("mq", {
       provideInlayHints: async (model: editor.ITextModel) => {
         if (!enableTypeCheckRef.current) {
-          return { hints: [], dispose: () => { } };
+          return { hints: [], dispose: () => {} };
         }
         const hints = await mq.inlayHints(model.getValue());
         return {
@@ -1643,7 +1766,7 @@ export const Playground = () => {
             label: hint.label,
             kind: monaco.languages.InlayHintKind.Type,
           })),
-          dispose: () => { },
+          dispose: () => {},
         };
       },
     });
@@ -1775,6 +1898,56 @@ export const Playground = () => {
   const monacoTheme =
     theme === "mq" ? "mq-branded" : isDarkMode ? "mq-dark" : "mq-light";
 
+  const buildPreviewSrcDoc = (htmlFragment: string) => {
+    const resolvedTheme =
+      theme === "system"
+        ? window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light"
+        : theme;
+
+    const colors =
+      resolvedTheme === "mq"
+        ? {
+            bg: "#1e293b",
+            fg: "#e2e8f0",
+            preBg: "#2a3444",
+            link: "#67b8e3",
+            heading: "#e2e8f0",
+            border: "#32404f",
+          }
+        : resolvedTheme === "dark"
+          ? {
+              bg: "#1e1e1e",
+              fg: "#d4d4d4",
+              preBg: "#2d2d2d",
+              link: "#4ec9b0",
+              heading: "#d4d4d4",
+              border: "#3e3e42",
+            }
+          : {
+              bg: "#ffffff",
+              fg: "#1a1a1a",
+              preBg: "#f5f5f5",
+              link: "#0070c1",
+              heading: "#1a1a1a",
+              border: "#e0e0e0",
+            };
+
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:;"><style>
+body{margin:16px;font-family:sans-serif;background:${colors.bg};color:${colors.fg};line-height:1.6}
+h1,h2,h3,h4,h5,h6{color:${colors.heading};border-bottom:1px solid ${colors.border};padding-bottom:0.3em}
+a{color:${colors.link}}
+pre{background:${colors.preBg};padding:12px;border-radius:4px;overflow:auto;border:1px solid ${colors.border}}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em}
+blockquote{border-left:4px solid ${colors.border};margin:0;padding:0 1em;color:${colors.fg};opacity:0.8}
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid ${colors.border};padding:6px 12px}
+th{background:${colors.preBg}}
+img{max-width:100%}
+</style></head><body>${htmlFragment}</body></html>`;
+  };
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
@@ -1791,6 +1964,14 @@ export const Playground = () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [code, markdown, isUpdate, enableTypeCheck, inputFormat]);
+
+  const isDesktopView = isDesktop();
+
+  const previewSrcDoc = previewHtml
+    ? buildPreviewSrcDoc(previewHtml)
+    : buildPreviewSrcDoc(
+        "<p style='color:#888'>Click \"Run\" button to display preview</p>",
+      );
 
   return (
     <div className="playground-container">
@@ -1856,7 +2037,7 @@ export const Playground = () => {
           <>
             <div
               className="file-tree-panel"
-              style={isDesktop() ? { width: sidebarWidth } : undefined}
+              style={isDesktopView ? { width: sidebarWidth } : undefined}
             >
               <FileTree
                 files={files}
@@ -1870,7 +2051,7 @@ export const Playground = () => {
                 selectedFile={selectedFile}
               />
             </div>
-            {isDesktop() && (
+            {isDesktopView && (
               <ResizeHandle
                 direction="horizontal"
                 onResize={handleSidebarResize}
@@ -1882,18 +2063,33 @@ export const Playground = () => {
           className="left-panel"
           ref={leftPanelRef}
           style={
-            isDesktop()
+            isDesktopView
               ? {
-                width: `calc((100% - ${isOPFSSupported && isSidebarVisible ? sidebarWidth + 4 : 0}px) * ${leftRightSplit / 100})`,
-                flex: "none",
-              }
+                  width: `calc((100% - ${isOPFSSupported && isSidebarVisible ? sidebarWidth + 4 : 0}px) * ${leftRightSplit / 100})`,
+                  flex: "none",
+                }
               : undefined
           }
         >
           <div
             className="editor-container"
-            style={isDesktop() ? { height: `${topBottomSplit}%` } : undefined}
+            style={isDesktopView ? { height: `${topBottomSplit}%` } : undefined}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDraggingOverCode(true);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                setIsDraggingOverCode(false);
+              }
+            }}
+            onDrop={handleCodeEditorDrop}
           >
+            {isDraggingOverCode && (
+              <div className="drop-overlay">
+                <div className="drop-overlay-content">Drop file to import</div>
+              </div>
+            )}
             {!isEmbed && tabs.length > 0 && (
               <TabBar
                 tabs={tabs}
@@ -1996,11 +2192,29 @@ export const Playground = () => {
             </div>
           </div>
 
-          {isDesktop() && (
+          {isDesktopView && (
             <ResizeHandle direction="vertical" onResize={handleEditorResize} />
           )}
 
-          <div className="editor-container" style={{ flex: 1 }}>
+          <div
+            className="editor-container"
+            style={{ flex: 1 }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDraggingOverMarkdown(true);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                setIsDraggingOverMarkdown(false);
+              }
+            }}
+            onDrop={handleMarkdownEditorDrop}
+          >
+            {isDraggingOverMarkdown && (
+              <div className="drop-overlay">
+                <div className="drop-overlay-content">Drop file to import</div>
+              </div>
+            )}
             <div className="editor-header">
               <label className="label">
                 <select
@@ -2041,7 +2255,7 @@ export const Playground = () => {
             </div>
           </div>
         </div>
-        {isDesktop() && (
+        {isDesktopView && (
           <ResizeHandle direction="horizontal" onResize={handlePanelResize} />
         )}
         <div className="right-panel">
@@ -2051,6 +2265,19 @@ export const Playground = () => {
               onClick={() => setActiveTab("output")}
             >
               Output
+            </button>
+            <button
+              className={`tab ${activeTab === "preview" ? "active" : ""}`}
+              onClick={async () => {
+                try {
+                  setPreviewHtml(await toHtml(result));
+                } catch {
+                  setPreviewHtml("");
+                }
+                setActiveTab("preview");
+              }}
+            >
+              Preview
             </button>
             <button
               className={`tab ${activeTab === "ast" ? "active" : ""}`}
@@ -2182,6 +2409,18 @@ export const Playground = () => {
                 theme={monacoTheme}
               />
             )}
+            {activeTab === "preview" && (
+              <iframe
+                srcDoc={previewSrcDoc}
+                sandbox=""
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  border: "none",
+                }}
+                title="Preview"
+              />
+            )}
             {activeTab === "ast" && (
               <Editor
                 height="100%"
@@ -2202,6 +2441,24 @@ export const Playground = () => {
           </div>
         </div>
       </div>
+
+      {!isEmbed && isProblemsVisible && (
+        <>
+          <ResizeHandle
+            direction="vertical"
+            onResize={handleProblemsPanelResize}
+          />
+          <ProblemsPanel
+            problems={diagnostics.items}
+            height={problemsPanelHeight}
+            onProblemClick={(lineNumber, column) => {
+              editorRef.current?.revealLineInCenter(lineNumber);
+              editorRef.current?.setPosition({ lineNumber, column });
+              editorRef.current?.focus();
+            }}
+          />
+        </>
+      )}
 
       {!isEmbed && (
         <footer className="playground-footer">
@@ -2249,17 +2506,25 @@ export const Playground = () => {
             )}
           </div>
           <div className="footer-right">
-            {diagnosticCounts.errors > 0 && (
-              <span className="footer-diagnostic footer-diagnostic-error">
-                <VscError size={12} />
-                {diagnosticCounts.errors}
-              </span>
-            )}
-            {diagnosticCounts.warnings > 0 && (
-              <span className="footer-diagnostic footer-diagnostic-warning">
-                <VscWarning size={12} />
-                {diagnosticCounts.warnings}
-              </span>
+            {(diagnostics.errors > 0 || diagnostics.warnings > 0) && (
+              <button
+                className={`footer-diagnostic-button${isProblemsVisible ? " active" : ""}`}
+                onClick={() => setIsProblemsVisible((v) => !v)}
+                title={isProblemsVisible ? "Hide Problems" : "Show Problems"}
+              >
+                {diagnostics.errors > 0 && (
+                  <span className="footer-diagnostic footer-diagnostic-error">
+                    <VscError size={12} />
+                    {diagnostics.errors}
+                  </span>
+                )}
+                {diagnostics.warnings > 0 && (
+                  <span className="footer-diagnostic footer-diagnostic-warning">
+                    <VscWarning size={12} />
+                    {diagnostics.warnings}
+                  </span>
+                )}
+              </button>
             )}
             <span className="cursor-position">
               Ln {cursorPosition.line}, Col {cursorPosition.column}

@@ -19,13 +19,13 @@ The installer will:
 # Install from crates.io
 cargo install mq-run
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.31
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.6.1
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 # Install using binstall
-cargo binstall mq-run@0.5.31
+cargo binstall mq-run@0.6.1
 ```
 
 ## Binaries
@@ -34,13 +34,13 @@ You can download pre-built binaries from the [GitHub releases page](https://gith
 
 ```sh
 # macOS (Apple Silicon)
-curl -L https://github.com/harehare/mq/releases/download/v0.5.31/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.6.1/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux x86_64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.31/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.6.1/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux arm64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.31/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.6.1/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.31/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
+Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.6.1/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
 ```
 
 ## Homebrew
@@ -53,7 +53,7 @@ $ brew install mq
 ## Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.5.31
+$ docker run --rm ghcr.io/harehare/mq:0.6.1
 ```
 
 ### mq-lsp (Language Server)
@@ -72,11 +72,11 @@ curl -sSL https://mqlang.org/install_lsp.sh | bash
 # Install from crates.io
 cargo install mq-lsp
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-lsp --tag v0.5.31
+cargo install --git https://github.com/harehare/mq.git mq-lsp --tag v0.6.1
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-lsp
 # Install using binstall
-cargo binstall mq-lsp@0.5.31
+cargo binstall mq-lsp@0.6.1
 ```
 
 #### Binaries
@@ -85,14 +85,52 @@ You can download pre-built binaries from the [GitHub releases page](https://gith
 
 ```sh
 # macOS (Apple Silicon)
-curl -L https://github.com/harehare/mq/releases/download/v0.5.31/mq-lsp-aarch64-apple-darwin -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
+curl -L https://github.com/harehare/mq/releases/download/v0.6.1/mq-lsp-aarch64-apple-darwin -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
 # Linux x86_64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.31/mq-lsp-x86_64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
+curl -L https://github.com/harehare/mq/releases/download/v0.6.1/mq-lsp-x86_64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
 # Linux arm64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.31/mq-lsp-aarch64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
+curl -L https://github.com/harehare/mq/releases/download/v0.6.1/mq-lsp-aarch64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
 # Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.31/mq-lsp-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq-lsp.exe"
+Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.6.1/mq-lsp-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq-lsp.exe"
 ```
+
+## Shell Completion
+
+mq can generate shell completion scripts via the `completion` subcommand. Supported shells: `bash`, `elvish`, `fish`, `nushell`, `powershell`, `zsh`.
+
+```sh
+# Bash (add to ~/.bashrc)
+echo 'source <(mq completion bash)' >> ~/.bashrc
+
+# Zsh (add to ~/.zshrc)
+echo 'source <(mq completion zsh)' >> ~/.zshrc
+
+# Fish
+mq completion fish > ~/.config/fish/completions/mq.fish
+
+# Elvish (add to ~/.config/elvish/rc.elv)
+mq completion elvish >> ~/.config/elvish/rc.elv
+
+# PowerShell (add to your PowerShell profile)
+mq completion powershell >> $PROFILE
+```
+
+### Nushell
+
+Generate the completion script and source it from your `config.nu`:
+
+```sh
+mkdir -p ~/.config/nushell/completions
+mq completion nushell > ~/.config/nushell/completions/mq.nu
+```
+
+Then add the following line to `~/.config/nushell/config.nu`:
+
+```nu
+source ~/.config/nushell/completions/mq.nu
+```
+
+Restart Nushell (or run `source ~/.config/nushell/config.nu`) to enable completions.
 
 ## Visual Studio Code Extension
 

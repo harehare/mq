@@ -21,25 +21,30 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   test:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.os == 'all' && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') || fromJSON(format('["{0}"]', github.event.inputs.os))) || fromJSON('["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Install tools
-        uses: taiki-e/install-action@873c7452cadb7c034694a1282227095d93fbdf92 # v2.79.14
+        uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
           tool: nextest,cargo-llvm-cov
       - name: Configure RUSTFLAGS for Windows
@@ -56,7 +61,7 @@ jobs:
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v6.0.1
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
@@ -64,13 +69,14 @@ jobs:
           fail_ci_if_error: true
 
   format-check:
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         os: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.os == 'all' && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') || fromJSON(format('["{0}"]', github.event.inputs.os))) || fromJSON('["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
@@ -85,13 +91,14 @@ jobs:
         run: just fmt
 
   lint:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.os == 'all' && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') || fromJSON(format('["{0}"]', github.event.inputs.os))) || fromJSON('["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
@@ -107,8 +114,9 @@ jobs:
 
   check-deny:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
@@ -117,12 +125,13 @@ jobs:
 
   check-docs:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
-      - uses: harehare/setup-mq@25dd7cb844804420bcf785503ea4ca54e7fb729c # v1
+      - uses: harehare/setup-mq@25dd7cb844804420bcf785503ea4ca54e7fb729c # v1.1.5
         with:
           bins: docs
       - name: Check docs

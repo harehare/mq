@@ -61,6 +61,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/start/modules</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/reference</loc>
     <priority>1.0</priority>
   </url>

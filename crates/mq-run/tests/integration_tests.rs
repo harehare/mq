@@ -821,6 +821,25 @@ fn test_exit_status_parallel_batch(
         cmd.arg(file.to_string_lossy().to_string());
     }
     cmd.assert().code(expected_code);
+}
+
+#[case::bash("bash", "_mq()")]
+#[case::elvish("elvish", "edit:completion:arg-completer[mq]")]
+#[case::fish("fish", "complete -c mq")]
+#[case::nushell("nushell", "export extern mq")]
+#[case::powershell("powershell", "Register-ArgumentCompleter")]
+#[case::zsh("zsh", "#compdef mq")]
+fn test_completion(#[case] shell: &str, #[case] expected_substring: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("completion").arg(shell).assert();
+    let output = assert.success().code(0).get_output().stdout.clone();
+    let output = String::from_utf8(output)?;
+
+    assert!(
+        output.contains(expected_substring),
+        "expected completion script for {shell} to contain {expected_substring:?}, got:\n{output}"
+    );
 
     Ok(())
 }

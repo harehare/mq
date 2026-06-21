@@ -2381,7 +2381,29 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     // This typically involves a recursive call to `parse_expr`.
     #[inline(always)]
     fn parse_arg_expr(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        self.parse_expr(token)
+        let first = self.parse_expr(token)?;
+        if !self.is_next_token(|kind| matches!(kind, TokenKind::Pipe)) {
+            return Ok(first);
+        }
+
+        let token_id = first.token_id;
+        let mut program = vec![first];
+        while self.is_next_token(|kind| matches!(kind, TokenKind::Pipe)) {
+            let pipe_token = self.tokens.next().unwrap();
+            let next_token = match self.tokens.next() {
+                Some(token) if token.kind == TokenKind::Eof => {
+                    return Err(SyntaxError::UnexpectedEOFAfterToken((**pipe_token).clone()));
+                }
+                Some(token) => token,
+                None => return Err(SyntaxError::UnexpectedEOFAfterToken((**pipe_token).clone())),
+            };
+            program.push(self.parse_expr(next_token)?);
+        }
+
+        Ok(Shared::new(Node {
+            token_id,
+            expr: Shared::new(Expr::Block(program)),
+        }))
     }
 
     fn parse_set_attr_call_with_selector(

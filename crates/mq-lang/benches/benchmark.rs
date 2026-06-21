@@ -417,3 +417,23 @@ fn eval_if_else_branching() -> mq_lang::RuntimeValues {
         )
         .unwrap()
 }
+
+/// Measures `expand_wikilinks` post-processing cost when the document contains wikilinks.
+#[divan::bench(name = "parse_markdown_with_wikilinks")]
+fn parse_markdown_with_wikilinks() -> mq_markdown::Markdown {
+    let content = (0..100)
+        .map(|i| {
+            format!("# Heading {i}\n\nSome text with [[target{i}]] and [[another{i}|Display Text {i}]] links.\n\n")
+        })
+        .collect::<String>();
+    mq_markdown::Markdown::from_markdown_str(&content).unwrap()
+}
+
+/// Baseline: same document shape but no `[[...]]` patterns — measures pure traversal cost.
+#[divan::bench(name = "parse_markdown_without_wikilinks")]
+fn parse_markdown_without_wikilinks() -> mq_markdown::Markdown {
+    let content = (0..100)
+        .map(|i| format!("# Heading {i}\n\nSome text without any wikilink patterns here.\n\n"))
+        .collect::<String>();
+    mq_markdown::Markdown::from_markdown_str(&content).unwrap()
+}

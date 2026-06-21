@@ -1067,6 +1067,16 @@ fn register_markdown(ctx: &mut InferenceContext) {
         Type::Markdown,
     );
 
+    // (markdown, array) -> markdown
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "set_children",
+        Type::Markdown,
+        Type::array(Type::Var(a)),
+        Type::Markdown,
+    );
+
     // (string, string, string) -> markdown
     register_ternary(ctx, "to_link", Type::String, Type::String, Type::String, Type::Markdown);
     register_ternary(
@@ -1724,7 +1734,7 @@ mod tests {
     #[case::downcase_number("downcase(42)", false)] // wrong argument type
     #[case::ceil_string("ceil(\"hello\")", false)] // wrong argument type
     #[case::floor_bool("floor(true)", false)] // wrong argument type
-    #[case::len_no_args("len()", false)] // missing argument
+    #[case::len_no_args("len()", true)] // valid: root-level dynamic piped input satisfies the arg
     #[case::split_numbers("split(1, 2)", false)] // wrong argument types
     #[case::join_numbers("join(1, 2)", false)] // wrong argument types
     #[case::starts_with_numbers("starts_with(1, 2)", false)] // wrong argument types
@@ -1742,7 +1752,7 @@ mod tests {
     #[case::split_wrong_sep("split(\"hello\", 42)", false)] // separator must be string
     #[case::join_wrong_sep("join([\"a\", \"b\"], 42)", false)] // separator must be string
     #[case::replace_wrong_sep("replace(\"hello\", 42, \"r\")", false)] // wrong separator type
-    #[case::replace_too_few_args("replace(\"hello\", \"l\")", false)] // missing replacement arg
+    #[case::replace_too_few_args("replace(\"l\")", false)] // 1 explicit + 1 piped = 2 args, needs 3
     #[case::replace_too_many_args("replace(\"hello\", \"l\", \"r\", \"extra\")", false)] // too many args
     #[case::gsub_wrong_first("gsub(42, \"l\", \"r\")", false)] // expects string first arg
     #[case::starts_with_num_sep("starts_with(\"hello\", 42)", false)] // expects string prefix
@@ -2044,6 +2054,7 @@ mod tests {
     #[rstest]
     #[case::attr("to_markdown(\"[link](url)\") | first() | attr(\"href\")", true)]
     #[case::set_attr("to_markdown(\"[link](url)\") | first() | set_attr(\"href\", \"new\")", true)]
+    #[case::set_children("to_markdown(\"# heading\") | first() | set_children([\"new\"])", true)]
     #[case::get_title("to_markdown(\"[link](url)\") | first() | get_title", true)]
     #[case::get_url("to_markdown(\"[link](url)\") | first() | get_url", true)]
     #[case::set_check("to_markdown(\"- [ ] task\") | first() | set_check(true)", true)]
@@ -2146,6 +2157,11 @@ mod tests {
         "to_md_table_cell expects number row"
     )]
     #[case::set_check_wrong_type("to_markdown(\"- [ ] task\") | set_check(42)", false, "set_check expects bool")]
+    #[case::set_children_wrong_type(
+        "to_markdown(\"# heading\") | set_children(\"not_an_array\")",
+        false,
+        "set_children expects array"
+    )]
     #[case::set_list_ordered_wrong_type(
         "to_markdown(\"- item\") | set_list_ordered(42)",
         false,
