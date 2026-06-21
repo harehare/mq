@@ -846,20 +846,25 @@ def test_md_table_align():
 end
 
 def test_md_doc():
+  let result = to_string(md::doc(md::text("a"), md::text("b")))
+  | assert_eq(result, "a\nb")
+end
+
+def test_md_doc_array_arg():
   let result = to_string(md::doc([md::text("a"), md::text("b")]))
   | assert_eq(result, "a\nb")
 end
 
 def test_md_doc_flattens_nested_arrays():
-  let result = to_string(md::doc([
-      md::h("Items", 2),
-      map(["a", "b"], fn(x): md::list(x);),
-    ]))
+  let result = to_string(md::doc(
+    md::h("Items", 2),
+    map(["a", "b"], fn(x): md::list(x);),
+  ))
   | assert_eq(result, "## Items\n- a\n- b")
 end
 
 def test_md_doc_skips_none_children():
-  let result = to_string(md::doc([md::text("a"), None, md::text("b")]))
+  let result = to_string(md::doc(md::text("a"), None, md::text("b")))
   | assert_eq(result, "a\n\nb")
 end
 
