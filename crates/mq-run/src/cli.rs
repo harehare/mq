@@ -11,8 +11,15 @@ use std::io::{self, BufWriter, Read, Write};
 use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{fs, path::PathBuf};
 use which::which;
+
+// Tracks whether any non-falsy value has been printed during a run.
+// Used by --exit-status / -e to decide the process exit code. A plain
+// AtomicBool (rather than a thread_local) is required because batch
+// processing can fan out across rayon worker threads.
+static HAD_TRUTHY_OUTPUT: AtomicBool = AtomicBool::new(false);
 
 use crate::grep;
 use crate::reference;
@@ -379,6 +386,11 @@ struct OutputArgs {
     /// Show NUM nodes before and after each match. Only effective with -F grep.
     #[clap(long, value_name = "NUM")]
     context: Option<usize>,
+
+    /// Exit with code 1 if the last output value is false, null, or the output
+    /// is empty. Mirrors jq's --exit-status / -e flag.
+    #[arg(short = 'e', long = "exit-status", default_value_t = false)]
+    exit_status: bool,
 }
 
 impl OutputArgs {
@@ -693,11 +705,24 @@ impl Cli {
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
             Some(Commands::Completion { shell }) => Self::generate_completion(shell),
             None => {
-                if self.input.stream {
+                let result = if self.input.stream {
                     self.process_streaming()
                 } else {
                     self.process_batch()
+                };
+
+                // --exit-status / -e: exit with code 1 if no truthy value was
+                // produced. Mirrors jq's behaviour: false and null are falsy;
+                // everything else (including empty string, 0, [], {}) is truthy.
+                if self.output.exit_status {
+                    let had_truthy = HAD_TRUTHY_OUTPUT.load(Ordering::Relaxed);
+                    if !had_truthy {
+                        result?;
+                        std::process::exit(1);
+                    }
                 }
+
+                result
             }
         }
     }
@@ -1202,6 +1227,16 @@ impl Cli {
         }
     }
 
+    /// Returns true if a RuntimeValue is considered "falsy" for --exit-status.
+    /// Mirrors jq's definition (false and null are falsy) but also treats
+    /// empty values as falsy: `select()` on markdown input doesn't drop
+    /// non-matching nodes, it replaces them with an empty `Markdown` value,
+    /// so a plain `None`/`Boolean(false)` check alone would never observe
+    /// the common "no match" case.
+    fn is_falsy(value: &mq_lang::RuntimeValue) -> bool {
+        matches!(value, mq_lang::RuntimeValue::Boolean(false)) || value.is_empty()
+    }
+
     /// Converts a `RuntimeValue` into a list of Markdown nodes.
     fn runtime_value_to_nodes(runtime_value: &mq_lang::RuntimeValue) -> Vec<mq_markdown::Node> {
         match runtime_value {
@@ -1260,6 +1295,11 @@ impl Cli {
             Box::new(BufWriter::new(stdout.lock()))
         };
         let runtime_values = runtime_values.values();
+
+        // Track truthy output for --exit-status.
+        if self.output.exit_status && runtime_values.iter().any(|v| !Self::is_falsy(v)) {
+            HAD_TRUTHY_OUTPUT.store(true, Ordering::Relaxed);
+        }
 
         match self.output.output_format {
             OutputFormat::Raw => {
