@@ -41,6 +41,7 @@ import "github.com/harehare/<module-name>"
 | [logfmt.mq](https://github.com/harehare/logfmt.mq) | logfmt structured log lines (`key=value`) |
 | [cron.mq](https://github.com/harehare/cron.mq) | Cron expression parser and human-readable descriptions |
 | [jwt.mq](https://github.com/harehare/jwt.mq) | JWT decoder — inspect header and payload without verification |
+| [okf.mq](https://github.com/harehare/okf.mq) | [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog) (Open Knowledge Format) reader/writer — concept documents, cross-links, citations, log/index entries |
 
 
 ## Diagram & Graph
@@ -75,5 +76,11 @@ import "github.com/harehare/<module-name>"
 |---|---|
 | [lisp.mq](https://github.com/harehare/lisp.mq) | Scheme-like Lisp interpreter |
 | [bf.mq](https://github.com/harehare/bf.mq) | Brainfuck interpreter |
+
+## Libraries & Toolkits
+
+| Module | Description |
+|---|---|
+| [parser_combinator.mq](https://github.com/harehare/parser_combinator.mq) | A small parser-combinator toolkit, in the spirit of Rust's [nom](https://github.com/rust-bakery/nom) |
 
 
