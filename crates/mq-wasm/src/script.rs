@@ -376,6 +376,7 @@ impl WasmModuleResolver {
     /// (e.g. A imports B, B imports A) are handled safely via a visited set.
     ///
     /// If OPFS is not available, this method returns immediately without error.
+    #[cfg_attr(not(feature = "opfs"), allow(unused_variables))]
     pub async fn preload_modules(&self, code: &str) {
         #[cfg(feature = "opfs")]
         {
@@ -945,14 +946,17 @@ pub async fn hover(code: &str, line: u32, column: u32) -> JsValue {
 }
 
 /// Name of the OPFS subdirectory used to store cached HTTP modules.
+#[cfg(feature = "opfs")]
 const HTTP_CACHE_DIR: &str = "http_cache";
 
 /// Returns the MD5 hex string of `url`, used as the cache file stem.
+#[cfg(feature = "opfs")]
 fn cache_file_stem(url: &str) -> String {
     format!("{:x}", md5::compute(url))
 }
 
 /// Computes SHA-256 of `content` as a lowercase hex string.
+#[cfg(feature = "opfs")]
 fn compute_content_hash(content: &str) -> String {
     use sha2::Digest;
     sha2::Sha256::digest(content.as_bytes())
@@ -1043,6 +1047,7 @@ async fn write_opfs_http_cache(root: &opfs::persistent::DirectoryHandle, subdir:
 }
 
 /// Parses `code` and returns all import/include paths that are local module names (not URLs).
+#[cfg(feature = "opfs")]
 fn extract_local_import_names(code: &str) -> Vec<String> {
     let token_arena = mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
     let Ok(program) = mq_lang::parse(code, token_arena) else {
