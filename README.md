@@ -170,8 +170,9 @@ For a comprehensive collection of practical examples, see the [Example Guide](ht
 Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 
 Commands:
-  repl  Start a REPL session for interactive query execution
-  help  Print this message or the help of the given subcommand(s)
+  repl        Start a REPL session for interactive query execution
+  completion  Generate a shell completion script and print it to stdout
+  help        Print this message or the help of the given subcommand(s)
 
 Arguments:
   [QUERY OR FILE]  
@@ -226,6 +227,8 @@ Options:
           Show NUM nodes after each match. Only effective with -F grep
       --context <NUM>
           Show NUM nodes before and after each match. Only effective with -F grep
+  -e, --exit-status
+          Exit with code 1 if the last output value is false, null, or the output is empty. Mirrors jq's --exit-status / -e flag
       --list
           List all available subcommands (built-in and external)
       --doc
