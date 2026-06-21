@@ -1,7 +1,7 @@
 {
   "name": "mq-web",
   "description": "A jq-like command-line tool for Markdown processing",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "author": "harehare",
   "license": "MIT",
   "bugs": {
@@ -38,7 +38,9 @@
   },
   "packageManager": "pnpm@10.33.0",
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "sideEffects": false,
   "type": "module",
