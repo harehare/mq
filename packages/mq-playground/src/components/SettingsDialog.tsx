@@ -21,6 +21,8 @@ type SettingsDialogProps = {
   shareMode: "current" | "all";
   onShareModeChange: (mode: "current" | "all") => void;
   isOPFSSupported: boolean;
+  onClearHttpCache?: () => Promise<void>;
+  onClearAllHttpCache?: () => Promise<void>;
 };
 
 export const SettingsDialog = ({
@@ -43,6 +45,8 @@ export const SettingsDialog = ({
   shareMode,
   onShareModeChange,
   isOPFSSupported,
+  onClearHttpCache,
+  onClearAllHttpCache,
 }: SettingsDialogProps) => {
   if (!isOpen) return null;
 
@@ -164,6 +168,33 @@ export const SettingsDialog = ({
                   <option value="all">All Files</option>
                 </select>
               </div>
+            </div>
+          )}
+          {isOPFSSupported && (onClearHttpCache || onClearAllHttpCache) && (
+            <div className="settings-section">
+              <h4>Cache</h4>
+              {onClearHttpCache && (
+                <div className="settings-item">
+                  <label>HTTP Module Cache</label>
+                  <button
+                    className="cache-clear-btn"
+                    onClick={onClearHttpCache}
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+              {onClearAllHttpCache && (
+                <div className="settings-item">
+                  <label>All HTTP Cache</label>
+                  <button
+                    className="cache-clear-btn cache-clear-btn--danger"
+                    onClick={onClearAllHttpCache}
+                  >
+                    Clear All
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

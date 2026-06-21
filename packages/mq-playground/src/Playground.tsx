@@ -2607,6 +2607,14 @@ img{max-width:100%}
         shareMode={shareMode}
         onShareModeChange={setShareMode}
         isOPFSSupported={isOPFSSupported}
+        onClearHttpCache={async () => {
+          await mq.clearHttpCache();
+          showToast("HTTP module cache cleared", "success");
+        }}
+        onClearAllHttpCache={async () => {
+          await mq.clearAllHttpCache();
+          showToast("All HTTP cache cleared", "success");
+        }}
       />
 
       <ToastContainer toasts={toasts} onClose={dismissToast} />
