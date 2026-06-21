@@ -5,12 +5,13 @@
  */
 
 // Re-export everything from core and types
-export { run, format, diagnostics, inlayHints, definedValues, toAst, htmlToMarkdown, toHtml } from "./core.js";
+export { run, format, diagnostics, inlayHints, definedValues, hover, toAst, htmlToMarkdown, toHtml, clearHttpCache, clearAllHttpCache } from "./core.js";
 
 export type {
   Options,
   Diagnostic,
   InlayHint,
+  HoverResult,
   DefinedValue,
   DefinedValueType,
 } from "./mq_wasm.js";
