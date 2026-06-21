@@ -343,9 +343,24 @@ impl Formatter {
         // Output module name
         self.output.push_str(&node.to_string());
 
+        // Re-derive from the actual line when inline, since the caller's
+        // indent_level may not match where this node was written (mirrors format_call).
+        let current_line_indent = if indent_level == 0 {
+            self.current_line_indent()
+        } else {
+            indent_level
+        };
+
         // Output children (::, identifier, optional args)
         node.children.iter().for_each(|child| {
-            self.format_node(mq_lang::Shared::clone(child), 0);
+            self.format_node(
+                mq_lang::Shared::clone(child),
+                if child.has_new_line() {
+                    current_line_indent + 1
+                } else {
+                    current_line_indent
+                },
+            );
         });
     }
 
@@ -2957,6 +2972,17 @@ end
   a,
   b
 ): a + b;)
+"
+    )]
+    #[case::qualified_call_multiline_args_nested_in_call(
+        "let result = to_string(md::doc(
+    md::h(\"Items\", 2),
+    map([\"a\", \"b\"], fn(x): md::list(x);),
+  ))",
+        "let result = to_string(md::doc(
+  md::h(\"Items\", 2),
+  map([\"a\", \"b\"], fn(x): md::list(x);),
+))
 "
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
