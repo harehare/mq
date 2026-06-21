@@ -758,3 +758,69 @@ fn test_let_simple_regression() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[rstest]
+// select() on markdown input replaces non-matching nodes with an empty
+// value instead of dropping them, so --exit-status must treat that empty
+// value as falsy, not just `None`/`false`.
+#[case::truthy_match(vec!["--unbuffered", "--exit-status", "select(.h1)"], "# title\n\nbody", 0)]
+#[case::no_match_is_falsy(vec!["--unbuffered", "-e", "select(.h2)"], "# title\n\nbody", 1)]
+#[case::bare_false(vec!["--unbuffered", "-I", "null", "-e", "false"], "", 1)]
+#[case::bare_null(vec!["--unbuffered", "-I", "null", "-e", "None"], "", 1)]
+#[case::bare_truthy_number(vec!["--unbuffered", "-I", "null", "-e", "1"], "", 0)]
+fn test_exit_status(
+    #[case] args: Vec<&str>,
+    #[case] input: &str,
+    #[case] expected_code: i32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let mut assert = cmd.args(args);
+
+    if !input.is_empty() {
+        assert = assert.write_stdin(input);
+    }
+
+    assert.assert().code(expected_code);
+
+    Ok(())
+}
+
+#[rstest]
+// With more files than `parallel_threshold`, batch processing fans out
+// across rayon worker threads. --exit-status must aggregate truthiness
+// across all of them, not just the main thread.
+#[case::match_found(true, 0)]
+#[case::no_match(false, 1)]
+fn test_exit_status_parallel_batch(
+    #[case] has_match: bool,
+    #[case] expected_code: i32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let files: Vec<PathBuf> = (0..11)
+        .map(|i| {
+            let content = if has_match && i == 5 {
+                "# YES\n"
+            } else {
+                "no heading here\n"
+            };
+            create_file(&format!("test_exit_status_parallel_batch_{has_match}_{i}.md"), content).1
+        })
+        .collect();
+    let files_clone = files.clone();
+
+    defer! {
+        for file in &files_clone {
+            if file.exists() {
+                std::fs::remove_file(file).expect("Failed to delete temp file");
+            }
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--unbuffered").arg("--exit-status").arg("select(.h1)");
+    for file in &files {
+        cmd.arg(file.to_string_lossy().to_string());
+    }
+    cmd.assert().code(expected_code);
+
+    Ok(())
+}

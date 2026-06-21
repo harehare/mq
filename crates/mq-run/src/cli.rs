@@ -4,7 +4,6 @@ use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::DefaultEngine;
 use rayon::prelude::*;
-use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::io::BufRead;
 use std::io::IsTerminal;
@@ -12,14 +11,15 @@ use std::io::{self, BufWriter, Read, Write};
 use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{fs, path::PathBuf};
 use which::which;
 
 // Tracks whether any non-falsy value has been printed during a run.
-// Used by --exit-status / -e to decide the process exit code.
-thread_local! {
-    static HAD_TRUTHY_OUTPUT: Cell<bool> = const { Cell::new(false) };
-}
+// Used by --exit-status / -e to decide the process exit code. A plain
+// AtomicBool (rather than a thread_local) is required because batch
+// processing can fan out across rayon worker threads.
+static HAD_TRUTHY_OUTPUT: AtomicBool = AtomicBool::new(false);
 
 use crate::grep;
 use crate::reference;
@@ -620,7 +620,7 @@ impl Cli {
                 // produced. Mirrors jq's behaviour: false and null are falsy;
                 // everything else (including empty string, 0, [], {}) is truthy.
                 if self.output.exit_status {
-                    let had_truthy = HAD_TRUTHY_OUTPUT.with(|cell| cell.get());
+                    let had_truthy = HAD_TRUTHY_OUTPUT.load(Ordering::Relaxed);
                     if !had_truthy {
                         result?;
                         std::process::exit(1);
@@ -1120,12 +1120,13 @@ impl Cli {
     }
 
     /// Returns true if a RuntimeValue is considered "falsy" for --exit-status.
-    /// Mirrors jq's definition: false and null are falsy; everything else is truthy.
+    /// Mirrors jq's definition (false and null are falsy) but also treats
+    /// empty values as falsy: `select()` on markdown input doesn't drop
+    /// non-matching nodes, it replaces them with an empty `Markdown` value,
+    /// so a plain `None`/`Boolean(false)` check alone would never observe
+    /// the common "no match" case.
     fn is_falsy(value: &mq_lang::RuntimeValue) -> bool {
-        matches!(
-            value,
-            mq_lang::RuntimeValue::None | mq_lang::RuntimeValue::Boolean(false)
-        )
+        matches!(value, mq_lang::RuntimeValue::Boolean(false)) || value.is_empty()
     }
 
     /// Converts a `RuntimeValue` into a list of Markdown nodes.
@@ -1185,18 +1186,12 @@ impl Cli {
         } else {
             Box::new(BufWriter::new(stdout.lock()))
         };
-        let values_ref = runtime_values.values();
+        let runtime_values = runtime_values.values();
 
         // Track truthy output for --exit-status.
-        if self.output.exit_status {
-            for v in values_ref {
-                if !Self::is_falsy(v) {
-                    HAD_TRUTHY_OUTPUT.with(|cell| cell.set(true));
-                    break;
-                }
-            }
+        if self.output.exit_status && runtime_values.iter().any(|v| !Self::is_falsy(v)) {
+            HAD_TRUTHY_OUTPUT.store(true, Ordering::Relaxed);
         }
-        let runtime_values = runtime_values;
 
         match self.output.output_format {
             OutputFormat::Raw => {
