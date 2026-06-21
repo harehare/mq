@@ -524,6 +524,14 @@ impl Formatter {
         }
         self.output.push_str(&node.to_string());
 
+        // Re-derive from the actual line when inline, since the parent's
+        // block_indent_level may not match where this node was written.
+        let block_indent_level = if indent_level == 0 {
+            self.current_line_indent()
+        } else {
+            block_indent_level
+        };
+
         if append_space_after_keyword {
             self.append_space();
         }
@@ -2895,6 +2903,61 @@ end"#,
   end
 end
 "#
+    )]
+    #[case::fn_multiline_params_as_first_array_element(
+        "let fns = [fn(
+  a,
+  b
+): a + b;, fn(c): c;]",
+        "let fns = [fn(
+  a,
+  b
+): a + b;, fn(c): c;]
+"
+    )]
+    #[case::fn_multiline_variadic_params_as_first_array_element(
+        "let fns = [fn(
+  a,
+  *rest
+): rest;, fn(c): c;]",
+        "let fns = [fn(
+  a,
+  *rest
+): rest;, fn(c): c;]
+"
+    )]
+    #[case::fn_multiline_params_as_non_first_array_element(
+        "let fns = [first, fn(
+  a,
+  b
+): a + b;]",
+        "let fns = [first, fn(
+  a,
+  b
+): a + b;]
+"
+    )]
+    #[case::fn_multiline_params_in_nested_array(
+        "let xs = [[fn(
+  a,
+  b
+): a + b;]]",
+        "let xs = [[fn(
+  a,
+  b
+): a + b;]]
+"
+    )]
+    #[case::fn_multiline_params_as_call_arg(
+        "map(arr, fn(
+  a,
+  b
+): a + b;)",
+        "map(arr, fn(
+  a,
+  b
+): a + b;)
+"
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
