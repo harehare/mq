@@ -73,6 +73,44 @@ add_with_offset(20)
 # Output: 35
 ```
 
+### Variadic Parameters
+
+A function can accept a variable number of arguments using a `*` prefix on its last parameter. The variadic parameter collects all remaining arguments into an array.
+
+```mq
+def function_name(param1, *rest):
+  program;
+```
+
+```mq
+# Collect all arguments into an array
+def all_args(*args):
+  args;
+
+all_args(1, 2, 3)
+# Output: [1, 2, 3]
+
+# Combine regular and variadic parameters
+def first_and_rest(a, *rest):
+  rest;
+
+first_and_rest(1, 2, 3)
+# Output: [2, 3]
+
+# Variadic parameter is an empty array when no extra arguments are passed
+def first_and_rest(a, *rest):
+  rest;
+
+first_and_rest(1)
+# Output: []
+```
+
+A variadic parameter:
+
+- Must be the **last** parameter in the parameter list
+- Can only be declared **once** per function
+- Is **not allowed** in `macro` definitions
+
 ## Anonymous Functions
 
 Anonymous functions (lambda expressions) are defined with `fn` or the `->` shorthand, and can be passed as arguments, assigned to variables, or used inline.
@@ -139,11 +177,23 @@ multiply(10, 3)
 [1, 2] | map(fn(x, prefix="Item: "): prefix + to_text(x);)
 ```
 
+### Variadic Parameters
+
+Anonymous functions support variadic parameters the same way named functions do:
+
+```mq
+let sum_all = fn(*args): sum(args);
+
+sum_all(1, 2, 3)
+# Output: 6
+```
+
 ## Rules
 
 - Parameters with default values must come after parameters without default values
 - Default values are evaluated when the function is called, not when it is defined
 - Default values can be any valid expression
+- A variadic parameter (`*name`) must be the last parameter, can appear at most once, and is not allowed in `macro` definitions
 
 ## Pipeline Expressions As Arguments
 
