@@ -821,8 +821,11 @@ fn test_exit_status_parallel_batch(
         cmd.arg(file.to_string_lossy().to_string());
     }
     cmd.assert().code(expected_code);
+
+    Ok(())
 }
 
+#[rstest]
 #[case::bash("bash", "_mq()")]
 #[case::elvish("elvish", "edit:completion:arg-completer[mq]")]
 #[case::fish("fish", "complete -c mq")]
