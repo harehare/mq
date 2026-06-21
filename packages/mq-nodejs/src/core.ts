@@ -4,6 +4,7 @@ import type {
   Diagnostic,
   DefinedValue,
   InlayHint,
+  HoverResult,
   ConversionOptions,
 } from "./mq_wasm.js";
 
@@ -17,6 +18,11 @@ interface WasmModule {
     enableTypeCheck?: boolean,
   ) => Promise<readonly Diagnostic[]>;
   inlayHints: (code: string) => Promise<readonly InlayHint[]>;
+  hover: (
+    code: string,
+    line: number,
+    column: number,
+  ) => Promise<HoverResult | null>;
   definedValues: (
     code: string,
     module?: string,
@@ -26,6 +32,8 @@ interface WasmModule {
     options?: ConversionOptions,
   ): Promise<string>;
   toHtml(markdown_input: string): Promise<string>;
+  clearHttpCache(): Promise<void>;
+  clearAllHttpCache(): Promise<void>;
 }
 
 const wasmModule: WasmModule = {
@@ -34,9 +42,12 @@ const wasmModule: WasmModule = {
   format: wasmImport.format,
   diagnostics: wasmImport.diagnostics,
   inlayHints: wasmImport.inlayHints,
+  hover: wasmImport.hover,
   definedValues: wasmImport.definedValues,
   htmlToMarkdown: wasmImport.htmlToMarkdown,
   toHtml: wasmImport.toHtml,
+  clearHttpCache: wasmImport.clearHttpCache,
+  clearAllHttpCache: wasmImport.clearAllHttpCache,
 };
 
 /**
@@ -101,6 +112,19 @@ export async function definedValues(
 }
 
 /**
+ * Get hover information for the symbol at the given position (1-based line and column).
+ *
+ * Returns `null` when no symbol exists at the position.
+ */
+export async function hover(
+  code: string,
+  line: number,
+  column: number,
+): Promise<HoverResult | null> {
+  return await wasmModule.hover(code, line, column);
+}
+
+/**
  * Convert HTML to Markdown.
  */
 export async function htmlToMarkdown(
@@ -115,4 +139,19 @@ export async function htmlToMarkdown(
  */
 export async function toHtml(markdownInput: string): Promise<string> {
   return await wasmModule.toHtml(markdownInput);
+}
+
+/**
+ * Clears mutable HTTP module cache (HEAD/branch imports).
+ * Versioned (tagged) cache is preserved.
+ */
+export async function clearHttpCache(): Promise<void> {
+  return await wasmModule.clearHttpCache();
+}
+
+/**
+ * Clears all HTTP module cache including versioned (tagged) imports.
+ */
+export async function clearAllHttpCache(): Promise<void> {
+  return await wasmModule.clearAllHttpCache();
 }
