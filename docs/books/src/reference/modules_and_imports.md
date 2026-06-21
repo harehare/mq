@@ -130,21 +130,22 @@ import "json"
 
 The `md` module provides functions for constructing markdown nodes from scratch, rather than
 filtering or transforming existing ones. Each function returns a markdown value that can be
-combined with others using `md::doc()`, which merges an array of nodes into a single markdown
-value. `md::doc()` flattens nested arrays automatically, so the result of `map()` (or any
-function returning a plain array of nodes) can be spliced in directly as children, and `None`
-entries (e.g. from conditional branches) are dropped.
+combined with others using `md::doc()`, which merges nodes into a single markdown value.
+`md::doc()` accepts either a variable number of arguments or a single array, and flattens nested
+arrays automatically, so the result of `map()` (or any function returning a plain array of nodes)
+can be spliced in directly as children, and `None` entries (e.g. from conditional branches) are
+dropped.
 
 > **Note:** This module is under development. APIs and behavior may change without notice.
 
 ```mq
 import "md"
-| md::doc([
+| md::doc(
     md::h("My Project", 1),
     md::text("Run `cargo install mq`."),
     md::code("cargo install mq", "bash"),
     map(["fast", "composable", "jq-like"], fn(x): md::list(x);),
-  ])
+  )
 ```
 
 Since the current value (`self`) is automatically passed when a call is missing an argument,
@@ -159,7 +160,7 @@ Lists and tables are built the same way:
 
 ```mq
 import "md"
-| md::doc([
+| md::doc(
     # List
     md::list("Plain item"),
     md::list("Nested item", 1),
@@ -169,7 +170,7 @@ import "md"
     md::table_row(["Name", "Age"]),
     md::table_align(["left", "right"]),
     md::table_row(["Alice", "30"]),
-  ])
+  )
 ```
 
 ## HTTP Imports

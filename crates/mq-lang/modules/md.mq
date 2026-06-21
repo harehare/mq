@@ -62,7 +62,8 @@ def table_cell(value, row, column): to_md_table_cell(value, row, column);
 # (e.g. ["left", "right", "center"]).
 def table_align(aligns): to_md_table_align(aligns);
 
-# Combines an array of markdown nodes into a single markdown value. Nested arrays
-# (e.g. from `map()`) are flattened automatically, so components can return plain
-# arrays of nodes and be spliced in as children.
-def doc(values): to_md_fragment(values);
+# Combines markdown nodes into a single markdown value. Accepts either a variable
+# number of arguments (`doc(a, b, c)`) or a single array (`doc([a, b, c])`). Nested
+# arrays (e.g. from `map()`) are flattened automatically, so components can return
+# plain arrays of nodes and be spliced in as children.
+def doc(*values): to_md_fragment(values);
