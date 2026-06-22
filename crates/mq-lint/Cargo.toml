@@ -27,11 +27,9 @@ disabled-strategies = ["quick-install"]
 [dependencies]
 clap = {workspace = true, features = ["derive"], optional = true}
 colored = {workspace = true, optional = true}
-miette = {workspace = true}
 mq-hir = {workspace = true}
 mq-lang = {workspace = true}
 rustc-hash = {workspace = true}
-thiserror = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}
