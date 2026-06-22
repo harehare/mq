@@ -3689,6 +3689,19 @@ fn file_exists_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+#[cfg(feature = "file-io")]
+#[mq_macros::mq_fn(name = "read_file_bytes", params = Fixed(1))]
+fn read_file_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(path)] => match std::fs::read(&path) {
+            Ok(content) => Ok(RuntimeValue::Bytes(content)),
+            Err(e) => Err(Error::Runtime(format!("Failed to read file {}: {}", path, e))),
+        },
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("read_file_bytes should always receive exactly one argument"),
+    }
+}
+
 const fn fnv1a_hash_64(s: &str) -> u64 {
     const FNV_OFFSET_BASIS_64: u64 = 14695981039346656037;
     const FNV_PRIME_64: u64 = 1099511628211;
@@ -3883,6 +3896,8 @@ mq_macros::builtin_dispatch! {
     READ_FILE,
     #[cfg(feature = "file-io")]
     FILE_EXISTS,
+    #[cfg(feature = "file-io")]
+    READ_FILE_BYTES,
 }
 
 #[derive(Clone, Debug)]
@@ -5324,6 +5339,14 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         SmolStr::new("file_exists"),
         BuiltinFunctionDoc {
             description: "Checks if a file exists at the given path.",
+            params: &["path"],
+        },
+    );
+    #[cfg(feature = "file-io")]
+    map.insert(
+        SmolStr::new("read_file_bytes"),
+        BuiltinFunctionDoc {
+            description: "Reads the contents of a file at the given path and returns it as raw bytes.",
             params: &["path"],
         },
     );
@@ -8825,6 +8848,29 @@ mod tests {
     #[test]
     fn test_file_exists_invalid_type() {
         let result = call("file_exists", vec![RuntimeValue::Number(42.into())]);
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "file-io")]
+    #[test]
+    fn test_read_file_bytes() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        tmp.write_all(&[0x89, 0x50, 0x4e, 0x47]).expect("failed to write");
+        let path = tmp.path().to_string_lossy().to_string();
+        assert_eq!(
+            call("read_file_bytes", vec![RuntimeValue::String(path)]),
+            Ok(RuntimeValue::Bytes(vec![0x89, 0x50, 0x4e, 0x47]))
+        );
+    }
+
+    #[cfg(feature = "file-io")]
+    #[test]
+    fn test_read_file_bytes_with_nonexistent_file() {
+        let result = call(
+            "read_file_bytes",
+            vec![RuntimeValue::String("/nonexistent/path/no_such_file.png".into())],
+        );
         assert!(result.is_err());
     }
 }
