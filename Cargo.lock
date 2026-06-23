@@ -733,7 +733,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f70e4ddd6beedefeb48f59d5f85fc21365a66e7976408c3d39f6cbbc4f03e08c"
 dependencies = [
  "divan-macros",
- "itertools",
+ "itertools 0.14.0",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -2123,6 +2123,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2541,7 +2550,7 @@ name = "mq-fuzz"
 version = "0.5.5"
 dependencies = [
  "arbitrary",
- "itertools",
+ "itertools 0.15.0",
  "libfuzzer-sys",
  "mq-lang",
 ]
@@ -2550,7 +2559,7 @@ dependencies = [
 name = "mq-hir"
 version = "0.6.2"
 dependencies = [
- "itertools",
+ "itertools 0.15.0",
  "mq-lang",
  "rstest",
  "rustc-hash",
@@ -2572,7 +2581,7 @@ dependencies = [
  "csv",
  "dirs 6.0.0",
  "hcl-rs",
- "itertools",
+ "itertools 0.15.0",
  "md5",
  "miette",
  "mq-macros",
@@ -2611,7 +2620,7 @@ dependencies = [
  "bimap",
  "clap",
  "dashmap",
- "itertools",
+ "itertools 0.15.0",
  "mq-check",
  "mq-formatter",
  "mq-hir",
@@ -2640,7 +2649,7 @@ version = "0.6.2"
 dependencies = [
  "codspeed-divan-compat",
  "ego-tree",
- "itertools",
+ "itertools 0.15.0",
  "markdown",
  "miette",
  "rstest",
@@ -2712,7 +2721,7 @@ dependencies = [
 name = "mq-wasm"
 version = "0.6.2"
 dependencies = [
- "itertools",
+ "itertools 0.15.0",
  "js-sys",
  "md5",
  "mq-check",
@@ -3322,7 +3331,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn",
@@ -4365,9 +4374,9 @@ checksum = "b7401a30af6cb5818bb64852270bb722533397edcfc7344954a38f420819ece2"
 
 [[package]]
 name = "syn"
-version = "2.0.117"
+version = "2.0.118"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e665b8803e7b1d2a727f4023456bbbbe74da67099c585258af0ad9c5013b9b99"
+checksum = "1b9ae57f904213ebb649ce6895b8a66c66f0203b9319718f69a5612a065b1422"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5482,9 +5491,9 @@ dependencies = [
 
 [[package]]
 name = "which"
-version = "8.0.3"
+version = "8.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c789537cf2f7f55be8e6192f92e464174ee55f91af622777f7f1ceb0dbccd03e"
+checksum = "48d7cd18d4acb58fb3cdfe9ea54e6cd96a4e7d4cc45c56338b236e82dad47248"
 dependencies = [
  "libc",
 ]
