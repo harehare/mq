@@ -3702,6 +3702,84 @@ fn read_file_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Sha
     }
 }
 
+#[cfg(feature = "file-io")]
+fn collection_record(path: String, raw: &str) -> Result<RuntimeValue, Error> {
+    let nodes = mq_markdown::Markdown::from_markdown_str(raw)
+        .map_err(|e| Error::Runtime(format!("Failed to parse markdown {}: {}", path, e)))?
+        .nodes;
+
+    let (frontmatter, body_nodes) = match nodes.first() {
+        Some(mq_markdown::Node::Yaml(yaml)) => {
+            let frontmatter = yaml_rust2::YamlLoader::load_from_str(&yaml.value)
+                .map_err(|e| Error::Runtime(format!("Failed to parse YAML frontmatter in {}: {}", path, e)))?
+                .into_iter()
+                .next()
+                .map(RuntimeValue::from)
+                .unwrap_or(RuntimeValue::NONE);
+            (frontmatter, &nodes[1..])
+        }
+        Some(mq_markdown::Node::Toml(toml_node)) => {
+            let value: serde_json::Value = toml::from_str(&toml_node.value)
+                .map_err(|e| Error::Runtime(format!("Failed to parse TOML frontmatter in {}: {}", path, e)))?;
+            (value.into(), &nodes[1..])
+        }
+        _ => (RuntimeValue::NONE, &nodes[..]),
+    };
+
+    let title = nodes
+        .iter()
+        .find(|node| matches!(node, mq_markdown::Node::Heading(_)))
+        .map(|node| RuntimeValue::String(node.value()))
+        .unwrap_or(RuntimeValue::NONE);
+
+    let content = RuntimeValue::Array(body_nodes.iter().cloned().map(RuntimeValue::from).collect());
+
+    let mut record = BTreeMap::new();
+    record.insert(Ident::new("path"), RuntimeValue::String(path));
+    record.insert(Ident::new("title"), title);
+    record.insert(Ident::new("frontmatter"), frontmatter);
+    record.insert(Ident::new("content"), content);
+
+    Ok(RuntimeValue::Dict(record))
+}
+
+#[cfg(feature = "file-io")]
+#[mq_macros::mq_fn(name = "collection", params = Fixed(1))]
+fn collection_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(dir)] => {
+            let entries = std::fs::read_dir(&dir)
+                .map_err(|e| Error::Runtime(format!("Failed to read directory {}: {}", dir, e)))?;
+
+            let mut paths: Vec<std::path::PathBuf> = entries
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path())
+                .filter(|path| {
+                    path.is_file()
+                        && path
+                            .extension()
+                            .and_then(|ext| ext.to_str())
+                            .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
+                })
+                .collect();
+            paths.sort();
+
+            let records = paths
+                .into_iter()
+                .map(|path| {
+                    let raw = std::fs::read_to_string(&path)
+                        .map_err(|e| Error::Runtime(format!("Failed to read file {}: {}", path.display(), e)))?;
+                    collection_record(path.to_string_lossy().into_owned(), &raw)
+                })
+                .collect::<Result<Vec<RuntimeValue>, Error>>()?;
+
+            Ok(RuntimeValue::Array(records))
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("collection should always receive exactly one argument"),
+    }
+}
+
 const fn fnv1a_hash_64(s: &str) -> u64 {
     const FNV_OFFSET_BASIS_64: u64 = 14695981039346656037;
     const FNV_PRIME_64: u64 = 1099511628211;
@@ -3898,6 +3976,8 @@ mq_macros::builtin_dispatch! {
     FILE_EXISTS,
     #[cfg(feature = "file-io")]
     READ_FILE_BYTES,
+    #[cfg(feature = "file-io")]
+    COLLECTION,
 }
 
 #[derive(Clone, Debug)]
@@ -5348,6 +5428,14 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Reads the contents of a file at the given path and returns it as raw bytes.",
             params: &["path"],
+        },
+    );
+    #[cfg(feature = "file-io")]
+    map.insert(
+        SmolStr::new("collection"),
+        BuiltinFunctionDoc {
+            description: "Reads every Markdown file in the given directory and returns an array of `{path, title, frontmatter, content}` dicts, sorted by path, so they can be filtered, sorted, or aggregated as a single dataset. `content` holds the file's Markdown nodes with frontmatter stripped.",
+            params: &["dir"],
         },
     );
 
@@ -8871,6 +8959,89 @@ mod tests {
             "read_file_bytes",
             vec![RuntimeValue::String("/nonexistent/path/no_such_file.png".into())],
         );
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "file-io")]
+    #[test]
+    fn test_collection() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(
+            dir.path().join("b.md"),
+            "---\ntitle: Hello\ntags:\n  - rust\n---\n\n# Hello\n\nbody text\n",
+        )
+        .expect("failed to write");
+        std::fs::write(dir.path().join("a.md"), "+++\ntitle = \"World\"\n+++\n\n# World\n").expect("failed to write");
+        std::fs::write(dir.path().join("c.md"), "# No frontmatter\n\nplain\n").expect("failed to write");
+        std::fs::write(dir.path().join("ignore.txt"), "not markdown").expect("failed to write");
+
+        let result = call(
+            "collection",
+            vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+        )
+        .expect("collection should succeed");
+
+        let entries = match result {
+            RuntimeValue::Array(entries) => entries,
+            other => panic!("expected Array, got {other:?}"),
+        };
+        assert_eq!(entries.len(), 3);
+
+        // sorted by path: a.md, b.md, c.md
+        let get = |entry: &RuntimeValue, key: &str| match entry {
+            RuntimeValue::Dict(d) => d.get(&Ident::new(key)).cloned().unwrap_or(RuntimeValue::NONE),
+            other => panic!("expected Dict, got {other:?}"),
+        };
+
+        assert_eq!(get(&entries[0], "title"), RuntimeValue::String("World".into()));
+        let mut toml_frontmatter = BTreeMap::new();
+        toml_frontmatter.insert(Ident::new("title"), RuntimeValue::String("World".into()));
+        assert_eq!(get(&entries[0], "frontmatter"), RuntimeValue::Dict(toml_frontmatter));
+
+        assert_eq!(get(&entries[1], "title"), RuntimeValue::String("Hello".into()));
+        match get(&entries[1], "frontmatter") {
+            RuntimeValue::Dict(d) => {
+                assert_eq!(d.get(&Ident::new("title")), Some(&RuntimeValue::String("Hello".into())));
+                assert_eq!(
+                    d.get(&Ident::new("tags")),
+                    Some(&RuntimeValue::Array(vec![RuntimeValue::String("rust".into())]))
+                );
+            }
+            other => panic!("expected Dict, got {other:?}"),
+        }
+        match get(&entries[1], "content") {
+            RuntimeValue::Array(nodes) => {
+                assert!(nodes.iter().any(|n| match n {
+                    RuntimeValue::Markdown(node, _) => node.value().contains("body text"),
+                    _ => false,
+                }));
+                assert!(
+                    !nodes
+                        .iter()
+                        .any(|n| matches!(n, RuntimeValue::Markdown(node, _) if node.is_yaml()))
+                );
+            }
+            other => panic!("expected Array, got {other:?}"),
+        }
+
+        assert_eq!(get(&entries[2], "title"), RuntimeValue::String("No frontmatter".into()));
+        assert_eq!(get(&entries[2], "frontmatter"), RuntimeValue::NONE);
+    }
+
+    #[cfg(feature = "file-io")]
+    #[test]
+    fn test_collection_with_nonexistent_dir() {
+        let result = call(
+            "collection",
+            vec![RuntimeValue::String("/nonexistent/path/no_such_dir".into())],
+        );
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "file-io")]
+    #[test]
+    fn test_collection_invalid_type() {
+        let result = call("collection", vec![RuntimeValue::Number(42.into())]);
         assert!(result.is_err());
     }
 }
