@@ -82,22 +82,18 @@ fn run() -> io::Result<bool> {
     if cli.files.is_empty() {
         let mut code = String::new();
         io::stdin().read_to_string(&mut code)?;
-        let had_diagnostics = lint_source(&mut w, &code, None, &linter, &config, min_severity)?;
+        let had_diagnostics = lint_source(&mut w, &code, "<stdin>", &linter, &config, min_severity)?;
         return Ok(had_diagnostics);
     }
 
-    let multi = cli.files.len() > 1;
     let mut had_diagnostics = false;
 
     for path in &cli.files {
         let code = std::fs::read_to_string(path)
             .map_err(|e| io::Error::other(format!("reading file {}: {}", path.display(), e)))?;
-        let label = if multi { Some(path.display().to_string()) } else { None };
-        if lint_source(&mut w, &code, label.as_deref(), &linter, &config, min_severity)? {
+        let label = path.display().to_string();
+        if lint_source(&mut w, &code, &label, &linter, &config, min_severity)? {
             had_diagnostics = true;
-        }
-        if multi {
-            writeln!(w)?;
         }
     }
 
@@ -113,11 +109,15 @@ fn list_rules(w: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
-/// Lints a single source, writes diagnostics, and returns `true` if any were reported.
+/// Severities in the order categories are displayed, most severe first.
+const SEVERITY_ORDER: [Severity; 4] = [Severity::Error, Severity::Warn, Severity::Perf, Severity::Style];
+
+/// Lints a single source, writes diagnostics grouped by severity in a Credo-style report,
+/// and returns `true` if any were reported.
 fn lint_source(
     w: &mut impl Write,
     code: &str,
-    label: Option<&str>,
+    file_label: &str,
     linter: &Linter,
     config: &LintConfig,
     min_severity: Severity,
@@ -133,12 +133,17 @@ fn lint_source(
         .collect();
     diagnostics.sort_by_key(|d| d.range.map(|r| (r.start.line, r.start.column)));
 
-    if let Some(lbl) = label {
-        writeln!(w, "{} {}", "──".dimmed(), lbl.bold())?;
-    }
-
-    for diagnostic in &diagnostics {
-        write_diagnostic(w, diagnostic, code)?;
+    let mut printed_category = false;
+    for severity in SEVERITY_ORDER {
+        let group: Vec<&Diagnostic> = diagnostics.iter().filter(|d| d.severity == severity).collect();
+        if group.is_empty() {
+            continue;
+        }
+        if printed_category {
+            writeln!(w)?;
+        }
+        printed_category = true;
+        write_category(w, severity, &group, file_label)?;
     }
 
     if diagnostics.is_empty() {
@@ -149,92 +154,106 @@ fn lint_source(
             "No lint issues found.".bright_green()
         )?;
     } else {
-        writeln!(
-            w,
-            "{}  {} issue{} found.",
-            "✗".bright_red().bold(),
-            diagnostics.len().to_string().bright_red().bold(),
-            if diagnostics.len() == 1 { "" } else { "s" },
-        )?;
+        writeln!(w)?;
+        write_summary(w, &diagnostics)?;
     }
 
     Ok(!diagnostics.is_empty())
 }
 
-fn severity_label(severity: Severity) -> colored::ColoredString {
+/// Maps a severity to its Credo-style category title and one-letter marker.
+fn severity_category(severity: Severity) -> (colored::ColoredString, colored::ColoredString) {
     match severity {
-        Severity::Style => "style".cyan().bold(),
-        Severity::Perf => "perf".blue().bold(),
-        Severity::Warn => "warn".bright_yellow().bold(),
-        Severity::Error => "error".bright_red().bold(),
+        Severity::Error => ("## Errors".bright_red().bold(), "[E]".bright_red().bold()),
+        Severity::Warn => ("## Warnings".bright_yellow().bold(), "[W]".bright_yellow().bold()),
+        Severity::Perf => ("## Performance".blue().bold(), "[P]".blue().bold()),
+        Severity::Style => ("## Style".cyan().bold(), "[S]".cyan().bold()),
     }
 }
 
-fn write_diagnostic(w: &mut impl Write, diagnostic: &Diagnostic, code: &str) -> io::Result<()> {
-    let loc_plain = diagnostic
-        .range
-        .map(|range| format!("{}:{}", range.start.line, range.start.column))
-        .unwrap_or_default();
-    let prefix_width = loc_plain.len();
-    let sep = "│".dimmed();
-
-    writeln!(
-        w,
-        "  {} {} {} {} {}",
-        loc_plain.dimmed(),
-        sep,
-        severity_label(diagnostic.severity),
-        diagnostic.rule_id().as_str().bright_magenta(),
-        diagnostic.message(),
-    )?;
-
-    if let Some(range) = &diagnostic.range {
-        write_snippet(w, code, range, prefix_width)?;
+/// Uses mq's own pipe operator `|` as the gutter bar.
+fn severity_bar(severity: Severity) -> colored::ColoredString {
+    match severity {
+        Severity::Error => "|".bright_red(),
+        Severity::Warn => "|".bright_yellow(),
+        Severity::Perf => "|".blue(),
+        Severity::Style => "|".cyan(),
     }
+}
 
-    if let Some(help) = diagnostic.help() {
+/// Writes one severity category: a heading followed by its diagnostics, each as a
+/// `[X] message` line with the `file:line:col .rule_id` location on the line below
+/// (the rule id rendered as an mq selector, e.g. `.unused_variable`).
+fn write_category(
+    w: &mut impl Write,
+    severity: Severity,
+    diagnostics: &[&Diagnostic],
+    file_label: &str,
+) -> io::Result<()> {
+    let (title, letter) = severity_category(severity);
+    let bar = severity_bar(severity);
+
+    writeln!(w, "{}\n", title)?;
+    writeln!(w, "{bar}")?;
+
+    for (i, diagnostic) in diagnostics.iter().enumerate() {
+        match diagnostic.severity {
+            Severity::Error => writeln!(w, "{bar} {} {}", letter, diagnostic.message().bright_red().bold())?,
+            Severity::Warn => writeln!(w, "{bar} {} {}", letter, diagnostic.message().bright_yellow().bold())?,
+            Severity::Perf => writeln!(w, "{bar} {} {}", letter, diagnostic.message().blue().bold())?,
+            Severity::Style => writeln!(w, "{bar} {} {}", letter, diagnostic.message().cyan().bold())?,
+        }
+
+        let loc = match &diagnostic.range {
+            Some(range) => format!("{}:{}:{}", file_label, range.start.line, range.start.column),
+            None => file_label.to_string(),
+        };
         writeln!(
             w,
-            "  {} {} {}",
-            " ".repeat(prefix_width),
-            sep,
-            format!("help: {help}").bright_blue(),
+            "{bar}     {} {}",
+            loc.dimmed(),
+            format!(".{}", diagnostic.rule_id().as_str()).dimmed(),
         )?;
+
+        if let Some(help) = diagnostic.help() {
+            writeln!(w, "{bar}       {}", format!("help: {help}").bright_blue())?;
+        }
+
+        if i + 1 < diagnostics.len() {
+            writeln!(w, "{bar}")?;
+        }
     }
 
     Ok(())
 }
 
-/// Writes a source snippet for the diagnostic location with a caret underline.
-fn write_snippet(w: &mut impl Write, code: &str, range: &mq_lang::Range, prefix_width: usize) -> io::Result<()> {
-    let sep = "│".dimmed();
-    let lines: Vec<&str> = code.lines().collect();
-    let line_idx = range.start.line.saturating_sub(1) as usize;
-    let Some(source_line) = lines.get(line_idx) else {
-        return Ok(());
-    };
+/// Writes the trailing summary line, e.g. `found 3 issues (2 warnings, 1 style).`
+fn write_summary(w: &mut impl Write, diagnostics: &[Diagnostic]) -> io::Result<()> {
+    let breakdown: Vec<String> = SEVERITY_ORDER
+        .into_iter()
+        .filter_map(|severity| {
+            let count = diagnostics.iter().filter(|d| d.severity == severity).count();
+            if count == 0 {
+                return None;
+            }
+            let (singular, plural) = match severity {
+                Severity::Error => ("error".bright_red(), "errors".bright_red()),
+                Severity::Warn => ("warning".bright_yellow(), "warnings".bright_yellow()),
+                Severity::Perf => ("performance".blue(), "performance".blue()),
+                Severity::Style => ("style".cyan(), "style".cyan()),
+            };
+            Some(format!("{count} {}", if count == 1 { singular } else { plural }))
+        })
+        .collect();
 
-    let col_start = range.start.column.saturating_sub(1);
-    let col_end = if range.end.line == range.start.line {
-        range.end.column.saturating_sub(1)
-    } else {
-        source_line.len()
-    };
-    let underline_len = col_end.saturating_sub(col_start).max(1);
-
-    let line_num = range.start.line.to_string();
-    let gutter = " ".repeat(prefix_width.max(line_num.len()));
-
-    writeln!(w, "  {} {} {}", gutter, sep, source_line.dimmed())?;
     writeln!(
         w,
-        "  {} {} {}{}",
-        format!("{:>width$}", line_num, width = prefix_width).dimmed(),
-        sep,
-        " ".repeat(col_start),
-        "^".repeat(underline_len).bright_red().bold(),
-    )?;
-    Ok(())
+        "{} {} issue{} ({}).",
+        "found".bold(),
+        diagnostics.len().to_string().bold(),
+        if diagnostics.len() == 1 { "" } else { "s" },
+        breakdown.join(", "),
+    )
 }
 
 #[cfg(test)]

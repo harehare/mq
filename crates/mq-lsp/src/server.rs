@@ -462,31 +462,6 @@ impl Backend {
                     }
                 }));
 
-                // Add unused function warnings
-                let unused_functions = hir_guard.unused_functions(*source_id);
-                for (_, symbol) in unused_functions {
-                    if let Some(text_range) = &symbol.source.text_range {
-                        let mut diagnostic = ls_types::Diagnostic::new_simple(
-                            ls_types::Range::new(
-                                ls_types::Position {
-                                    line: text_range.start.line - 1,
-                                    character: (text_range.start.column - 1) as u32,
-                                },
-                                ls_types::Position {
-                                    line: text_range.end.line - 1,
-                                    character: (text_range.end.column - 1) as u32,
-                                },
-                            ),
-                            format!(
-                                "Function '{}' is defined but never used",
-                                symbol.value.as_ref().unwrap_or(&"<anonymous>".into())
-                            ),
-                        );
-                        diagnostic.severity = Some(ls_types::DiagnosticSeverity::WARNING);
-                        diagnostics.push(diagnostic);
-                    }
-                }
-
                 // Add HIR warnings (including unreachable code warnings)
                 diagnostics.extend(hir_guard.warning_ranges().into_iter().filter_map(|(message, item)| {
                     if range_set.contains(&item) {
@@ -510,7 +485,6 @@ impl Backend {
                     }
                 }));
 
-                // `unused_function` is skipped: already covered by the warning above.
                 if self.config.enable_lint {
                     let lint_ctx = mq_lint::LintContext::new(&hir_guard, *source_id, &self.config.lint_config);
                     let linter = mq_lint::Linter::with_default_rules();
@@ -518,7 +492,6 @@ impl Backend {
                         linter
                             .run(&lint_ctx)
                             .into_iter()
-                            .filter(|d| d.rule_id() != mq_lint::RuleId::UnusedFunction)
                             .map(|d| (&LspError::LintWarning(d)).into()),
                     );
                 }
