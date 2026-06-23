@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct TooManyMatchArms;
 
 impl LintRule for TooManyMatchArms {
-    fn id(&self) -> &'static str {
-        "too_many_match_arms"
+    fn id(&self) -> RuleId {
+        RuleId::TooManyMatchArms
     }
 
     fn severity(&self) -> Severity {
@@ -35,15 +35,11 @@ impl LintRule for TooManyMatchArms {
                     return None;
                 }
 
-                let mut d = Diagnostic::new(
-                    self.id(),
-                    self.severity(),
-                    format!("match expression has {arm_count} arms (limit: {max_arms})"),
-                );
+                let mut d = Diagnostic::new(LintMessage::TooManyMatchArms { arm_count, max_arms }, self.severity());
                 if let Some(range) = match_sym.source.text_range {
                     d = d.with_range(range);
                 }
-                Some(d.with_help("consider refactoring into helper functions or a lookup table"))
+                Some(d)
             })
             .collect()
     }

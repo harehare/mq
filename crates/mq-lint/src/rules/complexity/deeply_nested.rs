@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{ScopeId, ScopeKind};
 
 pub struct DeeplyNested;
 
 impl LintRule for DeeplyNested {
-    fn id(&self) -> &'static str {
-        "deeply_nested"
+    fn id(&self) -> RuleId {
+        RuleId::DeeplyNested
     }
 
     fn severity(&self) -> Severity {
@@ -41,15 +41,11 @@ impl LintRule for DeeplyNested {
                 ScopeKind::Module(_) => None,
             };
 
-            let mut d = Diagnostic::new(
-                self.id(),
-                self.severity(),
-                format!("nesting depth {depth} exceeds the limit of {max_depth}"),
-            );
+            let mut d = Diagnostic::new(LintMessage::DeeplyNested { depth, max_depth }, self.severity());
             if let Some(r) = range {
                 d = d.with_range(r);
             }
-            diagnostics.push(d.with_help("reduce nesting by extracting code into helper functions"));
+            diagnostics.push(d);
         }
 
         diagnostics

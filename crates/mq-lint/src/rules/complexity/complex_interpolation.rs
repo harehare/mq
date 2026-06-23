@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct ComplexInterpolation;
 
 impl LintRule for ComplexInterpolation {
-    fn id(&self) -> &'static str {
-        "complex_interpolation"
+    fn id(&self) -> RuleId {
+        RuleId::ComplexInterpolation
     }
 
     fn severity(&self) -> Severity {
@@ -30,14 +30,13 @@ impl LintRule for ComplexInterpolation {
                 }
 
                 let mut d = Diagnostic::new(
-                    self.id(),
+                    LintMessage::ComplexInterpolation { expr_count, max_exprs },
                     self.severity(),
-                    format!("interpolated string has {expr_count} interpolated expressions (limit: {max_exprs})"),
                 );
                 if let Some(range) = sym.source.text_range {
                     d = d.with_range(range);
                 }
-                Some(d.with_help("consider extracting parts into intermediate `let` bindings for readability"))
+                Some(d)
             })
             .collect()
     }

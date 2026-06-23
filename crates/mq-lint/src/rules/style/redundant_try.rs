@@ -1,12 +1,12 @@
 use mq_hir::SymbolKind;
 
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 
 pub struct RedundantTry;
 
 impl LintRule for RedundantTry {
-    fn id(&self) -> &'static str {
-        "redundant_try"
+    fn id(&self) -> RuleId {
+        RuleId::RedundantTry
     }
 
     fn severity(&self) -> Severity {
@@ -31,15 +31,11 @@ impl LintRule for RedundantTry {
                     return None;
                 }
 
-                let mut d = Diagnostic::new(
-                    self.id(),
-                    self.severity(),
-                    "`try: ... catch: none` is equivalent to the `?` error-suppression operator",
-                );
+                let mut d = Diagnostic::new(LintMessage::RedundantTry, self.severity());
                 if let Some(range) = try_sym.source.text_range {
                     d = d.with_range(range);
                 }
-                Some(d.with_help("rewrite as `<expr>?`"))
+                Some(d)
             })
             .collect()
     }

@@ -1,13 +1,13 @@
 use rustc_hash::FxHashSet;
 
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct UnusedVariable;
 
 impl LintRule for UnusedVariable {
-    fn id(&self) -> &'static str {
-        "unused_variable"
+    fn id(&self) -> RuleId {
+        RuleId::UnusedVariable
     }
 
     fn severity(&self) -> Severity {
@@ -33,11 +33,11 @@ impl LintRule for UnusedVariable {
                 if used_names.contains(name) {
                     return None;
                 }
-                let mut d = Diagnostic::new(self.id(), self.severity(), format!("unused variable `{name}`"));
+                let mut d = Diagnostic::new(LintMessage::UnusedVariable { name: name.to_string() }, self.severity());
                 if let Some(range) = sym.source.text_range {
                     d = d.with_range(range);
                 }
-                Some(d.with_help(format!("if this is intentional, prefix with `_`: `_{name}`")))
+                Some(d)
             })
             .collect()
     }
@@ -62,7 +62,7 @@ mod tests {
     fn detects_unused_variable() {
         let diags = check("let x = .h1");
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("unused variable `x`"));
+        assert!(diags[0].message().contains("unused variable `x`"));
     }
 
     #[test]

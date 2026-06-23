@@ -1,12 +1,12 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolId;
 use mq_hir::SymbolKind;
 
 pub struct InfiniteLoop;
 
 impl LintRule for InfiniteLoop {
-    fn id(&self) -> &'static str {
-        "infinite_loop"
+    fn id(&self) -> RuleId {
+        RuleId::InfiniteLoop
     }
 
     fn severity(&self) -> Severity {
@@ -25,11 +25,11 @@ impl LintRule for InfiniteLoop {
 
         for (loop_id, loop_sym) in loops {
             if !has_break_descendant(ctx, loop_id) {
-                let mut d = Diagnostic::new(self.id(), self.severity(), "loop without `break` may run forever");
+                let mut d = Diagnostic::new(LintMessage::InfiniteLoop, self.severity());
                 if let Some(range) = loop_sym.source.text_range {
                     d = d.with_range(range);
                 }
-                diagnostics.push(d.with_help("add a `break` expression to exit the loop"));
+                diagnostics.push(d);
             }
         }
 

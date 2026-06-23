@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct MissingModuleDoc;
 
 impl LintRule for MissingModuleDoc {
-    fn id(&self) -> &'static str {
-        "missing_module_doc"
+    fn id(&self) -> RuleId {
+        RuleId::MissingModuleDoc
     }
 
     fn severity(&self) -> Severity {
@@ -17,16 +17,12 @@ impl LintRule for MissingModuleDoc {
             .filter(|(_, sym)| matches!(sym.kind, SymbolKind::Module(_)))
             .filter(|(_, sym)| sym.doc.is_empty())
             .map(|(_, sym)| {
-                let name = sym.value.as_deref().unwrap_or("<anonymous>");
-                let mut d = Diagnostic::new(
-                    self.id(),
-                    self.severity(),
-                    format!("module `{name}` has no documentation comment"),
-                );
+                let name = sym.value.as_deref().unwrap_or("<anonymous>").to_string();
+                let mut d = Diagnostic::new(LintMessage::MissingModuleDoc { name }, self.severity());
                 if let Some(range) = sym.source.text_range {
                     d = d.with_range(range);
                 }
-                d.with_help(format!("add a `#` doc comment above `module {name}:`"))
+                d
             })
             .collect()
     }
@@ -51,7 +47,7 @@ mod tests {
     fn detects_module_without_doc() {
         let diags = check("module a: def b(): 1; end");
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("module `a`"));
+        assert!(diags[0].message().contains("module `a`"));
     }
 
     #[test]

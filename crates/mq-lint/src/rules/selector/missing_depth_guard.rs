@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct MissingDepthGuard;
 
 impl LintRule for MissingDepthGuard {
-    fn id(&self) -> &'static str {
-        "missing_depth_guard"
+    fn id(&self) -> RuleId {
+        RuleId::MissingDepthGuard
     }
 
     fn severity(&self) -> Severity {
@@ -31,18 +31,11 @@ impl LintRule for MissingDepthGuard {
         ctx.all_symbols()
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Selector(mq_lang::Selector::Recursive)))
             .map(|(_, sym)| {
-                let mut d = Diagnostic::new(
-                    self.id(),
-                    self.severity(),
-                    "`..` (recursive selector) used without a depth guard",
-                );
+                let mut d = Diagnostic::new(LintMessage::MissingDepthGuard, self.severity());
                 if let Some(range) = sym.source.text_range {
                     d = d.with_range(range);
                 }
-                d.with_help(
-                    "consider adding a depth limit, e.g. `.. | select(.depth <= 3)`, \
-                     to avoid traversing the entire document",
-                )
+                d
             })
             .collect()
     }
@@ -67,7 +60,7 @@ mod tests {
     fn detects_bare_recursive_selector() {
         let diags = check("..");
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("depth guard"));
+        assert!(diags[0].message().contains("depth guard"));
     }
 
     #[test]

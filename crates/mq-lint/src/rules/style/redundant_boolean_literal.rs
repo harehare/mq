@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{SymbolId, SymbolKind};
 
 pub struct RedundantBooleanLiteral;
 
 impl LintRule for RedundantBooleanLiteral {
-    fn id(&self) -> &'static str {
-        "redundant_boolean_literal"
+    fn id(&self) -> RuleId {
+        RuleId::RedundantBooleanLiteral
     }
 
     fn severity(&self) -> Severity {
@@ -40,21 +40,16 @@ impl LintRule for RedundantBooleanLiteral {
             // Pattern: if (cond): true else: false  →  cond
             //          if (cond): false else: true  →  !cond
             if (then_val == "true" && else_val == "false") || (then_val == "false" && else_val == "true") {
-                let suggestion = if then_val == "true" {
-                    "replace `if (cond): true else: false` with just `cond`"
-                } else {
-                    "replace `if (cond): false else: true` with `not(cond)` or `!(cond)`"
-                };
-
                 let mut d = Diagnostic::new(
-                    self.id(),
+                    LintMessage::RedundantBooleanLiteral {
+                        then_val: then_val.to_string(),
+                    },
                     self.severity(),
-                    "redundant boolean literal in `if`/`else` — condition already is the result",
                 );
                 if let Some(range) = if_sym.source.text_range {
                     d = d.with_range(range);
                 }
-                diagnostics.push(d.with_help(suggestion));
+                diagnostics.push(d);
             }
         }
 
@@ -126,7 +121,7 @@ mod tests {
     fn detects_true_false_pattern() {
         let diags = check("if (.h1): true else: false;");
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("redundant boolean literal"));
+        assert!(diags[0].message().contains("redundant boolean literal"));
     }
 
     #[test]

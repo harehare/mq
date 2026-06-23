@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct AlwaysTrueCondition;
 
 impl LintRule for AlwaysTrueCondition {
-    fn id(&self) -> &'static str {
-        "always_true_condition"
+    fn id(&self) -> RuleId {
+        RuleId::AlwaysTrueCondition
     }
 
     fn severity(&self) -> Severity {
@@ -45,14 +45,15 @@ impl LintRule for AlwaysTrueCondition {
             }
 
             let mut d = Diagnostic::new(
-                self.id(),
+                LintMessage::AlwaysTrueCondition {
+                    value: value.to_string(),
+                },
                 self.severity(),
-                format!("condition is always `{value}` — this branch is never/always taken"),
             );
             if let Some(range) = if_sym.source.text_range {
                 d = d.with_range(range);
             }
-            diagnostics.push(d.with_help("replace the `if` with the branch that will always execute"));
+            diagnostics.push(d);
         }
 
         diagnostics
@@ -78,14 +79,14 @@ mod tests {
     fn detects_literal_true_condition() {
         let diags = check("if (true): 1 else: 2;");
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("always `true`"));
+        assert!(diags[0].message().contains("always `true`"));
     }
 
     #[test]
     fn detects_literal_false_condition() {
         let diags = check("if (false): 1 else: 2;");
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("always `false`"));
+        assert!(diags[0].message().contains("always `false`"));
     }
 
     #[test]

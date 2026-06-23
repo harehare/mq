@@ -1,7 +1,7 @@
 use mq_hir::SymbolKind;
 use mq_lang::Selector;
 
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 
 pub struct SelectorAlwaysEmpty;
 
@@ -18,8 +18,8 @@ fn mutually_exclusive(first: &Selector, second: &Selector) -> bool {
 }
 
 impl LintRule for SelectorAlwaysEmpty {
-    fn id(&self) -> &'static str {
-        "selector_always_empty"
+    fn id(&self) -> RuleId {
+        RuleId::SelectorAlwaysEmpty
     }
 
     fn severity(&self) -> Severity {
@@ -46,18 +46,19 @@ impl LintRule for SelectorAlwaysEmpty {
                     continue;
                 }
 
-                let first_text = first.value.as_deref().unwrap_or("<selector>");
-                let second_text = second.value.as_deref().unwrap_or("<selector>");
+                let first_text = first.value.as_deref().unwrap_or("<selector>").to_string();
+                let second_text = second.value.as_deref().unwrap_or("<selector>").to_string();
                 let mut d = Diagnostic::new(
-                    self.id(),
+                    LintMessage::SelectorAlwaysEmpty {
+                        first: first_text,
+                        second: second_text,
+                    },
                     self.severity(),
-                    format!("`{first_text} | {second_text}` can never match: a node can't be both"),
                 );
                 if let Some(range) = second.source.text_range {
                     d = d.with_range(range);
                 }
-                diagnostics
-                    .push(d.with_help("remove one of the selectors, or replace the pipe with a different query"));
+                diagnostics.push(d);
             }
         }
 

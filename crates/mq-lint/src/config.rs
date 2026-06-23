@@ -2,6 +2,8 @@
 
 use std::collections::HashMap;
 
+use crate::RuleId;
+
 /// Per-rule enable/disable flag.
 #[derive(Debug, Clone)]
 pub struct RuleConfig {
@@ -45,18 +47,18 @@ impl Default for ComplexityThresholds {
 #[derive(Debug, Clone, Default)]
 pub struct LintConfig {
     /// Per-rule overrides. Rules not listed here use their default enabled state.
-    pub rules: HashMap<String, RuleConfig>,
+    pub rules: HashMap<RuleId, RuleConfig>,
     pub complexity: ComplexityThresholds,
 }
 
 impl LintConfig {
     /// Returns `true` if the given rule should run.
-    pub fn is_rule_enabled(&self, rule_id: &str) -> bool {
-        self.rules.get(rule_id).map(|r| r.enabled).unwrap_or(true)
+    pub fn is_rule_enabled(&self, rule_id: RuleId) -> bool {
+        self.rules.get(&rule_id).map(|r| r.enabled).unwrap_or(true)
     }
 
     /// Disable a specific rule by ID.
-    pub fn disable_rule(&mut self, rule_id: impl Into<String>) {
-        self.rules.insert(rule_id.into(), RuleConfig { enabled: false });
+    pub fn disable_rule(&mut self, rule_id: RuleId) {
+        self.rules.insert(rule_id, RuleConfig { enabled: false });
     }
 }

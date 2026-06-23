@@ -58,7 +58,7 @@ struct LintArgs {
 
     /// Disable a specific lint rule by ID (repeatable)
     #[arg(long = "disable-lint-rule", value_name = "RULE_ID")]
-    disable_lint_rule: Vec<String>,
+    disable_lint_rule: Vec<mq_lint::RuleId>,
 }
 
 #[tokio::main]
@@ -71,7 +71,7 @@ async fn main() {
 
     let mut lint_config = mq_lint::LintConfig::default();
     for rule_id in &cli.lint.disable_lint_rule {
-        lint_config.disable_rule(rule_id.clone());
+        lint_config.disable_rule(*rule_id);
     }
 
     let config = LspConfig::new(

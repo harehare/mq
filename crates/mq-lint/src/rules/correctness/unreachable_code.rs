@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct UnreachableCode;
 
 impl LintRule for UnreachableCode {
-    fn id(&self) -> &'static str {
-        "unreachable_code"
+    fn id(&self) -> RuleId {
+        RuleId::UnreachableCode
     }
 
     fn severity(&self) -> Severity {
@@ -44,11 +44,16 @@ impl LintRule for UnreachableCode {
                 .collect();
 
             for (_, dead_sym) in unreachable {
-                let mut d = Diagnostic::new(self.id(), self.severity(), format!("unreachable code after `{kw}`"));
+                let mut d = Diagnostic::new(
+                    LintMessage::UnreachableCode {
+                        keyword: kw.to_string(),
+                    },
+                    self.severity(),
+                );
                 if let Some(range) = dead_sym.source.text_range {
                     d = d.with_range(range);
                 }
-                diagnostics.push(d.with_help("remove or move this code before the `break`/`continue`"));
+                diagnostics.push(d);
             }
         }
 

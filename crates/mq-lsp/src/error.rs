@@ -55,14 +55,14 @@ impl From<&LspError> for ls_types::Diagnostic {
                         ls_types::Position { line: 0, character: 1 },
                     )
                 });
-                let message = match &diagnostic.help {
-                    Some(help) => format!("{} (help: {help})", diagnostic.message),
-                    None => diagnostic.message.clone(),
+                let message = match diagnostic.help() {
+                    Some(help) => format!("{} (help: {help})", diagnostic.message()),
+                    None => diagnostic.message(),
                 };
                 ls_types::Diagnostic::new(
                     range,
                     Some(lint_severity(diagnostic.severity)),
-                    Some(NumberOrString::String(diagnostic.rule_id.to_string())),
+                    Some(NumberOrString::String(diagnostic.rule_id().to_string())),
                     Some("mq-lint".to_string()),
                     message,
                     None,
@@ -79,12 +79,14 @@ mod tests {
 
     #[test]
     fn lint_warning_carries_rule_id_source_and_severity() {
-        let diagnostic = mq_lint::Diagnostic::new("unused_variable", mq_lint::Severity::Warn, "unused variable `x`")
-            .with_range(mq_lang::Range {
-                start: mq_lang::Position { line: 1, column: 5 },
-                end: mq_lang::Position { line: 1, column: 6 },
-            })
-            .with_help("prefix with `_` if intentional");
+        let diagnostic = mq_lint::Diagnostic::new(
+            mq_lint::LintMessage::UnusedVariable { name: "x".to_string() },
+            mq_lint::Severity::Warn,
+        )
+        .with_range(mq_lang::Range {
+            start: mq_lang::Position { line: 1, column: 5 },
+            end: mq_lang::Position { line: 1, column: 6 },
+        });
 
         let lsp_diagnostic: ls_types::Diagnostic = (&LspError::LintWarning(diagnostic)).into();
 
@@ -95,15 +97,19 @@ mod tests {
         );
         assert_eq!(lsp_diagnostic.source, Some("mq-lint".to_string()));
         assert!(lsp_diagnostic.message.contains("unused variable `x`"));
-        assert!(lsp_diagnostic.message.contains("help: prefix with `_` if intentional"));
+        assert!(lsp_diagnostic.message.contains("help: if this is intentional"));
         assert_eq!(lsp_diagnostic.range.start.line, 0);
         assert_eq!(lsp_diagnostic.range.start.character, 4);
     }
 
     #[test]
     fn lint_warning_without_range_falls_back_to_origin() {
-        let diagnostic =
-            mq_lint::Diagnostic::new("duplicate_match_arm", mq_lint::Severity::Error, "duplicate match arm");
+        let diagnostic = mq_lint::Diagnostic::new(
+            mq_lint::LintMessage::DuplicateMatchArm {
+                pattern: "a".to_string(),
+            },
+            mq_lint::Severity::Error,
+        );
 
         let lsp_diagnostic: ls_types::Diagnostic = (&LspError::LintWarning(diagnostic)).into();
 

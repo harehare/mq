@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct BooleanComparison;
 
 impl LintRule for BooleanComparison {
-    fn id(&self) -> &'static str {
-        "boolean_comparison"
+    fn id(&self) -> RuleId {
+        RuleId::BooleanComparison
     }
 
     fn severity(&self) -> Severity {
@@ -35,23 +35,18 @@ impl LintRule for BooleanComparison {
             };
 
             let bool_val = bool_sym.value.as_deref().unwrap_or("true");
-            let help = match (op, bool_val) {
-                ("==", "true") => "use the value directly instead of `== true`",
-                ("==", "false") => "use `!` prefix instead of `== false`",
-                ("!=", "true") => "use `!` prefix instead of `!= true`",
-                ("!=", "false") => "use the value directly instead of `!= false`",
-                _ => "simplify this boolean comparison",
-            };
 
             let mut d = Diagnostic::new(
-                self.id(),
+                LintMessage::BooleanComparison {
+                    op: op.to_string(),
+                    bool_val: bool_val.to_string(),
+                },
                 self.severity(),
-                format!("unnecessary comparison with boolean literal `{bool_val}`"),
             );
             if let Some(range) = bop_sym.source.text_range {
                 d = d.with_range(range);
             }
-            diagnostics.push(d.with_help(help));
+            diagnostics.push(d);
         }
 
         diagnostics

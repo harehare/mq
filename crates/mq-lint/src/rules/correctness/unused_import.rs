@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct UnusedImport;
 
 impl LintRule for UnusedImport {
-    fn id(&self) -> &'static str {
-        "unused_import"
+    fn id(&self) -> RuleId {
+        RuleId::UnusedImport
     }
 
     fn severity(&self) -> Severity {
@@ -30,15 +30,11 @@ impl LintRule for UnusedImport {
                 if used_modules.contains(name) {
                     return None;
                 }
-                let mut d = Diagnostic::new(
-                    self.id(),
-                    self.severity(),
-                    format!("imported module `{name}` is never used"),
-                );
+                let mut d = Diagnostic::new(LintMessage::UnusedImport { name: name.to_string() }, self.severity());
                 if let Some(range) = sym.source.text_range {
                     d = d.with_range(range);
                 }
-                Some(d.with_help(format!("remove `import \"{name}\"` or use it with `{name}::function`")))
+                Some(d)
             })
             .collect()
     }

@@ -1,13 +1,13 @@
 use rustc_hash::FxHashSet;
 
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct DuplicateMatchArm;
 
 impl LintRule for DuplicateMatchArm {
-    fn id(&self) -> &'static str {
-        "duplicate_match_arm"
+    fn id(&self) -> RuleId {
+        RuleId::DuplicateMatchArm
     }
 
     fn severity(&self) -> Severity {
@@ -52,15 +52,11 @@ impl LintRule for DuplicateMatchArm {
                 }
 
                 if !seen_patterns.insert(repr.clone()) {
-                    let mut d = Diagnostic::new(
-                        self.id(),
-                        self.severity(),
-                        format!("duplicate match arm pattern `{repr}`"),
-                    );
+                    let mut d = Diagnostic::new(LintMessage::DuplicateMatchArm { pattern: repr }, self.severity());
                     if let Some(range) = arm_sym.source.text_range {
                         d = d.with_range(range);
                     }
-                    diagnostics.push(d.with_help("remove or merge this arm with the earlier identical pattern"));
+                    diagnostics.push(d);
                 }
             }
         }

@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct MissingElseInExpr;
 
 impl LintRule for MissingElseInExpr {
-    fn id(&self) -> &'static str {
-        "missing_else_in_expr"
+    fn id(&self) -> RuleId {
+        RuleId::MissingElseInExpr
     }
 
     fn severity(&self) -> Severity {
@@ -26,15 +26,11 @@ impl LintRule for MissingElseInExpr {
             .symbols_for_source(ctx.source_id)
             .filter(|(id, s)| matches!(s.kind, SymbolKind::If) && !if_ids_with_else.contains(id))
             .map(|(_, sym)| {
-                let mut d = Diagnostic::new(
-                    self.id(),
-                    self.severity(),
-                    "`if` expression is missing an `else` branch (evaluates to `none` on false)",
-                );
+                let mut d = Diagnostic::new(LintMessage::MissingElseInExpr, self.severity());
                 if let Some(range) = sym.source.text_range {
                     d = d.with_range(range);
                 }
-                d.with_help("add `else: <expr>` to provide a value for the false branch")
+                d
             })
             .collect()
     }
@@ -59,7 +55,7 @@ mod tests {
     fn detects_if_without_else() {
         let diags = check("if (true): 1;");
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("missing an `else` branch"));
+        assert!(diags[0].message().contains("missing an `else` branch"));
     }
 
     #[test]

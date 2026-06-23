@@ -1,10 +1,10 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 
 pub struct FunctionTooLong;
 
 impl LintRule for FunctionTooLong {
-    fn id(&self) -> &'static str {
-        "function_too_long"
+    fn id(&self) -> RuleId {
+        RuleId::FunctionTooLong
     }
 
     fn severity(&self) -> Severity {
@@ -25,14 +25,17 @@ impl LintRule for FunctionTooLong {
                 if line_count <= max_lines {
                     return None;
                 }
-                let name = sym.value.as_deref().unwrap_or("<anonymous>");
+                let name = sym.value.as_deref().unwrap_or("<anonymous>").to_string();
                 let mut d = Diagnostic::new(
-                    self.id(),
+                    LintMessage::FunctionTooLong {
+                        name,
+                        line_count,
+                        max_lines,
+                    },
                     self.severity(),
-                    format!("function `{name}` is {line_count} lines long (limit: {max_lines})"),
                 );
                 d = d.with_range(range);
-                Some(d.with_help("consider splitting into smaller, focused helper functions"))
+                Some(d)
             })
             .collect()
     }

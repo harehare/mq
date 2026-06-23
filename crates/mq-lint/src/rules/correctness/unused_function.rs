@@ -1,13 +1,13 @@
 use rustc_hash::FxHashSet;
 
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct UnusedFunction;
 
 impl LintRule for UnusedFunction {
-    fn id(&self) -> &'static str {
-        "unused_function"
+    fn id(&self) -> RuleId {
+        RuleId::UnusedFunction
     }
 
     fn severity(&self) -> Severity {
@@ -31,11 +31,11 @@ impl LintRule for UnusedFunction {
                 if name.starts_with('_') || used_names.contains(name) {
                     return None;
                 }
-                let mut d = Diagnostic::new(self.id(), self.severity(), format!("unused function `{name}`"));
+                let mut d = Diagnostic::new(LintMessage::UnusedFunction { name: name.to_string() }, self.severity());
                 if let Some(range) = sym.source.text_range {
                     d = d.with_range(range);
                 }
-                Some(d.with_help(format!("if this is intentional, prefix with `_`: `_{name}`")))
+                Some(d)
             })
             .collect()
     }
@@ -60,7 +60,7 @@ mod tests {
     fn detects_unused_function() {
         let diags = check("def foo(): .h1;");
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("unused function `foo`"));
+        assert!(diags[0].message().contains("unused function `foo`"));
     }
 
     #[test]

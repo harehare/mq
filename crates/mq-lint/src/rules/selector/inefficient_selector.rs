@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct InefficientSelector;
 
 impl LintRule for InefficientSelector {
-    fn id(&self) -> &'static str {
-        "inefficient_selector"
+    fn id(&self) -> RuleId {
+        RuleId::InefficientSelector
     }
 
     fn severity(&self) -> Severity {
@@ -50,14 +50,9 @@ impl LintRule for InefficientSelector {
             });
 
             if has_redundant_follow {
-                let mut d = Diagnostic::new(
-                    self.id(),
-                    self.severity(),
-                    "inefficient selector: `..` followed by a specific selector",
-                );
+                let mut d = Diagnostic::new(LintMessage::InefficientSelector, self.severity());
                 d = d.with_range(rec_range);
-                diagnostics
-                    .push(d.with_help("use the specific selector directly (e.g. replace `.. | .h1` with `.h1`)"));
+                diagnostics.push(d);
             }
         }
 
@@ -97,6 +92,6 @@ mod tests {
         // `.. | .h1` — the `..` is redundant because `.h1` already selects h1 nodes directly.
         let diags = check(".. | .h1");
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("inefficient selector"));
+        assert!(diags[0].message().contains("inefficient selector"));
     }
 }

@@ -1,13 +1,13 @@
 use rustc_hash::FxHashMap;
 
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct AmbiguousQualifiedAccess;
 
 impl LintRule for AmbiguousQualifiedAccess {
-    fn id(&self) -> &'static str {
-        "ambiguous_qualified_access"
+    fn id(&self) -> RuleId {
+        RuleId::AmbiguousQualifiedAccess
     }
 
     fn severity(&self) -> Severity {
@@ -52,16 +52,17 @@ impl LintRule for AmbiguousQualifiedAccess {
                 let other_module = defining_modules.get(fn_name)?.iter().find(|&&m| m != this_module)?;
 
                 let mut d = Diagnostic::new(
-                    self.id(),
+                    LintMessage::AmbiguousQualifiedAccess {
+                        fn_name: fn_name.to_string(),
+                        this_module: this_module.to_string(),
+                        other_module: other_module.to_string(),
+                    },
                     self.severity(),
-                    format!("function `{fn_name}` is also defined in module `{other_module}`"),
                 );
                 if let Some(range) = sym.source.text_range {
                     d = d.with_range(range);
                 }
-                Some(d.with_help(format!(
-                    "use a fully qualified call (e.g. `{this_module}::{fn_name}()`) to avoid ambiguity"
-                )))
+                Some(d)
             })
             .collect()
     }
@@ -86,7 +87,7 @@ mod tests {
     fn detects_same_function_name_in_two_modules() {
         let diags = check("module a: def foo(): 1; end | module b: def foo(): 2; end");
         assert_eq!(diags.len(), 2);
-        assert!(diags.iter().all(|d| d.message.contains("foo")));
+        assert!(diags.iter().all(|d| d.message().contains("foo")));
     }
 
     #[test]

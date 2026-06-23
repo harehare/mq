@@ -23,12 +23,14 @@ let linter = Linter::with_default_rules();
 let diagnostics = linter.run(&ctx);
 
 for d in diagnostics {
-    eprintln!("[{}] {} — {}", d.severity, d.rule_id, d.message);
-    if let Some(help) = &d.help {
+    eprintln!("[{}] {} — {}", d.severity, d.rule_id(), d.message());
+    if let Some(help) = d.help() {
         eprintln!("  help: {}", help);
     }
 }
 ```
+
+Each diagnostic's `rule_id()` and `message()` are derived from `d.kind`, a [`LintMessage`](src/message.rs) enum with one variant per rule. Rule identity (`RuleId`) and message text are both enums rather than free-form strings, so adding or renaming a rule is a compile-time-checked change in one place (`src/message.rs`).
 
 ### As a CLI
 
@@ -52,9 +54,11 @@ Exits with a non-zero status if any diagnostic (at or above `--min-severity`) wa
 ### Disabling Rules
 
 ```rust
+use mq_lint::RuleId;
+
 let mut config = LintConfig::default();
-config.disable_rule("naming_convention");
-config.disable_rule("shadow_variable");
+config.disable_rule(RuleId::NamingConvention);
+config.disable_rule(RuleId::ShadowVariable);
 ```
 
 ### Adjusting Complexity Thresholds

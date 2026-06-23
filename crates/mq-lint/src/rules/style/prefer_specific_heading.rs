@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct PreferSpecificHeading;
 
 impl LintRule for PreferSpecificHeading {
-    fn id(&self) -> &'static str {
-        "prefer_specific_heading"
+    fn id(&self) -> RuleId {
+        RuleId::PreferSpecificHeading
     }
 
     fn severity(&self) -> Severity {
@@ -17,15 +17,11 @@ impl LintRule for PreferSpecificHeading {
         ctx.all_symbols()
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Selector(mq_lang::Selector::Heading(None))))
             .map(|(_, sym)| {
-                let mut d = Diagnostic::new(
-                    self.id(),
-                    self.severity(),
-                    "prefer a specific heading level selector (`.h1`–`.h6`) over `.h`",
-                );
+                let mut d = Diagnostic::new(LintMessage::PreferSpecificHeading, self.severity());
                 if let Some(range) = sym.source.text_range {
                     d = d.with_range(range);
                 }
-                d.with_help("using `.h1`–`.h6` makes the intended heading level explicit")
+                d
             })
             .collect()
     }

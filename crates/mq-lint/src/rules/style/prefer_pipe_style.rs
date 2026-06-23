@@ -1,12 +1,12 @@
 use mq_hir::SymbolKind;
 
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 
 pub struct PreferPipeStyle;
 
 impl LintRule for PreferPipeStyle {
-    fn id(&self) -> &'static str {
-        "prefer_pipe_style"
+    fn id(&self) -> RuleId {
+        RuleId::PreferPipeStyle
     }
 
     fn severity(&self) -> Severity {
@@ -27,18 +27,14 @@ impl LintRule for PreferPipeStyle {
                     return None;
                 }
 
-                let outer_name = outer_sym.value.as_deref().unwrap_or("<call>");
-                let inner_name = arg.value.as_deref().unwrap_or("<call>");
+                let outer_name = outer_sym.value.as_deref().unwrap_or("<call>").to_string();
+                let inner_name = arg.value.as_deref().unwrap_or("<call>").to_string();
 
-                let mut d = Diagnostic::new(
-                    self.id(),
-                    self.severity(),
-                    format!("nested call `{outer_name}({inner_name}(...))` reads better as a pipe"),
-                );
+                let mut d = Diagnostic::new(LintMessage::PreferPipeStyle { outer_name, inner_name }, self.severity());
                 if let Some(range) = outer_sym.source.text_range {
                     d = d.with_range(range);
                 }
-                Some(d.with_help(format!("rewrite as `... | {inner_name}() | {outer_name}()`")))
+                Some(d)
             })
             .collect()
     }
@@ -63,8 +59,8 @@ mod tests {
     fn detects_nested_unary_calls() {
         let diags = check("to_text(to_upper(x))");
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("to_text"));
-        assert!(diags[0].message.contains("to_upper"));
+        assert!(diags[0].message().contains("to_text"));
+        assert!(diags[0].message().contains("to_upper"));
     }
 
     #[test]

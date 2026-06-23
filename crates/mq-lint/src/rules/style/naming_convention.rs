@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct NamingConvention;
 
 impl LintRule for NamingConvention {
-    fn id(&self) -> &'static str {
-        "naming_convention"
+    fn id(&self) -> RuleId {
+        RuleId::NamingConvention
     }
 
     fn severity(&self) -> Severity {
@@ -27,14 +27,16 @@ impl LintRule for NamingConvention {
                 }
                 let suggested = to_snake_case(name);
                 let mut d = Diagnostic::new(
-                    self.id(),
+                    LintMessage::NamingConvention {
+                        name: name.to_string(),
+                        suggested,
+                    },
                     self.severity(),
-                    format!("`{name}` should be written in snake_case"),
                 );
                 if let Some(range) = sym.source.text_range {
                     d = d.with_range(range);
                 }
-                Some(d.with_help(format!("rename to `{suggested}`")))
+                Some(d)
             })
             .collect()
     }
@@ -81,7 +83,7 @@ mod tests {
     fn detects_camel_case_function() {
         let diags = check("def myFunc(): .h1;");
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("myFunc"));
+        assert!(diags[0].message().contains("myFunc"));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use mq_hir::{Symbol, SymbolId, SymbolKind};
 
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 
 pub struct PreferCoalesce;
 
@@ -73,8 +73,8 @@ fn matches_null_check_pattern(ctx: &LintContext<'_>, if_id: SymbolId) -> bool {
 }
 
 impl LintRule for PreferCoalesce {
-    fn id(&self) -> &'static str {
-        "prefer_coalesce"
+    fn id(&self) -> RuleId {
+        RuleId::PreferCoalesce
     }
 
     fn severity(&self) -> Severity {
@@ -86,15 +86,11 @@ impl LintRule for PreferCoalesce {
             .filter(|(_, sym)| matches!(sym.kind, SymbolKind::If))
             .filter(|(if_id, _)| matches_null_check_pattern(ctx, *if_id))
             .map(|(_, if_sym)| {
-                let mut d = Diagnostic::new(
-                    self.id(),
-                    self.severity(),
-                    "`if`/`else` null-check can be simplified using the `??` coalesce operator",
-                );
+                let mut d = Diagnostic::new(LintMessage::PreferCoalesce, self.severity());
                 if let Some(range) = if_sym.source.text_range {
                     d = d.with_range(range);
                 }
-                d.with_help("rewrite as `<value> ?? <fallback>`")
+                d
             })
             .collect()
     }

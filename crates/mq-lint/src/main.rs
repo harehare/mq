@@ -6,7 +6,7 @@ use std::str::FromStr;
 use clap::Parser;
 use colored::Colorize;
 use mq_hir::Hir;
-use mq_lint::{Diagnostic, LintConfig, LintContext, Linter, Severity};
+use mq_lint::{Diagnostic, LintConfig, LintContext, Linter, RuleId, Severity};
 
 /// Static analysis linter for mq programs
 #[derive(Parser)]
@@ -17,7 +17,7 @@ struct Cli {
 
     /// Disable a rule by ID (repeatable)
     #[arg(long = "disable", value_name = "RULE_ID")]
-    disable: Vec<String>,
+    disable: Vec<RuleId>,
 
     /// Only report diagnostics at or above this severity (style, perf, warn, error)
     #[arg(long, default_value = "style")]
@@ -74,7 +74,7 @@ fn run() -> io::Result<bool> {
 
     let mut config = LintConfig::default();
     for rule_id in &cli.disable {
-        config.disable_rule(rule_id.clone());
+        config.disable_rule(*rule_id);
     }
     let min_severity = cli.min_severity.0;
     let linter = Linter::with_default_rules();
@@ -108,7 +108,7 @@ fn list_rules(w: &mut impl Write) -> io::Result<()> {
     let mut rules: Vec<_> = mq_lint::rules::all_rules();
     rules.sort_by_key(|r| r.id());
     for rule in &rules {
-        writeln!(w, "{:<28} {}", rule.id().bright_cyan(), rule.severity())?;
+        writeln!(w, "{:<28} {}", rule.id().as_str().bright_cyan(), rule.severity())?;
     }
     Ok(())
 }
@@ -184,15 +184,15 @@ fn write_diagnostic(w: &mut impl Write, diagnostic: &Diagnostic, code: &str) -> 
         loc_plain.dimmed(),
         sep,
         severity_label(diagnostic.severity),
-        diagnostic.rule_id.bright_magenta(),
-        diagnostic.message,
+        diagnostic.rule_id().as_str().bright_magenta(),
+        diagnostic.message(),
     )?;
 
     if let Some(range) = &diagnostic.range {
         write_snippet(w, code, range, prefix_width)?;
     }
 
-    if let Some(help) = &diagnostic.help {
+    if let Some(help) = diagnostic.help() {
         writeln!(
             w,
             "  {} {} {}",
@@ -264,7 +264,7 @@ mod tests {
             "shadow_variable",
         ])
         .unwrap();
-        assert_eq!(cli.disable, vec!["naming_convention", "shadow_variable"]);
+        assert_eq!(cli.disable, vec![RuleId::NamingConvention, RuleId::ShadowVariable]);
     }
 
     #[test]

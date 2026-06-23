@@ -1,14 +1,14 @@
 use rustc_hash::FxHashSet;
 
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{SymbolId, SymbolKind};
 use mq_lang::Range;
 
 pub struct PreferLetOverVar;
 
 impl LintRule for PreferLetOverVar {
-    fn id(&self) -> &'static str {
-        "prefer_let_over_var"
+    fn id(&self) -> RuleId {
+        RuleId::PreferLetOverVar
     }
 
     fn severity(&self) -> Severity {
@@ -65,12 +65,11 @@ impl LintRule for PreferLetOverVar {
             }
 
             let mut d = Diagnostic::new(
-                self.id(),
+                LintMessage::PreferLetOverVar { name: name.to_string() },
                 self.severity(),
-                format!("`{name}` is never reassigned; prefer `let` over `var`"),
             );
             d = d.with_range(kw_range);
-            diagnostics.push(d.with_help(format!("change `var {name}` to `let {name}`")));
+            diagnostics.push(d);
         }
 
         diagnostics
@@ -96,7 +95,7 @@ mod tests {
     fn detects_var_never_reassigned() {
         let diags = check("var x = .h1 | x");
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("prefer `let` over `var`"));
+        assert!(diags[0].message().contains("prefer `let` over `var`"));
     }
 
     #[test]

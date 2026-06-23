@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct TooManyParams;
 
 impl LintRule for TooManyParams {
-    fn id(&self) -> &'static str {
-        "too_many_params"
+    fn id(&self) -> RuleId {
+        RuleId::TooManyParams
     }
 
     fn severity(&self) -> Severity {
@@ -25,17 +25,13 @@ impl LintRule for TooManyParams {
                 if params.len() <= max {
                     return None;
                 }
-                let name = sym.value.as_deref().unwrap_or("<anonymous>");
+                let name = sym.value.as_deref().unwrap_or("<anonymous>").to_string();
                 let count = params.len();
-                let mut d = Diagnostic::new(
-                    self.id(),
-                    self.severity(),
-                    format!("function `{name}` has {count} parameters (limit: {max})"),
-                );
+                let mut d = Diagnostic::new(LintMessage::TooManyParams { name, count, max }, self.severity());
                 if let Some(range) = sym.source.text_range {
                     d = d.with_range(range);
                 }
-                Some(d.with_help("consider grouping related parameters or using default arguments"))
+                Some(d)
             })
             .collect()
     }
@@ -61,7 +57,7 @@ mod tests {
     fn detects_too_many_params() {
         let diags = check_with_max("def f(a, b, c): a", 2);
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("3 parameters"));
+        assert!(diags[0].message().contains("3 parameters"));
     }
 
     #[test]

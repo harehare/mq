@@ -518,7 +518,7 @@ impl Backend {
                         linter
                             .run(&lint_ctx)
                             .into_iter()
-                            .filter(|d| d.rule_id != "unused_function")
+                            .filter(|d| d.rule_id() != mq_lint::RuleId::UnusedFunction)
                             .map(|d| (&LspError::LintWarning(d)).into()),
                     );
                 }
@@ -1538,7 +1538,9 @@ mod tests {
             let lint_ctx = mq_lint::LintContext::new(&hir_guard, source_id, &backend.config.lint_config);
             let diagnostics = mq_lint::Linter::with_default_rules().run(&lint_ctx);
             assert!(
-                diagnostics.iter().any(|d| d.rule_id == "unused_variable"),
+                diagnostics
+                    .iter()
+                    .any(|d| d.rule_id() == mq_lint::RuleId::UnusedVariable),
                 "expected an unused_variable lint diagnostic"
             );
         }
@@ -1805,7 +1807,7 @@ mod tests {
     #[tokio::test]
     async fn test_lsp_config_new() {
         let mut lint_config = mq_lint::LintConfig::default();
-        lint_config.disable_rule("naming_convention");
+        lint_config.disable_rule(mq_lint::RuleId::NamingConvention);
         let config = LspConfig::new(
             vec![],
             true,
@@ -1819,7 +1821,7 @@ mod tests {
         assert!(config.enable_type_checking);
         assert!(config.type_checker_options.strict_array);
         assert!(config.enable_lint);
-        assert!(!config.lint_config.is_rule_enabled("naming_convention"));
+        assert!(!config.lint_config.is_rule_enabled(mq_lint::RuleId::NamingConvention));
     }
 
     #[tokio::test]

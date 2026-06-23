@@ -19,9 +19,11 @@
 //! ```
 
 pub mod config;
+pub mod message;
 pub mod rules;
 
 pub use config::LintConfig;
+pub use message::{LintMessage, RuleId};
 
 use mq_hir::{Hir, SourceId};
 
@@ -52,24 +54,19 @@ impl std::fmt::Display for Severity {
 /// A lint finding produced by a [`LintRule`].
 #[derive(Debug, Clone)]
 pub struct Diagnostic {
-    /// The rule that produced this diagnostic.
-    pub rule_id: &'static str,
+    /// The message data that identifies the rule and renders its text.
+    pub kind: LintMessage,
     pub severity: Severity,
-    pub message: String,
     /// Source location of the finding, if available.
     pub range: Option<mq_lang::Range>,
-    /// Optional suggestion for how to fix the issue.
-    pub help: Option<String>,
 }
 
 impl Diagnostic {
-    pub fn new(rule_id: &'static str, severity: Severity, message: impl Into<String>) -> Self {
+    pub fn new(kind: LintMessage, severity: Severity) -> Self {
         Self {
-            rule_id,
+            kind,
             severity,
-            message: message.into(),
             range: None,
-            help: None,
         }
     }
 
@@ -78,9 +75,19 @@ impl Diagnostic {
         self
     }
 
-    pub fn with_help(mut self, help: impl Into<String>) -> Self {
-        self.help = Some(help.into());
-        self
+    /// The rule that produced this diagnostic.
+    pub fn rule_id(&self) -> RuleId {
+        self.kind.rule_id()
+    }
+
+    /// Human-readable diagnostic text.
+    pub fn message(&self) -> String {
+        self.kind.to_string()
+    }
+
+    /// Suggested fix text, if the rule has one.
+    pub fn help(&self) -> Option<String> {
+        self.kind.help()
     }
 }
 
@@ -112,8 +119,8 @@ impl<'a> LintContext<'a> {
 
 /// A single lint rule.
 pub trait LintRule: Send + Sync {
-    /// Unique identifier for this rule (e.g. `"unused_variable"`).
-    fn id(&self) -> &'static str;
+    /// Unique identifier for this rule.
+    fn id(&self) -> RuleId;
 
     /// Default severity when the rule fires.
     fn severity(&self) -> Severity;

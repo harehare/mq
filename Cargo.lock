@@ -2619,12 +2619,10 @@ version = "0.6.3"
 dependencies = [
  "clap",
  "colored 3.1.1",
- "miette",
  "mq-hir",
  "mq-lang",
  "rstest",
  "rustc-hash",
- "thiserror 2.0.18",
 ]
 
 [[package]]

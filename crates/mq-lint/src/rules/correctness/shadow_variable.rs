@@ -1,11 +1,11 @@
-use crate::{Diagnostic, LintContext, LintRule, Severity};
+use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{ScopeId, SymbolKind};
 
 pub struct ShadowVariable;
 
 impl LintRule for ShadowVariable {
-    fn id(&self) -> &'static str {
-        "shadow_variable"
+    fn id(&self) -> RuleId {
+        RuleId::ShadowVariable
     }
 
     fn severity(&self) -> Severity {
@@ -26,15 +26,11 @@ impl LintRule for ShadowVariable {
             };
 
             if shadows_outer_variable(ctx, sym.scope, name) {
-                let mut d = Diagnostic::new(
-                    self.id(),
-                    self.severity(),
-                    format!("variable `{name}` shadows a variable in an outer scope"),
-                );
+                let mut d = Diagnostic::new(LintMessage::ShadowVariable { name: name.to_string() }, self.severity());
                 if let Some(range) = sym.source.text_range {
                     d = d.with_range(range);
                 }
-                diagnostics.push(d.with_help("consider renaming to avoid confusion"));
+                diagnostics.push(d);
             }
         }
 
