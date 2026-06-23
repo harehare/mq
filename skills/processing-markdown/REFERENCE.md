@@ -168,7 +168,7 @@ Use `-I raw` to disable auto-parsing and receive the raw string.
 
 **Type**: `type`, `to_string()`, `to_number()`, `to_array()`, `is_none()`, `is_empty()`, `coalesce(a, b)`
 
-**I/O**: `print`, `stderr`, `input`, `read_file(path)`
+**I/O**: `print`, `stderr`, `input`, `read_file(path)`, `collection(dir)` (file-io only; reads a directory of Markdown files into an array of `{path, title, frontmatter, content}` dicts for cross-file queries)
 
 **Utility**: `identity()`, `error(msg)`, `halt(code)`, `assert(a, b)`, `now`, `from_date(str)`, `to_date(ts, fmt)`, `all_symbols`
 
