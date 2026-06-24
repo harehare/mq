@@ -289,7 +289,15 @@ fn register_string(ctx: &mut InferenceContext) {
     // Case conversion and trimming: string -> string
     register_many(
         ctx,
-        &["downcase", "upcase", "trim", "ltrim", "rtrim"],
+        &[
+            "downcase",
+            "upcase",
+            "ascii_downcase",
+            "ascii_upcase",
+            "trim",
+            "ltrim",
+            "rtrim",
+        ],
         vec![Type::String],
         Type::String,
     );
@@ -356,6 +364,8 @@ fn register_string(ctx: &mut InferenceContext) {
         &[
             "downcase",
             "upcase",
+            "ascii_downcase",
+            "ascii_upcase",
             "trim",
             "ltrim",
             "rtrim",
@@ -1377,8 +1387,11 @@ mod tests {
     #[rstest]
     #[case::downcase("downcase(\"HELLO\")", true)]
     #[case::upcase("upcase(\"hello\")", true)]
+    #[case::ascii_downcase("ascii_downcase(\"HELLO\")", true)]
+    #[case::ascii_upcase("ascii_upcase(\"hello\")", true)]
     #[case::trim("trim(\"  hello  \")", true)]
     #[case::downcase_number("downcase(42)", false)] // Should fail: wrong type
+    #[case::ascii_downcase_number("ascii_downcase(42)", false)] // Should fail: wrong type
     #[case::rtrim("rtrim(\"  hello  \")", true)]
     #[case::rindex("rindex(\"hello world hello\", \"hello\")", true)]
     #[case::capture("capture(\"hello 42\", \"(?P<word>\\\\w+)\")", true)]
@@ -1650,6 +1663,7 @@ mod tests {
 
     #[rstest]
     #[case::string_to_upcase("\"hello\" | upcase", true)]
+    #[case::string_to_ascii_upcase("\"hello\" | ascii_upcase", true)]
     #[case::string_to_trim("\"  hello  \" | trim", true)]
     #[case::number_to_abs("-42 | abs", true)]
     #[case::string_to_len("\"hello\" | len", true)]
@@ -1658,6 +1672,7 @@ mod tests {
     #[case::chained_split_to_len("\"hello\" | split(\",\") | len", true)]
     #[case::chained_array_reverse_first("[1,2,3] | reverse | first", true)]
     #[case::number_to_upcase("42 | upcase", false)] // Number piped to string function
+    #[case::number_to_ascii_upcase("42 | ascii_upcase", false)] // Number piped to string function
     fn test_pipe_type_propagation(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
@@ -1732,6 +1747,7 @@ mod tests {
     #[rstest]
     #[case::abs_string("abs(\"not a number\")", false)] // wrong argument type
     #[case::downcase_number("downcase(42)", false)] // wrong argument type
+    #[case::ascii_downcase_number("ascii_downcase(42)", false)] // wrong argument type
     #[case::ceil_string("ceil(\"hello\")", false)] // wrong argument type
     #[case::floor_bool("floor(true)", false)] // wrong argument type
     #[case::len_no_args("len()", true)] // valid: root-level dynamic piped input satisfies the arg
@@ -1744,6 +1760,7 @@ mod tests {
     #[case::floor_string("floor(\"hello\")", false)] // wrong argument type
     #[case::ceil_bool("ceil(false)", false)] // wrong argument type
     #[case::upcase_number("upcase(42)", false)] // wrong argument type
+    #[case::ascii_upcase_number("ascii_upcase(42)", false)] // wrong argument type
     #[case::trim_number("trim(42)", false)] // wrong argument type
     #[case::ltrim_bool("ltrim(true)", false)] // wrong argument type
     #[case::rtrim_bool("rtrim(true)", false)] // wrong argument type
@@ -1784,7 +1801,9 @@ mod tests {
     #[case::string_to_abs("\"hello\" | abs", false)] // string piped to number function
     #[case::string_to_ceil("\"hello\" | ceil", false)] // string piped to number function
     #[case::number_to_downcase("42 | downcase", false)] // number piped to string function
+    #[case::number_to_ascii_downcase("42 | ascii_downcase", false)] // number piped to string function
     #[case::bool_to_upcase("true | upcase", false)] // bool piped to string function
+    #[case::bool_to_ascii_upcase("true | ascii_upcase", false)] // bool piped to string function
     #[case::bool_to_trim("true | trim", false)] // bool piped to string function
     #[case::bool_to_abs("true | abs", false)] // bool piped to number function
     #[case::string_to_floor("\"hello\" | floor", false)] // string piped to number function
@@ -2191,6 +2210,7 @@ mod tests {
     #[rstest]
     #[case::number_to_explode("42 | explode", false, "number piped to explode (expects string)")]
     #[case::number_to_downcase("42 | downcase", false, "number piped to downcase")]
+    #[case::number_to_ascii_downcase("42 | ascii_downcase", false, "number piped to ascii_downcase")]
     #[case::number_to_ltrim("42 | ltrim", false, "number piped to ltrim")]
     #[case::number_to_rtrim("42 | rtrim", false, "number piped to rtrim")]
     #[case::bool_to_floor("true | floor", false, "bool piped to floor")]
