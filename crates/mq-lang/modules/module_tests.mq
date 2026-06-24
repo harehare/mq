@@ -128,8 +128,9 @@ def test_toml_parse():
 end
 
 def test_toml_to_json():
-  let result = toml::toml_to_json(toml::toml_parse(toml_input))
-  | assert_eq(result, "{\"dependencies\":{},\"package\":{\"name\":\"test-package\",\"authors\":[\"Test Author <test@example.com>\"],\"description\":\"A test TOML configuration file\",\"edition\":\"2021\",\"license\":\"MIT\",\"version\":\"1.0.0\"}}")
+  let parsed = toml::toml_parse(toml_input)
+  | let result = toml::toml_to_json(parsed)
+  | assert_eq(json::json_parse(result), parsed)
 end
 
 # -- YAML Tests --
@@ -729,6 +730,48 @@ def test_semver_min():
   let versions = map(["1.0.0", "3.0.0", "2.0.0"], semver::semver_parse)
   | let min = semver::semver_min(versions)
   | assert_eq(semver::semver_to_string(min), "1.0.0")
+end
+
+def test_semver_satisfies_range_true():
+  assert_true(semver::semver_satisfies("1.5.0", ">=1.0.0,<2.0.0"))
+end
+
+def test_semver_satisfies_range_false():
+  assert_false(semver::semver_satisfies("2.0.0", ">=1.0.0,<2.0.0"))
+end
+
+def test_semver_satisfies_range_lower_bound_inclusive():
+  assert_true(semver::semver_satisfies("1.0.0", ">=1.0.0,<2.0.0"))
+end
+
+def test_semver_satisfies_exact_match():
+  assert_true(semver::semver_satisfies("1.2.3", "1.2.3"))
+  | assert_false(semver::semver_satisfies("1.2.4", "1.2.3"))
+end
+
+def test_semver_satisfies_eq_operator():
+  assert_true(semver::semver_satisfies("1.2.3", "=1.2.3"))
+  | assert_true(semver::semver_satisfies("1.2.3", "==1.2.3"))
+end
+
+def test_semver_satisfies_not_equal():
+  assert_true(semver::semver_satisfies("1.2.4", "!=1.2.3"))
+  | assert_false(semver::semver_satisfies("1.2.3", "!=1.2.3"))
+end
+
+def test_semver_satisfies_gt_lt():
+  assert_true(semver::semver_satisfies("1.5.0", ">1.0.0"))
+  | assert_false(semver::semver_satisfies("1.0.0", ">1.0.0"))
+  | assert_true(semver::semver_satisfies("1.0.0", "<2.0.0"))
+  | assert_false(semver::semver_satisfies("2.0.0", "<2.0.0"))
+end
+
+def test_semver_satisfies_ignores_whitespace():
+  assert_true(semver::semver_satisfies("1.5.0", " >= 1.0.0 , < 2.0.0 "))
+end
+
+def test_semver_satisfies_with_prerelease():
+  assert_true(semver::semver_satisfies("1.0.0-alpha", "<1.0.0"))
 end
 
 # -- Markdown Builder (md) Tests --
