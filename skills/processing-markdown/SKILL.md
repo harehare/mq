@@ -90,6 +90,10 @@ mq -U '.code.lang |= "rust"' file.md        # Update in place
 mq -A 'pluck(.code.value)' *.md             # Collect all code values
 mq -S 's"\n---\n"' 'identity' *.md       # Merge with separator
 
+# mq accepts multiple file args directly (shell glob expansion) —
+# no need to loop over files in bash:
+mq '.h | to_text' *.md work/*.md docs/*.md
+
 # Format conversion
 mq -F html 'identity' file.md             # Markdown → HTML
 mq -F json '.h | to_text' file.md         # Headings → JSON
