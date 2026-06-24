@@ -173,3 +173,45 @@ end
 def semver_min(versions):
   fold(versions[1:len(versions)], versions[0], fn(acc, v): if (semver_lt(v, acc)): v else: acc;)
 end
+
+# Parses a single version comparator (e.g. ">=1.0.0") into a dict with op and parsed version fields.
+def _semver_parse_comparator(comp):
+  let c = trim(comp)
+  | if (starts_with(c, ">=")):
+      {op: ">=", version: semver_parse(trim(ltrimstr(c, ">=")))}
+    elif (starts_with(c, "<=")):
+      {op: "<=", version: semver_parse(trim(ltrimstr(c, "<=")))}
+    elif (starts_with(c, "==")):
+      {op: "=", version: semver_parse(trim(ltrimstr(c, "==")))}
+    elif (starts_with(c, "!=")):
+      {op: "!=", version: semver_parse(trim(ltrimstr(c, "!=")))}
+    elif (starts_with(c, ">")):
+      {op: ">", version: semver_parse(trim(ltrimstr(c, ">")))}
+    elif (starts_with(c, "<")):
+      {op: "<", version: semver_parse(trim(ltrimstr(c, "<")))}
+    elif (starts_with(c, "=")):
+      {op: "=", version: semver_parse(trim(ltrimstr(c, "=")))}
+    else:
+      {op: "=", version: semver_parse(c)}
+end
+
+# Checks whether a parsed SemVer dict satisfies a single comparator dict produced by `_semver_parse_comparator`.
+def _semver_satisfies_comparator(v, cmp):
+  let op = cmp[:op]
+  | let cv = cmp[:version]
+  | if (op == ">="): semver_gte(v, cv)
+    elif (op == "<="): semver_lte(v, cv)
+    elif (op == ">"): semver_gt(v, cv)
+    elif (op == "<"): semver_lt(v, cv)
+    elif (op == "!="): !semver_eq(v, cv)
+    else: semver_eq(v, cv)
+end
+
+# Returns true if the given version string satisfies every comma-separated comparator in `range`.
+# Supported comparators: "=", "==", "!=", ">", ">=", "<", "<=". A bare version (no operator) requires an exact match.
+# Example: semver_satisfies("1.5.0", ">=1.0.0,<2.0.0") == true
+def semver_satisfies(version, range):
+  let v = semver_parse(version)
+  | let comparators = map(split(range, ","), _semver_parse_comparator)
+  | all(comparators, fn(cmp): _semver_satisfies_comparator(v, cmp);)
+end
