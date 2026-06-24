@@ -251,6 +251,21 @@ In {year}, the snowfall was above average.
     "<root>text</root>",
     Some("{\"text\": \"text\", \"attributes\": {}, \"tag\": \"root\", \"children\": []}\n")
 )]
+#[case::select_skips_non_matching_wrapped_list_items(
+    vec!["--unbuffered", r#"select(.code.lang == "bash") | to_text()"#],
+    "- An [Amazon Bedrock Knowledge Base](https://aws.amazon.com/bedrock/knowledge-bases/)\n  indexes **one configurable [Confluence](https://www.atlassian.com/software/confluence)\n  space** (the space key is an OpenTofu variable)\n- [Confluence](https://www.atlassian.com/software/confluence) credentials are\n  rendered by OpenTofu into an [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/)\n  secret - the only credential store the Bedrock connector accepts\n\n```bash\necho \"hello\"\n```\n",
+    Some("echo \"hello\"\n")
+)]
+#[case::select_skips_non_matching_wrapped_list_items_markdown_format(
+    vec!["--unbuffered", r#"select(.code.lang == "bash")"#],
+    "- An [Amazon Bedrock Knowledge Base](https://aws.amazon.com/bedrock/knowledge-bases/)\n  indexes **one configurable [Confluence](https://www.atlassian.com/software/confluence)\n  space** (the space key is an OpenTofu variable)\n- [Confluence](https://www.atlassian.com/software/confluence) credentials are\n  rendered by OpenTofu into an [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/)\n  secret - the only credential store the Bedrock connector accepts\n\n```bash\necho \"hello\"\n```\n",
+    Some("```bash\necho \"hello\"\n```\n")
+)]
+#[case::select_skips_non_matching_container_nodes(
+    vec!["--unbuffered", "select(.h1)"],
+    "- [Link](http://a) **bold** item\n- another *em* ~~del~~ item\n\n> [Quoted link](http://b)\n\n| [Cell link](http://c) | **Cell bold** |\n| --- | --- |\n| a | b |\n\n[^1]: [Footnote link](http://d)\n\n# DONE\n",
+    Some("# DONE\n")
+)]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,

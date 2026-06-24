@@ -1305,7 +1305,7 @@ impl Node {
             }
             Self::Fragment(Fragment { values }) => values
                 .iter()
-                .filter(|value| !value.is_empty())
+                .filter(|value| !value.is_empty() && !value.is_empty_fragment())
                 .map(|value| value.render_with_theme(options, theme))
                 .join("\n"),
             Self::Empty => String::new(),
@@ -4359,6 +4359,24 @@ mod tests {
         Node::Text(Text{value: "".to_string(), position: None}),
         Node::Text(Text{value: "world".to_string(), position: None})
     ]}), RenderOptions::default(), "hello\n\nworld")]
+    #[case::fragment_filters_nested_empty_fragment(Node::Fragment(Fragment{values: vec![
+        Node::Fragment(Fragment{values: vec![Node::Empty, Node::Empty]}),
+        Node::Text(Text{value: "hello".to_string(), position: None}),
+        Node::Fragment(Fragment{values: vec![Node::Empty]}),
+    ]}), RenderOptions::default(), "hello")]
+    #[case::fragment_filters_deeply_nested_empty_fragment(Node::Fragment(Fragment{values: vec![
+        Node::Fragment(Fragment{values: vec![
+            Node::Fragment(Fragment{values: vec![Node::Empty]}),
+            Node::Empty,
+        ]}),
+        Node::Text(Text{value: "hello".to_string(), position: None}),
+    ]}), RenderOptions::default(), "hello")]
+    #[case::fragment_keeps_nested_fragment_with_blank_line_text(Node::Fragment(Fragment{values: vec![
+        Node::Fragment(Fragment{values: vec![Node::Empty]}),
+        Node::Text(Text{value: "hello".to_string(), position: None}),
+        Node::Fragment(Fragment{values: vec![Node::Text(Text{value: "".to_string(), position: None})]}),
+        Node::Text(Text{value: "world".to_string(), position: None}),
+    ]}), RenderOptions::default(), "hello\n\nworld")]
     #[cfg_attr(feature = "wikilink", case::wikilink(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), RenderOptions::default(), "[[target]]"))]
     #[cfg_attr(feature = "wikilink", case::wikilink_with_text(Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display text".to_string()), position: None}), RenderOptions::default(), "[[target|display text]]"))]
     #[cfg_attr(feature = "wikilink", case::wikilink_same_text(Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("target".to_string()), position: None}), RenderOptions::default(), "[[target]]"))]
@@ -4641,6 +4659,37 @@ mod tests {
     #[case(Node::Empty, Node::Empty)]
     fn test_to_fragment(#[case] node: Node, #[case] expected: Node) {
         assert_eq!(node.to_fragment(), expected);
+    }
+
+    // Regression coverage for the 0.6.2 blank-line bug: `eval_markdown_node`
+    // replaces a non-matching `select()` result with `child_node.to_fragment()`,
+    // not `Node::Empty` directly. For container nodes this yields a `Fragment`
+    // wrapping the (now `Empty`) children, which must still render to "" with
+    // no stray blank lines, while a partially-matching container must render
+    // only the surviving content.
+    #[rstest]
+    #[case::blockquote_all_empty(Node::Blockquote(Blockquote{values: vec![Node::Empty, Node::Empty], position: None}), "")]
+    #[case::blockquote_mixed(Node::Blockquote(Blockquote{values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
+    #[case::delete_all_empty(Node::Delete(Delete{values: vec![Node::Empty, Node::Empty], position: None}), "")]
+    #[case::delete_mixed(Node::Delete(Delete{values: vec![Node::Text(Text{value: "kept".to_string(), position: None}), Node::Empty], position: None}), "kept")]
+    #[case::heading_all_empty(Node::Heading(Heading{depth: 1, values: vec![Node::Empty, Node::Empty], position: None}), "")]
+    #[case::heading_mixed(Node::Heading(Heading{depth: 1, values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
+    #[case::emphasis_all_empty(Node::Emphasis(Emphasis{values: vec![Node::Empty, Node::Empty], position: None}), "")]
+    #[case::emphasis_mixed(Node::Emphasis(Emphasis{values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
+    #[case::list_all_empty(Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Empty, Node::Empty], position: None}), "")]
+    #[case::list_mixed(Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
+    #[case::strong_all_empty(Node::Strong(Strong{values: vec![Node::Empty, Node::Empty], position: None}), "")]
+    #[case::strong_mixed(Node::Strong(Strong{values: vec![Node::Text(Text{value: "kept".to_string(), position: None}), Node::Empty], position: None}), "kept")]
+    #[case::link_all_empty(Node::Link(Link{url: Url(attr_keys::URL.to_string()), title: None, values: vec![Node::Empty, Node::Empty], position: None}), "")]
+    #[case::link_mixed(Node::Link(Link{url: Url(attr_keys::URL.to_string()), title: None, values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
+    #[case::link_ref_all_empty(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![Node::Empty, Node::Empty], label: None, position: None}), "")]
+    #[case::link_ref_mixed(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], label: None, position: None}), "kept")]
+    #[case::footnote_all_empty(Node::Footnote(Footnote{ident: "id".to_string(), values: vec![Node::Empty, Node::Empty], position: None}), "")]
+    #[case::footnote_mixed(Node::Footnote(Footnote{ident: "id".to_string(), values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
+    #[case::table_cell_all_empty(Node::TableCell(TableCell{column: 0, row: 0, values: vec![Node::Empty, Node::Empty], position: None}), "")]
+    #[case::table_cell_mixed(Node::TableCell(TableCell{column: 0, row: 0, values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
+    fn test_to_fragment_then_render_skips_non_matching(#[case] node: Node, #[case] expected: &str) {
+        assert_eq!(node.to_fragment().to_string_with(&RenderOptions::default()), expected);
     }
 
     #[rstest]
