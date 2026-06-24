@@ -2508,6 +2508,16 @@ fn engine() -> DefaultEngine {
 #[case::index_string_simple(r##"index("hello", "e")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 #[case::set_ref_simple(r##"to_markdown("[link][id]\n\n[id]: url") | first() | set_ref("newlabel") | .link_ref.label"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("newlabel".to_string())].into()))]
 #[case::downcase_simple(r##"downcase("ABC")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abc".to_string())].into()))]
+#[case::ascii_downcase_simple(r##"ascii_downcase("ABC")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abc".to_string())].into()))]
+// downcase is Unicode-aware: "À" (U+00C0) is also lowercased to "à" (U+00E0)
+#[case::downcase_non_ascii(r##"downcase("ABCÀ")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abcà".to_string())].into()))]
+// ascii_downcase only folds ASCII letters: "À" is left untouched, unlike downcase above
+#[case::ascii_downcase_non_ascii(r##"ascii_downcase("ABCÀ")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abcÀ".to_string())].into()))]
+#[case::ascii_upcase_simple(r##"ascii_upcase("abc")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ABC".to_string())].into()))]
+// upcase is Unicode-aware: "à" (U+00E0) is also uppercased to "À" (U+00C0)
+#[case::upcase_non_ascii(r##"upcase("abcà")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ABCÀ".to_string())].into()))]
+// ascii_upcase only folds ASCII letters: "à" is left untouched, unlike upcase above
+#[case::ascii_upcase_non_ascii(r##"ascii_upcase("abcà")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ABCà".to_string())].into()))]
 #[case::gsub_simple(r##"gsub("a1b2", "\\d", "x")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("axbx".to_string())].into()))]
 #[case::regex_match_simple(r##"regex_match("a1b2", "\\d")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("1".to_string()), RuntimeValue::String("2".to_string())])].into()))]
 #[case::slice_simple(r##"slice("abcdef", 1, 4)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("bcd".to_string())].into()))]
@@ -3064,6 +3074,10 @@ fn engine() -> DefaultEngine {
 #[case::upcase_none("upcase(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // downcase: None input → None
 #[case::downcase_none("downcase(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+// ascii_upcase: None input → None
+#[case::ascii_upcase_none("ascii_upcase(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+// ascii_downcase: None input → None
+#[case::ascii_downcase_none("ascii_downcase(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // trim: None input → None
 #[case::trim_none("trim(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // ltrim: None input → None
@@ -3126,6 +3140,7 @@ fn engine() -> DefaultEngine {
 #[case::ltrim_markdown(r#"to_h("  test  ", 1) | ltrim | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
 #[case::rtrim_markdown(r#"to_h("  test  ", 1) | rtrim | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
 #[case::upcase_markdown(r#"to_h("test", 1) | upcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+#[case::ascii_upcase_markdown(r#"to_h("test", 1) | ascii_upcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
 // sub/div/mod: string arguments are converted to numbers
 #[case::sub_strings(r#"sub("10", "3")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(7.into())].into()))]
 #[case::div_strings(r#"div("10", "2")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
@@ -3162,6 +3177,8 @@ fn engine() -> DefaultEngine {
 #[case::mul_markdown_number(r#"to_h("ab", 1) | mul(2) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
 // downcase: with Markdown input
 #[case::downcase_markdown(r#"to_h("TEST", 1) | downcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+// ascii_downcase: with Markdown input
+#[case::ascii_downcase_markdown(r#"to_h("TEST", 1) | ascii_downcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
 // wikilink selector
 #[case::wikilink_select(
     r#"to_markdown("[[target]]") | first() | .wikilink"#,
@@ -3355,6 +3372,8 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::rtrim_non_string("rtrim(42)", vec![RuntimeValue::None],)]
 // upcase: non-string/non-markdown/non-none → type error
 #[case::upcase_non_string("upcase(42)", vec![RuntimeValue::None],)]
+// ascii_upcase: non-string/non-markdown/non-none → type error
+#[case::ascii_upcase_non_string("ascii_upcase(42)", vec![RuntimeValue::None],)]
 // range: multi-char string with step → error
 #[case::range_multichar_with_step(r#"range("aa", "zz", 2)"#, vec![RuntimeValue::None],)]
 // range: invalid type → error

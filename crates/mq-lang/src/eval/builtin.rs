@@ -914,6 +914,18 @@ fn downcase_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Resu
     }
 }
 
+#[mq_macros::mq_fn(name = "ascii_downcase", params = Fixed(1))]
+fn ascii_downcase_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| Ok(node.update_markdown_value(md.value().to_ascii_lowercase().as_str())))
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::String(s)] => Ok(s.to_ascii_lowercase().into()),
+        _ => Ok(RuntimeValue::NONE),
+    }
+}
+
 #[mq_macros::mq_fn(name = "gsub", params = Fixed(3))]
 fn gsub_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -1070,6 +1082,20 @@ fn upcase_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("upcase should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "ascii_upcase", params = Fixed(1))]
+fn ascii_upcase_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| Ok(node.update_markdown_value(md.value().to_ascii_uppercase().as_str())))
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::String(s)] => Ok(s.to_ascii_uppercase().into()),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("ascii_upcase should always receive exactly one argument"),
     }
 }
 
@@ -3874,6 +3900,7 @@ mq_macros::builtin_dispatch! {
     IS_NOT_REGEX_MATCH,
     CAPTURE,
     DOWNCASE,
+    ASCII_DOWNCASE,
     GSUB,
     REPLACE,
     REPEAT,
@@ -3883,6 +3910,7 @@ mq_macros::builtin_dispatch! {
     LTRIM,
     RTRIM,
     UPCASE,
+    ASCII_UPCASE,
     UPDATE,
     SLICE,
     POW,
@@ -4866,6 +4894,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
+        SmolStr::new("ascii_downcase"),
+        BuiltinFunctionDoc {
+            description: "Converts ASCII uppercase letters (A-Z) in the given string to lowercase, leaving all other characters unchanged.",
+            params: &["input"],
+        },
+    );
+    map.insert(
         SmolStr::new("gsub"),
         BuiltinFunctionDoc {
             description: "Replaces all occurrences matching a regular expression pattern with the replacement string.",
@@ -4925,6 +4960,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         SmolStr::new("upcase"),
         BuiltinFunctionDoc {
             description: "Converts the given string to uppercase.",
+            params: &["input"],
+        },
+    );
+    map.insert(
+        SmolStr::new("ascii_upcase"),
+        BuiltinFunctionDoc {
+            description: "Converts ASCII lowercase letters (a-z) in the given string to uppercase, leaving all other characters unchanged.",
             params: &["input"],
         },
     );
