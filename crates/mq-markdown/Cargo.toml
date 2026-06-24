@@ -25,6 +25,7 @@ smol_str = {workspace = true}
 
 [dev-dependencies]
 divan = {workspace = true}
+proptest = {workspace = true}
 rstest = {workspace = true}
 
 [[bench]]
