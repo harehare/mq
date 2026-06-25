@@ -81,6 +81,53 @@ pub(super) fn replace_re(input: &str, pattern: &str, replacement: &str) -> Resul
     Ok(re.replace_all(input, replacement).to_string().into())
 }
 
+pub(super) fn replace_first_re(input: &str, pattern: &str, replacement: &str) -> Result<RuntimeValue, Error> {
+    if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
+        return Ok(re.replace(input, replacement).to_string().into());
+    }
+    let re = RegexBuilder::new(pattern)
+        .size_limit(1 << 20)
+        .build()
+        .map_err(|_| Error::InvalidRegularExpression(pattern.to_string()))?;
+    REGEX_CACHE.write().unwrap().insert(pattern.to_string(), re.clone());
+    Ok(re.replace(input, replacement).to_string().into())
+}
+
+fn scan_re_inner(re: &Regex, input: &str) -> RuntimeValue {
+    let has_groups = re.captures_len() > 1;
+    let matches: Vec<RuntimeValue> = re
+        .captures_iter(input)
+        .map(|caps| {
+            if has_groups {
+                RuntimeValue::Array(
+                    caps.iter()
+                        .skip(1)
+                        .map(|m| {
+                            m.map(|m| RuntimeValue::String(m.as_str().to_string()))
+                                .unwrap_or(RuntimeValue::NONE)
+                        })
+                        .collect(),
+                )
+            } else {
+                RuntimeValue::String(caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default())
+            }
+        })
+        .collect();
+    RuntimeValue::Array(matches)
+}
+
+pub(super) fn scan_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
+    if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
+        return Ok(scan_re_inner(&re, input));
+    }
+    let re = RegexBuilder::new(pattern)
+        .size_limit(1 << 20)
+        .build()
+        .map_err(|_| Error::InvalidRegularExpression(pattern.to_string()))?;
+    REGEX_CACHE.write().unwrap().insert(pattern.to_string(), re.clone());
+    Ok(scan_re_inner(&re, input))
+}
+
 #[inline(always)]
 pub(super) fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
     if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
@@ -207,5 +254,65 @@ mod tests {
     #[test]
     fn test_split_re_invalid_pattern() {
         assert!(split_re("text", "[invalid").is_err());
+    }
+
+    #[rstest]
+    #[case("hello world", r"\s+", "_", "hello_world")]
+    #[case("aaa", "a", "b", "baa")]
+    #[case("no match", r"\d+", "X", "no match")]
+    fn test_replace_first_re(
+        #[case] input: &str,
+        #[case] pattern: &str,
+        #[case] replacement: &str,
+        #[case] expected: &str,
+    ) {
+        let result = replace_first_re(input, pattern, replacement).unwrap();
+        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        // second call hits cache — same result expected
+        let result2 = replace_first_re(input, pattern, replacement).unwrap();
+        assert_eq!(result, result2);
+    }
+
+    #[test]
+    fn test_replace_first_re_invalid_pattern() {
+        assert!(replace_first_re("text", "[invalid", "x").is_err());
+    }
+
+    #[test]
+    fn test_scan_re_no_groups() {
+        let result = scan_re("a1b2c3", r"\d").unwrap();
+        assert_eq!(result, strings(vec!["1", "2", "3"]));
+        // second call hits cache — same result expected
+        let result2 = scan_re("a1b2c3", r"\d").unwrap();
+        assert_eq!(result, result2);
+    }
+
+    #[test]
+    fn test_scan_re_with_groups() {
+        let result = scan_re("2024-06 2025-07", r"(\d{4})-(\d{2})").unwrap();
+        assert_eq!(
+            result,
+            RuntimeValue::Array(vec![
+                RuntimeValue::Array(vec![
+                    RuntimeValue::String("2024".to_string()),
+                    RuntimeValue::String("06".to_string()),
+                ]),
+                RuntimeValue::Array(vec![
+                    RuntimeValue::String("2025".to_string()),
+                    RuntimeValue::String("07".to_string()),
+                ]),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_scan_re_no_match() {
+        let result = scan_re("no digits here", r"\d+").unwrap();
+        assert_eq!(result, RuntimeValue::Array(vec![]));
+    }
+
+    #[test]
+    fn test_scan_re_invalid_pattern() {
+        assert!(scan_re("text", "[invalid").is_err());
     }
 }

@@ -2519,7 +2519,13 @@ fn engine() -> DefaultEngine {
 // ascii_upcase only folds ASCII letters: "à" is left untouched, unlike upcase above
 #[case::ascii_upcase_non_ascii(r##"ascii_upcase("abcà")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ABCà".to_string())].into()))]
 #[case::gsub_simple(r##"gsub("a1b2", "\\d", "x")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("axbx".to_string())].into()))]
+#[case::gsub_first_simple(r##"gsub_first("a1b2", "\\d", "x")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("axb2".to_string())].into()))]
 #[case::regex_match_simple(r##"regex_match("a1b2", "\\d")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("1".to_string()), RuntimeValue::String("2".to_string())])].into()))]
+#[case::scan_no_groups(r##"scan("a1b2", "\\d")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("1".to_string()), RuntimeValue::String("2".to_string())])].into()))]
+#[case::scan_with_groups(r##"scan("2024-06 2025-07", "(\\d{4})-(\\d{2})")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![
+    RuntimeValue::Array(vec![RuntimeValue::String("2024".to_string()), RuntimeValue::String("06".to_string())]),
+    RuntimeValue::Array(vec![RuntimeValue::String("2025".to_string()), RuntimeValue::String("07".to_string())]),
+])].into()))]
 #[case::slice_simple(r##"slice("abcdef", 1, 4)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("bcd".to_string())].into()))]
 #[case::sort_by_impl_simple(r##"_sort_by_impl([[2, "b"], [1, "a"]])"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![
     RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::String("a".to_string())]),
