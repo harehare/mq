@@ -263,7 +263,7 @@ fn register_math(ctx: &mut InferenceContext) {
     // Unary math: number -> number
     register_many(
         ctx,
-        &["abs", "ceil", "floor", "round", "trunc"],
+        &["abs", "ceil", "floor", "round", "trunc", "ln", "log10", "sqrt", "exp"],
         vec![Type::Number],
         Type::Number,
     );
@@ -338,6 +338,7 @@ fn register_string(ctx: &mut InferenceContext) {
         Type::array(Type::String),
     );
     register_binary(ctx, "is_regex_match", Type::String, Type::String, Type::Bool);
+    register_binary(ctx, "is_not_regex_match", Type::String, Type::String, Type::Bool);
 
     // Encoding functions
     register_many(
@@ -357,6 +358,12 @@ fn register_string(ctx: &mut InferenceContext) {
         Type::String,
         Type::dict(Type::Var(k), Type::Var(v)),
     );
+
+    // Scan: (string, pattern) -> [a]
+    // Element type is left polymorphic since it depends on whether the pattern has
+    // capture groups (string per match) or not (array of groups per match).
+    let a = ctx.fresh_var();
+    register_binary(ctx, "scan", Type::String, Type::String, Type::array(Type::Var(a)));
 
     // None propagation for string functions
     register_none_propagation_unary(
@@ -703,6 +710,10 @@ fn register_type_conversion(ctx: &mut InferenceContext) {
     // bytes -> [number]
     register_unary(ctx, "to_array", Type::Bytes, Type::array(Type::Number));
 
+    // to_boolean: bool -> bool, string -> bool (parses "true"/"false")
+    register_unary(ctx, "to_boolean", Type::Bool, Type::Bool);
+    register_unary(ctx, "to_boolean", Type::String, Type::Bool);
+
     // to_bytes: string -> bytes, [number] -> bytes, bytes -> bytes
     register_unary(ctx, "to_bytes", Type::String, Type::Bytes);
     register_unary(ctx, "to_bytes", Type::array(Type::Number), Type::Bytes);
@@ -880,6 +891,36 @@ fn register_datetime(ctx: &mut InferenceContext) {
     register_nullary(ctx, "now", Type::Number);
     register_unary(ctx, "from_date", Type::String, Type::Number);
     register_binary(ctx, "to_date", Type::Number, Type::String, Type::String);
+
+    // gmtime/localtime: number (unix timestamp) -> [number] (broken-down time array)
+    register_unary(ctx, "gmtime", Type::Number, Type::array(Type::Number));
+    register_unary(ctx, "localtime", Type::Number, Type::array(Type::Number));
+
+    // mktime: [number] (broken-down time array) -> number (unix timestamp)
+    register_unary(ctx, "mktime", Type::array(Type::Number), Type::Number);
+
+    // strftime: (number, string) -> string
+    register_binary(ctx, "strftime", Type::Number, Type::String, Type::String);
+
+    // date_add: ([number], number, string) -> [number]
+    register_ternary(
+        ctx,
+        "date_add",
+        Type::array(Type::Number),
+        Type::Number,
+        Type::String,
+        Type::array(Type::Number),
+    );
+
+    // date_diff: ([number], [number], string) -> number
+    register_ternary(
+        ctx,
+        "date_diff",
+        Type::array(Type::Number),
+        Type::array(Type::Number),
+        Type::String,
+        Type::Number,
+    );
 }
 
 /// I/O and control flow functions: print, stderr, error, halt, input
@@ -962,6 +1003,8 @@ fn register_markdown(ctx: &mut InferenceContext) {
         "is_math_inline",
         "is_toml",
         "is_yaml",
+        "is_callout",
+        "is_table_align",
     ] {
         register_unary(ctx, name, Type::Markdown, Type::Bool);
     }
@@ -1005,6 +1048,8 @@ fn register_markdown(ctx: &mut InferenceContext) {
         "is_math_inline",
         "is_toml",
         "is_yaml",
+        "is_callout",
+        "is_table_align",
     ] {
         let a = ctx.fresh_var();
         register_unary(ctx, name, Type::Var(a), Type::Bool);
@@ -1038,6 +1083,8 @@ fn register_markdown(ctx: &mut InferenceContext) {
             "to_code_inline",
             "to_strong",
             "to_em",
+            "to_blockquote",
+            "to_delete",
             "increase_header_level",
             "decrease_header_level",
             "to_math",
@@ -1047,6 +1094,25 @@ fn register_markdown(ctx: &mut InferenceContext) {
         vec![Type::Markdown],
         Type::Markdown,
     );
+
+    // to_callout: (markdown, string, string) -> markdown
+    register_ternary(
+        ctx,
+        "to_callout",
+        Type::Markdown,
+        Type::String,
+        Type::String,
+        Type::Markdown,
+    );
+
+    // to_md_fragment: markdown -> markdown, [a] -> markdown
+    register_unary(ctx, "to_md_fragment", Type::Markdown, Type::Markdown);
+    let a = ctx.fresh_var();
+    register_unary(ctx, "to_md_fragment", Type::array(Type::Var(a)), Type::Markdown);
+
+    // to_md_table_align: [a] -> markdown
+    let a = ctx.fresh_var();
+    register_unary(ctx, "to_md_table_align", Type::array(Type::Var(a)), Type::Markdown);
 
     // (markdown, number) -> markdown
     let a = ctx.fresh_var();
@@ -1150,6 +1216,26 @@ fn register_debug(ctx: &mut InferenceContext) {
 /// File I/O functions
 fn register_file_io(ctx: &mut InferenceContext) {
     register_unary(ctx, "read_file", Type::String, Type::String);
+    register_unary(ctx, "read_file_bytes", Type::String, Type::Bytes);
+    register_unary(ctx, "file_exists", Type::String, Type::Bool);
+
+    // collection: string (dir path) -> [{path, title, frontmatter, content}]
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_unary(
+        ctx,
+        "collection",
+        Type::String,
+        Type::array(Type::dict(Type::Var(k), Type::Var(v))),
+    );
+
+    // Path manipulation: string -> string
+    register_many(
+        ctx,
+        &["basename", "dirname", "extname", "stem"],
+        vec![Type::String],
+        Type::String,
+    );
+    register_binary(ctx, "path_join", Type::String, Type::String, Type::String);
 }
 
 fn register_bytes(ctx: &mut InferenceContext) {
@@ -1373,6 +1459,12 @@ mod tests {
     #[case::nan("nan()", true)]
     #[case::infinite("infinite()", true)]
     #[case::is_nan("is_nan(1.0)", true)]
+    #[case::ln("ln(2.0)", true)]
+    #[case::log10("log10(100)", true)]
+    #[case::sqrt("sqrt(4)", true)]
+    #[case::exp("exp(1)", true)]
+    #[case::ln_string("ln(\"x\")", false)] // Should fail: wrong type
+    #[case::sqrt_string("sqrt(\"x\")", false)] // Should fail: wrong type
     fn test_special_number_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
@@ -1396,6 +1488,10 @@ mod tests {
     #[case::rindex("rindex(\"hello world hello\", \"hello\")", true)]
     #[case::capture("capture(\"hello 42\", \"(?P<word>\\\\w+)\")", true)]
     #[case::is_regex_match("is_regex_match(\"hello123\", \"[0-9]+\")", true)]
+    #[case::is_not_regex_match("is_not_regex_match(\"hello123\", \"[0-9]+\")", true)]
+    #[case::is_not_regex_match_number("is_not_regex_match(42, \"[0-9]+\")", false)] // Should fail: wrong type
+    #[case::scan("scan(\"2024-06\", \"(\\\\d{4})-(\\\\d{2})\")", true)]
+    #[case::scan_number("scan(42, \"[0-9]+\")", false)] // Should fail: wrong type
     #[case::base64url("base64url(\"hello\")", true)]
     #[case::base64urld("base64urld(\"aGVsbG8=\")", true)]
     #[case::ltrim_number("ltrim(42)", false)]
@@ -1545,6 +1641,8 @@ mod tests {
     #[case::keys("keys({\"a\": 1, \"b\": 2})", true)]
     #[case::values("values({\"a\": 1, \"b\": 2})", true)]
     #[case::entries("entries({\"a\": 1, \"b\": 2})", true)]
+    #[case::has_dict("has({\"a\": 1}, \"a\")", true)]
+    #[case::has_array("has([1, 2, 3], 1)", true)]
     fn test_dict_query_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
@@ -1578,6 +1676,8 @@ mod tests {
     #[case::set("set({\"a\": 1}, \"b\", 2)", true)]
     #[case::del("del({\"a\": 1, \"b\": 2}, \"a\")", true)]
     #[case::update("update({\"a\": 1}, {\"b\": 2})", true)]
+    #[case::from_entries("from_entries([[\"a\", 1], [\"b\", 2]])", true)]
+    #[case::with_entries("with_entries({\"a\": 1}, fn(pair): [pair[0], pair[1] + 1];)", true)]
     fn test_dict_manipulation_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
@@ -1596,6 +1696,9 @@ mod tests {
     #[case::to_string("to_string(42)", true)]
     #[case::to_array("to_array(42)", true)]
     #[case::type_of("type(42)", true)]
+    #[case::to_boolean_string("to_boolean(\"true\")", true)]
+    #[case::to_boolean_bool("to_boolean(true)", true)]
+    #[case::to_boolean_number("to_boolean(42)", false)] // Should fail: wrong type
     fn test_type_conversion_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
@@ -1613,6 +1716,18 @@ mod tests {
     #[case::now("now()", true)]
     #[case::from_date("from_date(\"2024-01-01\")", true)]
     #[case::to_date("to_date(1704067200000, \"%Y-%m-%d\")", true)]
+    #[case::gmtime("gmtime(0)", true)]
+    #[case::localtime("localtime(0)", true)]
+    #[case::mktime("mktime([2024, 0, 1, 0, 0, 0, 1, 0])", true)]
+    #[case::strftime("strftime(0, \"%Y-%m-%d\")", true)]
+    #[case::date_add("date_add([2024, 0, 1, 0, 0, 0, 1, 0], 1, \"days\")", true)]
+    #[case::date_diff(
+        "date_diff([2024, 0, 1, 0, 0, 0, 1, 0], [2024, 0, 2, 0, 0, 0, 2, 1], \"days\")",
+        true
+    )]
+    #[case::gmtime_string("gmtime(\"x\")", false)] // Should fail: wrong type
+    #[case::mktime_string("mktime(\"x\")", false)] // Should fail: wrong type
+    #[case::strftime_swapped("strftime(\"x\", 1)", false)] // Should fail: wrong type
     fn test_datetime_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
@@ -1631,6 +1746,35 @@ mod tests {
     #[case::stderr("stderr(\"error\")", true)]
     #[case::input("input()", true)]
     fn test_io_functions(#[case] code: &str, #[case] should_succeed: bool) {
+        let result = check_types(code);
+        assert_eq!(
+            result.is_empty(),
+            should_succeed,
+            "Code: {}\nResult: {:?}",
+            code,
+            result
+        );
+    }
+
+    // File I/O And Path Functions
+
+    #[rstest]
+    #[case::read_file("read_file(\"a.md\")", true)]
+    #[case::read_file_bytes("read_file_bytes(\"a.md\")", true)]
+    #[case::file_exists("file_exists(\"a.md\")", true)]
+    #[case::collection("collection(\"docs\")", true)]
+    #[case::collection_len("len(collection(\"docs\"))", true)]
+    #[case::basename("basename(\"a/b.md\")", true)]
+    #[case::dirname("dirname(\"a/b.md\")", true)]
+    #[case::extname("extname(\"a/b.md\")", true)]
+    #[case::stem("stem(\"a/b.md\")", true)]
+    #[case::path_join("path_join(\"a\", \"b.md\")", true)]
+    #[case::read_file_number("read_file(42)", false)] // Should fail: wrong type
+    #[case::file_exists_number("file_exists(42)", false)] // Should fail: wrong type
+    #[case::collection_number("collection(42)", false)] // Should fail: wrong type
+    #[case::basename_number("basename(42)", false)] // Should fail: wrong type
+    #[case::path_join_number("path_join(42, \"b\")", false)] // Should fail: wrong type
+    fn test_file_io_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
             result.is_empty(),
@@ -1942,6 +2086,33 @@ mod tests {
         );
     }
 
+    // Type filter functions (`arrays`, `booleans`, etc.) are `def`-based builtins from
+    // builtin.mq, not registered in this file: hir.add_builtin() loads builtin.mq's
+    // source into the HIR, so their types are inferred from the function bodies just
+    // like any other user-defined function.
+    #[rstest]
+    #[case::arrays("arrays([1, 2])", true)]
+    #[case::markdowns("markdowns(to_hr())", true)]
+    #[case::booleans("booleans(true)", true)]
+    #[case::numbers("numbers(42)", true)]
+    #[case::strings("strings(\"a\")", true)]
+    #[case::dicts("dicts({\"a\": 1})", true)]
+    #[case::nones("nones(None)", true)]
+    #[case::bytes_filter("bytes(to_bytes(\"a\"))", true)]
+    #[case::iterables_array("iterables([1, 2])", true)]
+    #[case::iterables_dict("iterables({\"a\": 1})", true)]
+    #[case::scalars("scalars(1)", true)]
+    fn test_type_filter_functions(#[case] code: &str, #[case] should_succeed: bool) {
+        let result = check_types(code);
+        assert_eq!(
+            result.is_empty(),
+            should_succeed,
+            "Code: {}\nResult: {:?}",
+            code,
+            result
+        );
+    }
+
     // Utility Functions
 
     #[rstest]
@@ -2022,6 +2193,8 @@ mod tests {
     #[case::is_yaml("to_markdown(\"hello\") | first() | is_yaml()", true)]
     #[case::is_h_level("to_markdown(\"# hello\") | first() | is_h_level(1)", true)]
     #[case::is_h_level_wrong_type("is_h_level(42, \"str\")", false)]
+    #[case::is_callout("to_markdown(\"hello\") | first() | is_callout()", true)]
+    #[case::is_table_align("to_markdown(\"hello\") | first() | is_table_align()", true)]
     fn test_markdown_type_check_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
@@ -2057,6 +2230,12 @@ mod tests {
     #[case::to_mdx("to_mdx(\"hello\")", true)]
     #[case::to_strong("to_markdown(\"hello\") | first() | to_strong()", true)]
     #[case::to_em("to_markdown(\"hello\") | first() | to_em()", true)]
+    #[case::to_blockquote("to_markdown(\"hello\") | first() | to_blockquote()", true)]
+    #[case::to_delete("to_markdown(\"hello\") | first() | to_delete()", true)]
+    #[case::to_callout("to_markdown(\"hello\") | first() | to_callout(\"note\", \"Note\")", true)]
+    #[case::to_md_fragment_markdown("to_markdown(\"hello\") | first() | to_md_fragment()", true)]
+    #[case::to_md_fragment_array("to_md_fragment([\"a\", \"b\"])", true)]
+    #[case::to_md_table_align("to_md_table_align([\"left\", \"right\"])", true)]
     fn test_markdown_conversion_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
@@ -2193,6 +2372,17 @@ mod tests {
     )]
     #[case::to_markdown_valid("to_markdown(\"# hello\")", true, "to_markdown with string is valid")]
     #[case::to_h_valid("to_markdown(\"hello\") | to_h(1)", true, "to_h with number is valid")]
+    #[case::to_callout_wrong_kind_type(
+        "to_markdown(\"hello\") | first() | to_callout(42, \"Note\")",
+        false,
+        "to_callout expects string kind"
+    )]
+    #[case::to_callout_wrong_title_type(
+        "to_markdown(\"hello\") | first() | to_callout(\"note\", 42)",
+        false,
+        "to_callout expects string title"
+    )]
+    #[case::to_md_table_align_wrong_type("to_md_table_align(\"left\")", false, "to_md_table_align expects an array")]
     fn test_markdown_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
         let result = check_types(code);
         assert_eq!(

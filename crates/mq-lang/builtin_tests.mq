@@ -194,6 +194,63 @@ def test_numbers():
   | assert_eq(result2, None)
 end
 
+def test_strings():
+  let result1 = strings("hello")
+  | assert_eq(result1, "hello")
+
+  | let result2 = strings(42)
+  | assert_eq(result2, None)
+end
+
+def test_dicts():
+  let result1 = dicts({"a": 1})
+  | assert_eq(result1, {"a": 1})
+
+  | let result2 = dicts([1, 2])
+  | assert_eq(result2, None)
+end
+
+def test_nones():
+  let result1 = nones(None)
+  | assert_eq(result1, None)
+
+  | let result2 = nones(42)
+  | assert_eq(result2, None)
+end
+
+def test_bytes():
+  let result1 = bytes(b"data")
+  | assert_eq(result1, b"data")
+
+  | let result2 = bytes("not bytes")
+  | assert_eq(result2, None)
+end
+
+def test_iterables():
+  let result1 = iterables([1, 2, 3])
+  | assert_eq(result1, [1, 2, 3])
+
+  | let result2 = iterables({"a": 1})
+  | assert_eq(result2, {"a": 1})
+
+  | let result3 = iterables(42)
+  | assert_eq(result3, None)
+end
+
+def test_scalars():
+  let result1 = scalars(42)
+  | assert_eq(result1, 42)
+
+  | let result2 = scalars("hello")
+  | assert_eq(result2, "hello")
+
+  | let result3 = scalars([1, 2, 3])
+  | assert_eq(result3, None)
+
+  | let result4 = scalars({"a": 1})
+  | assert_eq(result4, None)
+end
+
 # Array manipulation tests
 def test_map():
   let result1 = map([1, 2, 3], fn(x): x * 2;)
@@ -829,6 +886,46 @@ def test_omit():
 
   | let result3 = omit({"key": "value"}, ["nonexistent"])
   | assert_eq(result3, {"key": "value"})
+end
+
+def test_has():
+  let result1 = has({"a": 1, "b": 2}, "a")
+  | assert_eq(result1, true)
+
+  | let result2 = has({"a": 1, "b": 2}, "c")
+  | assert_eq(result2, false)
+
+  | let result3 = has([1, 2, 3], 1)
+  | assert_eq(result3, true)
+
+  | let result4 = has([1, 2, 3], 5)
+  | assert_eq(result4, false)
+
+  | let result5 = has([1, 2, 3], -1)
+  | assert_eq(result5, false)
+
+  | let result6 = has("not a container", "key")
+  | assert_eq(result6, false)
+end
+
+def test_from_entries():
+  let result1 = from_entries([["a", 1], ["b", 2]])
+  | assert_eq(result1, {"a": 1, "b": 2})
+
+  | let result2 = from_entries([])
+  | assert_eq(result2, dict())
+
+  # Later occurrences of the same key overwrite earlier ones
+  | let result3 = from_entries([["a", 1], ["a", 2]])
+  | assert_eq(result3, {"a": 2})
+end
+
+def test_with_entries():
+  let result1 = with_entries({"a": 1, "b": 2}, fn(pair): [pair[0], pair[1] * 10];)
+  | assert_eq(result1, {"a": 10, "b": 20})
+
+  | let result2 = with_entries({}, fn(pair): pair;)
+  | assert_eq(result2, dict())
 end
 
 def test_frontmatter():

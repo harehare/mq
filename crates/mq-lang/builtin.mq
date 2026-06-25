@@ -77,6 +77,24 @@ def booleans(b): select(b, is_bool(b));
 # Returns number if input is number, None otherwise
 def numbers(n): select(n, is_number(n));
 
+# Returns string if input is string, None otherwise
+def strings(s): select(s, is_string(s));
+
+# Returns dict if input is dict, None otherwise
+def dicts(d): select(d, is_dict(d));
+
+# Returns the value if it is None, None otherwise
+def nones(n): select(n, is_none(n));
+
+# Returns bytes if input is bytes, None otherwise
+def bytes(b): select(b, is_bytes(b));
+
+# Returns the value if it is an array or dict (i.e. a container that can be iterated over), None otherwise
+def iterables(v): select(v, is_array(v) || is_dict(v));
+
+# Returns the value if it is not an array or dict (i.e. a leaf/scalar value), None otherwise
+def scalars(v): select(v, !(is_array(v) || is_dict(v)));
+
 # Formats a date to ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)
 def to_date_iso8601(d): to_date(d, "%Y-%m-%dT%H:%M:%SZ");
 
@@ -876,6 +894,25 @@ def omit(d, keys):
       | result
     end
 end
+
+# Checks if a dict has the given key, or an array has an element at the given index.
+def has(v, key):
+  if (is_dict(v)):
+    in(keys(v), key)
+  elif (is_array(v)):
+    is_number(key) && between(key, 0, len(v) - 1)
+  else:
+    false
+end
+
+# Builds a dict from an array of [key, value] pairs, as produced by `entries`.
+# If the same key appears more than once, the last occurrence wins.
+def from_entries(arr):
+  fold(arr, dict(), fn(acc, pair): set(acc, to_string(pair[0]), pair[1]););
+
+# Transforms each [key, value] pair of a dict by applying the given function,
+# then rebuilds a dict from the resulting pairs.
+def with_entries(d, f): from_entries(map(entries(d), f));
 
 # Parses frontmatter from a markdown node, supporting both YAML and TOML formats.
 def frontmatter(v):

@@ -30,7 +30,7 @@ use std::sync::LazyLock;
 use thiserror::Error;
 
 use self::range::{generate_char_range, generate_multi_char_range, generate_numeric_range};
-use self::regex::{capture_re, is_match_re, match_re, replace_re, split_re};
+use self::regex::{capture_re, is_match_re, match_re, replace_re, scan_re, split_re};
 use super::runtime_value::{self, RuntimeValue};
 use mq_markdown;
 
@@ -735,6 +735,11 @@ fn to_number_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
     convert::to_number(&mut args[0])
 }
 
+#[mq_macros::mq_fn(name = "to_boolean", params = Fixed(1))]
+fn to_boolean_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    convert::to_boolean(&args[0])
+}
+
 #[mq_macros::mq_fn(name = "to_array", params = Fixed(1))]
 fn to_array_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     convert::to_array(&mut args[0])
@@ -899,6 +904,23 @@ fn capture_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             vec![std::mem::take(a), std::mem::take(b)],
         )),
         _ => unreachable!("capture should always receive exactly two arguments"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "scan", params = Fixed(2))]
+fn scan_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s), RuntimeValue::String(pattern)] => scan_re(s, pattern),
+        [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(pattern)] => node
+            .markdown_node()
+            .map(|md| scan_re(&md.value(), pattern))
+            .unwrap_or_else(|| Ok(RuntimeValue::EMPTY_ARRAY)),
+        [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::EMPTY_ARRAY),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("scan should always receive exactly two arguments"),
     }
 }
 
@@ -3880,6 +3902,7 @@ mq_macros::builtin_dispatch! {
     TO_MARKDOWN_STRING,
     TO_STRING,
     TO_NUMBER,
+    TO_BOOLEAN,
     TO_ARRAY,
     TO_BYTES,
     FROM_HEX,
@@ -3899,6 +3922,7 @@ mq_macros::builtin_dispatch! {
     IS_REGEX_MATCH,
     IS_NOT_REGEX_MATCH,
     CAPTURE,
+    SCAN,
     DOWNCASE,
     ASCII_DOWNCASE,
     GSUB,
@@ -4740,6 +4764,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
+        SmolStr::new("to_boolean"),
+        BuiltinFunctionDoc {
+            description: "Converts the given value to a boolean. Booleans are returned unchanged, the strings \"true\" and \"false\" are converted to their boolean equivalent, and all other input results in an error.",
+            params: &["value"],
+        },
+    );
+    map.insert(
         SmolStr::new("to_array"),
         BuiltinFunctionDoc {
             description: "Converts the given value to an array.",
@@ -4883,6 +4914,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         SmolStr::new("is_not_regex_match"),
         BuiltinFunctionDoc {
             description: "Checks if the given pattern does not match the string.",
+            params: &["string", "pattern"],
+        },
+    );
+    map.insert(
+        SmolStr::new("scan"),
+        BuiltinFunctionDoc {
+            description: "Finds all matches of a regular expression pattern in the string. For each match, returns the captured groups as an array if the pattern has capture groups, otherwise returns the whole match as a string.",
             params: &["string", "pattern"],
         },
     );
