@@ -338,6 +338,7 @@ fn register_string(ctx: &mut InferenceContext) {
         Type::array(Type::String),
     );
     register_binary(ctx, "is_regex_match", Type::String, Type::String, Type::Bool);
+    register_binary(ctx, "is_not_regex_match", Type::String, Type::String, Type::Bool);
 
     // Encoding functions
     register_many(
@@ -357,6 +358,12 @@ fn register_string(ctx: &mut InferenceContext) {
         Type::String,
         Type::dict(Type::Var(k), Type::Var(v)),
     );
+
+    // Scan: (string, pattern) -> [a]
+    // Element type is left polymorphic since it depends on whether the pattern has
+    // capture groups (string per match) or not (array of groups per match).
+    let a = ctx.fresh_var();
+    register_binary(ctx, "scan", Type::String, Type::String, Type::array(Type::Var(a)));
 
     // None propagation for string functions
     register_none_propagation_unary(
@@ -702,6 +709,10 @@ fn register_type_conversion(ctx: &mut InferenceContext) {
     register_unary(ctx, "to_array", Type::Var(a), Type::array(Type::Var(a)));
     // bytes -> [number]
     register_unary(ctx, "to_array", Type::Bytes, Type::array(Type::Number));
+
+    // to_boolean: bool -> bool, string -> bool (parses "true"/"false")
+    register_unary(ctx, "to_boolean", Type::Bool, Type::Bool);
+    register_unary(ctx, "to_boolean", Type::String, Type::Bool);
 
     // to_bytes: string -> bytes, [number] -> bytes, bytes -> bytes
     register_unary(ctx, "to_bytes", Type::String, Type::Bytes);
@@ -1396,6 +1407,10 @@ mod tests {
     #[case::rindex("rindex(\"hello world hello\", \"hello\")", true)]
     #[case::capture("capture(\"hello 42\", \"(?P<word>\\\\w+)\")", true)]
     #[case::is_regex_match("is_regex_match(\"hello123\", \"[0-9]+\")", true)]
+    #[case::is_not_regex_match("is_not_regex_match(\"hello123\", \"[0-9]+\")", true)]
+    #[case::is_not_regex_match_number("is_not_regex_match(42, \"[0-9]+\")", false)] // Should fail: wrong type
+    #[case::scan("scan(\"2024-06\", \"(\\\\d{4})-(\\\\d{2})\")", true)]
+    #[case::scan_number("scan(42, \"[0-9]+\")", false)] // Should fail: wrong type
     #[case::base64url("base64url(\"hello\")", true)]
     #[case::base64urld("base64urld(\"aGVsbG8=\")", true)]
     #[case::ltrim_number("ltrim(42)", false)]
@@ -1545,6 +1560,8 @@ mod tests {
     #[case::keys("keys({\"a\": 1, \"b\": 2})", true)]
     #[case::values("values({\"a\": 1, \"b\": 2})", true)]
     #[case::entries("entries({\"a\": 1, \"b\": 2})", true)]
+    #[case::has_dict("has({\"a\": 1}, \"a\")", true)]
+    #[case::has_array("has([1, 2, 3], 1)", true)]
     fn test_dict_query_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
@@ -1578,6 +1595,8 @@ mod tests {
     #[case::set("set({\"a\": 1}, \"b\", 2)", true)]
     #[case::del("del({\"a\": 1, \"b\": 2}, \"a\")", true)]
     #[case::update("update({\"a\": 1}, {\"b\": 2})", true)]
+    #[case::from_entries("from_entries([[\"a\", 1], [\"b\", 2]])", true)]
+    #[case::with_entries("with_entries({\"a\": 1}, fn(pair): [pair[0], pair[1] + 1];)", true)]
     fn test_dict_manipulation_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
@@ -1596,6 +1615,9 @@ mod tests {
     #[case::to_string("to_string(42)", true)]
     #[case::to_array("to_array(42)", true)]
     #[case::type_of("type(42)", true)]
+    #[case::to_boolean_string("to_boolean(\"true\")", true)]
+    #[case::to_boolean_bool("to_boolean(true)", true)]
+    #[case::to_boolean_number("to_boolean(42)", false)] // Should fail: wrong type
     fn test_type_conversion_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
@@ -1932,6 +1954,33 @@ mod tests {
     #[case::is_empty_string("is_empty(\"\")", true)]
     #[case::is_empty_array("is_empty([])", true)]
     fn test_type_check_functions(#[case] code: &str, #[case] should_succeed: bool) {
+        let result = check_types(code);
+        assert_eq!(
+            result.is_empty(),
+            should_succeed,
+            "Code: {}\nResult: {:?}",
+            code,
+            result
+        );
+    }
+
+    // Type filter functions (`arrays`, `booleans`, etc.) are `def`-based builtins from
+    // builtin.mq, not registered in this file: hir.add_builtin() loads builtin.mq's
+    // source into the HIR, so their types are inferred from the function bodies just
+    // like any other user-defined function.
+    #[rstest]
+    #[case::arrays("arrays([1, 2])", true)]
+    #[case::markdowns("markdowns(to_hr())", true)]
+    #[case::booleans("booleans(true)", true)]
+    #[case::numbers("numbers(42)", true)]
+    #[case::strings("strings(\"a\")", true)]
+    #[case::dicts("dicts({\"a\": 1})", true)]
+    #[case::nones("nones(None)", true)]
+    #[case::bytes_filter("bytes(to_bytes(\"a\"))", true)]
+    #[case::iterables_array("iterables([1, 2])", true)]
+    #[case::iterables_dict("iterables({\"a\": 1})", true)]
+    #[case::scalars("scalars(1)", true)]
+    fn test_type_filter_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
             result.is_empty(),
