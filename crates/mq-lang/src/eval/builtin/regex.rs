@@ -81,18 +81,6 @@ pub(super) fn replace_re(input: &str, pattern: &str, replacement: &str) -> Resul
     Ok(re.replace_all(input, replacement).to_string().into())
 }
 
-pub(super) fn replace_first_re(input: &str, pattern: &str, replacement: &str) -> Result<RuntimeValue, Error> {
-    if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
-        return Ok(re.replace(input, replacement).to_string().into());
-    }
-    let re = RegexBuilder::new(pattern)
-        .size_limit(1 << 20)
-        .build()
-        .map_err(|_| Error::InvalidRegularExpression(pattern.to_string()))?;
-    REGEX_CACHE.write().unwrap().insert(pattern.to_string(), re.clone());
-    Ok(re.replace(input, replacement).to_string().into())
-}
-
 fn scan_re_inner(re: &Regex, input: &str) -> RuntimeValue {
     let has_groups = re.captures_len() > 1;
     let matches: Vec<RuntimeValue> = re
@@ -254,28 +242,6 @@ mod tests {
     #[test]
     fn test_split_re_invalid_pattern() {
         assert!(split_re("text", "[invalid").is_err());
-    }
-
-    #[rstest]
-    #[case("hello world", r"\s+", "_", "hello_world")]
-    #[case("aaa", "a", "b", "baa")]
-    #[case("no match", r"\d+", "X", "no match")]
-    fn test_replace_first_re(
-        #[case] input: &str,
-        #[case] pattern: &str,
-        #[case] replacement: &str,
-        #[case] expected: &str,
-    ) {
-        let result = replace_first_re(input, pattern, replacement).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
-        // second call hits cache — same result expected
-        let result2 = replace_first_re(input, pattern, replacement).unwrap();
-        assert_eq!(result, result2);
-    }
-
-    #[test]
-    fn test_replace_first_re_invalid_pattern() {
-        assert!(replace_first_re("text", "[invalid", "x").is_err());
     }
 
     #[test]

@@ -2519,7 +2519,6 @@ fn engine() -> DefaultEngine {
 // ascii_upcase only folds ASCII letters: "à" is left untouched, unlike upcase above
 #[case::ascii_upcase_non_ascii(r##"ascii_upcase("abcà")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ABCà".to_string())].into()))]
 #[case::gsub_simple(r##"gsub("a1b2", "\\d", "x")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("axbx".to_string())].into()))]
-#[case::gsub_first_simple(r##"gsub_first("a1b2", "\\d", "x")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("axb2".to_string())].into()))]
 #[case::regex_match_simple(r##"regex_match("a1b2", "\\d")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("1".to_string()), RuntimeValue::String("2".to_string())])].into()))]
 #[case::scan_no_groups(r##"scan("a1b2", "\\d")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("1".to_string()), RuntimeValue::String("2".to_string())])].into()))]
 #[case::scan_with_groups(r##"scan("2024-06 2025-07", "(\\d{4})-(\\d{2})")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![
@@ -2849,6 +2848,10 @@ fn engine() -> DefaultEngine {
 #[case::url_encode_plain(r#"url_encode("abc")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abc".to_string())].into()))]
 // to_number conversion
 #[case::to_number_string(r#"to_number("42")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
+// to_boolean conversion
+#[case::to_boolean_true_string(r#"to_boolean("true")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::to_boolean_false_string(r#"to_boolean("false")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
+#[case::to_boolean_bool(r#"to_boolean(true)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 // to_html conversion
 #[case::to_html_string(r#"to_html("hello") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
 // to_text conversion
@@ -3430,6 +3433,10 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::mod_non_convertible(r#"mod("x", "y")"#, vec![RuntimeValue::None],)]
 // assign_to_immutable: let binding then reassign → error
 #[case::assign_let_then_modify(r#"let x = 5 | x = 10"#, vec![RuntimeValue::None],)]
+// to_boolean: non-boolean string → type error
+#[case::to_boolean_invalid_string(r#"to_boolean("yes")"#, vec![RuntimeValue::None],)]
+// to_boolean: non-string, non-boolean arg → type error
+#[case::to_boolean_number(r#"to_boolean(42)"#, vec![RuntimeValue::None],)]
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
 }

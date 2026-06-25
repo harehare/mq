@@ -30,7 +30,7 @@ use std::sync::LazyLock;
 use thiserror::Error;
 
 use self::range::{generate_char_range, generate_multi_char_range, generate_numeric_range};
-use self::regex::{capture_re, is_match_re, match_re, replace_first_re, replace_re, scan_re, split_re};
+use self::regex::{capture_re, is_match_re, match_re, replace_re, scan_re, split_re};
 use super::runtime_value::{self, RuntimeValue};
 use mq_markdown;
 
@@ -735,6 +735,11 @@ fn to_number_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
     convert::to_number(&mut args[0])
 }
 
+#[mq_macros::mq_fn(name = "to_boolean", params = Fixed(1))]
+fn to_boolean_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    convert::to_boolean(&args[0])
+}
+
 #[mq_macros::mq_fn(name = "to_array", params = Fixed(1))]
 fn to_array_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     convert::to_array(&mut args[0])
@@ -965,31 +970,6 @@ fn gsub_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
             vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
         )),
         _ => unreachable!("gsub should always receive exactly three arguments"),
-    }
-}
-
-#[mq_macros::mq_fn(name = "gsub_first", params = Fixed(3))]
-fn gsub_first_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
-        [
-            RuntimeValue::String(s1),
-            RuntimeValue::String(s2),
-            RuntimeValue::String(s3),
-        ] => Ok(replace_first_re(s1, s2, s3)?),
-        [
-            node @ RuntimeValue::Markdown(_, _),
-            RuntimeValue::String(s1),
-            RuntimeValue::String(s2),
-        ] => node
-            .markdown_node()
-            .map(|md| Ok(node.update_markdown_value(&replace_first_re(md.value().as_str(), &*s1, &*s2)?.to_string())))
-            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-        [RuntimeValue::None, _, _] => Ok(RuntimeValue::NONE),
-        [a, b, c] => Err(Error::InvalidTypes(
-            ident.to_string(),
-            vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
-        )),
-        _ => unreachable!("gsub_first should always receive exactly three arguments"),
     }
 }
 
@@ -3922,6 +3902,7 @@ mq_macros::builtin_dispatch! {
     TO_MARKDOWN_STRING,
     TO_STRING,
     TO_NUMBER,
+    TO_BOOLEAN,
     TO_ARRAY,
     TO_BYTES,
     FROM_HEX,
@@ -3945,7 +3926,6 @@ mq_macros::builtin_dispatch! {
     DOWNCASE,
     ASCII_DOWNCASE,
     GSUB,
-    GSUB_FIRST,
     REPLACE,
     REPEAT,
     EXPLODE,
@@ -4784,6 +4764,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
+        SmolStr::new("to_boolean"),
+        BuiltinFunctionDoc {
+            description: "Converts the given value to a boolean. Booleans are returned unchanged, the strings \"true\" and \"false\" are converted to their boolean equivalent, and all other input results in an error.",
+            params: &["value"],
+        },
+    );
+    map.insert(
         SmolStr::new("to_array"),
         BuiltinFunctionDoc {
             description: "Converts the given value to an array.",
@@ -4955,13 +4942,6 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         SmolStr::new("gsub"),
         BuiltinFunctionDoc {
             description: "Replaces all occurrences matching a regular expression pattern with the replacement string.",
-            params: &["from", "pattern", "to"],
-        },
-    );
-    map.insert(
-        SmolStr::new("gsub_first"),
-        BuiltinFunctionDoc {
-            description: "Replaces the first occurrence matching a regular expression pattern with the replacement string.",
             params: &["from", "pattern", "to"],
         },
     );

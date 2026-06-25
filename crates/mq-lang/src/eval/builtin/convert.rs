@@ -317,6 +317,19 @@ pub(super) fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error>
     }
 }
 
+/// convert to boolean
+pub(super) fn to_boolean(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
+    match value {
+        b @ RuntimeValue::Boolean(_) => Ok(b.clone()),
+        RuntimeValue::String(s) => match s.as_str() {
+            "true" => Ok(RuntimeValue::Boolean(true)),
+            "false" => Ok(RuntimeValue::Boolean(false)),
+            _ => Err(Error::InvalidTypes("to_boolean".to_string(), vec![value.clone()])),
+        },
+        _ => Err(Error::InvalidTypes("to_boolean".to_string(), vec![value.clone()])),
+    }
+}
+
 /// convert to array
 pub(super) fn to_array(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
     match value {
