@@ -29,6 +29,28 @@ Or if you prefer using asdf:
 asdf install
 ```
 
+Or if you prefer using Nix (see [Using Nix](#using-nix) below for details):
+
+```sh
+direnv allow  # or: nix develop
+```
+
+## Using Nix
+
+If you have [Nix](https://nixos.org/) with flakes enabled, the repository includes a `flake.nix` that provides a fully reproducible development environment with Rust (matching `rust-toolchain.toml`), `just`, `wasm-pack`, `rust-analyzer`, and all other required tools.
+
+The repository also includes a `.envrc` file, so if you have [direnv](https://direnv.net/) installed, run the following once and the environment will be activated automatically whenever you enter the directory:
+
+```sh
+direnv allow
+```
+
+If you prefer not to use direnv, you can enter the shell manually:
+
+```sh
+nix develop
+```
+
 ## Common development tasks
 
 Here are some useful commands to help you during development:
