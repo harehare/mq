@@ -194,7 +194,6 @@ fn write_category(
     let bar = severity_bar(severity);
 
     writeln!(w, "{}\n", title)?;
-    writeln!(w, "{bar}")?;
 
     for (i, diagnostic) in diagnostics.iter().enumerate() {
         match diagnostic.severity {
