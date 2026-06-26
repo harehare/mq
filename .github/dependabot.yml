@@ -64,3 +64,15 @@ updates:
         patterns: ["*"]
     open-pull-requests-limit: 10
 
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "20:00"
+    cooldown:
+      default-days: 7
+    groups:
+      dependencies:
+        patterns: ["*"]
+    open-pull-requests-limit: 10
+
