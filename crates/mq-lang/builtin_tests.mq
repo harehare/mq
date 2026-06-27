@@ -949,3 +949,103 @@ def test_frontmatter():
   | assert_eq(result4["tags"], ["rust", "markdown"])
 end
 
+def test_walk():
+  # scalar: number — f applied directly
+  let result1 = walk(42, fn(x): x * 2;)
+  | assert_eq(result1, 84)
+
+  # scalar: string — f applied directly
+  | let result2 = walk("hello", fn(x): if (is_string(x)): upcase(x) else: x;)
+  | assert_eq(result2, "HELLO")
+
+  # scalar: None — f applied directly
+  | let result3 = walk(None, identity)
+  | assert_eq(result3, None)
+
+  # scalar: bool — f applied directly
+  | let result4 = walk(true, fn(x): if (is_bool(x)): !x else: x;)
+  | assert_eq(result4, false)
+
+  # array: empty array returns []
+  | let result5 = walk([], identity)
+  | assert_eq(result5, [])
+
+  # array: identity preserves all elements
+  | let result6 = walk([1, 2, 3], identity)
+  | assert_eq(result6, [1, 2, 3])
+
+  # array: transform each number
+  | let result7 = walk([1, 2, 3], fn(x): if (is_number(x)): x * 2 else: x;)
+  | assert_eq(result7, [2, 4, 6])
+
+  # array: recurses into nested subarrays
+  | let result8 = walk([[1, 2], [3, 4]], fn(x): if (is_number(x)): x + 10 else: x;)
+  | assert_eq(result8, [[11, 12], [13, 14]])
+
+  # array: 3 levels of nesting
+  | let result9 = walk([[[1]]], fn(x): if (is_number(x)): x + 100 else: x;)
+  | assert_eq(result9, [[[101]]])
+
+  # array: identity preserves mixed types including None
+  | let result10 = walk([1, "hello", None], identity)
+  | assert_eq(result10, [1, "hello", None])
+
+  # array: negate each number
+  | let result11 = walk([2, 4, 6], fn(x): if (is_number(x)): x * -1 else: x;)
+  | assert_eq(result11, [-2, -4, -6])
+
+  # array: upcase each string
+  | let result12 = walk(["a", "b"], fn(x): if (is_string(x)): upcase(x) else: x;)
+  | assert_eq(result12, ["A", "B"])
+
+  # array: flip each boolean
+  | let result13 = walk([true, false], fn(x): if (is_bool(x)): !x else: x;)
+  | assert_eq(result13, [false, true])
+
+  # array: named def as function argument
+  | def double(x): if (is_number(x)): x * 2 else: x;
+  | let result14 = walk([1, 2, 3], double)
+  | assert_eq(result14, [2, 4, 6])
+
+  # dict: empty dict returns {}
+  | let result15 = walk({}, identity)
+  | assert_eq(result15, dict())
+
+  # dict: only values are transformed, keys unchanged
+  | let result16 = walk({"a": 1, "b": 2}, fn(x): if (is_number(x)): x * 10 else: x;)
+  | assert_eq(result16["a"], 10)
+  | assert_eq(result16["b"], 20)
+
+  # dict: string values uppercased
+  | let result17 = walk({"x": "hello"}, fn(x): if (is_string(x)): upcase(x) else: x;)
+  | assert_eq(result17["x"], "HELLO")
+
+  # dict: identity preserves full structure
+  | let result18 = walk({"a": 1, "b": 2}, identity)
+  | assert_eq(result18, {"a": 1, "b": 2})
+
+  # markdown: text leaf — identity preserves text content
+  | let result19 = do "plain text" | to_markdown() | first() | walk(fn(n): n;) | to_text();
+  | assert_eq(result19, "plain text")
+
+  # markdown: heading — identity preserves HTML output
+  | let result20 = do "# heading" | to_markdown() | first() | walk(fn(n): n;) | to_html();
+  | assert_eq(result20, "<h1>heading</h1>")
+
+  # markdown: h2 — identity preserves depth
+  | let result21 = do "## section" | to_markdown() | first() | walk(fn(n): n;) | to_html();
+  | assert_eq(result21, "<h2>section</h2>")
+
+  # markdown: demote h1 → h2
+  | let result22 = do "# Title" | to_markdown() | first() | walk(fn(n): if (is_h(n)): demote_heading(n) else: n;) | to_html();
+  | assert_eq(result22, "<h2>Title</h2>")
+
+  # markdown: promote h2 → h1
+  | let result23 = do "## Title" | to_markdown() | first() | walk(fn(n): if (is_h(n)): promote_heading(n) else: n;) | to_html();
+  | assert_eq(result23, "<h1>Title</h1>")
+
+  # markdown: node name reflects transformation
+  | let result24 = do "# hi" | to_markdown() | first() | walk(fn(n): if (is_h(n)): demote_heading(n) else: n;) | to_md_name();
+  | assert_eq(result24, "h2")
+end
+
