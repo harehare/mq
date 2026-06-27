@@ -37,6 +37,10 @@ M.defaults = {
   enable_type_check = false,
   -- Enable strict array mode (passes --strict-array to mq-lsp, requires enable_type_check)
   strict_array = false,
+  -- Enable mq-lint diagnostics (passes --enable-lint to mq-lsp)
+  enable_lint = false,
+  -- Lint rule IDs to disable (passes --disable-lint-rule <id> to mq-lsp for each, requires enable_lint)
+  lint_disabled_rules = {},
   -- Enable LSP inlay hints (requires Neovim 0.10+)
   enable_inlay_hints = true,
   -- LSP server configuration

@@ -144,6 +144,21 @@
           "type": "boolean",
           "default": false,
           "description": "Enable or disable strict array mode. When enabled, arrays must contain elements of a single type."
+        },
+        "mq.lint.enableLint": {
+          "title": "Enable lint",
+          "type": "boolean",
+          "default": false,
+          "description": "Enable or disable mq-lint diagnostics (correctness, style, complexity, selector, and module rules) for mq queries."
+        },
+        "mq.lint.disabledRules": {
+          "title": "Disabled lint rules",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Lint rule IDs to disable (e.g. \"naming_convention\", \"shadow_variable\"). Only effective when mq.lint.enableLint is true."
         }
       }
     },

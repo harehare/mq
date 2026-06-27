@@ -22,6 +22,11 @@ use crate::{
 fn selector_from_cst_node(node: &mq_lang::CstNode) -> Option<mq_lang::Selector> {
     let token = node.token.as_ref()?;
 
+    // `..` is tokenized as `DoubleDot`, not as `Selector(".."), so handle it explicitly.
+    if matches!(token.kind, TokenKind::DoubleDot) {
+        return Some(mq_lang::Selector::Recursive);
+    }
+
     if !matches!(&token.kind, TokenKind::Selector(s) if s == ".") {
         return mq_lang::Selector::try_from(&**token).ok();
     }

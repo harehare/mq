@@ -90,6 +90,28 @@ Enable type checking by adding the following to your Zed `settings.json` (`cmd-,
 | `enableTypeCheck` | `false` | Enable type checking; passes `--enable-type-checking` to `mq-lsp` |
 | `strictArray` | `false` | Arrays must contain elements of a single type (requires `enableTypeCheck`) |
 
+### Linting
+
+Enable `mq-lint` diagnostics (correctness, style, complexity, selector, and module rules):
+
+```json
+{
+  "lsp": {
+    "mq-lsp": {
+      "initialization_options": {
+        "enableLint": true,
+        "lintDisabledRules": ["naming_convention", "shadow_variable"]
+      }
+    }
+  }
+}
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `enableLint` | `false` | Enable `mq-lint` diagnostics; passes `--enable-lint` to `mq-lsp` |
+| `lintDisabledRules` | `[]` | Lint rule IDs to disable (requires `enableLint`) |
+
 ### Inlay Hints
 
 Inlay hints show inferred types inline in the editor. Enable them in your Zed `settings.json`:

@@ -127,6 +127,32 @@ impl MqExtension {
 
         args
     }
+
+    fn lint_args_from_settings(worktree: &Worktree) -> Vec<String> {
+        let Ok(lsp_settings) = LspSettings::for_worktree("mq-lsp", worktree) else {
+            return vec![];
+        };
+        let Some(init_opts) = lsp_settings.initialization_options else {
+            return vec![];
+        };
+
+        let enable_lint = init_opts.get("enableLint").and_then(|v| v.as_bool()).unwrap_or(false);
+
+        if !enable_lint {
+            return vec![];
+        }
+
+        let mut args = vec!["--enable-lint".to_string()];
+
+        if let Some(rules) = init_opts.get("lintDisabledRules").and_then(|v| v.as_array()) {
+            for rule_id in rules.iter().filter_map(|v| v.as_str()) {
+                args.push("--disable-lint-rule".to_string());
+                args.push(rule_id.to_string());
+            }
+        }
+
+        args
+    }
 }
 
 fn find_mq_binary(worktree: Option<&Worktree>) -> Result<String, String> {
@@ -297,7 +323,9 @@ impl zed::Extension for MqExtension {
         let args = if let Some(args) = user_args {
             args
         } else {
-            Self::type_check_args_from_settings(worktree)
+            let mut args = Self::type_check_args_from_settings(worktree);
+            args.extend(Self::lint_args_from_settings(worktree));
+            args
         };
 
         Ok(zed::Command {

@@ -2614,6 +2614,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-lint"
+version = "0.6.3"
+dependencies = [
+ "clap",
+ "colored 3.1.1",
+ "mq-hir",
+ "mq-lang",
+ "rstest",
+ "rustc-hash",
+]
+
+[[package]]
 name = "mq-lsp"
 version = "0.6.3"
 dependencies = [
@@ -2625,6 +2637,7 @@ dependencies = [
  "mq-formatter",
  "mq-hir",
  "mq-lang",
+ "mq-lint",
  "mq-markdown",
  "rustc-hash",
  "serde_json",
