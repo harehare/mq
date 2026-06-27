@@ -1,4 +1,5 @@
 pub mod always_true_condition;
+pub mod deprecated_function_call;
 pub mod duplicate_match_arm;
 pub mod infinite_loop;
 pub mod missing_else_in_expr;
@@ -17,6 +18,7 @@ pub fn all() -> Vec<Box<dyn LintRule>> {
         Box::new(unused_import::UnusedImport),
         Box::new(unreachable_code::UnreachableCode),
         Box::new(infinite_loop::InfiniteLoop),
+        Box::new(deprecated_function_call::DeprecatedFunctionCall),
         Box::new(duplicate_match_arm::DuplicateMatchArm),
         Box::new(shadow_variable::ShadowVariable),
         Box::new(missing_else_in_expr::MissingElseInExpr),
