@@ -923,3 +923,21 @@ def frontmatter(v):
   else: None
 end
 
+# Walks through a value (which can be a markdown node, array, or dict) and applies a function to each element, returning a new structure with the results.
+def walk(v, f):
+  match (v):
+    | :markdown:
+      do
+        let new_children = map(v.children, fn(child): walk(child, f);)
+        | let new_value = f(v)
+        | set_children(new_value, new_children)
+      end
+    | :array:
+      map(v, fn(x): walk(x, f);)
+    | :dict:
+      with_entries(v, fn(entry): [entry[0], walk(entry[1], f)];)
+    | _:
+      f(v)
+  end
+end
+
