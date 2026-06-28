@@ -19,6 +19,7 @@ pub enum RuleId {
     InfiniteLoop,
     DeprecatedFunctionCall,
     DuplicateMatchArm,
+    DuplicateImport,
     ShadowVariable,
     MissingElseInExpr,
     AlwaysTrueCondition,
@@ -44,7 +45,7 @@ pub enum RuleId {
 
 impl RuleId {
     /// All known rule IDs.
-    pub const ALL: &'static [RuleId; 28] = &[
+    pub const ALL: &'static [RuleId; 29] = &[
         RuleId::UnusedVariable,
         RuleId::UnusedFunction,
         RuleId::UnusedImport,
@@ -52,6 +53,7 @@ impl RuleId {
         RuleId::InfiniteLoop,
         RuleId::DeprecatedFunctionCall,
         RuleId::DuplicateMatchArm,
+        RuleId::DuplicateImport,
         RuleId::ShadowVariable,
         RuleId::MissingElseInExpr,
         RuleId::AlwaysTrueCondition,
@@ -84,6 +86,7 @@ impl RuleId {
             RuleId::UnreachableCode => "unreachable_code",
             RuleId::InfiniteLoop => "infinite_loop",
             RuleId::DuplicateMatchArm => "duplicate_match_arm",
+            RuleId::DuplicateImport => "duplicate_import",
             RuleId::DeprecatedFunctionCall => "deprecated_function_call",
             RuleId::ShadowVariable => "shadow_variable",
             RuleId::MissingElseInExpr => "missing_else_in_expr",
@@ -147,6 +150,9 @@ pub enum LintMessage {
     InfiniteLoop,
     DuplicateMatchArm {
         pattern: String,
+    },
+    DuplicateImport {
+        name: String,
     },
     DeprecatedFunctionCall {
         name: String,
@@ -227,6 +233,7 @@ impl LintMessage {
             LintMessage::UnreachableCode { .. } => RuleId::UnreachableCode,
             LintMessage::InfiniteLoop => RuleId::InfiniteLoop,
             LintMessage::DuplicateMatchArm { .. } => RuleId::DuplicateMatchArm,
+            LintMessage::DuplicateImport { .. } => RuleId::DuplicateImport,
             LintMessage::DeprecatedFunctionCall { .. } => RuleId::DeprecatedFunctionCall,
             LintMessage::ShadowVariable { .. } => RuleId::ShadowVariable,
             LintMessage::MissingElseInExpr => RuleId::MissingElseInExpr,
@@ -267,6 +274,9 @@ impl LintMessage {
             LintMessage::InfiniteLoop => Some("add a `break` expression to exit the loop".to_string()),
             LintMessage::DuplicateMatchArm { .. } => {
                 Some("remove or merge this arm with the earlier identical pattern".to_string())
+            }
+            LintMessage::DuplicateImport { .. } => {
+                Some("remove or merge this import with the earlier identical pattern".to_string())
             }
             LintMessage::DeprecatedFunctionCall { name } => Some(format!(
                 "deprecated function `{name}`; consider using an alternative or removing the call"
@@ -351,6 +361,7 @@ impl fmt::Display for LintMessage {
             LintMessage::UnreachableCode { keyword } => write!(f, "unreachable code after `{keyword}`"),
             LintMessage::InfiniteLoop => write!(f, "loop without `break` may run forever"),
             LintMessage::DuplicateMatchArm { pattern } => write!(f, "duplicate match arm pattern `{pattern}`"),
+            LintMessage::DuplicateImport { name } => write!(f, "duplicate import of module `{name}`"),
             LintMessage::DeprecatedFunctionCall { name } => {
                 write!(f, "call to deprecated function `{name}`")
             }

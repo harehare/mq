@@ -13,7 +13,7 @@ impl Source {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct SourceInfo {
     pub source_id: Option<SourceId>,
     pub text_range: Option<mq_lang::Range>,
