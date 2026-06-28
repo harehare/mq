@@ -6,6 +6,7 @@ pub mod prefer_pipe_style;
 pub mod prefer_specific_heading;
 pub mod redundant_boolean_literal;
 pub mod redundant_try;
+pub mod unnecessary_interpolation;
 
 use crate::LintRule;
 
@@ -19,5 +20,6 @@ pub fn all() -> Vec<Box<dyn LintRule>> {
         Box::new(naming_convention::NamingConvention),
         Box::new(boolean_comparison::BooleanComparison),
         Box::new(redundant_boolean_literal::RedundantBooleanLiteral),
+        Box::new(unnecessary_interpolation::UnnecessaryInterpolation),
     ]
 }

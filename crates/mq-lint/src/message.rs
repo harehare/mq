@@ -41,11 +41,12 @@ pub enum RuleId {
     NamingConvention,
     BooleanComparison,
     RedundantBooleanLiteral,
+    UnnecessaryInterpolation,
 }
 
 impl RuleId {
     /// All known rule IDs.
-    pub const ALL: &'static [RuleId; 29] = &[
+    pub const ALL: &'static [RuleId] = &[
         RuleId::UnusedVariable,
         RuleId::UnusedFunction,
         RuleId::UnusedImport,
@@ -75,6 +76,7 @@ impl RuleId {
         RuleId::NamingConvention,
         RuleId::BooleanComparison,
         RuleId::RedundantBooleanLiteral,
+        RuleId::UnnecessaryInterpolation,
     ];
 
     /// The rule's `snake_case` identifier, as used in config and CLI flags.
@@ -109,6 +111,7 @@ impl RuleId {
             RuleId::NamingConvention => "naming_convention",
             RuleId::BooleanComparison => "boolean_comparison",
             RuleId::RedundantBooleanLiteral => "redundant_boolean_literal",
+            RuleId::UnnecessaryInterpolation => "unnecessary_interpolation",
         }
     }
 }
@@ -221,6 +224,7 @@ pub enum LintMessage {
     RedundantBooleanLiteral {
         then_val: String,
     },
+    UnnecessaryInterpolation,
 }
 
 impl LintMessage {
@@ -256,6 +260,7 @@ impl LintMessage {
             LintMessage::NamingConvention { .. } => RuleId::NamingConvention,
             LintMessage::BooleanComparison { .. } => RuleId::BooleanComparison,
             LintMessage::RedundantBooleanLiteral { .. } => RuleId::RedundantBooleanLiteral,
+            LintMessage::UnnecessaryInterpolation => RuleId::UnnecessaryInterpolation,
         }
     }
 
@@ -348,6 +353,9 @@ impl LintMessage {
                 }
                 .to_string(),
             ),
+            LintMessage::UnnecessaryInterpolation => {
+                Some("replace `s\"${x}\"` with just `x` (no interpolation needed)".to_string())
+            }
         }
     }
 }
@@ -442,6 +450,12 @@ impl fmt::Display for LintMessage {
                 write!(
                     f,
                     "redundant boolean literal in `if`/`else` — condition already is the result"
+                )
+            }
+            LintMessage::UnnecessaryInterpolation => {
+                write!(
+                    f,
+                    "unnecessary string interpolation: the expression can be used directly"
                 )
             }
         }
