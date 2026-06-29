@@ -208,21 +208,60 @@ mod tests {
 
     #[rstest]
     #[case("@test", Some(TestAnnotation::Test))]
+    #[case("  @test  ", Some(TestAnnotation::Test))]
     #[case("[test]", Some(TestAnnotation::Test))]
+    #[case("  [test]  ", Some(TestAnnotation::Test))]
     #[case(
         "@parametrize([[1, 2], [3, 4]])",
         Some(TestAnnotation::Parametrize { params_expr: "[[1, 2], [3, 4]]".to_string() })
     )]
+    #[case(
+        "  @parametrize(  [[1, 2]]  )  ",
+        Some(TestAnnotation::Parametrize { params_expr: "[[1, 2]]".to_string() })
+    )]
+    #[case(
+        "@parametrize(range(0, 5))",
+        Some(TestAnnotation::Parametrize { params_expr: "range(0, 5)".to_string() })
+    )]
+    #[case(
+        "@parametrize([])",
+        Some(TestAnnotation::Parametrize { params_expr: "[]".to_string() })
+    )]
     #[case("@unknown(foo)", None)]
+    #[case("@skip", None)]
     #[case("not an annotation", None)]
+    #[case("@", None)]
+    #[case("@parametrize", None)]
     fn test_parse_annotation(#[case] input: &str, #[case] expected: Option<TestAnnotation>) {
         assert_eq!(TestRunner::parse_annotation(input), expected);
+    }
+
+    fn first_def(content: &str) -> mq_lang::Shared<mq_lang::CstNode> {
+        let (nodes, _) = mq_lang::parse_recovery(content);
+        nodes
+            .into_iter()
+            .find(|n| n.kind == mq_lang::CstNodeKind::Def)
+            .expect("no def node found")
+    }
+
+    #[rstest]
+    #[case("def foo():\n  None\nend\n", 0)]
+    #[case("def foo(x):\n  None\nend\n", 1)]
+    #[case("def foo(x, y):\n  None\nend\n", 2)]
+    #[case("def foo(x, y, z):\n  None\nend\n", 3)]
+    #[case("def foo(a, b, c, d):\n  None\nend\n", 4)]
+    fn test_get_arity(#[case] content: &str, #[case] expected: usize) {
+        let node = first_def(content);
+        assert_eq!(TestRunner::get_arity(&node), expected);
     }
 
     #[rstest]
     #[case(
         "def test_foo():\n  None\nend\n\ndef helper():\n  None\nend\n\ndef test_bar():\n  None\nend\n",
-        vec![DiscoveredTest::Simple("test_foo".to_string()), DiscoveredTest::Simple("test_bar".to_string())]
+        vec![
+            DiscoveredTest::Simple("test_foo".to_string()),
+            DiscoveredTest::Simple("test_bar".to_string()),
+        ]
     )]
     #[case(
         "# @test\ndef my_check():\n  None\nend\n\ndef not_a_test():\n  None\nend\n",
@@ -234,20 +273,54 @@ mod tests {
     )]
     #[case(
         "def test_first():\n  None\nend\n\n# @test\ndef annotated():\n  None\nend\n",
-        vec![DiscoveredTest::Simple("test_first".to_string()), DiscoveredTest::Simple("annotated".to_string())]
+        vec![
+            DiscoveredTest::Simple("test_first".to_string()),
+            DiscoveredTest::Simple("annotated".to_string()),
+        ]
     )]
     #[case("def helper():\n  None\nend\n", vec![])]
     #[case(
         "module a:\n  def test_first():\n  None\nend\n\n# @test\ndef annotated():\n  None\nend\nend\n",
-        vec![DiscoveredTest::Simple("test_first".to_string()), DiscoveredTest::Simple("annotated".to_string())]
+        vec![
+            DiscoveredTest::Simple("test_first".to_string()),
+            DiscoveredTest::Simple("annotated".to_string()),
+        ]
     )]
     fn test_discover_tests_simple(#[case] content: &str, #[case] expected: Vec<DiscoveredTest>) {
         assert_eq!(TestRunner::discover_tests(content), expected);
     }
 
-    #[test]
-    fn test_discover_tests_parametrized() {
-        let content = "# @parametrize([[\"hello\", 5], [\"world\", 5]])\ndef test_len(input, expected):\n  None\nend\n";
+    #[rstest]
+    #[case(
+        "# @parametrize([[\"hello\", 5], [\"world\", 5]])\ndef test_len(input, expected):\n  None\nend\n",
+        "test_len",
+        "[[\"hello\", 5], [\"world\", 5]]",
+        2
+    )]
+    #[case(
+        "# @parametrize([[1], [2], [3]])\ndef test_double(x):\n  None\nend\n",
+        "test_double",
+        "[[1], [2], [3]]",
+        1
+    )]
+    #[case(
+        "# @parametrize([[\"a\", \"b\", \"ab\"], [\"x\", \"y\", \"xy\"]])\ndef test_concat(a, b, expected):\n  None\nend\n",
+        "test_concat",
+        "[[\"a\", \"b\", \"ab\"], [\"x\", \"y\", \"xy\"]]",
+        3
+    )]
+    #[case(
+        "# @parametrize([[\"ignored\"]])\ndef test_no_args():\n  None\nend\n",
+        "test_no_args",
+        "[[\"ignored\"]]",
+        0
+    )]
+    fn test_discover_tests_parametrized(
+        #[case] content: &str,
+        #[case] expected_name: &str,
+        #[case] expected_params_expr: &str,
+        #[case] expected_arity: usize,
+    ) {
         let tests = TestRunner::discover_tests(content);
         assert_eq!(tests.len(), 1);
         match &tests[0] {
@@ -256,56 +329,130 @@ mod tests {
                 params_expr,
                 arity,
             } => {
-                assert_eq!(name, "test_len");
-                assert_eq!(params_expr, "[[\"hello\", 5], [\"world\", 5]]");
-                assert_eq!(*arity, 2);
+                assert_eq!(name, expected_name);
+                assert_eq!(params_expr, expected_params_expr);
+                assert_eq!(*arity, expected_arity);
             }
             other => panic!("expected Parametrized, got {other:?}"),
         }
     }
 
-    #[rstest]
-    #[case(
-        "include \"test\"\n|",
-        vec![DiscoveredTest::Simple("test_foo".to_string()), DiscoveredTest::Simple("test_bar".to_string())],
-        vec![("[test_case(\"foo\", test_foo)]", true), ("[test_case(\"bar\", test_bar)]", true)]
-    )]
-    #[case(
-        "include \"test\"\n|",
-        vec![DiscoveredTest::Simple("my_check".to_string())],
-        vec![("[test_case(\"my_check\", my_check)]", true)]
-    )]
-    fn test_build_test_query_simple(
-        #[case] content: &str,
-        #[case] tests: Vec<DiscoveredTest>,
-        #[case] expected_snippets: Vec<(&str, bool)>,
-    ) {
-        let query = TestRunner::build_test_query(content, &tests);
-        assert!(query.contains("flatten(["));
-        for (snippet, should_contain) in expected_snippets {
-            assert_eq!(
-                query.contains(snippet),
-                should_contain,
-                "snippet {snippet:?} in query:\n{query}"
-            );
-        }
+    #[test]
+    fn test_discover_tests_multiple_parametrized() {
+        let content = concat!(
+            "# @parametrize([[1, 2], [3, 4]])\n",
+            "def test_add(a, b):\n  None\nend\n\n",
+            "# @parametrize([[\"hello\", 5]])\n",
+            "def test_len(s, n):\n  None\nend\n",
+        );
+        let tests = TestRunner::discover_tests(content);
+        assert_eq!(tests.len(), 2);
+        assert!(matches!(&tests[0], DiscoveredTest::Parametrized { name, .. } if name == "test_add"));
+        assert!(matches!(&tests[1], DiscoveredTest::Parametrized { name, .. } if name == "test_len"));
     }
 
     #[test]
-    fn test_build_test_query_parametrized() {
-        let tests = vec![DiscoveredTest::Parametrized {
-            name: "test_len".to_string(),
-            params_expr: "[[\"hello\", 5], [\"world\", 5]]".to_string(),
-            arity: 2,
-        }];
-        let query = TestRunner::build_test_query("include \"test\"\n|", &tests);
-        assert!(query.contains("flatten(["));
-        assert!(query.contains("map("));
-        assert!(
-            query.contains("zip(range(0, len([[\"hello\", 5], [\"world\", 5]])), [[\"hello\", 5], [\"world\", 5]])")
+    fn test_discover_tests_mixed_all_kinds() {
+        let content = concat!(
+            "def test_simple():\n  None\nend\n\n",
+            "# @test\ndef annotated():\n  None\nend\n\n",
+            "# @parametrize([[1, 2]])\ndef test_param(a, b):\n  None\nend\n",
         );
-        assert!(query.contains("test_len(__ic[1][0], __ic[1][1])"));
-        assert!(query.contains("\"len[\""));
+        let tests = TestRunner::discover_tests(content);
+        assert_eq!(tests.len(), 3);
+        assert!(matches!(&tests[0], DiscoveredTest::Simple(n) if n == "test_simple"));
+        assert!(matches!(&tests[1], DiscoveredTest::Simple(n) if n == "annotated"));
+        assert!(matches!(&tests[2], DiscoveredTest::Parametrized { name, .. } if name == "test_param"));
+    }
+
+    #[test]
+    fn test_discover_tests_parametrized_in_module() {
+        let content = concat!(
+            "module m:\n",
+            "  # @parametrize([[1, 2]])\n",
+            "  def test_add(a, b):\n  None\nend\n",
+            "end\n",
+        );
+        let tests = TestRunner::discover_tests(content);
+        assert_eq!(tests.len(), 1);
+        assert!(
+            matches!(&tests[0], DiscoveredTest::Parametrized { name, arity, .. } if name == "test_add" && *arity == 2)
+        );
+    }
+
+    #[test]
+    fn test_discover_tests_ignores_unknown_annotation() {
+        let content = "# @skip\ndef my_check():\n  None\nend\n";
+        let tests = TestRunner::discover_tests(content);
+        assert!(tests.is_empty());
+    }
+
+    #[rstest]
+    #[case(vec![DiscoveredTest::Simple("test_foo".to_string())], "[test_case(\"foo\", test_foo)]")]
+    #[case(vec![DiscoveredTest::Simple("test_is_array".to_string())], "[test_case(\"is_array\", test_is_array)]")]
+    #[case(vec![DiscoveredTest::Simple("my_check".to_string())], "[test_case(\"my_check\", my_check)]")]
+    fn test_build_test_query_simple_cases(#[case] tests: Vec<DiscoveredTest>, #[case] expected: &str) {
+        let query = TestRunner::build_test_query("content", &tests);
+        assert!(query.starts_with("content\n"), "query must start with original content");
+        assert!(query.contains("flatten(["), "must use flatten");
+        assert!(query.contains(expected), "expected {expected:?} in:\n{query}");
+    }
+
+    #[rstest]
+    #[case(
+        DiscoveredTest::Parametrized { name: "test_no_args".to_string(), params_expr: "[[]]".to_string(), arity: 0 },
+        "test_no_args()",
+        "\"no_args[\""
+    )]
+    #[case(
+        DiscoveredTest::Parametrized { name: "test_double".to_string(), params_expr: "[[1], [2]]".to_string(), arity: 1 },
+        "test_double(__ic[1][0])",
+        "\"double[\""
+    )]
+    #[case(
+        DiscoveredTest::Parametrized { name: "test_len".to_string(), params_expr: "[[\"a\", 1]]".to_string(), arity: 2 },
+        "test_len(__ic[1][0], __ic[1][1])",
+        "\"len[\""
+    )]
+    #[case(
+        DiscoveredTest::Parametrized { name: "test_concat".to_string(), params_expr: "[[\"a\", \"b\", \"ab\"]]".to_string(), arity: 3 },
+        "test_concat(__ic[1][0], __ic[1][1], __ic[1][2])",
+        "\"concat[\""
+    )]
+    #[case(
+        DiscoveredTest::Parametrized { name: "check_len".to_string(), params_expr: "[[1]]".to_string(), arity: 1 },
+        "check_len(__ic[1][0])",
+        "\"check_len[\""
+    )]
+    fn test_build_test_query_parametrized_cases(
+        #[case] test: DiscoveredTest,
+        #[case] expected_call: &str,
+        #[case] expected_label: &str,
+    ) {
+        let query = TestRunner::build_test_query("content", &[test]);
+        assert!(query.contains("flatten(["), "must use flatten");
+        assert!(query.contains("map("), "must use map");
+        assert!(query.contains("zip(range("), "must use zip+range");
+        assert!(
+            query.contains(expected_call),
+            "expected call {expected_call:?} in:\n{query}"
+        );
+        assert!(
+            query.contains(expected_label),
+            "expected label {expected_label:?} in:\n{query}"
+        );
+    }
+
+    #[test]
+    fn test_build_test_query_multiple_simple() {
+        let tests = vec![
+            DiscoveredTest::Simple("test_foo".to_string()),
+            DiscoveredTest::Simple("test_bar".to_string()),
+        ];
+        let query = TestRunner::build_test_query("content", &tests);
+        assert!(query.contains("[test_case(\"foo\", test_foo)]"));
+        assert!(query.contains("[test_case(\"bar\", test_bar)]"));
+        assert!(query.contains("flatten(["));
     }
 
     #[test]
@@ -318,9 +465,18 @@ mod tests {
                 arity: 2,
             },
         ];
-        let query = TestRunner::build_test_query("include \"test\"\n|", &tests);
+        let query = TestRunner::build_test_query("content", &tests);
         assert!(query.contains("[test_case(\"foo\", test_foo)]"));
         assert!(query.contains("map("));
+        assert!(query.contains("test_len(__ic[1][0], __ic[1][1])"));
         assert!(query.contains("flatten(["));
+    }
+
+    #[test]
+    fn test_build_test_query_preserves_content() {
+        let content = "include \"test\"\n|\ndef helper(): None end";
+        let tests = vec![DiscoveredTest::Simple("test_foo".to_string())];
+        let query = TestRunner::build_test_query(content, &tests);
+        assert!(query.starts_with(content));
     }
 }
