@@ -63,6 +63,7 @@ impl LintRule for InefficientSelector {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -75,23 +76,21 @@ mod tests {
         InefficientSelector.check(&ctx)
     }
 
-    #[test]
-    fn no_diagnostic_for_direct_selector() {
-        let diags = check(".h1");
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn no_diagnostic_for_recursive_alone() {
-        let diags = check("..");
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn detects_recursive_followed_by_specific_selector() {
-        // `.. | .h1` — the `..` is redundant because `.h1` already selects h1 nodes directly.
-        let diags = check(".. | .h1");
+    #[rstest]
+    #[case(".. | .h1")]
+    #[case(".. | .h2")]
+    fn detects_recursive_followed_by_specific_selector(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
         assert!(diags[0].message().contains("inefficient selector"));
+    }
+
+    #[rstest]
+    #[case(".h1")]
+    #[case("..")]
+    #[case(".h1 | .h2")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
+        assert_eq!(diags.len(), 0);
     }
 }

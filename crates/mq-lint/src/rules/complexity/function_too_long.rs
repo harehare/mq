@@ -44,6 +44,7 @@ impl LintRule for FunctionTooLong {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -57,9 +58,19 @@ mod tests {
         FunctionTooLong.check(&ctx)
     }
 
-    #[test]
-    fn no_diagnostic_for_short_function() {
-        let diags = check_with_max("def f(): .h1;", 50);
+    #[rstest]
+    #[case("def f(): .h1 | .h2 | .h3;", 0)]
+    #[case("def g(): .h1;", 0)]
+    fn detects_function_too_long(#[case] code: &str, #[case] max: usize) {
+        let diags = check_with_max(code, max);
+        assert_eq!(diags.len(), 1);
+    }
+
+    #[rstest]
+    #[case("def f(): .h1;", 50)]
+    #[case("def f(): .h1 | .h2;", 10)]
+    fn no_diagnostic_for_short_function(#[case] code: &str, #[case] max: usize) {
+        let diags = check_with_max(code, max);
         assert_eq!(diags.len(), 0);
     }
 }

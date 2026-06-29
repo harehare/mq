@@ -40,6 +40,7 @@ impl LintRule for TooManyParams {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -53,16 +54,21 @@ mod tests {
         TooManyParams.check(&ctx)
     }
 
-    #[test]
-    fn detects_too_many_params() {
-        let diags = check_with_max("def f(a, b, c): a", 2);
+    #[rstest]
+    #[case("def f(a, b, c): a", 2, "3 parameters")]
+    #[case("def f(a, b, c, d): a", 3, "4 parameters")]
+    fn detects_too_many_params(#[case] code: &str, #[case] max: usize, #[case] msg: &str) {
+        let diags = check_with_max(code, max);
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message().contains("3 parameters"));
+        assert!(diags[0].message().contains(msg));
     }
 
-    #[test]
-    fn no_diagnostic_within_limit() {
-        let diags = check_with_max("def f(a, b): a", 2);
+    #[rstest]
+    #[case("def f(a, b): a", 2)]
+    #[case("def f(a): a", 2)]
+    #[case("def f(): .h1", 0)]
+    fn no_diagnostic_within_limit(#[case] code: &str, #[case] max: usize) {
+        let diags = check_with_max(code, max);
         assert_eq!(diags.len(), 0);
     }
 }

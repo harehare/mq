@@ -68,6 +68,7 @@ impl LintRule for DuplicateMatchArm {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -80,15 +81,20 @@ mod tests {
         DuplicateMatchArm.check(&ctx)
     }
 
-    #[test]
-    fn detects_duplicate_arm() {
-        let diags = check(r#"match (1): | "a": "h" | "a": "hh" | _: "other" end"#);
+    #[rstest]
+    #[case(r#"match (1): | "a": "h" | "a": "hh" | _: "other" end"#)]
+    #[case(r#"match (1): | "x": 1 | "x": 2 | _: 0 end"#)]
+    fn detects_duplicate_arm(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
     }
 
-    #[test]
-    fn no_duplicate_arms() {
-        let diags = check(r#"match (1): | "a": "h" | "b": "t" | _: "other" end"#);
+    #[rstest]
+    #[case(r#"match (1): | "a": "h" | "b": "t" | _: "other" end"#)]
+    #[case(r#"match (1): | "a": 1 | _: 0 end"#)]
+    #[case(r#"match (1): | _: 0 | _: 1 end"#)]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

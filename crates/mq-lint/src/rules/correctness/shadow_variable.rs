@@ -63,6 +63,7 @@ fn shadows_outer_variable(ctx: &LintContext<'_>, current_scope: ScopeId, name: &
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -75,16 +76,19 @@ mod tests {
         ShadowVariable.check(&ctx)
     }
 
-    #[test]
-    fn detects_shadow() {
-        // Outer `x`, then inner `x` in function body
-        let diags = check("let x = 1 | def f(): let x = 2; x; end");
+    #[rstest]
+    #[case("let x = 1 | def f(): let x = 2; x; end")]
+    #[case("let y = 1 | def g(): let y = 2; y; end")]
+    fn detects_shadow(#[case] code: &str) {
+        let diags = check(code);
         assert!(!diags.is_empty());
     }
 
-    #[test]
-    fn no_shadow_different_names() {
-        let diags = check("let x = 1 | def f(): let y = 2; y; end");
+    #[rstest]
+    #[case("let x = 1 | def f(): let y = 2; y; end")]
+    #[case("let x = 1 | x")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

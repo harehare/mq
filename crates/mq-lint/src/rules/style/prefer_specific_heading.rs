@@ -30,6 +30,7 @@ impl LintRule for PreferSpecificHeading {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -42,17 +43,20 @@ mod tests {
         PreferSpecificHeading.check(&ctx)
     }
 
-    #[test]
-    fn detects_generic_heading_selector() {
-        let diags = check(".h");
+    #[rstest]
+    #[case(".h")]
+    fn detects_generic_heading_selector(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
     }
 
-    #[test]
-    fn no_diagnostic_for_specific_heading() {
-        let diags = check(".h1");
+    #[rstest]
+    #[case(".h1")]
+    #[case(".h2")]
+    #[case(".h6")]
+    #[case(".h1 | .value")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
-        let diags2 = check(".h6");
-        assert_eq!(diags2.len(), 0);
     }
 }

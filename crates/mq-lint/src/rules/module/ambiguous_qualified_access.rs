@@ -71,6 +71,7 @@ impl LintRule for AmbiguousQualifiedAccess {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -83,22 +84,21 @@ mod tests {
         AmbiguousQualifiedAccess.check(&ctx)
     }
 
-    #[test]
-    fn detects_same_function_name_in_two_modules() {
-        let diags = check("module a: def foo(): 1; end | module b: def foo(): 2; end");
+    #[rstest]
+    #[case("module a: def foo(): 1; end | module b: def foo(): 2; end", "foo")]
+    #[case("module x: def bar(): 1; end | module y: def bar(): 2; end", "bar")]
+    fn detects_same_function_name_in_two_modules(#[case] code: &str, #[case] fn_name: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 2);
-        assert!(diags.iter().all(|d| d.message().contains("foo")));
+        assert!(diags.iter().all(|d| d.message().contains(fn_name)));
     }
 
-    #[test]
-    fn no_diagnostic_for_distinct_function_names() {
-        let diags = check("module a: def foo(): 1; end | module b: def bar(): 2; end");
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn no_diagnostic_for_function_outside_module() {
-        let diags = check("def foo(): 1; | foo()");
+    #[rstest]
+    #[case("module a: def foo(): 1; end | module b: def bar(): 2; end")]
+    #[case("def foo(): 1; | foo()")]
+    #[case("module a: def foo(): 1; end")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

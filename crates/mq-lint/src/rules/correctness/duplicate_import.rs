@@ -49,6 +49,7 @@ impl LintRule for DuplicateImport {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -61,21 +62,20 @@ mod tests {
         DuplicateImport.check(&ctx)
     }
 
-    #[test]
-    fn detects_duplicate_import() {
-        let diags = check("import \"a\" | import \"a\" | a");
+    #[rstest]
+    #[case("import \"a\" | import \"a\" | a")]
+    #[case("import \"b\" | import \"b\" | import \"b\" | b")]
+    fn detects_duplicate_import(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
     }
 
-    #[test]
-    fn no_duplicate_import_with_other_module() {
-        let diags = check("import \"a\" | import \"b\" | a");
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn no_duplicate_import() {
-        let diags = check("import \"a\" | a");
+    #[rstest]
+    #[case("import \"a\" | import \"b\" | a")]
+    #[case("import \"a\" | a")]
+    #[case(".h1")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

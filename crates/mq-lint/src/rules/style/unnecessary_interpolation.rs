@@ -41,6 +41,7 @@ impl LintRule for UnnecessaryInterpolation {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -53,21 +54,20 @@ mod tests {
         UnnecessaryInterpolation.check(&ctx)
     }
 
-    #[test]
-    fn detects_unnecessary_interpolation() {
-        let diags = check(r#"s"${x}""#);
+    #[rstest]
+    #[case(r#"s"${x}""#)]
+    #[case(r#"s"${.h1}""#)]
+    fn detects_unnecessary_interpolation(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
     }
 
-    #[test]
-    fn no_diagnostic_for_multiple_expressions() {
-        let diags = check(r#"s"${x}${y}""#);
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn no_diagnostic_for_text_with_expression() {
-        let diags = check(r#"s"prefix ${x}""#);
+    #[rstest]
+    #[case(r#"s"${x}${y}""#)]
+    #[case(r#"s"prefix ${x}""#)]
+    #[case(r#"s"${x} suffix""#)]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

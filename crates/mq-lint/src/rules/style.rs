@@ -1,5 +1,7 @@
 pub mod boolean_comparison;
+pub mod constant_string_concat;
 pub mod naming_convention;
+pub mod negated_condition;
 pub mod prefer_coalesce;
 pub mod prefer_let_over_var;
 pub mod prefer_pipe_style;
@@ -21,5 +23,7 @@ pub fn all() -> Vec<Box<dyn LintRule>> {
         Box::new(boolean_comparison::BooleanComparison),
         Box::new(redundant_boolean_literal::RedundantBooleanLiteral),
         Box::new(unnecessary_interpolation::UnnecessaryInterpolation),
+        Box::new(constant_string_concat::ConstantStringConcat),
+        Box::new(negated_condition::NegatedCondition),
     ]
 }

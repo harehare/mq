@@ -31,6 +31,7 @@ impl LintRule for MissingModuleDoc {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -43,16 +44,20 @@ mod tests {
         MissingModuleDoc.check(&ctx)
     }
 
-    #[test]
-    fn detects_module_without_doc() {
-        let diags = check("module a: def b(): 1; end");
+    #[rstest]
+    #[case("module a: def b(): 1; end", "module `a`")]
+    #[case("module my_mod: .h1 end", "module `my_mod`")]
+    fn detects_module_without_doc(#[case] code: &str, #[case] msg: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message().contains("module `a`"));
+        assert!(diags[0].message().contains(msg));
     }
 
-    #[test]
-    fn no_diagnostic_when_module_has_doc() {
-        let diags = check("# A module that does something.\nmodule a: def b(): 1; end");
+    #[rstest]
+    #[case("# A module that does something.\nmodule a: def b(): 1; end")]
+    #[case("# Docs.\nmodule my_mod: .h1 end")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

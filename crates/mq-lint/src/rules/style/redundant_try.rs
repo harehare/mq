@@ -44,6 +44,7 @@ impl LintRule for RedundantTry {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -56,15 +57,18 @@ mod tests {
         RedundantTry.check(&ctx)
     }
 
-    #[test]
-    fn detects_catch_none() {
-        let diags = check(r#"try: get("x") catch: none"#);
+    #[rstest]
+    #[case(r#"try: get("x") catch: none"#)]
+    fn detects_catch_none(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
     }
 
-    #[test]
-    fn no_diagnostic_for_catch_with_fallback() {
-        let diags = check(r#"try: get("x") catch: "default""#);
+    #[rstest]
+    #[case(r#"try: get("x") catch: "default""#)]
+    #[case(r#"try: get("x") catch: 0"#)]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

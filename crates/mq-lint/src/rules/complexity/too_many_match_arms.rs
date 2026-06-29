@@ -48,6 +48,7 @@ impl LintRule for TooManyMatchArms {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -61,15 +62,19 @@ mod tests {
         TooManyMatchArms.check(&ctx)
     }
 
-    #[test]
-    fn detects_too_many_arms() {
-        let diags = check_with_max(r#"match (1): | "a": 1 | "b": 2 | "c": 3 | _: 0 end"#, 3);
+    #[rstest]
+    #[case(r#"match (1): | "a": 1 | "b": 2 | "c": 3 | _: 0 end"#, 3)]
+    #[case(r#"match (1): | "a": 1 | "b": 2 | _: 0 end"#, 2)]
+    fn detects_too_many_arms(#[case] code: &str, #[case] max: usize) {
+        let diags = check_with_max(code, max);
         assert_eq!(diags.len(), 1);
     }
 
-    #[test]
-    fn no_diagnostic_within_limit() {
-        let diags = check_with_max(r#"match (1): | "a": 1 | "b": 2 | _: 0 end"#, 3);
+    #[rstest]
+    #[case(r#"match (1): | "a": 1 | "b": 2 | _: 0 end"#, 3)]
+    #[case(r#"match (1): | "a": 1 | _: 0 end"#, 2)]
+    fn no_diagnostic_within_limit(#[case] code: &str, #[case] max: usize) {
+        let diags = check_with_max(code, max);
         assert_eq!(diags.len(), 0);
     }
 }

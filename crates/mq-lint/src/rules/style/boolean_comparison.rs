@@ -56,6 +56,7 @@ impl LintRule for BooleanComparison {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -68,9 +69,21 @@ mod tests {
         BooleanComparison.check(&ctx)
     }
 
-    #[test]
-    fn no_diagnostic_for_non_boolean_comparison() {
-        let diags = check(r#".type == "heading""#);
+    #[rstest]
+    #[case(".checked == true")]
+    #[case(".checked == false")]
+    #[case(".checked != true")]
+    #[case(".checked != false")]
+    fn detects_boolean_comparison(#[case] code: &str) {
+        let diags = check(code);
+        assert_eq!(diags.len(), 1);
+    }
+
+    #[rstest]
+    #[case(r#".type == "heading""#)]
+    #[case(".h1 | .checked")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

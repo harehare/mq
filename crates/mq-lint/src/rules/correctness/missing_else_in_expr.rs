@@ -39,6 +39,7 @@ impl LintRule for MissingElseInExpr {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -51,29 +52,22 @@ mod tests {
         MissingElseInExpr.check(&ctx)
     }
 
-    #[test]
-    fn detects_if_without_else() {
-        let diags = check("if (true): 1;");
+    #[rstest]
+    #[case("if (true): 1;")]
+    #[case("if (.h1): 2;")]
+    #[case("if (true): 1 elif (false): 2;")]
+    fn detects_missing_else(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
         assert!(diags[0].message().contains("missing an `else` branch"));
     }
 
-    #[test]
-    fn no_diagnostic_with_else() {
-        let diags = check("if (true): 1 else: 2;");
+    #[rstest]
+    #[case("if (true): 1 else: 2;")]
+    #[case("if (true): 1 elif (false): 2 else: 3;")]
+    #[case(".h1")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn no_diagnostic_with_elif_else() {
-        let diags = check("if (true): 1 elif (false): 2 else: 3;");
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn detects_if_with_only_elif() {
-        // elif but no else is still missing an else
-        let diags = check("if (true): 1 elif (false): 2;");
-        assert_eq!(diags.len(), 1);
     }
 }

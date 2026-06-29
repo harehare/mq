@@ -44,6 +44,7 @@ impl LintRule for UnusedFunction {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -56,22 +57,20 @@ mod tests {
         UnusedFunction.check(&ctx)
     }
 
-    #[test]
-    fn detects_unused_function() {
-        let diags = check("def foo(): .h1;");
+    #[rstest]
+    #[case("def foo(): .h1;", "unused function `foo`")]
+    #[case("def bar(): .h2;", "unused function `bar`")]
+    fn detects_unused_function(#[case] code: &str, #[case] msg: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message().contains("unused function `foo`"));
+        assert!(diags[0].message().contains(msg));
     }
 
-    #[test]
-    fn no_diagnostic_when_function_called() {
-        let diags = check("def foo(): .h1; | foo");
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn no_diagnostic_when_function_called_with_parens() {
-        let diags = check("def foo(): .h1; | foo()");
+    #[rstest]
+    #[case("def foo(): .h1; | foo")]
+    #[case("def foo(): .h1; | foo()")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

@@ -44,6 +44,7 @@ impl LintRule for MissingDepthGuard {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -56,23 +57,20 @@ mod tests {
         MissingDepthGuard.check(&ctx)
     }
 
-    #[test]
-    fn detects_bare_recursive_selector() {
-        let diags = check("..");
+    #[rstest]
+    #[case("..")]
+    fn detects_bare_recursive_selector(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
         assert!(diags[0].message().contains("depth guard"));
     }
 
-    #[test]
-    fn no_diagnostic_when_depth_attr_present() {
-        // When .depth is used somewhere, we consider depth guarding in place.
-        let diags = check(".. | .depth");
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn no_diagnostic_for_non_recursive_selector() {
-        let diags = check(".h1");
+    #[rstest]
+    #[case(".. | .depth")]
+    #[case(".h1")]
+    #[case(".h1 | .value")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

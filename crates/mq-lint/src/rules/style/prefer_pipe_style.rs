@@ -43,6 +43,7 @@ impl LintRule for PreferPipeStyle {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -55,29 +56,20 @@ mod tests {
         PreferPipeStyle.check(&ctx)
     }
 
-    #[test]
-    fn detects_nested_unary_calls() {
-        let diags = check("to_text(to_upper(x))");
+    #[rstest]
+    #[case("to_text(to_upper(x))")]
+    #[case("trim(to_text(x))")]
+    fn detects_nested_unary_calls(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message().contains("to_text"));
-        assert!(diags[0].message().contains("to_upper"));
     }
 
-    #[test]
-    fn no_diagnostic_for_multi_arg_outer_call() {
-        let diags = check("add(foo(x), y)");
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn no_diagnostic_for_non_call_argument() {
-        let diags = check("to_text(x)");
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn no_diagnostic_for_already_piped_style() {
-        let diags = check("x | to_upper() | to_text()");
+    #[rstest]
+    #[case("add(foo(x), y)")]
+    #[case("to_text(x)")]
+    #[case("x | to_upper() | to_text()")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

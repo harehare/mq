@@ -45,6 +45,7 @@ impl LintRule for ComplexInterpolation {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -58,16 +59,21 @@ mod tests {
         ComplexInterpolation.check(&ctx)
     }
 
-    #[test]
-    fn detects_too_many_interpolations() {
-        // 4 interpolated expressions, limit 3
-        let diags = check_with_max(r#"s"${.h1} ${.h2} ${.h3} ${.h4}""#, 3);
+    #[rstest]
+    #[case(r#"s"${.h1} ${.h2} ${.h3} ${.h4}""#, 3)]
+    #[case(r#"s"${.h1} ${.h2} ${.h3} ${.h4} ${.h5}""#, 3)]
+    #[case(r#"s"${.h1} ${.h2}""#, 1)]
+    fn detects_too_many_interpolations(#[case] code: &str, #[case] max: usize) {
+        let diags = check_with_max(code, max);
         assert_eq!(diags.len(), 1);
     }
 
-    #[test]
-    fn no_diagnostic_within_limit() {
-        let diags = check_with_max(r#"s"${.h1} ${.h2}""#, 3);
+    #[rstest]
+    #[case(r#"s"${.h1} ${.h2}""#, 3)]
+    #[case(r#"s"${.h1} ${.h2} ${.h3}""#, 3)]
+    #[case(r#"s"hello world""#, 1)]
+    fn no_diagnostic_within_limit(#[case] code: &str, #[case] max: usize) {
+        let diags = check_with_max(code, max);
         assert_eq!(diags.len(), 0);
     }
 }

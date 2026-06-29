@@ -105,6 +105,7 @@ fn first_child_boolean<'a>(ctx: &'a LintContext<'_>, parent_id: SymbolId) -> Opt
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -117,28 +118,21 @@ mod tests {
         RedundantBooleanLiteral.check(&ctx)
     }
 
-    #[test]
-    fn detects_true_false_pattern() {
-        let diags = check("if (.h1): true else: false;");
+    #[rstest]
+    #[case("if (.h1): true else: false;")]
+    #[case("if (.h1): false else: true;")]
+    fn detects_redundant_boolean_branches(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
         assert!(diags[0].message().contains("redundant boolean literal"));
     }
 
-    #[test]
-    fn detects_false_true_pattern() {
-        let diags = check("if (.h1): false else: true;");
-        assert_eq!(diags.len(), 1);
-    }
-
-    #[test]
-    fn no_diagnostic_for_non_boolean_branches() {
-        let diags = check("if (.h1): 1 else: 2;");
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn no_diagnostic_for_mixed_branches() {
-        let diags = check("if (.h1): true else: 2;");
+    #[rstest]
+    #[case("if (.h1): 1 else: 2;")]
+    #[case("if (.h1): true else: 2;")]
+    #[case("if (.h1): 1 else: false;")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

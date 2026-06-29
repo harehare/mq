@@ -42,6 +42,9 @@ pub enum RuleId {
     BooleanComparison,
     RedundantBooleanLiteral,
     UnnecessaryInterpolation,
+    UnusedParameter,
+    ConstantStringConcat,
+    NegatedCondition,
 }
 
 impl RuleId {
@@ -77,6 +80,9 @@ impl RuleId {
         RuleId::BooleanComparison,
         RuleId::RedundantBooleanLiteral,
         RuleId::UnnecessaryInterpolation,
+        RuleId::UnusedParameter,
+        RuleId::ConstantStringConcat,
+        RuleId::NegatedCondition,
     ];
 
     /// The rule's `snake_case` identifier, as used in config and CLI flags.
@@ -112,6 +118,9 @@ impl RuleId {
             RuleId::BooleanComparison => "boolean_comparison",
             RuleId::RedundantBooleanLiteral => "redundant_boolean_literal",
             RuleId::UnnecessaryInterpolation => "unnecessary_interpolation",
+            RuleId::UnusedParameter => "unused_parameter",
+            RuleId::ConstantStringConcat => "constant_string_concat",
+            RuleId::NegatedCondition => "negated_condition",
         }
     }
 }
@@ -225,6 +234,11 @@ pub enum LintMessage {
         then_val: String,
     },
     UnnecessaryInterpolation,
+    UnusedParameter {
+        name: String,
+    },
+    ConstantStringConcat,
+    NegatedCondition,
 }
 
 impl LintMessage {
@@ -261,6 +275,9 @@ impl LintMessage {
             LintMessage::BooleanComparison { .. } => RuleId::BooleanComparison,
             LintMessage::RedundantBooleanLiteral { .. } => RuleId::RedundantBooleanLiteral,
             LintMessage::UnnecessaryInterpolation => RuleId::UnnecessaryInterpolation,
+            LintMessage::UnusedParameter { .. } => RuleId::UnusedParameter,
+            LintMessage::ConstantStringConcat => RuleId::ConstantStringConcat,
+            LintMessage::NegatedCondition => RuleId::NegatedCondition,
         }
     }
 
@@ -355,6 +372,13 @@ impl LintMessage {
             ),
             LintMessage::UnnecessaryInterpolation => {
                 Some("replace `s\"${x}\"` with just `x` (no interpolation needed)".to_string())
+            }
+            LintMessage::UnusedParameter { name } => {
+                Some(format!("if this is intentional, prefix with `_`: `_{name}`"))
+            }
+            LintMessage::ConstantStringConcat => Some("combine the string literals into a single string".to_string()),
+            LintMessage::NegatedCondition => {
+                Some("invert the condition and swap the `then` and `else` branches".to_string())
             }
         }
     }
@@ -456,6 +480,16 @@ impl fmt::Display for LintMessage {
                 write!(
                     f,
                     "unnecessary string interpolation: the expression can be used directly"
+                )
+            }
+            LintMessage::UnusedParameter { name } => write!(f, "unused parameter `{name}`"),
+            LintMessage::ConstantStringConcat => {
+                write!(f, "concatenating string literals can be written as a single string")
+            }
+            LintMessage::NegatedCondition => {
+                write!(
+                    f,
+                    "negated condition in `if`/`else` — consider swapping the branches and inverting the condition"
                 )
             }
         }

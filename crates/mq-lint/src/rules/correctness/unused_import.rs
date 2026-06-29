@@ -43,6 +43,7 @@ impl LintRule for UnusedImport {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -57,9 +58,11 @@ mod tests {
         UnusedImport.check(&ctx)
     }
 
-    #[test]
-    fn no_imports_no_diagnostic() {
-        let diags = check(".h1");
+    #[rstest]
+    #[case(".h1")]
+    #[case(".h1 | .value")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

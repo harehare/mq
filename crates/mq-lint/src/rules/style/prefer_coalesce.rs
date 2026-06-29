@@ -99,6 +99,7 @@ impl LintRule for PreferCoalesce {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -111,27 +112,19 @@ mod tests {
         PreferCoalesce.check(&ctx)
     }
 
-    #[test]
-    fn detects_eq_none_pattern() {
-        let diags = check(r#"if (.value == none): "default" else: .value"#);
+    #[rstest]
+    #[case(r#"if (.value == none): "default" else: .value"#)]
+    #[case(r#"if (x != none): x else: "default""#)]
+    fn detects_null_check_pattern(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
     }
 
-    #[test]
-    fn detects_ne_none_pattern() {
-        let diags = check(r#"if (x != none): x else: "default""#);
-        assert_eq!(diags.len(), 1);
-    }
-
-    #[test]
-    fn no_diagnostic_when_branches_differ() {
-        let diags = check(r#"if (.value == none): "default" else: .other"#);
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn no_diagnostic_for_unrelated_condition() {
-        let diags = check(r#"if (.checked == true): "yes" else: "no""#);
+    #[rstest]
+    #[case(r#"if (.value == none): "default" else: .other"#)]
+    #[case(r#"if (.checked == true): "yes" else: "no""#)]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

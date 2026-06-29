@@ -79,6 +79,7 @@ impl LintRule for PreferLetOverVar {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -91,16 +92,20 @@ mod tests {
         PreferLetOverVar.check(&ctx)
     }
 
-    #[test]
-    fn detects_var_never_reassigned() {
-        let diags = check("var x = .h1 | x");
+    #[rstest]
+    #[case("var x = .h1 | x")]
+    #[case("var my_val = .h2 | my_val")]
+    fn detects_var_never_reassigned(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
         assert!(diags[0].message().contains("prefer `let` over `var`"));
     }
 
-    #[test]
-    fn no_diagnostic_for_let() {
-        let diags = check("let x = .h1 | x");
+    #[rstest]
+    #[case("let x = .h1 | x")]
+    #[case(".h1 | .value")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

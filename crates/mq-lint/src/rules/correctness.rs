@@ -8,6 +8,7 @@ pub mod shadow_variable;
 pub mod unreachable_code;
 pub mod unused_function;
 pub mod unused_import;
+pub mod unused_parameter;
 pub mod unused_variable;
 
 use crate::LintRule;
@@ -17,6 +18,7 @@ pub fn all() -> Vec<Box<dyn LintRule>> {
         Box::new(unused_variable::UnusedVariable),
         Box::new(unused_function::UnusedFunction),
         Box::new(unused_import::UnusedImport),
+        Box::new(unused_parameter::UnusedParameter),
         Box::new(unreachable_code::UnreachableCode),
         Box::new(infinite_loop::InfiniteLoop),
         Box::new(deprecated_function_call::DeprecatedFunctionCall),
