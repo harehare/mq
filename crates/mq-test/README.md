@@ -7,9 +7,10 @@ Standalone test runner for mq — auto-discovers and executes test functions in 
 `mq-test` discovers test functions in `.mq` files and runs them using the mq engine. A function is treated as a test if:
 
 - Its name starts with `test_`, **OR**
-- It is immediately preceded by a `# @test` or `#[test]` annotation comment.
+- It is immediately preceded by a `# @test` or `# [test]` annotation comment, **OR**
+- It is immediately preceded by a `# @parametrize(...)` annotation comment.
 
-Test discovery uses the CST so both conventions are resolved accurately without any line-scanning heuristics.
+Test discovery uses the CST so all conventions are resolved accurately without any line-scanning heuristics.
 
 ## Installation
 
@@ -64,6 +65,25 @@ def check_string_upcase():
 end
 ```
 
+### Parameterized Tests
+
+Use `# @parametrize(expr)` to run a function once per element in an array.
+Each element is spread as positional arguments to the function.
+Generated test case names use the pattern `name[0]`, `name[1]`, etc.
+
+```mq
+include "test"
+|
+
+# @parametrize([["hello", 5], ["world", 5], ["", 0]])
+def test_len(input, expected):
+  assert_eq(len(input), expected)
+end
+```
+
+This produces three test cases — `len[0]`, `len[1]`, `len[2]` — each called
+with the corresponding `[input, expected]` pair.
+
 ### Test Helpers
 
 Tests use the built-in `assert_eq` and related helpers from the `test` module:
@@ -75,7 +95,8 @@ Tests use the built-in `assert_eq` and related helpers from the `test` module:
 | `test_case(name, fn)`       | Registers a named test case    |
 | `run_tests(cases)`          | Runs all registered test cases |
 
-The runner automatically generates a `run_tests([...])` call from all discovered test functions — test files do not need to maintain a manual list.
+The runner automatically generates a `run_tests(flatten([...]))` call from all
+discovered test functions — test files do not need to maintain a manual list.
 
 ## Example
 
