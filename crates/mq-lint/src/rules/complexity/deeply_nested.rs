@@ -72,6 +72,7 @@ fn scope_depth(ctx: &LintContext<'_>, scope_id: ScopeId) -> usize {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -85,9 +86,19 @@ mod tests {
         DeeplyNested.check(&ctx)
     }
 
-    #[test]
-    fn no_diagnostic_for_shallow_code() {
-        let diags = check_with_max("def f(): .h1;", 4);
+    #[rstest]
+    #[case("def f(): if (true): if (true): 1 else: 2 else: 3;", 1)]
+    #[case("loop if (true): if (true): 1 else: 2 else: 3 end", 1)]
+    fn detects_deeply_nested(#[case] code: &str, #[case] max: usize) {
+        let diags = check_with_max(code, max);
+        assert!(!diags.is_empty());
+    }
+
+    #[rstest]
+    #[case("def f(): .h1;", 4)]
+    #[case(".h1 | .h2", 4)]
+    fn no_diagnostic_for_shallow_code(#[case] code: &str, #[case] max: usize) {
+        let diags = check_with_max(code, max);
         assert_eq!(diags.len(), 0);
     }
 }

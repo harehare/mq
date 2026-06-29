@@ -61,6 +61,7 @@ fn is_descendant_of(ctx: &LintContext<'_>, maybe_parent: Option<SymbolId>, targe
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -73,15 +74,20 @@ mod tests {
         InfiniteLoop.check(&ctx)
     }
 
-    #[test]
-    fn detects_loop_without_break() {
-        let diags = check("loop .h1 end");
+    #[rstest]
+    #[case("loop .h1 end")]
+    #[case("loop .h1 | .h2 end")]
+    fn detects_loop_without_break(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
     }
 
-    #[test]
-    fn no_diagnostic_when_break_present() {
-        let diags = check("loop break end");
+    #[rstest]
+    #[case("loop break end")]
+    #[case("loop if (true): break else: .h1 end")]
+    #[case("while (.h1): .h1 end")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

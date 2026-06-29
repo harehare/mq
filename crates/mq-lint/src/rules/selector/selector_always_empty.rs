@@ -69,6 +69,7 @@ impl LintRule for SelectorAlwaysEmpty {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -81,33 +82,20 @@ mod tests {
         SelectorAlwaysEmpty.check(&ctx)
     }
 
-    #[test]
-    fn detects_conflicting_heading_levels() {
-        let diags = check(".h1 | .h2");
+    #[rstest]
+    #[case(".h1 | .h2")]
+    #[case(".todo | .done")]
+    fn detects_conflicting_selectors(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
     }
 
-    #[test]
-    fn detects_todo_then_done() {
-        let diags = check(".todo | .done");
-        assert_eq!(diags.len(), 1);
-    }
-
-    #[test]
-    fn no_diagnostic_for_same_selector_repeated() {
-        let diags = check(".h1 | .h1");
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn no_diagnostic_for_generic_then_specific_heading() {
-        let diags = check(".heading | .h1");
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn no_diagnostic_when_unrelated_step_is_between() {
-        let diags = check(".h1 | to_text() | .h2");
+    #[rstest]
+    #[case(".h1 | .h1")]
+    #[case(".heading | .h1")]
+    #[case(".h1 | to_text() | .h2")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

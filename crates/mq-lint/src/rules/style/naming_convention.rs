@@ -67,6 +67,7 @@ fn to_snake_case(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -79,28 +80,29 @@ mod tests {
         NamingConvention.check(&ctx)
     }
 
-    #[test]
-    fn detects_camel_case_function() {
-        let diags = check("def myFunc(): .h1;");
+    #[rstest]
+    #[case("def myFunc(): .h1;", "myFunc")]
+    #[case("def camelCaseFn(): .h1;", "camelCaseFn")]
+    fn detects_camel_case_function(#[case] code: &str, #[case] name: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message().contains("myFunc"));
+        assert!(diags[0].message().contains(name));
     }
 
-    #[test]
-    fn no_diagnostic_for_snake_case() {
-        let diags = check("def my_func(): .h1;");
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn detects_camel_case_variable() {
-        let diags = check("let myVar = .h1");
+    #[rstest]
+    #[case("let myVar = .h1")]
+    #[case("let camelCase = .h1")]
+    fn detects_camel_case_variable(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
     }
 
-    #[test]
-    fn underscore_prefix_is_ok() {
-        let diags = check("def _myHelper(): .h1;");
+    #[rstest]
+    #[case("def my_func(): .h1;")]
+    #[case("def _myHelper(): .h1;")]
+    #[case("let my_var = .h1")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

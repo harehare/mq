@@ -63,6 +63,7 @@ impl LintRule for AlwaysTrueCondition {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -75,23 +76,22 @@ mod tests {
         AlwaysTrueCondition.check(&ctx)
     }
 
-    #[test]
-    fn detects_literal_true_condition() {
-        let diags = check("if (true): 1 else: 2;");
+    #[rstest]
+    #[case("if (true): 1 else: 2;", "always `true`")]
+    #[case("if (false): 1 else: 2;", "always `false`")]
+    #[case("if (true): 1;", "always `true`")]
+    fn detects_constant_boolean_condition(#[case] code: &str, #[case] expected_msg: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message().contains("always `true`"));
+        assert!(diags[0].message().contains(expected_msg));
     }
 
-    #[test]
-    fn detects_literal_false_condition() {
-        let diags = check("if (false): 1 else: 2;");
-        assert_eq!(diags.len(), 1);
-        assert!(diags[0].message().contains("always `false`"));
-    }
-
-    #[test]
-    fn no_diagnostic_for_dynamic_condition() {
-        let diags = check("if (.h1): 1 else: 2;");
+    #[rstest]
+    #[case("if (.h1): 1 else: 2;")]
+    #[case("if (x): 1 else: 2;")]
+    #[case("if (.checked == true): 1 else: 2;")]
+    fn no_diagnostic_for_dynamic_condition(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

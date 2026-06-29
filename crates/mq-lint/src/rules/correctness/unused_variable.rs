@@ -46,6 +46,7 @@ impl LintRule for UnusedVariable {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -58,22 +59,21 @@ mod tests {
         UnusedVariable.check(&ctx)
     }
 
-    #[test]
-    fn detects_unused_variable() {
-        let diags = check("let x = .h1");
+    #[rstest]
+    #[case("let x = .h1", "unused variable `x`")]
+    #[case("let my_var = .h2", "unused variable `my_var`")]
+    fn detects_unused_variable(#[case] code: &str, #[case] msg: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 1);
-        assert!(diags[0].message().contains("unused variable `x`"));
+        assert!(diags[0].message().contains(msg));
     }
 
-    #[test]
-    fn no_diagnostic_when_variable_used() {
-        let diags = check("let x = .h1 | x");
-        assert_eq!(diags.len(), 0);
-    }
-
-    #[test]
-    fn underscore_prefix_suppresses_warning() {
-        let diags = check("let _x = .h1");
+    #[rstest]
+    #[case("let x = .h1 | x")]
+    #[case("let _x = .h1")]
+    #[case("let _ignored = .h1")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }

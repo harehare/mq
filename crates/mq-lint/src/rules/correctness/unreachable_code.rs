@@ -64,6 +64,7 @@ impl LintRule for UnreachableCode {
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use rstest::rstest;
 
     use super::*;
     use crate::{LintConfig, LintContext};
@@ -76,9 +77,18 @@ mod tests {
         UnreachableCode.check(&ctx)
     }
 
-    #[test]
-    fn no_diagnostic_without_break() {
-        let diags = check(".h1 | .value");
+    #[rstest]
+    #[case("loop break | .h1 end")]
+    fn detects_unreachable_after_break(#[case] code: &str) {
+        let diags = check(code);
+        assert!(!diags.is_empty());
+    }
+
+    #[rstest]
+    #[case(".h1 | .value")]
+    #[case("loop break end")]
+    fn no_diagnostic(#[case] code: &str) {
+        let diags = check(code);
         assert_eq!(diags.len(), 0);
     }
 }
