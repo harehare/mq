@@ -218,7 +218,7 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "vscode-languageclient": "^10.0.0",
+    "vscode-languageclient": "^10.0.1",
     "which": "^7.0.0"
   }
 }
