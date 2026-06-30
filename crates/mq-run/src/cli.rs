@@ -941,7 +941,27 @@ impl Cli {
         file: &Option<PathBuf>,
     ) -> miette::Result<()> {
         let runtime_values = if self.output.skip.is_some() || self.output.limit.is_some() {
-            self.output.paginate(runtime_values.compact()).into()
+            let compact = runtime_values.compact();
+            let had_empties = compact.len() < runtime_values.len();
+            let paginated: Vec<mq_lang::RuntimeValue> = self
+                .output
+                .paginate(compact)
+                .into_iter()
+                .map(|v| {
+                    if had_empties {
+                        match v {
+                            mq_lang::RuntimeValue::Markdown(mut node, meta) => {
+                                node.set_position(None);
+                                mq_lang::RuntimeValue::Markdown(node, meta)
+                            }
+                            other => other,
+                        }
+                    } else {
+                        v
+                    }
+                })
+                .collect();
+            paginated.into()
         } else {
             runtime_values
         };
