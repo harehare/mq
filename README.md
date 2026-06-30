@@ -16,6 +16,7 @@
 [![crates.io](https://img.shields.io/crates/v/mq-markdown?logo=rust&style=flat-square)](https://crates.io/crates/mq-markdown)
 [![codecov](https://img.shields.io/codecov/c/github/harehare/mq?logo=codecov&style=flat-square)](https://codecov.io/gh/harehare/mq)
 [![codspeed badge](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json&style=flat-square)](https://codspeed.io/harehare/mq)
+[![LICENCE](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
 
