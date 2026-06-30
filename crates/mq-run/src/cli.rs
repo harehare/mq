@@ -391,6 +391,11 @@ struct OutputArgs {
     /// is empty. Mirrors jq's --exit-status / -e flag.
     #[arg(short = 'e', long = "exit-status", default_value_t = false)]
     exit_status: bool,
+
+    /// Output only the count of matching (non-None) results. Mirrors grep -c.
+    /// With multiple files, prints "filename: N" per file and "total: N" at the end.
+    #[arg(short = 'c', long = "count", default_value_t = false, conflicts_with_all = ["update", "stream"])]
+    count: bool,
 }
 
 impl OutputArgs {
@@ -995,6 +1000,10 @@ impl Cli {
         let query = self.get_query()?;
         let files = self.read_contents()?;
 
+        if self.output.count {
+            return self.process_batch_count(&query, &files);
+        }
+
         if files.len() > self.parallel_threshold {
             files.par_iter().try_for_each(|(file, content)| {
                 let mut engine = self.create_engine()?;
@@ -1045,6 +1054,72 @@ impl Cli {
         };
 
         self.emit_results(runtime_values, grep_input, file)
+    }
+
+    fn count_file(
+        &self,
+        engine: &mut mq_lang::DefaultEngine,
+        query: &str,
+        file: &Option<PathBuf>,
+        content: &ContentData,
+    ) -> miette::Result<usize> {
+        let effective_query;
+        let query = match self.auto_query_prefix(file) {
+            Some(prefix) => {
+                effective_query = format!("{} | {}", prefix, query);
+                effective_query.as_str()
+            }
+            None => query,
+        };
+        if let Some(f) = file {
+            self.set_file_vars(engine, f);
+        }
+        let input = self.resolve_input(file, content)?;
+        let runtime_values = engine.eval(query, input.into_iter()).map_err(|e| *e)?;
+        Ok(runtime_values.compact().len())
+    }
+
+    fn process_batch_count(&self, query: &str, files: &[(Option<PathBuf>, ContentData)]) -> miette::Result<()> {
+        let multiple_files = files.len() > 1;
+        let mut total = 0usize;
+        let mut engine = self.create_engine()?;
+
+        let stdout = io::stdout();
+        let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
+            let file = fs::File::create(output_file).into_diagnostic()?;
+            Box::new(BufWriter::new(file))
+        } else if self.output.unbuffered {
+            Box::new(stdout.lock())
+        } else {
+            Box::new(BufWriter::new(stdout.lock()))
+        };
+
+        for (file, content) in files {
+            let count = self.count_file(&mut engine, query, file, content)?;
+            total += count;
+            if multiple_files {
+                let name = file
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "(stdin)".to_string());
+                Self::write_ignore_pipe(&mut handle, format!("{}: {}\n", name, count).as_bytes())?;
+            }
+        }
+
+        if multiple_files {
+            Self::write_ignore_pipe(&mut handle, format!("total: {}\n", total).as_bytes())?;
+        } else {
+            Self::write_ignore_pipe(&mut handle, format!("{}\n", total).as_bytes())?;
+        }
+
+        if !self.output.unbuffered
+            && let Err(e) = handle.flush()
+            && e.kind() != std::io::ErrorKind::BrokenPipe
+        {
+            return Err(miette!(e));
+        }
+
+        Ok(())
     }
 
     fn process_streaming(&self) -> miette::Result<()> {
