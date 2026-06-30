@@ -394,7 +394,7 @@ struct OutputArgs {
 
     /// Output only the count of matching (non-None) results. Mirrors grep -c.
     /// With multiple files, prints "filename: N" per file and "total: N" at the end.
-    #[arg(short = 'c', long = "count", default_value_t = false)]
+    #[arg(short = 'c', long = "count", default_value_t = false, conflicts_with_all = ["update", "stream"])]
     count: bool,
 }
 
@@ -663,14 +663,6 @@ impl Cli {
             return Err(miette!(
                 "--before-context, --after-context, and --context are only valid with -F grep"
             ));
-        }
-
-        if self.output.count && self.output.update {
-            return Err(miette!("--count and --update cannot be used together"));
-        }
-
-        if self.output.count && self.input.stream {
-            return Err(miette!("--count is not supported with --stream"));
         }
 
         // Check if query is actually an external subcommand
