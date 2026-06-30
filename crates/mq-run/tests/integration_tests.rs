@@ -841,6 +841,89 @@ fn test_exit_status_parallel_batch(
 }
 
 #[rstest]
+#[case::two_matches("# h1\n\n## h2a\n\n## h2b\n", ".h2", "2\n")]
+#[case::no_matches("# h1\n\nbody\n", ".h2", "0\n")]
+#[case::all_match("# h1\n\n# h2\n", ".h", "2\n")]
+fn test_count_stdin(
+    #[case] input: &str,
+    #[case] query: &str,
+    #[case] expected: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--unbuffered")
+        .arg("--count")
+        .arg(query)
+        .write_stdin(input)
+        .assert()
+        .success()
+        .stdout(expected.to_owned());
+    Ok(())
+}
+
+#[test]
+fn test_count_short_flag() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--unbuffered")
+        .arg("-c")
+        .arg(".h2")
+        .write_stdin("# h1\n\n## h2\n\n## h2b\n")
+        .assert()
+        .success()
+        .stdout("2\n");
+    Ok(())
+}
+
+#[test]
+fn test_count_multiple_files() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, file_a) = create_file("test_count_a.md", "# h1\n\n## h2\n\n## h2b\n");
+    let (_, file_b) = create_file("test_count_b.md", "# h1\n\n## h2\n\n## h2b\n\n## h2c\n");
+    let file_a_clone = file_a.clone();
+    let file_b_clone = file_b.clone();
+
+    defer! {
+        if file_a_clone.exists() { std::fs::remove_file(&file_a_clone).ok(); }
+        if file_b_clone.exists() { std::fs::remove_file(&file_b_clone).ok(); }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let output = cmd
+        .arg("--unbuffered")
+        .arg("--count")
+        .arg(".h2")
+        .arg(&file_a)
+        .arg(&file_b)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let output_str = String::from_utf8(output)?;
+    assert!(
+        output_str.contains("test_count_a.md: 2"),
+        "missing per-file count for a: {output_str}"
+    );
+    assert!(
+        output_str.contains("test_count_b.md: 3"),
+        "missing per-file count for b: {output_str}"
+    );
+    assert!(output_str.contains("total: 5"), "missing total: {output_str}");
+    Ok(())
+}
+
+#[test]
+fn test_count_update_error() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--count")
+        .arg("--update")
+        .arg(".h")
+        .write_stdin("# title\n")
+        .assert()
+        .failure();
+    Ok(())
+}
+
+#[rstest]
 #[case::bash("bash", "_mq()")]
 #[case::elvish("elvish", "edit:completion:arg-completer[mq]")]
 #[case::fish("fish", "complete -c mq")]
