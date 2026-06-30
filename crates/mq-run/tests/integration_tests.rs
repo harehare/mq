@@ -266,6 +266,31 @@ In {year}, the snowfall was above average.
     "- [Link](http://a) **bold** item\n- another *em* ~~del~~ item\n\n> [Quoted link](http://b)\n\n| [Cell link](http://c) | **Cell bold** |\n| --- | --- |\n| a | b |\n\n[^1]: [Footnote link](http://d)\n\n# DONE\n",
     Some("# DONE\n")
 )]
+#[case::limit_first_result(
+    vec!["--unbuffered", "--limit", "1", ".h"],
+    "# h1\n\n## h2\n\n### h3\n",
+    Some("# h1\n")
+)]
+#[case::limit_more_than_available(
+    vec!["--unbuffered", "--limit", "10", ".h"],
+    "# h1\n\n## h2\n",
+    Some("# h1\n\n## h2\n")
+)]
+#[case::skip_first_result(
+    vec!["--unbuffered", "--skip", "1", ".h"],
+    "# h1\n\n## h2\n\n### h3\n",
+    Some("## h2\n\n### h3\n")
+)]
+#[case::skip_and_limit(
+    vec!["--unbuffered", "--skip", "1", "--limit", "1", ".h"],
+    "# h1\n\n## h2\n\n### h3\n",
+    Some("## h2\n")
+)]
+#[case::skip_beyond_results(
+    vec!["--unbuffered", "--skip", "99", ".h"],
+    "# h1\n\n## h2\n",
+    Some("")
+)]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,
