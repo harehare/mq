@@ -396,6 +396,14 @@ struct OutputArgs {
     /// With multiple files, prints "filename: N" per file and "total: N" at the end.
     #[arg(short = 'c', long = "count", default_value_t = false, conflicts_with_all = ["update", "stream"])]
     count: bool,
+
+    /// Skip the first N matching results before outputting.
+    #[arg(long, value_name = "N", conflicts_with = "update")]
+    skip: Option<usize>,
+
+    /// Limit output to at most N results.
+    #[arg(long, value_name = "N", conflicts_with = "update")]
+    limit: Option<usize>,
 }
 
 impl OutputArgs {
@@ -406,6 +414,19 @@ impl OutputArgs {
         let before = self.before_context.unwrap_or(base);
         let after = self.after_context.unwrap_or(base);
         (before, after)
+    }
+
+    /// Applies skip/limit pagination to a vector of values.
+    ///
+    /// Call this on compact (non-empty) values so that N refers to visible results.
+    fn paginate<T>(&self, values: Vec<T>) -> Vec<T> {
+        let skip = self.skip.unwrap_or(0);
+        let values: Vec<T> = values.into_iter().skip(skip).collect();
+        if let Some(limit) = self.limit {
+            values.into_iter().take(limit).collect()
+        } else {
+            values
+        }
     }
 }
 
@@ -919,6 +940,32 @@ impl Cli {
         grep_input: Option<Vec<mq_lang::RuntimeValue>>,
         file: &Option<PathBuf>,
     ) -> miette::Result<()> {
+        let runtime_values = if self.output.skip.is_some() || self.output.limit.is_some() {
+            let compact = runtime_values.compact();
+            let had_empties = compact.len() < runtime_values.len();
+            let paginated: Vec<mq_lang::RuntimeValue> = self
+                .output
+                .paginate(compact)
+                .into_iter()
+                .map(|v| {
+                    if had_empties {
+                        match v {
+                            mq_lang::RuntimeValue::Markdown(mut node, meta) => {
+                                node.set_position(None);
+                                mq_lang::RuntimeValue::Markdown(node, meta)
+                            }
+                            other => other,
+                        }
+                    } else {
+                        v
+                    }
+                })
+                .collect();
+            paginated.into()
+        } else {
+            runtime_values
+        };
+
         if let Some(input) = grep_input {
             let (before, after) = self.output.context_counts();
             grep::print_grep(
@@ -1076,7 +1123,7 @@ impl Cli {
         }
         let input = self.resolve_input(file, content)?;
         let runtime_values = engine.eval(query, input.into_iter()).map_err(|e| *e)?;
-        Ok(runtime_values.compact().len())
+        Ok(self.output.paginate(runtime_values.compact()).len())
     }
 
     fn process_batch_count(&self, query: &str, files: &[(Option<PathBuf>, ContentData)]) -> miette::Result<()> {
