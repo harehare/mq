@@ -14,7 +14,7 @@ use helpers::{
     build_piped_call_args, collect_break_value_types, collect_pattern_variable_descendants, find_enclosing_function,
     find_lambda_function_child, get_post_loop_siblings, get_symbol_range, is_foreach_iterable_ref,
     is_inside_quote_block, merge_loop_types, might_receive_piped_input, resolve_builtin_call, resolve_pattern_type,
-    resolve_whole_type_pattern,
+    resolve_whole_type_pattern, spread_element_type,
 };
 use pipe::{generate_block_constraints, generate_function_body_pipe_constraints, resolve_branch_body_type};
 
@@ -1188,10 +1188,12 @@ pub(super) fn generate_symbol_constraints(
                 let array_ty = Type::array(Type::Var(elem_ty_var));
                 ctx.set_symbol_type(symbol_id, array_ty);
             } else {
-                // Get types of all elements
+                // Get types of all elements. A `...expr` spread element contributes the
+                // *element* type of its (array-typed) target, not the target's own type,
+                // so `[0, ...a, 99]` is still seen as homogeneous when `a: [number]`.
                 let elem_tys: Vec<Type> = children
                     .iter()
-                    .map(|&child_id| ctx.get_or_create_symbol_type(child_id))
+                    .map(|&child_id| spread_element_type(hir, child_id, children_index, ctx))
                     .collect();
 
                 // Resolve element types to check for heterogeneous concrete types
@@ -1271,6 +1273,14 @@ pub(super) fn generate_symbol_constraints(
 
                 for &key_id in key_symbols {
                     let symbol = hir.symbol(key_id);
+
+                    // `...expr` merges another dict's fields at runtime, which a fixed-field
+                    // Record type can't represent; fall back to the permissive Dict type below.
+                    if symbol.is_some_and(|s| s.kind == SymbolKind::Spread) {
+                        all_string_keys = false;
+                        break;
+                    }
+
                     let key_name = symbol.and_then(|s| s.value.as_ref().map(|v| v.to_string()));
                     let key_kind = symbol.map(|s| s.kind.clone());
 
@@ -1308,6 +1318,24 @@ pub(super) fn generate_symbol_constraints(
                     let range = get_symbol_range(hir, symbol_id);
 
                     for &key_id in key_symbols {
+                        if hir.symbol(key_id).is_some_and(|s| s.kind == SymbolKind::Spread) {
+                            // Checked against its own fresh key/value vars rather than this
+                            // dict's shared `key_ty`: Record↔Dict unification forces String
+                            // keys, which would misfire against Symbol-typed plain entries
+                            // (e.g. `y: 99`) if it shared `key_ty` with them.
+                            if let Some(&target_id) = get_children(children_index, key_id).first() {
+                                let target_ty = ctx.get_or_create_symbol_type(target_id);
+                                let (spread_k, spread_v) = (ctx.fresh_var(), ctx.fresh_var());
+                                ctx.add_constraint(Constraint::Equal(
+                                    target_ty,
+                                    Type::dict(Type::Var(spread_k), Type::Var(spread_v)),
+                                    range,
+                                    ConstraintOrigin::General,
+                                ));
+                            }
+                            continue;
+                        }
+
                         let k_ty = ctx.get_or_create_symbol_type(key_id);
                         ctx.add_constraint(Constraint::Equal(
                             key_ty.clone(),

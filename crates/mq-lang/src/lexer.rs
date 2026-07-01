@@ -215,6 +215,7 @@ define_token_parser!(ne_eq, "!=", TokenKind::NeEq);
 define_token_parser!(plus, "+", TokenKind::Plus);
 define_token_parser!(pipe, "|", TokenKind::Pipe);
 define_token_parser!(percent, "%", TokenKind::Percent);
+define_token_parser!(spread_op, "...", TokenKind::DotDotDot);
 define_token_parser!(range_op, "..", TokenKind::DoubleDot);
 define_token_parser!(r_bracket, "]", TokenKind::RBracket);
 define_token_parser!(r_paren, ")", TokenKind::RParen);
@@ -301,6 +302,7 @@ fn binary_op(input: Span) -> IResult<Span, Token> {
         asterisk,
         slash,
         percent,
+        spread_op,
         range_op,
     ))
     .parse(input)

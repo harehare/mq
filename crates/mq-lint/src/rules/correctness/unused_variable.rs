@@ -91,6 +91,8 @@ mod tests {
     #[case("let _ignored = .h1")]
     #[case(r#"s"${x}""#)]
     #[case(r#"let x = 1 | s"${x}""#)]
+    #[case("let a = [1, 2, 3] | [...a]")]
+    #[case("let base = {x: 1} | {...base, y: 2}")]
     fn no_diagnostic(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);

@@ -1,6 +1,8 @@
 pub mod builtins {
     pub const ARRAY: &str = "array";
     pub const DICT: &str = "dict";
+    /// Marker ident for `...expr` spread elements; not a valid identifier, so it can't collide with user code.
+    pub const SPREAD: &str = "...";
 
     pub const CONVERT: &str = "convert";
     pub const GET: &str = "get";

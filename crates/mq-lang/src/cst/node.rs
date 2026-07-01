@@ -119,6 +119,7 @@ pub enum NodeKind {
     SelectorCall,
     Self_,
     SelfAttr,
+    Spread,
     Token,
     Try,
     Catch,

@@ -87,6 +87,21 @@ fn test_dictionaries() {
     assert!(check_types(r#"{"a": 1, "b": 2}"#).is_empty());
 }
 
+#[rstest]
+#[case::array_spread_basic("let a = [1, 2, 3];\n| let b = [0, ...a, 99];", true)]
+#[case::array_spread_multiple("let a = [1];\n| let b = [2];\n| let c = [...a, ...b, 3];", true)]
+#[case::array_spread_of_literal("[...[1, 2], 3]", true)]
+#[case::array_spread_empty("let a = [];\n| [...a, 1];", true)]
+#[case::array_spread_wrong_type("[...42];", false)]
+#[case::dict_spread_basic("let base = {x: 1, y: 2};\n| let merged = {...base, y: 99, z: 3};", true)]
+#[case::dict_spread_multiple("let a = {x: 1};\n| let b = {y: 2};\n| let c = {...a, ...b};", true)]
+#[case::dict_spread_of_literal("{...{x: 1}, y: 2}", true)]
+#[case::dict_spread_empty("let a = {};\n| {...a, x: 1};", true)]
+#[case::dict_spread_wrong_type("{...42};", false)]
+fn test_spread(#[case] code: &str, #[case] expect_no_errors: bool) {
+    assert_eq!(check_types(code).is_empty(), expect_no_errors, "code: {code}");
+}
+
 #[test]
 fn test_conditionals() {
     assert!(

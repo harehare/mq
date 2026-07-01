@@ -5,7 +5,6 @@ use std::sync::LazyLock;
 #[cfg(feature = "debugger")]
 use crate::DebuggerHandler;
 use crate::Module;
-#[cfg(feature = "debugger")]
 use crate::ast::constants;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::DefaultDebuggerHandler;
@@ -45,6 +44,8 @@ use runtime_value::RuntimeValue;
 
 static TYPE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("type"));
 static DYNAMIC_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("<dynamic>"));
+static SPREAD_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(constants::builtins::SPREAD));
+static DICT_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(constants::builtins::DICT));
 
 /// Control flow signals for internal evaluation.
 ///
@@ -1710,10 +1711,75 @@ impl<T: ModuleResolver> Evaluator<T> {
         args: &ast::Args,
         env: &Shared<SharedCell<Env>>,
     ) -> EvalResult {
-        let args: Result<builtin::Args, EvalError> =
-            args.iter().map(|arg| self.eval_expr(runtime_value, arg, env)).collect();
-        builtin::eval_builtin(runtime_value, ident, args?, env)
+        let args = self.eval_call_args(runtime_value, &node, ident, args, env)?;
+        builtin::eval_builtin(runtime_value, ident, args, env)
             .map_err(|e| EvalError::from(e.to_runtime_error((*node).clone(), Shared::clone(&self.token_arena))))
+    }
+
+    /// Evaluates call args, expanding `...expr` spread markers (see `parse_spread_element`)
+    /// in place into the elements/entries of the array/dict they were written in.
+    fn eval_call_args(
+        &mut self,
+        runtime_value: &RuntimeValue,
+        node: &Shared<ast::Node>,
+        ident: &Ident,
+        args: &ast::Args,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<builtin::Args, EvalError> {
+        let mut evaluated: builtin::Args = Vec::with_capacity(args.len());
+
+        for arg in args.iter() {
+            match &*arg.expr {
+                ast::Expr::Call(spread_ident, spread_args) if spread_ident.name == *SPREAD_IDENT => {
+                    let spread_value = self.eval_expr(runtime_value, &spread_args[0], env)?;
+                    self.expand_spread(node, ident, spread_value, &mut evaluated)?;
+                }
+                _ => evaluated.push(self.eval_expr(runtime_value, arg, env)?),
+            }
+        }
+
+        Ok(evaluated)
+    }
+
+    /// Splices a spread target's contents into `out`: array elements for `[...a]`,
+    /// `[Symbol(key), value]` pairs for `{...d}`. Spreading `None` contributes nothing;
+    /// any other mismatched type is a runtime error.
+    fn expand_spread(
+        &self,
+        node: &Shared<ast::Node>,
+        ident: &Ident,
+        value: RuntimeValue,
+        out: &mut builtin::Args,
+    ) -> Result<(), EvalError> {
+        let invalid_types = |value: RuntimeValue| {
+            EvalError::from(
+                builtin::Error::InvalidTypes(ident.to_string(), vec![value])
+                    .to_runtime_error((**node).clone(), Shared::clone(&self.token_arena)),
+            )
+        };
+
+        if *ident == *DICT_IDENT {
+            match value {
+                RuntimeValue::Dict(map) => {
+                    out.extend(
+                        map.into_iter()
+                            .map(|(k, v)| RuntimeValue::Array(vec![RuntimeValue::Symbol(k), v])),
+                    );
+                    Ok(())
+                }
+                RuntimeValue::None => Ok(()),
+                other => Err(invalid_types(other)),
+            }
+        } else {
+            match value {
+                RuntimeValue::Array(items) => {
+                    out.extend(items);
+                    Ok(())
+                }
+                RuntimeValue::None => Ok(()),
+                other => Err(invalid_types(other)),
+            }
+        }
     }
 
     #[inline(always)]

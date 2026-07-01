@@ -101,6 +101,8 @@ pub enum SymbolKind {
     },
     Ref,
     Selector(mq_lang::Selector),
+    /// A `...expr` spread element inside an array or dict literal.
+    Spread,
     String,
     Symbol,
     UnaryOp,
