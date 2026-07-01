@@ -627,6 +627,18 @@ fn test_dict_destructuring_type_check(#[case] code: &str, #[case] should_succeed
     true,
     "multiple whole-type arms before wildcard should not cause errors"
 )]
+// Markdown node-kind labels (`:h1`, `:code`, ...) should type-check like other type labels
+#[case::node_kind_label_then_wildcard_valid(
+    r#"def f(x): match (x): | :h1:: "top" | _: x end"#,
+    true,
+    "wildcard arm after :h1: label arm should succeed"
+)]
+// Attribute selectors (`.lang`, `.depth`, ...) in a guard/body read the matched node
+#[case::node_kind_guard_attribute_access_valid(
+    r#"def f(x): match (x): | :code if (.lang == "rust"): upcase(.value) | :code: .value | _: x end"#,
+    true,
+    "guard/body reading attributes of a node-kind pattern should not error"
+)]
 fn test_cross_arm_narrowing(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(result.is_empty(), should_succeed, "{}: {result:?}", description);

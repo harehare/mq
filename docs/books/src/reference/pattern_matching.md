@@ -55,6 +55,42 @@ Available type patterns:
 - `:markdown` - Matches markdown values
 - `:none` - Matches none value
 
+## Markdown Node-Kind Patterns
+
+Match a `:markdown` value against a specific node kind using the same names as
+[selectors](./selectors.md) (without the leading `.`):
+
+```mq
+match (node):
+  | :h1: "top-level heading"
+  | :h2: "section heading"
+  | :code: "code block"
+  | :list: "list"
+  | :text: "text"
+  | _: "other node"
+end
+```
+
+Any node-kind name accepted by a selector (`h1`..`h6`, `h`, `code`, `list`,
+`text`, `strong`, `emphasis`, `link`, `table`, and so on) can be used. A
+pattern matches only when the value is a markdown node of that kind; other
+values fall through to the next arm.
+
+Inside a matched arm, `.` refers to the matched node itself, so attribute
+selectors like `.depth`, `.lang`, or `.ordered` can be used directly in the
+guard or body without binding a variable:
+
+```mq
+match (node):
+  | :h if (.depth > 2): "deep heading"
+  | :code if (.lang == "rust"): upcase(.value)
+  | :code: .value
+  | :list if (.ordered): "ordered list"
+  | :list: "unordered list"
+  | _: "other node"
+end
+```
+
 ## Array Patterns
 
 Destructure arrays and bind elements to variables:
@@ -321,6 +357,24 @@ def classify_status(code):
     | 404: "not found"
     | 500 || 502 || 503: "server error"
     | _: "unknown"
+  end
+end
+```
+
+### Dispatching on Markdown Node Kinds
+
+```mq
+def describe_node(node):
+  match (node):
+    | :h1: "top-level heading"
+    | :h2: "section heading"
+    | :h if (.depth > 2): "deep heading"
+    | :code if (.lang == "rust"): upcase(.value)
+    | :code: .value
+    | :list if (.ordered): "ordered list"
+    | :list: "unordered list"
+    | :text: .value
+    | _: "other node"
   end
 end
 ```
