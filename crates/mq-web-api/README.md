@@ -1,92 +1,173 @@
 <h1 align="center">mq-web-api</h1>
 
-Web API server for the mq markdown query language.
-
-## Configuration
-
-The server can be configured using environment variables:
-
-### Basic Configuration
-
-| Environment Variable | Description                  | Default Value                       |
-| -------------------- | ---------------------------- | ----------------------------------- |
-| `HOST`               | Host to bind to              | `0.0.0.0`                           |
-| `PORT`               | Port to bind to              | `8080`                              |
-| `RUST_LOG`           | Log level                    | `mq_web_api=debug,tower_http=debug` |
-| `LOG_FORMAT`         | Log format: `json` or `text` | `json`                              |
-| `CORS_ORIGINS`       | Comma-separated CORS origins | `*`                                 |
-
-### Rate Limiting Configuration
-
-| Environment Variable                  | Description                                    | Default Value |
-| ------------------------------------- | ---------------------------------------------- | ------------- |
-| `DATABASE_URL`                        | Database URL for rate limiting (libsql format) | `:memory:`    |
-| `DATABASE_TOKEN`                      | Database authentication token (for remote DB)  | None          |
-| `RATE_LIMIT_REQUESTS_PER_WINDOW`      | Maximum requests per time window               | `100`         |
-| `RATE_LIMIT_WINDOW_SIZE_SECONDS`      | Time window size in seconds                    | `3600`        |
-| `RATE_LIMIT_CLEANUP_INTERVAL_SECONDS` | Cleanup interval for expired records           | `3600`        |
-| `RATE_LIMIT_POOL_MAX_SIZE`            | Maximum database connection pool size          | `10`          |
-| `RATE_LIMIT_POOL_TIMEOUT_SECONDS`     | Database connection timeout in seconds         | `30`          |
-
-## Usage
-
-### Running with default settings
-
-```bash
-cargo run --bin mq-web-api
-```
-
-### Running with custom configuration
-
-```bash
-HOST=localhost PORT=3000 RUST_LOG=info cargo run --bin mq-web-api
-```
-
-### Running with specific CORS origins
-
-```bash
-CORS_ORIGINS="https://example.com,https://app.example.com" cargo run --bin mq-web-api
-```
-
-### Running with text-format logs
-
-```bash
-LOG_FORMAT=text cargo run --bin mq-web-api
-```
-
-### Running with JSON logs (default)
-
-```bash
-LOG_FORMAT=json cargo run --bin mq-web-api
-```
-
-### Running with rate limiting using Turso database
-
-```bash
-DATABASE_URL="libsql://your-database.turso.io" \
-DATABASE_TOKEN="your-auth-token" \
-RATE_LIMIT_REQUESTS_PER_WINDOW=50 \
-RATE_LIMIT_WINDOW_SIZE_SECONDS=3600 \
-cargo run --bin mq-web-api
-```
+HTTP/REST server that exposes the [mq](https://mqlang.org/) markdown query language over the network.
 
 ## API Endpoints
 
-- `GET /api/query?query=<mq-query>&input=<content>&input_format=<format>` - Execute query via GET
-- `POST /api/query` - Execute query via POST with JSON body
-- `GET /api/query/diagnostics?query=<mq-query>` - Get query diagnostics
-- `GET /openapi.json` - OpenAPI specification
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check |
+| `GET` | `/api/v1/query` | Execute a query (query-string parameters) |
+| `POST` | `/api/v1/query` | Execute a query (JSON body) |
+| `POST` | `/api/v1/check` | Type-check a query |
+| `POST` | `/api/v1/format` | Format a query |
+| `GET` | `/api/v1/functions` | List builtin mq functions |
+| `GET` | `/api/v1/selectors` | List builtin mq selectors |
+| `POST` | `/api/v1/lint` | Lint a query |
+| `GET` | `/api/v1/openapi.json` | OpenAPI specification |
+| `GET` | `/docs` | Swagger UI |
+
+Legacy paths (`/api/query`, `/api/check`, `/api/format`, `/openapi.json`) redirect permanently to the `/api/v1/` equivalents.
+
+### `GET /api/v1/query`
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `query` | Yes | mq query string |
+| `input` | No | Input content |
+| `input_format` | No | `markdown` (default), `mdx`, `text`, `html`, `raw`, `null` |
+
+### `POST /api/v1/query`
+
+```json
+{
+  "query": ".h",
+  "input": "## Markdown Content\n\nBody text.",
+  "input_format": "markdown",
+  "output_format": "markdown",
+  "modules": ["json"],
+  "args": { "key": "value" },
+  "aggregate": false
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `query` | `string` | mq query string |
+| `input` | `string?` | Input content |
+| `input_format` | `string?` | `markdown` (default), `mdx`, `text`, `html`, `raw`, `null` |
+| `output_format` | `string?` | `markdown` (default), `html`, `text`, `json`, `none` |
+| `modules` | `string[]?` | Builtin module names to load (e.g. `"json"`, `"csv"`) |
+| `args` | `object?` | String variables passed to the engine |
+| `aggregate` | `bool?` | Aggregate all input nodes before querying (equivalent to CLI `-A`) |
+
+### `POST /api/v1/check`
+
+```json
+{ "query": "upcase() | downcase()" }
+```
+
+Returns an array of errors (empty means no issues). Always returns HTTP 200.
+
+### `GET /api/v1/functions`
+
+Returns all builtin mq functions with their descriptions and parameters.
+
+### `GET /api/v1/selectors`
+
+Returns all builtin mq selectors with their descriptions and parameters.
+
+### `POST /api/v1/lint`
+
+```json
+{ "query": "let x = .h1 | .text" }
+```
+
+Returns an array of style/correctness diagnostics (empty means no issues). Always returns HTTP 200.
+
+### `POST /api/v1/format`
+
+```json
+{
+  "query": "if(a):1 elif(b):2 else:3",
+  "indent_width": 2,
+  "sort_imports": false,
+  "sort_functions": false,
+  "sort_fields": false
+}
+```
+
+## Configuration
+
+All settings are controlled through environment variables.
+
+### Server
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HOST` | `0.0.0.0` | Bind address |
+| `PORT` | `8080` | Bind port |
+| `RUST_LOG` | `mq_web_api=debug,tower_http=debug` | Log level filter |
+| `LOG_FORMAT` | `json` | Log format: `json` or `text` |
+| `CORS_ORIGINS` | `*` | Comma-separated allowed origins |
+
+### Rate Limiting
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RATE_LIMIT_REQUESTS_PER_WINDOW` | `100` | Maximum requests per window |
+| `RATE_LIMIT_WINDOW_SIZE_SECONDS` | `3600` | Window size in seconds |
+| `RATE_LIMIT_CLEANUP_INTERVAL_SECONDS` | `3600` | Expired-entry cleanup interval |
+
+### OpenTelemetry (requires `otel` feature)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP exporter endpoint (e.g. `http://localhost:4317`) |
+| `OTEL_SERVICE_NAME` | `mq-web-api` | Service name reported to the collector |
+
+## Usage
+
+### Running locally
+
+```bash
+# Default settings
+cargo run --bin mq-web-api
+
+# Custom host and port
+HOST=localhost PORT=3000 cargo run --bin mq-web-api
+
+# Text-format logs
+LOG_FORMAT=text cargo run --bin mq-web-api
+
+# Restrict CORS origins
+CORS_ORIGINS="https://example.com,https://app.example.com" cargo run --bin mq-web-api
+
+# Enable OpenTelemetry
+cargo run --features otel --bin mq-web-api
+```
+
+### Docker
+
+Build and run from the workspace root:
+
+```bash
+docker build -f crates/mq-web-api/Dockerfile.vercel -t mq-web-api .
+docker run -p 8080:8080 mq-web-api
+```
+
+With custom configuration:
+
+```bash
+docker run -p 3000:3000 \
+  -e PORT=3000 \
+  -e LOG_FORMAT=text \
+  -e CORS_ORIGINS="https://example.com" \
+  mq-web-api
+```
 
 ## Examples
 
-### Query via GET
+### Execute a query (GET)
+
 ```bash
-curl "http://localhost:8080/api/query?query=.h&input=%23%20Title%0A%0AContent&input_format=markdown"
+curl "http://localhost:8080/api/v1/query?query=.h&input=%23%20Title%0A%0AContent&input_format=markdown"
 ```
 
-### Query via POST
+### Execute a query (POST)
+
 ```bash
-curl -X POST http://localhost:8080/api/query \
+curl -X POST http://localhost:8080/api/v1/query \
   -H "Content-Type: application/json" \
   -d '{
     "query": ".h",
@@ -95,24 +176,54 @@ curl -X POST http://localhost:8080/api/query \
   }'
 ```
 
-### Get diagnostics
+### Type-check a query
+
 ```bash
-curl "http://localhost:8080/api/query/diagnostics?query=invalid%20query"
+curl -X POST http://localhost:8080/api/v1/check \
+  -H "Content-Type: application/json" \
+  -d '{"query": "upcase() | downcase()"}'
+```
+
+### Format a query
+
+```bash
+curl -X POST http://localhost:8080/api/v1/format \
+  -H "Content-Type: application/json" \
+  -d '{"query": "if(a):1 elif(b):2 else:3"}'
+```
+
+### List builtin functions
+
+```bash
+curl http://localhost:8080/api/v1/functions
+```
+
+### List builtin selectors
+
+```bash
+curl http://localhost:8080/api/v1/selectors
+```
+
+### Lint a query
+
+```bash
+curl -X POST http://localhost:8080/api/v1/lint \
+  -H "Content-Type: application/json" \
+  -d '{"query": "let x = .h1 | .text"}'
 ```
 
 ## Features
 
-- **Axum-based HTTP server** - Fast and reliable web framework
-- **Rate limiting** - Built-in rate limiting with libsql/SQLite backend support
-- **CORS support** - Configurable CORS origins for web applications
-- **Structured logging** - JSON and text format logging with tracing
-- **OpenAPI documentation** - Auto-generated API documentation
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `use_mimalloc` | enabled | Use mimalloc as the global allocator |
+| `otel` | disabled | Enable OpenTelemetry tracing via OTLP |
 
 ## Support
 
-- 🐛 [Report bugs](https://github.com/harehare/mq/issues)
-- 💡 [Request features](https://github.com/harehare/mq/issues)
-- 📖 [Read the documentation](https://mqlang.org/book/)
+- [Report bugs](https://github.com/harehare/mq/issues)
+- [Request features](https://github.com/harehare/mq/issues)
+- [Read the documentation](https://mqlang.org/book/)
 
 ## License
 

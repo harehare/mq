@@ -17,7 +17,10 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     config::Config,
-    handlers::{ApiDoc, AppState, get_query_api, health_check, post_check_api, post_format_api, post_query_api},
+    handlers::{
+        ApiDoc, AppState, get_functions_api, get_query_api, get_selectors_api, health_check, post_check_api,
+        post_format_api, post_lint_api, post_query_api,
+    },
     middleware::rate_limit_middleware,
     rate_limiter::RateLimiter,
 };
@@ -51,7 +54,10 @@ pub fn create_router(config: &Config, rate_limiter: Arc<RateLimiter>) -> Router 
     let v1_routes = Router::new()
         .route("/query", get(get_query_api).post(post_query_api))
         .route("/check", post(post_check_api))
-        .route("/format", post(post_format_api));
+        .route("/format", post(post_format_api))
+        .route("/functions", get(get_functions_api))
+        .route("/selectors", get(get_selectors_api))
+        .route("/lint", post(post_lint_api));
 
     Router::new()
         .merge(SwaggerUi::new("/docs").url("/api/v1/openapi.json", ApiDoc::openapi()))
