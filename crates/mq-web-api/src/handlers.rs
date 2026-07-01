@@ -60,13 +60,6 @@ pub struct HealthResponse {
 }
 
 /// Returns 200 OK when the server is healthy.
-#[utoipa::path(
-    get,
-    path = "/health",
-    responses(
-        (status = 200, description = "Server is healthy", body = HealthResponse),
-    )
-)]
 pub async fn health_check() -> Json<HealthResponse> {
     Json(HealthResponse { status: "ok" })
 }
@@ -74,7 +67,6 @@ pub async fn health_check() -> Json<HealthResponse> {
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        health_check,
         get_query_api,
         post_query_api,
         post_check_api,
@@ -85,7 +77,6 @@ pub async fn health_check() -> Json<HealthResponse> {
         openapi_json
     ),
     components(
-        schemas(HealthResponse),
         schemas(ApiRequest),
         schemas(InputFormat),
         schemas(OutputFormat),
