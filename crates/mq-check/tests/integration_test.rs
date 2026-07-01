@@ -118,6 +118,32 @@ fn test_match_different_types_creates_union() {
     );
 }
 
+#[test]
+fn test_pattern_matching_markdown_node_kind() {
+    let result = check_types(
+        r#"
+        def describe(node):
+          match (node):
+            | :h1: "top-level heading"
+            | :h2: "section heading"
+            | :h if (.depth > 2): "deep heading"
+            | :code if (.lang == "rust"): upcase(.value)
+            | :code: .value
+            | :list if (.ordered): "ordered list"
+            | :list: "unordered list"
+            | :text: .value
+            | _: "other node"
+          end
+        ;
+        "#,
+    );
+    assert!(
+        result.is_empty(),
+        "node-kind patterns with attribute guards should type-check: {:?}",
+        result
+    );
+}
+
 #[rstest]
 #[case::wildcard_only(r#"match (42): | _: 0 end"#, true, "wildcard-only arm covers everything")]
 #[case::wildcard_after_literal(

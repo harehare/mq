@@ -1442,7 +1442,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                         define(&guard_env, *name, value.clone());
                     }
 
-                    let guard_result = self.eval_expr(runtime_value, guard_node, &guard_env)?;
+                    // Guard sees the matched value as `.`, so `.depth`/`.lang` work unbound.
+                    let guard_result = self.eval_expr(&match_value, guard_node, &guard_env)?;
                     if !guard_result.is_truthy() {
                         // Guard failed, try next arm
                         continue;
@@ -1455,7 +1456,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     define(&body_env, name, value);
                 }
 
-                return self.eval_expr(runtime_value, &arm.body, &body_env);
+                return self.eval_expr(&match_value, &arm.body, &body_env);
             }
         }
 
@@ -1587,7 +1588,13 @@ impl<T: ModuleResolver> Evaluator<T> {
                     "function" => matches!(value, RuntimeValue::Function(_, _, _)),
                     "symbol" => matches!(value, RuntimeValue::Symbol(_)),
                     "none" => matches!(value, RuntimeValue::None),
-                    _ => false,
+                    // Node-kind pattern (`:h1`, `:code`, `:list`), backed by the selector table.
+                    _ => match value {
+                        RuntimeValue::Markdown(node, _) => Selector::from_selector_str(&format!(".{type_str}"))
+                            .filter(|selector| !selector.is_attribute_selector())
+                            .is_some_and(|selector| builtin::eval_selector(node, &selector) != RuntimeValue::NONE),
+                        _ => false,
+                    },
                 };
 
                 if matches { Ok(Some(Vec::new())) } else { Ok(None) }
@@ -6708,6 +6715,158 @@ mod tests {
                     pattern: Pattern::Type(crate::Ident::new("bytes")),
                     guard: None,
                     body: ast_node(ast::Expr::Literal(ast::Literal::String("bytes".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::String("other".to_string())])
+    )]
+    #[case::match_type_node_kind_heading_matches(
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+            values: vec![],
+            position: None,
+            depth: 1,
+        }))],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Self_),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Type(crate::Ident::new("h1")),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("h1".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "h1".to_string(),
+            position: None,
+        }))])
+    )]
+    #[case::match_type_node_kind_heading_depth_mismatch_falls_to_wildcard(
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+            values: vec![],
+            position: None,
+            depth: 2,
+        }))],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Self_),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Type(crate::Ident::new("h1")),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("h1".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "other".to_string(),
+            position: None,
+        }))])
+    )]
+    #[case::match_type_node_kind_generic_heading_matches_any_depth(
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+            values: vec![],
+            position: None,
+            depth: 5,
+        }))],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Self_),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Type(crate::Ident::new("h")),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("heading".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "heading".to_string(),
+            position: None,
+        }))])
+    )]
+    #[case::match_type_node_kind_unknown_name_no_match(
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+            values: vec![],
+            position: None,
+            depth: 1,
+        }))],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Self_),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Type(crate::Ident::new("not_a_real_node_kind")),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("matched".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "other".to_string(),
+            position: None,
+        }))])
+    )]
+    #[case::match_type_node_kind_attribute_name_does_not_match(
+        vec![RuntimeValue::new_markdown(mq_markdown::Node::Code(mq_markdown::Code {
+            value: "fn main() {}".to_string(),
+            lang: Some("rust".to_string()),
+            position: None,
+            meta: None,
+            fence: true,
+        }))],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Self_),
+            smallvec![
+                MatchArm {
+                    // `:lang` is an attribute selector, not a node-kind selector, so it must not match.
+                    pattern: Pattern::Type(crate::Ident::new("lang")),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("matched".to_string()))),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+                },
+            ]
+        ))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "other".to_string(),
+            position: None,
+        }))])
+    )]
+    #[case::match_type_node_kind_no_match_on_non_markdown(
+        vec![RuntimeValue::Number(42.into())],
+        vec![ast_node(ast::Expr::Match(
+            ast_node(ast::Expr::Self_),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Type(crate::Ident::new("code")),
+                    guard: None,
+                    body: ast_node(ast::Expr::Literal(ast::Literal::String("matched".to_string()))),
                 },
                 MatchArm {
                     pattern: Pattern::Wildcard,

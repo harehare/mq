@@ -172,7 +172,10 @@ pub(crate) fn type_name_to_type(name: &str, ctx: &mut InferenceContext) -> Optio
             let v = ctx.fresh_var();
             Some(Type::dict(Type::Var(k), Type::Var(v)))
         }
-        _ => None,
+        // Node-kind pattern (`:h1`, `:code`, `:list`) narrows to Markdown.
+        _ => mq_lang::Selector::from_selector_str(&format!(".{name}"))
+            .filter(|selector| !selector.is_attribute_selector())
+            .map(|_| Type::Markdown),
     }
 }
 

@@ -177,6 +177,216 @@ fn engine() -> DefaultEngine {
     ",
       vec![RuntimeValue::Number(0.into())],
       Ok(vec![RuntimeValue::String("is_array".to_string())].into()))]
+#[case::match_node_kind_h1("
+    match(.) do
+      | :h1: \"h1\"
+      | :h2: \"h2\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+          values: vec![],
+          position: None,
+          depth: 1,
+      }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "h1".to_string(),
+          position: None,
+      }))].into()))]
+#[case::match_node_kind_heading_guard_depth("
+    match(.) do
+      | :h1: \"h1\"
+      | :h2: \"h2\"
+      | :h if (.depth > 2): \"deep\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+          values: vec![],
+          position: None,
+          depth: 3,
+      }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "deep".to_string(),
+          position: None,
+      }))].into()))]
+#[case::match_node_kind_code_lang_guard("
+    match(.) do
+      | :code if (.lang == \"rust\"): \"rust code\"
+      | :code: \"other code\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::Code(mq_markdown::Code {
+          value: "fn main() {}".to_string(),
+          lang: Some("rust".to_string()),
+          position: None,
+          meta: None,
+          fence: true,
+      }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "rust code".to_string(),
+          position: None,
+      }))].into()))]
+#[case::match_node_kind_code_lang_guard_no_match("
+    match(.) do
+      | :code if (.lang == \"rust\"): \"rust code\"
+      | :code: \"other code\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::Code(mq_markdown::Code {
+          value: "print(\"hi\")".to_string(),
+          lang: Some("python".to_string()),
+          position: None,
+          meta: None,
+          fence: true,
+      }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "other code".to_string(),
+          position: None,
+      }))].into()))]
+#[case::match_node_kind_list_ordered_guard("
+    match(.) do
+      | :list if (.ordered): \"ordered\"
+      | :list: \"unordered\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List {
+          values: vec![],
+          index: 0,
+          level: 1,
+          ordered: true,
+          checked: None,
+          position: None,
+      }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "ordered".to_string(),
+          position: None,
+      }))].into()))]
+#[case::match_node_kind_list_unordered("
+    match(.) do
+      | :list if (.ordered): \"ordered\"
+      | :list: \"unordered\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List {
+          values: vec![],
+          index: 0,
+          level: 1,
+          ordered: false,
+          checked: None,
+          position: None,
+      }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "unordered".to_string(),
+          position: None,
+      }))].into()))]
+#[case::match_node_kind_no_match_on_non_markdown("
+    match(.) do
+      | :code: \"code\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::Number(1.into())],
+      Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+#[case::match_node_kind_or_pattern("
+    match(.) do
+      | :h1 || :h2: \"top-level\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+          values: vec![],
+          position: None,
+          depth: 2,
+      }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "top-level".to_string(),
+          position: None,
+      }))].into()))]
+#[case::match_node_kind_alias_paragraph("
+    match(.) do
+      | :p: \"paragraph\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "hello".to_string(),
+          position: None,
+      }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "paragraph".to_string(),
+          position: None,
+      }))].into()))]
+#[case::match_node_kind_task_checked_guard("
+    match(.) do
+      | :list if (.checked == true): \"done\"
+      | :list if (.checked == false): \"todo\"
+      | :list: \"plain list\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List {
+          values: vec![],
+          index: 0,
+          level: 1,
+          ordered: false,
+          checked: Some(true),
+          position: None,
+      }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "done".to_string(),
+          position: None,
+      }))].into()))]
+#[case::match_node_kind_strong_matches("
+    match(.) do
+      | :strong: \"bold\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::Strong(mq_markdown::Strong {
+          values: vec![],
+          position: None,
+      }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "bold".to_string(),
+          position: None,
+      }))].into()))]
+#[case::match_node_kind_unknown_name_falls_to_wildcard("
+    match(.) do
+      | :not_a_real_kind: \"matched\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+          values: vec![],
+          position: None,
+          depth: 1,
+      }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "other".to_string(),
+          position: None,
+      }))].into()))]
+#[case::match_node_kind_attribute_name_pattern_does_not_match("
+    match(.) do
+      | :lang: \"matched\"
+      | _: \"other\"
+    end
+    ",
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::Code(mq_markdown::Code {
+          value: "fn main() {}".to_string(),
+          lang: Some("rust".to_string()),
+          position: None,
+          meta: None,
+          fence: true,
+      }))],
+      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "other".to_string(),
+          position: None,
+      }))].into()))]
 #[case::if_("
     def fibonacci(x):
       if(eq(x, 0)):
