@@ -109,6 +109,62 @@ pub struct FormatApiResponse {
     pub formatted: String,
 }
 
+/// Documentation for a single builtin function.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct FunctionDoc {
+    pub name: String,
+    pub description: String,
+    pub params: Vec<String>,
+}
+
+/// Response body for `GET /api/functions`.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct FunctionsApiResponse {
+    pub functions: Vec<FunctionDoc>,
+}
+
+/// Documentation for a single builtin selector.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct SelectorDoc {
+    pub name: String,
+    pub description: String,
+    pub params: Vec<String>,
+}
+
+/// Response body for `GET /api/selectors`.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct SelectorsApiResponse {
+    pub selectors: Vec<SelectorDoc>,
+}
+
+/// Request body for `POST /api/lint`.
+#[derive(Deserialize, Serialize, ToSchema, Clone, Debug)]
+pub struct LintApiRequest {
+    #[schema(example = "def f(x): let y = 1; x;")]
+    pub query: String,
+}
+
+/// A single lint diagnostic.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct LintDiagnostic {
+    /// Identifier of the lint rule that produced this diagnostic (e.g. `"unused_variable"`).
+    pub rule_id: String,
+    pub message: String,
+    /// Severity: `"style"`, `"perf"`, `"warn"`, or `"error"`.
+    pub severity: String,
+    pub help: Option<String>,
+    pub start_line: Option<u32>,
+    pub start_column: Option<u32>,
+    pub end_line: Option<u32>,
+    pub end_column: Option<u32>,
+}
+
+/// Response body for `POST /api/lint`.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct LintApiResponse {
+    pub diagnostics: Vec<LintDiagnostic>,
+}
+
 pub fn query(request: ApiRequest) -> miette::Result<QueryApiResponse> {
     execute_query(request)
 }
@@ -169,6 +225,62 @@ pub fn format_query(request: FormatApiRequest) -> miette::Result<FormatApiRespon
         .format(&request.query)
         .map_err(|e| miette!("Format error: {}", e))?;
     Ok(FormatApiResponse { formatted })
+}
+
+/// Lists all builtin mq functions with their documentation.
+pub fn list_functions() -> FunctionsApiResponse {
+    let mut functions: Vec<FunctionDoc> = mq_lang::BUILTIN_FUNCTION_DOC
+        .iter()
+        .map(|(name, doc)| FunctionDoc {
+            name: name.to_string(),
+            description: doc.description.to_string(),
+            params: doc.params.iter().map(|p| p.to_string()).collect(),
+        })
+        .collect();
+    functions.sort_by(|a, b| a.name.cmp(&b.name));
+    FunctionsApiResponse { functions }
+}
+
+/// Lists all builtin mq selectors with their documentation.
+pub fn list_selectors() -> SelectorsApiResponse {
+    let mut selectors: Vec<SelectorDoc> = mq_lang::BUILTIN_SELECTOR_DOC
+        .iter()
+        .map(|(name, doc)| SelectorDoc {
+            name: name.to_string(),
+            description: doc.description.to_string(),
+            params: doc.params.iter().map(|p| p.to_string()).collect(),
+        })
+        .collect();
+    selectors.sort_by(|a, b| a.name.cmp(&b.name));
+    SelectorsApiResponse { selectors }
+}
+
+/// Lints the given query and returns any diagnostics found.
+pub fn lint(request: LintApiRequest) -> LintApiResponse {
+    let mut hir = mq_hir::Hir::default();
+    let (source_id, _) = hir.add_code(None, &request.query);
+
+    let config = mq_lint::LintConfig::default();
+    let ctx = mq_lint::LintContext::new(&hir, source_id, &config);
+    let diagnostics = mq_lint::Linter::with_default_rules()
+        .run(&ctx)
+        .into_iter()
+        .map(|d| {
+            let range = d.range;
+            LintDiagnostic {
+                rule_id: d.rule_id().as_str().to_string(),
+                message: d.message(),
+                severity: d.severity.to_string(),
+                help: d.help(),
+                start_line: range.as_ref().map(|r| r.start.line),
+                start_column: range.as_ref().map(|r| r.start.column as u32),
+                end_line: range.as_ref().map(|r| r.end.line),
+                end_column: range.as_ref().map(|r| r.end.column as u32),
+            }
+        })
+        .collect();
+
+    LintApiResponse { diagnostics }
 }
 
 fn type_error_kind(e: &mq_check::TypeError) -> String {
@@ -511,5 +623,37 @@ mod tests {
         };
         let result = format_query(req);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_functions() {
+        let resp = list_functions();
+        assert!(!resp.functions.is_empty());
+        assert!(resp.functions.iter().any(|f| f.name == "halt"));
+    }
+
+    #[test]
+    fn test_list_selectors() {
+        let resp = list_selectors();
+        assert!(!resp.selectors.is_empty());
+        assert!(resp.selectors.iter().any(|s| s.name == ".h"));
+    }
+
+    #[test]
+    fn test_lint_unused_variable() {
+        let req = LintApiRequest {
+            query: "let x = .h1 | .text".to_string(),
+        };
+        let resp = lint(req);
+        assert!(resp.diagnostics.iter().any(|d| d.rule_id == "unused_variable"));
+    }
+
+    #[test]
+    fn test_lint_clean_query_has_no_diagnostics() {
+        let req = LintApiRequest {
+            query: ".h1".to_string(),
+        };
+        let resp = lint(req);
+        assert!(resp.diagnostics.is_empty());
     }
 }

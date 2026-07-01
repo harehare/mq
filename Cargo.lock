@@ -2765,6 +2765,7 @@ dependencies = [
  "mq-formatter",
  "mq-hir",
  "mq-lang",
+ "mq-lint",
  "mq-markdown",
  "opentelemetry",
  "opentelemetry-otlp",

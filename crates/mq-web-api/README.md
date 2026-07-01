@@ -11,6 +11,9 @@ HTTP/REST server that exposes the [mq](https://mqlang.org/) markdown query langu
 | `POST` | `/api/v1/query` | Execute a query (JSON body) |
 | `POST` | `/api/v1/check` | Type-check a query |
 | `POST` | `/api/v1/format` | Format a query |
+| `GET` | `/api/v1/functions` | List builtin mq functions |
+| `GET` | `/api/v1/selectors` | List builtin mq selectors |
+| `POST` | `/api/v1/lint` | Lint a query |
 | `GET` | `/api/v1/openapi.json` | OpenAPI specification |
 | `GET` | `/docs` | Swagger UI |
 
@@ -55,6 +58,22 @@ Legacy paths (`/api/query`, `/api/check`, `/api/format`, `/openapi.json`) redire
 ```
 
 Returns an array of errors (empty means no issues). Always returns HTTP 200.
+
+### `GET /api/v1/functions`
+
+Returns all builtin mq functions with their descriptions and parameters.
+
+### `GET /api/v1/selectors`
+
+Returns all builtin mq selectors with their descriptions and parameters.
+
+### `POST /api/v1/lint`
+
+```json
+{ "query": "let x = .h1 | .text" }
+```
+
+Returns an array of style/correctness diagnostics (empty means no issues). Always returns HTTP 200.
 
 ### `POST /api/v1/format`
 
@@ -171,6 +190,26 @@ curl -X POST http://localhost:8080/api/v1/check \
 curl -X POST http://localhost:8080/api/v1/format \
   -H "Content-Type: application/json" \
   -d '{"query": "if(a):1 elif(b):2 else:3"}'
+```
+
+### List builtin functions
+
+```bash
+curl http://localhost:8080/api/v1/functions
+```
+
+### List builtin selectors
+
+```bash
+curl http://localhost:8080/api/v1/selectors
+```
+
+### Lint a query
+
+```bash
+curl -X POST http://localhost:8080/api/v1/lint \
+  -H "Content-Type: application/json" \
+  -d '{"query": "let x = .h1 | .text"}'
 ```
 
 ## Features

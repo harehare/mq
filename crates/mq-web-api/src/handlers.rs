@@ -11,8 +11,9 @@ use utoipa::{OpenApi, ToSchema};
 
 use crate::{
     api::{
-        ApiRequest, CheckApiRequest, CheckApiResponse, CheckError, FormatApiRequest, FormatApiResponse, InputFormat,
-        OutputFormat, QueryApiResponse,
+        ApiRequest, CheckApiRequest, CheckApiResponse, CheckError, FormatApiRequest, FormatApiResponse, FunctionDoc,
+        FunctionsApiResponse, InputFormat, LintApiRequest, LintApiResponse, LintDiagnostic, OutputFormat,
+        QueryApiResponse, SelectorDoc, SelectorsApiResponse,
     },
     problem::ProblemDetails,
 };
@@ -72,7 +73,17 @@ pub async fn health_check() -> Json<HealthResponse> {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(health_check, get_query_api, post_query_api, post_check_api, post_format_api, openapi_json),
+    paths(
+        health_check,
+        get_query_api,
+        post_query_api,
+        post_check_api,
+        post_format_api,
+        get_functions_api,
+        get_selectors_api,
+        post_lint_api,
+        openapi_json
+    ),
     components(
         schemas(HealthResponse),
         schemas(ApiRequest),
@@ -84,6 +95,13 @@ pub async fn health_check() -> Json<HealthResponse> {
         schemas(CheckError),
         schemas(FormatApiRequest),
         schemas(FormatApiResponse),
+        schemas(FunctionDoc),
+        schemas(FunctionsApiResponse),
+        schemas(SelectorDoc),
+        schemas(SelectorsApiResponse),
+        schemas(LintApiRequest),
+        schemas(LintApiResponse),
+        schemas(LintDiagnostic),
     ),
     tags(
         (name = "mq-api", description = "Markdown Query API")
@@ -258,6 +276,60 @@ pub async fn post_format_api(
                 .with_detail("error", &e.to_string()))
         }
     }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/functions",
+    responses(
+        (status = 200, description = "List of builtin mq functions", body = FunctionsApiResponse),
+    )
+)]
+pub async fn get_functions_api(State(_state): State<AppState>) -> Json<FunctionsApiResponse> {
+    debug!("GET /functions called");
+    Json(crate::api::list_functions())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/selectors",
+    responses(
+        (status = 200, description = "List of builtin mq selectors", body = SelectorsApiResponse),
+    )
+)]
+pub async fn get_selectors_api(State(_state): State<AppState>) -> Json<SelectorsApiResponse> {
+    debug!("GET /selectors called");
+    Json(crate::api::list_selectors())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/lint",
+    responses(
+        (status = 200, description = "Lint completed", body = LintApiResponse),
+    ),
+    request_body = LintApiRequest
+)]
+pub async fn post_lint_api(
+    State(_state): State<AppState>,
+    Json(request): Json<LintApiRequest>,
+) -> Json<LintApiResponse> {
+    debug!("POST /lint called with query: {}", request.query);
+
+    let query_str = request.query.clone();
+    let response = tokio::task::spawn_blocking(move || crate::api::lint(request))
+        .await
+        .unwrap_or_else(|e| {
+            error!("Lint task panicked: {}", e);
+            crate::api::LintApiResponse { diagnostics: vec![] }
+        });
+    info!(
+        "Lint for query '{}': {} diagnostics found",
+        query_str,
+        response.diagnostics.len()
+    );
+
+    Json(response)
 }
 
 static OPENAPI_SPEC: OnceLock<utoipa::openapi::OpenApi> = OnceLock::new();
