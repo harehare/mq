@@ -10,8 +10,4 @@ FROM gcr.io/distroless/cc:nonroot
 
 COPY --from=builder --chown=nonroot:nonroot /usr/src/app/target/release/mq-web-api /usr/local/bin/mq-web-api
 
-ENV HOST=0.0.0.0
-ENV PORT=8080
-
-
 ENTRYPOINT ["/usr/local/bin/mq-web-api"]
