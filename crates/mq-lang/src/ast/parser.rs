@@ -646,6 +646,38 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    /// Consumes the comma or closing `}` after a dict entry. Returns `true` once closed.
+    fn parse_dict_separator(&mut self, opening: &Token) -> Result<bool, SyntaxError> {
+        match self.tokens.peek() {
+            Some(token) if token.kind == TokenKind::Comma => {
+                self.tokens.next(); // Consume Comma
+                if let Some(next_token) = self.tokens.peek()
+                    && next_token.kind == TokenKind::RBrace
+                {
+                    self.tokens.next(); // Consume RBrace
+                    return Ok(true);
+                }
+                Ok(false)
+            }
+            Some(token) if token.kind == TokenKind::RBrace => {
+                self.tokens.next(); // Consume RBrace
+                Ok(true)
+            }
+            Some(token) => Err(SyntaxError::ExpectedClosingBrace(
+                (***token).clone(),
+                Some(Box::new(opening.clone())),
+            )),
+            None => Err(SyntaxError::ExpectedClosingBrace(
+                Token {
+                    range: opening.range,
+                    kind: TokenKind::Eof,
+                    module_id: self.module_id,
+                },
+                Some(Box::new(opening.clone())),
+            )),
+        }
+    }
+
     fn parse_dict(&mut self, lbrace_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let opening = (**lbrace_token).clone();
         let token_id = self.token_arena.alloc(Shared::clone(lbrace_token));
@@ -688,27 +720,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             if key_token.kind == TokenKind::DotDotDot {
                 pairs.push(self.parse_spread_element(key_token)?);
-                match self.tokens.peek() {
-                    Some(token) if token.kind == TokenKind::Comma => {
-                        self.tokens.next(); // Consume Comma
-                        if let Some(next_token) = self.tokens.peek()
-                            && next_token.kind == TokenKind::RBrace
-                        {
-                            self.tokens.next(); // Consume RBrace
-                            break;
-                        }
-                    }
-                    Some(token) if token.kind == TokenKind::RBrace => {
-                        self.tokens.next(); // Consume RBrace
-                        break;
-                    }
-                    Some(token) => {
-                        return Err(SyntaxError::ExpectedClosingBrace(
-                            (***token).clone(),
-                            Some(Box::new(opening.clone())),
-                        ));
-                    }
-                    None => return Err(eof_closing_err(&opening, self.module_id)),
+                if self.parse_dict_separator(&opening)? {
+                    break;
                 }
                 continue;
             }
@@ -749,29 +762,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 )),
             }));
 
-            // Peek for Comma or RBrace
-            match self.tokens.peek() {
-                Some(token) if token.kind == TokenKind::Comma => {
-                    self.tokens.next(); // Consume Comma
-                    // Check for trailing comma followed by RBrace
-                    if let Some(next_token) = self.tokens.peek()
-                        && next_token.kind == TokenKind::RBrace
-                    {
-                        self.tokens.next(); // Consume RBrace
-                        break;
-                    }
-                }
-                Some(token) if token.kind == TokenKind::RBrace => {
-                    self.tokens.next(); // Consume RBrace
-                    break;
-                }
-                Some(token) => {
-                    return Err(SyntaxError::ExpectedClosingBrace(
-                        (***token).clone(),
-                        Some(Box::new(opening.clone())),
-                    ));
-                }
-                None => return Err(eof_closing_err(&opening, self.module_id)),
+            if self.parse_dict_separator(&opening)? {
+                break;
             }
         }
 

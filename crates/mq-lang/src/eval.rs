@@ -45,6 +45,7 @@ use runtime_value::RuntimeValue;
 static TYPE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("type"));
 static DYNAMIC_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("<dynamic>"));
 static SPREAD_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(constants::builtins::SPREAD));
+static ARRAY_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(constants::builtins::ARRAY));
 static DICT_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(constants::builtins::DICT));
 
 /// Control flow signals for internal evaluation.
@@ -1716,8 +1717,8 @@ impl<T: ModuleResolver> Evaluator<T> {
             .map_err(|e| EvalError::from(e.to_runtime_error((*node).clone(), Shared::clone(&self.token_arena))))
     }
 
-    /// Evaluates call args, expanding `...expr` spread markers (see `parse_spread_element`)
-    /// in place into the elements/entries of the array/dict they were written in.
+    /// Evaluates call args, expanding `...expr` spread markers for `array`/`dict` calls.
+    /// Other builtins take the plain evaluation fast path below.
     fn eval_call_args(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -1726,6 +1727,10 @@ impl<T: ModuleResolver> Evaluator<T> {
         args: &ast::Args,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<builtin::Args, EvalError> {
+        if *ident != *ARRAY_IDENT && *ident != *DICT_IDENT {
+            return args.iter().map(|arg| self.eval_expr(runtime_value, arg, env)).collect();
+        }
+
         let mut evaluated: builtin::Args = Vec::with_capacity(args.len());
 
         for arg in args.iter() {
@@ -1741,9 +1746,8 @@ impl<T: ModuleResolver> Evaluator<T> {
         Ok(evaluated)
     }
 
-    /// Splices a spread target's contents into `out`: array elements for `[...a]`,
-    /// `[Symbol(key), value]` pairs for `{...d}`. Spreading `None` contributes nothing;
-    /// any other mismatched type is a runtime error.
+    /// Splices a spread target into `out`: array elements, or `[Symbol(key), value]`
+    /// pairs for a dict. `None` contributes nothing; any other type is a runtime error.
     fn expand_spread(
         &self,
         node: &Shared<ast::Node>,
@@ -1751,34 +1755,23 @@ impl<T: ModuleResolver> Evaluator<T> {
         value: RuntimeValue,
         out: &mut builtin::Args,
     ) -> Result<(), EvalError> {
-        let invalid_types = |value: RuntimeValue| {
-            EvalError::from(
-                builtin::Error::InvalidTypes(ident.to_string(), vec![value])
+        match value {
+            RuntimeValue::None => Ok(()),
+            RuntimeValue::Dict(map) if *ident == *DICT_IDENT => {
+                out.extend(
+                    map.into_iter()
+                        .map(|(k, v)| RuntimeValue::Array(vec![RuntimeValue::Symbol(k), v])),
+                );
+                Ok(())
+            }
+            RuntimeValue::Array(items) if *ident != *DICT_IDENT => {
+                out.extend(items);
+                Ok(())
+            }
+            other => Err(EvalError::from(
+                builtin::Error::InvalidTypes(ident.to_string(), vec![other])
                     .to_runtime_error((**node).clone(), Shared::clone(&self.token_arena)),
-            )
-        };
-
-        if *ident == *DICT_IDENT {
-            match value {
-                RuntimeValue::Dict(map) => {
-                    out.extend(
-                        map.into_iter()
-                            .map(|(k, v)| RuntimeValue::Array(vec![RuntimeValue::Symbol(k), v])),
-                    );
-                    Ok(())
-                }
-                RuntimeValue::None => Ok(()),
-                other => Err(invalid_types(other)),
-            }
-        } else {
-            match value {
-                RuntimeValue::Array(items) => {
-                    out.extend(items);
-                    Ok(())
-                }
-                RuntimeValue::None => Ok(()),
-                other => Err(invalid_types(other)),
-            }
+            )),
         }
     }
 
