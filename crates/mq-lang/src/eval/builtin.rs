@@ -2,6 +2,7 @@ pub(super) mod bytes;
 pub(super) mod convert;
 pub(super) mod date;
 pub(super) mod path;
+mod random;
 mod range;
 mod regex;
 
@@ -525,6 +526,71 @@ fn sha512_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
         [a] => convert::sha512(&a.to_string()),
         _ => unreachable!("sha512 should always receive exactly one argument"),
     }
+}
+
+/// Formats 16 bytes as a hyphenated UUID string (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
+fn format_uuid(bytes: &[u8; 16]) -> String {
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0],
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        bytes[4],
+        bytes[5],
+        bytes[6],
+        bytes[7],
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15]
+    )
+}
+
+/// Generates a random (version 4, RFC 4122) UUID string, backed by the OS CSPRNG
+/// (see [`random`](self::random)).
+fn generate_uuid_v4() -> String {
+    let mut bytes = random::next_bytes_16();
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xxxxxx
+    format_uuid(&bytes)
+}
+
+/// Generates a time-ordered (version 7, RFC 9562) UUID string: a 48-bit big-endian
+/// Unix millisecond timestamp followed by CSPRNG-backed random bits (see
+/// [`random`](self::random)). Sortable by creation time, which makes it a better fit than v4
+/// for database primary keys and log IDs. The timestamp is plaintext, not secret, so v7 leaks
+/// generation time and has less effective entropy than v4 — prefer v4 for unguessable IDs.
+fn generate_uuid_v7() -> String {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    let mut bytes = random::next_bytes_16();
+    bytes[0..6].copy_from_slice(&millis.to_be_bytes()[2..8]); // 48-bit timestamp
+    bytes[6] = (bytes[6] & 0x0f) | 0x70; // version 7
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xxxxxx
+    format_uuid(&bytes)
+}
+
+#[mq_macros::mq_fn(name = "uuid", params = None)]
+fn uuid_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    Ok(RuntimeValue::String(generate_uuid_v4()))
+}
+
+#[mq_macros::mq_fn(name = "uuid_v7", params = None)]
+fn uuid_v7_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    Ok(RuntimeValue::String(generate_uuid_v7()))
+}
+
+#[mq_macros::mq_fn(name = "uuid_v4", params = None)]
+fn uuid_v4_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    Ok(RuntimeValue::String(generate_uuid_v4()))
 }
 
 #[mq_macros::mq_fn(name = "from_hex", params = Fixed(1))]
@@ -3913,6 +3979,9 @@ mq_macros::builtin_dispatch! {
     MD5,
     SHA256,
     SHA512,
+    UUID,
+    UUID_V4,
+    UUID_V7,
     MIN,
     MAX,
     FROM_HTML,
@@ -4899,6 +4968,27 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "URL-decodes the given string.",
             params: &["input"],
+        },
+    );
+    map.insert(
+        SmolStr::new("uuid"),
+        BuiltinFunctionDoc {
+            description: "Generates a random (version 4, RFC 4122) UUID string.",
+            params: &[],
+        },
+    );
+    map.insert(
+        SmolStr::new("uuid_v4"),
+        BuiltinFunctionDoc {
+            description: "Generates a random (version 4, RFC 4122) UUID string. Alias of `uuid`.",
+            params: &[],
+        },
+    );
+    map.insert(
+        SmolStr::new("uuid_v7"),
+        BuiltinFunctionDoc {
+            description: "Generates a time-ordered (version 7, RFC 9562) UUID string: a millisecond Unix timestamp followed by random bits, so values sort by creation time. The timestamp is plaintext, so prefer uuid/uuid_v4 for unguessable IDs.",
+            params: &[],
         },
     );
     map.insert(
@@ -6290,6 +6380,57 @@ mod tests {
         .unwrap();
         let result = eval_builtin(&RuntimeValue::None, &mktime_ident, vec![arr], &env).unwrap();
         assert_eq!(result, RuntimeValue::Number(expected.into()));
+    }
+
+    fn call_uuid_fn(name: &str) -> String {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        match eval_builtin(&RuntimeValue::None, &Ident::new(name), vec![], &env).unwrap() {
+            RuntimeValue::String(s) => s.to_string(),
+            other => panic!("{name} should return a string, got {other:?}"),
+        }
+    }
+
+    fn assert_uuid_shape(uuid: &str, expected_version: char) {
+        let parts: Vec<&str> = uuid.split('-').collect();
+        assert_eq!(parts.len(), 5, "uuid {uuid} should have 5 hyphen-separated groups");
+        assert_eq!(
+            [
+                parts[0].len(),
+                parts[1].len(),
+                parts[2].len(),
+                parts[3].len(),
+                parts[4].len()
+            ],
+            [8, 4, 4, 4, 12]
+        );
+        assert!(uuid.chars().all(|c| c == '-' || c.is_ascii_hexdigit()));
+        assert_eq!(parts[2].chars().next().unwrap(), expected_version, "version nibble");
+        assert!(
+            matches!(parts[3].chars().next().unwrap(), '8' | '9' | 'a' | 'b'),
+            "variant nibble should be 10xxxxxx, got {}",
+            parts[3]
+        );
+    }
+
+    #[test]
+    fn test_uuid_is_version_4() {
+        assert_uuid_shape(&call_uuid_fn("uuid"), '4');
+    }
+
+    #[test]
+    fn test_uuid_v4_is_version_4() {
+        assert_uuid_shape(&call_uuid_fn("uuid_v4"), '4');
+    }
+
+    #[test]
+    fn test_uuid_v7_is_version_7() {
+        assert_uuid_shape(&call_uuid_fn("uuid_v7"), '7');
+    }
+
+    #[test]
+    fn test_uuid_calls_are_unique() {
+        let values: std::collections::HashSet<String> = (0..200).map(|_| call_uuid_fn("uuid")).collect();
+        assert_eq!(values.len(), 200, "uuid() should not repeat across calls");
     }
 
     #[rstest]

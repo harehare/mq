@@ -418,6 +418,11 @@ fn register_string(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_unary(ctx, "sha256", Type::Var(a), Type::String);
     register_unary(ctx, "sha256", Type::None, Type::None);
+
+    // uuid/uuid_v4/uuid_v7: () -> string
+    register_nullary(ctx, "uuid", Type::String);
+    register_nullary(ctx, "uuid_v4", Type::String);
+    register_nullary(ctx, "uuid_v7", Type::String);
 }
 
 /// Array functions: flatten, reverse, sort, uniq, compact, len, slice, insert, range, repeat
@@ -1583,6 +1588,9 @@ mod tests {
     #[case::base64d("base64d(\"aGVsbG8=\")", true)]
     #[case::url_encode("url_encode(\"hello world\")", true)]
     #[case::url_decode("url_decode(\"hello%20world\")", true)]
+    #[case::uuid("uuid()", true)]
+    #[case::uuid_v4("uuid_v4()", true)]
+    #[case::uuid_v7("uuid_v7()", true)]
     fn test_string_encoding_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
