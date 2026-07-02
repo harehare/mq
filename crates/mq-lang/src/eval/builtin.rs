@@ -2,7 +2,6 @@ pub(super) mod bytes;
 pub(super) mod convert;
 pub(super) mod date;
 pub(super) mod path;
-mod random;
 mod range;
 mod regex;
 
@@ -528,69 +527,19 @@ fn sha512_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     }
 }
 
-/// Formats 16 bytes as a hyphenated UUID string (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
-fn format_uuid(bytes: &[u8; 16]) -> String {
-    format!(
-        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[0],
-        bytes[1],
-        bytes[2],
-        bytes[3],
-        bytes[4],
-        bytes[5],
-        bytes[6],
-        bytes[7],
-        bytes[8],
-        bytes[9],
-        bytes[10],
-        bytes[11],
-        bytes[12],
-        bytes[13],
-        bytes[14],
-        bytes[15]
-    )
-}
-
-/// Generates a random (version 4, RFC 4122) UUID string, backed by the OS CSPRNG
-/// (see [`random`](self::random)).
-fn generate_uuid_v4() -> String {
-    let mut bytes = random::next_bytes_16();
-    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
-    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xxxxxx
-    format_uuid(&bytes)
-}
-
-/// Generates a time-ordered (version 7, RFC 9562) UUID string: a 48-bit big-endian
-/// Unix millisecond timestamp followed by CSPRNG-backed random bits (see
-/// [`random`](self::random)). Sortable by creation time, which makes it a better fit than v4
-/// for database primary keys and log IDs. The timestamp is plaintext, not secret, so v7 leaks
-/// generation time and has less effective entropy than v4 — prefer v4 for unguessable IDs.
-fn generate_uuid_v7() -> String {
-    let millis = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-
-    let mut bytes = random::next_bytes_16();
-    bytes[0..6].copy_from_slice(&millis.to_be_bytes()[2..8]); // 48-bit timestamp
-    bytes[6] = (bytes[6] & 0x0f) | 0x70; // version 7
-    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xxxxxx
-    format_uuid(&bytes)
-}
-
 #[mq_macros::mq_fn(name = "uuid", params = None)]
 fn uuid_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(generate_uuid_v4()))
+    Ok(RuntimeValue::String(uuid::Uuid::new_v4().to_string()))
 }
 
 #[mq_macros::mq_fn(name = "uuid_v7", params = None)]
 fn uuid_v7_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(generate_uuid_v7()))
+    Ok(RuntimeValue::String(uuid::Uuid::now_v7().to_string()))
 }
 
 #[mq_macros::mq_fn(name = "uuid_v4", params = None)]
 fn uuid_v4_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(generate_uuid_v4()))
+    Ok(RuntimeValue::String(uuid::Uuid::new_v4().to_string()))
 }
 
 #[mq_macros::mq_fn(name = "from_hex", params = Fixed(1))]
