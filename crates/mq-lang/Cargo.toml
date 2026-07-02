@@ -27,6 +27,7 @@ mq-markdown = {workspace = true, features = ["html-to-markdown", "obsidian"]}
 nom = {workspace = true}
 nom_locate = {workspace = true}
 percent-encoding = {workspace = true}
+rand = {workspace = true}
 regex-lite = {workspace = true}
 ropey = {workspace = true, optional = true}
 rustc-hash = {workspace = true}
@@ -48,6 +49,7 @@ uuid = {workspace = true, features = ["v4", "v7"]}
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["console"] }
 uuid = {workspace = true, features = ["js"]}
+getrandom = { version = "0.3", features = ["wasm_js"] }
 
 [features]
 ast-json = ["smallvec/serde", "smol_str/serde"]
