@@ -119,7 +119,7 @@ $ docker run --rm ghcr.io/harehare/mq:0.6.3
 
 ### Visual Studio Code Extension
 
-[![Visual Studio Marketplace Version](https://vsmarketplacebadges.dev/version/harehare.vscode-mq.svg)](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq)
+[![Visual Studio Marketplace Version](https://vsmarketplacebadges.dev/version/harehare.vscode-mq.svg?style=flat-square&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq)
 [![Open VSX Version](https://img.shields.io/open-vsx/v/harehare/vscode-mq?style=flat-square&logo=eclipseide)](https://open-vsx.org/extension/harehare/vscode-mq)
 
 You can install the VSCode extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq).
