@@ -1,0 +1,64 @@
+name: ✨ Feature Request
+description: Propose a new feature or enhancement for mq
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an idea! Please describe it in as much detail as you can.
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: What problem are you trying to solve? Why is this feature needed?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: |
+        Describe the feature. Include example `mq` syntax/queries and expected input/output if applicable.
+      placeholder: |
+        Query:
+        ```
+        .h1 | to_upper()
+        ```
+
+        Input:
+        ```markdown
+        # hello
+        ```
+
+        Expected output:
+        ```markdown
+        # HELLO
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: How do you work around this today? Are there other ways to solve the same problem, and why is this approach preferred?
+    validations:
+      required: false
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Potential Implementation
+      description: If you have thoughts on how this could be implemented (e.g. which crate it belongs in), share them here. Not required.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues to make sure this feature hasn't already been requested.
+          required: true

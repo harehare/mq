@@ -363,9 +363,13 @@ See the [External Subcommands documentation](https://mqlang.org/book/start/exter
 
 ## Support
 
-- 🐛 [Report bugs](https://github.com/harehare/mq/issues)
-- 💡 [Request features](https://github.com/harehare/mq/issues)
+- 🐛 [Report bugs](https://github.com/harehare/mq/issues/new?template=bug_report.yml)
+- 💡 [Request features](https://github.com/harehare/mq/issues/new?template=feature_request.yml)
 - ⭐ [Star the project](https://github.com/harehare/mq) if you find it useful!
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding conventions, and how to submit changes. Please also review our [Code of Conduct](.github/CODE_OF_CONDUCT.md).
 
 ## License
 

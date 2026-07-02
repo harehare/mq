@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing to mq! This document provides guidelines for contributing to the project.
 
+By participating in this project, you agree to abide by our [Code of Conduct](.github/CODE_OF_CONDUCT.md).
+
 ## Getting Started
 
 Before contributing, please:
@@ -106,7 +108,7 @@ just docs
 
 ## Bug Reports
 
-When reporting bugs, please provide:
+Please use the [bug report template](https://github.com/harehare/mq/issues/new?template=bug_report.yml) when opening an issue. When reporting bugs, please provide:
 
 1. A detailed description of the issue
 2. Steps to reproduce the problem
@@ -116,7 +118,7 @@ When reporting bugs, please provide:
 
 ## Feature Requests
 
-When proposing new features, please include:
+Please use the [feature request template](https://github.com/harehare/mq/issues/new?template=feature_request.yml) when opening an issue. When proposing new features, please include:
 
 1. A clear description of the use case
 2. Examples of the proposed syntax and behavior

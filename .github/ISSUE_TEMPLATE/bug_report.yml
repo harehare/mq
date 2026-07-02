@@ -1,0 +1,65 @@
+name: 🐛 Bug Report
+description: Report a problem with mq
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the details below so we can reproduce and fix it.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: |
+        Steps to reproduce the behavior, including the Markdown input and the `mq` query that triggers the issue, and what you expected to happen vs. what actually happened.
+      placeholder: |
+        Input Markdown:
+        ```markdown
+        # Hello
+        ```
+
+        Command:
+        ```bash
+        mq '.h1' input.md
+        ```
+
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Output of `mq --version`, and your OS
+      placeholder: "e.g. mq 0.x.x, macOS 15.5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Anything else that might help, e.g. how you installed mq, related issues, screenshots.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues to make sure this bug hasn't already been reported.
+          required: true
+        - label: I am using the latest version of mq.
+          required: false

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentation
+    url: https://mqlang.org/book/
+    about: Check the book for usage details before filing an issue.
+  - name: 🎮 Playground
+    url: https://mqlang.org/playground
+    about: Try out mq queries in the browser to confirm the behavior you're seeing.
