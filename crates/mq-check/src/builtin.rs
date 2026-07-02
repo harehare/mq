@@ -26,6 +26,7 @@ pub fn register_all(ctx: &mut InferenceContext) {
     register_variable(ctx);
     register_debug(ctx);
     register_file_io(ctx);
+    register_net(ctx);
     register_bytes(ctx);
 }
 
@@ -1263,6 +1264,16 @@ fn register_file_io(ctx: &mut InferenceContext) {
         Type::String,
     );
     register_binary(ctx, "path_join", Type::String, Type::String, Type::String);
+
+    // write_file: (string, string | bytes) -> none
+    register_binary(ctx, "write_file", Type::String, Type::String, Type::None);
+    register_binary(ctx, "write_file", Type::String, Type::Bytes, Type::None);
+}
+
+/// Networking functions: http_get, http_post
+fn register_net(ctx: &mut InferenceContext) {
+    register_unary(ctx, "http_get", Type::String, Type::String);
+    register_binary(ctx, "http_post", Type::String, Type::String, Type::String);
 }
 
 fn register_bytes(ctx: &mut InferenceContext) {
@@ -1804,11 +1815,17 @@ mod tests {
     #[case::extname("extname(\"a/b.md\")", true)]
     #[case::stem("stem(\"a/b.md\")", true)]
     #[case::path_join("path_join(\"a\", \"b.md\")", true)]
+    #[case::write_file_string("write_file(\"a.md\", \"content\")", true)]
+    #[case::write_file_bytes("write_file(\"a.md\", to_bytes(\"content\"))", true)]
+    #[case::http_get("http_get(\"https://example.com\")", true)]
+    #[case::http_post("http_post(\"https://example.com\", \"{}\")", true)]
     #[case::read_file_number("read_file(42)", false)] // Should fail: wrong type
     #[case::file_exists_number("file_exists(42)", false)] // Should fail: wrong type
     #[case::collection_number("collection(42)", false)] // Should fail: wrong type
     #[case::basename_number("basename(42)", false)] // Should fail: wrong type
     #[case::path_join_number("path_join(42, \"b\")", false)] // Should fail: wrong type
+    #[case::write_file_number("write_file(42, \"content\")", false)] // Should fail: wrong type
+    #[case::http_get_number("http_get(42)", false)] // Should fail: wrong type
     fn test_file_io_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(

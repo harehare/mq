@@ -1,6 +1,9 @@
 pub(super) mod bytes;
+pub(crate) mod capability;
 pub(super) mod convert;
 pub(super) mod date;
+#[cfg(feature = "http-import-ureq")]
+mod http;
 pub(super) mod path;
 mod random;
 mod range;
@@ -3844,6 +3847,60 @@ fn read_file_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Sha
     }
 }
 
+/// Writes `content` (string or bytes) to `path`, creating or truncating the file.
+/// Requires the `--allow-write` CLI flag (see [`capability`]).
+#[cfg(feature = "file-io")]
+#[mq_macros::mq_fn(name = "write_file", params = Fixed(2))]
+fn write_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    if !capability::is_write_allowed() {
+        return Err(Error::Runtime(
+            "write_file: filesystem writes are disabled; re-run mq with --allow-write to enable write_file".into(),
+        ));
+    }
+    match args.as_mut_slice() {
+        [RuntimeValue::String(path), RuntimeValue::String(content)] => match std::fs::write(&path, content.as_str()) {
+            Ok(()) => Ok(RuntimeValue::NONE),
+            Err(e) => Err(Error::Runtime(format!("Failed to write file {}: {}", path, e))),
+        },
+        [RuntimeValue::String(path), RuntimeValue::Bytes(content)] => match std::fs::write(&path, content) {
+            Ok(()) => Ok(RuntimeValue::NONE),
+            Err(e) => Err(Error::Runtime(format!("Failed to write file {}: {}", path, e))),
+        },
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("write_file should always receive exactly two arguments"),
+    }
+}
+
+/// Performs an HTTPS GET request and returns the response body as a string.
+/// Requires the `--allow-net` CLI flag (see [`capability`]).
+#[cfg(feature = "http-import-ureq")]
+#[mq_macros::mq_fn(name = "http_get", params = Fixed(1))]
+fn http_get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(url)] => http::get(url),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("http_get should always receive exactly one argument"),
+    }
+}
+
+/// Performs an HTTPS POST request with the given body and returns the response body as a string.
+/// Requires the `--allow-net` CLI flag (see [`capability`]).
+#[cfg(feature = "http-import-ureq")]
+#[mq_macros::mq_fn(name = "http_post", params = Fixed(2))]
+fn http_post_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(url), RuntimeValue::String(body)] => http::post(url, body),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("http_post should always receive exactly two arguments"),
+    }
+}
+
 #[cfg(feature = "file-io")]
 fn collection_record(path: String, raw: &str) -> Result<RuntimeValue, Error> {
     let nodes = mq_markdown::Markdown::from_markdown_str(raw)
@@ -4154,6 +4211,12 @@ mq_macros::builtin_dispatch! {
     READ_FILE_BYTES,
     #[cfg(feature = "file-io")]
     COLLECTION,
+    #[cfg(feature = "file-io")]
+    WRITE_FILE,
+    #[cfg(feature = "http-import-ureq")]
+    HTTP_GET,
+    #[cfg(feature = "http-import-ureq")]
+    HTTP_POST,
 }
 
 #[derive(Clone, Debug)]
@@ -5696,6 +5759,30 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Recursively reads every Markdown file in the given directory (including subdirectories and symlinked files/directories) and returns an array of `{path, title, frontmatter, content}` dicts, sorted by path, so they can be filtered, sorted, or aggregated as a single dataset. `content` holds the file's Markdown nodes with frontmatter stripped. Symlink cycles are detected and only visited once.",
             params: &["dir"],
+        },
+    );
+    #[cfg(feature = "file-io")]
+    map.insert(
+        SmolStr::new("write_file"),
+        BuiltinFunctionDoc {
+            description: "Writes content (string or bytes) to the file at the given path, creating or truncating it. Requires the --allow-write CLI flag; otherwise returns a runtime error.",
+            params: &["path", "content"],
+        },
+    );
+    #[cfg(feature = "http-import-ureq")]
+    map.insert(
+        SmolStr::new("http_get"),
+        BuiltinFunctionDoc {
+            description: "Performs an HTTPS GET request and returns the response body as a string. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
+            params: &["url"],
+        },
+    );
+    #[cfg(feature = "http-import-ureq")]
+    map.insert(
+        SmolStr::new("http_post"),
+        BuiltinFunctionDoc {
+            description: "Performs an HTTPS POST request with the given body and returns the response body as a string. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
+            params: &["url", "body"],
         },
     );
 
@@ -9384,6 +9471,58 @@ mod tests {
             vec![RuntimeValue::String("/nonexistent/path/no_such_file.png".into())],
         );
         assert!(result.is_err());
+    }
+
+    // WRITE_ALLOWED is a single process-wide flag, so every case that toggles it must run in
+    // one #[test] function — cargo test runs tests in parallel by default, and two tests
+    // flipping the same global independently would race and flake.
+    #[cfg(feature = "file-io")]
+    #[test]
+    fn test_write_file_capability_gate_and_success() {
+        capability::set_allow_write(false);
+        let tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        let path = tmp.path().to_string_lossy().to_string();
+        assert!(
+            call(
+                "write_file",
+                vec![RuntimeValue::String(path.clone()), RuntimeValue::String("hello".into())]
+            )
+            .is_err(),
+            "write_file should be blocked when --allow-write is not set"
+        );
+
+        capability::set_allow_write(true);
+        assert_eq!(
+            call(
+                "write_file",
+                vec![RuntimeValue::String(path.clone()), RuntimeValue::String("hello".into())]
+            ),
+            Ok(RuntimeValue::NONE)
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello");
+
+        assert_eq!(
+            call(
+                "write_file",
+                vec![RuntimeValue::String(path.clone()), RuntimeValue::Bytes(vec![1, 2, 3])]
+            ),
+            Ok(RuntimeValue::NONE)
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), vec![1, 2, 3]);
+
+        let result = call(
+            "write_file",
+            vec![
+                RuntimeValue::String("/nonexistent/dir/no_such_file.md".into()),
+                RuntimeValue::String("hello".into()),
+            ],
+        );
+        assert!(
+            result.is_err(),
+            "write_file should error when the parent directory doesn't exist"
+        );
+
+        capability::set_allow_write(false);
     }
 
     #[cfg(feature = "file-io")]

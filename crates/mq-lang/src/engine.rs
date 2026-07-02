@@ -118,6 +118,22 @@ impl<T: ModuleResolver> Engine<T> {
         self.evaluator.options.max_call_stack_depth = max_call_stack_depth;
     }
 
+    /// Enables or disables the `http_get`/`http_post` builtins for the current process.
+    ///
+    /// Disabled by default. This is a process-wide setting (see
+    /// [`capability`](crate::eval::builtin::capability)), not per-`Engine`.
+    pub fn set_allow_net(&self, allow: bool) {
+        crate::eval::builtin::capability::set_allow_net(allow);
+    }
+
+    /// Enables or disables the `write_file` builtin for the current process.
+    ///
+    /// Disabled by default. This is a process-wide setting (see
+    /// [`capability`](crate::eval::builtin::capability)), not per-`Engine`.
+    pub fn set_allow_write(&self, allow: bool) {
+        crate::eval::builtin::capability::set_allow_write(allow);
+    }
+
     /// Set search paths for module loading.
     ///
     /// These paths will be searched when loading external modules

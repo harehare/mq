@@ -40,6 +40,10 @@ Options:
           Force re-fetch of mutable-ref (HEAD/branch) HTTP-imported modules, ignoring the local cache. Versioned (tagged) modules are never re-fetched regardless of this flag
       --clear-cache
           Remove all HTTP module cache including versioned (tagged) modules and lock files. Use this to fully reset the cache when something goes wrong
+      --allow-net
+          Allow the `http_get`/`http_post` functions to make outbound HTTPS requests. Disabled by default; requests are HTTPS-only and blocked from reaching loopback/private/link-local addresses regardless of this flag
+      --allow-write
+          Allow the `write_file` function to write to the filesystem. Disabled by default
   -F, --output-format <OUTPUT_FORMAT>
           Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, raw, none]
   -U, --update

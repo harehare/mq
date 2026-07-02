@@ -238,6 +238,26 @@ mq --allowed-domain example.com 'self' file.md
 mq --allowed-domain example.com --allowed-domain raw.githubusercontent.com 'self' file.md
 ```
 
+## Network and File-Write Capabilities
+
+`http_get(url)`, `http_post(url, body)`, and `write_file(path, content)` are disabled by
+default and must be explicitly enabled with `--allow-net` / `--allow-write`. Calling them
+without the corresponding flag raises a runtime error explaining how to opt in.
+
+> **Security note:** `http_get`/`http_post` only accept `https://` URLs and are routed through
+> the same SSRF-hardened client used for HTTP imports — no automatic redirects, and DNS results
+> are filtered to publicly routable addresses, so a loopback/private/link-local address can't be
+> reached even with `--allow-net` set.
+
+```sh
+# Blocked by default
+mq 'http_get("https://example.com")'
+
+# Enabled explicitly
+mq --allow-net 'http_get("https://example.com")'
+mq --allow-write 'write_file("out.md", "# Hello")'
+```
+
 ## Comparison
 
 | Feature  | `module`                          | `import`                          | `include`               |
