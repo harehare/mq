@@ -285,7 +285,7 @@ Run the following command.
 Use `bodies()` to get section content without the header:
 
 ```bash
-$ mq -A 'section::section("Installation") | section::bodies() | first()' README.md
+$ mq -A 'section::section("Installation") | section::bodies() | first' README.md
 ```
 
 **Output**: Returns only the body nodes of the "Installation" section, without the `##` header.
@@ -421,7 +421,7 @@ Table objects are automatically expanded to Markdown nodes in CLI output, so `to
 > import "table"
 > | nodes
 > | table::tables()
-> | table::to_markdown()
+> | table::to_markdown
 > ```
 
 **Input example**:
@@ -445,7 +445,7 @@ Table objects are automatically expanded to Markdown nodes in CLI output, so `to
 ### Add a Row to a Table
 
 ```bash
-$ mq -A 'import "table" | table::tables() | first() | table::add_row(["Charlie", "35"])' README.md
+$ mq -A 'import "table" | table::tables() | first | table::add_row(["Charlie", "35"])' README.md
 ```
 
 **Input example**:
@@ -468,7 +468,7 @@ $ mq -A 'import "table" | table::tables() | first() | table::add_row(["Charlie",
 ### Convert Table to CSV
 
 ```bash
-$ mq -A 'import "table" | table::tables() | first() | table::to_csv()' README.md
+$ mq -A 'import "table" | table::tables() | first | table::to_csv' README.md
 ```
 
 **Output**: Returns the table as a CSV string.

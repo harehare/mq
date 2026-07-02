@@ -54,7 +54,7 @@ Legacy paths (`/api/query`, `/api/check`, `/api/format`, `/openapi.json`) redire
 ### `POST /api/v1/check`
 
 ```json
-{ "query": "upcase() | downcase()" }
+{ "query": "upcase | downcase" }
 ```
 
 Returns an array of errors (empty means no issues). Always returns HTTP 200.
@@ -181,7 +181,7 @@ curl -X POST http://localhost:8080/api/v1/query \
 ```bash
 curl -X POST http://localhost:8080/api/v1/check \
   -H "Content-Type: application/json" \
-  -d '{"query": "upcase() | downcase()"}'
+  -d '{"query": "upcase | downcase"}'
 ```
 
 ### Format a query

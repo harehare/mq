@@ -125,11 +125,11 @@ if (true): 1 else: 2;  # warn: condition is always `true`
 ```mq
 # Before (warn): x is never reassigned
 var x = .h1
-| x | to_text()
+| x | to_text
 
 # After
 let x = .h1
-| x | to_text()
+| x | to_text
 ```
 
 **Example — `boolean_comparison`**

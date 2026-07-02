@@ -133,7 +133,7 @@ const filtered = await run('.[] | select(test(to_text(), "^A"))', markdown);
 // Output: - Apple
 
 // Transform list items
-const uppercase = await run(".[] | upcase()", markdown);
+const uppercase = await run(".[] | upcase", markdown);
 // Output: - APPLE\n- BANANA\n- CHERRY
 ```
 
@@ -209,7 +209,7 @@ await writable.close();
 const textUtilsHandle = await root.getFileHandle("text_utils.mq", { create: true });
 const textWritable = await textUtilsHandle.createWritable();
 await textWritable.write(`
-  def shout(text): text | upcase() | s"\${self}!!!";
+  def shout(text): text | upcase | s"\${self}!!!";
 `);
 await textWritable.close();
 ```
@@ -226,7 +226,7 @@ const markdown = "5";
 
 const result1 = await run(`
   import "utils"
-  | to_number() | utils::double()
+  | to_number | utils::double()
 `, markdown);
 // Output: 10
 

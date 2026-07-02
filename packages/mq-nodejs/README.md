@@ -159,7 +159,7 @@ const filtered = await run('.[] | select(test(to_text(), "^A"))', markdown);
 // Output: - Apple
 
 // Transform list items
-const uppercase = await run(".[] | upcase()", markdown);
+const uppercase = await run(".[] | upcase", markdown);
 // Output: - APPLE\n- BANANA\n- CHERRY
 ```
 

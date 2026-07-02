@@ -43,7 +43,7 @@ int main() {
         "- Cross-platform\n\n";
 
     // Execute query
-    mq_result_t result = mq_eval(ctx, ".h | to_text()", markdown_content, "markdown");
+    mq_result_t result = mq_eval(ctx, ".h | to_text", markdown_content, "markdown");
 
     // Check for errors
     if (result.error_msg != NULL) {
@@ -74,7 +74,7 @@ void extract_code_blocks(const char *markdown) {
     mq_context_t *ctx = mq_create();
     if (!ctx) return;
 
-    mq_result_t result = mq_eval(ctx, ".code | to_text()", markdown, "markdown");
+    mq_result_t result = mq_eval(ctx, ".code | to_text", markdown, "markdown");
 
     if (result.error_msg == NULL) {
         for (size_t i = 0; i < result.values_len; i++) {
@@ -120,7 +120,7 @@ void filter_list_items(const char *markdown, const char *keyword) {
     if (!ctx) return;
 
     char query[256];
-    snprintf(query, sizeof(query), ".[] | select(contains(\"%s\")) | to_text()", keyword);
+    snprintf(query, sizeof(query), ".[] | select(contains(\"%s\")) | to_text", keyword);
 
     mq_result_t result = mq_eval(ctx, query, markdown, "markdown");
 

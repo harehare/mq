@@ -61,7 +61,7 @@ shift_left("hello", 2)
 # => "llo"
 
 # Promote a heading (decrease depth)
-let md = do to_markdown("## Heading 2") | first(); |
+let md = do to_markdown("## Heading 2") | first; |
 md << 1
 # => # Heading 2
 ```
@@ -95,7 +95,7 @@ shift_right("hello", 2)
 # => "hel"
 
 # Demote a heading (increase depth)
-let md = do to_markdown("# Heading 1") | first(); |
+let md = do to_markdown("# Heading 1") | first; |
 md >> 1
 # => ## Heading 1
 ```
@@ -164,12 +164,12 @@ The `type` operand can be a symbol or a string that specifies the target format.
 # => [mq](https://harehare.github.io/mq)
 
 # Convert Markdown to HTML
-let md = do to_markdown("# Hello") | first(); |
+let md = do to_markdown("# Hello") | first; |
 md @ :html
 # => "<h1>Hello</h1>"
 
 # Extract plain text from a Markdown node
-let md = do to_markdown("## Hello World") | first(); |
+let md = do to_markdown("## Hello World") | first; |
 md @ :text
 # => "Hello World"
 

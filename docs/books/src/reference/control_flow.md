@@ -15,12 +15,12 @@ The if expression evaluates a condition and executes code based on the result:
 
 ```mq
  if (x == 1):
-   do "one" | upcase();
+   do "one" | upcase;
  elif (x == 2):
-   do "TWO" | downcase();
+   do "TWO" | downcase;
  else:
    do
-    "other" | upcase()
+    "other" | upcase
    end
 ```
 

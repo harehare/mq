@@ -82,7 +82,7 @@ Selector calls can be combined with pipes and functions just like plain selector
 .h(2) | .value
 
 # Count Rust code blocks
-.code("rust") | len()
+.code("rust") | len
 
 # Replace language of all TypeScript blocks
 .code("typescript").lang |= "ts"

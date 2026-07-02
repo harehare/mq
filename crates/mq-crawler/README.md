@@ -95,7 +95,7 @@ mq-crawl -m '.h | select(contains("News"))' https://example.com
 mq-crawl -m '.code' https://developer.example.com
 
 # Extract and transform links
-mq-crawl -m '.link | to_text()' https://example.com
+mq-crawl -m '.link | to_text' https://example.com
 ```
 
 ### Parallel Crawling

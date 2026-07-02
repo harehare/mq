@@ -27,5 +27,5 @@ nodes | map(upcase)
 ### Counting nodes by type
 
 ```mq
-nodes | len()
+nodes | len
 ```
