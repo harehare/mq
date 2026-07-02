@@ -1,0 +1,22 @@
+target
+work
+book
+dist
+debug
+.direnv
+result
+pkg
+.serena
+mutants.out
+*.rs.bk
+*.pdb
+*.proptest-regressions
+*.mq-db
+
+# not needed to build mq-web-api's Docker image
+docs
+packages
+assets
+scripts
+fuzz/corpus
+fuzz/artifacts

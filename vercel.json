@@ -1,0 +1,12 @@
+{
+  "services": {
+    "mq-web-api": {
+      "root": ".",
+      "runtime": "container",
+      "entrypoint": "Dockerfile.vercel"
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": { "service": "mq-web-api" } }
+  ]
+}

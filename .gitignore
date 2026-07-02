@@ -102,3 +102,5 @@ mutants.out
 
 *.mq-db
 
+.vercel
+.env*
