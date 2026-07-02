@@ -278,32 +278,21 @@
                   <div class="w-3 h-3 rounded-full bg-primary/40"></div>
                 </div>
               </div>
-              <div
-                class="p-6 font-mono text-sm leading-relaxed overflow-x-auto"
-              >
-                <div class="flex gap-4 mb-4">
-                  <span class="text-primary opacity-50">$</span>
-                  <span class="text-on-surface"
-                    >cat README.md | mq
-                    <span class="text-primary">'.list | to_text()'</span></span
-                  >
-                </div>
-                <div class="text-on-surface-variant opacity-80">
-                  <span class="text-slate-500"># Output:</span><br />
-                  <span class="text-[#85d4ff]">Slice and Filter</span><br />
-                  <span class="text-[#85d4ff]">Map and Transform</span><br />
-                  <span class="text-[#85d4ff]">Command-line Interface</span>
-                </div>
-              </div>
+              <img
+                src="demo.gif"
+                alt="mq demo"
+                class="w-full h-auto block"
+                loading="lazy"
+              />
             </div>
           </div>
         </div>
       </section>
 
       <!-- About Section -->
-      <section id="about" class="py-24">
+      <section id="about" class="py-12">
         <div class="max-w-7xl mx-auto px-8">
-          <div class="mb-16 text-center">
+          <div class="text-center">
             <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">
               What is mq?
             </h2>
@@ -312,18 +301,59 @@
             >
               mq is a command-line tool that processes Markdown using a syntax
               similar to jq. It's written in Rust, allowing you to easily slice,
-              filter, map, and transform structured data.
+              filter, map, and transform structured data — no regular
+              expressions or custom scripts required.
             </p>
           </div>
-          <div
-            class="max-w-4xl mx-auto rounded-xl overflow-hidden border border-outline-variant/30 shadow-2xl"
-          >
-            <img
-              src="demo.gif"
-              alt="mq demo"
-              class="w-full h-auto block"
-              loading="lazy"
-            />
+          <div class="grid sm:grid-cols-3 gap-8 mt-14 max-w-4xl mx-auto">
+            <div class="flex flex-col items-center text-center px-4">
+              <div
+                class="w-12 h-12 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-4"
+              >
+                <span class="material-symbols-outlined text-primary"
+                  >data_object</span
+                >
+              </div>
+              <h4 class="font-bold mb-1 font-headline text-sm">
+                Structural, not textual
+              </h4>
+              <p class="text-sm text-on-surface-variant">
+                Queries walk the Markdown AST — matching headings, lists,
+                tables, and code blocks, not raw text.
+              </p>
+            </div>
+            <div class="flex flex-col items-center text-center px-4">
+              <div
+                class="w-12 h-12 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-4"
+              >
+                <span class="material-symbols-outlined text-primary"
+                  >bolt</span
+                >
+              </div>
+              <h4 class="font-bold mb-1 font-headline text-sm">
+                Built in Rust
+              </h4>
+              <p class="text-sm text-on-surface-variant">
+                A single native binary with no runtime dependencies — built
+                for speed on files large and small.
+              </p>
+            </div>
+            <div class="flex flex-col items-center text-center px-4">
+              <div
+                class="w-12 h-12 rounded-full bg-surface-container-highest/60 flex items-center justify-center mb-4"
+              >
+                <span class="material-symbols-outlined text-primary"
+                  >terminal</span
+                >
+              </div>
+              <h4 class="font-bold mb-1 font-headline text-sm">
+                Familiar jq-like syntax
+              </h4>
+              <p class="text-sm text-on-surface-variant">
+                If you already know jq, you already know how to pipe, filter,
+                and transform with mq — the core ideas carry straight over.
+              </p>
+            </div>
           </div>
         </div>
       </section>
