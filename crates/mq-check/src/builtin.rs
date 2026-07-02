@@ -282,6 +282,10 @@ fn register_math(ctx: &mut InferenceContext) {
     register_nullary(ctx, "nan", Type::Number);
     register_nullary(ctx, "infinite", Type::Number);
     register_unary(ctx, "is_nan", Type::Number, Type::Bool);
+
+    // Randomness
+    register_nullary(ctx, "rand", Type::Number);
+    register_binary(ctx, "rand_int", Type::Number, Type::Number, Type::Number);
 }
 
 /// String functions: downcase, upcase, trim, starts_with, ends_with, etc.
@@ -428,10 +432,20 @@ fn register_string(ctx: &mut InferenceContext) {
 /// Array functions: flatten, reverse, sort, uniq, compact, len, slice, insert, range, repeat
 fn register_array(ctx: &mut InferenceContext) {
     // Polymorphic array -> array functions
-    for name in ["reverse", "sort", "uniq", "compact"] {
+    for name in ["reverse", "sort", "uniq", "compact", "shuffle"] {
         let a = ctx.fresh_var();
         register_unary(ctx, name, Type::array(Type::Var(a)), Type::array(Type::Var(a)));
     }
+
+    // sample: ([a], number) -> [a]
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "sample",
+        Type::array(Type::Var(a)),
+        Type::Number,
+        Type::array(Type::Var(a)),
+    );
 
     // flatten: [[a]] -> [a]
     let a = ctx.fresh_var();
@@ -1472,6 +1486,8 @@ mod tests {
     #[case::nan("nan()", true)]
     #[case::infinite("infinite()", true)]
     #[case::is_nan("is_nan(1.0)", true)]
+    #[case::rand("rand()", true)]
+    #[case::rand_int("rand_int(1, 10)", true)]
     #[case::ln("ln(2.0)", true)]
     #[case::log10("log10(100)", true)]
     #[case::sqrt("sqrt(4)", true)]
@@ -1610,6 +1626,8 @@ mod tests {
     #[case::sort("sort([3, 1, 2])", true)]
     #[case::uniq("uniq([1, 2, 2, 3])", true)]
     #[case::compact("compact([1, none, 2])", true)]
+    #[case::shuffle("shuffle([1, 2, 3])", true)]
+    #[case::sample("sample([1, 2, 3], 2)", true)]
     fn test_array_manipulation_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(

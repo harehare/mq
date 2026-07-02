@@ -2,6 +2,7 @@ pub(super) mod bytes;
 pub(super) mod convert;
 pub(super) mod date;
 pub(super) mod path;
+mod random;
 mod range;
 mod regex;
 
@@ -540,6 +541,66 @@ fn uuid_v7_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<R
 #[mq_macros::mq_fn(name = "uuid_v4", params = None)]
 fn uuid_v4_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(uuid::Uuid::new_v4().to_string()))
+}
+
+/// Generates a pseudo-random `f64` in `[0, 1)`. Not cryptographically secure.
+#[mq_macros::mq_fn(name = "rand", params = None)]
+fn rand_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    Ok(RuntimeValue::Number(random::next_f64().into()))
+}
+
+/// Generates a pseudo-random integer uniformly distributed in `[min, max]` (inclusive).
+#[mq_macros::mq_fn(name = "rand_int", params = Fixed(2))]
+fn rand_int_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(min), RuntimeValue::Number(max)] if min.is_int() && max.is_int() => {
+            let (min_i, max_i) = (min.to_int(), max.to_int());
+            random::next_range_i64(min_i, max_i)
+                .map(|n| RuntimeValue::Number(n.into()))
+                .ok_or_else(|| Error::Runtime(format!("rand_int: min ({min_i}) must be <= max ({max_i})")))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("rand_int should always receive exactly two arguments"),
+    }
+}
+
+/// Returns a new array containing the same elements as `arr` in a uniformly random order.
+#[mq_macros::mq_fn(name = "shuffle", params = Fixed(1))]
+fn shuffle_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Array(arr)] => {
+            let mut arr = std::mem::take(arr);
+            random::shuffle(&mut arr);
+            Ok(RuntimeValue::Array(arr))
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("shuffle should always receive exactly one argument"),
+    }
+}
+
+/// Returns `n` elements sampled from `arr` without replacement, in random order.
+#[mq_macros::mq_fn(name = "sample", params = Fixed(2))]
+fn sample_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Array(arr), RuntimeValue::Number(n)] if n.is_int() && n.value() >= 0.0 => {
+            let n = n.to_int() as usize;
+            if n > arr.len() {
+                return Err(Error::Runtime(format!(
+                    "sample: n ({n}) must not exceed the array length ({})",
+                    arr.len()
+                )));
+            }
+            Ok(RuntimeValue::Array(random::sample(arr, n)))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("sample should always receive exactly two arguments"),
+    }
 }
 
 #[mq_macros::mq_fn(name = "from_hex", params = Fixed(1))]
@@ -3931,6 +3992,10 @@ mq_macros::builtin_dispatch! {
     UUID,
     UUID_V4,
     UUID_V7,
+    RAND,
+    RAND_INT,
+    SHUFFLE,
+    SAMPLE,
     MIN,
     MAX,
     FROM_HTML,
@@ -4938,6 +5003,34 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Generates a time-ordered (version 7, RFC 9562) UUID string: a millisecond Unix timestamp followed by random bits, so values sort by creation time. The timestamp is plaintext, so prefer uuid/uuid_v4 for unguessable IDs.",
             params: &[],
+        },
+    );
+    map.insert(
+        SmolStr::new("rand"),
+        BuiltinFunctionDoc {
+            description: "Generates a pseudo-random number in the range [0, 1). Not cryptographically secure.",
+            params: &[],
+        },
+    );
+    map.insert(
+        SmolStr::new("rand_int"),
+        BuiltinFunctionDoc {
+            description: "Generates a pseudo-random integer uniformly distributed in [min, max] (inclusive). Not cryptographically secure.",
+            params: &["min", "max"],
+        },
+    );
+    map.insert(
+        SmolStr::new("shuffle"),
+        BuiltinFunctionDoc {
+            description: "Returns a new array containing the same elements as the input, in a uniformly random order.",
+            params: &["array"],
+        },
+    );
+    map.insert(
+        SmolStr::new("sample"),
+        BuiltinFunctionDoc {
+            description: "Returns n elements sampled from the array without replacement, in random order. Errors if n exceeds the array length.",
+            params: &["array", "n"],
         },
     );
     map.insert(
@@ -6380,6 +6473,119 @@ mod tests {
     fn test_uuid_calls_are_unique() {
         let values: std::collections::HashSet<String> = (0..200).map(|_| call_uuid_fn("uuid")).collect();
         assert_eq!(values.len(), 200, "uuid() should not repeat across calls");
+    }
+
+    #[test]
+    fn test_rand_is_in_unit_range() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        for _ in 0..200 {
+            match eval_builtin(&RuntimeValue::None, &Ident::new("rand"), vec![], &env).unwrap() {
+                RuntimeValue::Number(n) => assert!((0.0..1.0).contains(&n.value()), "rand() out of [0, 1)"),
+                other => panic!("rand() should return a number, got {other:?}"),
+            }
+        }
+    }
+
+    #[rstest]
+    #[case(1, 10)]
+    #[case(-5, 5)]
+    #[case(7, 7)]
+    fn test_rand_int_within_bounds(#[case] min: i64, #[case] max: i64) {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        for _ in 0..200 {
+            let result = eval_builtin(
+                &RuntimeValue::None,
+                &Ident::new("rand_int"),
+                vec![RuntimeValue::Number(min.into()), RuntimeValue::Number(max.into())],
+                &env,
+            )
+            .unwrap();
+            match result {
+                RuntimeValue::Number(n) => {
+                    let v = n.to_int();
+                    assert!((min..=max).contains(&v), "rand_int({min}, {max}) produced {v}");
+                }
+                other => panic!("rand_int should return a number, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_rand_int_invalid_range_errors() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("rand_int"),
+            vec![RuntimeValue::Number(10.into()), RuntimeValue::Number(1.into())],
+            &env,
+        );
+        assert!(result.is_err(), "rand_int(10, 1) should error since min > max");
+    }
+
+    #[test]
+    fn test_shuffle_preserves_elements() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let input: Vec<RuntimeValue> = (1..=10).map(|n| RuntimeValue::Number(n.into())).collect();
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("shuffle"),
+            vec![RuntimeValue::Array(input.clone())],
+            &env,
+        )
+        .unwrap();
+        match result {
+            RuntimeValue::Array(shuffled) => {
+                assert_eq!(shuffled.len(), input.len());
+                let mut sorted_input = input.clone();
+                let mut sorted_shuffled = shuffled.clone();
+                sorted_input.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                sorted_shuffled.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                assert_eq!(sorted_input, sorted_shuffled);
+            }
+            other => panic!("shuffle should return an array, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_sample_returns_subset_without_duplicates() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let input: Vec<RuntimeValue> = (1..=10).map(|n| RuntimeValue::Number(n.into())).collect();
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("sample"),
+            vec![RuntimeValue::Array(input.clone()), RuntimeValue::Number(4.into())],
+            &env,
+        )
+        .unwrap();
+        match result {
+            RuntimeValue::Array(sampled) => {
+                assert_eq!(sampled.len(), 4);
+                for v in &sampled {
+                    assert!(input.contains(v));
+                }
+                let mut sorted = sampled.clone();
+                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                sorted.dedup();
+                assert_eq!(sorted.len(), 4, "sample should not contain duplicates");
+            }
+            other => panic!("sample should return an array, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_sample_n_exceeds_length_errors() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let input: Vec<RuntimeValue> = (1..=3).map(|n| RuntimeValue::Number(n.into())).collect();
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("sample"),
+            vec![RuntimeValue::Array(input), RuntimeValue::Number(10.into())],
+            &env,
+        );
+        assert!(
+            result.is_err(),
+            "sample(arr, n) should error when n exceeds the array length"
+        );
     }
 
     #[rstest]
