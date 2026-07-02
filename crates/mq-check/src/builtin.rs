@@ -343,7 +343,14 @@ fn register_string(ctx: &mut InferenceContext) {
     // Encoding functions
     register_many(
         ctx,
-        &["base64", "base64d", "base64url", "base64urld", "url_encode"],
+        &[
+            "base64",
+            "base64d",
+            "base64url",
+            "base64urld",
+            "url_encode",
+            "url_decode",
+        ],
         vec![Type::String],
         Type::String,
     );
@@ -381,6 +388,7 @@ fn register_string(ctx: &mut InferenceContext) {
             "base64url",
             "base64urld",
             "url_encode",
+            "url_decode",
             "utf8bytelen",
         ],
     );
@@ -1574,6 +1582,7 @@ mod tests {
     #[case::base64("base64(\"hello\")", true)]
     #[case::base64d("base64d(\"aGVsbG8=\")", true)]
     #[case::url_encode("url_encode(\"hello world\")", true)]
+    #[case::url_decode("url_decode(\"hello%20world\")", true)]
     fn test_string_encoding_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(

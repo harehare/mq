@@ -4190,6 +4190,26 @@ mod tests {
              ast_call("url_encode", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::String("1".to_string())]))]
+    #[case::url_decode(vec![RuntimeValue::String("test%20string%20with%20spaces".to_string())],
+        vec![
+             ast_call("url_decode", SmallVec::new())
+        ],
+        Ok(vec![RuntimeValue::String("test string with spaces".to_string())]))]
+    #[case::url_decode(vec![RuntimeValue::String("test%21%40%23%24%25%5E%26%2A%28%29".to_string())],
+        vec![
+             ast_call("url_decode", SmallVec::new())
+        ],
+        Ok(vec![RuntimeValue::String("test!@#$%^&*()".to_string())]))]
+    #[case::url_decode(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test%20string".to_string(), position: None}))],
+        vec![
+             ast_call("url_decode", SmallVec::new())
+        ],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test string".to_string(), position: None}))]))]
+    #[case::url_decode(vec![RuntimeValue::Number(1.into())],
+        vec![
+             ast_call("url_decode", SmallVec::new())
+        ],
+        Ok(vec![RuntimeValue::String("1".to_string())]))]
     #[case::update(vec!["".to_string().into()],
         vec![
              ast_call("update", smallvec![
