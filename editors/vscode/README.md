@@ -10,8 +10,8 @@
 
 <div align="center">
 
-[![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/harehare.vscode-mq?style=flat-square&label=VS%20Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq)
-[![Visual Studio Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/harehare.vscode-mq?style=flat-square&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq)
+[![Visual Studio Marketplace Version](https://vsmarketplacebadges.dev/version/harehare.vscode-mq.svg)](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq)
+[![Visual Studio Marketplace Installs](https://vsmarketplacebadges.dev/installs/harehare.vscode-mq.svg)](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq)
 [![Open VSX Version](https://img.shields.io/open-vsx/v/harehare/vscode-mq?style=flat-square&logo=eclipseide)](https://open-vsx.org/extension/harehare/vscode-mq)
 
 </div>
