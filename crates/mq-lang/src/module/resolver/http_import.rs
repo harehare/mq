@@ -137,37 +137,6 @@ pub fn prefix_matches(url_without_scheme: &str, domain: &str) -> bool {
     rest.is_empty() || rest.starts_with('/') || rest.starts_with('?') || rest.starts_with('#') || rest.starts_with(':')
 }
 
-/// Returns `true` if `ip` is publicly routable.
-///
-/// Used to reject DNS results that point at loopback, private, link-local
-/// (which includes the `169.254.169.254` cloud metadata endpoint), multicast,
-/// unspecified, or documentation/benchmark ranges. This guards against SSRF via
-/// DNS rebinding: an allowlisted domain's name could otherwise resolve to an
-/// internal address at connect time.
-pub fn is_global_ip(ip: std::net::IpAddr) -> bool {
-    match ip {
-        std::net::IpAddr::V4(v4) => {
-            !(v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_multicast()
-                || v4.is_broadcast()
-                || v4.is_unspecified()
-                || v4.is_documentation())
-        }
-        std::net::IpAddr::V6(v6) => {
-            if let Some(mapped) = v6.to_ipv4_mapped() {
-                return is_global_ip(std::net::IpAddr::V4(mapped));
-            }
-            !(v6.is_loopback()
-                || v6.is_multicast()
-                || v6.is_unspecified()
-                || v6.is_unique_local()
-                || v6.is_unicast_link_local())
-        }
-    }
-}
-
 /// Returns `true` if `url` is permitted given `allowed_domains`.
 ///
 /// `DEFAULT_ALLOWED_DOMAIN` is always allowed regardless of `allowed_domains`.
@@ -439,27 +408,6 @@ mod tests {
             let attacker_url = format!("https://{}.evil.com/{}", host, path);
             prop_assert!(!is_allowed_url(&attacker_url, &allowed));
         }
-    }
-
-    #[rstest]
-    #[case("127.0.0.1", false)]
-    #[case("10.0.0.1", false)]
-    #[case("172.16.0.1", false)]
-    #[case("192.168.1.1", false)]
-    #[case("169.254.169.254", false)] // cloud metadata endpoint
-    #[case("0.0.0.0", false)]
-    #[case("224.0.0.1", false)]
-    #[case("255.255.255.255", false)]
-    #[case("8.8.8.8", true)]
-    #[case("93.184.216.34", true)]
-    #[case("::1", false)]
-    #[case("fc00::1", false)]
-    #[case("fe80::1", false)]
-    #[case("::ffff:127.0.0.1", false)] // IPv4-mapped loopback bypass
-    #[case("::ffff:8.8.8.8", true)]
-    #[case("2001:4860:4860::8888", true)]
-    fn test_is_global_ip(#[case] ip: &str, #[case] expected: bool) {
-        assert_eq!(is_global_ip(ip.parse().unwrap()), expected);
     }
 
     #[rstest]
