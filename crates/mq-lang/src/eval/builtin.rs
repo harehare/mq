@@ -789,6 +789,24 @@ fn url_encode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
     }
 }
 
+#[mq_macros::mq_fn(name = "url_decode", params = Fixed(1))]
+fn url_decode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::url_decode(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| {
+                convert::url_decode(md.value().as_str()).and_then(|o| match o {
+                    RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                    a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                })
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [a] => convert::url_decode(&a.to_string()),
+        _ => unreachable!("url_decode should always receive exactly one argument"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "to_text", params = Fixed(1))]
 fn to_text_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.first() {
@@ -3915,6 +3933,7 @@ mq_macros::builtin_dispatch! {
     PACK,
     UNPACK,
     URL_ENCODE,
+    URL_DECODE,
     TO_TEXT,
     ENDS_WITH,
     STARTS_WITH,
@@ -4872,6 +4891,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         SmolStr::new("url_encode"),
         BuiltinFunctionDoc {
             description: "URL-encodes the given string.",
+            params: &["input"],
+        },
+    );
+    map.insert(
+        SmolStr::new("url_decode"),
+        BuiltinFunctionDoc {
+            description: "URL-decodes the given string.",
             params: &["input"],
         },
     );
