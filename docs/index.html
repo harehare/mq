@@ -165,6 +165,11 @@
             >
             <a
               class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium"
+              href="#playground"
+              >Playground</a
+            >
+            <a
+              class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium"
               href="#why-mq"
               >Why mq?</a
             >
@@ -753,6 +758,130 @@
           </div>
         </div>
       </section>
+
+      <!-- Playground Section -->
+      <section
+        id="playground"
+        class="py-24 bg-gradient-to-b from-surface-container-low/40 to-transparent"
+      >
+        <div class="max-w-7xl mx-auto px-8">
+          <div class="mb-16 text-center max-w-2xl mx-auto">
+            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">
+              Try mq right now
+            </h2>
+            <p class="text-on-surface-variant text-lg leading-relaxed">
+              Run a query against sample Markdown directly in your browser.
+              For the full editor experience with syntax highlighting, open
+              the
+              <a
+                href="https://mqlang.org/playground"
+                target="_blank"
+                class="text-primary hover:underline"
+                >full Playground</a
+              >.
+            </p>
+          </div>
+
+          <div
+            class="max-w-5xl mx-auto rounded-xl overflow-hidden border border-outline-variant/30 shadow-2xl bg-surface-container-lowest"
+          >
+            <!-- Toolbar -->
+            <div
+              class="flex items-center gap-2 px-4 py-3 bg-surface-container-low"
+            >
+              <div class="flex gap-1.5">
+                <div class="w-3 h-3 rounded-full bg-error/40"></div>
+                <div class="w-3 h-3 rounded-full bg-tertiary/40"></div>
+                <div class="w-3 h-3 rounded-full bg-primary/40"></div>
+              </div>
+              <span class="ml-2 text-xs text-on-surface-variant font-mono"
+                >playground.mq</span
+              >
+            </div>
+
+            <!-- Panes -->
+            <div
+              class="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-outline-variant/20"
+            >
+              <div class="flex flex-col">
+                <div
+                  class="flex items-center gap-2 px-4 py-3 border-b border-outline-variant/20"
+                >
+                  <span
+                    class="material-symbols-outlined text-primary text-base leading-none"
+                    >description</span
+                  >
+                  <label
+                    for="playground-input"
+                    class="text-xs uppercase tracking-widest text-slate-500"
+                    >Markdown Input</label
+                  >
+                </div>
+                <textarea
+                  id="playground-input"
+                  class="h-56 bg-transparent p-4 font-mono text-sm text-on-surface resize-none focus:outline-none"
+                  spellcheck="false"
+># Slice and Filter
+
+Extract specific parts of your Markdown documents with ease.
+
+## Map and Transform
+
+Apply transformations to your Markdown content.</textarea
+                >
+              </div>
+              <div class="flex flex-col">
+                <div
+                  class="flex items-center gap-2 px-4 py-3 border-b border-outline-variant/20"
+                >
+                  <span
+                    class="material-symbols-outlined text-primary text-base leading-none"
+                    >terminal</span
+                  >
+                  <label
+                    for="playground-output"
+                    class="text-xs uppercase tracking-widest text-slate-500"
+                    >Output</label
+                  >
+                </div>
+                <pre
+                  id="playground-output"
+                  class="h-56 p-4 font-mono text-sm text-[#85d4ff] overflow-auto whitespace-pre-wrap"
+                ></pre>
+              </div>
+            </div>
+
+            <!-- Query bar -->
+            <div
+              class="flex items-center gap-3 px-4 py-4 bg-surface-container-low border-t border-outline-variant/20"
+            >
+              <span class="text-primary font-mono text-sm shrink-0">mq</span>
+              <input
+                id="playground-query"
+                type="text"
+                value=".h1"
+                autocomplete="off"
+                spellcheck="false"
+                class="flex-1 min-w-0 bg-surface-container-highest/60 rounded-md px-3 py-2 font-mono text-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <button
+                id="playground-run"
+                class="flex items-center gap-1.5 px-5 py-2 bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold rounded-md scale-98-on-click transition-all text-sm font-headline disabled:opacity-50 shrink-0"
+              >
+                <span
+                  class="material-symbols-outlined text-base leading-none"
+                  >play_arrow</span
+                >
+                Run
+              </button>
+            </div>
+          </div>
+          <p
+            id="playground-status"
+            class="text-center text-xs text-on-surface-variant mt-4 h-4"
+          ></p>
+        </div>
+      </section>
     </main>
 
     <!-- Footer -->
@@ -854,6 +983,60 @@
         });
 
         switchTab(defaultTab);
+      });
+
+      document.addEventListener("DOMContentLoaded", () => {
+        const API_URL = "https://api.mqlang.org/api/v1/query";
+        const runButton = document.getElementById("playground-run");
+        const queryInput = document.getElementById("playground-query");
+        const markdownInput = document.getElementById("playground-input");
+        const output = document.getElementById("playground-output");
+        const status = document.getElementById("playground-status");
+
+        if (!runButton || !queryInput || !markdownInput || !output) return;
+
+        async function runPlaygroundQuery() {
+          const query = queryInput.value.trim();
+          if (!query) return;
+
+          runButton.disabled = true;
+          status.textContent = "Running…";
+
+          try {
+            const response = await fetch(API_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                query,
+                input: markdownInput.value,
+                input_format: "markdown",
+                output_format: "markdown",
+              }),
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+              output.textContent = data.error || data.title || "Query failed.";
+              status.textContent = `Error (${response.status})`;
+            } else {
+              output.textContent = (data.results || []).join("\n");
+              status.textContent = "Done";
+            }
+          } catch (err) {
+            output.textContent = `Network error: ${err.message || err}`;
+            status.textContent = "Failed to reach api.mqlang.org";
+          } finally {
+            runButton.disabled = false;
+          }
+        }
+
+        runButton.addEventListener("click", runPlaygroundQuery);
+        queryInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            runPlaygroundQuery();
+          }
+        });
       });
     </script>
   </body>
