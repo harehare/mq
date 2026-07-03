@@ -66,6 +66,12 @@ Options:
           Show NUM nodes before and after each match. Only effective with -F grep
   -e, --exit-status
           Exit with code 1 if the last output value is false, null, or the output is empty. Mirrors jq's --exit-status / -e flag
+  -c, --count
+          Output only the count of matching (non-None) results. Mirrors grep -c. With multiple files, prints "filename: N" per file and "total: N" at the end
+      --skip <N>
+          Skip the first N matching results before outputting
+      --limit <N>
+          Limit output to at most N results
       --list
           List all available subcommands (built-in and external)
       --doc
