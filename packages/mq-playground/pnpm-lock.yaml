@@ -24,8 +24,8 @@ importers:
         specifier: ^0.4.4
         version: 0.4.4(monaco-editor@0.55.1)
       mq-web:
-        specifier: 0.6.3
-        version: 0.6.3
+        specifier: 0.6.4
+        version: 0.6.4
       react:
         specifier: ^19.2.7
         version: 19.2.7
@@ -620,8 +620,8 @@ packages:
     peerDependencies:
       monaco-editor: '*'
 
-  mq-web@0.6.3:
-    resolution: {integrity: sha512-0pdN7BpSXuVqHEM11VvwlYiUsTxMlUjxkbMZw0eXveYtk8qObACB819i8C5FzfEexbAkv5t4AWcHxc5vnmvscQ==}
+  mq-web@0.6.4:
+    resolution: {integrity: sha512-QKdRjrvv8MNVgNxcdDJvqqQEyDyFpOev7Y1n/RZbWUG+LWFeDBjCIBXZdvG358TdtqDQsl215WPwpdRJTJfWvQ==}
 
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
@@ -1177,7 +1177,7 @@ snapshots:
     dependencies:
       monaco-editor: 0.55.1
 
-  mq-web@0.6.3: {}
+  mq-web@0.6.4: {}
 
   ms@2.1.3: {}
 
