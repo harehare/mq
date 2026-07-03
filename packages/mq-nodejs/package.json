@@ -1,7 +1,7 @@
 {
   "name": "mq-nodejs",
   "description": "A jq-like command-line tool for Markdown processing for Node.js",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "author": "harehare",
   "license": "MIT",
   "bugs": {

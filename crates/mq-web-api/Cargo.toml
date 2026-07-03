@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-web-api"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.6.3"
+version = "0.6.4"
 
 [features]
 default = ["use_mimalloc"]
@@ -44,4 +44,3 @@ utoipa-swagger-ui = {workspace = true}
 [[bin]]
 name = "mq-web-api"
 path = "src/main.rs"
-

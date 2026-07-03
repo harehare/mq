@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-formatter"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.6.3"
+version = "0.6.4"
 
 [dependencies]
 clap = {workspace = true, features = ["derive"]}
