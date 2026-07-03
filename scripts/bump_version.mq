@@ -34,6 +34,7 @@ def crates_version(line):
   | replace(s"path = \"crates/mq-check\", version = \"${prev_version}\"", s"path = \"crates/mq-check\", version = \"${version}\"")
   | replace(s"path = \"crates/mq-test\", version = \"${prev_version}\"", s"path = \"crates/mq-test\", version = \"${version}\"")
   | replace(s"path = \"crates/mq-macros\", version = \"${prev_version}\"", s"path = \"crates/mq-macros\", version = \"${version}\"")
+  | replace(s"path = \"crates/mq-lint\", version = \"${prev_version}\"", s"path = \"crates/mq-lint\", version = \"${version}\"")
 end
 
 def code_block_version(line, version):
