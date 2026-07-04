@@ -69,6 +69,7 @@ import "github.com/harehare/<module-name>"
 | Module | Description |
 |---|---|
 | [ansi.mq](https://github.com/harehare/ansi.mq) | ANSI terminal escape code utilities |
+| [emoji.mq](https://github.com/harehare/emoji.mq) | GitHub-style emoji shortcode <-> Unicode emoji conversion |
 
 ## Interpreters
 
@@ -82,5 +83,6 @@ import "github.com/harehare/<module-name>"
 | Module | Description |
 |---|---|
 | [parser_combinator.mq](https://github.com/harehare/parser_combinator.mq) | A small parser-combinator toolkit, in the spirit of Rust's [nom](https://github.com/rust-bakery/nom) |
+| [diff.mq](https://github.com/harehare/diff.mq) | Text and array diffing utilities, built on mq's native Myers-diff engine |
 
 
