@@ -1,6 +1,6 @@
 use rustc_hash::FxHashSet;
 
-use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
+use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{SymbolId, SymbolKind};
 use mq_lang::Range;
 
@@ -68,7 +68,7 @@ impl LintRule for PreferLetOverVar {
                 LintMessage::PreferLetOverVar { name: name.to_string() },
                 self.severity(),
             );
-            d = d.with_range(kw_range);
+            d = d.with_range(kw_range).with_fix(Fix::literal(kw_range, "let"));
             diagnostics.push(d);
         }
 
@@ -107,5 +107,17 @@ mod tests {
     fn no_diagnostic(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);
+    }
+
+    #[test]
+    fn fix_replaces_var_with_let() {
+        let code = "var x = .h1 | x";
+        let diags = check(code);
+        let fix = diags[0].fix.as_ref().unwrap();
+        let (range, replacement) = fix.resolve(code).unwrap();
+        assert_eq!(
+            crate::fix::apply_edits(code, &[(range, replacement)]),
+            "let x = .h1 | x"
+        );
     }
 }

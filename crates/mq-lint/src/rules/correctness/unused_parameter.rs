@@ -1,6 +1,6 @@
 use rustc_hash::FxHashSet;
 
-use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
+use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{ScopeId, ScopeKind, SymbolId, SymbolKind};
 
 pub struct UnusedParameter;
@@ -14,6 +14,14 @@ fn is_in_scope_subtree(ctx: &LintContext<'_>, scope_id: ScopeId, target_scope_id
         current = ctx.hir.scope(sid).and_then(|s| s.parent_id);
     }
     false
+}
+
+/// True if `sym` is a `${name}` interpolation embed (which reuses `SymbolKind::Variable` for the
+/// embedded text) rather than an actual reference symbol.
+fn is_interpolation_embed(ctx: &LintContext<'_>, sym: &mq_hir::Symbol) -> bool {
+    sym.parent
+        .and_then(|id| ctx.hir.symbol(id))
+        .is_some_and(|p| matches!(p.kind, SymbolKind::InterpolatedString))
 }
 
 impl LintRule for UnusedParameter {
@@ -41,7 +49,10 @@ impl LintRule for UnusedParameter {
 
             let used_names: FxHashSet<&str> = ctx
                 .all_symbols()
-                .filter(|(_, s)| matches!(s.kind, SymbolKind::Ref | SymbolKind::Ident | SymbolKind::Call))
+                .filter(|(_, s)| {
+                    matches!(s.kind, SymbolKind::Ref | SymbolKind::Ident | SymbolKind::Call)
+                        || is_interpolation_embed(ctx, s)
+                })
                 .filter(|(_, s)| is_in_scope_subtree(ctx, s.scope, fn_scope_id))
                 .filter_map(|(_, s)| s.value.as_deref())
                 .collect();
@@ -61,7 +72,7 @@ impl LintRule for UnusedParameter {
 
                 let mut d = Diagnostic::new(LintMessage::UnusedParameter { name: name.to_string() }, self.severity());
                 if let Some(range) = param_sym.source.text_range {
-                    d = d.with_range(range);
+                    d = d.with_range(range).with_fix(Fix::literal(range, format!("_{name}")));
                 }
                 diagnostics.push(d);
             }
@@ -100,6 +111,7 @@ mod tests {
     #[case("def f(a, b): a + b")]
     #[case("def f(a): a")]
     #[case("def f(): .h1")]
+    #[case(r#"def f(name): s"Hello ${name}""#)]
     fn no_diagnostic_when_all_params_used(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);
@@ -115,5 +127,17 @@ mod tests {
     fn detects_multiple_unused_parameters() {
         let diags = check("def f(a, b, c): .h1");
         assert_eq!(diags.len(), 3);
+    }
+
+    #[test]
+    fn fix_prefixes_name_with_underscore() {
+        let code = "def f(a, b): a";
+        let diags = check(code);
+        let fix = diags[0].fix.as_ref().unwrap();
+        let (range, replacement) = fix.resolve(code).unwrap();
+        assert_eq!(
+            crate::fix::apply_edits(code, &[(range, replacement)]),
+            "def f(a, _b): a"
+        );
     }
 }
