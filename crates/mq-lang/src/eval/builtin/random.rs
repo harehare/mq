@@ -10,7 +10,7 @@
 //! use a purpose-built secret-generation API for that.
 
 use crate::RuntimeValue;
-use rand::Rng;
+use rand::RngExt;
 use rand::seq::SliceRandom;
 
 /// Returns a pseudo-random `f64` uniformly distributed in `[0, 1)`.

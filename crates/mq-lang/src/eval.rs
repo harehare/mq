@@ -1895,6 +1895,30 @@ fn resolve(ident: &str, env: &Shared<SharedCell<Env>>) -> Result<RuntimeValue, E
     }
 }
 
+/// Implementation of MacroEvaluator trait for Evaluator.
+/// This allows the macro expander to evaluate macro bodies during collection.
+impl<T: ModuleResolver> MacroEvaluator for Evaluator<T> {
+    fn eval_macro_body(&mut self, body: &Shared<ast::Node>, _token_id: TokenId) -> Result<RuntimeValue, RuntimeError> {
+        let value = self.eval_macro(body);
+
+        // If the result is already an AST (from quote), return it as-is
+        // If the result is None (e.g., from if(false) without else), return None to indicate removal
+        // Otherwise, wrap the body itself as an AST (for macros without quote)
+        match value {
+            Ok(RuntimeValue::Ast(ast)) => Ok(RuntimeValue::Ast(ast)),
+            Ok(RuntimeValue::None) => {
+                // Return None instead of empty block - this will cause the macro to be skipped
+                Ok(RuntimeValue::None)
+            }
+            Ok(_) | Err(_) => {
+                // Return the body as AST, not the evaluated result
+                // This allows macros without quote to work
+                Ok(RuntimeValue::Ast(Shared::clone(body)))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::f64::consts::PI;
@@ -7742,30 +7766,6 @@ mod tests {
             ),
             "expected HttpImportNotAllowed for '{blocked_url}'"
         );
-    }
-}
-
-/// Implementation of MacroEvaluator trait for Evaluator.
-/// This allows the macro expander to evaluate macro bodies during collection.
-impl<T: ModuleResolver> MacroEvaluator for Evaluator<T> {
-    fn eval_macro_body(&mut self, body: &Shared<ast::Node>, _token_id: TokenId) -> Result<RuntimeValue, RuntimeError> {
-        let value = self.eval_macro(body);
-
-        // If the result is already an AST (from quote), return it as-is
-        // If the result is None (e.g., from if(false) without else), return None to indicate removal
-        // Otherwise, wrap the body itself as an AST (for macros without quote)
-        match value {
-            Ok(RuntimeValue::Ast(ast)) => Ok(RuntimeValue::Ast(ast)),
-            Ok(RuntimeValue::None) => {
-                // Return None instead of empty block - this will cause the macro to be skipped
-                Ok(RuntimeValue::None)
-            }
-            Ok(_) | Err(_) => {
-                // Return the body as AST, not the evaluated result
-                // This allows macros without quote to work
-                Ok(RuntimeValue::Ast(Shared::clone(body)))
-            }
-        }
     }
 }
 
