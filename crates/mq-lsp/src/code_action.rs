@@ -6,7 +6,8 @@ use std::{
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
 use tower_lsp_server::ls_types::{
-    self, CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, Position, Range, TextEdit, WorkspaceEdit,
+    self, CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, NumberOrString, Position, Range, TextEdit,
+    WorkspaceEdit,
 };
 use url::Url;
 
@@ -64,11 +65,44 @@ fn add_module_statement_action(
     })
 }
 
+/// Builds a quick fix from a resolved `mq-lint` [`Fix`](mq_lint::Fix), replacing the diagnostic's
+/// span with the fix's suggested text.
+fn lint_fix_action(
+    uri: &ls_types::Uri,
+    diagnostic: &ls_types::Diagnostic,
+    title: String,
+    range: mq_lang::Range,
+    replacement: String,
+) -> CodeActionOrCommand {
+    let mut changes = HashMap::new();
+    changes.insert(
+        uri.clone(),
+        vec![TextEdit {
+            range: to_range(range),
+            new_text: replacement,
+        }],
+    );
+
+    CodeActionOrCommand::CodeAction(CodeAction {
+        title,
+        kind: Some(CodeActionKind::QUICKFIX),
+        diagnostics: Some(vec![diagnostic.clone()]),
+        edit: Some(WorkspaceEdit {
+            changes: Some(changes),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })
+}
+
 /// Builds quick fixes for diagnostics in the request range:
 pub(crate) fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
     url: Url,
     params: CodeActionParams,
+    source_id: Option<mq_hir::SourceId>,
+    lint_config: Option<&mq_lint::LintConfig>,
+    source_text: Option<&str>,
 ) -> Option<Vec<CodeActionOrCommand>> {
     let hir_guard = hir.read().unwrap();
     hir_guard.source_by_url(&url)?;
@@ -117,6 +151,30 @@ pub(crate) fn response(
         }
     }
 
+    if let (Some(source_id), Some(lint_config), Some(source_text)) = (source_id, lint_config, source_text) {
+        let ctx = mq_lint::LintContext::new(&hir_guard, source_id, lint_config);
+        let lint_diagnostics = mq_lint::Linter::with_default_rules().run(&ctx);
+
+        for diagnostic in &params.context.diagnostics {
+            let Some(NumberOrString::String(rule_id)) = &diagnostic.code else {
+                continue;
+            };
+            let Some(matched) = lint_diagnostics
+                .iter()
+                .find(|d| d.rule_id().as_str() == rule_id.as_str() && d.range.map(to_range) == Some(diagnostic.range))
+            else {
+                continue;
+            };
+            let Some(fix) = matched.fix.as_ref() else { continue };
+            let Some((range, replacement)) = fix.resolve(source_text) else {
+                continue;
+            };
+
+            let title = format!("Fix: {}", matched.help().unwrap_or_else(|| matched.message()));
+            actions.push(lint_fix_action(uri, diagnostic, title, range, replacement));
+        }
+    }
+
     if actions.is_empty() { None } else { Some(actions) }
 }
 
@@ -151,7 +209,7 @@ mod tests {
         let range = Range::new(Position::new(0, 0), Position::new(0, 9));
         let params = params_for(&uri, range, "Unresolved symbol: csv_parse");
 
-        let actions = response(Arc::new(RwLock::new(hir)), url, params);
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None);
 
         assert!(actions.is_some());
         let actions = actions.unwrap();
@@ -171,7 +229,7 @@ mod tests {
         let range = Range::new(Position::new(0, 19), Position::new(0, 24));
         let params = params_for(&uri, range, "Unresolved symbol: func1");
 
-        let actions = response(Arc::new(RwLock::new(hir)), url, params);
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None);
         assert!(actions.is_none());
     }
 
@@ -185,7 +243,7 @@ mod tests {
         let range = Range::new(Position::new(0, 0), Position::new(0, 17));
         let params = params_for(&uri, range, "Unresolved symbol: totally_unknown_fn");
 
-        let actions = response(Arc::new(RwLock::new(hir)), url, params);
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None);
         assert!(actions.is_none());
     }
 
@@ -203,7 +261,7 @@ mod tests {
         let range = Range::new(Position::new(0, 0), Position::new(0, 9));
         let params = params_for(&uri, range, "Unresolved symbol: csv_parse");
 
-        let actions = response(Arc::new(RwLock::new(hir)), url, params).unwrap();
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None).unwrap();
         assert_eq!(actions.len(), exporters.len());
 
         let titles: Vec<String> = actions
@@ -228,7 +286,7 @@ mod tests {
         let range = Range::new(Position::new(0, 0), Position::new(0, 9));
         let params = params_for(&uri, range, "Unresolved symbol: csv_parse");
 
-        let actions = response(Arc::new(RwLock::new(hir)), url, params).unwrap();
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None).unwrap();
         let CodeActionOrCommand::CodeAction(action) = &actions[0] else {
             panic!("expected a CodeAction");
         };
@@ -258,7 +316,7 @@ mod tests {
         let range = Range::new(Position::new(0, 0), Position::new(0, 9));
         let params = params_for(&uri, range, "Unresolved symbol: csv_parse");
 
-        let actions = response(Arc::new(RwLock::new(hir)), url, params);
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None);
         assert!(actions.is_some());
     }
 
@@ -273,7 +331,7 @@ mod tests {
         let range = Range::new(Position::new(5, 0), Position::new(5, 9));
         let params = params_for(&uri, range, "Unresolved symbol: csv_parse");
 
-        let actions = response(Arc::new(RwLock::new(hir)), url, params);
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None);
         assert!(actions.is_none());
     }
 
@@ -296,7 +354,7 @@ mod tests {
             partial_result_params: Default::default(),
         };
 
-        let actions = response(Arc::new(RwLock::new(hir)), url, params);
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None);
         assert!(actions.is_none());
     }
 
@@ -308,7 +366,7 @@ mod tests {
         let range = Range::new(Position::new(0, 0), Position::new(0, 9));
         let params = params_for(&uri, range, "Unresolved symbol: csv_parse");
 
-        let actions = response(Arc::new(RwLock::new(hir)), url, params);
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None);
         assert!(actions.is_none());
     }
 
@@ -350,7 +408,7 @@ mod tests {
             partial_result_params: Default::default(),
         };
 
-        let actions = response(Arc::new(RwLock::new(hir)), url, params);
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None);
         assert!(actions.is_some());
         let actions = actions.unwrap();
         // Only `json_parse` resolves to a std module export; `totally_unknown_fn` contributes nothing.
@@ -392,7 +450,7 @@ mod tests {
         let uri = ls_types::Uri::from_str(url.as_str()).unwrap();
         let params = params_for(&uri, range, "Unresolved symbol: csv_parse");
 
-        let actions = response(Arc::new(RwLock::new(hir)), url, params);
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None);
 
         assert!(actions.is_some());
         let actions = actions.unwrap();
@@ -425,7 +483,7 @@ mod tests {
         let uri = ls_types::Uri::from_str(url.as_str()).unwrap();
         let params = params_for(&uri, range, "Unresolved symbol: some_fn");
 
-        let actions = response(Arc::new(RwLock::new(hir)), url, params);
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None);
         assert!(actions.is_none());
     }
 
@@ -443,7 +501,89 @@ mod tests {
         let range = Range::new(Position::new(0, 0), Position::new(0, 1));
         let params = params_for(&uri, range, "Unresolved symbol: csv_parse");
 
-        let actions = response(Arc::new(RwLock::new(hir)), url, params);
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None);
+        assert!(actions.is_none());
+    }
+
+    /// Builds `CodeActionParams` carrying a single diagnostic shaped like the ones
+    /// `LspError::LintWarning` produces (range + `code` set to the rule id), so the response's
+    /// lint-fix matching (which keys off `diagnostic.code` and `diagnostic.range`) has something
+    /// to match against.
+    fn lint_diagnostic_params(uri: &ls_types::Uri, range: Range, rule_id: mq_lint::RuleId) -> CodeActionParams {
+        CodeActionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            range,
+            context: CodeActionContext {
+                diagnostics: vec![ls_types::Diagnostic::new(
+                    range,
+                    None,
+                    Some(NumberOrString::String(rule_id.to_string())),
+                    Some("mq-lint".to_string()),
+                    "diagnostic message is irrelevant to matching".to_string(),
+                    None,
+                    None,
+                )],
+                only: None,
+                trigger_kind: None,
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: Default::default(),
+        }
+    }
+
+    #[test]
+    fn test_offers_fix_for_boolean_comparison_lint_diagnostic() {
+        let mut hir = mq_hir::Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+        let code = ".checked == true";
+        let (source_id, _) = hir.add_code(Some(url.clone()), code);
+
+        let uri = ls_types::Uri::from_str(url.as_str()).unwrap();
+        let range = Range::new(Position::new(0, 0), Position::new(0, code.len() as u32));
+        let params = lint_diagnostic_params(&uri, range, mq_lint::RuleId::BooleanComparison);
+        let lint_config = mq_lint::LintConfig::default();
+
+        let actions = response(
+            Arc::new(RwLock::new(hir)),
+            url,
+            params,
+            Some(source_id),
+            Some(&lint_config),
+            Some(code),
+        )
+        .unwrap();
+
+        assert_eq!(actions.len(), 1);
+        let CodeActionOrCommand::CodeAction(action) = &actions[0] else {
+            panic!("expected a CodeAction");
+        };
+        assert_eq!(action.kind, Some(CodeActionKind::QUICKFIX));
+        let edits = action
+            .edit
+            .as_ref()
+            .unwrap()
+            .changes
+            .as_ref()
+            .unwrap()
+            .get(&uri)
+            .unwrap();
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].new_text, ".checked");
+    }
+
+    #[test]
+    fn test_no_fix_action_when_lint_disabled() {
+        let mut hir = mq_hir::Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+        let code = ".checked == true";
+        hir.add_code(Some(url.clone()), code);
+
+        let uri = ls_types::Uri::from_str(url.as_str()).unwrap();
+        let range = Range::new(Position::new(0, 0), Position::new(0, code.len() as u32));
+        let params = lint_diagnostic_params(&uri, range, mq_lint::RuleId::BooleanComparison);
+
+        // No `source_id`/`lint_config`/`source_text` supplied (mirrors `enable_lint: false`).
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None);
         assert!(actions.is_none());
     }
 }

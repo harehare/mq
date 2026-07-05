@@ -32,6 +32,21 @@ for d in diagnostics {
 
 Each diagnostic's `rule_id()` and `message()` are derived from `d.kind`, a [`LintMessage`](src/message.rs) enum with one variant per rule. Rule identity (`RuleId`) and message text are both enums rather than free-form strings, so adding or renaming a rule is a compile-time-checked change in one place (`src/message.rs`).
 
+### Applying Fixes
+
+Some rules (marked "Fixable" in the tables below) attach a [`Fix`](src/fix.rs) that a caller can resolve against the original source and apply:
+
+```rust
+let code = "s\"${x}\"";
+let edits: Vec<_> = diagnostics
+    .iter()
+    .filter_map(|d| d.fix.as_ref().and_then(|fix| fix.resolve(code)))
+    .collect();
+let fixed = mq_lint::fix::apply_edits(code, &edits);
+```
+
+A `Fix` only records source ranges (not text), so it stays independent of any one source string until `resolve` is called — the same diagnostics can be resolved against the CLI's file contents or the language server's in-editor buffer.
+
 ### As a CLI
 
 Build with the `cli` feature to get the `mq-lint` binary (also invocable as `mq lint` if placed on your `PATH`, see [External Subcommands](https://mqlang.org/book/start/external_subcommands.html)):
@@ -47,9 +62,13 @@ echo "let x = .h1" | mq-lint           # read from stdin
 mq-lint --disable naming_convention script.mq
 mq-lint --min-severity warn script.mq # only show warn/error diagnostics
 mq-lint --list-rules                  # print all rule IDs and their severity
+mq-lint --fix script.mq               # rewrite the file, applying every fixable diagnostic
+echo "let x = .h1" | mq-lint --fix     # write the fixed code to stdout
 ```
 
-Exits with a non-zero status if any diagnostic (at or above `--min-severity`) was reported.
+Exits with a non-zero status if any diagnostic (at or above `--min-severity`) was reported. `--fix` only
+rewrites diagnostics that have a machine-applicable fix (see "Fixable" in the rules tables below); it then
+reports any remaining diagnostics as usual.
 
 ### Disabling Rules
 
@@ -76,23 +95,32 @@ config.complexity.max_interpolation_exprs = 4;
 
 ### Correctness
 
-| Rule ID                 | Severity | Description                                                                    |
-| ----------------------- | -------- | ------------------------------------------------------------------------------ |
-| `unused_variable`       | warn     | `let`/`var` variable declared but never referenced                             |
-| `unused_function`       | warn     | `def` function defined but never called                                        |
-| `unused_import`         | warn     | `import` module declared but never accessed                                    |
-| `unreachable_code`      | error    | Code following `break`/`continue` that can never execute                       |
-| `infinite_loop`         | warn     | `loop` body without a `break`                                                  |
-| `duplicate_match_arm`   | error    | Same pattern appears more than once in a `match`                               |
-| `shadow_variable`       | warn     | Variable re-declared in an inner scope with the same name as an outer variable |
-| `missing_else_in_expr`  | warn     | `if` expression with no `else` branch (evaluates to `none` on false)           |
-| `always_true_condition` | warn     | `if` condition is a literal `true` or `false`                                  |
+| Rule ID                 | Severity | Fixable | Description                                                                    |
+| ----------------------- | -------- | ------- | ------------------------------------------------------------------------------ |
+| `unused_variable`       | warn     | ✓       | `let`/`var` variable declared but never referenced                             |
+| `unused_function`       | warn     |         | `def` function defined but never called                                        |
+| `unused_import`         | warn     |         | `import` module declared but never accessed                                    |
+| `unused_parameter`      | warn     | ✓       | Function parameter declared but never referenced                               |
+| `unreachable_code`      | error    |         | Code following `break`/`continue` that can never execute                       |
+| `infinite_loop`         | warn     |         | `loop` body without a `break`                                                  |
+| `duplicate_match_arm`   | error    |         | Same pattern appears more than once in a `match`                               |
+| `shadow_variable`       | warn     |         | Variable re-declared in an inner scope with the same name as an outer variable |
+| `missing_else_in_expr`  | warn     |         | `if` expression with no `else` branch (evaluates to `none` on false)           |
+| `always_true_condition` | warn     |         | `if` condition is a literal `true` or `false`                                  |
+
+"Fixable" rules can be auto-corrected with `mq-lint --fix` or their language server quick fix.
 
 **Example — `unused_variable`**
 
 ```mq
 let x = .h1;  # warn: x is never used
 .text
+```
+
+**Example — `unused_parameter`**
+
+```mq
+def greet(name, unused): s"Hello ${name}";  # warn: unused is never used
 ```
 
 **Example — `missing_else_in_expr`**
@@ -109,16 +137,20 @@ if (true): 1 else: 2;  # warn: condition is always `true`
 
 ### Style / Best Practices
 
-| Rule ID                     | Severity | Description                                                          |
-| --------------------------- | -------- | -------------------------------------------------------------------- |
-| `prefer_let_over_var`       | warn     | `var` variable never reassigned — prefer `let`                       |
-| `naming_convention`         | style    | Function or variable name is not `snake_case`                        |
-| `boolean_comparison`        | style    | `x == true` → `x`, `x == false` → `not(x)`                           |
-| `redundant_boolean_literal` | style    | `if (cond): true else: false` simplifies to `cond`                   |
-| `prefer_specific_heading`   | style    | `.h` without a level — prefer `.h1`–`.h6`                            |
-| `prefer_coalesce`           | style    | `if (x == none): fallback else: x` simplifies to `x ?? fallback`     |
-| `prefer_pipe_style`         | style    | Nested unary call `f(g(x))` reads better as a pipe `x \| g() \| f()` |
-| `redundant_try`             | style    | `try: ... catch: none` is exactly what the `?` operator does         |
+| Rule ID                     | Severity | Fixable | Description                                                          |
+| --------------------------- | -------- | ------- | --------------------------------------------------------------------- |
+| `prefer_let_over_var`       | warn     | ✓       | `var` variable never reassigned — prefer `let`                       |
+| `naming_convention`         | style    |         | Function or variable name is not `snake_case`                        |
+| `boolean_comparison`        | style    | ✓       | `x == true` → `x`, `x == false` → `not(x)`                           |
+| `redundant_boolean_literal` | style    | ✓       | `if (cond): true else: false` simplifies to `cond`                   |
+| `prefer_specific_heading`   | style    |         | `.h` without a level — prefer `.h1`–`.h6`                            |
+| `prefer_coalesce`           | style    | ✓       | `if (x == none): fallback else: x` simplifies to `x ?? fallback`     |
+| `prefer_pipe_style`         | style    |         | Nested unary call `f(g(x))` reads better as a pipe `x \| g() \| f()` |
+| `redundant_try`             | style    | ✓       | `try: ... catch: none` is exactly what the `?` operator does         |
+| `unnecessary_interpolation` | style    | ✓       | `s"${x}"` (a single interpolation, nothing else) → `x`               |
+| `constant_string_concat`    | style    | ✓       | `"a" + "b"` (both literals) → `"ab"`                                 |
+
+"Fixable" rules can be auto-corrected with `mq-lint --fix` or their language server quick fix.
 
 **Example — `prefer_let_over_var`**
 
@@ -160,6 +192,18 @@ to_text(to_upper(x))  # style: rewrite as `x | to_upper() | to_text()`
 
 ```mq
 try: get("x") catch: none  # style: rewrite as `get("x")?`
+```
+
+**Example — `unnecessary_interpolation`**
+
+```mq
+s"${.h1}"  # style: rewrite as `.h1` — no interpolation needed for a single expr
+```
+
+**Example — `constant_string_concat`**
+
+```mq
+"hello" + " world"  # style: rewrite as `"hello world"`
 ```
 
 ### Complexity

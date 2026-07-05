@@ -1,4 +1,4 @@
-use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
+use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 use rustc_hash::FxHashMap;
 
@@ -26,13 +26,23 @@ impl LintRule for UnnecessaryInterpolation {
             .filter(|(_, sym)| matches!(sym.kind, SymbolKind::InterpolatedString))
             .filter_map(|(sym_id, sym)| {
                 let count = child_counts.get(&sym_id).copied().unwrap_or(0);
-                if count == 1 {
-                    sym.source.text_range.map(|range| {
-                        Diagnostic::new(LintMessage::UnnecessaryInterpolation, self.severity()).with_range(range)
-                    })
-                } else {
-                    None
+                if count != 1 {
+                    return None;
                 }
+                let range = sym.source.text_range?;
+                let mut d = Diagnostic::new(LintMessage::UnnecessaryInterpolation, self.severity()).with_range(range);
+
+                // The lone segment's text is already captured verbatim as a `Variable` symbol's
+                // value, so use it directly rather than slicing `${...}`'s span (which includes
+                // the delimiters).
+                let expr_text = ctx
+                    .all_symbols()
+                    .find(|(_, s)| s.parent == Some(sym_id) && matches!(s.kind, SymbolKind::Variable))
+                    .and_then(|(_, s)| s.value.clone());
+                if let Some(expr_text) = expr_text {
+                    d = d.with_fix(Fix::literal(range, expr_text));
+                }
+                Some(d)
             })
             .collect()
     }
@@ -60,6 +70,16 @@ mod tests {
     fn detects_unnecessary_interpolation(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 1);
+    }
+
+    #[rstest]
+    #[case(r#"s"${x}""#, "x")]
+    #[case(r#"s"${.h1}""#, ".h1")]
+    fn fix_replaces_interpolation_with_inner_expr(#[case] code: &str, #[case] expected: &str) {
+        let diags = check(code);
+        let fix = diags[0].fix.as_ref().unwrap();
+        let (range, replacement) = fix.resolve(code).unwrap();
+        assert_eq!(crate::fix::apply_edits(code, &[(range, replacement)]), expected);
     }
 
     #[rstest]

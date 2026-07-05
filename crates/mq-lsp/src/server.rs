@@ -202,7 +202,20 @@ impl LanguageServer for Backend {
         params: ls_types::CodeActionParams,
     ) -> jsonrpc::Result<Option<ls_types::CodeActionResponse>> {
         let url = to_url(&params.text_document.uri.clone());
-        Ok(code_action::response(Arc::clone(&self.hir), url, params))
+        let uri_string = params.text_document.uri.to_string();
+
+        let source_id = self.source_map.read().unwrap().get_by_left(&uri_string).copied();
+        let source_text = self.text_map.get(&uri_string).map(|text| Arc::clone(text.value()));
+        let lint_config = self.config.enable_lint.then(|| self.config.lint_config.clone());
+
+        Ok(code_action::response(
+            Arc::clone(&self.hir),
+            url,
+            params,
+            source_id,
+            lint_config.as_ref(),
+            source_text.as_deref().map(String::as_str),
+        ))
     }
 
     async fn rename(&self, params: ls_types::RenameParams) -> jsonrpc::Result<Option<ls_types::WorkspaceEdit>> {

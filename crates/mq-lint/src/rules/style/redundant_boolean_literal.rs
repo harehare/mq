@@ -1,4 +1,4 @@
-use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
+use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{SymbolId, SymbolKind};
 
 pub struct RedundantBooleanLiteral;
@@ -27,14 +27,20 @@ impl LintRule for RedundantBooleanLiteral {
                 continue;
             };
 
-            // The then-body is the second child of If by position (first is the condition).
-            let then_bool = second_child_boolean(ctx, if_id);
-            // The else-body is the first (only) child of Else.
-            let else_bool = first_child_boolean(ctx, else_id);
+            // Condition and then-body are the first two children of If by position.
+            let if_children = sorted_children(ctx, if_id, true);
+            let Some(&(cond_id, _)) = if_children.first() else {
+                continue;
+            };
+            let Some(&(_, then_sym)) = if_children.get(1) else {
+                continue;
+            };
+            let Some(&(_, else_sym)) = sorted_children(ctx, else_id, false).first() else {
+                continue;
+            };
 
-            let (then_val, else_val) = match (then_bool, else_bool) {
-                (Some(t), Some(e)) => (t, e),
-                _ => continue,
+            let (Some(then_val), Some(else_val)) = (boolean_value(then_sym), boolean_value(else_sym)) else {
+                continue;
             };
 
             // Pattern: if (cond): true else: false  →  cond
@@ -46,7 +52,21 @@ impl LintRule for RedundantBooleanLiteral {
                     },
                     self.severity(),
                 );
-                if let Some(range) = if_sym.source.text_range {
+                if let (Some(if_start), Some(else_range), Some(cond_range)) = (
+                    if_sym.source.text_range,
+                    else_sym.source.text_range,
+                    ctx.full_range(cond_id),
+                ) {
+                    let range = mq_lang::Range {
+                        start: if_start.start,
+                        end: else_range.end,
+                    };
+                    let mut fix = Fix::verbatim(range, cond_range);
+                    if then_val == "false" {
+                        fix = fix.with_prefix("!");
+                    }
+                    d = d.with_range(range).with_fix(fix);
+                } else if let Some(range) = if_sym.source.text_range {
                     d = d.with_range(range);
                 }
                 diagnostics.push(d);
@@ -64,42 +84,30 @@ fn find_else_child(ctx: &LintContext<'_>, if_id: SymbolId) -> Option<SymbolId> {
         .map(|(id, _)| id)
 }
 
-/// Returns the value of the second child (by source position) of `parent_id` if it is Boolean.
-fn second_child_boolean<'a>(ctx: &'a LintContext<'_>, parent_id: SymbolId) -> Option<&'a str> {
+fn boolean_value(sym: &mq_hir::Symbol) -> Option<&str> {
+    matches!(sym.kind, SymbolKind::Boolean)
+        .then(|| sym.value.as_deref())
+        .flatten()
+}
+
+/// Children of `parent_id`, sorted by source position. When `exclude_branches` is set, `Else`
+/// and `Elif` children are skipped (used for `If`'s children, where they aren't part of the
+/// condition/then-body pair).
+fn sorted_children<'a>(
+    ctx: &'a LintContext<'_>,
+    parent_id: SymbolId,
+    exclude_branches: bool,
+) -> Vec<(SymbolId, &'a mq_hir::Symbol)> {
     let mut children: Vec<_> = ctx
         .all_symbols()
         .filter(|(_, s)| {
             s.parent == Some(parent_id)
-                && !matches!(s.kind, SymbolKind::Else | SymbolKind::Elif)
                 && s.source.text_range.is_some()
+                && !(exclude_branches && matches!(s.kind, SymbolKind::Else | SymbolKind::Elif))
         })
-        .filter_map(|(id, s)| s.source.text_range.map(|r| (id, r, s)))
         .collect();
-    children.sort_by_key(|(_, r, _)| (r.start.line, r.start.column));
-
-    let (_, _, sym) = children.get(1)?;
-    if matches!(sym.kind, SymbolKind::Boolean) {
-        sym.value.as_deref()
-    } else {
-        None
-    }
-}
-
-/// Returns the value of the first child (by source position) of `parent_id` if it is Boolean.
-fn first_child_boolean<'a>(ctx: &'a LintContext<'_>, parent_id: SymbolId) -> Option<&'a str> {
-    let mut children: Vec<_> = ctx
-        .all_symbols()
-        .filter(|(_, s)| s.parent == Some(parent_id) && s.source.text_range.is_some())
-        .filter_map(|(id, s)| s.source.text_range.map(|r| (id, r, s)))
-        .collect();
-    children.sort_by_key(|(_, r, _)| (r.start.line, r.start.column));
-
-    let (_, _, sym) = children.first()?;
-    if matches!(sym.kind, SymbolKind::Boolean) {
-        sym.value.as_deref()
-    } else {
-        None
-    }
+    children.sort_by_key(|(_, s)| s.source.text_range.map(|r| (r.start.line, r.start.column)));
+    children
 }
 
 #[cfg(test)]
@@ -134,5 +142,15 @@ mod tests {
     fn no_diagnostic(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);
+    }
+
+    #[rstest]
+    #[case("if (.h1): true else: false;", ".h1;")]
+    #[case("if (.h1): false else: true;", "!.h1;")]
+    fn fix_simplifies_to_condition(#[case] code: &str, #[case] expected: &str) {
+        let diags = check(code);
+        let fix = diags[0].fix.as_ref().unwrap();
+        let (range, replacement) = fix.resolve(code).unwrap();
+        assert_eq!(crate::fix::apply_edits(code, &[(range, replacement)]), expected);
     }
 }

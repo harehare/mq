@@ -19,10 +19,12 @@
 //! ```
 
 pub mod config;
+pub mod fix;
 pub mod message;
 pub mod rules;
 
 pub use config::LintConfig;
+pub use fix::Fix;
 pub use message::{LintMessage, RuleId};
 
 use mq_hir::{Hir, SourceId};
@@ -59,6 +61,8 @@ pub struct Diagnostic {
     pub severity: Severity,
     /// Source location of the finding, if available.
     pub range: Option<mq_lang::Range>,
+    /// A machine-applicable rewrite, if the rule can suggest one.
+    pub fix: Option<Fix>,
 }
 
 impl Diagnostic {
@@ -67,11 +71,17 @@ impl Diagnostic {
             kind,
             severity,
             range: None,
+            fix: None,
         }
     }
 
     pub fn with_range(mut self, range: mq_lang::Range) -> Self {
         self.range = Some(range);
+        self
+    }
+
+    pub fn with_fix(mut self, fix: Fix) -> Self {
+        self.fix = Some(fix);
         self
     }
 
@@ -114,6 +124,27 @@ impl<'a> LintContext<'a> {
         self.hir
             .symbols()
             .filter(move |(_, s)| s.source.source_id == Some(source_id))
+    }
+
+    /// The full source range spanned by a symbol and all of its descendants.
+    ///
+    /// A symbol's own `source.text_range` often covers only its own token (e.g. a `BinaryOp`
+    /// symbol's range is just the operator), not the whole subtree, so rules building a [`Fix`]
+    /// should use this instead.
+    pub fn full_range(&self, symbol_id: mq_hir::SymbolId) -> Option<mq_lang::Range> {
+        let symbol = self.hir.symbol(symbol_id)?;
+        let mut range = symbol.source.text_range;
+
+        for (child_id, _) in self.all_symbols().filter(|(_, s)| s.parent == Some(symbol_id)) {
+            if let Some(child_range) = self.full_range(child_id) {
+                range = Some(match range {
+                    Some(r) => fix::union(r, child_range),
+                    None => child_range,
+                });
+            }
+        }
+
+        range
     }
 }
 

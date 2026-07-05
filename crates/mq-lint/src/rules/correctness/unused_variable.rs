@@ -1,9 +1,17 @@
 use rustc_hash::FxHashSet;
 
-use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
+use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 pub struct UnusedVariable;
+
+/// True if `sym` is a `${name}` interpolation embed rather than an actual `let`/`var` declaration
+/// (both reuse `SymbolKind::Variable`; see `Hir::add_interpolated_string`).
+fn is_interpolation_embed(ctx: &LintContext<'_>, sym: &mq_hir::Symbol) -> bool {
+    sym.parent
+        .and_then(|id| ctx.hir.symbol(id))
+        .is_some_and(|p| matches!(p.kind, SymbolKind::InterpolatedString))
+}
 
 impl LintRule for UnusedVariable {
     fn id(&self) -> RuleId {
@@ -15,10 +23,14 @@ impl LintRule for UnusedVariable {
     }
 
     fn check(&self, ctx: &LintContext<'_>) -> Vec<Diagnostic> {
-        // Build a set of all names referenced by Ref/Ident/Call symbols
+        // Build a set of all names referenced by Ref/Ident/Call symbols, plus bare `${name}`
+        // interpolation embeds (which reuse `SymbolKind::Variable` for the embedded text).
         let used_names: FxHashSet<&str> = ctx
             .all_symbols()
-            .filter(|(_, s)| matches!(s.kind, SymbolKind::Ref | SymbolKind::Ident | SymbolKind::Call))
+            .filter(|(_, s)| {
+                matches!(s.kind, SymbolKind::Ref | SymbolKind::Ident | SymbolKind::Call)
+                    || is_interpolation_embed(ctx, s)
+            })
             .filter_map(|(_, s)| s.value.as_deref())
             .collect();
 
@@ -30,12 +42,17 @@ impl LintRule for UnusedVariable {
                 if name.starts_with('_') {
                     return None;
                 }
+                // An interpolation embed is itself a reference, not a declaration, so it can't be
+                // "unused" or renamed.
+                if is_interpolation_embed(ctx, sym) {
+                    return None;
+                }
                 if used_names.contains(name) {
                     return None;
                 }
                 let mut d = Diagnostic::new(LintMessage::UnusedVariable { name: name.to_string() }, self.severity());
                 if let Some(range) = sym.source.text_range {
-                    d = d.with_range(range);
+                    d = d.with_range(range).with_fix(Fix::literal(range, format!("_{name}")));
                 }
                 Some(d)
             })
@@ -72,8 +89,19 @@ mod tests {
     #[case("let x = .h1 | x")]
     #[case("let _x = .h1")]
     #[case("let _ignored = .h1")]
+    #[case(r#"s"${x}""#)]
+    #[case(r#"let x = 1 | s"${x}""#)]
     fn no_diagnostic(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);
+    }
+
+    #[test]
+    fn fix_prefixes_name_with_underscore() {
+        let code = "let x = .h1";
+        let diags = check(code);
+        let fix = diags[0].fix.as_ref().unwrap();
+        let (range, replacement) = fix.resolve(code).unwrap();
+        assert_eq!(crate::fix::apply_edits(code, &[(range, replacement)]), "let _x = .h1");
     }
 }
