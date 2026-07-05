@@ -569,6 +569,12 @@ end
 # Loads a markdown file from the specified path
 def load_markdown(path): read_file(path) | to_markdown();
 
+# Performs an HTTPS GET request and returns the response body as a string
+def http_get(url): http(:get, url);
+
+# Performs an HTTPS POST request with the given body and returns the response body as a string
+def http_post(url, body): http(:post, url, body);
+
 # Prints the debug information of the given value(s).
 def debug(*args):
   if (len(args) == 1):

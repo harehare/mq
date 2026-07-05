@@ -1270,10 +1270,13 @@ fn register_file_io(ctx: &mut InferenceContext) {
     register_binary(ctx, "write_file", Type::String, Type::Bytes, Type::None);
 }
 
-/// Networking functions: http_get, http_post
+/// Networking functions: http(method, url) / http(method, url, body)
+/// `method` may be a string (`"post"`) or a symbol (`:post`).
 fn register_net(ctx: &mut InferenceContext) {
-    register_unary(ctx, "http_get", Type::String, Type::String);
-    register_binary(ctx, "http_post", Type::String, Type::String, Type::String);
+    register_binary(ctx, "http", Type::String, Type::String, Type::String);
+    register_binary(ctx, "http", Type::Symbol, Type::String, Type::String);
+    register_ternary(ctx, "http", Type::String, Type::String, Type::String, Type::String);
+    register_ternary(ctx, "http", Type::Symbol, Type::String, Type::String, Type::String);
 }
 
 fn register_bytes(ctx: &mut InferenceContext) {
@@ -1817,15 +1820,17 @@ mod tests {
     #[case::path_join("path_join(\"a\", \"b.md\")", true)]
     #[case::write_file_string("write_file(\"a.md\", \"content\")", true)]
     #[case::write_file_bytes("write_file(\"a.md\", to_bytes(\"content\"))", true)]
-    #[case::http_get("http_get(\"https://example.com\")", true)]
-    #[case::http_post("http_post(\"https://example.com\", \"{}\")", true)]
+    #[case::http_get("http(\"get\", \"https://example.com\")", true)]
+    #[case::http_get_symbol("http(:get, \"https://example.com\")", true)]
+    #[case::http_post("http(\"post\", \"https://example.com\", \"{}\")", true)]
+    #[case::http_post_symbol("http(:post, \"https://example.com\", \"{}\")", true)]
     #[case::read_file_number("read_file(42)", false)] // Should fail: wrong type
     #[case::file_exists_number("file_exists(42)", false)] // Should fail: wrong type
     #[case::collection_number("collection(42)", false)] // Should fail: wrong type
     #[case::basename_number("basename(42)", false)] // Should fail: wrong type
     #[case::path_join_number("path_join(42, \"b\")", false)] // Should fail: wrong type
     #[case::write_file_number("write_file(42, \"content\")", false)] // Should fail: wrong type
-    #[case::http_get_number("http_get(42)", false)] // Should fail: wrong type
+    #[case::http_get_number("http(\"get\", 42)", false)] // Should fail: wrong type
     fn test_file_io_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(

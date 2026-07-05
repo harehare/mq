@@ -240,13 +240,18 @@ mq --allowed-domain example.com --allowed-domain raw.githubusercontent.com 'self
 
 ## Network and File-Write Capabilities
 
-`http_get(url)`, `http_post(url, body)`, and `write_file(path, content)` are disabled by
+`http(method, url)` / `http(method, url, body)` and `write_file(path, content)` are disabled by
 default and must be explicitly enabled with `--allow-net` / `--allow-write`. Calling them
 without the corresponding flag raises a runtime error explaining how to opt in.
 
-> **Security note:** `http_get`/`http_post` only accept `https://` URLs and are routed through
-> the same SSRF-hardened client used for HTTP imports — no automatic redirects, and DNS results
-> are filtered to publicly routable addresses, so a loopback/private/link-local address can't be
+`method` is a string or symbol (`"post"` or `:post`) and accepts any HTTP method — `get`, `post`,
+`put`, `delete`, `patch`, `head`, and so on. The optional `body` argument is sent as the request
+body regardless of method. `http_get(url)` and `http_post(url, body)` are convenience wrappers
+around `http(:get, url)` and `http(:post, url, body)` for the two most common cases.
+
+> **Security note:** `http` only accepts `https://` URLs and is routed through the same
+> SSRF-hardened client used for HTTP imports — no automatic redirects, and DNS results are
+> filtered to publicly routable addresses, so a loopback/private/link-local address can't be
 > reached even with `--allow-net` set.
 
 ```sh
@@ -255,6 +260,7 @@ mq 'http_get("https://example.com")'
 
 # Enabled explicitly
 mq --allow-net 'http_get("https://example.com")'
+mq --allow-net 'http(:delete, "https://example.com/resource/1")'
 mq --allow-write 'write_file("out.md", "# Hello")'
 ```
 

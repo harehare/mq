@@ -118,7 +118,7 @@ impl<T: ModuleResolver> Engine<T> {
         self.evaluator.options.max_call_stack_depth = max_call_stack_depth;
     }
 
-    /// Enables or disables the `http_get`/`http_post` builtins for the current process.
+    /// Enables or disables the `http` builtin for the current process.
     ///
     /// Disabled by default. This is a process-wide setting (see
     /// [`capability`](crate::eval::builtin::capability)), not per-`Engine`.

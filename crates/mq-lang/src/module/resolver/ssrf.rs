@@ -1,5 +1,5 @@
 //! SSRF (server-side request forgery) defenses shared by every outbound HTTP path in this
-//! crate: HTTP module imports (`http_resolver.rs`) and the `http_get`/`http_post` builtins
+//! crate: HTTP module imports (`http_resolver.rs`) and the `http` builtin
 //! (`eval/builtin/http.rs`).
 //!
 //! [`is_global_ip`] has no I/O dependencies. [`SsrfSafeResolver`]/[`ssrf_safe_agent`] additionally
@@ -82,7 +82,7 @@ impl ureq::unversioned::resolver::Resolver for SsrfSafeResolver {
 /// internal address can't bypass allowlist/IP checks), and resolves DNS through
 /// [`SsrfSafeResolver`] so only publicly routable addresses are ever connected to.
 ///
-/// Shared by the HTTP module-import fetcher and the `http_get`/`http_post` builtins.
+/// Shared by the HTTP module-import fetcher and the `http` builtin.
 #[cfg(feature = "http-import-ureq")]
 pub(crate) fn ssrf_safe_agent(timeout: std::time::Duration, https_only: bool) -> ureq::Agent {
     let config = ureq::Agent::config_builder()

@@ -3874,30 +3874,26 @@ fn write_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
     }
 }
 
-/// Performs an HTTPS GET request and returns the response body as a string.
+/// Performs an HTTPS request with the given method (`"get"`/`:get`, `"post"`/`:post`, etc.) and
+/// returns the response body as a string. `body`, when given, is sent regardless of method.
 /// Requires the `--allow-net` CLI flag (see [`capability`]).
 #[cfg(feature = "http-import-ureq")]
-#[mq_macros::mq_fn(name = "http_get", params = Fixed(1))]
-fn http_get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+#[mq_macros::mq_fn(name = "http", params = Range(2, 3))]
+fn http_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(url)] => http::get(url),
-        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!("http_get should always receive exactly one argument"),
-    }
-}
-
-/// Performs an HTTPS POST request with the given body and returns the response body as a string.
-/// Requires the `--allow-net` CLI flag (see [`capability`]).
-#[cfg(feature = "http-import-ureq")]
-#[mq_macros::mq_fn(name = "http_post", params = Fixed(2))]
-fn http_post_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
-        [RuntimeValue::String(url), RuntimeValue::String(body)] => http::post(url, body),
-        [a, b] => Err(Error::InvalidTypes(
+        [
+            method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
+            RuntimeValue::String(url),
+        ] => http::request(method, url, None),
+        [
+            method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
+            RuntimeValue::String(url),
+            RuntimeValue::String(body),
+        ] => http::request(method, url, Some(body)),
+        args => Err(Error::InvalidTypes(
             ident.to_string(),
-            vec![std::mem::take(a), std::mem::take(b)],
+            args.iter_mut().map(std::mem::take).collect(),
         )),
-        _ => unreachable!("http_post should always receive exactly two arguments"),
     }
 }
 
@@ -4214,9 +4210,7 @@ mq_macros::builtin_dispatch! {
     #[cfg(feature = "file-io")]
     WRITE_FILE,
     #[cfg(feature = "http-import-ureq")]
-    HTTP_GET,
-    #[cfg(feature = "http-import-ureq")]
-    HTTP_POST,
+    HTTP,
 }
 
 #[derive(Clone, Debug)]
@@ -5771,18 +5765,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     );
     #[cfg(feature = "http-import-ureq")]
     map.insert(
-        SmolStr::new("http_get"),
+        SmolStr::new("http"),
         BuiltinFunctionDoc {
-            description: "Performs an HTTPS GET request and returns the response body as a string. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
-            params: &["url"],
-        },
-    );
-    #[cfg(feature = "http-import-ureq")]
-    map.insert(
-        SmolStr::new("http_post"),
-        BuiltinFunctionDoc {
-            description: "Performs an HTTPS POST request with the given body and returns the response body as a string. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
-            params: &["url", "body"],
+            description: "Performs an HTTPS request with the given method (a string or symbol, e.g. \"post\" or :post — get, post, put, delete, patch, head, ... are all supported) and returns the response body as a string. An optional third argument sends a request body regardless of method. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
+            params: &["method", "url"],
         },
     );
 

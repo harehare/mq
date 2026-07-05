@@ -1,5 +1,5 @@
 //! Process-wide opt-in flags gating capabilities with real-world side effects:
-//! `http_get`/`http_post` (network) and `write_file` (filesystem writes).
+//! `http` (network) and `write_file` (filesystem writes).
 //!
 //! Both default to `false`. A host must explicitly enable them via
 //! [`set_allow_net`]/[`set_allow_write`] (wired to the `--allow-net`/`--allow-write` CLI flags
@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 static NET_ALLOWED: AtomicBool = AtomicBool::new(false);
 static WRITE_ALLOWED: AtomicBool = AtomicBool::new(false);
 
-/// Enables or disables `http_get`/`http_post` for the current process.
+/// Enables or disables `http` for the current process.
 pub fn set_allow_net(allow: bool) {
     NET_ALLOWED.store(allow, Ordering::Relaxed);
 }

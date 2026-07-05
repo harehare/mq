@@ -1,4 +1,5 @@
-//! `http_get`/`http_post` builtins.
+//! `http` builtin: issues an HTTPS request using any method (`get`, `post`, `put`, `delete`,
+//! `patch`, `head`, ...) and returns the response body as a string.
 //!
 //! Gated at compile time by the `http-import-ureq` feature and at runtime by the
 //! `--allow-net` CLI flag (see [`super::capability`]) — both must be satisfied before a
@@ -9,44 +10,60 @@
 
 use std::sync::LazyLock;
 
+use ureq::http;
+
 use super::Error;
 use super::capability;
 use crate::RuntimeValue;
 use crate::module::resolver::ssrf::{is_https, ssrf_safe_agent};
 
-/// Maximum response body size read from `http_get`/`http_post` (10 MiB).
+/// Maximum response body size read from `http` (10 MiB).
 const MAX_RESPONSE_SIZE: u64 = 10 * 1024 * 1024;
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Built once and reused so repeated calls share connection pooling.
 static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| ssrf_safe_agent(TIMEOUT, true));
 
-fn ensure_net_allowed(fn_name: &str) -> Result<(), Error> {
+fn ensure_net_allowed() -> Result<(), Error> {
     if capability::is_net_allowed() {
         Ok(())
     } else {
-        Err(Error::Runtime(format!(
-            "{fn_name}: network access is disabled; re-run mq with --allow-net to enable http_get/http_post"
-        )))
+        Err(Error::Runtime(
+            "http: network access is disabled; re-run mq with --allow-net to enable http".into(),
+        ))
     }
 }
 
-fn ensure_https(fn_name: &str, url: &str) -> Result<(), Error> {
+fn ensure_https(url: &str) -> Result<(), Error> {
     if is_https(url) {
         Ok(())
     } else {
         Err(Error::Runtime(format!(
-            "{fn_name}: only https:// URLs are allowed, got {url:?}"
+            "http: only https:// URLs are allowed, got {url:?}"
         )))
     }
 }
 
-fn read_body(fn_name: &str, mut response: ureq::http::Response<ureq::Body>) -> Result<RuntimeValue, Error> {
+/// Accepts either a string (`"post"`) or a symbol (`:post`) method name, case-insensitively.
+fn parse_method(value: &RuntimeValue) -> Result<http::Method, Error> {
+    let name = match value {
+        RuntimeValue::Symbol(name) => name.as_str(),
+        RuntimeValue::String(name) => name.clone(),
+        other => {
+            return Err(Error::Runtime(format!(
+                "http: method must be a string or symbol, got {other}"
+            )));
+        }
+    };
+    name.to_ascii_uppercase()
+        .parse::<http::Method>()
+        .map_err(|_| Error::Runtime(format!("http: invalid HTTP method {name:?}")))
+}
+
+fn read_body(mut response: http::Response<ureq::Body>) -> Result<RuntimeValue, Error> {
     let status = response.status();
     if !status.is_success() {
-        return Err(Error::Runtime(format!(
-            "{fn_name}: request failed with status {status}"
-        )));
+        return Err(Error::Runtime(format!("http: request failed with status {status}")));
     }
     response
         .body_mut()
@@ -54,36 +71,91 @@ fn read_body(fn_name: &str, mut response: ureq::http::Response<ureq::Body>) -> R
         .limit(MAX_RESPONSE_SIZE)
         .read_to_string()
         .map(RuntimeValue::String)
-        .map_err(|e| Error::Runtime(format!("{fn_name}: failed to read response body: {e}")))
+        .map_err(|e| Error::Runtime(format!("http: failed to read response body: {e}")))
 }
 
-/// Performs an HTTPS GET request and returns the response body as a string.
-pub(super) fn get(url: &str) -> Result<RuntimeValue, Error> {
-    ensure_net_allowed("http_get")?;
-    ensure_https("http_get", url)?;
+/// Performs an HTTPS request with the given `method` and returns the response body as a string.
+/// `body`, when present, is sent as the request body regardless of method.
+pub(super) fn request(method: &RuntimeValue, url: &str, body: Option<&str>) -> Result<RuntimeValue, Error> {
+    ensure_net_allowed()?;
+    ensure_https(url)?;
+    let method = parse_method(method)?;
 
-    let response = AGENT
-        .get(url)
-        .call()
-        .map_err(|e| Error::Runtime(format!("http_get: {e}")))?;
-    read_body("http_get", response)
-}
+    let response = match body {
+        Some(body) => {
+            let request = http::Request::builder()
+                .method(method)
+                .uri(url)
+                .body(body.to_string())
+                .map_err(|e| Error::Runtime(format!("http: {e}")))?;
+            AGENT.run(request)
+        }
+        None => {
+            let request = http::Request::builder()
+                .method(method)
+                .uri(url)
+                .body(())
+                .map_err(|e| Error::Runtime(format!("http: {e}")))?;
+            AGENT.run(request)
+        }
+    }
+    .map_err(|e| Error::Runtime(format!("http: {e}")))?;
 
-/// Performs an HTTPS POST request with `body` and returns the response body as a string.
-pub(super) fn post(url: &str, body: &str) -> Result<RuntimeValue, Error> {
-    ensure_net_allowed("http_post")?;
-    ensure_https("http_post", url)?;
-
-    let response = AGENT
-        .post(url)
-        .send(body)
-        .map_err(|e| Error::Runtime(format!("http_post: {e}")))?;
-    read_body("http_post", response)
+    read_body(response)
 }
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
+    use crate::Ident;
+
+    const ALL_METHODS: &[&str] = &[
+        "get", "head", "post", "put", "delete", "connect", "options", "trace", "patch",
+    ];
+
+    fn symbol(name: &str) -> RuntimeValue {
+        RuntimeValue::Symbol(Ident::new(name))
+    }
+
+    #[rstest]
+    #[case::get("get", "GET")]
+    #[case::head("head", "HEAD")]
+    #[case::post("post", "POST")]
+    #[case::put("put", "PUT")]
+    #[case::delete("delete", "DELETE")]
+    #[case::connect("connect", "CONNECT")]
+    #[case::options("options", "OPTIONS")]
+    #[case::trace("trace", "TRACE")]
+    #[case::patch("patch", "PATCH")]
+    #[case::uppercase("POST", "POST")]
+    #[case::mixed_case("PoSt", "POST")]
+    #[case::webdav_extension_token("propfind", "PROPFIND")]
+    fn test_parse_method_accepts_symbol_and_string(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(parse_method(&symbol(input)).unwrap().as_str(), expected);
+        assert_eq!(
+            parse_method(&RuntimeValue::String(input.into())).unwrap().as_str(),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case::empty("")]
+    #[case::space_in_token("in valid")]
+    #[case::control_char("get\n")]
+    fn test_parse_method_rejects_invalid_method_strings(#[case] input: &str) {
+        assert!(parse_method(&symbol(input)).is_err());
+        assert!(parse_method(&RuntimeValue::String(input.into())).is_err());
+    }
+
+    #[rstest]
+    #[case::number(RuntimeValue::from(1usize))]
+    #[case::boolean(RuntimeValue::from(true))]
+    #[case::none(RuntimeValue::NONE)]
+    fn test_parse_method_rejects_non_string_non_symbol(#[case] value: RuntimeValue) {
+        assert!(parse_method(&value).is_err());
+    }
 
     // `capability::NET_ALLOWED` is a single process-wide flag, so every case that flips it
     // must run in one #[test] function — cargo test runs tests in parallel by default, and
@@ -91,27 +163,50 @@ mod tests {
     #[test]
     fn test_net_capability_gate_and_https_enforcement() {
         capability::set_allow_net(false);
+        for name in ALL_METHODS {
+            assert!(
+                request(&symbol(name), "https://example.com", None).is_err(),
+                "http({name}, ..) should be blocked when --allow-net is not set"
+            );
+        }
         assert!(
-            get("https://example.com").is_err(),
-            "http_get should be blocked when --allow-net is not set"
-        );
-        assert!(
-            post("https://example.com", "{}").is_err(),
-            "http_post should be blocked when --allow-net is not set"
+            request(&symbol("post"), "https://example.com", Some("{}")).is_err(),
+            "http should be blocked when --allow-net is not set, even with a body"
         );
 
         capability::set_allow_net(true);
+        for name in ALL_METHODS {
+            assert!(
+                request(&symbol(name), "http://example.com", None).is_err(),
+                "http({name}, ..) should reject non-https URLs"
+            );
+        }
         assert!(
-            get("http://example.com").is_err(),
-            "http_get should reject non-https URLs"
+            request(
+                &RuntimeValue::String("bogus method".into()),
+                "https://example.com",
+                None
+            )
+            .is_err(),
+            "http should reject unknown methods"
         );
         assert!(
-            post("http://example.com", "{}").is_err(),
-            "http_post should reject non-https URLs"
+            request(
+                &symbol("get"),
+                "https://this-domain-should-not-exist-mq-test.invalid",
+                None
+            )
+            .is_err(),
+            "http should surface a request error for an unresolvable host"
         );
         assert!(
-            get("https://this-domain-should-not-exist-mq-test.invalid").is_err(),
-            "http_get should surface a request error for an unresolvable host"
+            request(
+                &symbol("delete"),
+                "https://this-domain-should-not-exist-mq-test.invalid",
+                None
+            )
+            .is_err(),
+            "http should surface a request error for an unresolvable host regardless of method"
         );
 
         capability::set_allow_net(false);

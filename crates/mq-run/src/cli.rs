@@ -330,7 +330,7 @@ struct InputArgs {
     #[arg(long = "clear-cache", default_value_t = false)]
     clear_cache: bool,
 
-    /// Allow the `http_get`/`http_post` functions to make outbound HTTPS requests.
+    /// Allow the `http` function to make outbound HTTPS requests.
     /// Disabled by default; requests are HTTPS-only and blocked from reaching
     /// loopback/private/link-local addresses regardless of this flag.
     #[cfg(feature = "http-import")]
