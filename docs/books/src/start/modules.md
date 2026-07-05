@@ -69,6 +69,7 @@ import "github.com/harehare/<module-name>"
 | Module | Description |
 |---|---|
 | [ansi.mq](https://github.com/harehare/ansi.mq) | ANSI terminal escape code utilities |
+| [case.mq](https://github.com/harehare/case.mq) | String case conversion utilities implemented as an mq module |
 | [emoji.mq](https://github.com/harehare/emoji.mq) | GitHub-style emoji shortcode <-> Unicode emoji conversion |
 
 ## Interpreters
