@@ -25,12 +25,17 @@ const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 /// Built once and reused so repeated calls share connection pooling.
 static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| ssrf_safe_agent(TIMEOUT, true));
 
+/// Builds an `Error::Runtime` with the `http: ` prefix shared by every error in this module.
+fn err(msg: impl std::fmt::Display) -> Error {
+    Error::Runtime(format!("http: {msg}"))
+}
+
 fn ensure_net_allowed() -> Result<(), Error> {
     if capability::is_net_allowed() {
         Ok(())
     } else {
-        Err(Error::Runtime(
-            "http: network access is disabled; re-run mq with --allow-net to enable http".into(),
+        Err(err(
+            "network access is disabled; re-run mq with --allow-net to enable http",
         ))
     }
 }
@@ -39,9 +44,7 @@ fn ensure_https(url: &str) -> Result<(), Error> {
     if is_https(url) {
         Ok(())
     } else {
-        Err(Error::Runtime(format!(
-            "http: only https:// URLs are allowed, got {url:?}"
-        )))
+        Err(err(format!("only https:// URLs are allowed, got {url:?}")))
     }
 }
 
@@ -50,21 +53,17 @@ fn parse_method(value: &RuntimeValue) -> Result<http::Method, Error> {
     let name = match value {
         RuntimeValue::Symbol(name) => name.as_str(),
         RuntimeValue::String(name) => name.clone(),
-        other => {
-            return Err(Error::Runtime(format!(
-                "http: method must be a string or symbol, got {other}"
-            )));
-        }
+        other => return Err(err(format!("method must be a string or symbol, got {other}"))),
     };
     name.to_ascii_uppercase()
         .parse::<http::Method>()
-        .map_err(|_| Error::Runtime(format!("http: invalid HTTP method {name:?}")))
+        .map_err(|_| err(format!("invalid HTTP method {name:?}")))
 }
 
 fn read_body(mut response: http::Response<ureq::Body>) -> Result<RuntimeValue, Error> {
     let status = response.status();
     if !status.is_success() {
-        return Err(Error::Runtime(format!("http: request failed with status {status}")));
+        return Err(err(format!("request failed with status {status}")));
     }
     response
         .body_mut()
@@ -72,7 +71,7 @@ fn read_body(mut response: http::Response<ureq::Body>) -> Result<RuntimeValue, E
         .limit(MAX_RESPONSE_SIZE)
         .read_to_string()
         .map(RuntimeValue::String)
-        .map_err(|e| Error::Runtime(format!("http: failed to read response body: {e}")))
+        .map_err(|e| err(format!("failed to read response body: {e}")))
 }
 
 /// Applies `headers` to `builder`, requiring every value to be a string. Invalid header
@@ -87,11 +86,7 @@ fn apply_headers(
     for (name, value) in headers {
         let value = match value {
             RuntimeValue::String(value) => value.as_str(),
-            other => {
-                return Err(Error::Runtime(format!(
-                    "http: header {name:?} must be a string, got {other}"
-                )));
-            }
+            other => return Err(err(format!("header {name:?} must be a string, got {other}"))),
         };
         builder = builder.header(name.as_str(), value);
     }
@@ -114,17 +109,15 @@ pub(super) fn request(
 
     let response = match body {
         Some(body) => {
-            let request = builder
-                .body(body.to_string())
-                .map_err(|e| Error::Runtime(format!("http: {e}")))?;
+            let request = builder.body(body.to_string()).map_err(err)?;
             AGENT.run(request)
         }
         None => {
-            let request = builder.body(()).map_err(|e| Error::Runtime(format!("http: {e}")))?;
+            let request = builder.body(()).map_err(err)?;
             AGENT.run(request)
         }
     }
-    .map_err(|e| Error::Runtime(format!("http: {e}")))?;
+    .map_err(err)?;
 
     read_body(response)
 }

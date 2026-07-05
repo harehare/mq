@@ -2,6 +2,7 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
+use crate::eval::builtin::capability;
 #[cfg(feature = "debugger")]
 use crate::eval::env::Env;
 #[cfg(feature = "debugger")]
@@ -123,7 +124,7 @@ impl<T: ModuleResolver> Engine<T> {
     /// Disabled by default. This is a process-wide setting (see
     /// [`capability`](crate::eval::builtin::capability)), not per-`Engine`.
     pub fn set_allow_net(&self, allow: bool) {
-        crate::eval::builtin::capability::set_allow_net(allow);
+        capability::set_allow_net(allow);
     }
 
     /// Enables or disables the `write_file` builtin for the current process.
@@ -131,7 +132,7 @@ impl<T: ModuleResolver> Engine<T> {
     /// Disabled by default. This is a process-wide setting (see
     /// [`capability`](crate::eval::builtin::capability)), not per-`Engine`.
     pub fn set_allow_write(&self, allow: bool) {
-        crate::eval::builtin::capability::set_allow_write(allow);
+        capability::set_allow_write(allow);
     }
 
     /// Set search paths for module loading.

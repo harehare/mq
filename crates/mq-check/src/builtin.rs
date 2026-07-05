@@ -57,11 +57,6 @@ fn register_ternary(ctx: &mut InferenceContext, name: &str, p1: Type, p2: Type, 
     ctx.register_builtin(name, Type::function(vec![p1, p2, p3], ret));
 }
 
-/// Registers a quaternary builtin: `(p1, p2, p3, p4) -> ret`.
-fn register_quaternary(ctx: &mut InferenceContext, name: &str, p1: Type, p2: Type, p3: Type, p4: Type, ret: Type) {
-    ctx.register_builtin(name, Type::function(vec![p1, p2, p3, p4], ret));
-}
-
 /// Registers None propagation overloads: `(none) -> none` for multiple unary functions.
 fn register_none_propagation_unary(ctx: &mut InferenceContext, names: &[&str]) {
     for name in names {
@@ -1282,30 +1277,17 @@ fn register_file_io(ctx: &mut InferenceContext) {
 fn register_net(ctx: &mut InferenceContext) {
     let headers = Type::dict(Type::String, Type::String);
 
-    register_binary(ctx, "http", Type::String, Type::String, Type::String);
-    register_binary(ctx, "http", Type::Symbol, Type::String, Type::String);
-    register_ternary(ctx, "http", Type::String, Type::String, Type::String, Type::String);
-    register_ternary(ctx, "http", Type::Symbol, Type::String, Type::String, Type::String);
-    register_ternary(ctx, "http", Type::String, Type::String, headers.clone(), Type::String);
-    register_ternary(ctx, "http", Type::Symbol, Type::String, headers.clone(), Type::String);
-    register_quaternary(
-        ctx,
-        "http",
-        Type::String,
-        Type::String,
-        Type::String,
-        headers.clone(),
-        Type::String,
-    );
-    register_quaternary(
-        ctx,
-        "http",
-        Type::Symbol,
-        Type::String,
-        Type::String,
-        headers,
-        Type::String,
-    );
+    for method in [Type::String, Type::Symbol] {
+        register_binary(ctx, "http", method.clone(), Type::String, Type::String);
+        register_ternary(ctx, "http", method.clone(), Type::String, Type::String, Type::String);
+        register_ternary(ctx, "http", method.clone(), Type::String, headers.clone(), Type::String);
+        register_many(
+            ctx,
+            &["http"],
+            vec![method, Type::String, Type::String, headers.clone()],
+            Type::String,
+        );
+    }
 }
 
 fn register_bytes(ctx: &mut InferenceContext) {
