@@ -3857,15 +3857,15 @@ fn write_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             "write_file: filesystem writes are disabled; re-run mq with --allow-write to enable write_file".into(),
         ));
     }
+    fn write(path: &str, content: impl AsRef<[u8]>) -> Result<RuntimeValue, Error> {
+        std::fs::write(path, content)
+            .map(|()| RuntimeValue::NONE)
+            .map_err(|e| Error::Runtime(format!("Failed to write file {}: {}", path, e)))
+    }
+
     match args.as_mut_slice() {
-        [RuntimeValue::String(path), RuntimeValue::String(content)] => match std::fs::write(&path, content.as_str()) {
-            Ok(()) => Ok(RuntimeValue::NONE),
-            Err(e) => Err(Error::Runtime(format!("Failed to write file {}: {}", path, e))),
-        },
-        [RuntimeValue::String(path), RuntimeValue::Bytes(content)] => match std::fs::write(&path, content) {
-            Ok(()) => Ok(RuntimeValue::NONE),
-            Err(e) => Err(Error::Runtime(format!("Failed to write file {}: {}", path, e))),
-        },
+        [RuntimeValue::String(path), RuntimeValue::String(content)] => write(path, content.as_str()),
+        [RuntimeValue::String(path), RuntimeValue::Bytes(content)] => write(path, content),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],

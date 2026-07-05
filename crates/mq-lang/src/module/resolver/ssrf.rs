@@ -5,6 +5,11 @@
 //! [`is_global_ip`] has no I/O dependencies. [`SsrfSafeResolver`]/[`ssrf_safe_agent`] additionally
 //! require a concrete `ureq` transport, so they're gated behind `http-import-ureq`.
 
+/// Returns `true` if `url` uses the `https://` scheme.
+pub fn is_https(url: &str) -> bool {
+    url.starts_with("https://")
+}
+
 /// Returns `true` if `ip` is publicly routable.
 ///
 /// Rejects loopback, private, link-local (which includes the `169.254.169.254` cloud metadata

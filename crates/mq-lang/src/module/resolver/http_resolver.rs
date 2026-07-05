@@ -227,7 +227,7 @@ const MAX_MODULE_SIZE: u64 = 1024 * 1024;
 #[cfg(feature = "http-import-ureq")]
 impl HttpFetcher for UreqFetcher {
     fn fetch(&self, url: &str) -> Result<String, ModuleError> {
-        if !url.starts_with("https://") {
+        if !super::ssrf::is_https(url) {
             return Err(ModuleError::IOError(
                 format!("Only HTTPS URLs are allowed: {}", url).into(),
             ));

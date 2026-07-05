@@ -7,14 +7,19 @@
 //! DNS resolution filtered to publicly routable addresses so a hostname can't be rebound to
 //! an internal address after the initial check.
 
+use std::sync::LazyLock;
+
 use super::Error;
 use super::capability;
 use crate::RuntimeValue;
-use crate::module::resolver::ssrf::ssrf_safe_agent;
+use crate::module::resolver::ssrf::{is_https, ssrf_safe_agent};
 
 /// Maximum response body size read from `http_get`/`http_post` (10 MiB).
 const MAX_RESPONSE_SIZE: u64 = 10 * 1024 * 1024;
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Built once and reused so repeated calls share connection pooling.
+static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| ssrf_safe_agent(TIMEOUT, true));
 
 fn ensure_net_allowed(fn_name: &str) -> Result<(), Error> {
     if capability::is_net_allowed() {
@@ -27,7 +32,7 @@ fn ensure_net_allowed(fn_name: &str) -> Result<(), Error> {
 }
 
 fn ensure_https(fn_name: &str, url: &str) -> Result<(), Error> {
-    if url.starts_with("https://") {
+    if is_https(url) {
         Ok(())
     } else {
         Err(Error::Runtime(format!(
@@ -57,8 +62,7 @@ pub(super) fn get(url: &str) -> Result<RuntimeValue, Error> {
     ensure_net_allowed("http_get")?;
     ensure_https("http_get", url)?;
 
-    let agent = ssrf_safe_agent(TIMEOUT, true);
-    let response = agent
+    let response = AGENT
         .get(url)
         .call()
         .map_err(|e| Error::Runtime(format!("http_get: {e}")))?;
@@ -70,8 +74,7 @@ pub(super) fn post(url: &str, body: &str) -> Result<RuntimeValue, Error> {
     ensure_net_allowed("http_post")?;
     ensure_https("http_post", url)?;
 
-    let agent = ssrf_safe_agent(TIMEOUT, true);
-    let response = agent
+    let response = AGENT
         .post(url)
         .send(body)
         .map_err(|e| Error::Runtime(format!("http_post: {e}")))?;
