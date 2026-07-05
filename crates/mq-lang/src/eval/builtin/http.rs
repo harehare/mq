@@ -183,26 +183,26 @@ mod tests {
         capability::set_allow_net(false);
         for name in ALL_METHODS {
             assert!(
-                request(&symbol(name), "https://example.com", None, None).is_err(),
+                request(&symbol(name), "https://example.invalid", None, None).is_err(),
                 "http({name}, ..) should be blocked when --allow-net is not set"
             );
         }
         assert!(
-            request(&symbol("post"), "https://example.com", Some("{}"), None).is_err(),
+            request(&symbol("post"), "https://example.invalid", Some("{}"), None).is_err(),
             "http should be blocked when --allow-net is not set, even with a body"
         );
 
         capability::set_allow_net(true);
         for name in ALL_METHODS {
             assert!(
-                request(&symbol(name), "http://example.com", None, None).is_err(),
+                request(&symbol(name), "http://example.invalid", None, None).is_err(),
                 "http({name}, ..) should reject non-https URLs"
             );
         }
         assert!(
             request(
                 &RuntimeValue::String("bogus method".into()),
-                "https://example.com",
+                "https://example.invalid",
                 None,
                 None
             )
@@ -250,7 +250,7 @@ mod tests {
     fn test_apply_headers_accepts_string_values() {
         let builder = http::Request::builder()
             .method(http::Method::GET)
-            .uri("https://example.com");
+            .uri("https://example.invalid");
         let headers = BTreeMap::from([
             (Ident::new("X-Test"), RuntimeValue::String("value".into())),
             (
@@ -268,7 +268,7 @@ mod tests {
     fn test_apply_headers_rejects_non_string_values() {
         let builder = http::Request::builder()
             .method(http::Method::GET)
-            .uri("https://example.com");
+            .uri("https://example.invalid");
         let headers = BTreeMap::from([(Ident::new("X-Test"), RuntimeValue::from(1usize))]);
 
         assert!(apply_headers(builder, Some(&headers)).is_err());
@@ -278,7 +278,7 @@ mod tests {
     fn test_apply_headers_passthrough_when_none() {
         let builder = http::Request::builder()
             .method(http::Method::GET)
-            .uri("https://example.com");
+            .uri("https://example.invalid");
 
         assert!(apply_headers(builder, None).unwrap().body(()).is_ok());
     }

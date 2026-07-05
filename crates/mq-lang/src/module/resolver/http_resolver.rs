@@ -338,7 +338,7 @@ mod tests {
     #[rstest]
     #[case("github.com/alice/mymod", "mymod")]
     #[case("github.com/alice/mymod.mq@v1.0", "mymod")]
-    #[case("https://example.com/foo.mq", "foo")]
+    #[case("https://example.invalid/foo.mq", "foo")]
     #[case("local_module", "local_module")]
     #[cfg(feature = "http-import-ureq")]
     fn test_canonical_name(#[case] input: &str, #[case] expected: &str) {
@@ -349,7 +349,7 @@ mod tests {
     #[rstest]
     #[case(vec!["github.com/alice/myrepo".to_string()], "https://raw.githubusercontent.com/alice/myrepo/HEAD/mod.mq", true)]
     #[case(vec!["github.com/alice/myrepo".to_string()], "https://raw.githubusercontent.com/alice/other/HEAD/mod.mq", false)]
-    #[case(vec!["example.com".to_string()], "https://example.com/foo.mq", true)]
+    #[case(vec!["example.invalid".to_string()], "https://example.invalid/foo.mq", true)]
     #[cfg(feature = "http-import-ureq")]
     fn test_new_normalizes_github_domains(#[case] domains: Vec<String>, #[case] url: &str, #[case] expected: bool) {
         let resolver = HttpModuleResolver::new(domains, UreqFetcher::new(Duration::from_secs(10)));
@@ -388,9 +388,9 @@ mod tests {
 
     #[rstest]
     #[case(vec![], "github.com/alice/lisp")]
-    #[case(vec!["example.com".to_string()], "github.com/alice/lisp")]
-    #[case(vec!["example.com".to_string()], "https://other.com/foo.mq")]
-    #[case(vec![], "https://example.com/foo.mq")]
+    #[case(vec!["example.invalid".to_string()], "github.com/alice/lisp")]
+    #[case(vec!["example.invalid".to_string()], "https://other.com/foo.mq")]
+    #[case(vec![], "https://example.invalid/foo.mq")]
     #[cfg(feature = "http-import-ureq")]
     fn test_to_fetch_url_blocked_by_allowlist(#[case] allowed: Vec<String>, #[case] input: &str) {
         let resolver = resolver_with_domains(allowed);
@@ -560,8 +560,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(vec!["other.com".to_string()], "https://example.com/foo.mq")]
-    #[case(vec![], "https://example.com/foo.mq")]
+    #[case(vec!["other.com".to_string()], "https://example.invalid/foo.mq")]
+    #[case(vec![], "https://example.invalid/foo.mq")]
     #[case(vec![], "https://raw.githubusercontent.com/alice/mod/HEAD/mod.mq")]
     #[cfg(feature = "http-import-ureq")]
     fn test_resolve_blocked_domain_returns_io_error(#[case] allowed: Vec<String>, #[case] url: &str) {
@@ -570,7 +570,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case("http://example.com/foo.mq")]
+    #[case("http://example.invalid/foo.mq")]
     #[case("http://raw.githubusercontent.com/harehare/mod/HEAD/mod.mq")]
     #[cfg(feature = "http-import-ureq")]
     fn test_fetch_rejects_http(#[case] url: &str) {
@@ -600,7 +600,7 @@ mod tests {
     fn test_fetch_rejects_non_default_domain_with_empty_allowlist() {
         let resolver = resolver_with_domains(vec![]);
         assert!(matches!(
-            resolver.resolve("https://example.com/foo.mq"),
+            resolver.resolve("https://example.invalid/foo.mq"),
             Err(ModuleError::IOError(_))
         ));
     }

@@ -1831,18 +1831,21 @@ mod tests {
     #[case::path_join("path_join(\"a\", \"b.md\")", true)]
     #[case::write_file_string("write_file(\"a.md\", \"content\")", true)]
     #[case::write_file_bytes("write_file(\"a.md\", to_bytes(\"content\"))", true)]
-    #[case::http_get("http(\"get\", \"https://example.com\")", true)]
-    #[case::http_get_symbol("http(:get, \"https://example.com\")", true)]
-    #[case::http_post("http(\"post\", \"https://example.com\", \"{}\")", true)]
-    #[case::http_post_symbol("http(:post, \"https://example.com\", \"{}\")", true)]
-    #[case::http_headers("http(\"get\", \"https://example.com\", {\"Accept\": \"application/json\"})", true)]
-    #[case::http_headers_symbol("http(:get, \"https://example.com\", {\"Accept\": \"application/json\"})", true)]
+    #[case::http_get("http(\"get\", \"https://example.invalid\")", true)]
+    #[case::http_get_symbol("http(:get, \"https://example.invalid\")", true)]
+    #[case::http_post("http(\"post\", \"https://example.invalid\", \"{}\")", true)]
+    #[case::http_post_symbol("http(:post, \"https://example.invalid\", \"{}\")", true)]
+    #[case::http_headers(
+        "http(\"get\", \"https://example.invalid\", {\"Accept\": \"application/json\"})",
+        true
+    )]
+    #[case::http_headers_symbol("http(:get, \"https://example.invalid\", {\"Accept\": \"application/json\"})", true)]
     #[case::http_body_and_headers(
-        "http(\"post\", \"https://example.com\", \"{}\", {\"Content-Type\": \"application/json\"})",
+        "http(\"post\", \"https://example.invalid\", \"{}\", {\"Content-Type\": \"application/json\"})",
         true
     )]
     #[case::http_body_and_headers_symbol(
-        "http(:post, \"https://example.com\", \"{}\", {\"Content-Type\": \"application/json\"})",
+        "http(:post, \"https://example.invalid\", \"{}\", {\"Content-Type\": \"application/json\"})",
         true
     )]
     #[case::read_file_number("read_file(42)", false)] // Should fail: wrong type
@@ -1852,7 +1855,7 @@ mod tests {
     #[case::path_join_number("path_join(42, \"b\")", false)] // Should fail: wrong type
     #[case::write_file_number("write_file(42, \"content\")", false)] // Should fail: wrong type
     #[case::http_get_number("http(\"get\", 42)", false)] // Should fail: wrong type
-    #[case::http_headers_number("http(\"get\", \"https://example.com\", 42)", false)] // Should fail: wrong type
+    #[case::http_headers_number("http(\"get\", \"https://example.invalid\", 42)", false)] // Should fail: wrong type
     fn test_file_io_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
