@@ -128,44 +128,13 @@ pub fn normalize_allowed_domain(domain: &str) -> String {
 /// Returns `true` if `url`'s host/path matches `domain` as a strict prefix.
 ///
 /// The match requires that after the prefix the next character is `/`, `?`, `#`, `:`, or
-/// end of string — preventing `example.com.evil.com` from matching `example.com`.
+/// end of string — preventing `example.invalid.evil.com` from matching `example.invalid`.
 pub fn prefix_matches(url_without_scheme: &str, domain: &str) -> bool {
     let rest = match url_without_scheme.strip_prefix(domain) {
         Some(r) => r,
         None => return false,
     };
     rest.is_empty() || rest.starts_with('/') || rest.starts_with('?') || rest.starts_with('#') || rest.starts_with(':')
-}
-
-/// Returns `true` if `ip` is publicly routable.
-///
-/// Used to reject DNS results that point at loopback, private, link-local
-/// (which includes the `169.254.169.254` cloud metadata endpoint), multicast,
-/// unspecified, or documentation/benchmark ranges. This guards against SSRF via
-/// DNS rebinding: an allowlisted domain's name could otherwise resolve to an
-/// internal address at connect time.
-pub fn is_global_ip(ip: std::net::IpAddr) -> bool {
-    match ip {
-        std::net::IpAddr::V4(v4) => {
-            !(v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_multicast()
-                || v4.is_broadcast()
-                || v4.is_unspecified()
-                || v4.is_documentation())
-        }
-        std::net::IpAddr::V6(v6) => {
-            if let Some(mapped) = v6.to_ipv4_mapped() {
-                return is_global_ip(std::net::IpAddr::V4(mapped));
-            }
-            !(v6.is_loopback()
-                || v6.is_multicast()
-                || v6.is_unspecified()
-                || v6.is_unique_local()
-                || v6.is_unicast_link_local())
-        }
-    }
 }
 
 /// Returns `true` if `url` is permitted given `allowed_domains`.
@@ -195,10 +164,10 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case("https://example.com/foo.mq", true)]
-    #[case("http://example.com/foo.mq", true)]
-    #[case("ftp://example.com/foo.mq", false)]
-    #[case("example.com/foo.mq", false)]
+    #[case("https://example.invalid/foo.mq", true)]
+    #[case("http://example.invalid/foo.mq", true)]
+    #[case("ftp://example.invalid/foo.mq", false)]
+    #[case("example.invalid/foo.mq", false)]
     #[case("csv", false)]
     #[case("", false)]
     #[case("https://", true)]
@@ -232,7 +201,7 @@ mod tests {
     #[case("github.com/owner/repo", true)]
     #[case("https://github.com/owner/repo", true)]
     #[case("http://github.com/owner/repo", true)]
-    #[case("https://example.com/foo.mq", false)]
+    #[case("https://example.invalid/foo.mq", false)]
     #[case("csv", false)]
     #[case("", false)]
     #[case("github.com/", true)]
@@ -326,9 +295,9 @@ mod tests {
     #[rstest]
     #[case("github.com/alice/mymod", "mymod")]
     #[case("github.com/alice/mymod.mq@v1.0", "mymod")]
-    #[case("https://example.com/path/foo.mq", "foo")]
-    #[case("https://example.com/bar", "bar")]
-    #[case("https://example.com/a/b/c.mq@v2", "c")]
+    #[case("https://example.invalid/path/foo.mq", "foo")]
+    #[case("https://example.invalid/bar", "bar")]
+    #[case("https://example.invalid/a/b/c.mq@v2", "c")]
     fn test_extract_module_name(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(extract_module_name(input), expected);
     }
@@ -360,8 +329,8 @@ mod tests {
     #[case("github.com/alice/myrepo", "raw.githubusercontent.com/alice/myrepo")]
     #[case("https://github.com/alice/myrepo", "raw.githubusercontent.com/alice/myrepo")]
     #[case("http://github.com/alice/myrepo", "raw.githubusercontent.com/alice/myrepo")]
-    #[case("example.com", "example.com")]
-    #[case("https://example.com", "example.com")]
+    #[case("example.invalid", "example.invalid")]
+    #[case("https://example.invalid", "example.invalid")]
     #[case("raw.githubusercontent.com/alice/repo", "raw.githubusercontent.com/alice/repo")]
     fn test_normalize_allowed_domain(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(normalize_allowed_domain(input), expected);
@@ -387,12 +356,12 @@ mod tests {
     // default domain always allowed
     #[case(vec![], "https://raw.githubusercontent.com/harehare/lisp/HEAD/lisp.mq", true)]
     // non-default domain blocked by empty list
-    #[case(vec![], "https://example.com/foo.mq", false)]
+    #[case(vec![], "https://example.invalid/foo.mq", false)]
     // user-specified domain allowed
-    #[case(vec!["example.com".to_string()], "https://example.com/foo.mq", true)]
-    #[case(vec!["example.com".to_string()], "https://other.com/foo.mq", false)]
+    #[case(vec!["example.invalid".to_string()], "https://example.invalid/foo.mq", true)]
+    #[case(vec!["example.invalid".to_string()], "https://other.com/foo.mq", false)]
     // prefix-bypass prevention
-    #[case(vec!["example.com".to_string()], "https://example.com.evil.com/foo.mq", false)]
+    #[case(vec!["example.invalid".to_string()], "https://example.invalid.evil.com/foo.mq", false)]
     // multiple allowed domains
     #[case(vec!["a.com".to_string(), "b.com".to_string()], "https://a.com/x.mq", true)]
     #[case(vec!["a.com".to_string(), "b.com".to_string()], "https://b.com/x.mq", true)]
@@ -434,7 +403,7 @@ mod tests {
             host in "[a-z][a-z0-9-]{2,10}\\.[a-z]{2,4}",
             path in "[a-z0-9/_.-]{1,20}",
         ) {
-            // "example.com.evil.com" must not match "example.com".
+            // "example.invalid.evil.com" must not match "example.invalid".
             let allowed = vec![host.clone()];
             let attacker_url = format!("https://{}.evil.com/{}", host, path);
             prop_assert!(!is_allowed_url(&attacker_url, &allowed));
@@ -442,32 +411,11 @@ mod tests {
     }
 
     #[rstest]
-    #[case("127.0.0.1", false)]
-    #[case("10.0.0.1", false)]
-    #[case("172.16.0.1", false)]
-    #[case("192.168.1.1", false)]
-    #[case("169.254.169.254", false)] // cloud metadata endpoint
-    #[case("0.0.0.0", false)]
-    #[case("224.0.0.1", false)]
-    #[case("255.255.255.255", false)]
-    #[case("8.8.8.8", true)]
-    #[case("93.184.216.34", true)]
-    #[case("::1", false)]
-    #[case("fc00::1", false)]
-    #[case("fe80::1", false)]
-    #[case("::ffff:127.0.0.1", false)] // IPv4-mapped loopback bypass
-    #[case("::ffff:8.8.8.8", true)]
-    #[case("2001:4860:4860::8888", true)]
-    fn test_is_global_ip(#[case] ip: &str, #[case] expected: bool) {
-        assert_eq!(is_global_ip(ip.parse().unwrap()), expected);
-    }
-
-    #[rstest]
     #[case("https://raw.githubusercontent.com/alice/mymod/v0.1.0/mymod.mq", true)]
     #[case("https://raw.githubusercontent.com/alice/mymod/HEAD/mymod.mq", false)]
     #[case("https://raw.githubusercontent.com/alice/mymod/main/mymod.mq", false)]
     #[case("https://raw.githubusercontent.com/alice/mymod/master/mymod.mq", false)]
-    #[case("https://example.com/foo.mq", false)]
+    #[case("https://example.invalid/foo.mq", false)]
     #[case("https://raw.githubusercontent.com/a/b/feature-branch/f.mq", true)]
     fn test_is_versioned_url(#[case] url: &str, #[case] expected: bool) {
         assert_eq!(is_versioned_url(url), expected);
@@ -502,13 +450,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case("example.com/foo", "example.com", true)]
-    #[case("example.com?q=1", "example.com", true)]
-    #[case("example.com#anchor", "example.com", true)]
-    #[case("example.com:8080/foo", "example.com", true)]
-    #[case("example.com", "example.com", true)]
-    #[case("example.com.evil.com/foo", "example.com", false)]
-    #[case("other.com/foo", "example.com", false)]
+    #[case("example.invalid/foo", "example.invalid", true)]
+    #[case("example.invalid?q=1", "example.invalid", true)]
+    #[case("example.invalid#anchor", "example.invalid", true)]
+    #[case("example.invalid:8080/foo", "example.invalid", true)]
+    #[case("example.invalid", "example.invalid", true)]
+    #[case("example.invalid.evil.com/foo", "example.invalid", false)]
+    #[case("other.com/foo", "example.invalid", false)]
     fn test_prefix_matches(#[case] url_without_scheme: &str, #[case] domain: &str, #[case] expected: bool) {
         assert_eq!(prefix_matches(url_without_scheme, domain), expected);
     }

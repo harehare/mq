@@ -224,47 +224,10 @@ impl UreqFetcher {
 #[cfg(feature = "http-import-ureq")]
 const MAX_MODULE_SIZE: u64 = 1024 * 1024;
 
-/// DNS resolver that drops any resolved address that isn't publicly routable.
-///
-/// Domain allowlisting only checks the *name* in the URL; without this, an
-/// allowlisted domain could still resolve (at connect time, or via a later
-/// DNS rebind) to a loopback/private/link-local address and reach internal
-/// services. Filtering at the resolver level pins the connection to the
-/// addresses validated here, so a later re-resolution can't smuggle in an
-/// internal address.
-#[cfg(feature = "http-import-ureq")]
-#[derive(Debug, Default)]
-struct SsrfSafeResolver(ureq::unversioned::resolver::DefaultResolver);
-
-#[cfg(feature = "http-import-ureq")]
-impl ureq::unversioned::resolver::Resolver for SsrfSafeResolver {
-    fn resolve(
-        &self,
-        uri: &ureq::http::Uri,
-        config: &ureq::config::Config,
-        timeout: ureq::unversioned::transport::NextTimeout,
-    ) -> Result<ureq::unversioned::resolver::ResolvedSocketAddrs, ureq::Error> {
-        let resolved = self.0.resolve(uri, config, timeout)?;
-
-        let mut safe = self.empty();
-        for addr in resolved.iter() {
-            if super::http_import::is_global_ip(addr.ip()) {
-                safe.push(*addr);
-            }
-        }
-
-        if safe.is_empty() {
-            Err(ureq::Error::HostNotFound)
-        } else {
-            Ok(safe)
-        }
-    }
-}
-
 #[cfg(feature = "http-import-ureq")]
 impl HttpFetcher for UreqFetcher {
     fn fetch(&self, url: &str) -> Result<String, ModuleError> {
-        if !url.starts_with("https://") {
+        if !super::ssrf::is_https(url) {
             return Err(ModuleError::IOError(
                 format!("Only HTTPS URLs are allowed: {}", url).into(),
             ));
@@ -295,16 +258,7 @@ impl HttpFetcher for UreqFetcher {
             return Ok(content);
         }
 
-        let config = ureq::Agent::config_builder()
-            .timeout_global(Some(self.timeout))
-            .https_only(true)
-            .max_redirects(0)
-            .build();
-        let agent = ureq::Agent::with_parts(
-            config,
-            ureq::unversioned::transport::DefaultConnector::default(),
-            SsrfSafeResolver::default(),
-        );
+        let agent = super::ssrf::ssrf_safe_agent(self.timeout, true);
 
         let mut response = agent
             .get(url)
@@ -384,7 +338,7 @@ mod tests {
     #[rstest]
     #[case("github.com/alice/mymod", "mymod")]
     #[case("github.com/alice/mymod.mq@v1.0", "mymod")]
-    #[case("https://example.com/foo.mq", "foo")]
+    #[case("https://example.invalid/foo.mq", "foo")]
     #[case("local_module", "local_module")]
     #[cfg(feature = "http-import-ureq")]
     fn test_canonical_name(#[case] input: &str, #[case] expected: &str) {
@@ -395,7 +349,7 @@ mod tests {
     #[rstest]
     #[case(vec!["github.com/alice/myrepo".to_string()], "https://raw.githubusercontent.com/alice/myrepo/HEAD/mod.mq", true)]
     #[case(vec!["github.com/alice/myrepo".to_string()], "https://raw.githubusercontent.com/alice/other/HEAD/mod.mq", false)]
-    #[case(vec!["example.com".to_string()], "https://example.com/foo.mq", true)]
+    #[case(vec!["example.invalid".to_string()], "https://example.invalid/foo.mq", true)]
     #[cfg(feature = "http-import-ureq")]
     fn test_new_normalizes_github_domains(#[case] domains: Vec<String>, #[case] url: &str, #[case] expected: bool) {
         let resolver = HttpModuleResolver::new(domains, UreqFetcher::new(Duration::from_secs(10)));
@@ -434,9 +388,9 @@ mod tests {
 
     #[rstest]
     #[case(vec![], "github.com/alice/lisp")]
-    #[case(vec!["example.com".to_string()], "github.com/alice/lisp")]
-    #[case(vec!["example.com".to_string()], "https://other.com/foo.mq")]
-    #[case(vec![], "https://example.com/foo.mq")]
+    #[case(vec!["example.invalid".to_string()], "github.com/alice/lisp")]
+    #[case(vec!["example.invalid".to_string()], "https://other.com/foo.mq")]
+    #[case(vec![], "https://example.invalid/foo.mq")]
     #[cfg(feature = "http-import-ureq")]
     fn test_to_fetch_url_blocked_by_allowlist(#[case] allowed: Vec<String>, #[case] input: &str) {
         let resolver = resolver_with_domains(allowed);
@@ -606,8 +560,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(vec!["other.com".to_string()], "https://example.com/foo.mq")]
-    #[case(vec![], "https://example.com/foo.mq")]
+    #[case(vec!["other.com".to_string()], "https://example.invalid/foo.mq")]
+    #[case(vec![], "https://example.invalid/foo.mq")]
     #[case(vec![], "https://raw.githubusercontent.com/alice/mod/HEAD/mod.mq")]
     #[cfg(feature = "http-import-ureq")]
     fn test_resolve_blocked_domain_returns_io_error(#[case] allowed: Vec<String>, #[case] url: &str) {
@@ -616,7 +570,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case("http://example.com/foo.mq")]
+    #[case("http://example.invalid/foo.mq")]
     #[case("http://raw.githubusercontent.com/harehare/mod/HEAD/mod.mq")]
     #[cfg(feature = "http-import-ureq")]
     fn test_fetch_rejects_http(#[case] url: &str) {
@@ -646,7 +600,7 @@ mod tests {
     fn test_fetch_rejects_non_default_domain_with_empty_allowlist() {
         let resolver = resolver_with_domains(vec![]);
         assert!(matches!(
-            resolver.resolve("https://example.com/foo.mq"),
+            resolver.resolve("https://example.invalid/foo.mq"),
             Err(ModuleError::IOError(_))
         ));
     }

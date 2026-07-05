@@ -26,6 +26,7 @@ pub fn register_all(ctx: &mut InferenceContext) {
     register_variable(ctx);
     register_debug(ctx);
     register_file_io(ctx);
+    register_net(ctx);
     register_bytes(ctx);
 }
 
@@ -1263,6 +1264,30 @@ fn register_file_io(ctx: &mut InferenceContext) {
         Type::String,
     );
     register_binary(ctx, "path_join", Type::String, Type::String, Type::String);
+
+    // write_file: (string, string | bytes) -> none
+    register_binary(ctx, "write_file", Type::String, Type::String, Type::None);
+    register_binary(ctx, "write_file", Type::String, Type::Bytes, Type::None);
+}
+
+/// Networking functions: http(method, url) / http(method, url, body | headers) /
+/// http(method, url, body, headers)
+/// `method` may be a string (`"post"`) or a symbol (`:post`). `headers` is a dict of
+/// string to string.
+fn register_net(ctx: &mut InferenceContext) {
+    let headers = Type::dict(Type::String, Type::String);
+
+    for method in [Type::String, Type::Symbol] {
+        register_binary(ctx, "http", method.clone(), Type::String, Type::String);
+        register_ternary(ctx, "http", method.clone(), Type::String, Type::String, Type::String);
+        register_ternary(ctx, "http", method.clone(), Type::String, headers.clone(), Type::String);
+        register_many(
+            ctx,
+            &["http"],
+            vec![method, Type::String, Type::String, headers.clone()],
+            Type::String,
+        );
+    }
 }
 
 fn register_bytes(ctx: &mut InferenceContext) {
@@ -1804,11 +1829,33 @@ mod tests {
     #[case::extname("extname(\"a/b.md\")", true)]
     #[case::stem("stem(\"a/b.md\")", true)]
     #[case::path_join("path_join(\"a\", \"b.md\")", true)]
+    #[case::write_file_string("write_file(\"a.md\", \"content\")", true)]
+    #[case::write_file_bytes("write_file(\"a.md\", to_bytes(\"content\"))", true)]
+    #[case::http_get("http(\"get\", \"https://example.invalid\")", true)]
+    #[case::http_get_symbol("http(:get, \"https://example.invalid\")", true)]
+    #[case::http_post("http(\"post\", \"https://example.invalid\", \"{}\")", true)]
+    #[case::http_post_symbol("http(:post, \"https://example.invalid\", \"{}\")", true)]
+    #[case::http_headers(
+        "http(\"get\", \"https://example.invalid\", {\"Accept\": \"application/json\"})",
+        true
+    )]
+    #[case::http_headers_symbol("http(:get, \"https://example.invalid\", {\"Accept\": \"application/json\"})", true)]
+    #[case::http_body_and_headers(
+        "http(\"post\", \"https://example.invalid\", \"{}\", {\"Content-Type\": \"application/json\"})",
+        true
+    )]
+    #[case::http_body_and_headers_symbol(
+        "http(:post, \"https://example.invalid\", \"{}\", {\"Content-Type\": \"application/json\"})",
+        true
+    )]
     #[case::read_file_number("read_file(42)", false)] // Should fail: wrong type
     #[case::file_exists_number("file_exists(42)", false)] // Should fail: wrong type
     #[case::collection_number("collection(42)", false)] // Should fail: wrong type
     #[case::basename_number("basename(42)", false)] // Should fail: wrong type
     #[case::path_join_number("path_join(42, \"b\")", false)] // Should fail: wrong type
+    #[case::write_file_number("write_file(42, \"content\")", false)] // Should fail: wrong type
+    #[case::http_get_number("http(\"get\", 42)", false)] // Should fail: wrong type
+    #[case::http_headers_number("http(\"get\", \"https://example.invalid\", 42)", false)] // Should fail: wrong type
     fn test_file_io_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(

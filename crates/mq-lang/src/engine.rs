@@ -2,6 +2,7 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
+use crate::eval::builtin::capability;
 #[cfg(feature = "debugger")]
 use crate::eval::env::Env;
 #[cfg(feature = "debugger")]
@@ -116,6 +117,22 @@ impl<T: ModuleResolver> Engine<T> {
     /// calls can be nested. Useful for controlling resource usage.
     pub fn set_max_call_stack_depth(&mut self, max_call_stack_depth: u32) {
         self.evaluator.options.max_call_stack_depth = max_call_stack_depth;
+    }
+
+    /// Enables or disables the `http` builtin for the current process.
+    ///
+    /// Disabled by default. This is a process-wide setting (see
+    /// [`capability`](crate::eval::builtin::capability)), not per-`Engine`.
+    pub fn set_allow_net(&self, allow: bool) {
+        capability::set_allow_net(allow);
+    }
+
+    /// Enables or disables the `write_file` builtin for the current process.
+    ///
+    /// Disabled by default. This is a process-wide setting (see
+    /// [`capability`](crate::eval::builtin::capability)), not per-`Engine`.
+    pub fn set_allow_write(&self, allow: bool) {
+        capability::set_allow_write(allow);
     }
 
     /// Set search paths for module loading.

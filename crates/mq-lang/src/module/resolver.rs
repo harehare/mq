@@ -3,6 +3,8 @@ pub mod http_import;
 #[cfg(feature = "http-import")]
 pub mod http_resolver;
 pub(crate) mod local_fs_resolver;
+#[cfg(feature = "http-import")]
+pub mod ssrf;
 pub(crate) mod std_resolver;
 
 use crate::module::error::ModuleError;

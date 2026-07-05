@@ -329,6 +329,17 @@ struct InputArgs {
     #[cfg(feature = "http-import")]
     #[arg(long = "clear-cache", default_value_t = false)]
     clear_cache: bool,
+
+    /// Allow the `http` function to make outbound HTTPS requests.
+    /// Disabled by default; requests are HTTPS-only and blocked from reaching
+    /// loopback/private/link-local addresses regardless of this flag.
+    #[cfg(feature = "http-import")]
+    #[arg(long = "allow-net", default_value_t = false)]
+    allow_net: bool,
+
+    /// Allow the `write_file` function to write to the filesystem. Disabled by default.
+    #[arg(long = "allow-write", default_value_t = false)]
+    allow_write: bool,
 }
 
 #[derive(Clone, Debug, clap::Args, Default)]
@@ -828,7 +839,10 @@ impl Cli {
             } else if self.input.refresh_modules {
                 engine.clear_http_cache().map_err(|e| miette!(e.to_string()))?;
             }
+            engine.set_allow_net(self.input.allow_net);
         }
+
+        engine.set_allow_write(self.input.allow_write);
 
         #[cfg(feature = "debugger")]
         {
