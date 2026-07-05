@@ -569,11 +569,29 @@ end
 # Loads a markdown file from the specified path
 def load_markdown(path): read_file(path) | to_markdown();
 
-# Performs an HTTPS GET request and returns the response body as a string
-def http_get(url): http(:get, url);
+# Performs an HTTPS GET request, optionally with the given headers (a dict of string to
+# string), and returns the response body as a string
+def http_get(url, headers = {}): http(:get, url, headers);
 
-# Performs an HTTPS POST request with the given body and returns the response body as a string
-def http_post(url, body): http(:post, url, body);
+# Performs an HTTPS POST request with the given body, optionally with the given headers
+# (a dict of string to string), and returns the response body as a string
+def http_post(url, body, headers = {}): http(:post, url, body, headers);
+
+# Performs an HTTPS PUT request with the given body, optionally with the given headers
+# (a dict of string to string), and returns the response body as a string
+def http_put(url, body, headers = {}): http(:put, url, body, headers);
+
+# Performs an HTTPS PATCH request with the given body, optionally with the given headers
+# (a dict of string to string), and returns the response body as a string
+def http_patch(url, body, headers = {}): http(:patch, url, body, headers);
+
+# Performs an HTTPS DELETE request, optionally with the given headers (a dict of string to
+# string), and returns the response body as a string
+def http_delete(url, headers = {}): http(:delete, url, headers);
+
+# Performs an HTTPS HEAD request, optionally with the given headers (a dict of string to
+# string), and returns the response body as a string
+def http_head(url, headers = {}): http(:head, url, headers);
 
 # Prints the debug information of the given value(s).
 def debug(*args):

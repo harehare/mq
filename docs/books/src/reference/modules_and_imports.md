@@ -240,14 +240,21 @@ mq --allowed-domain example.com --allowed-domain raw.githubusercontent.com 'self
 
 ## Network and File-Write Capabilities
 
-`http(method, url)` / `http(method, url, body)` and `write_file(path, content)` are disabled by
-default and must be explicitly enabled with `--allow-net` / `--allow-write`. Calling them
-without the corresponding flag raises a runtime error explaining how to opt in.
+`http(method, url)` / `http(method, url, body)` / `http(method, url, headers)` /
+`http(method, url, body, headers)` and `write_file(path, content)` are disabled by default and
+must be explicitly enabled with `--allow-net` / `--allow-write`. Calling them without the
+corresponding flag raises a runtime error explaining how to opt in.
 
 `method` is a string or symbol (`"post"` or `:post`) and accepts any HTTP method — `get`, `post`,
 `put`, `delete`, `patch`, `head`, and so on. The optional `body` argument is sent as the request
-body regardless of method. `http_get(url)` and `http_post(url, body)` are convenience wrappers
-around `http(:get, url)` and `http(:post, url, body)` for the two most common cases.
+body regardless of method. The optional `headers` argument is a dict of string to string
+(e.g. `{"Content-Type": "application/json"}`) applied to the request.
+
+`http_get(url, headers = {})`, `http_post(url, body, headers = {})`,
+`http_put(url, body, headers = {})`, `http_patch(url, body, headers = {})`,
+`http_delete(url, headers = {})`, and `http_head(url, headers = {})` are convenience wrappers
+around `http(:get, url, headers)`, `http(:post, url, body, headers)`, and so on, for the most
+common cases — `headers` defaults to `{}` and can be omitted.
 
 > **Security note:** `http` only accepts `https://` URLs and is routed through the same
 > SSRF-hardened client used for HTTP imports — no automatic redirects, and DNS results are
@@ -261,6 +268,8 @@ mq 'http_get("https://example.com")'
 # Enabled explicitly
 mq --allow-net 'http_get("https://example.com")'
 mq --allow-net 'http(:delete, "https://example.com/resource/1")'
+mq --allow-net 'http(:post, "https://example.com", "{}", {"Content-Type": "application/json"})'
+mq --allow-net 'http_post("https://example.com", "{}", {"Content-Type": "application/json"})'
 mq --allow-write 'write_file("out.md", "# Hello")'
 ```
 

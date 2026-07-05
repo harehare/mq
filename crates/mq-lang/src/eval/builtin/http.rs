@@ -8,14 +8,15 @@
 //! DNS resolution filtered to publicly routable addresses so a hostname can't be rebound to
 //! an internal address after the initial check.
 
+use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 use ureq::http;
 
 use super::Error;
 use super::capability;
-use crate::RuntimeValue;
 use crate::module::resolver::ssrf::{is_https, ssrf_safe_agent};
+use crate::{Ident, RuntimeValue};
 
 /// Maximum response body size read from `http` (10 MiB).
 const MAX_RESPONSE_SIZE: u64 = 10 * 1024 * 1024;
@@ -74,28 +75,52 @@ fn read_body(mut response: http::Response<ureq::Body>) -> Result<RuntimeValue, E
         .map_err(|e| Error::Runtime(format!("http: failed to read response body: {e}")))
 }
 
+/// Applies `headers` to `builder`, requiring every value to be a string. Invalid header
+/// names/values (e.g. containing CR/LF) are caught later when the request is built.
+fn apply_headers(
+    mut builder: http::request::Builder,
+    headers: Option<&BTreeMap<Ident, RuntimeValue>>,
+) -> Result<http::request::Builder, Error> {
+    let Some(headers) = headers else {
+        return Ok(builder);
+    };
+    for (name, value) in headers {
+        let value = match value {
+            RuntimeValue::String(value) => value.as_str(),
+            other => {
+                return Err(Error::Runtime(format!(
+                    "http: header {name:?} must be a string, got {other}"
+                )));
+            }
+        };
+        builder = builder.header(name.as_str(), value);
+    }
+    Ok(builder)
+}
+
 /// Performs an HTTPS request with the given `method` and returns the response body as a string.
-/// `body`, when present, is sent as the request body regardless of method.
-pub(super) fn request(method: &RuntimeValue, url: &str, body: Option<&str>) -> Result<RuntimeValue, Error> {
+/// `body`, when present, is sent as the request body regardless of method. `headers`, when
+/// present, are applied to the request; every header value must be a string.
+pub(super) fn request(
+    method: &RuntimeValue,
+    url: &str,
+    body: Option<&str>,
+    headers: Option<&BTreeMap<Ident, RuntimeValue>>,
+) -> Result<RuntimeValue, Error> {
     ensure_net_allowed()?;
     ensure_https(url)?;
     let method = parse_method(method)?;
+    let builder = apply_headers(http::Request::builder().method(method).uri(url), headers)?;
 
     let response = match body {
         Some(body) => {
-            let request = http::Request::builder()
-                .method(method)
-                .uri(url)
+            let request = builder
                 .body(body.to_string())
                 .map_err(|e| Error::Runtime(format!("http: {e}")))?;
             AGENT.run(request)
         }
         None => {
-            let request = http::Request::builder()
-                .method(method)
-                .uri(url)
-                .body(())
-                .map_err(|e| Error::Runtime(format!("http: {e}")))?;
+            let request = builder.body(()).map_err(|e| Error::Runtime(format!("http: {e}")))?;
             AGENT.run(request)
         }
     }
@@ -165,19 +190,19 @@ mod tests {
         capability::set_allow_net(false);
         for name in ALL_METHODS {
             assert!(
-                request(&symbol(name), "https://example.com", None).is_err(),
+                request(&symbol(name), "https://example.com", None, None).is_err(),
                 "http({name}, ..) should be blocked when --allow-net is not set"
             );
         }
         assert!(
-            request(&symbol("post"), "https://example.com", Some("{}")).is_err(),
+            request(&symbol("post"), "https://example.com", Some("{}"), None).is_err(),
             "http should be blocked when --allow-net is not set, even with a body"
         );
 
         capability::set_allow_net(true);
         for name in ALL_METHODS {
             assert!(
-                request(&symbol(name), "http://example.com", None).is_err(),
+                request(&symbol(name), "http://example.com", None, None).is_err(),
                 "http({name}, ..) should reject non-https URLs"
             );
         }
@@ -185,6 +210,7 @@ mod tests {
             request(
                 &RuntimeValue::String("bogus method".into()),
                 "https://example.com",
+                None,
                 None
             )
             .is_err(),
@@ -194,6 +220,7 @@ mod tests {
             request(
                 &symbol("get"),
                 "https://this-domain-should-not-exist-mq-test.invalid",
+                None,
                 None
             )
             .is_err(),
@@ -203,12 +230,63 @@ mod tests {
             request(
                 &symbol("delete"),
                 "https://this-domain-should-not-exist-mq-test.invalid",
+                None,
                 None
             )
             .is_err(),
             "http should surface a request error for an unresolvable host regardless of method"
         );
+        assert!(
+            request(
+                &symbol("get"),
+                "https://this-domain-should-not-exist-mq-test.invalid",
+                None,
+                Some(&BTreeMap::from([(
+                    Ident::new("Authorization"),
+                    RuntimeValue::String("Bearer token".into())
+                )]))
+            )
+            .is_err(),
+            "http should surface a request error for an unresolvable host even with headers set"
+        );
 
         capability::set_allow_net(false);
+    }
+
+    #[test]
+    fn test_apply_headers_accepts_string_values() {
+        let builder = http::Request::builder()
+            .method(http::Method::GET)
+            .uri("https://example.com");
+        let headers = BTreeMap::from([
+            (Ident::new("X-Test"), RuntimeValue::String("value".into())),
+            (
+                Ident::new("Content-Type"),
+                RuntimeValue::String("application/json".into()),
+            ),
+        ]);
+        let request = apply_headers(builder, Some(&headers)).unwrap().body(()).unwrap();
+
+        assert_eq!(request.headers().get("X-Test").unwrap(), "value");
+        assert_eq!(request.headers().get("Content-Type").unwrap(), "application/json");
+    }
+
+    #[test]
+    fn test_apply_headers_rejects_non_string_values() {
+        let builder = http::Request::builder()
+            .method(http::Method::GET)
+            .uri("https://example.com");
+        let headers = BTreeMap::from([(Ident::new("X-Test"), RuntimeValue::from(1usize))]);
+
+        assert!(apply_headers(builder, Some(&headers)).is_err());
+    }
+
+    #[test]
+    fn test_apply_headers_passthrough_when_none() {
+        let builder = http::Request::builder()
+            .method(http::Method::GET)
+            .uri("https://example.com");
+
+        assert!(apply_headers(builder, None).unwrap().body(()).is_ok());
     }
 }

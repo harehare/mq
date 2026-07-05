@@ -57,6 +57,11 @@ fn register_ternary(ctx: &mut InferenceContext, name: &str, p1: Type, p2: Type, 
     ctx.register_builtin(name, Type::function(vec![p1, p2, p3], ret));
 }
 
+/// Registers a quaternary builtin: `(p1, p2, p3, p4) -> ret`.
+fn register_quaternary(ctx: &mut InferenceContext, name: &str, p1: Type, p2: Type, p3: Type, p4: Type, ret: Type) {
+    ctx.register_builtin(name, Type::function(vec![p1, p2, p3, p4], ret));
+}
+
 /// Registers None propagation overloads: `(none) -> none` for multiple unary functions.
 fn register_none_propagation_unary(ctx: &mut InferenceContext, names: &[&str]) {
     for name in names {
@@ -1270,13 +1275,37 @@ fn register_file_io(ctx: &mut InferenceContext) {
     register_binary(ctx, "write_file", Type::String, Type::Bytes, Type::None);
 }
 
-/// Networking functions: http(method, url) / http(method, url, body)
-/// `method` may be a string (`"post"`) or a symbol (`:post`).
+/// Networking functions: http(method, url) / http(method, url, body | headers) /
+/// http(method, url, body, headers)
+/// `method` may be a string (`"post"`) or a symbol (`:post`). `headers` is a dict of
+/// string to string.
 fn register_net(ctx: &mut InferenceContext) {
+    let headers = Type::dict(Type::String, Type::String);
+
     register_binary(ctx, "http", Type::String, Type::String, Type::String);
     register_binary(ctx, "http", Type::Symbol, Type::String, Type::String);
     register_ternary(ctx, "http", Type::String, Type::String, Type::String, Type::String);
     register_ternary(ctx, "http", Type::Symbol, Type::String, Type::String, Type::String);
+    register_ternary(ctx, "http", Type::String, Type::String, headers.clone(), Type::String);
+    register_ternary(ctx, "http", Type::Symbol, Type::String, headers.clone(), Type::String);
+    register_quaternary(
+        ctx,
+        "http",
+        Type::String,
+        Type::String,
+        Type::String,
+        headers.clone(),
+        Type::String,
+    );
+    register_quaternary(
+        ctx,
+        "http",
+        Type::Symbol,
+        Type::String,
+        Type::String,
+        headers,
+        Type::String,
+    );
 }
 
 fn register_bytes(ctx: &mut InferenceContext) {
@@ -1824,6 +1853,16 @@ mod tests {
     #[case::http_get_symbol("http(:get, \"https://example.com\")", true)]
     #[case::http_post("http(\"post\", \"https://example.com\", \"{}\")", true)]
     #[case::http_post_symbol("http(:post, \"https://example.com\", \"{}\")", true)]
+    #[case::http_headers("http(\"get\", \"https://example.com\", {\"Accept\": \"application/json\"})", true)]
+    #[case::http_headers_symbol("http(:get, \"https://example.com\", {\"Accept\": \"application/json\"})", true)]
+    #[case::http_body_and_headers(
+        "http(\"post\", \"https://example.com\", \"{}\", {\"Content-Type\": \"application/json\"})",
+        true
+    )]
+    #[case::http_body_and_headers_symbol(
+        "http(:post, \"https://example.com\", \"{}\", {\"Content-Type\": \"application/json\"})",
+        true
+    )]
     #[case::read_file_number("read_file(42)", false)] // Should fail: wrong type
     #[case::file_exists_number("file_exists(42)", false)] // Should fail: wrong type
     #[case::collection_number("collection(42)", false)] // Should fail: wrong type
@@ -1831,6 +1870,7 @@ mod tests {
     #[case::path_join_number("path_join(42, \"b\")", false)] // Should fail: wrong type
     #[case::write_file_number("write_file(42, \"content\")", false)] // Should fail: wrong type
     #[case::http_get_number("http(\"get\", 42)", false)] // Should fail: wrong type
+    #[case::http_headers_number("http(\"get\", \"https://example.com\", 42)", false)] // Should fail: wrong type
     fn test_file_io_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
