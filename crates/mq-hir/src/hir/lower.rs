@@ -198,6 +198,9 @@ impl Hir {
             mq_lang::CstNodeKind::Dict => {
                 self.add_dict_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Spread => {
+                self.add_spread_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Match => {
                 self.add_match_expr(node, source_id, scope_id, parent);
             }
@@ -250,6 +253,7 @@ impl Hir {
     simple_expr!(add_try_expr, mq_lang::CstNodeKind::Try, SymbolKind::Try);
     simple_expr!(add_catch_expr, mq_lang::CstNodeKind::Catch, SymbolKind::Catch);
     simple_expr!(add_array_expr, mq_lang::CstNodeKind::Array, SymbolKind::Array);
+    simple_expr!(add_spread_expr, mq_lang::CstNodeKind::Spread, SymbolKind::Spread);
 
     /// Lowers a `CstNodeKind::Assign` node into a `SymbolKind::Assign` symbol.
     ///
@@ -1271,7 +1275,9 @@ impl Hir {
             });
 
             for entry in node.children_without_token() {
-                if let (Some(key_node), Some(value_node)) = (entry.children.first(), entry.children.get(2)) {
+                if matches!(entry.kind, mq_lang::CstNodeKind::Spread) {
+                    self.add_spread_expr(&entry, source_id, scope_id, Some(symbol_id));
+                } else if let (Some(key_node), Some(value_node)) = (entry.children.first(), entry.children.get(2)) {
                     let key_symbol_id = self.add_symbol(Symbol {
                         value: key_node.name(),
                         kind: match &key_node.token {

@@ -881,6 +881,30 @@ fn engine() -> DefaultEngine {
 #[case::array_length("len([1, 2, 3, 4])",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::Number(4.into())].into()))]
+#[case::array_spread_basic("let a = [1, 2, 3] | let b = [4, 5, 6] | [...a, ...b]",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()),
+            RuntimeValue::Number(4.into()), RuntimeValue::Number(5.into()), RuntimeValue::Number(6.into()),
+          ])].into()))]
+#[case::array_spread_with_surrounding_elements("let a = [1, 2, 3] | [0, ...a, 99]",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(0.into()), RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(3.into()), RuntimeValue::Number(99.into()),
+          ])].into()))]
+#[case::array_spread_empty_array("let a = [] | [...a, 1]",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into())])].into()))]
+#[case::array_spread_none_contributes_nothing("[...None, 1, 2]",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())])].into()))]
+#[case::array_spread_nested("let a = [1, 2] | [...a, ...[3, 4]]",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into()),
+          ])].into()))]
 #[case::dict_new_empty("dict()",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::new_dict()].into()))]
@@ -947,6 +971,39 @@ fn engine() -> DefaultEngine {
           let mut dict = BTreeMap::new();
           dict.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
           dict.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
+          dict.into()
+        }].into()))]
+#[case::dict_spread_basic("let base = {x: 1, y: 2} | {...base, z: 3}",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![{
+          let mut dict = BTreeMap::new();
+          dict.insert(Ident::new("x"), RuntimeValue::Number(1.into()));
+          dict.insert(Ident::new("y"), RuntimeValue::Number(2.into()));
+          dict.insert(Ident::new("z"), RuntimeValue::Number(3.into()));
+          dict.into()
+        }].into()))]
+#[case::dict_spread_later_key_overrides("let base = {x: 1, y: 2} | {...base, y: 99, z: 3}",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![{
+          let mut dict = BTreeMap::new();
+          dict.insert(Ident::new("x"), RuntimeValue::Number(1.into()));
+          dict.insert(Ident::new("y"), RuntimeValue::Number(99.into()));
+          dict.insert(Ident::new("z"), RuntimeValue::Number(3.into()));
+          dict.into()
+        }].into()))]
+#[case::dict_spread_multiple("let a = {x: 1} | let b = {y: 2} | {...a, ...b}",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![{
+          let mut dict = BTreeMap::new();
+          dict.insert(Ident::new("x"), RuntimeValue::Number(1.into()));
+          dict.insert(Ident::new("y"), RuntimeValue::Number(2.into()));
+          dict.into()
+        }].into()))]
+#[case::dict_spread_none_contributes_nothing("{...None, x: 1}",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![{
+          let mut dict = BTreeMap::new();
+          dict.insert(Ident::new("x"), RuntimeValue::Number(1.into()));
           dict.into()
         }].into()))]
 #[case::dict_map_transform_values("
@@ -3647,6 +3704,10 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::to_boolean_invalid_string(r#"to_boolean("yes")"#, vec![RuntimeValue::None],)]
 // to_boolean: non-string, non-boolean arg → type error
 #[case::to_boolean_number(r#"to_boolean(42)"#, vec![RuntimeValue::None],)]
+// array spread: spreading a non-array value → type error
+#[case::array_spread_non_array(r#"let a = 5 | [...a]"#, vec![RuntimeValue::None],)]
+// dict spread: spreading a non-dict value → type error
+#[case::dict_spread_non_dict(r#"let a = 5 | {...a}"#, vec![RuntimeValue::None],)]
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
 }

@@ -74,6 +74,39 @@ pub(super) fn get_symbol_range(hir: &Hir, symbol_id: SymbolId) -> Option<mq_lang
     hir.symbol(symbol_id).and_then(|symbol| symbol.source.text_range)
 }
 
+/// Returns the element type an array child contributes to its enclosing `[...]`.
+///
+/// For a plain element this is just its own type. For a `...expr` spread element
+/// (`SymbolKind::Spread`), the spread target must itself be an array, so its
+/// *element* type — not the array type itself — is what should be compared
+/// against sibling elements (e.g. `[0, ...a, 99]` with `a: [number]` should be
+/// seen as homogeneous `number` elements, not a 3-slot tuple).
+pub(super) fn spread_element_type(
+    hir: &Hir,
+    child_id: SymbolId,
+    children_index: &ChildrenIndex,
+    ctx: &mut InferenceContext,
+) -> Type {
+    if !hir.symbol(child_id).is_some_and(|s| s.kind == SymbolKind::Spread) {
+        return ctx.get_or_create_symbol_type(child_id);
+    }
+
+    let target_ty = get_children(children_index, child_id)
+        .first()
+        .map(|&id| ctx.get_or_create_symbol_type(id))
+        .unwrap_or_else(|| Type::Var(ctx.fresh_var()));
+    let elem_var = ctx.fresh_var();
+    let range = get_symbol_range(hir, child_id);
+    ctx.add_constraint(Constraint::Equal(
+        target_ty,
+        Type::array(Type::Var(elem_var)),
+        range,
+        ConstraintOrigin::General,
+    ));
+
+    Type::Var(elem_var)
+}
+
 /// Checks if a symbol belongs to a module source (include/import/module).
 ///
 /// Symbols from included/imported modules are trusted library code and should

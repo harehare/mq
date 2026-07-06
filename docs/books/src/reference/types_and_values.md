@@ -134,6 +134,28 @@ get(d, "name")   # Same as di["name"]
 d | get("age")    # Same as d["age"]
 ```
 
+### Spread Operator
+
+The `...` spread operator expands an array or dict inline inside an array or
+dict literal.
+
+```mq
+let a = [1, 2, 3]
+| let b = [4, 5, 6]
+| let c = [...a, ...b]      # [1, 2, 3, 4, 5, 6]
+| let d = [0, ...a, 99]     # [0, 1, 2, 3, 99]
+```
+
+```mq
+let base = {x: 1, y: 2}
+| let merged = {...base, y: 99, z: 3}   # {x: 1, y: 99, z: 3}
+```
+
+When the same key appears more than once, later keys override earlier ones,
+including keys coming from a spread. Spreading `None` contributes nothing;
+spreading any other non-array (in `[...]`) or non-dict (in `{...}`) value is a
+type error.
+
 ### Dynamic Access
 
 Both arrays and dictionaries support dynamic access using variables:

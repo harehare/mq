@@ -646,6 +646,38 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    /// Consumes the comma or closing `}` after a dict entry. Returns `true` once closed.
+    fn parse_dict_separator(&mut self, opening: &Token) -> Result<bool, SyntaxError> {
+        match self.tokens.peek() {
+            Some(token) if token.kind == TokenKind::Comma => {
+                self.tokens.next(); // Consume Comma
+                if let Some(next_token) = self.tokens.peek()
+                    && next_token.kind == TokenKind::RBrace
+                {
+                    self.tokens.next(); // Consume RBrace
+                    return Ok(true);
+                }
+                Ok(false)
+            }
+            Some(token) if token.kind == TokenKind::RBrace => {
+                self.tokens.next(); // Consume RBrace
+                Ok(true)
+            }
+            Some(token) => Err(SyntaxError::ExpectedClosingBrace(
+                (***token).clone(),
+                Some(Box::new(opening.clone())),
+            )),
+            None => Err(SyntaxError::ExpectedClosingBrace(
+                Token {
+                    range: opening.range,
+                    kind: TokenKind::Eof,
+                    module_id: self.module_id,
+                },
+                Some(Box::new(opening.clone())),
+            )),
+        }
+    }
+
     fn parse_dict(&mut self, lbrace_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let opening = (**lbrace_token).clone();
         let token_id = self.token_arena.alloc(Shared::clone(lbrace_token));
@@ -686,6 +718,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 None => return Err(eof_closing_err(&opening, self.module_id)),
             };
 
+            if key_token.kind == TokenKind::DotDotDot {
+                pairs.push(self.parse_spread_element(key_token)?);
+                if self.parse_dict_separator(&opening)? {
+                    break;
+                }
+                continue;
+            }
+
             let key_node = match &key_token.kind {
                 TokenKind::Ident(name) => Shared::new(Node {
                     token_id: self.token_arena.alloc(Shared::clone(key_token)),
@@ -722,29 +762,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 )),
             }));
 
-            // Peek for Comma or RBrace
-            match self.tokens.peek() {
-                Some(token) if token.kind == TokenKind::Comma => {
-                    self.tokens.next(); // Consume Comma
-                    // Check for trailing comma followed by RBrace
-                    if let Some(next_token) = self.tokens.peek()
-                        && next_token.kind == TokenKind::RBrace
-                    {
-                        self.tokens.next(); // Consume RBrace
-                        break;
-                    }
-                }
-                Some(token) if token.kind == TokenKind::RBrace => {
-                    self.tokens.next(); // Consume RBrace
-                    break;
-                }
-                Some(token) => {
-                    return Err(SyntaxError::ExpectedClosingBrace(
-                        (***token).clone(),
-                        Some(Box::new(opening.clone())),
-                    ));
-                }
-                None => return Err(eof_closing_err(&opening, self.module_id)),
+            if self.parse_dict_separator(&opening)? {
+                break;
             }
         }
 
@@ -861,6 +880,25 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    /// Parses a `...expr` spread element, wrapping it in a `SPREAD` marker call that
+    /// `eval_builtin` expands in place when building the enclosing array/dict.
+    fn parse_spread_element(&mut self, dots_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.token_arena.alloc(Shared::clone(dots_token));
+        let next_token = self
+            .tokens
+            .next()
+            .ok_or(SyntaxError::UnexpectedEOFDetected(self.module_id))?;
+        let inner = self.parse_expr(next_token)?;
+
+        Ok(Shared::new(Node {
+            token_id,
+            expr: Shared::new(Expr::Call(
+                IdentWithToken::new_with_token(constants::builtins::SPREAD, Some(Shared::clone(dots_token))),
+                smallvec![inner],
+            )),
+        }))
+    }
+
     fn parse_array(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let opening = (**token).clone();
         let token_id = self.token_arena.alloc(Shared::clone(token));
@@ -880,6 +918,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     ));
                 }
                 TokenKind::Comma => continue,
+                TokenKind::DotDotDot => {
+                    elements.push(self.parse_spread_element(elem_token)?);
+                }
                 _ => {
                     let expr = self.parse_expr(elem_token)?;
                     elements.push(expr);

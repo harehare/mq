@@ -302,6 +302,7 @@ impl Formatter {
             mq_lang::CstNodeKind::Pattern => self.format_pattern(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Token => self.append_token(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::DictEntry => self.format_dict_entry(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Spread => self.format_spread(&node, indent_level_consider_new_line),
         }
     }
 
@@ -499,6 +500,23 @@ impl Formatter {
                 self.format_node(right, indent_level);
             }
             _ => unreachable!("Expected BinaryOp node with two children"),
+        }
+    }
+
+    fn format_spread(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Spread,
+            token: Some(token),
+            ..
+        } = &**node
+        {
+            if node.has_new_line() {
+                self.append_indent(indent_level);
+            }
+            self.output.push_str(&token.to_string());
+            self.format_node(mq_lang::Shared::clone(&node.children[0]), indent_level);
+        } else {
+            unreachable!("Expected Spread node");
         }
     }
 
