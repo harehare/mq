@@ -4,6 +4,8 @@ pub mod http_import;
 pub mod http_resolver;
 pub(crate) mod local_fs_resolver;
 #[cfg(feature = "http-import")]
+pub mod lockfile;
+#[cfg(feature = "http-import")]
 pub mod ssrf;
 pub(crate) mod std_resolver;
 
@@ -129,10 +131,15 @@ impl DefaultModuleResolver {
     /// Only available when the `http-import-ureq` feature is enabled.
     #[cfg(feature = "http-import-ureq")]
     pub fn with_http(mut self, allowed_domains: Vec<String>, timeout: Option<std::time::Duration>) -> Self {
-        self.http_resolver = http_resolver::HttpModuleResolver::new(
+        let lockfile_path = self.http_resolver.lockfile_path();
+        let lockfile_enabled = self.http_resolver.lockfile_enabled();
+        let mut http_resolver = http_resolver::HttpModuleResolver::new(
             allowed_domains,
             http_resolver::UreqFetcher::new(timeout.unwrap_or(std::time::Duration::from_secs(10))),
         );
+        http_resolver.set_lockfile_path(lockfile_path);
+        http_resolver.set_lockfile_enabled(lockfile_enabled);
+        self.http_resolver = http_resolver;
         self
     }
 
@@ -155,6 +162,18 @@ impl DefaultModuleResolver {
     #[cfg(feature = "http-import-ureq")]
     pub fn clear_http_cache_all(&self) -> Result<(), crate::module::error::ModuleError> {
         self.http_resolver.clear_all_cache()
+    }
+
+    /// Enables or disables the `mq.lock` integrity check/update for HTTP imports.
+    #[cfg(feature = "http-import-ureq")]
+    pub fn set_lockfile_enabled(&mut self, enabled: bool) {
+        self.http_resolver.set_lockfile_enabled(enabled);
+    }
+
+    /// Sets the path used for `mq.lock`.
+    #[cfg(feature = "http-import-ureq")]
+    pub fn set_lockfile_path(&mut self, path: PathBuf) {
+        self.http_resolver.set_lockfile_path(path);
     }
 }
 
@@ -258,6 +277,19 @@ mod tests {
                 .http_resolver
                 .is_allowed_domain("https://raw.githubusercontent.com/alice/other/HEAD/mod.mq")
         );
+    }
+
+    #[cfg(feature = "http-import-ureq")]
+    #[test]
+    fn test_with_http_preserves_previously_set_lockfile_config() {
+        let mut resolver = DefaultModuleResolver::new(vec![]);
+        resolver.set_lockfile_path(PathBuf::from("custom/mq.lock"));
+        resolver.set_lockfile_enabled(false);
+
+        let resolver = resolver.with_http(vec![], None);
+
+        assert_eq!(resolver.http_resolver.lockfile_path(), PathBuf::from("custom/mq.lock"));
+        assert!(!resolver.http_resolver.lockfile_enabled());
     }
 
     #[cfg(feature = "http-import-ureq")]

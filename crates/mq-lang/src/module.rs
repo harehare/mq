@@ -402,6 +402,16 @@ impl ModuleLoader<DefaultModuleResolver> {
     pub fn clear_http_cache_all(&self) -> Result<(), error::ModuleError> {
         self.resolver.clear_http_cache_all()
     }
+
+    /// Enables or disables the `mq.lock` integrity check/update for HTTP imports.
+    pub fn set_lockfile_enabled(&mut self, enabled: bool) {
+        self.resolver.set_lockfile_enabled(enabled);
+    }
+
+    /// Sets the path used for `mq.lock`.
+    pub fn set_lockfile_path(&mut self, path: std::path::PathBuf) {
+        self.resolver.set_lockfile_path(path);
+    }
 }
 
 #[cfg(test)]

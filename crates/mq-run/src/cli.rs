@@ -330,6 +330,19 @@ struct InputArgs {
     #[arg(long = "clear-cache", default_value_t = false)]
     clear_cache: bool,
 
+    /// Disable the mq.lock integrity check for HTTP imports.
+    /// By default a fetched URL's content is checked against mq.lock, and a mismatch is
+    /// rejected unless --refresh-modules is also passed.
+    #[cfg(feature = "http-import")]
+    #[arg(long = "no-lockfile", default_value_t = false, conflicts_with = "lockfile_path")]
+    no_lockfile: bool,
+
+    /// Path to the mq.lock file used for HTTP import integrity checks.
+    /// Defaults to ./mq.lock (relative to the current directory).
+    #[cfg(feature = "http-import")]
+    #[arg(long = "lockfile", value_name = "PATH")]
+    lockfile_path: Option<PathBuf>,
+
     /// Allow the `http` function to make outbound HTTPS requests.
     /// Disabled by default; requests are HTTPS-only and blocked from reaching
     /// loopback/private/link-local addresses regardless of this flag.
@@ -833,6 +846,12 @@ impl Cli {
         {
             if let Some(domains) = &self.input.allowed_domains {
                 engine.set_http_allowed_domains(domains.clone());
+            }
+            if self.input.no_lockfile {
+                engine.set_lockfile_enabled(false);
+            }
+            if let Some(path) = &self.input.lockfile_path {
+                engine.set_lockfile_path(path.clone());
             }
             if self.input.clear_cache {
                 engine.clear_http_cache_all().map_err(|e| miette!(e.to_string()))?;

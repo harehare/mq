@@ -24,7 +24,6 @@ mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
 mq-check = {workspace = true}
 mq-lang = {workspace = true, features = ["ast-json", "http-import"]}
-sha2 = {workspace = true}
 mq-markdown = {workspace = true}
 opfs = {workspace = true, optional = true}
 serde = {workspace = true, features = ["derive"]}
@@ -32,7 +31,7 @@ serde-wasm-bindgen = {workspace = true}
 serde_json = {workspace = true}
 wasm-bindgen = {workspace = true}
 wasm-bindgen-futures = {workspace = true}
-web-sys = {version = "0.3", features = ["Response"]}
+web-sys = {version = "0.3", features = ["Response", "console"]}
 
 [dev-dependencies]
 wasm-bindgen-test = {workspace = true}

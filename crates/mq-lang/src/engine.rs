@@ -382,6 +382,16 @@ impl Engine<DefaultModuleResolver> {
     pub fn clear_http_cache_all(&self) -> Result<(), crate::module::error::ModuleError> {
         self.evaluator.module_loader.clear_http_cache_all()
     }
+
+    /// Enables or disables the `mq.lock` integrity check for HTTP imports (on by default).
+    pub fn set_lockfile_enabled(&mut self, enabled: bool) {
+        self.evaluator.module_loader.set_lockfile_enabled(enabled);
+    }
+
+    /// Sets the path used for `mq.lock`.
+    pub fn set_lockfile_path(&mut self, path: std::path::PathBuf) {
+        self.evaluator.module_loader.set_lockfile_path(path);
+    }
 }
 
 #[cfg(test)]

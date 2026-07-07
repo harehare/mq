@@ -40,6 +40,14 @@ Options:
           Force re-fetch of mutable-ref (HEAD/branch) HTTP-imported modules, ignoring the local cache. Versioned (tagged) modules are never re-fetched regardless of this flag
       --clear-cache
           Remove all HTTP module cache including versioned (tagged) modules and lock files. Use this to fully reset the cache when something goes wrong
+      --no-lockfile
+          Disable the mq.lock integrity check for HTTP imports. By default, every fetched module URL's content hash is recorded in mq.lock (created in the current directory), and a later fetch of the same URL with different content is rejected unless --refresh-modules is also passed
+      --lockfile <PATH>
+          Path to the mq.lock file used for HTTP import integrity checks. Defaults to ./mq.lock (relative to the current directory)
+      --allow-net
+          Allow the `http` function to make outbound HTTPS requests. Disabled by default; requests are HTTPS-only and blocked from reaching loopback/private/link-local addresses regardless of this flag
+      --allow-write
+          Allow the `write_file` function to write to the filesystem. Disabled by default
   -F, --output-format <OUTPUT_FORMAT>
           Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, raw, none]
   -U, --update
