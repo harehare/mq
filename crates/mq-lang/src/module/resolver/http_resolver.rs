@@ -1,9 +1,9 @@
-use std::{borrow::Cow, path::PathBuf};
-
 use super::http_import::{
     extract_module_name, github_to_raw_url, is_allowed_url, is_github_url, is_remote_url, normalize_allowed_domain,
 };
+use crate::module::resolver::lockfile;
 use crate::{ModuleError, ModuleResolver};
+use std::{borrow::Cow, path::PathBuf};
 
 /// Pluggable HTTP fetch-and-cache backend for [`HttpModuleResolver`].
 ///
@@ -320,18 +320,14 @@ impl UreqFetcher {
         result
     }
 
-    /// Returns the in-memory cached lock if this fetcher already loaded one, otherwise reads
-    /// `mq.lock` from disk once and caches it — avoiding a re-read/re-parse per fetched URL
-    /// within a single invocation. Must be called while holding the guard from
-    /// [`Self::with_lockfile_guard`].
-    fn cached_or_load_lock(&self) -> Result<super::lockfile::ModuleLock, ModuleError> {
+    /// Loads `mq.lock` into the cache if not already loaded. Call while holding the guard
+    /// from [`Self::with_lockfile_guard`].
+    fn ensure_lock_loaded(&self) -> Result<(), ModuleError> {
         let mut cache = self.lockfile_cache.lock().unwrap();
-        if let Some(lock) = cache.as_ref() {
-            return Ok(lock.clone());
+        if cache.is_none() {
+            *cache = Some(Self::load_lock(&self.lockfile_path)?);
         }
-        let lock = Self::load_lock(&self.lockfile_path)?;
-        *cache = Some(lock.clone());
-        Ok(lock)
+        Ok(())
     }
 
     /// Checks a freshly-fetched `hash` for `url` against `mq.lock`, recording it if new.
@@ -340,16 +336,17 @@ impl UreqFetcher {
             return Ok(());
         }
         self.with_lockfile_guard(|| {
-            let mut lock = self.cached_or_load_lock()?;
+            self.ensure_lock_loaded()?;
+            let mut cache = self.lockfile_cache.lock().unwrap();
+            let lock = cache.as_mut().unwrap();
             match lock.check(url, hash) {
-                super::lockfile::LockCheck::Match => Ok(()),
-                super::lockfile::LockCheck::NewEntry => {
+                lockfile::LockCheck::Match => Ok(()),
+                lockfile::LockCheck::NewEntry => {
                     lock.insert(url, hash);
-                    Self::save_lock(&self.lockfile_path, &lock)?;
-                    *self.lockfile_cache.lock().unwrap() = Some(lock);
+                    Self::save_lock(&self.lockfile_path, lock)?;
                     Ok(())
                 }
-                super::lockfile::LockCheck::Mismatch { locked } => Err(ModuleError::IOError(
+                lockfile::LockCheck::Mismatch { locked } => Err(ModuleError::IOError(
                     format!(
                         "content for {url} does not match {} (expected sha256 {locked}, got sha256 {hash}). \
                          The remote content may have changed since it was locked. If this is expected, \
