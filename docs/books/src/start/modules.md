@@ -42,6 +42,7 @@ import "github.com/harehare/<module-name>"
 | [cron.mq](https://github.com/harehare/cron.mq) | Cron expression parser and human-readable descriptions |
 | [jwt.mq](https://github.com/harehare/jwt.mq) | JWT decoder — inspect header and payload without verification |
 | [okf.mq](https://github.com/harehare/okf.mq) | [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog) (Open Knowledge Format) reader/writer — concept documents, cross-links, citations, log/index entries |
+| [url.mq](https://github.com/harehare/url.mq) | URL parsing, building, and relative-resolution utilities for mq. |
 
 
 ## Diagram & Graph
