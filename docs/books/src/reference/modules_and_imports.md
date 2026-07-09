@@ -226,10 +226,16 @@ across machines and CI: if the same URL is fetched again with different content 
 different machine, a fresh (cold) cache, or after `--refresh-modules` clears the disk cache
 — mq fails with an error instead of silently using whatever the remote now serves.
 
-- **First fetch of a URL**: recorded in `mq.lock`.
-- **Later fetch, content unchanged**: succeeds silently.
-- **Later fetch, content changed**: fails with an error explaining the mismatch. Re-run with
-  `--refresh-modules` to accept the new content and update `mq.lock`.
+The check also applies to disk-cache hits, not just network fetches. The module cache is
+shared per machine while `mq.lock` is per project, so a project whose lock file expects
+different content than the local cache holds fails the same way, and a project without an
+`mq.lock` yet gets one created even when every module is served from the cache.
+
+- **First use of a URL** (fetched or served from the cache): recorded in `mq.lock`.
+- **Later use, content unchanged**: succeeds silently.
+- **Later use, content changed**: fails with an error explaining the mismatch. Re-run with
+  `--refresh-modules` to accept the new content and update `mq.lock` (for a versioned/tagged
+  URL, whose cache `--refresh-modules` doesn't touch, use `--clear-cache` instead).
 - `--refresh-modules` / `--clear-cache` also drop the corresponding entries from `mq.lock`
   (mutable-ref entries only, and all entries respectively), matching their disk-cache behavior.
 - Pass `--no-lockfile` to disable the check entirely (no file is read or written).

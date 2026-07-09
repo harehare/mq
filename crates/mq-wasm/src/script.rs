@@ -273,32 +273,19 @@ impl WasmFetcher {
         let stem = cache_file_stem(fetch_url);
 
         if let Some(content) = try_read_opfs_http_cache(r, subdir, &stem).await {
+            // A cache hit must still pass the mq.lock check: the OPFS cache is shared across
+            // pages/sessions, so cached content can disagree with the lock file.
+            if !check_opfs_lock(r, fetch_url, &mq_lang::compute_hash(&content)).await {
+                return;
+            }
             self.cache.borrow_mut().insert(fetch_url.to_string(), content);
             return;
         }
 
         if let Ok(content) = fetch_text(fetch_url).await {
-            let hash = mq_lang::compute_hash(&content);
-            let mut lock = read_opfs_lock(r).await;
-            match lock.check(fetch_url, &hash) {
-                // Drifted since locked; skip rather than trust it (clearHttpCache to accept).
-                mq_lang::LockCheck::Mismatch { locked } => {
-                    web_sys::console::warn_1(
-                        &format!(
-                            "mq: content for {fetch_url} does not match mq.lock (expected sha256 {locked}, got \
-                             sha256 {hash}); skipping. Call clearHttpCache() to accept the new content."
-                        )
-                        .into(),
-                    );
-                    return;
-                }
-                mq_lang::LockCheck::NewEntry => {
-                    lock.insert(fetch_url, hash);
-                    write_opfs_lock(r, &lock).await;
-                }
-                mq_lang::LockCheck::Match => {}
+            if !check_opfs_lock(r, fetch_url, &mq_lang::compute_hash(&content)).await {
+                return;
             }
-
             write_opfs_http_cache(r, subdir, &stem, &content).await;
             self.cache.borrow_mut().insert(fetch_url.to_string(), content);
         }
@@ -1066,6 +1053,40 @@ async fn write_opfs_http_cache(root: &opfs::persistent::DirectoryHandle, subdir:
         mq_lang::compute_hash(content).as_bytes(),
     )
     .await;
+}
+
+/// Checks `hash` for `fetch_url` against the OPFS `mq.lock`, recording it if new.
+///
+/// Returns `false` when the hash has drifted from the locked one, in which case the content
+/// must not be used; a console warning explains how to accept the new content.
+#[cfg(feature = "opfs")]
+async fn check_opfs_lock(root: &opfs::persistent::DirectoryHandle, fetch_url: &str, hash: &str) -> bool {
+    let mut lock = read_opfs_lock(root).await;
+    match lock.check(fetch_url, hash) {
+        mq_lang::LockCheck::Mismatch { locked } => {
+            // clearHttpCache() only resets mutable-ref entries, so a drifted versioned
+            // (tagged) module needs the full reset instead.
+            let hint = if mq_lang::http_import::is_versioned_url(fetch_url) {
+                "clearAllHttpCache()"
+            } else {
+                "clearHttpCache()"
+            };
+            web_sys::console::warn_1(
+                &format!(
+                    "mq: content for {fetch_url} does not match mq.lock (expected sha256 {locked}, got \
+                     sha256 {hash}); skipping. Call {hint} to accept the new content."
+                )
+                .into(),
+            );
+            false
+        }
+        mq_lang::LockCheck::NewEntry => {
+            lock.insert(fetch_url, hash);
+            write_opfs_lock(root, &lock).await;
+            true
+        }
+        mq_lang::LockCheck::Match => true,
+    }
 }
 
 /// Reads `mq.lock` from the OPFS root, or an empty lock if missing/unreadable.
