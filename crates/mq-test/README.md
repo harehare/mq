@@ -29,7 +29,37 @@ mq-test tests.mq
 
 # Run multiple test files
 mq-test tests.mq other_tests.mq
+
+# Run with a line-coverage report
+mq-test --coverage
+
+# Write an lcov tracefile for CI (e.g. codecov, genhtml)
+mq-test --coverage --coverage-format lcov --coverage-output lcov.info
 ```
+
+## Coverage
+
+Pass `--coverage` to report which lines of each executed test file were run
+by the evaluator:
+
+```
+Coverage report:
+  tests.mq                                              66.7% (2/3)
+      uncovered lines: 9
+
+  Total: 66.7% (2/3)
+```
+
+- `--coverage-format <text|lcov>` selects the report format (default: `text`).
+  `lcov` produces an [lcov tracefile](https://ltp.sourceforge.net/coverage/lcov/geninfo.1.php)
+  suitable for `genhtml` or CI coverage integrations.
+- `--coverage-output <path>` writes the report to a file instead of stdout.
+- Coverage is line-based: a line counts as covered if the evaluator executed
+  any expression on it. `def`/`include`/`import` declaration lines themselves
+  aren't counted (only their bodies are), and coverage of `include`d/imported
+  modules is not tracked — only the file passed to `mq-test` is measured.
+- Coverage tracking is only active when `--coverage` is passed, so normal
+  `mq-test` runs have no added overhead.
 
 ## Writing Tests
 

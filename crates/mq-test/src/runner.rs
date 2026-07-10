@@ -4,6 +4,8 @@ use mq_lang::{CstNodeKind, CstTrivia};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::coverage::{self, CoverageData, CoverageFormat, CoverageHandler, FileCoverage};
+
 /// Parsed test annotation from a leading comment.
 #[derive(Debug, PartialEq)]
 enum TestAnnotation {
@@ -29,13 +31,41 @@ enum DiscoveredTest {
 /// The runner auto-generates the `run_tests(...)` call from discovered tests.
 pub struct TestRunner {
     files: Vec<PathBuf>,
+    coverage: bool,
+    coverage_format: CoverageFormat,
+    coverage_output: Option<PathBuf>,
 }
 
 impl TestRunner {
     /// Creates a `TestRunner` for the given files.
     /// If `files` is empty, globs `**/*.mq` in the current directory.
     pub fn new(files: Vec<PathBuf>) -> Self {
-        Self { files }
+        Self {
+            files,
+            coverage: false,
+            coverage_format: CoverageFormat::default(),
+            coverage_output: None,
+        }
+    }
+
+    /// Enables line-coverage tracking. Coverage of `include`d/imported modules
+    /// is not tracked — only the test file being executed.
+    pub fn with_coverage(mut self, coverage: bool) -> Self {
+        self.coverage = coverage;
+        self
+    }
+
+    /// Sets the report format used when coverage is enabled.
+    pub fn with_coverage_format(mut self, format: CoverageFormat) -> Self {
+        self.coverage_format = format;
+        self
+    }
+
+    /// Sets an output file for the coverage report. When `None`, the report
+    /// is printed to stdout.
+    pub fn with_coverage_output(mut self, output: Option<PathBuf>) -> Self {
+        self.coverage_output = output;
+        self
     }
 
     /// Discovers and executes all test functions.
@@ -46,8 +76,9 @@ impl TestRunner {
                 .collect::<Result<Vec<_>, _>>()
                 .into_diagnostic()?
         } else {
-            self.files
+            self.files.clone()
         };
+        let mut file_coverages = Vec::new();
 
         for file in &test_files {
             let content = fs::read_to_string(file).into_diagnostic()?;
@@ -68,8 +99,40 @@ impl TestRunner {
                 engine.set_search_paths(vec![parent.to_path_buf()]);
             }
 
+            let coverage_data = if self.coverage {
+                let data = CoverageData::default();
+                engine.set_debugger_handler(Box::new(CoverageHandler(data.clone())));
+                let debugger = engine.debugger();
+                debugger.write().unwrap().activate();
+                debugger
+                    .write()
+                    .unwrap()
+                    .set_command(mq_lang::DebuggerCommand::StepInto);
+                Some(data)
+            } else {
+                None
+            };
+
             let input = mq_lang::null_input();
             engine.eval(&query, input.into_iter()).map_err(|e| *e)?;
+
+            if let Some(data) = coverage_data {
+                let visited = data.snapshot();
+                let executable = coverage::executable_lines(&content);
+                file_coverages.push(FileCoverage::new(file.clone(), executable, visited));
+            }
+        }
+
+        if self.coverage {
+            let report = match self.coverage_format {
+                CoverageFormat::Text => coverage::format_text_report(&file_coverages),
+                CoverageFormat::Lcov => coverage::format_lcov_report(&file_coverages),
+            };
+
+            match &self.coverage_output {
+                Some(path) => fs::write(path, report).into_diagnostic()?,
+                None => print!("{report}"),
+            }
         }
 
         Ok(())
