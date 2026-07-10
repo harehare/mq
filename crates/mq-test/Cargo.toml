@@ -15,6 +15,7 @@ clap = {workspace = true, features = ["derive"]}
 glob = {workspace = true}
 miette = {workspace = true, features = ["fancy"]}
 mq-lang = {workspace = true, features = ["cst", "debugger", "file-io"]}
+rustc-hash = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}

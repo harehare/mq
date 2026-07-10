@@ -1,8 +1,9 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use mq_lang::{CstNode, CstNodeKind, DebugContext, DebuggerAction, DebuggerHandler, Shared};
+use rustc_hash::FxHashSet;
 
 /// Output format for a coverage report.
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -17,14 +18,14 @@ pub enum CoverageFormat {
 
 /// Shared, thread-safe accumulator of source lines visited during a single test-file run.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct CoverageData(Arc<Mutex<HashSet<usize>>>);
+pub(crate) struct CoverageData(Arc<Mutex<FxHashSet<usize>>>);
 
 impl CoverageData {
     fn record(&self, line: usize) {
         self.0.lock().unwrap().insert(line);
     }
 
-    pub(crate) fn snapshot(&self) -> HashSet<usize> {
+    pub(crate) fn snapshot(&self) -> FxHashSet<usize> {
         self.0.lock().unwrap().clone()
     }
 }
@@ -51,11 +52,11 @@ impl DebuggerHandler for CoverageHandler {
 pub struct FileCoverage {
     pub file: PathBuf,
     executable_lines: BTreeSet<usize>,
-    visited_lines: HashSet<usize>,
+    visited_lines: FxHashSet<usize>,
 }
 
 impl FileCoverage {
-    pub(crate) fn new(file: PathBuf, executable_lines: BTreeSet<usize>, visited_lines: HashSet<usize>) -> Self {
+    pub(crate) fn new(file: PathBuf, executable_lines: BTreeSet<usize>, visited_lines: FxHashSet<usize>) -> Self {
         Self {
             file,
             executable_lines,
@@ -245,7 +246,7 @@ mod tests {
         let cov = FileCoverage::new(
             PathBuf::from("test.mq"),
             BTreeSet::from([1, 2, 3, 4]),
-            HashSet::from([1, 2]),
+            [1, 2].into_iter().collect(),
         );
         assert_eq!(cov.total_lines(), 4);
         assert_eq!(cov.covered_lines(), 2);
@@ -255,7 +256,7 @@ mod tests {
 
     #[test]
     fn test_file_coverage_percent_no_executable_lines() {
-        let cov = FileCoverage::new(PathBuf::from("empty.mq"), BTreeSet::new(), HashSet::new());
+        let cov = FileCoverage::new(PathBuf::from("empty.mq"), BTreeSet::new(), FxHashSet::default());
         assert_eq!(cov.percent(), 100.0);
     }
 
@@ -264,7 +265,7 @@ mod tests {
         let cov = FileCoverage::new(
             PathBuf::from("test.mq"),
             BTreeSet::from([1, 2, 3, 4]),
-            HashSet::from([1, 2]),
+            [1, 2].into_iter().collect(),
         );
         let report = format_text_report(&[cov]);
         assert!(report.contains("test.mq"));
@@ -275,7 +276,11 @@ mod tests {
 
     #[test]
     fn test_format_lcov_report_structure() {
-        let cov = FileCoverage::new(PathBuf::from("test.mq"), BTreeSet::from([1, 2]), HashSet::from([1]));
+        let cov = FileCoverage::new(
+            PathBuf::from("test.mq"),
+            BTreeSet::from([1, 2]),
+            [1].into_iter().collect(),
+        );
         let report = format_lcov_report(&[cov]);
         assert!(report.contains("SF:test.mq\n"));
         assert!(report.contains("DA:1,1\n"));
