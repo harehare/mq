@@ -50,9 +50,9 @@ export function diagnostics(code: string, enableTypeCheck?: boolean): Promise<Re
 export function hover(code: string, line: number, column: number): Promise<HoverResult | null>;
 export function inlayHints(code: string): Promise<ReadonlyArray<InlayHint>>;
 export function run(code: string, content: string, options: Options): Promise<string>;
-/** Clears mutable HTTP module cache (HEAD/branch imports). Versioned (tagged) cache is preserved. */
+/** Clears mutable HTTP module cache (HEAD/branch imports) and their mq.lock entries. Versioned (tagged) cache and lock entries are preserved. */
 export function clearHttpCache(): Promise<void>;
-/** Clears all HTTP module cache including versioned (tagged) imports. */
+/** Clears all HTTP module cache including versioned (tagged) imports, and deletes mq.lock. */
 export function clearAllHttpCache(): Promise<void>;
 "#;
 
@@ -273,11 +273,19 @@ impl WasmFetcher {
         let stem = cache_file_stem(fetch_url);
 
         if let Some(content) = try_read_opfs_http_cache(r, subdir, &stem).await {
+            // A cache hit must still pass the mq.lock check: the OPFS cache is shared across
+            // pages/sessions, so cached content can disagree with the lock file.
+            if !check_opfs_lock(r, fetch_url, &mq_lang::compute_hash(&content)).await {
+                return;
+            }
             self.cache.borrow_mut().insert(fetch_url.to_string(), content);
             return;
         }
 
         if let Ok(content) = fetch_text(fetch_url).await {
+            if !check_opfs_lock(r, fetch_url, &mq_lang::compute_hash(&content)).await {
+                return;
+            }
             write_opfs_http_cache(r, subdir, &stem, &content).await;
             self.cache.borrow_mut().insert(fetch_url.to_string(), content);
         }
@@ -551,8 +559,7 @@ impl mq_lang::ModuleResolver for WasmModuleResolver {
     }
 }
 
-/// Removes mutable HTTP module cache (HEAD/branch imports).
-/// Versioned (tagged) cached modules are preserved, matching `--refresh-modules` CLI behaviour.
+/// Removes mutable HTTP module cache and their `mq.lock` entries (matches `--refresh-modules`).
 #[wasm_bindgen(js_name=clearHttpCache)]
 pub async fn clear_http_cache() -> Result<(), JsValue> {
     #[cfg(feature = "opfs")]
@@ -571,11 +578,17 @@ pub async fn clear_http_cache() -> Result<(), JsValue> {
                 .remove_entry_with_options("mutable", &opfs::FileSystemRemoveOptions { recursive: true })
                 .await;
         }
+
+        let mut lock = read_opfs_lock(&root).await;
+        if !lock.is_empty() {
+            lock.retain_versioned_only();
+            write_opfs_lock(&root, &lock).await;
+        }
     }
     Ok(())
 }
 
-/// Removes all HTTP module cache including versioned (tagged) imports, matching `--clear-cache` CLI behaviour.
+/// Removes all HTTP module cache and deletes `mq.lock` (matches `--clear-cache`).
 #[wasm_bindgen(js_name=clearAllHttpCache)]
 pub async fn clear_all_http_cache() -> Result<(), JsValue> {
     #[cfg(feature = "opfs")]
@@ -588,6 +601,12 @@ pub async fn clear_all_http_cache() -> Result<(), JsValue> {
 
         let _ = root
             .remove_entry_with_options(HTTP_CACHE_DIR, &opfs::FileSystemRemoveOptions { recursive: true })
+            .await;
+        let _ = root
+            .remove_entry_with_options(
+                mq_lang::LOCKFILE_NAME,
+                &opfs::FileSystemRemoveOptions { recursive: false },
+            )
             .await;
     }
     Ok(())
@@ -955,16 +974,6 @@ fn cache_file_stem(url: &str) -> String {
     format!("{:x}", md5::compute(url))
 }
 
-/// Computes SHA-256 of `content` as a lowercase hex string.
-#[cfg(feature = "opfs")]
-fn compute_content_hash(content: &str) -> String {
-    use sha2::Digest;
-    sha2::Sha256::digest(content.as_bytes())
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect()
-}
-
 /// Tries to read a cached module from OPFS. Returns `None` on any error or hash mismatch.
 #[cfg(feature = "opfs")]
 async fn try_read_opfs_http_cache(
@@ -998,7 +1007,7 @@ async fn try_read_opfs_http_cache(
     let content = String::from_utf8(content_fh.read().await.ok()?).ok()?;
     let stored = String::from_utf8(hash_fh.read().await.ok()?).ok()?;
 
-    if stored.trim() == compute_content_hash(&content) {
+    if stored.trim() == mq_lang::compute_hash(&content) {
         Some(content)
     } else {
         None
@@ -1041,9 +1050,86 @@ async fn write_opfs_http_cache(root: &opfs::persistent::DirectoryHandle, subdir:
     let _ = write_file(
         &sub,
         &format!("{}.mq.sha256", stem),
-        compute_content_hash(content).as_bytes(),
+        mq_lang::compute_hash(content).as_bytes(),
     )
     .await;
+}
+
+/// Checks `hash` for `fetch_url` against the OPFS `mq.lock`, recording it if new.
+///
+/// Returns `false` when the hash has drifted from the locked one, in which case the content
+/// must not be used; a console warning explains how to accept the new content.
+#[cfg(feature = "opfs")]
+async fn check_opfs_lock(root: &opfs::persistent::DirectoryHandle, fetch_url: &str, hash: &str) -> bool {
+    let mut lock = read_opfs_lock(root).await;
+    match lock.check(fetch_url, hash) {
+        mq_lang::LockCheck::Mismatch { locked } => {
+            // clearHttpCache() only resets mutable-ref entries, so a drifted versioned
+            // (tagged) module needs the full reset instead.
+            let hint = if mq_lang::http_import::is_versioned_url(fetch_url) {
+                "clearAllHttpCache()"
+            } else {
+                "clearHttpCache()"
+            };
+            web_sys::console::warn_1(
+                &format!(
+                    "mq: content for {fetch_url} does not match mq.lock (expected sha256 {locked}, got \
+                     sha256 {hash}); skipping. Call {hint} to accept the new content."
+                )
+                .into(),
+            );
+            false
+        }
+        mq_lang::LockCheck::NewEntry => {
+            lock.insert(fetch_url, hash);
+            write_opfs_lock(root, &lock).await;
+            true
+        }
+        mq_lang::LockCheck::Match => true,
+    }
+}
+
+/// Reads `mq.lock` from the OPFS root, or an empty lock if missing/unreadable.
+#[cfg(feature = "opfs")]
+async fn read_opfs_lock(root: &opfs::persistent::DirectoryHandle) -> mq_lang::ModuleLock {
+    use opfs::{DirectoryHandle as _, FileHandle as _};
+
+    let Ok(fh) = root
+        .get_file_handle_with_options(mq_lang::LOCKFILE_NAME, &opfs::GetFileHandleOptions { create: false })
+        .await
+    else {
+        return mq_lang::ModuleLock::default();
+    };
+    let Ok(bytes) = fh.read().await else {
+        return mq_lang::ModuleLock::default();
+    };
+    let Ok(content) = String::from_utf8(bytes) else {
+        return mq_lang::ModuleLock::default();
+    };
+    mq_lang::ModuleLock::parse(&content).unwrap_or_default()
+}
+
+/// Writes `lock` to `mq.lock` at the OPFS root. Silently ignores errors.
+#[cfg(feature = "opfs")]
+async fn write_opfs_lock(root: &opfs::persistent::DirectoryHandle, lock: &mq_lang::ModuleLock) {
+    use opfs::{DirectoryHandle as _, FileHandle as _, WritableFileStream as _};
+
+    let Ok(mut fh) = root
+        .get_file_handle_with_options(mq_lang::LOCKFILE_NAME, &opfs::GetFileHandleOptions { create: true })
+        .await
+    else {
+        return;
+    };
+    let Ok(mut w) = fh
+        .create_writable_with_options(&opfs::CreateWritableOptions {
+            keep_existing_data: false,
+        })
+        .await
+    else {
+        return;
+    };
+    let _ = w.write_at_cursor_pos(lock.to_json().as_bytes()).await;
+    let _ = w.close().await;
 }
 
 /// Parses `code` and returns all import/include paths that are local module names (not URLs).
@@ -2212,6 +2298,87 @@ mod tests {
             .await
             .is_ok();
         assert!(!still_exists, "http_cache/ dir should have been fully removed");
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_read_opfs_lock_missing_file_returns_empty() {
+        let root = match opfs::persistent::app_specific_dir().await {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+
+        let lock = read_opfs_lock(&root).await;
+        assert!(lock.is_empty());
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_write_then_read_opfs_lock_roundtrip() {
+        let root = match opfs::persistent::app_specific_dir().await {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+
+        let mut lock = mq_lang::ModuleLock::default();
+        lock.insert("https://example.invalid/a.mq", "hash-a");
+        write_opfs_lock(&root, &lock).await;
+
+        let reloaded = read_opfs_lock(&root).await;
+        assert_eq!(
+            reloaded.check("https://example.invalid/a.mq", "hash-a"),
+            mq_lang::LockCheck::Match
+        );
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_clear_http_cache_strips_only_mutable_lock_entries() {
+        let root = match opfs::persistent::app_specific_dir().await {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+
+        let mutable_url = "https://raw.githubusercontent.com/harehare/lisp/HEAD/lisp.mq";
+        let versioned_url = "https://raw.githubusercontent.com/harehare/lisp/v0.1.0/lisp.mq";
+        let mut lock = mq_lang::ModuleLock::default();
+        lock.insert(mutable_url, "mutable-hash");
+        lock.insert(versioned_url, "versioned-hash");
+        write_opfs_lock(&root, &lock).await;
+
+        clear_http_cache().await.expect("clear_http_cache failed");
+
+        let reloaded = read_opfs_lock(&root).await;
+        assert_eq!(
+            reloaded.check(mutable_url, "mutable-hash"),
+            mq_lang::LockCheck::NewEntry
+        );
+        assert_eq!(
+            reloaded.check(versioned_url, "versioned-hash"),
+            mq_lang::LockCheck::Match
+        );
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_clear_all_http_cache_deletes_lockfile() {
+        let root = match opfs::persistent::app_specific_dir().await {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+
+        let mut lock = mq_lang::ModuleLock::default();
+        lock.insert("https://example.invalid/a.mq", "hash-a");
+        write_opfs_lock(&root, &lock).await;
+
+        clear_all_http_cache().await.expect("clear_all_http_cache failed");
+
+        let reloaded = read_opfs_lock(&root).await;
+        assert!(reloaded.is_empty(), "mq.lock should have been deleted");
     }
 
     #[allow(unused)]

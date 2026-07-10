@@ -218,17 +218,46 @@ Fetched modules are cached in `{system_cache_dir}/mq/` as `{md5(url)}.mq` files.
 - **Mutable refs** (`HEAD`, `main`, `master`, or no version): cached on first fetch.
   Pass `--refresh-modules` on the command line to discard the cache and re-fetch.
 
+### Lock file (`mq.lock`)
+
+Every fetched module URL's SHA-256 content hash is recorded in an `mq.lock` file, created in
+the current directory the first time a URL is fetched. This makes HTTP imports reproducible
+across machines and CI: if the same URL is fetched again with different content — from a
+different machine, a fresh (cold) cache, or after `--refresh-modules` clears the disk cache
+— mq fails with an error instead of silently using whatever the remote now serves.
+
+The check also applies to disk-cache hits, not just network fetches. The module cache is
+shared per machine while `mq.lock` is per project, so a project whose lock file expects
+different content than the local cache holds fails the same way, and a project without an
+`mq.lock` yet gets one created even when every module is served from the cache.
+
+- **First use of a URL** (fetched or served from the cache): recorded in `mq.lock`.
+- **Later use, content unchanged**: succeeds silently.
+- **Later use, content changed**: fails with an error explaining the mismatch. Re-run with
+  `--refresh-modules` to accept the new content and update `mq.lock` (for a versioned/tagged
+  URL, whose cache `--refresh-modules` doesn't touch, use `--clear-cache` instead).
+- `--refresh-modules` / `--clear-cache` also drop the corresponding entries from `mq.lock`
+  (mutable-ref entries only, and all entries respectively), matching their disk-cache behavior.
+- Pass `--no-lockfile` to disable the check entirely (no file is read or written).
+- Pass `--lockfile <path>` to use a different location instead of `./mq.lock`. Missing parent
+  directories are created automatically. Mutually exclusive with `--no-lockfile`.
+
+Commit `mq.lock` alongside scripts that use HTTP imports so CI and teammates fetch the exact
+content you locked, the same way `package-lock.json`/`deno.lock` work.
+
 ### CLI options
 
 | Flag                        | Description                                                                                                                             |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `--refresh-modules`         | Discard cached mutable-ref modules and re-fetch them.                                                                                   |
+| `--refresh-modules`         | Discard cached mutable-ref modules and re-fetch them, updating their `mq.lock` entries.                                                 |
 | `--allowed-domain <domain>` | Allow HTTP imports from an additional domain beyond the default (`raw.githubusercontent.com/harehare`). Repeat to add multiple domains. |
+| `--no-lockfile`             | Disable the `mq.lock` integrity check/update.                                                                                           |
+| `--lockfile <path>`         | Use `<path>` instead of `./mq.lock`.                                                                                                     |
 
 **Examples:**
 
 ```sh
-# Force re-fetch of any HEAD/branch modules
+# Force re-fetch of any HEAD/branch modules, accepting new content into mq.lock
 mq --refresh-modules 'self' file.md
 
 # Only allow imports from example.com
@@ -236,6 +265,12 @@ mq --allowed-domain example.com 'self' file.md
 
 # Allow multiple domains
 mq --allowed-domain example.com --allowed-domain raw.githubusercontent.com 'self' file.md
+
+# Use a different lock file location
+mq --lockfile config/mq.lock 'self' file.md
+
+# Skip the mq.lock check entirely
+mq --no-lockfile 'self' file.md
 ```
 
 ## Network and File-Write Capabilities

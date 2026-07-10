@@ -91,6 +91,8 @@ pub use module::resolver::http_import;
 #[cfg(feature = "http-import")]
 pub use module::resolver::http_resolver::{HttpFetcher, HttpModuleResolver};
 #[cfg(feature = "http-import")]
+pub use module::resolver::lockfile::{LOCKFILE_NAME, LockCheck, ModuleLock, compute_hash};
+#[cfg(feature = "http-import")]
 pub use module::resolver::ssrf;
 pub use module::{
     BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, STANDARD_MODULES, error::ModuleError,
