@@ -123,6 +123,13 @@ impl<F: HttpFetcher> HttpModuleResolver<F> {
     }
 }
 
+/// A module read from the on-disk cache, paired with its content-verified SHA-256 hash.
+#[cfg(feature = "http-import-ureq")]
+struct CachedModule {
+    content: String,
+    hash: String,
+}
+
 /// Fetcher backed by `ureq` with local filesystem caching.
 ///
 /// Fetched modules are stored under `{system_cache_dir}/mq/` in one of two subdirectories:
@@ -241,14 +248,11 @@ impl UreqFetcher {
         format!("{:x}", md5::compute(url))
     }
 
-    /// Reads a cached module and its `.sha256` sidecar, returning `(content, hash)` when the
-    /// sidecar matches the content. The returned hash is content-verified, so callers can
-    /// compare it against `mq.lock` without re-hashing.
     fn try_read_cache(
         &self,
         cache_file: &std::path::Path,
         hash_file: &std::path::Path,
-    ) -> Result<Option<(String, String)>, ModuleError> {
+    ) -> Result<Option<CachedModule>, ModuleError> {
         if !cache_file.exists() || !hash_file.exists() {
             return Ok(None);
         }
@@ -256,7 +260,7 @@ impl UreqFetcher {
         let stored = std::fs::read_to_string(hash_file).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
         if stored.trim() == Self::compute_hash(&content) {
             let hash = stored.trim().to_string();
-            Ok(Some((content, hash)))
+            Ok(Some(CachedModule { content, hash }))
         } else {
             Ok(None)
         }
@@ -297,21 +301,17 @@ impl UreqFetcher {
         std::fs::rename(&tmp_path, path).map_err(|e| ModuleError::IOError(e.to_string().into()))
     }
 
+    /// System temp dir, not next to `mq.lock`, so no stray sidecar file is left in the
+    /// project; named by the absolute path's hash so distinct `mq.lock` paths never collide.
     fn lockfile_flock_path(&self) -> std::path::PathBuf {
-        let mut name = self.lockfile_path.clone().into_os_string();
-        name.push(".flock");
-        std::path::PathBuf::from(name)
+        let absolute_path = std::path::absolute(&self.lockfile_path).unwrap_or_else(|_| self.lockfile_path.clone());
+        let hash = super::lockfile::compute_hash(&absolute_path.to_string_lossy());
+        std::env::temp_dir().join(format!("mq-{hash}.lock"))
     }
 
-    /// Runs `f` while holding an OS-level advisory lock on `mq.lock`'s `.flock` sidecar, so
-    /// concurrent readers/writers of the same path (e.g. multiple `mq` processes, or the
-    /// parallel file-processing workers in `mq-run`) can't race on a lost update.
+    /// Runs `f` while holding an OS-level advisory lock, so concurrent readers/writers of the
+    /// same `mq.lock` (e.g. multiple `mq` processes) can't race on a lost update.
     fn with_lockfile_guard<T>(&self, f: impl FnOnce() -> Result<T, ModuleError>) -> Result<T, ModuleError> {
-        if let Some(parent) = self.lockfile_path.parent()
-            && !parent.as_os_str().is_empty()
-        {
-            std::fs::create_dir_all(parent).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
-        }
         let flock_file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -392,9 +392,9 @@ impl HttpFetcher for UreqFetcher {
         let cache_file = cache_subdir.join(format!("{}.mq", stem));
         let hash_file = cache_subdir.join(format!("{}.mq.sha256", stem));
 
-        if let Some((content, hash)) = self.try_read_cache(&cache_file, &hash_file)? {
-            self.check_lock(url, &hash)?;
-            return Ok(content);
+        if let Some(cached) = self.try_read_cache(&cache_file, &hash_file)? {
+            self.check_lock(url, &cached.hash)?;
+            return Ok(cached.content);
         }
 
         std::fs::create_dir_all(&cache_subdir).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
@@ -409,9 +409,9 @@ impl HttpFetcher for UreqFetcher {
             .lock()
             .map_err(|e| ModuleError::IOError(e.to_string().into()))?;
 
-        if let Some((content, hash)) = self.try_read_cache(&cache_file, &hash_file)? {
-            self.check_lock(url, &hash)?;
-            return Ok(content);
+        if let Some(cached) = self.try_read_cache(&cache_file, &hash_file)? {
+            self.check_lock(url, &cached.hash)?;
+            return Ok(cached.content);
         }
 
         let agent = super::ssrf::ssrf_safe_agent(self.timeout, true);
