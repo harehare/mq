@@ -1,6 +1,7 @@
 use super::http_import::{
     extract_module_name, github_to_raw_url, is_allowed_url, is_github_url, is_remote_url, normalize_allowed_domain,
 };
+use crate::http_import;
 use crate::module::resolver::lockfile;
 use crate::{ModuleError, ModuleResolver};
 use std::{borrow::Cow, path::PathBuf};
@@ -140,11 +141,6 @@ struct CachedModule {
 ///   cleared by [`UreqFetcher::clear_cache`].
 ///
 /// Each cached module is accompanied by a `.mq.sha256` sidecar for tamper detection.
-///
-/// Separately, every fetched URL's content hash is recorded in `mq.lock` (see
-/// [`super::lockfile`]) to detect drift in mutable refs across fetches. Cache hits are
-/// verified (and recorded) against `mq.lock` too, so a per-project lock file still
-/// protects runs that are served entirely from the shared on-disk cache.
 #[cfg(feature = "http-import-ureq")]
 #[derive(Debug, Clone)]
 pub struct UreqFetcher {
@@ -161,7 +157,7 @@ impl Default for UreqFetcher {
         Self {
             timeout: std::time::Duration::from_secs(10),
             cache_dir: dirs::cache_dir().unwrap_or_default().join("mq"),
-            lockfile_path: std::path::PathBuf::from(super::lockfile::LOCKFILE_NAME),
+            lockfile_path: std::path::PathBuf::from(lockfile::LOCKFILE_NAME),
             lockfile_enabled: true,
             lockfile_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
@@ -258,18 +254,12 @@ impl UreqFetcher {
         }
         let content = std::fs::read_to_string(cache_file).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
         let stored = std::fs::read_to_string(hash_file).map_err(|e| ModuleError::IOError(e.to_string().into()))?;
-        if stored.trim() == Self::compute_hash(&content) {
+        if stored.trim() == lockfile::compute_hash(&content) {
             let hash = stored.trim().to_string();
             Ok(Some(CachedModule { content, hash }))
         } else {
             Ok(None)
         }
-    }
-
-    /// SHA-256 hex digest of `content`. Delegates to [`super::lockfile::compute_hash`], the
-    /// single implementation shared with the WASM fetcher.
-    pub fn compute_hash(content: &str) -> String {
-        super::lockfile::compute_hash(content)
     }
 
     fn load_lock(path: &std::path::Path) -> Result<super::lockfile::ModuleLock, ModuleError> {
@@ -305,7 +295,7 @@ impl UreqFetcher {
     /// project; named by the absolute path's hash so distinct `mq.lock` paths never collide.
     fn lockfile_flock_path(&self) -> std::path::PathBuf {
         let absolute_path = std::path::absolute(&self.lockfile_path).unwrap_or_else(|_| self.lockfile_path.clone());
-        let hash = super::lockfile::compute_hash(&absolute_path.to_string_lossy());
+        let hash = lockfile::compute_hash(&absolute_path.to_string_lossy());
         std::env::temp_dir().join(format!("mq-{hash}.lock"))
     }
 
@@ -355,7 +345,8 @@ impl UreqFetcher {
                 lockfile::LockCheck::Mismatch { locked } => {
                     // --refresh-modules only clears mutable-ref cache and lock entries, so
                     // a drifted versioned (tagged) module needs the full reset instead.
-                    let hint = if super::http_import::is_versioned_url(url) {
+
+                    let hint = if http_import::is_versioned_url(url) {
                         "re-run with --clear-cache to reset the module cache and the lock file"
                     } else {
                         "re-run with --refresh-modules to update the lock file"
@@ -449,7 +440,7 @@ impl HttpFetcher for UreqFetcher {
             .limit(MAX_MODULE_SIZE)
             .read_to_string()
             .map_err(|e| ModuleError::IOError(e.to_string().into()))?;
-        let hash = Self::compute_hash(&content);
+        let hash = lockfile::compute_hash(&content);
 
         self.check_lock(url, &hash)?;
 
@@ -634,7 +625,7 @@ mod tests {
         std::fs::write(mutable_dir.join(format!("{}.mq", stem)), content.as_bytes()).unwrap();
         std::fs::write(
             mutable_dir.join(format!("{}.mq.sha256", stem)),
-            UreqFetcher::compute_hash(content).as_bytes(),
+            lockfile::compute_hash(content).as_bytes(),
         )
         .unwrap();
 
@@ -704,7 +695,7 @@ mod tests {
         std::fs::write(versioned_dir.join(format!("{}.mq", stem)), content.as_bytes()).unwrap();
         std::fs::write(
             versioned_dir.join(format!("{}.mq.sha256", stem)),
-            UreqFetcher::compute_hash(content).as_bytes(),
+            lockfile::compute_hash(content).as_bytes(),
         )
         .unwrap();
 
@@ -726,7 +717,7 @@ mod tests {
         std::fs::write(dir.join(format!("{}.mq", stem)), content.as_bytes()).unwrap();
         std::fs::write(
             dir.join(format!("{}.mq.sha256", stem)),
-            UreqFetcher::compute_hash(content).as_bytes(),
+            lockfile::compute_hash(content).as_bytes(),
         )
         .unwrap();
     }
@@ -739,7 +730,7 @@ mod tests {
         seed_cache(dir.path(), "mutable", url, "def cached(): 42;");
 
         let lock_path = dir.path().join("mq.lock");
-        let mut lock = super::super::lockfile::ModuleLock::default();
+        let mut lock = lockfile::ModuleLock::default();
         lock.insert(url, "0000000000000000000000000000000000000000000000000000000000000000");
         std::fs::write(&lock_path, lock.to_json()).unwrap();
 
@@ -762,7 +753,7 @@ mod tests {
         seed_cache(dir.path(), "versioned", url, "def pinned(): 1;");
 
         let lock_path = dir.path().join("mq.lock");
-        let mut lock = super::super::lockfile::ModuleLock::default();
+        let mut lock = lockfile::ModuleLock::default();
         lock.insert(url, "0000000000000000000000000000000000000000000000000000000000000000");
         std::fs::write(&lock_path, lock.to_json()).unwrap();
 
@@ -796,10 +787,10 @@ mod tests {
         // A cache hit in a project with no mq.lock yet must still create the entry, so the
         // project gains lock protection even when the module never touches the network.
         assert_eq!(resolver.resolve(url).unwrap(), content);
-        let lock = super::super::lockfile::ModuleLock::parse(&std::fs::read_to_string(&lock_path).unwrap()).unwrap();
+        let lock = lockfile::ModuleLock::parse(&std::fs::read_to_string(&lock_path).unwrap()).unwrap();
         assert_eq!(
-            lock.check(url, &UreqFetcher::compute_hash(content)),
-            super::super::lockfile::LockCheck::Match
+            lock.check(url, &lockfile::compute_hash(content)),
+            lockfile::LockCheck::Match
         );
     }
 
@@ -812,7 +803,7 @@ mod tests {
         seed_cache(dir.path(), "mutable", url, content);
 
         let lock_path = dir.path().join("mq.lock");
-        let mut lock = super::super::lockfile::ModuleLock::default();
+        let mut lock = lockfile::ModuleLock::default();
         lock.insert(url, "0000000000000000000000000000000000000000000000000000000000000000");
         std::fs::write(&lock_path, lock.to_json()).unwrap();
 
@@ -902,8 +893,8 @@ mod tests {
     #[test]
     #[cfg(feature = "http-import-ureq")]
     fn test_compute_hash_is_deterministic() {
-        let h1 = UreqFetcher::compute_hash("def foo(): 1;");
-        let h2 = UreqFetcher::compute_hash("def foo(): 1;");
+        let h1 = lockfile::compute_hash("def foo(): 1;");
+        let h2 = lockfile::compute_hash("def foo(): 1;");
         assert_eq!(h1, h2);
         assert_eq!(h1.len(), 64);
     }

@@ -3,11 +3,9 @@
 //! Records each fetched URL's SHA-256 hash so a later fetch with different content (a
 //! mutable ref that drifted) can be detected. Pure data logic; each fetcher owns the I/O.
 
-use std::collections::BTreeMap;
-
-use serde::{Deserialize, Serialize};
-
 use super::http_import::is_versioned_url;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Default lock-file name, mirroring the convention of `deno.lock`/`package-lock.json`.
 pub const LOCKFILE_NAME: &str = "mq.lock";
