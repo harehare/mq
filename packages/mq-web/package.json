@@ -8,9 +8,11 @@
     "url": "https://github.com/harehare/mq/issues"
   },
   "devDependencies": {
+    "@types/node": "^25.6.0",
     "oxlint": "^1.31.0",
     "tsup": "^8.5.1",
-    "typescript": "^6.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.0"
   },
   "files": [
     "dist"
@@ -34,7 +36,8 @@
     "build": "tsup && rm dist/.gitignore",
     "dev": "tsup --watch",
     "type-check": "tsc --noEmit",
-    "lint": "oxlint ."
+    "lint": "oxlint .",
+    "test": "vitest run"
   },
   "packageManager": "pnpm@10.33.0",
   "pnpm": {

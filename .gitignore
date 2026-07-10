@@ -2,6 +2,7 @@ work
 
 book
 dist
+editors/vscode/out
 debug/
 target/
 .direnv/

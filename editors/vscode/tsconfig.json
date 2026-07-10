@@ -5,8 +5,9 @@
     "lib": ["ES2022", "esnext.disposable"],
     "sourceMap": false,
     "rootDir": "src",
+    "outDir": "out",
     "strict": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": ["node", "mocha"]
   }
 }
