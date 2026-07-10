@@ -1,7 +1,9 @@
 use super::http_import::{
     extract_module_name, github_to_raw_url, is_allowed_url, is_github_url, is_remote_url, normalize_allowed_domain,
 };
+#[cfg(feature = "http-import-ureq")]
 use crate::http_import;
+#[cfg(feature = "http-import-ureq")]
 use crate::module::resolver::lockfile;
 use crate::{ModuleError, ModuleResolver};
 use std::{borrow::Cow, path::PathBuf};
