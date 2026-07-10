@@ -1,6 +1,8 @@
 minimumReleaseAge: 4320
 minimumReleaseAgeExclude:
 - mq-web
+- typescript
+- '@typescript/*'
 
 overrides:
   dompurify: ">=3.4.0"
