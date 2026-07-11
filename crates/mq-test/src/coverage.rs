@@ -5,6 +5,8 @@ use std::sync::{Arc, Mutex};
 use mq_lang::{CstNode, CstNodeKind, DebugContext, DebuggerAction, DebuggerHandler, Module, Shared};
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::highlight;
+
 /// Output format for a coverage report.
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum CoverageFormat {
@@ -292,7 +294,7 @@ pub(crate) fn format_lcov_report(coverages: &[FileCoverage]) -> String {
     out
 }
 
-fn html_escape(s: &str) -> String {
+pub(crate) fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -318,16 +320,31 @@ const HTML_STYLE: &str = r#"
   --muted: #6b7280;
   --border: #e5e7eb;
   --row-alt: #f9fafb;
-  --covered-bg: #d9f7e3;
-  --covered-fg: #1a7f37;
-  --uncovered-bg: #ffe3e3;
-  --uncovered-fg: #c53030;
+  --covered-bg: #d9f7e380;
+  --uncovered-bg: #ffe3e380;
   --badge-high-bg: #d9f7e3;
   --badge-high-fg: #1a7f37;
   --badge-mid-bg: #fff3cd;
   --badge-mid-fg: #8a6100;
   --badge-low-bg: #ffe3e3;
   --badge-low-fg: #c53030;
+
+  /* mq source highlighting, from the Tarn Light theme
+     (https://github.com/harehare/tarn-theme). */
+  --code-bg: #f8fafc;
+  --code-fg: #0f172a;
+  --tok-comment: #64748b;
+  --tok-keyword: #7c3aed;
+  --tok-operator: #475569;
+  --tok-function: #0891b2;
+  --tok-module: #0284c7;
+  --tok-property: #0e7490;
+  --tok-string: #059669;
+  --tok-number: #c2410c;
+  --tok-boolean: #0369a1;
+  --tok-builtin: #0369a1;
+  --tok-variable: #1e40af;
+  --tok-punctuation: #475569;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -336,16 +353,30 @@ const HTML_STYLE: &str = r#"
     --muted: #9aa0a6;
     --border: #30333a;
     --row-alt: #1d2026;
-    --covered-bg: #123822;
-    --covered-fg: #4ada91;
-    --uncovered-bg: #3a1618;
-    --uncovered-fg: #ff8080;
+    --covered-bg: #12382280;
+    --uncovered-bg: #3a161880;
     --badge-high-bg: #123822;
     --badge-high-fg: #4ada91;
     --badge-mid-bg: #3a2f00;
     --badge-mid-fg: #ffd766;
     --badge-low-bg: #3a1618;
     --badge-low-fg: #ff8080;
+
+    /* mq source highlighting, from the Tarn (dark) theme. */
+    --code-bg: #1e293b;
+    --code-fg: #e2e8f0;
+    --tok-comment: #6b7a90;
+    --tok-keyword: #bb9af7;
+    --tok-operator: #94a3b8;
+    --tok-function: #56d4d4;
+    --tok-module: #67b8e3;
+    --tok-property: #67e8f9;
+    --tok-string: #89ddff;
+    --tok-number: #de935f;
+    --tok-boolean: #85d4ff;
+    --tok-builtin: #85d4ff;
+    --tok-variable: #9cdcfe;
+    --tok-punctuation: #94a3b8;
   }
 }
 * { box-sizing: border-box; }
@@ -361,7 +392,7 @@ table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--border); }
 th { background: var(--row-alt); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
 tbody tr:hover { background: var(--row-alt); }
-td.uncovered { color: var(--uncovered-fg); font-family: ui-monospace, monospace; font-size: 0.85rem; }
+td.uncovered { color: var(--badge-low-fg); font-family: ui-monospace, monospace; font-size: 0.85rem; }
 tfoot td { font-weight: 700; border-top: 2px solid var(--border); border-bottom: none; }
 a { color: inherit; }
 .badge { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-weight: 600; font-variant-numeric: tabular-nums; font-size: 0.85rem; }
@@ -371,26 +402,39 @@ a { color: inherit; }
 details { margin-top: 1rem; border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 1rem; }
 summary { cursor: pointer; font-weight: 600; }
 summary:hover { color: var(--muted); }
-table.source { margin-top: 0.6rem; border: none; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+table.source { margin-top: 0.6rem; border: none; border-radius: 6px; overflow: hidden; background: var(--code-bg); font-family: ui-monospace, monospace; font-size: 0.85rem; }
 table.source td { padding: 0.1rem 0.6rem; border-bottom: none; white-space: pre; }
+table.source td.code { color: var(--code-fg); }
 table.source td.lineno { color: var(--muted); text-align: right; user-select: none; width: 1%; }
-table.source tr.covered td.code { background: var(--covered-bg); color: var(--covered-fg); }
-table.source tr.uncovered td.code { background: var(--uncovered-bg); color: var(--uncovered-fg); }
+table.source tr.covered td.code { background: var(--covered-bg); }
+table.source tr.uncovered td.code { background: var(--uncovered-bg); }
+.tok-comment { color: var(--tok-comment); font-style: italic; }
+.tok-keyword { color: var(--tok-keyword); font-weight: 600; }
+.tok-operator { color: var(--tok-operator); }
+.tok-punctuation { color: var(--tok-punctuation); }
+.tok-function { color: var(--tok-function); }
+.tok-module { color: var(--tok-module); }
+.tok-property { color: var(--tok-property); }
+.tok-string { color: var(--tok-string); }
+.tok-number { color: var(--tok-number); }
+.tok-boolean { color: var(--tok-boolean); }
+.tok-builtin { color: var(--tok-builtin); }
+.tok-variable { color: var(--tok-variable); }
 "#;
 
 /// Renders the per-line source table for a single file, with executable lines
 /// highlighted green (covered) or red (uncovered).
 fn format_html_source(cov: &FileCoverage, anchor: &str) -> String {
     let mut lines_html = String::new();
+    let highlighted_lines = highlight::highlight_lines(&cov.content);
 
-    for (i, line) in cov.content.lines().enumerate() {
+    for (i, code) in highlighted_lines.into_iter().enumerate() {
         let line_no = i + 1;
         let status = cov.line_status(line_no);
 
         lines_html.push_str(&format!(
             "          <tr class=\"{class}\"><td class=\"lineno\">{line_no}</td><td class=\"code\">{code}</td></tr>\n",
             class = status.as_str(),
-            code = html_escape(line),
         ));
     }
 
@@ -797,29 +841,23 @@ mod tests {
     fn test_format_html_report_highlights_covered_and_uncovered_lines() {
         let cov = FileCoverage::new(
             PathBuf::from("test.mq"),
-            BTreeSet::from([1, 2, 3]),
-            [1, 3].into_iter().collect(),
-            "covered one\nuncovered\ncovered two\n".to_string(),
+            BTreeSet::from([2, 3]),
+            [2].into_iter().collect(),
+            "def foo():\n  1\n  | 2\nend\n".to_string(),
         );
         let report = format_html_report(&[cov]);
 
-        // Line 1 and 3 were visited -> covered (green); line 2 was not -> uncovered (red).
-        assert!(
-            report
-                .contains("<tr class=\"covered\"><td class=\"lineno\">1</td><td class=\"code\">covered one</td></tr>")
-        );
-        assert!(
-            report
-                .contains("<tr class=\"uncovered\"><td class=\"lineno\">2</td><td class=\"code\">uncovered</td></tr>")
-        );
-        assert!(
-            report
-                .contains("<tr class=\"covered\"><td class=\"lineno\">3</td><td class=\"code\">covered two</td></tr>")
-        );
+        // Line 2 was visited -> covered (green); line 3 was not -> uncovered (red).
+        assert!(report.contains(
+            "<tr class=\"covered\"><td class=\"lineno\">2</td><td class=\"code\">  <span class=\"tok-number\">1</span></td></tr>"
+        ));
+        assert!(report.contains(
+            "<tr class=\"uncovered\"><td class=\"lineno\">3</td><td class=\"code\">  <span class=\"tok-operator\">|</span> <span class=\"tok-number\">2</span></td></tr>"
+        ));
         assert!(report.contains("tr.covered td.code { background: var(--covered-bg)"));
         assert!(report.contains("tr.uncovered td.code { background: var(--uncovered-bg)"));
         assert!(report.contains("prefers-color-scheme: dark"));
-        assert!(report.contains("<span class=\"badge mid\">66.7%</span>"));
+        assert!(report.contains("<span class=\"badge mid\">50.0%</span>"));
     }
 
     #[test]
@@ -832,11 +870,16 @@ mod tests {
         );
         let report = format_html_report(&[cov]);
 
-        assert!(
-            report.contains("<tr class=\"plain\"><td class=\"lineno\">1</td><td class=\"code\">def foo():</td></tr>")
-        );
+        assert!(report.contains(
+            "<tr class=\"plain\"><td class=\"lineno\">1</td><td class=\"code\">\
+             <span class=\"tok-keyword\">def</span> <span class=\"tok-function\">foo</span>\
+             <span class=\"tok-punctuation\">(</span><span class=\"tok-punctuation\">)</span>\
+             <span class=\"tok-punctuation\">:</span></td></tr>"
+        ));
         assert!(report.contains("<tr class=\"covered\"><td class=\"lineno\">2</td>"));
-        assert!(report.contains("<tr class=\"plain\"><td class=\"lineno\">3</td><td class=\"code\">end</td></tr>"));
+        assert!(report.contains(
+            "<tr class=\"plain\"><td class=\"lineno\">3</td><td class=\"code\"><span class=\"tok-keyword\">end</span></td></tr>"
+        ));
     }
 
     #[rstest]

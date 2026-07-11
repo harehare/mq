@@ -1,4 +1,5 @@
 mod coverage;
+mod highlight;
 mod runner;
 
 use clap::Parser;
