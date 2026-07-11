@@ -7,7 +7,7 @@ HTTP/REST server that exposes the [mq](https://mqlang.org/) markdown query langu
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Health check |
-| `POST` | `/{query}` | Curl-friendly shortcut: query in the path, raw Markdown body |
+| `POST` | `/{query}` | Curl-friendly shortcut: query in the path, raw Markdown/HTML body (HTML auto-detected) |
 | `GET` | `/api/v1/query` | Execute a query (query-string parameters) |
 | `POST` | `/api/v1/query` | Execute a query (JSON body) |
 | `POST` | `/api/v1/check` | Type-check a query |
@@ -32,10 +32,18 @@ curl --data-binary @doc.md https://api.mqlang.org/.h1
 |-----------|----------|----------|--------------|
 | `query` | Path | Yes | mq query expression. Reserved characters (`\|`, `?`, `#`) must be percent-encoded, e.g. `.h1 \| .text` → `.h1%20%7C%20.text` |
 | (body) | Body | No | Raw input content |
-| `input_format` | Query | No | `markdown` (default), `mdx`, `text`, `html`, `raw`, `null` |
+| `input_format` | Query | No | `markdown` (default), `mdx`, `text`, `html`, `raw`, `null`. Auto-detected as `html` if omitted and the body starts with `<!doctype html>` or `<html>`. |
 | `output_format` | Query | No | `markdown` (default), `html`, `text`, `json`, `none` |
 
-> **Use `--data-binary`, not `-d`/`--data`.** `curl -d @file` strips newlines from the file, which breaks Markdown parsing (blank lines separate paragraphs and headings). `--data-binary` sends the file exactly as-is.
+```bash
+# HTML is auto-detected — no ?input_format=html needed
+curl --data-binary @page.html https://api.mqlang.org/.h1
+
+# Force a format explicitly if auto-detection isn't what you want
+curl --data-binary @page.html "https://api.mqlang.org/.h1?input_format=text"
+```
+
+> **Use `--data-binary`, not `-d`/`--data`.** `curl -d @file` strips newlines from the file, which breaks Markdown/HTML parsing (blank lines separate paragraphs and headings). `--data-binary` sends the file exactly as-is.
 
 For queries that need modules, args, or aggregation, use `POST /api/v1/query` instead.
 
@@ -182,6 +190,12 @@ docker run -p 3000:3000 \
 
 ```bash
 curl --data-binary @doc.md https://api.mqlang.org/.h1
+```
+
+### Curl-friendly shortcut with HTML input (auto-detected)
+
+```bash
+curl --data-binary @page.html https://api.mqlang.org/.h1
 ```
 
 ### Execute a query (GET)

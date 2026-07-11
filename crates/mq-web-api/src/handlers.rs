@@ -210,6 +210,15 @@ pub async fn post_query_api(
     }
 }
 
+/// Detects whether `body` looks like a full HTML document, ignoring leading
+/// whitespace and a UTF-8 BOM. Used by the shorthand endpoint to auto-select
+/// `InputFormat::Html` when the caller doesn't pass `?input_format=`.
+fn looks_like_html(body: &str) -> bool {
+    let trimmed = body.trim_start_matches('\u{feff}').trim_start();
+    let prefix: String = trimmed.chars().take(14).collect::<String>().to_ascii_lowercase();
+    prefix.starts_with("<!doctype html") || prefix.starts_with("<html")
+}
+
 #[utoipa::path(
     post,
     path = "/{query}",
@@ -218,7 +227,7 @@ pub async fn post_query_api(
     description = "Curl-friendly shortcut that reads the mq query from the URL path and the input content from the raw request body, e.g. `curl -d @doc.md https://api.mqlang.org/.h1`. Reserved characters in the query (`|`, `?`, `#`) must be percent-encoded.",
     params(
         ("query" = String, Path, description = "mq query expression", example = ".h1"),
-        ("input_format" = Option<String>, Query, description = "Input format: markdown, mdx, text, html, raw, or null"),
+        ("input_format" = Option<String>, Query, description = "Input format: markdown, mdx, text, html, raw, or null. If omitted, HTML is auto-detected when the body starts with `<!doctype html>` or `<html>`."),
         ("output_format" = Option<String>, Query, description = "Output format: markdown, html, text, json, or none"),
     ),
     request_body(content = String, content_type = "text/markdown", description = "Raw Markdown/MDX/HTML/text content to query"),
@@ -237,7 +246,8 @@ pub async fn post_shorthand_query_api(
 
     let input_format = params
         .input_format
-        .and_then(|v| serde_json::from_str::<InputFormat>(&format!("\"{}\"", v)).ok());
+        .and_then(|v| serde_json::from_str::<InputFormat>(&format!("\"{}\"", v)).ok())
+        .or_else(|| looks_like_html(&body).then_some(InputFormat::Html));
     let output_format = params
         .output_format
         .and_then(|v| serde_json::from_str::<OutputFormat>(&format!("\"{}\"", v)).ok());
@@ -409,4 +419,23 @@ static OPENAPI_SPEC: OnceLock<utoipa::openapi::OpenApi> = OnceLock::new();
 pub async fn openapi_json() -> Json<utoipa::openapi::OpenApi> {
     debug!("GET /openapi.json called");
     Json(OPENAPI_SPEC.get_or_init(ApiDoc::openapi).clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case("<html><body>Hi</body></html>", true)]
+    #[case("<HTML><body>Hi</body></html>", true)]
+    #[case("<!DOCTYPE html><html></html>", true)]
+    #[case("  \n<!doctype html>\n<html></html>", true)]
+    #[case("\u{feff}<html></html>", true)]
+    #[case("# Title\n\nBody text.", false)]
+    #[case("<div>fragment</div>", false)]
+    #[case("", false)]
+    fn test_looks_like_html(#[case] body: &str, #[case] expected: bool) {
+        assert_eq!(looks_like_html(body), expected, "body: {:?}", body);
+    }
 }

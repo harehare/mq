@@ -41,6 +41,9 @@ tracing-subscriber = {workspace = true, features = ["env-filter", "json"]}
 utoipa = {workspace = true, features = ["preserve_order"]}
 utoipa-swagger-ui = {workspace = true}
 
+[dev-dependencies]
+rstest = {workspace = true}
+
 [[bin]]
 name = "mq-web-api"
 path = "src/main.rs"
