@@ -616,6 +616,7 @@ impl RuntimeValue {
                 serde_json::Value::Object(obj)
             }
             RuntimeValue::Bytes(b) => serde_json::Value::String(base64::engine::general_purpose::STANDARD.encode(b)),
+            RuntimeValue::Markdown(node, _) => serde_json::to_value(node.as_ref()).unwrap_or(serde_json::Value::Null),
             _ => serde_json::Value::Null,
         }
     }
@@ -1233,6 +1234,35 @@ mod tests {
         match b.to_json_value() {
             serde_json::Value::String(s) => assert!(!s.is_empty()),
             other => panic!("expected String, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_to_json_value_markdown() {
+        let node = Node::Text(mq_markdown::Text {
+            value: "hi".to_string(),
+            position: None,
+        });
+        let value = RuntimeValue::Markdown(Box::new(node), None).to_json_value();
+        assert_eq!(value["type"], serde_json::Value::String("Text".to_string()));
+        assert_eq!(value["value"], serde_json::Value::String("hi".to_string()));
+    }
+
+    #[test]
+    fn test_to_json_value_array_of_markdown() {
+        // Regression test: nested Markdown values inside an Array (e.g. the array
+        // returned by `from_html()`) must serialize to their node structure, not `null`.
+        let node = Node::Text(mq_markdown::Text {
+            value: "hi".to_string(),
+            position: None,
+        });
+        let arr = RuntimeValue::Array(vec![RuntimeValue::Markdown(Box::new(node), None)]);
+        match arr.to_json_value() {
+            serde_json::Value::Array(items) => {
+                assert_ne!(items[0], serde_json::Value::Null);
+                assert_eq!(items[0]["type"], serde_json::Value::String("Text".to_string()));
+            }
+            other => panic!("expected Array, got {other:?}"),
         }
     }
 
