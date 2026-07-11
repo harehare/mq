@@ -1,0 +1,139 @@
+import "md"
+| include "test"
+
+# -- Markdown Builder (md) Tests --
+
+def test_md_h():
+  let result = to_string(md::h("Title", 2))
+  | assert_eq(result, "## Title")
+end
+
+def test_md_code():
+  let result = to_string(md::code("let x = 1;", "rust"))
+  | assert_eq(result, "```rust\nlet x = 1;\n```")
+end
+
+def test_md_code_inline():
+  let result = to_string(md::code_inline("x"))
+  | assert_eq(result, "`x`")
+end
+
+def test_md_text():
+  let result = to_string(md::text("plain"))
+  | assert_eq(result, "plain")
+end
+
+def test_md_strong():
+  let result = to_string(md::strong("bold"))
+  | assert_eq(result, "**bold**")
+end
+
+def test_md_em():
+  let result = to_string(md::em("italic"))
+  | assert_eq(result, "*italic*")
+end
+
+def test_md_delete():
+  let result = to_string(md::delete("gone"))
+  | assert_eq(result, "~~gone~~")
+end
+
+def test_md_blockquote():
+  let result = to_string(md::blockquote("quote"))
+  | assert_eq(result, "> quote")
+end
+
+def test_md_callout():
+  let result = to_string(md::callout("note body", "note"))
+  | assert_eq(result, "> [!NOTE]\n> note body")
+end
+
+def test_md_callout_with_title():
+  let result = to_string(md::callout("warn body", "warning", "Careful"))
+  | assert_eq(result, "> [!WARNING] Careful\n> warn body")
+end
+
+def test_md_hr():
+  let result = to_string(md::hr())
+  | assert_eq(result, "---")
+end
+
+def test_md_math():
+  let result = to_string(md::math("E=mc^2"))
+  | assert_eq(result, "$$\nE=mc^2\n$$")
+end
+
+def test_md_math_inline():
+  let result = to_string(md::math_inline("x^2"))
+  | assert_eq(result, "$x^2$")
+end
+
+def test_md_link():
+  let result = to_string(md::link("https://example.com", "Example"))
+  | assert_eq(result, "[Example](https://example.com)")
+end
+
+def test_md_image():
+  let result = to_string(md::image("https://example.com/a.png", "Alt"))
+  | assert_eq(result, "![Alt](https://example.com/a.png \"\")")
+end
+
+def test_md_list():
+  let result = to_string(md::list("Item"))
+  | assert_eq(result, "- Item")
+end
+
+def test_md_list_nested():
+  let result = to_string(md::list("Nested", 1))
+  | assert_eq(result, "  - Nested")
+end
+
+def test_md_list_ordered():
+  let result = to_string(md::list("Ordered", 0, true))
+  | assert_eq(result, "1. Ordered")
+end
+
+def test_md_list_checked():
+  let result = to_string(md::list("Checked", 0, false, true))
+  | assert_eq(result, "- [x] Checked")
+end
+
+def test_md_table_row():
+  let result = to_string(md::table_row(["A", "B"]))
+  | assert_eq(result, "|A|B|")
+end
+
+def test_md_table_cell():
+  let result = md::table_cell("v", 1, 2)
+  | assert_eq(to_string(result), "v")
+  | assert_eq(result.row, 1)
+  | assert_eq(result.column, 2)
+end
+
+def test_md_table_align():
+  let result = to_string(md::table_align(["left", "right"]))
+  | assert_eq(result, "|:---|---:|")
+end
+
+def test_md_doc():
+  let result = to_string(md::doc(md::text("a"), md::text("b")))
+  | assert_eq(result, "a\nb")
+end
+
+def test_md_doc_array_arg():
+  let result = to_string(md::doc([md::text("a"), md::text("b")]))
+  | assert_eq(result, "a\nb")
+end
+
+def test_md_doc_flattens_nested_arrays():
+  let result = to_string(md::doc(
+    md::h("Items", 2),
+    map(["a", "b"], fn(x): md::list(x);),
+  ))
+  | assert_eq(result, "## Items\n- a\n- b")
+end
+
+def test_md_doc_skips_none_children():
+  let result = to_string(md::doc(md::text("a"), None, md::text("b")))
+  | assert_eq(result, "a\n\nb")
+end

@@ -1,0 +1,139 @@
+import "section"
+| include "test"
+
+| let section_md = "# Introduction\nThis is the introduction section.\n\n## Advanced Topics\nThis section covers advanced topics.\n\n# Conclusion\nThis is the conclusion section.\n"
+| let test_sections = to_markdown(section_md) |
+
+def test_section_sections():
+  let sections = do test_sections | section::sections();
+  | assert_eq(len(sections), 3)
+
+  | let sections = do "# test" | to_markdown() | section::sections();
+  | assert_eq(len(sections), 1)
+end
+
+def test_section_filter_sections():
+  let sections = do test_sections | section::filter_sections(fn(x): section::level(x) == 1;);
+  | assert_eq(len(sections), 2)
+end
+
+def test_section_map_sections():
+  let level_list = do test_sections | section::map_sections(fn(head, children): head.level;);
+  | assert_eq(level_list, [1, 2, 1])
+end
+
+def test_section_split():
+  let sections = do test_sections | section::split(1);
+  | assert_eq(len(sections), 2)
+end
+
+def test_section_title_contains():
+  let sections = do test_sections | section::split(1);
+  | let filtered = section::title_contains(sections, "Introduction")
+  | assert_eq(len(filtered), 1)
+end
+
+def test_section_title_match():
+  let sections = do test_sections | section::split(1);
+  | let filtered = section::title_match(sections, "^I.*")
+  | assert_eq(len(filtered), 1)
+end
+
+def test_section_title():
+  let sections = do test_sections | section::split(1);
+  | let first_section = first(sections)
+  | let title_text = section::title(first_section)
+  | assert(contains(title_text, "Introduction"))
+end
+
+def test_section_content():
+  let sections = do test_sections | section::split(1);
+  | let first_section = first(sections)
+  | let content_nodes = section::content(first_section)
+  | assert(len(content_nodes) > 0)
+end
+
+def test_section_level():
+  let sections = do test_sections | section::split(1);
+  | let first_section = first(sections)
+  | let lvl = section::level(first_section)
+  | assert_eq(lvl, 1)
+end
+
+def test_section_nth():
+  let sections = do test_sections | section::split(1);
+  | let second = section::nth(sections, 1)
+  | assert(not(is_none(second)))
+end
+
+def test_section_titles():
+  let sections = do test_sections | section::split(1);
+  | let all_titles = section::titles(sections)
+  | assert_eq(len(all_titles), 2)
+end
+
+def test_section_flatten():
+  let sections = do test_sections | section::split(1);
+  | let flattened = section::collect(sections)
+  | assert(is_array(flattened))
+end
+
+def test_section_section_pattern():
+  let secs = do test_sections | section::section("Introduction");
+  | assert_eq(len(secs), 1)
+  | assert(contains(section::title(first(secs)), "Introduction"))
+end
+
+def test_section_section_no_match():
+  let secs = do test_sections | section::section("NonExistent");
+  | assert_eq(secs, [])
+end
+
+def test_section_section_depth_h1():
+  let secs = do test_sections | section::section(., "Introduction", true);
+  | assert_eq(len(secs), 1)
+  | let s = first(secs)
+  | assert_eq(section::level(s), 1)
+  | assert(len(section::body(s)) > 1)
+end
+
+def test_section_section_depth_h2():
+  let secs = do test_sections | section::section(., "Advanced Topics", true);
+  | assert_eq(len(secs), 1)
+  | let s = first(secs)
+  | assert_eq(section::level(s), 2)
+end
+
+def test_section_section_depth_false_unchanged():
+  let secs_default = do test_sections | section::section("Introduction");
+  | let secs_depth = do test_sections | section::section(., "Introduction", false);
+  | assert_eq(len(secs_default), len(secs_depth))
+end
+
+def test_section_bodies_pipe():
+  let body_list = do test_sections | section::section("Introduction") | section::bodies();
+  | assert_eq(len(body_list), 1)
+  | assert(is_array(first(body_list)))
+end
+
+def test_section_by_level_scalar():
+  let secs = do test_sections | section::sections() | section::by_level(1);
+  | assert_eq(len(secs), 2)
+  | assert_eq(section::level(first(secs)), 1)
+end
+
+def test_section_by_level_h2():
+  let secs = do test_sections | section::sections() | section::by_level(2);
+  | assert_eq(len(secs), 1)
+  | assert_eq(section::level(first(secs)), 2)
+end
+
+def test_section_by_level_range():
+  let secs = do test_sections | section::sections() | section::by_level(1..2);
+  | assert_eq(len(secs), 3)
+end
+
+def test_section_by_level_empty():
+  let secs = section::by_level([], 1)
+  | assert_eq(secs, [])
+end

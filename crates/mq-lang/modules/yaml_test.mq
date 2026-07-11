@@ -1,0 +1,33 @@
+import "yaml"
+| include "test"
+
+# -- YAML Tests --
+
+| let yaml_input = "number: 42\nfloat: 3.14\nbool_true: true\nbool_false: false\nnull_value: null\narray:\n  - item1\n  - item2\n  - item3\nobject:\n  key1: value1\n  key2: value2\nnested:\n  arr:\n    - a\n    - b\n  obj:\n    subkey: subval\n" |
+
+def test_yaml_parse():
+  let result = yaml::yaml_parse(yaml_input)
+  | assert_eq(len(keys(result)), 8)
+end
+
+def test_yaml_to_json():
+  let result = yaml::yaml_to_json(yaml::yaml_parse(yaml_input))
+  | assert_eq(result, "{\"array\": [\"item1\", \"item2\", \"item3\"], \"number\": 42, \"float\": 3.14, \"bool_true\": true, \"bool_false\": false, \"null_value\": null, \"object\": {\"key1\": \"value1\", \"key2\": \"value2\"}, \"nested\": {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}}}")
+end
+
+def test_yaml_to_markdown_table():
+  let result = yaml::yaml_to_markdown_table(yaml::yaml_parse(yaml_input))
+  | assert_eq(result, "| Key | Value |\n| --- | --- |\n| array | [\"item1\", \"item2\", \"item3\"] |\n| number | 42 |\n| float | 3.14 |\n| bool_true | true |\n| bool_false | false |\n| null_value |  |\n| object | {\"key1\": \"value1\", \"key2\": \"value2\"} |\n| nested | {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}} |")
+end
+
+def test_to_front_matter():
+  let input = {title: "title", date: "2024-06-01", tags: ["test", "yaml"], draft: false}
+  | let result = yaml::to_front_matter(input)
+  | assert_eq(result, "---\ndate: 2024-06-01\ndraft: false\ntags: \n  - test\n  - yaml\ntitle: title\n---")
+end
+
+def test_to_frontmatter():
+  let input = {title: "title", date: "2024-06-01", tags: ["test", "yaml"], draft: false}
+  | let result = yaml::to_frontmatter(input)
+  | assert_eq(result, "---\ndate: 2024-06-01\ndraft: false\ntags: \n  - test\n  - yaml\ntitle: title\n---")
+end

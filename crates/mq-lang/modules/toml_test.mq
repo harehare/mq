@@ -1,0 +1,18 @@
+import "toml"
+| import "json"
+| include "test"
+
+# -- TOML Tests --
+
+| let toml_input = "[package]\nauthors = [\"Test Author <test@example.com>\"]\ndescription = \"A test TOML configuration file\"\nedition = \"2021\"\nlicense = \"MIT\"\nname = \"test-package\"\nversion = \"1.0.0\"\n\n[dependencies]\n" |
+
+def test_toml_parse():
+  let result = toml::toml_parse(toml_input)
+  | assert_eq(len(result), 2)
+end
+
+def test_toml_to_json():
+  let parsed = toml::toml_parse(toml_input)
+  | let result = toml::toml_to_json(parsed)
+  | assert_eq(json::json_parse(result), parsed)
+end

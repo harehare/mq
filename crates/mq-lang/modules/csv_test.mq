@@ -1,0 +1,89 @@
+import "csv"
+| include "test"
+
+# -- CSV and PSV Tests --
+
+| let csv_input = "a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n" |
+
+def test_csv_parse_for_dict():
+  let result = csv::csv_parse(csv_input, true)
+  | assert_eq(len(result), 6)
+end
+
+def test_csv_to_json_for_dict():
+  let result = csv::csv_to_json(csv::csv_parse(csv_input, true))
+  | assert_eq(result, "[{\"a\":\"1,2\",\"b\":\"2,3\",\"c\":\"3,4\"},{\"a\":\"4\",\"b\":\"5\",\"c\":\"6\"},{\"a\":\"multi\\nline\",\"b\":\"7\",\"c\":\"8\"},{\"a\":\"9\",\"b\":\"10\",\"c\":\"quoted,comma\"},{\"a\":\"\",\"b\":\"11\",\"c\":\"12\"},{\"a\":\"13\",\"b\":\"14\",\"c\":\"15\"}]")
+end
+
+def test_csv_parse_for_array():
+  let result = csv::csv_parse(csv_input, false)
+  | assert_eq(len(result), 7)
+end
+
+def test_csv_to_json_for_array():
+  let result = csv::csv_to_json(csv::csv_parse(csv_input, false))
+  | assert_eq(result, "[[\"a\",\"b\",\"c\"],[\"1,2\",\"2,3\",\"3,4\"],[\"4\",\"5\",\"6\"],[\"multi\\nline\",\"7\",\"8\"],[\"9\",\"10\",\"quoted,comma\"],[\"\",\"11\",\"12\"],[\"13\",\"14\",\"15\"]]")
+end
+
+def test_csv_stringify_plain_for_array():
+  let result = csv::csv_stringify([["a", "b"], ["1", "2"], ["3", "4"]], ",")
+  | assert_eq(result, "a,b\n1,2\n3,4")
+end
+
+def test_csv_stringify_plain_for_dict():
+  let result = csv::csv_stringify([{"a": "1", "b": "2"}, {"a": "3", "b": "4"}], ",")
+  | assert_eq(result, "a,b\n1,2\n3,4")
+end
+
+def test_csv_stringify_escapes_quotes_for_array():
+  let result = csv::csv_stringify([["a", "b"], ["he said \"hi\"", "plain"]], ",")
+  | assert_eq(result, "a,b\n\"he said \"\"hi\"\"\",plain")
+end
+
+def test_csv_stringify_escapes_quotes_for_dict():
+  let result = csv::csv_stringify([{"a": "he said \"hi\"", "b": "plain"}], ",")
+  | assert_eq(result, "a,b\n\"he said \"\"hi\"\"\",plain")
+end
+
+def test_csv_stringify_escapes_multiple_quotes():
+  let result = csv::csv_stringify([["a"], ["\"\"\""]], ",")
+  | assert_eq(result, "a\n\"\"\"\"\"\"\"\"")
+end
+
+def test_csv_stringify_escapes_quote_and_delimiter_together():
+  let result = csv::csv_stringify([["a", "b"], ["x\",y", "plain"]], ",")
+  | assert_eq(result, "a,b\n\"x\"\",y\",plain")
+end
+
+def test_csv_stringify_escapes_quotes_in_header():
+  let result = csv::csv_stringify([["he said \"hi\""], ["v"]], ",")
+  | assert_eq(result, "\"he said \"\"hi\"\"\"\nv")
+end
+
+def test_csv_stringify_roundtrip_with_quotes():
+  let original = [{"a": "he said \"hi\"", "b": "x,y"}]
+  | let result = csv::csv_parse(csv::csv_stringify(original, ","), true)
+  | assert_eq(result, original)
+end
+
+| let psv_input = "a|b|c\n\"1,2\"|\"2,3\"|\"3,4\"\n4|5|6\n\"multi\nline\"|7|8\n9|10|\"quoted,comma\"\n\"\"|11|12\n13|14|15\n" |
+
+def test_psv_parse_for_dict():
+  let result = csv::psv_parse(psv_input, true)
+  | assert_eq(len(result), 6)
+end
+
+def test_psv_to_json_for_dict():
+  let result = csv::csv_to_json(csv::psv_parse(psv_input, true))
+  | assert_eq(result, "[{\"a\":\"1,2\",\"b\":\"2,3\",\"c\":\"3,4\"},{\"a\":\"4\",\"b\":\"5\",\"c\":\"6\"},{\"a\":\"multi\\nline\",\"b\":\"7\",\"c\":\"8\"},{\"a\":\"9\",\"b\":\"10\",\"c\":\"quoted,comma\"},{\"a\":\"\",\"b\":\"11\",\"c\":\"12\"},{\"a\":\"13\",\"b\":\"14\",\"c\":\"15\"}]")
+end
+
+def test_psv_parse_for_array():
+  let result = csv::psv_parse(psv_input, false)
+  | assert_eq(len(result), 7)
+end
+
+def test_psv_to_json_for_array():
+  let result = csv::csv_to_json(csv::psv_parse(psv_input, false))
+  | assert_eq(result, "[[\"a\",\"b\",\"c\"],[\"1,2\",\"2,3\",\"3,4\"],[\"4\",\"5\",\"6\"],[\"multi\\nline\",\"7\",\"8\"],[\"9\",\"10\",\"quoted,comma\"],[\"\",\"11\",\"12\"],[\"13\",\"14\",\"15\"]]")
+end
