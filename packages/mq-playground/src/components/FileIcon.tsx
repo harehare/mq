@@ -5,6 +5,7 @@ import {
   VscJson,
   VscFolder,
   VscFolderOpened,
+  VscLock,
 } from "react-icons/vsc";
 
 type FileIconProps = {
@@ -24,6 +25,10 @@ export const FileIcon = ({
     ) : (
       <VscFolder style={{ color: "#dcb67a" }} />
     );
+  }
+
+  if (fileName === "mq.lock") {
+    return <VscLock style={{ color: "#cccccc" }} />;
   }
 
   const extension = fileName.split(".").pop()?.toLowerCase();

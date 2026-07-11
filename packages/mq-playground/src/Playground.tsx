@@ -561,6 +561,12 @@ export const Playground = () => {
     } finally {
       const endTime = performance.now();
       setExecutionTime(endTime - startTime);
+
+      // HTTP imports (if any) write/update mq.lock directly in OPFS,
+      // bypassing the file tree's own write path, so refresh it here.
+      if (isOPFSSupported) {
+        await loadFiles();
+      }
     }
   }, [
     activeTab,
@@ -571,6 +577,8 @@ export const Playground = () => {
     listStyle,
     linkUrlStyle,
     linkTitleStyle,
+    isOPFSSupported,
+    loadFiles,
   ]);
 
   const handleGenerateAst = useCallback(async () => {
