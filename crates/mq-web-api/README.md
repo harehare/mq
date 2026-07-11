@@ -7,6 +7,7 @@ HTTP/REST server that exposes the [mq](https://mqlang.org/) markdown query langu
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Health check |
+| `POST` | `/{query}` | Curl-friendly shortcut: query in the path, raw body (Markdown/HTML/XML/JSON/CSV/...) |
 | `GET` | `/api/v1/query` | Execute a query (query-string parameters) |
 | `POST` | `/api/v1/query` | Execute a query (JSON body) |
 | `POST` | `/api/v1/check` | Type-check a query |
@@ -19,13 +20,47 @@ HTTP/REST server that exposes the [mq](https://mqlang.org/) markdown query langu
 
 Legacy paths (`/api/query`, `/api/check`, `/api/format`, `/openapi.json`) redirect permanently to the `/api/v1/` equivalents.
 
+### `POST /{query}`
+
+Curl-friendly shortcut for one-off queries: the mq query goes in the URL path, the input content is the raw request body.
+
+```bash
+curl --data-binary @doc.md https://api.mqlang.org/.h1
+```
+
+| Parameter | Location | Required | Description |
+|-----------|----------|----------|--------------|
+| `query` | Path | Yes | mq query expression. Reserved characters (`\|`, `?`, `#`) must be percent-encoded, e.g. `.h1 \| .text` → `.h1%20%7C%20.text` |
+| (body) | Body | No | Raw input content |
+| `input_format` | Query | No | `markdown` (default), `mdx`, `text`, `html`, `raw`, `null`, `csv`, `tsv`, `psv`, `json`, `yaml`, `toml`, `xml`, `hcl`, `toon`. See auto-detection below. |
+| `output_format` | Query | No | `markdown` (default), `html`, `text`, `json`, `none` |
+
+`html`, `xml`, and `json` are auto-detected from the body's leading bytes when `input_format` is omitted (`<!doctype html>`/`<html`, `<?xml`, and `{`/`[` respectively). `csv`, `tsv`, `psv`, `yaml`, `toml`, `hcl`, and `toon` have no reliable content signature and always need an explicit `input_format`.
+
+```bash
+# HTML/XML/JSON are auto-detected — no ?input_format= needed
+curl --data-binary @page.html https://api.mqlang.org/.h1
+curl --data-binary @data.json 'https://api.mqlang.org/json::json_to_markdown_table()'
+
+# CSV (and tsv/psv/yaml/toml/hcl/toon) need an explicit input_format,
+# then use the matching builtin module inside the query
+curl --data-binary @data.csv 'https://api.mqlang.org/csv::csv_to_markdown_table()?input_format=csv'
+
+# Force a format explicitly if auto-detection isn't what you want
+curl --data-binary @page.html "https://api.mqlang.org/.h1?input_format=text"
+```
+
+> **Use `--data-binary`, not `-d`/`--data`.** `curl -d @file` strips newlines from the file, which breaks Markdown/HTML/XML parsing (blank lines/whitespace are often significant). `--data-binary` sends the file exactly as-is.
+
+For queries that need `modules`, `args`, or `aggregate`, use `POST /api/v1/query` instead.
+
 ### `GET /api/v1/query`
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `query` | Yes | mq query string |
 | `input` | No | Input content |
-| `input_format` | No | `markdown` (default), `mdx`, `text`, `html`, `raw`, `null` |
+| `input_format` | No | `markdown` (default), `mdx`, `text`, `html`, `raw`, `null`, `csv`, `tsv`, `psv`, `json`, `yaml`, `toml`, `xml`, `hcl`, `toon` |
 
 ### `POST /api/v1/query`
 
@@ -45,7 +80,7 @@ Legacy paths (`/api/query`, `/api/check`, `/api/format`, `/openapi.json`) redire
 |-------|------|-------------|
 | `query` | `string` | mq query string |
 | `input` | `string?` | Input content |
-| `input_format` | `string?` | `markdown` (default), `mdx`, `text`, `html`, `raw`, `null` |
+| `input_format` | `string?` | `markdown` (default), `mdx`, `text`, `html`, `raw`, `null`, `csv`, `tsv`, `psv`, `json`, `yaml`, `toml`, `xml`, `hcl`, `toon` |
 | `output_format` | `string?` | `markdown` (default), `html`, `text`, `json`, `none` |
 | `modules` | `string[]?` | Builtin module names to load (e.g. `"json"`, `"csv"`) |
 | `args` | `object?` | String variables passed to the engine |
@@ -157,6 +192,30 @@ docker run -p 3000:3000 \
 ```
 
 ## Examples
+
+### Curl-friendly shortcut
+
+```bash
+curl --data-binary @doc.md https://api.mqlang.org/.h1
+```
+
+### Curl-friendly shortcut with HTML input (auto-detected)
+
+```bash
+curl --data-binary @page.html https://api.mqlang.org/.h1
+```
+
+### Curl-friendly shortcut with CSV input
+
+```bash
+curl --data-binary @data.csv 'https://api.mqlang.org/csv::csv_to_markdown_table()?input_format=csv'
+```
+
+### Curl-friendly shortcut with JSON input (auto-detected)
+
+```bash
+curl --data-binary @data.json 'https://api.mqlang.org/json::json_to_markdown_table()'
+```
 
 ### Execute a query (GET)
 

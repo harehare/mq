@@ -1,6 +1,6 @@
 use axum::{
     extract::rejection::QueryRejection,
-    extract::{FromRequestParts, Query, State},
+    extract::{FromRequestParts, Path, Query, State},
     http::{StatusCode, request::Parts},
     response::Json,
 };
@@ -31,6 +31,12 @@ pub struct QueryParams {
 #[derive(Deserialize)]
 pub struct DiagnosticsParams {
     pub query: String,
+}
+
+#[derive(Deserialize)]
+pub struct ShorthandQueryParams {
+    pub input_format: Option<String>,
+    pub output_format: Option<String>,
 }
 
 pub struct ValidatedQuery<T>(pub T);
@@ -69,6 +75,7 @@ pub async fn health_check() -> Json<HealthResponse> {
     paths(
         get_query_api,
         post_query_api,
+        post_shorthand_query_api,
         post_check_api,
         post_format_api,
         get_functions_api,
@@ -110,7 +117,7 @@ pub struct ApiDoc;
     params(
         ("query" = String, Query, description = "mq query string to execute"),
         ("input" = String, Query, description = "Input content to process"),
-        ("input_format" = Option<String>, Query, description = "Input format: markdown, mdx, text, html, raw, or null")
+        ("input_format" = Option<String>, Query, description = "Input format: markdown, mdx, text, html, raw, null, csv, tsv, psv, json, yaml, toml, xml, hcl, or toon")
     )
 )]
 pub async fn get_query_api(
@@ -196,6 +203,98 @@ pub async fn post_query_api(
         }
         Err(e) => {
             error!("Failed to process query '{}': {}", query_str, e);
+            Err(ProblemDetails::new(StatusCode::BAD_REQUEST)
+                .with_title("Invalid query")
+                .with_detail("error", &e.to_string()))
+        }
+    }
+}
+
+/// Guesses `body`'s format from its leading bytes, ignoring leading
+/// whitespace and a UTF-8 BOM. Used by the shorthand endpoint to auto-select
+/// `input_format` when the caller doesn't pass `?input_format=`.
+///
+/// Only formats with an unambiguous leading marker are detected here
+/// (HTML, XML, JSON). Formats like CSV/TSV/PSV/YAML/TOML/HCL/TOON have no
+/// reliable content signature and are indistinguishable from plain
+/// Markdown/text without an explicit `?input_format=`.
+fn sniff_input_format(body: &str) -> Option<InputFormat> {
+    let trimmed = body.trim_start_matches('\u{feff}').trim_start();
+    let lower_prefix: String = trimmed.chars().take(14).collect::<String>().to_ascii_lowercase();
+
+    if lower_prefix.starts_with("<!doctype html") || lower_prefix.starts_with("<html") {
+        return Some(InputFormat::Html);
+    }
+    if lower_prefix.starts_with("<?xml") {
+        return Some(InputFormat::Xml);
+    }
+    match trimmed.chars().next() {
+        Some('{') | Some('[') => Some(InputFormat::Json),
+        _ => None,
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/{query}",
+    tag = "mq-api",
+    summary = "Run an mq query against raw Markdown/HTML/XML/JSON/CSV/... (curl-friendly shortcut)",
+    description = "Curl-friendly shortcut that reads the mq query from the URL path and the input content from the raw request body, e.g. `curl --data-binary @doc.md https://api.mqlang.org/.h1`. Reserved characters in the query (`|`, `?`, `#`) must be percent-encoded.",
+    params(
+        ("query" = String, Path, description = "mq query expression", example = ".h1"),
+        ("input_format" = Option<String>, Query, description = "Input format: markdown, mdx, text, html, raw, null, csv, tsv, psv, json, yaml, toml, xml, hcl, or toon. If omitted, html/xml/json are auto-detected from the body's leading bytes; csv/tsv/psv/yaml/toml/hcl/toon have no reliable signature and require this parameter."),
+        ("output_format" = Option<String>, Query, description = "Output format: markdown, html, text, json, or none"),
+    ),
+    request_body(content = String, content_type = "text/markdown", description = "Raw content to query: Markdown/MDX/HTML/text natively, or CSV/TSV/PSV/JSON/YAML/TOML/XML/HCL/TOON via the matching `input_format`"),
+    responses(
+        (status = 200, description = "Query executed successfully", body = QueryApiResponse),
+        (status = 400, description = "Invalid query or request"),
+    )
+)]
+pub async fn post_shorthand_query_api(
+    State(_state): State<AppState>,
+    Path(query): Path<String>,
+    ValidatedQuery(params): ValidatedQuery<ShorthandQueryParams>,
+    body: String,
+) -> Result<Json<QueryApiResponse>, ProblemDetails> {
+    debug!("POST /{{query}} called with query: {}", query);
+
+    let input_format = params
+        .input_format
+        .and_then(|v| serde_json::from_str::<InputFormat>(&format!("\"{}\"", v)).ok())
+        .or_else(|| sniff_input_format(&body));
+    let output_format = params
+        .output_format
+        .and_then(|v| serde_json::from_str::<OutputFormat>(&format!("\"{}\"", v)).ok());
+
+    let request = ApiRequest {
+        query: query.clone(),
+        input: Some(body),
+        input_format,
+        modules: None,
+        args: None,
+        output_format,
+        aggregate: None,
+    };
+
+    match tokio::task::spawn_blocking(move || crate::api::query(request))
+        .await
+        .map_err(|e| {
+            error!("Shorthand query task panicked: {}", e);
+            ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .with_title("Internal error")
+                .with_detail("error", &e.to_string())
+        })? {
+        Ok(response) => {
+            info!(
+                "Successfully processed shorthand query: {}, results count: {}",
+                query,
+                response.results.len()
+            );
+            Ok(Json(response))
+        }
+        Err(e) => {
+            error!("Failed to process shorthand query '{}': {}", query, e);
             Err(ProblemDetails::new(StatusCode::BAD_REQUEST)
                 .with_title("Invalid query")
                 .with_detail("error", &e.to_string()))
@@ -335,4 +434,28 @@ static OPENAPI_SPEC: OnceLock<utoipa::openapi::OpenApi> = OnceLock::new();
 pub async fn openapi_json() -> Json<utoipa::openapi::OpenApi> {
     debug!("GET /openapi.json called");
     Json(OPENAPI_SPEC.get_or_init(ApiDoc::openapi).clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case("<html><body>Hi</body></html>", Some(InputFormat::Html))]
+    #[case("<HTML><body>Hi</body></html>", Some(InputFormat::Html))]
+    #[case("<!DOCTYPE html><html></html>", Some(InputFormat::Html))]
+    #[case("  \n<!doctype html>\n<html></html>", Some(InputFormat::Html))]
+    #[case("\u{feff}<html></html>", Some(InputFormat::Html))]
+    #[case(r#"<?xml version="1.0"?><root/>"#, Some(InputFormat::Xml))]
+    #[case(r#"{"a": 1}"#, Some(InputFormat::Json))]
+    #[case("[1, 2, 3]", Some(InputFormat::Json))]
+    #[case("  \n[1, 2, 3]", Some(InputFormat::Json))]
+    #[case("# Title\n\nBody text.", None)]
+    #[case("<div>fragment</div>", None)]
+    #[case("a,b,c\n1,2,3", None)]
+    #[case("", None)]
+    fn test_sniff_input_format(#[case] body: &str, #[case] expected: Option<InputFormat>) {
+        assert_eq!(sniff_input_format(body), expected, "body: {:?}", body);
+    }
 }
