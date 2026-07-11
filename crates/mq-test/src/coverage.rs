@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use mq_lang::{CstNode, CstNodeKind, DebugContext, DebuggerAction, DebuggerHandler, Shared};
-use rustc_hash::FxHashSet;
+use mq_lang::{CstNode, CstNodeKind, DebugContext, DebuggerAction, DebuggerHandler, Module, STANDARD_MODULES, Shared};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Output format for a coverage report.
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -23,31 +23,51 @@ pub enum CoverageFormat {
     Cobertura,
 }
 
-/// Shared, thread-safe accumulator of source lines visited during a single test-file run.
+/// Source and visited lines for one `include`d/imported module.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct CoverageData(Arc<Mutex<FxHashSet<usize>>>);
+pub(crate) struct ModuleHits {
+    pub(crate) code: String,
+    pub(crate) lines: FxHashSet<usize>,
+}
+
+/// Visited lines per imported module, keyed by module name, merged across all test files.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct CoverageData(Arc<Mutex<FxHashMap<String, ModuleHits>>>);
 
 impl CoverageData {
-    fn record(&self, line: usize) {
-        self.0.lock().unwrap().insert(line);
+    fn record(&self, module_name: &str, code: &str, line: usize) {
+        let mut data = self.0.lock().unwrap();
+        let hits = data.entry(module_name.to_string()).or_insert_with(|| ModuleHits {
+            code: code.to_string(),
+            lines: FxHashSet::default(),
+        });
+        hits.lines.insert(line);
     }
 
-    pub(crate) fn snapshot(&self) -> FxHashSet<usize> {
+    pub(crate) fn snapshot(&self) -> FxHashMap<String, ModuleHits> {
         self.0.lock().unwrap().clone()
     }
 }
 
-/// Records the line of every top-level-module expression visited by the evaluator.
-///
-/// Lines belonging to `include`d/imported modules are intentionally ignored;
-/// only the coverage of the test file itself is tracked.
+/// Records lines visited inside `include`d/imported modules; the test file's own lines and
+/// the `builtin`/standard-library modules (always loaded, never the code under test) are ignored.
 #[derive(Debug)]
 pub(crate) struct CoverageHandler(pub(crate) CoverageData);
 
+fn is_trackable_module(module_name: &str) -> bool {
+    module_name != Module::BUILTIN_MODULE && !STANDARD_MODULES.contains_key(module_name)
+}
+
 impl DebuggerHandler for CoverageHandler {
     fn on_step(&self, context: &DebugContext) -> DebuggerAction {
-        if context.source.name.is_none() {
-            self.0.record(context.token.range.start.line as usize);
+        if let Some(module_name) = &context.source.name
+            && is_trackable_module(module_name)
+        {
+            self.0.record(
+                module_name,
+                &context.source.code,
+                context.token.range.start.line as usize,
+            );
         }
         // Keep single-stepping through every expression in the program.
         DebuggerAction::StepInto
@@ -632,6 +652,30 @@ pub(crate) fn format_cobertura_report(coverages: &[FileCoverage]) -> String {
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    #[rstest]
+    #[case("lib", true)]
+    #[case("my_module", true)]
+    #[case("builtin", false)]
+    #[case("test", false)]
+    #[case("csv", false)]
+    #[case("json", false)]
+    fn test_is_trackable_module(#[case] module_name: &str, #[case] expected: bool) {
+        assert_eq!(is_trackable_module(module_name), expected);
+    }
+
+    #[test]
+    fn test_coverage_data_records_per_module_and_merges_across_runs() {
+        let data = CoverageData::default();
+        data.record("lib", "def foo():\n  1\nend\n", 2);
+        data.record("lib", "def foo():\n  1\nend\n", 2); // same test file re-visiting the same line
+        data.record("other", "def bar():\n  2\nend\n", 2);
+
+        let snapshot = data.snapshot();
+        assert_eq!(snapshot.len(), 2);
+        assert_eq!(snapshot["lib"].lines, FxHashSet::from_iter([2]));
+        assert_eq!(snapshot["other"].lines, FxHashSet::from_iter([2]));
+    }
 
     #[test]
     fn test_executable_lines_excludes_structural_nodes() {

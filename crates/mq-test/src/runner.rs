@@ -1,6 +1,7 @@
 use glob::glob;
 use miette::IntoDiagnostic;
 use mq_lang::{CstNodeKind, CstTrivia};
+use rustc_hash::FxHashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -50,8 +51,8 @@ impl TestRunner {
         }
     }
 
-    /// Enables line-coverage tracking. Coverage of `include`d/imported modules
-    /// is not tracked — only the test file being executed.
+    /// Enables line-coverage tracking of `include`d/imported modules.
+    /// The test files' own lines are not tracked.
     pub fn with_coverage(mut self, coverage: bool) -> Self {
         self.coverage = coverage;
         self
@@ -86,7 +87,10 @@ impl TestRunner {
         } else {
             self.files.clone()
         };
-        let mut file_coverages = Vec::new();
+        // Merged across all test files, so a shared module gets combined coverage.
+        let coverage_data = CoverageData::default();
+        // Resolved module-name -> file path, filled in as each engine resolves imports.
+        let mut module_paths: FxHashMap<String, PathBuf> = FxHashMap::default();
 
         for file in &test_files {
             let content = fs::read_to_string(file).into_diagnostic()?;
@@ -107,31 +111,46 @@ impl TestRunner {
                 engine.set_search_paths(vec![parent.to_path_buf()]);
             }
 
-            let coverage_data = if self.coverage {
-                let data = CoverageData::default();
-                engine.set_debugger_handler(Box::new(CoverageHandler(data.clone())));
+            if self.coverage {
+                engine.set_debugger_handler(Box::new(CoverageHandler(coverage_data.clone())));
                 let debugger = engine.debugger();
                 debugger.write().unwrap().activate();
                 debugger
                     .write()
                     .unwrap()
                     .set_command(mq_lang::DebuggerCommand::StepInto);
-                Some(data)
-            } else {
-                None
-            };
+            }
 
             let input = mq_lang::null_input();
             engine.eval(&query, input.into_iter()).map_err(|e| *e)?;
 
-            if let Some(data) = coverage_data {
-                let visited = data.snapshot();
-                let executable = coverage::executable_lines(&content);
-                file_coverages.push(FileCoverage::new(file.clone(), executable, visited, content));
+            if self.coverage {
+                for module_name in coverage_data.snapshot().keys() {
+                    module_paths.entry(module_name.clone()).or_insert_with(|| {
+                        engine
+                            .get_module_path(module_name)
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|_| PathBuf::from(module_name))
+                    });
+                }
             }
         }
 
         if self.coverage {
+            let mut file_coverages: Vec<FileCoverage> = coverage_data
+                .snapshot()
+                .into_iter()
+                .map(|(module_name, hits)| {
+                    let executable = coverage::executable_lines(&hits.code);
+                    let file = module_paths
+                        .get(&module_name)
+                        .cloned()
+                        .unwrap_or_else(|| PathBuf::from(&module_name));
+                    FileCoverage::new(file, executable, hits.lines, hits.code)
+                })
+                .collect();
+            file_coverages.sort_by(|a, b| a.file.cmp(&b.file));
+
             let report = match self.coverage_format {
                 CoverageFormat::Text => coverage::format_text_report(&file_coverages),
                 CoverageFormat::Lcov => coverage::format_lcov_report(&file_coverages),
@@ -604,5 +623,88 @@ mod tests {
         let mut expected: Vec<String> = expected_args.into_iter().map(String::from).collect();
         expected.push("coverage.html".to_string());
         assert_eq!(args, expected);
+    }
+
+    fn temp_project_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("mq_test_{name}_{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn test_coverage_reports_only_the_imported_module() {
+        let dir = temp_project_dir("coverage_only_imported");
+        fs::write(
+            dir.join("lib.mq"),
+            "def add(a, b):\n  a + b\nend\n\ndef unused(a):\n  a * 100\nend\n",
+        )
+        .unwrap();
+        let test_file = dir.join("tests.mq");
+        fs::write(
+            &test_file,
+            "include \"test\" | include \"lib\"\n|\n\ndef test_add():\n  assert_eq(add(1, 2), 3)\nend\n",
+        )
+        .unwrap();
+        let output = dir.join("coverage.json");
+
+        TestRunner::new(vec![test_file])
+            .with_coverage(true)
+            .with_coverage_format(CoverageFormat::Json)
+            .with_coverage_output(Some(output.clone()))
+            .run()
+            .unwrap();
+
+        let report = fs::read_to_string(&output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
+        let files = parsed["files"].as_array().unwrap();
+
+        // Only "lib" is reported — the test file itself and the "test"/"builtin"
+        // modules it also pulls in are not the code under test.
+        assert_eq!(files.len(), 1, "expected only lib.mq in report: {files:?}");
+        assert!(files[0]["file"].as_str().unwrap().ends_with("lib.mq"));
+        assert_eq!(files[0]["totalLines"], 2);
+        assert_eq!(files[0]["coveredLines"], 1);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_coverage_merges_across_test_files_sharing_a_module() {
+        let dir = temp_project_dir("coverage_merge");
+        fs::write(
+            dir.join("lib.mq"),
+            "def add(a, b):\n  a + b\nend\n\ndef sub(a, b):\n  a - b\nend\n",
+        )
+        .unwrap();
+        let test_add = dir.join("test_add.mq");
+        fs::write(
+            &test_add,
+            "include \"test\" | include \"lib\"\n|\n\ndef test_add():\n  assert_eq(add(1, 2), 3)\nend\n",
+        )
+        .unwrap();
+        let test_sub = dir.join("test_sub.mq");
+        fs::write(
+            &test_sub,
+            "include \"test\" | include \"lib\"\n|\n\ndef test_sub():\n  assert_eq(sub(5, 2), 3)\nend\n",
+        )
+        .unwrap();
+        let output = dir.join("coverage.json");
+
+        TestRunner::new(vec![test_add, test_sub])
+            .with_coverage(true)
+            .with_coverage_format(CoverageFormat::Json)
+            .with_coverage_output(Some(output.clone()))
+            .run()
+            .unwrap();
+
+        let report = fs::read_to_string(&output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
+        let files = parsed["files"].as_array().unwrap();
+
+        assert_eq!(files.len(), 1, "lib.mq must be reported once, merged: {files:?}");
+        assert_eq!(files[0]["totalLines"], 2);
+        assert_eq!(files[0]["coveredLines"], 2);
+
+        fs::remove_dir_all(&dir).ok();
     }
 }

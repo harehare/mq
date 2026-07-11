@@ -353,6 +353,17 @@ impl<T: ModuleResolver> Engine<T> {
         })
     }
 
+    /// Resolves `module_name` to the path its resolver loaded it from.
+    pub fn get_module_path(&self, module_name: &str) -> Result<String, Box<error::Error>> {
+        self.evaluator.module_loader.get_module_path(module_name).map_err(|e| {
+            Box::new(error::Error::from_error(
+                "",
+                e.into(),
+                self.evaluator.module_loader.clone(),
+            ))
+        })
+    }
+
     pub const fn version() -> &'static str {
         env!("CARGO_PKG_VERSION")
     }

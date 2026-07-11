@@ -31,8 +31,9 @@ struct Cli {
     /// Defaults to **/*.mq in the current directory when omitted.
     files: Vec<PathBuf>,
 
-    /// Collect and report line coverage for the executed test files.
-    /// Coverage of `include`d/imported modules is not tracked.
+    /// Collect and report line coverage of the `include`d/imported modules
+    /// exercised while running the tests. Coverage of the test files'
+    /// own lines is not tracked.
     #[arg(long)]
     coverage: bool,
 

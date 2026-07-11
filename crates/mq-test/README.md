@@ -54,17 +54,24 @@ mq-test --coverage --coverage-format cobertura --coverage-output cobertura.xml
 
 ## Coverage
 
-Pass `--coverage` to report which lines of each executed test file were run
-by the evaluator:
+Pass `--coverage` to report how much of the code your tests `include`/`import`
+was actually exercised while the tests ran — i.e. is the library code under
+test covered, not just the test file itself:
 
 ```
 Coverage report:
-  tests.mq                                              66.7% (2/3)
+  lib/string_utils.mq                                   66.7% (2/3)
       uncovered lines: 9
 
   Total: 66.7% (2/3)
 ```
 
+- Only `include`d/imported modules are measured. The test file's own lines
+  (test bodies, assertions, `include`/`import` statements) are not counted —
+  they're the thing doing the exercising, not the thing being measured. A
+  test file with no `include`/`import` produces no coverage output.
+- A module is reported once with combined coverage across every test file
+  that imports it, even if several test files share it.
 - `--coverage-format <text|lcov|html|markdown|json|cobertura>` selects the report format (default: `text`).
   - `lcov` produces an [lcov tracefile](https://ltp.sourceforge.net/coverage/lcov/geninfo.1.php)
     suitable for `genhtml` or CI coverage integrations.
@@ -85,9 +92,8 @@ Coverage report:
 - `--open` opens the written report in the OS default application (`open` on
   macOS, `xdg-open` on Linux, `start` on Windows). Requires `--coverage-output`.
 - Coverage is line-based: a line counts as covered if the evaluator executed
-  any expression on it. `def`/`include`/`import` declaration lines themselves
-  aren't counted (only their bodies are), and coverage of `include`d/imported
-  modules is not tracked — only the file passed to `mq-test` is measured.
+  any expression on it while running the tests. `def`/`include`/`import`
+  declaration lines themselves aren't counted (only their bodies are).
 - Coverage tracking is only active when `--coverage` is passed, so normal
   `mq-test` runs have no added overhead.
 
