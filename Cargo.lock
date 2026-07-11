@@ -2752,6 +2752,8 @@ dependencies = [
  "miette",
  "mq-lang",
  "rstest",
+ "rustc-hash",
+ "serde_json",
 ]
 
 [[package]]
