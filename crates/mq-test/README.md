@@ -29,7 +29,67 @@ mq-test tests.mq
 
 # Run multiple test files
 mq-test tests.mq other_tests.mq
+
+# Run with a line-coverage report
+mq-test --coverage
+
+# Write an lcov tracefile for CI (e.g. codecov, genhtml)
+mq-test --coverage --coverage-format lcov --coverage-output lcov.info
+
+# Write a self-contained HTML report with per-line source highlighting
+mq-test --coverage --coverage-format html --coverage-output coverage.html
+
+# Write an HTML report and open it in the browser
+mq-test --coverage --coverage-format html --coverage-output coverage.html --open
+
+# Write a Markdown report (e.g. to paste into a PR description)
+mq-test --coverage --coverage-format markdown --coverage-output coverage.md
+
+# Write a JSON report
+mq-test --coverage --coverage-format json --coverage-output coverage.json
+
+# Write a Cobertura XML report (e.g. Jenkins, GitLab CI)
+mq-test --coverage --coverage-format cobertura --coverage-output cobertura.xml
 ```
+
+## Coverage
+
+Pass `--coverage` to report which lines of each executed test file were run
+by the evaluator:
+
+```
+Coverage report:
+  tests.mq                                              66.7% (2/3)
+      uncovered lines: 9
+
+  Total: 66.7% (2/3)
+```
+
+- `--coverage-format <text|lcov|html|markdown|json|cobertura>` selects the report format (default: `text`).
+  - `lcov` produces an [lcov tracefile](https://ltp.sourceforge.net/coverage/lcov/geninfo.1.php)
+    suitable for `genhtml` or CI coverage integrations.
+  - `html` produces a self-contained HTML report: a summary table plus a
+    collapsible, line-by-line source view per file, with covered lines
+    highlighted green and uncovered lines red. Follows the viewer's
+    light/dark theme.
+  - `markdown` produces the same summary table plus a per-file source listing
+    in a ` ```diff ` block, so GitHub (and other diff-aware Markdown
+    renderers) colors covered/uncovered lines green/red — handy for pasting
+    into a PR description or CI job summary.
+  - `json` produces a machine-readable report with per-file and total stats,
+    plus a `lines` array per file giving each line's content and
+    `covered`/`uncovered`/`plain` status.
+  - `cobertura` produces a [Cobertura](https://cobertura.github.io/cobertura/) XML report
+    suitable for Jenkins/GitLab CI coverage integrations.
+- `--coverage-output <path>` writes the report to a file instead of stdout.
+- `--open` opens the written report in the OS default application (`open` on
+  macOS, `xdg-open` on Linux, `start` on Windows). Requires `--coverage-output`.
+- Coverage is line-based: a line counts as covered if the evaluator executed
+  any expression on it. `def`/`include`/`import` declaration lines themselves
+  aren't counted (only their bodies are), and coverage of `include`d/imported
+  modules is not tracked — only the file passed to `mq-test` is measured.
+- Coverage tracking is only active when `--coverage` is passed, so normal
+  `mq-test` runs have no added overhead.
 
 ## Writing Tests
 

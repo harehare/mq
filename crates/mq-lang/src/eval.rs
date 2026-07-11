@@ -1015,7 +1015,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         env: &Shared<SharedCell<Env>>,
     ) -> EvalResult {
         #[cfg(feature = "debugger")]
-        {
+        if self.debugger.read().unwrap().is_active() {
             let token = &get_token(Shared::clone(&self.token_arena), node.token_id);
             let call_stack = self.debugger.read().unwrap().current_call_stack();
             let debug_context = DebugContext {
