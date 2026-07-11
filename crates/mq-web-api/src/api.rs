@@ -28,7 +28,7 @@ pub struct QueryApiResponse {
     pub results: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, ToSchema, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, ToSchema, Debug, Clone, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum InputFormat {
     #[default]
@@ -44,6 +44,46 @@ pub enum InputFormat {
     Raw,
     #[serde(rename = "null")]
     Null,
+    /// Module-backed formats: fed as raw text and parsed by the corresponding
+    /// builtin mq module (same mechanism as the CLI's `-I` flag).
+    #[serde(rename = "csv")]
+    Csv,
+    #[serde(rename = "tsv")]
+    Tsv,
+    #[serde(rename = "psv")]
+    Psv,
+    #[serde(rename = "json")]
+    Json,
+    #[serde(rename = "yaml")]
+    Yaml,
+    #[serde(rename = "toml")]
+    Toml,
+    #[serde(rename = "xml")]
+    Xml,
+    #[serde(rename = "hcl")]
+    Hcl,
+    #[serde(rename = "toon")]
+    Toon,
+}
+
+impl InputFormat {
+    /// Returns the mq query prefix that parses raw text of this format into
+    /// structured data, for module-backed formats. `None` for formats that
+    /// are ingested natively (markdown, html, ...) without an `import`.
+    pub fn module_query_prefix(&self) -> Option<&'static str> {
+        match self {
+            Self::Csv => Some(r#"import "csv" | csv::csv_parse(true)"#),
+            Self::Tsv => Some(r#"import "csv" | csv::tsv_parse(true)"#),
+            Self::Psv => Some(r#"import "csv" | csv::psv_parse(true)"#),
+            Self::Json => Some(r#"import "json" | json::json_parse()"#),
+            Self::Yaml => Some(r#"import "yaml" | yaml::yaml_parse()"#),
+            Self::Toml => Some(r#"import "toml" | toml::toml_parse()"#),
+            Self::Xml => Some(r#"import "xml" | xml::xml_parse()"#),
+            Self::Hcl => Some(r#"import "hcl" | hcl::hcl_parse()"#),
+            Self::Toon => Some(r#"import "toon" | toon::toon_parse()"#),
+            Self::Markdown | Self::Mdx | Self::Text | Self::Html | Self::Raw | Self::Null => None,
+        }
+    }
 }
 
 /// Output format for query results.
@@ -319,19 +359,37 @@ fn execute_query(request: ApiRequest) -> miette::Result<QueryApiResponse> {
         }
     }
 
-    let query = if request.aggregate.unwrap_or(false) {
-        format!(r#"nodes | import "section" | {}"#, request.query)
-    } else {
-        request.query.clone()
+    let input_format = request.input_format.clone().unwrap_or(InputFormat::Markdown);
+
+    let query = {
+        let base = if request.aggregate.unwrap_or(false) {
+            format!(r#"nodes | import "section" | {}"#, request.query)
+        } else {
+            request.query.clone()
+        };
+        match input_format.module_query_prefix() {
+            Some(prefix) => format!("{} | {}", prefix, base),
+            None => base,
+        }
     };
 
-    let input = match request.input_format.unwrap_or(InputFormat::Markdown) {
+    let input = match input_format {
         InputFormat::Markdown => mq_lang::parse_markdown_input(&request.input.unwrap_or_default())?,
         InputFormat::Mdx => mq_lang::parse_mdx_input(&request.input.unwrap_or_default())?,
         InputFormat::Text => mq_lang::parse_text_input(&request.input.unwrap_or_default())?,
         InputFormat::Html => mq_lang::parse_html_input(&request.input.unwrap_or_default())?,
         InputFormat::Raw => mq_lang::raw_input(&request.input.unwrap_or_default()),
         InputFormat::Null => mq_lang::null_input(),
+        // Module-backed formats: pass raw text through; the `import`ed module parses it.
+        InputFormat::Csv
+        | InputFormat::Tsv
+        | InputFormat::Psv
+        | InputFormat::Json
+        | InputFormat::Yaml
+        | InputFormat::Toml
+        | InputFormat::Xml
+        | InputFormat::Hcl
+        | InputFormat::Toon => mq_lang::raw_input(&request.input.unwrap_or_default()),
     };
 
     let runtime_values = engine
@@ -446,6 +504,46 @@ fn runtime_value_to_nodes(runtime_value: &mq_lang::RuntimeValue) -> Vec<mq_markd
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(InputFormat::Csv, "name,age\nAlice,30\nBob,25")]
+    #[case(InputFormat::Tsv, "name\tage\nAlice\t30")]
+    #[case(InputFormat::Psv, "name|age\nAlice|30")]
+    #[case(InputFormat::Json, r#"{"name": "Alice", "age": 30}"#)]
+    #[case(InputFormat::Yaml, "name: Alice\nage: 30")]
+    #[case(InputFormat::Toml, "name = \"Alice\"\nage = 30")]
+    #[case(InputFormat::Xml, "<person><name>Alice</name></person>")]
+    #[case(InputFormat::Hcl, r#"resource "aws_instance" "example" { ami = "abc-123" }"#)]
+    #[case(InputFormat::Toon, "name: Alice\nage: 30")]
+    fn test_execute_module_backed_formats(#[case] input_format: InputFormat, #[case] input: &str) {
+        let req = ApiRequest {
+            query: "identity()".to_string(),
+            input: Some(input.to_string()),
+            input_format: Some(input_format),
+            modules: None,
+            args: None,
+            output_format: None,
+            aggregate: None,
+        };
+        let result = query(req);
+        assert!(result.is_ok(), "{:?}", result.err());
+        assert!(!result.unwrap().results.is_empty());
+    }
+
+    #[test]
+    fn test_module_query_prefix_native_formats_are_none() {
+        for fmt in [
+            InputFormat::Markdown,
+            InputFormat::Mdx,
+            InputFormat::Text,
+            InputFormat::Html,
+            InputFormat::Raw,
+            InputFormat::Null,
+        ] {
+            assert_eq!(fmt.module_query_prefix(), None);
+        }
+    }
 
     #[test]
     fn test_execute_markdown() {
