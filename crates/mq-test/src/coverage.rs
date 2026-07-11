@@ -11,7 +11,6 @@ pub enum CoverageFormat {
     /// Human-readable summary printed to the terminal.
     #[default]
     Text,
-    /// [lcov tracefile](https://ltp.sourceforge.net/coverage/lcov/geninfo.1.php) format,
     /// suitable for `genhtml` or CI coverage integrations.
     Lcov,
     /// Self-contained HTML report.
@@ -20,7 +19,6 @@ pub enum CoverageFormat {
     Json,
     /// Markdown report, suitable for pasting into a PR description or GitHub summary.
     Markdown,
-    /// [Cobertura](https://cobertura.github.io/cobertura/) XML format,
     /// suitable for Jenkins/GitLab CI coverage integrations.
     Cobertura,
 }
