@@ -4,8 +4,6 @@ use mq_lang::{CstNodeKind, CstTrivia};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::coverage::{self, CoverageData, CoverageFormat, CoverageHandler, FileCoverage};
-
 /// Parsed test annotation from a leading comment.
 #[derive(Debug, PartialEq)]
 enum TestAnnotation {
@@ -31,49 +29,13 @@ enum DiscoveredTest {
 /// The runner auto-generates the `run_tests(...)` call from discovered tests.
 pub struct TestRunner {
     files: Vec<PathBuf>,
-    coverage: bool,
-    coverage_format: CoverageFormat,
-    coverage_output: Option<PathBuf>,
-    open: bool,
 }
 
 impl TestRunner {
     /// Creates a `TestRunner` for the given files.
     /// If `files` is empty, globs `**/*.mq` in the current directory.
     pub fn new(files: Vec<PathBuf>) -> Self {
-        Self {
-            files,
-            coverage: false,
-            coverage_format: CoverageFormat::default(),
-            coverage_output: None,
-            open: false,
-        }
-    }
-
-    /// Enables line-coverage tracking. Coverage of `include`d/imported modules
-    /// is not tracked — only the test file being executed.
-    pub fn with_coverage(mut self, coverage: bool) -> Self {
-        self.coverage = coverage;
-        self
-    }
-
-    /// Sets the report format used when coverage is enabled.
-    pub fn with_coverage_format(mut self, format: CoverageFormat) -> Self {
-        self.coverage_format = format;
-        self
-    }
-
-    /// Sets an output file for the coverage report. When `None`, the report
-    /// is printed to stdout.
-    pub fn with_coverage_output(mut self, output: Option<PathBuf>) -> Self {
-        self.coverage_output = output;
-        self
-    }
-
-    /// Opens the written coverage report in the OS default application after `run()`.
-    pub fn with_open(mut self, open: bool) -> Self {
-        self.open = open;
-        self
+        Self { files }
     }
 
     /// Discovers and executes all test functions.
@@ -84,9 +46,8 @@ impl TestRunner {
                 .collect::<Result<Vec<_>, _>>()
                 .into_diagnostic()?
         } else {
-            self.files.clone()
+            self.files
         };
-        let mut file_coverages = Vec::new();
 
         for file in &test_files {
             let content = fs::read_to_string(file).into_diagnostic()?;
@@ -107,49 +68,8 @@ impl TestRunner {
                 engine.set_search_paths(vec![parent.to_path_buf()]);
             }
 
-            let coverage_data = if self.coverage {
-                let data = CoverageData::default();
-                engine.set_debugger_handler(Box::new(CoverageHandler(data.clone())));
-                let debugger = engine.debugger();
-                debugger.write().unwrap().activate();
-                debugger
-                    .write()
-                    .unwrap()
-                    .set_command(mq_lang::DebuggerCommand::StepInto);
-                Some(data)
-            } else {
-                None
-            };
-
             let input = mq_lang::null_input();
             engine.eval(&query, input.into_iter()).map_err(|e| *e)?;
-
-            if let Some(data) = coverage_data {
-                let visited = data.snapshot();
-                let executable = coverage::executable_lines(&content);
-                file_coverages.push(FileCoverage::new(file.clone(), executable, visited, content));
-            }
-        }
-
-        if self.coverage {
-            let report = match self.coverage_format {
-                CoverageFormat::Text => coverage::format_text_report(&file_coverages),
-                CoverageFormat::Lcov => coverage::format_lcov_report(&file_coverages),
-                CoverageFormat::Html => coverage::format_html_report(&file_coverages),
-                CoverageFormat::Markdown => coverage::format_markdown_report(&file_coverages),
-                CoverageFormat::Json => coverage::format_json_report(&file_coverages),
-                CoverageFormat::Cobertura => coverage::format_cobertura_report(&file_coverages),
-            };
-
-            match &self.coverage_output {
-                Some(path) => {
-                    fs::write(path, report).into_diagnostic()?;
-                    if self.open {
-                        open_in_default_app(path)?;
-                    }
-                }
-                None => print!("{report}"),
-            }
         }
 
         Ok(())
@@ -279,31 +199,6 @@ impl TestRunner {
 
         format!("{content}\n| run_tests(flatten([\n{cases}\n]))")
     }
-}
-
-/// Builds the command that opens `path` in the OS default application for
-/// `target_os` (as in `std::env::consts::OS`): `open` on macOS, `start` on
-/// Windows, `xdg-open` elsewhere.
-fn build_open_command(path: &Path, target_os: &str) -> std::process::Command {
-    let mut cmd = if target_os == "macos" {
-        std::process::Command::new("open")
-    } else if target_os == "windows" {
-        let mut cmd = std::process::Command::new("cmd");
-        cmd.args(["/C", "start", ""]);
-        cmd
-    } else {
-        std::process::Command::new("xdg-open")
-    };
-    cmd.arg(path);
-    cmd
-}
-
-/// Launches `path` in the OS default application.
-fn open_in_default_app(path: &Path) -> miette::Result<()> {
-    build_open_command(path, std::env::consts::OS)
-        .status()
-        .into_diagnostic()?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -583,26 +478,5 @@ mod tests {
         let tests = vec![DiscoveredTest::Simple("test_foo".to_string())];
         let query = TestRunner::build_test_query(content, &tests);
         assert!(query.starts_with(content));
-    }
-
-    #[rstest]
-    #[case("macos", "open", Vec::<&str>::new())]
-    #[case("windows", "cmd", vec!["/C", "start", ""])]
-    #[case("linux", "xdg-open", Vec::<&str>::new())]
-    #[case("freebsd", "xdg-open", Vec::<&str>::new())]
-    fn test_build_open_command(
-        #[case] target_os: &str,
-        #[case] expected_program: &str,
-        #[case] expected_args: Vec<&str>,
-    ) {
-        let path = PathBuf::from("coverage.html");
-        let cmd = build_open_command(&path, target_os);
-
-        assert_eq!(cmd.get_program(), expected_program);
-
-        let args: Vec<_> = cmd.get_args().map(|a| a.to_string_lossy().to_string()).collect();
-        let mut expected: Vec<String> = expected_args.into_iter().map(String::from).collect();
-        expected.push("coverage.html".to_string());
-        assert_eq!(args, expected);
     }
 }
