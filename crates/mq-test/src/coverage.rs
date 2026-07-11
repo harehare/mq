@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use mq_lang::{CstNode, CstNodeKind, DebugContext, DebuggerAction, DebuggerHandler, Module, STANDARD_MODULES, Shared};
+use mq_lang::{CstNode, CstNodeKind, DebugContext, DebuggerAction, DebuggerHandler, Module, Shared};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Output format for a coverage report.
@@ -49,13 +49,17 @@ impl CoverageData {
     }
 }
 
-/// Records lines visited inside `include`d/imported modules; the test file's own lines and
-/// the `builtin`/standard-library modules (always loaded, never the code under test) are ignored.
+/// The `test` module (`assert_eq` and friends) — boilerplate every test file
+/// includes for the assertion framework itself, never the code under test.
+const TEST_ASSERTION_MODULE: &str = "test";
+
+/// Records lines visited inside `include`d/imported modules; the test file's own lines,
+/// the implicitly-loaded `builtin` module, and the `test` assertion module are ignored.
 #[derive(Debug)]
 pub(crate) struct CoverageHandler(pub(crate) CoverageData);
 
 fn is_trackable_module(module_name: &str) -> bool {
-    module_name != Module::BUILTIN_MODULE && !STANDARD_MODULES.contains_key(module_name)
+    module_name != Module::BUILTIN_MODULE && module_name != TEST_ASSERTION_MODULE
 }
 
 impl DebuggerHandler for CoverageHandler {
@@ -656,10 +660,10 @@ mod tests {
     #[rstest]
     #[case("lib", true)]
     #[case("my_module", true)]
+    #[case("csv", true)] // a std module can itself be the code under test (e.g. csv_test.mq)
+    #[case("json", true)]
     #[case("builtin", false)]
     #[case("test", false)]
-    #[case("csv", false)]
-    #[case("json", false)]
     fn test_is_trackable_module(#[case] module_name: &str, #[case] expected: bool) {
         assert_eq!(is_trackable_module(module_name), expected);
     }
