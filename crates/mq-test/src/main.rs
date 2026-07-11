@@ -19,7 +19,13 @@ use std::{path::PathBuf, process::ExitCode};
     ## Run with a line-coverage report:\n\
     mq-test --coverage\n\n\
     ## Write an lcov tracefile for CI:\n\
-    mq-test --coverage --coverage-format lcov --coverage-output lcov.info")]
+    mq-test --coverage --coverage-format lcov --coverage-output lcov.info\n\n\
+    ## Write an HTML coverage report (green/red per-line highlighting):\n\
+    mq-test --coverage --coverage-format html --coverage-output coverage.html\n\n\
+    ## Write a Markdown coverage report:\n\
+    mq-test --coverage --coverage-format markdown --coverage-output coverage.md\n\n\
+    ## Write an HTML coverage report and open it in the browser:\n\
+    mq-test --coverage --coverage-format html --coverage-output coverage.html --open")]
 struct Cli {
     /// Path(s) to mq test files.
     /// Defaults to **/*.mq in the current directory when omitted.
@@ -37,6 +43,11 @@ struct Cli {
     /// Write the coverage report to a file instead of stdout.
     #[arg(long, requires = "coverage")]
     coverage_output: Option<PathBuf>,
+
+    /// Open the written coverage report in the OS default application.
+    /// Requires `--coverage-output`.
+    #[arg(long, requires_all = ["coverage", "coverage_output"])]
+    open: bool,
 }
 
 fn main() -> ExitCode {
@@ -46,6 +57,7 @@ fn main() -> ExitCode {
         .with_coverage(cli.coverage)
         .with_coverage_format(cli.coverage_format)
         .with_coverage_output(cli.coverage_output)
+        .with_open(cli.open)
         .run()
     {
         eprintln!("{e:?}");
