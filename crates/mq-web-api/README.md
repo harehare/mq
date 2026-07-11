@@ -7,6 +7,7 @@ HTTP/REST server that exposes the [mq](https://mqlang.org/) markdown query langu
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Health check |
+| `POST` | `/{query}` | Curl-friendly shortcut: query in the path, raw Markdown body |
 | `GET` | `/api/v1/query` | Execute a query (query-string parameters) |
 | `POST` | `/api/v1/query` | Execute a query (JSON body) |
 | `POST` | `/api/v1/check` | Type-check a query |
@@ -18,6 +19,25 @@ HTTP/REST server that exposes the [mq](https://mqlang.org/) markdown query langu
 | `GET` | `/docs` | Swagger UI |
 
 Legacy paths (`/api/query`, `/api/check`, `/api/format`, `/openapi.json`) redirect permanently to the `/api/v1/` equivalents.
+
+### `POST /{query}`
+
+Curl-friendly shortcut for one-off queries: the mq query goes in the URL path, the input content is the raw request body.
+
+```bash
+curl --data-binary @doc.md https://api.mqlang.org/.h1
+```
+
+| Parameter | Location | Required | Description |
+|-----------|----------|----------|--------------|
+| `query` | Path | Yes | mq query expression. Reserved characters (`\|`, `?`, `#`) must be percent-encoded, e.g. `.h1 \| .text` → `.h1%20%7C%20.text` |
+| (body) | Body | No | Raw input content |
+| `input_format` | Query | No | `markdown` (default), `mdx`, `text`, `html`, `raw`, `null` |
+| `output_format` | Query | No | `markdown` (default), `html`, `text`, `json`, `none` |
+
+> **Use `--data-binary`, not `-d`/`--data`.** `curl -d @file` strips newlines from the file, which breaks Markdown parsing (blank lines separate paragraphs and headings). `--data-binary` sends the file exactly as-is.
+
+For queries that need modules, args, or aggregation, use `POST /api/v1/query` instead.
 
 ### `GET /api/v1/query`
 
@@ -157,6 +177,12 @@ docker run -p 3000:3000 \
 ```
 
 ## Examples
+
+### Curl-friendly shortcut
+
+```bash
+curl --data-binary @doc.md https://api.mqlang.org/.h1
+```
 
 ### Execute a query (GET)
 

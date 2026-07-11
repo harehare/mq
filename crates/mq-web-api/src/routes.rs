@@ -19,7 +19,7 @@ use crate::{
     config::Config,
     handlers::{
         ApiDoc, AppState, get_functions_api, get_query_api, get_selectors_api, health_check, post_check_api,
-        post_format_api, post_lint_api, post_query_api,
+        post_format_api, post_lint_api, post_query_api, post_shorthand_query_api,
     },
     middleware::rate_limit_middleware,
     rate_limiter::RateLimiter,
@@ -75,6 +75,9 @@ pub fn create_router(config: &Config, rate_limiter: Arc<RateLimiter>) -> Router 
             "/openapi.json",
             get(|| async { Redirect::permanent("/api/v1/openapi.json") }),
         )
+        // Curl-friendly shortcut: query in the path, raw Markdown body.
+        // Static routes above (e.g. /health, /docs, /api/v1/*) take precedence.
+        .route("/{query}", post(post_shorthand_query_api))
         .layer(
             ServiceBuilder::new()
                 .layer(CompressionLayer::new())

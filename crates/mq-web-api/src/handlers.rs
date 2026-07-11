@@ -1,6 +1,6 @@
 use axum::{
     extract::rejection::QueryRejection,
-    extract::{FromRequestParts, Query, State},
+    extract::{FromRequestParts, Path, Query, State},
     http::{StatusCode, request::Parts},
     response::Json,
 };
@@ -31,6 +31,12 @@ pub struct QueryParams {
 #[derive(Deserialize)]
 pub struct DiagnosticsParams {
     pub query: String,
+}
+
+#[derive(Deserialize)]
+pub struct ShorthandQueryParams {
+    pub input_format: Option<String>,
+    pub output_format: Option<String>,
 }
 
 pub struct ValidatedQuery<T>(pub T);
@@ -69,6 +75,7 @@ pub async fn health_check() -> Json<HealthResponse> {
     paths(
         get_query_api,
         post_query_api,
+        post_shorthand_query_api,
         post_check_api,
         post_format_api,
         get_functions_api,
@@ -196,6 +203,73 @@ pub async fn post_query_api(
         }
         Err(e) => {
             error!("Failed to process query '{}': {}", query_str, e);
+            Err(ProblemDetails::new(StatusCode::BAD_REQUEST)
+                .with_title("Invalid query")
+                .with_detail("error", &e.to_string()))
+        }
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/{query}",
+    tag = "mq-api",
+    summary = "Run an mq query against raw Markdown (curl-friendly shortcut)",
+    description = "Curl-friendly shortcut that reads the mq query from the URL path and the input content from the raw request body, e.g. `curl -d @doc.md https://api.mqlang.org/.h1`. Reserved characters in the query (`|`, `?`, `#`) must be percent-encoded.",
+    params(
+        ("query" = String, Path, description = "mq query expression", example = ".h1"),
+        ("input_format" = Option<String>, Query, description = "Input format: markdown, mdx, text, html, raw, or null"),
+        ("output_format" = Option<String>, Query, description = "Output format: markdown, html, text, json, or none"),
+    ),
+    request_body(content = String, content_type = "text/markdown", description = "Raw Markdown/MDX/HTML/text content to query"),
+    responses(
+        (status = 200, description = "Query executed successfully", body = QueryApiResponse),
+        (status = 400, description = "Invalid query or request"),
+    )
+)]
+pub async fn post_shorthand_query_api(
+    State(_state): State<AppState>,
+    Path(query): Path<String>,
+    ValidatedQuery(params): ValidatedQuery<ShorthandQueryParams>,
+    body: String,
+) -> Result<Json<QueryApiResponse>, ProblemDetails> {
+    debug!("POST /{{query}} called with query: {}", query);
+
+    let input_format = params
+        .input_format
+        .and_then(|v| serde_json::from_str::<InputFormat>(&format!("\"{}\"", v)).ok());
+    let output_format = params
+        .output_format
+        .and_then(|v| serde_json::from_str::<OutputFormat>(&format!("\"{}\"", v)).ok());
+
+    let request = ApiRequest {
+        query: query.clone(),
+        input: Some(body),
+        input_format,
+        modules: None,
+        args: None,
+        output_format,
+        aggregate: None,
+    };
+
+    match tokio::task::spawn_blocking(move || crate::api::query(request))
+        .await
+        .map_err(|e| {
+            error!("Shorthand query task panicked: {}", e);
+            ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .with_title("Internal error")
+                .with_detail("error", &e.to_string())
+        })? {
+        Ok(response) => {
+            info!(
+                "Successfully processed shorthand query: {}, results count: {}",
+                query,
+                response.results.len()
+            );
+            Ok(Json(response))
+        }
+        Err(e) => {
+            error!("Failed to process shorthand query '{}': {}", query, e);
             Err(ProblemDetails::new(StatusCode::BAD_REQUEST)
                 .with_title("Invalid query")
                 .with_detail("error", &e.to_string()))
