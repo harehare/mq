@@ -1,0 +1,16 @@
+import "toon"
+| include "test"
+
+# -- TOON Tests --
+
+| let toon_input = "context:\n  task: Our favorite hikes together\n  location: Boulder\n  season: spring_2025\nfriends[3]: ana,luis,sam\nhikes[3]{id,name,distanceKm,elevationGain,companion,wasSunny}:\n  1,Blue Lake Trail,7.5,320,ana,true\n  2,Ridge Overlook,9.2,540,luis,false\n  3,Wildflower Loop,5.1,180,sam,true\nitems[3]:\n  - 1\n  - a: 1\n  - text\nitems2[2]:\n  - name: Laptop\n    price: 999\n  - name: Mouse\n    price: 29\n" |
+
+def test_toon_parse():
+  let result = toon::toon_parse(toon_input)
+  | assert_eq(len(result), 5)
+end
+
+def test_toon_stringify():
+  let result = toon::toon_stringify(toon::toon_parse(toon_input))
+  | assert_eq(result, "items[3]:\n    - 1\n    - a: 1\n    - text\ncontext:\n  task: Our favorite hikes together\n  location: Boulder\n  season: spring_2025\nfriends[3]: ana,luis,sam\nhikes[3]{name,id,distanceKm,elevationGain,companion,wasSunny}:\n    Blue Lake Trail,1,7.5,320,ana,true\n    Ridge Overlook,2,9.2,540,luis,false\n    Wildflower Loop,3,5.1,180,sam,true\nitems2[2]{name,price}:\n    Laptop,999\n    Mouse,29")
+end
