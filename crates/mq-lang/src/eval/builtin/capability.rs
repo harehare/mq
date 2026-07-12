@@ -25,7 +25,7 @@ pub fn set_allow_write(allow: bool) {
     WRITE_ALLOWED.store(allow, Ordering::Relaxed);
 }
 
-#[cfg(feature = "http-import-ureq")]
+#[cfg(feature = "http")]
 pub(crate) fn is_net_allowed() -> bool {
     NET_ALLOWED.load(Ordering::Relaxed)
 }

@@ -1,8 +1,8 @@
 //! `http` builtin: issues an HTTPS request using any method (`get`, `post`, `put`, `delete`,
 //! `patch`, `head`, ...) and returns the response body as a string.
 //!
-//! Gated at compile time by the `http-import-ureq` feature and at runtime by the
-//! `--allow-net` CLI flag (see [`super::capability`]) — both must be satisfied before a
+//! Gated at compile time by the `http` feature (implied by `http-import-ureq`) and at
+//! runtime by the `--allow-net` CLI flag (see [`super::capability`]) — both must be satisfied before a
 //! request is made. Requests go through the same SSRF-hardened agent used for HTTP module
 //! imports (see [`crate::module::resolver::ssrf`]): HTTPS only, no automatic redirects, and
 //! DNS resolution filtered to publicly routable addresses so a hostname can't be rebound to

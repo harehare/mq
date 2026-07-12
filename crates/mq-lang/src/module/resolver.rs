@@ -5,7 +5,7 @@ pub mod http_resolver;
 pub(crate) mod local_fs_resolver;
 #[cfg(feature = "http-import")]
 pub mod lockfile;
-#[cfg(feature = "http-import")]
+#[cfg(any(feature = "http-import", feature = "http"))]
 pub mod ssrf;
 pub(crate) mod std_resolver;
 
