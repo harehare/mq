@@ -20,3 +20,12 @@ assets
 scripts
 fuzz/corpus
 fuzz/artifacts
+editors/vscode
+editors/neovim
+work
+.claude
+.github
+.vscode
+skills
+flake.lock
+flake.nix
