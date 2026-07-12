@@ -12,7 +12,7 @@ repository = "https://github.com/harehare/mq"
 version = "0.6.5"
 
 [features]
-cli = ["dep:clap", "dep:colored"]
+cli = ["dep:clap", "dep:colored", "dep:serde_json"]
 
 [[bin]]
 name = "mq-lint"
@@ -30,6 +30,7 @@ colored = {workspace = true, optional = true}
 mq-hir = {workspace = true}
 mq-lang = {workspace = true}
 rustc-hash = {workspace = true}
+serde_json = {workspace = true, optional = true}
 
 [dev-dependencies]
 rstest = {workspace = true}

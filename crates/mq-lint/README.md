@@ -64,11 +64,35 @@ mq-lint --min-severity warn script.mq # only show warn/error diagnostics
 mq-lint --list-rules                  # print all rule IDs and their severity
 mq-lint --fix script.mq               # rewrite the file, applying every fixable diagnostic
 echo "let x = .h1" | mq-lint --fix     # write the fixed code to stdout
+mq-lint --format sarif script.mq      # SARIF 2.1.0 JSON, e.g. for github/codeql-action/upload-sarif
+mq-lint --format github script.mq     # GitHub Actions ::error/::warning/::notice annotations
 ```
 
 Exits with a non-zero status if any diagnostic (at or above `--min-severity`) was reported. `--fix` only
 rewrites diagnostics that have a machine-applicable fix (see "Fixable" in the rules tables below); it then
 reports any remaining diagnostics as usual.
+
+### CI Integration
+
+`--format` controls how diagnostics are rendered, independent of the rules and severities selected above:
+
+- `text` (default) — human-readable Credo-style report.
+- `sarif` — a single SARIF 2.1.0 log covering every linted file, suitable for
+  [`github/codeql-action/upload-sarif`](https://github.com/github/codeql-action/tree/main/upload-sarif) or any other
+  SARIF-consuming tool.
+- `github` — one `::error file=...,line=...,col=...,title=...::message` (or `::warning`/`::notice`, depending on
+  severity) workflow-command line per diagnostic, which GitHub Actions renders as inline PR annotations.
+
+```yaml
+# .github/workflows/lint.yml
+- run: mq-lint --format sarif $(git ls-files '*.mq') > mq-lint.sarif
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: mq-lint.sarif
+
+# or, for inline annotations without a SARIF upload:
+- run: mq-lint --format github $(git ls-files '*.mq')
+```
 
 ### Disabling Rules
 
