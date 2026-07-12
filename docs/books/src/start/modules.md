@@ -45,6 +45,8 @@ import "github.com/harehare/<module-name>"
 | [url.mq](https://github.com/harehare/url.mq) | URL parsing, building, and relative-resolution utilities for mq. |
 | [changelog.mq](https://github.com/harehare/changelog.mq) | [Keep a Changelog](https://keepachangelog.com) Markdown parser and serializer |
 | [dotenv.mq](https://github.com/harehare/dotenv.mq) | `.env` file parser and serializer — quotes, comments, and escape sequences |
+| [jsonpath.mq](https://github.com/harehare/jsonpath.mq) | [JSONPath](https://en.wikipedia.org/wiki/JSONPath) ([RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)-style) query engine for mq's parsed JSON values |
+| [xpath.mq](https://github.com/harehare/xpath.mq) | Abbreviated [XPath](https://www.w3.org/TR/1999/REC-xpath-19991116/) query engine for `xml.mq`'s parsed value tree |
 
 
 ## Diagram & Graph
