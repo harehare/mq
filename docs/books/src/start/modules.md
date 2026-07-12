@@ -43,6 +43,8 @@ import "github.com/harehare/<module-name>"
 | [jwt.mq](https://github.com/harehare/jwt.mq) | JWT decoder — inspect header and payload without verification |
 | [okf.mq](https://github.com/harehare/okf.mq) | [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog) (Open Knowledge Format) reader/writer — concept documents, cross-links, citations, log/index entries |
 | [url.mq](https://github.com/harehare/url.mq) | URL parsing, building, and relative-resolution utilities for mq. |
+| [changelog.mq](https://github.com/harehare/changelog.mq) | [Keep a Changelog](https://keepachangelog.com) Markdown parser and serializer |
+| [dotenv.mq](https://github.com/harehare/dotenv.mq) | `.env` file parser and serializer — quotes, comments, and escape sequences |
 
 
 ## Diagram & Graph
