@@ -54,6 +54,7 @@ mod number;
 mod optimizer;
 mod range;
 mod selector;
+mod suggest;
 
 use lexer::Lexer;
 #[cfg(not(feature = "sync"))]
