@@ -5942,7 +5942,7 @@ pub enum Error {
     #[error("")]
     NotDefined(FunctionName),
     #[error("")]
-    InvalidDefinition(String),
+    UndefinedReference(String),
     #[error("")]
     InvalidDateTimeFormat(String),
     #[error("")]
@@ -5968,7 +5968,7 @@ pub enum Error {
 impl From<env::EnvError> for Error {
     fn from(e: env::EnvError) -> Self {
         match e {
-            env::EnvError::InvalidDefinition(name) => Error::InvalidDefinition(name),
+            env::EnvError::UndefinedReference(name) => Error::UndefinedReference(name),
             env::EnvError::AssignToImmutable(name) => Error::AssignToImmutable(name),
             env::EnvError::UndefinedVariable(name) => Error::UndefinedVariable(name),
         }
@@ -5993,8 +5993,8 @@ impl Error {
             Error::NotDefined(name) => {
                 RuntimeError::NotDefined((*get_token(token_arena, node.token_id)).clone(), name.clone())
             }
-            Error::InvalidDefinition(a) => {
-                RuntimeError::InvalidDefinition((*get_token(token_arena, node.token_id)).clone(), a.clone())
+            Error::UndefinedReference(a) => {
+                RuntimeError::UndefinedReference((*get_token(token_arena, node.token_id)).clone(), a.clone())
             }
             Error::InvalidDateTimeFormat(msg) => {
                 RuntimeError::DateTimeFormatError((*get_token(token_arena, node.token_id)).clone(), msg.clone())

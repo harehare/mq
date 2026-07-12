@@ -17,6 +17,10 @@ pub enum RuntimeError {
     InvalidBase64String(ErrorToken, String),
     #[error("\"{1}\" is not defined")]
     NotDefined(ErrorToken, FunctionName),
+    // A bare identifier reference not bound in any scope. Distinct from InvalidDefinition
+    // below, which is a resolved-but-not-callable value.
+    #[error("\"{1}\" is not defined")]
+    UndefinedReference(ErrorToken, FunctionName),
     #[error("Unable to format date time, {1}")]
     DateTimeFormatError(ErrorToken, String),
     #[error("Index out of bounds {1}")]
@@ -89,6 +93,7 @@ impl RuntimeError {
             RuntimeError::UserDefined { token, .. } => Some(token),
             RuntimeError::InvalidBase64String(token, _) => Some(token),
             RuntimeError::NotDefined(token, _) => Some(token),
+            RuntimeError::UndefinedReference(token, _) => Some(token),
             RuntimeError::DateTimeFormatError(token, _) => Some(token),
             RuntimeError::IndexOutOfBounds(token, _) => Some(token),
             RuntimeError::InvalidDefinition(token, _) => Some(token),
@@ -136,6 +141,7 @@ mod tests {
     #[case(RuntimeError::UserDefined { message: "msg".to_string(), token: eof_token() }, true)]
     #[case(RuntimeError::InvalidBase64String(eof_token(), "bad".to_string()), true)]
     #[case(RuntimeError::NotDefined(eof_token(), "f".to_string()), true)]
+    #[case(RuntimeError::UndefinedReference(eof_token(), "r".to_string()), true)]
     #[case(RuntimeError::DateTimeFormatError(eof_token(), "err".to_string()), true)]
     #[case(RuntimeError::IndexOutOfBounds(eof_token(), Number::from(1.0)), true)]
     #[case(RuntimeError::InvalidDefinition(eof_token(), "d".to_string()), true)]

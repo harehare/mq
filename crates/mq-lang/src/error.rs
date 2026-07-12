@@ -153,6 +153,18 @@ impl Error {
     }
 }
 
+// help() text for an unresolved name (builtin call or bare reference), with a
+// "did you mean" hint when available.
+#[cold]
+fn not_defined_help(name: &str) -> Cow<'static, str> {
+    match crate::suggest::suggest_builtin(name) {
+        Some(similar) => Cow::Owned(format!(
+            "'{name}' is not defined. A function with a similar name exists: `{similar}`."
+        )),
+        None => Cow::Owned(format!("'{name}' is not defined. Did you forget to declare it?")),
+    }
+}
+
 // help() text for an unknown selector, with a "did you mean" hint when available.
 #[cold]
 fn selector_help(sel: &selector::UnknownSelector) -> Cow<'static, str> {
@@ -254,23 +266,17 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::InvalidBase64String(_, _)) => Some(Cow::Borrowed(
                 "The provided string is not valid Base64. Check your input.",
             )),
-            InnerError::Runtime(RuntimeError::NotDefined(_, name)) => {
-                Some(match crate::suggest::suggest_builtin(name) {
-                    Some(similar) => Cow::Owned(format!(
-                        "'{name}' is not defined. A function with a similar name exists: `{similar}`."
-                    )),
-                    None => Cow::Owned(format!("'{name}' is not defined. Did you forget to declare it?")),
-                })
-            }
+            InnerError::Runtime(RuntimeError::NotDefined(_, name)) => Some(not_defined_help(name)),
+            InnerError::Runtime(RuntimeError::UndefinedReference(_, name)) => Some(not_defined_help(name)),
             InnerError::Runtime(RuntimeError::DateTimeFormatError(_, _)) => Some(Cow::Borrowed(
                 "Invalid date/time format. Please check your format string.",
             )),
             InnerError::Runtime(RuntimeError::IndexOutOfBounds(_, _)) => Some(Cow::Borrowed(
                 "Index out of bounds. Check your array or string indices.",
             )),
-            InnerError::Runtime(RuntimeError::InvalidDefinition(_, _)) => Some(Cow::Borrowed(
-                "Invalid definition. Please check your function or variable declaration.",
-            )),
+            InnerError::Runtime(RuntimeError::InvalidDefinition(_, name)) => Some(Cow::Owned(format!(
+                "'{name}' exists but is not a function, so it cannot be called."
+            ))),
             InnerError::Runtime(RuntimeError::AssignToImmutable(_, name)) => Some(Cow::Owned(format!(
                 "Cannot assign to immutable variable '{name}'. Consider declaring it as mutable."
             ))),
@@ -622,6 +628,14 @@ mod test {
         }, "".to_string())),
         "source code"
     )]
+    #[case::eval_undefined_reference(
+        InnerError::Runtime(RuntimeError::UndefinedReference(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "".to_string())),
+        "source code"
+    )]
     #[case::eval_invalid_number_of_arguments(
         InnerError::Runtime(RuntimeError::InvalidNumberOfArguments{token: Token {
             range: Range::default(),
@@ -831,6 +845,13 @@ mod test {
     )]
     #[case::eval_invalid_definition(
         InnerError::Runtime(RuntimeError::InvalidDefinition(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "bad".into()))
+    )]
+    #[case::eval_undefined_reference(
+        InnerError::Runtime(RuntimeError::UndefinedReference(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
@@ -1059,6 +1080,48 @@ mod test {
         assert_eq!(
             help,
             Some("'totally_unrelated_gibberish_zz' is not defined. Did you forget to declare it?".to_string())
+        );
+    }
+
+    #[test]
+    fn test_undefined_reference_help_suggests_similar_builtin() {
+        // A bare identifier reference (not a call) that typos a builtin name, e.g.
+        // passing it as a function value: `map(slpit)`.
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let cause = InnerError::Runtime(RuntimeError::UndefinedReference(
+            Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            "slpit".to_string(),
+        ));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert_eq!(
+            help,
+            Some("'slpit' is not defined. A function with a similar name exists: `split`.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_invalid_definition_help_does_not_suggest_a_rename() {
+        // `x` already resolves to a real value here (just not a callable one, e.g.
+        // `let x = 42 | x(1)`), so a "did you mean" hint would be misleading.
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let cause = InnerError::Runtime(RuntimeError::InvalidDefinition(
+            Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            "x".to_string(),
+        ));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert_eq!(
+            help,
+            Some("'x' exists but is not a function, so it cannot be called.".to_string())
         );
     }
 

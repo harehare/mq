@@ -16,7 +16,7 @@ type Weak<T> = std::sync::Weak<T>;
 
 #[derive(Debug, PartialEq)]
 pub enum EnvError {
-    InvalidDefinition(String),
+    UndefinedReference(String),
     AssignToImmutable(String),
     UndefinedVariable(String),
 }
@@ -34,8 +34,8 @@ impl EnvError {
     #[cold]
     pub fn to_runtime_error(&self, token_id: TokenId, token_arena: TokenArena) -> RuntimeError {
         match self {
-            EnvError::InvalidDefinition(def) => {
-                RuntimeError::InvalidDefinition((*get_token(token_arena, token_id)).clone(), def.to_string())
+            EnvError::UndefinedReference(def) => {
+                RuntimeError::UndefinedReference((*get_token(token_arena, token_id)).clone(), def.to_string())
             }
             EnvError::AssignToImmutable(var) => {
                 RuntimeError::AssignToImmutable((*get_token(token_arena, token_id)).clone(), var.to_string())
@@ -50,7 +50,7 @@ impl EnvError {
     #[cold]
     pub fn to_runtime_error_with_token(&self, token: Token) -> RuntimeError {
         match self {
-            EnvError::InvalidDefinition(def) => RuntimeError::InvalidDefinition(token, def.to_string()),
+            EnvError::UndefinedReference(def) => RuntimeError::UndefinedReference(token, def.to_string()),
             EnvError::AssignToImmutable(var) => RuntimeError::AssignToImmutable(token, var.to_string()),
             EnvError::UndefinedVariable(var) => RuntimeError::UndefinedVariable(token, var.to_string()),
         }
@@ -308,7 +308,7 @@ impl Env {
 
     /// Looks up `ident` in this scope and its ancestors, falling back to built-in functions.
     ///
-    /// Returns [`EnvError::InvalidDefinition`] if the identifier is not found anywhere in
+    /// Returns [`EnvError::UndefinedReference`] if the identifier is not found anywhere in
     /// the scope chain and is not a built-in.
     #[inline(always)]
     pub fn resolve(&self, ident: Ident) -> Result<RuntimeValue, EnvError> {
@@ -330,7 +330,7 @@ impl Env {
         if ident.resolve_with(builtin::get_builtin_functions_by_str).is_some() {
             Ok(RuntimeValue::NativeFunction(ident))
         } else {
-            Err(EnvError::InvalidDefinition(ident.to_string()))
+            Err(EnvError::UndefinedReference(ident.to_string()))
         }
     }
 
