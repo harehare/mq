@@ -355,6 +355,9 @@ fn register_string(ctx: &mut InferenceContext) {
             "base64urld",
             "url_encode",
             "url_decode",
+            "html_escape",
+            "html_unescape",
+            "strip_tags",
         ],
         vec![Type::String],
         Type::String,
@@ -394,6 +397,9 @@ fn register_string(ctx: &mut InferenceContext) {
             "base64urld",
             "url_encode",
             "url_decode",
+            "html_escape",
+            "html_unescape",
+            "strip_tags",
             "utf8bytelen",
         ],
     );
@@ -1550,6 +1556,12 @@ mod tests {
     #[case::base64urld("base64urld(\"aGVsbG8=\")", true)]
     #[case::ltrim_number("ltrim(42)", false)]
     #[case::rtrim_number("rtrim(42)", false)]
+    #[case::html_escape("html_escape(\"<b>hi</b>\")", true)]
+    #[case::html_escape_number("html_escape(42)", false)] // Should fail: wrong type
+    #[case::html_unescape("html_unescape(\"&lt;b&gt;hi&lt;/b&gt;\")", true)]
+    #[case::html_unescape_number("html_unescape(42)", false)] // Should fail: wrong type
+    #[case::strip_tags("strip_tags(\"<b>hi</b>\")", true)]
+    #[case::strip_tags_number("strip_tags(42)", false)] // Should fail: wrong type
     fn test_string_case_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(

@@ -17,6 +17,7 @@ base64 = {workspace = true}
 ciborium = {workspace = true}
 csv = {workspace = true}
 hcl-rs = {workspace = true}
+html-escape = "0.2"
 md5 = {workspace = true}
 sha2 = {workspace = true}
 chrono = {workspace = true}

@@ -796,6 +796,63 @@ fn to_html_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
     }
 }
 
+#[mq_macros::mq_fn(name = "html_escape", params = Fixed(1))]
+fn html_escape_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::html_escape(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| {
+                convert::html_escape(md.value().as_str()).and_then(|o| match o {
+                    RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                    a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                })
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("html_escape should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "html_unescape", params = Fixed(1))]
+fn html_unescape_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::html_unescape(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| {
+                convert::html_unescape(md.value().as_str()).and_then(|o| match o {
+                    RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                    a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                })
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("html_unescape should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "strip_tags", params = Fixed(1))]
+fn strip_tags_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::strip_tags(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| {
+                convert::strip_tags(md.value().as_str()).and_then(|o| match o {
+                    RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                    a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                })
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("strip_tags should always receive exactly one argument"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "to_markdown_string", params = Fixed(1))]
 fn to_markdown_string_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     convert::to_markdown_string(args)
@@ -4065,6 +4122,9 @@ mq_macros::builtin_dispatch! {
     MAX,
     FROM_HTML,
     TO_HTML,
+    HTML_ESCAPE,
+    HTML_UNESCAPE,
+    STRIP_TAGS,
     TO_MARKDOWN_STRING,
     TO_STRING,
     TO_NUMBER,
@@ -4911,6 +4971,27 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts the given markdown string to HTML.",
             params: &["markdown"],
+        },
+    );
+    map.insert(
+        SmolStr::new("html_escape"),
+        BuiltinFunctionDoc {
+            description: "Escapes `&`, `<`, `>`, `\"`, and `'` in the given string as HTML entities.",
+            params: &["string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("html_unescape"),
+        BuiltinFunctionDoc {
+            description: "Decodes named and numeric HTML entities in the given string into their corresponding characters.",
+            params: &["string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("strip_tags"),
+        BuiltinFunctionDoc {
+            description: "Removes HTML tags from the given string, keeping the surrounding text content.",
+            params: &["string"],
         },
     );
     map.insert(

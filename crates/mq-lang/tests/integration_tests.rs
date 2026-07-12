@@ -3113,6 +3113,17 @@ fn engine() -> DefaultEngine {
 // url_encode
 #[case::url_encode_spaces(r#"url_encode("hello world")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello%20world".to_string())].into()))]
 #[case::url_encode_plain(r#"url_encode("abc")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abc".to_string())].into()))]
+// html_escape
+#[case::html_escape_tags(r#"html_escape("<b>hi</b>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("&lt;b&gt;hi&lt;/b&gt;".to_string())].into()))]
+#[case::html_escape_amp(r#"html_escape("a & b")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("a &amp; b".to_string())].into()))]
+#[case::html_escape_markdown_type(r#"to_md_text("<b>hi</b>") | html_escape | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+#[case::html_escape_markdown_value(r#"to_md_text("<b>hi</b>") | html_escape | to_text"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("&lt;b&gt;hi&lt;/b&gt;".to_string())].into()))]
+// html_unescape
+#[case::html_unescape_tags(r#"html_unescape("&lt;b&gt;hi&lt;/b&gt;")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("<b>hi</b>".to_string())].into()))]
+#[case::html_unescape_numeric(r#"html_unescape("&#65;&#x42;")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("AB".to_string())].into()))]
+// strip_tags
+#[case::strip_tags_basic(r#"strip_tags("<p>Hello <em>world</em>!</p>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("Hello world!".to_string())].into()))]
+#[case::strip_tags_no_tags(r#"strip_tags("plain text")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("plain text".to_string())].into()))]
 // to_number conversion
 #[case::to_number_string(r#"to_number("42")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // to_boolean conversion
@@ -3356,6 +3367,12 @@ fn engine() -> DefaultEngine {
 #[case::ascii_downcase_none("ascii_downcase(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // trim: None input → None
 #[case::trim_none("trim(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+// html_escape: None input → None
+#[case::html_escape_none("html_escape(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+// html_unescape: None input → None
+#[case::html_unescape_none("html_unescape(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+// strip_tags: None input → None
+#[case::strip_tags_none("strip_tags(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // ltrim: None input → None
 #[case::ltrim_none("ltrim(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // rtrim: None input → None
@@ -3650,6 +3667,12 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::upcase_non_string("upcase(42)", vec![RuntimeValue::None],)]
 // ascii_upcase: non-string/non-markdown/non-none → type error
 #[case::ascii_upcase_non_string("ascii_upcase(42)", vec![RuntimeValue::None],)]
+// html_escape: non-string/non-markdown/non-none → type error
+#[case::html_escape_non_string("html_escape(42)", vec![RuntimeValue::None],)]
+// html_unescape: non-string/non-markdown/non-none → type error
+#[case::html_unescape_non_string("html_unescape(42)", vec![RuntimeValue::None],)]
+// strip_tags: non-string/non-markdown/non-none → type error
+#[case::strip_tags_non_string("strip_tags(42)", vec![RuntimeValue::None],)]
 // range: multi-char string with step → error
 #[case::range_multichar_with_step(r#"range("aa", "zz", 2)"#, vec![RuntimeValue::None],)]
 // range: invalid type → error
