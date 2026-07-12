@@ -2,6 +2,7 @@ use crate::RuntimeValue;
 use crate::eval::builtin::Error;
 use crate::number::Number;
 use base64::prelude::*;
+use html_escape::decode_html_entities;
 use percent_encoding::{NON_ALPHANUMERIC, percent_decode, utf8_percent_encode};
 use sha2::Digest;
 use url::Url;
@@ -436,6 +437,57 @@ pub(super) fn url_decode(input: &str) -> Result<RuntimeValue, Error> {
     ))
 }
 
+/// Escape `&`, `<`, `>`, `"`, and `'` as HTML entities
+#[inline(always)]
+pub(super) fn html_escape(input: &str) -> Result<RuntimeValue, Error> {
+    let mut result = String::with_capacity(input.len());
+    for c in input.chars() {
+        match c {
+            '&' => result.push_str("&amp;"),
+            '<' => result.push_str("&lt;"),
+            '>' => result.push_str("&gt;"),
+            '"' => result.push_str("&quot;"),
+            '\'' => result.push_str("&#39;"),
+            _ => result.push(c),
+        }
+    }
+    Ok(RuntimeValue::String(result))
+}
+
+/// Decode named and numeric HTML entities into their corresponding characters
+#[inline(always)]
+pub(super) fn html_unescape(input: &str) -> Result<RuntimeValue, Error> {
+    Ok(RuntimeValue::String(decode_html_entities(input).into_owned()))
+}
+
+/// Strip HTML tags from a string, keeping the surrounding text content
+#[inline(always)]
+pub(super) fn strip_tags(input: &str) -> Result<RuntimeValue, Error> {
+    let mut result = String::with_capacity(input.len());
+    let mut in_tag = false;
+    let mut quote: Option<char> = None;
+
+    for c in input.chars() {
+        if in_tag {
+            match quote {
+                Some(q) if c == q => quote = None,
+                Some(_) => {}
+                None => match c {
+                    '"' | '\'' => quote = Some(c),
+                    '>' => in_tag = false,
+                    _ => {}
+                },
+            }
+        } else if c == '<' {
+            in_tag = true;
+        } else {
+            result.push(c);
+        }
+    }
+
+    Ok(RuntimeValue::String(result))
+}
+
 /// Compute MD5 hash and return lowercase hex string.
 ///
 /// Note: MD5 is cryptographically broken and should not be used for security
@@ -686,6 +738,64 @@ mod tests {
     #[case("café", "caf%C3%A9")]
     fn test_url_encode(#[case] input: &str, #[case] expected: &str) {
         let result = url_encode(input).unwrap();
+        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+    }
+
+    // Test html_escape
+    #[rstest]
+    #[case("<b>bold</b>", "&lt;b&gt;bold&lt;/b&gt;")]
+    #[case("Tom & Jerry", "Tom &amp; Jerry")]
+    #[case(r#"say "hi""#, "say &quot;hi&quot;")]
+    #[case("it's", "it&#39;s")]
+    #[case("plain text", "plain text")]
+    #[case("", "")]
+    fn test_html_escape(#[case] input: &str, #[case] expected: &str) {
+        let result = html_escape(input).unwrap();
+        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+    }
+
+    // Test html_unescape
+    #[rstest]
+    #[case("&lt;b&gt;bold&lt;/b&gt;", "<b>bold</b>")]
+    #[case("Tom &amp; Jerry", "Tom & Jerry")]
+    #[case("&quot;quoted&quot;", "\"quoted\"")]
+    #[case("&#39;single&#39;", "'single'")]
+    #[case("&apos;apos&apos;", "'apos'")]
+    #[case("&#65;&#x42;", "AB")]
+    #[case("plain text", "plain text")]
+    #[case("", "")]
+    fn test_html_unescape(#[case] input: &str, #[case] expected: &str) {
+        let result = html_unescape(input).unwrap();
+        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+    }
+
+    // Test html_escape/html_unescape round trip
+    #[rstest]
+    #[case("<script>alert('xss')</script>")]
+    #[case(r#"5 > 3 && 2 < 4, say "hi""#)]
+    fn test_html_escape_unescape_round_trip(#[case] input: &str) {
+        let escaped = html_escape(input).unwrap();
+        let RuntimeValue::String(escaped) = escaped else {
+            panic!("Expected String")
+        };
+        let unescaped = html_unescape(&escaped).unwrap();
+        assert_eq!(unescaped, RuntimeValue::String(input.to_string()));
+    }
+
+    // Test strip_tags
+    #[rstest]
+    #[case("<b>bold</b>", "bold")]
+    #[case("<p>Hello <em>world</em>!</p>", "Hello world!")]
+    #[case("no tags here", "no tags here")]
+    #[case(r#"<a href="http://example.com" title="a > b">link</a>"#, "link")]
+    #[case("<div class='a<b'>text</div>", "text")]
+    #[case("", "")]
+    // A stray, unterminated `<` is treated as the start of a tag through the
+    // end of the input, mirroring common strip_tags implementations.
+    #[case("a < b", "a ")]
+    #[case("a > b", "a > b")]
+    fn test_strip_tags(#[case] input: &str, #[case] expected: &str) {
+        let result = strip_tags(input).unwrap();
         assert_eq!(result, RuntimeValue::String(expected.to_string()));
     }
 

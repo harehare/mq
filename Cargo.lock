@@ -1712,6 +1712,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
+name = "html-escape"
+version = "0.2.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46c1ff2d1cbf39efe5af0900ced8a069b5e61557a17544eb0c4a50239937389e"
+
+[[package]]
 name = "html5ever"
 version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2602,6 +2608,7 @@ dependencies = [
  "dirs 6.0.0",
  "getrandom 0.4.3",
  "hcl-rs",
+ "html-escape",
  "itertools 0.15.0",
  "md5",
  "miette",
