@@ -40,10 +40,18 @@ fn is_word_like_selector(selector: &str) -> bool {
         .is_some_and(|c| c.is_ascii_alphabetic())
 }
 
-/// Closest known builtin function name to `name`, or `None` if nothing is close enough.
+/// Closest name to `name` among builtin functions and the given extra candidates (e.g.
+/// user-defined functions/variables visible in scope when the lookup failed).
 #[cold]
-pub(crate) fn suggest_builtin(name: &str) -> Option<&'static str> {
-    closest_match(name, crate::BUILTIN_FUNCTION_DOC.keys().map(|s| s.as_str()))
+pub(crate) fn suggest_name<'a>(name: &str, extra_candidates: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    closest_match(
+        name,
+        crate::BUILTIN_FUNCTION_DOC
+            .keys()
+            .map(|s| s.as_str())
+            .chain(extra_candidates),
+    )
+    .map(str::to_string)
 }
 
 /// Closest known selector (e.g. `.h1`, `.code`) to `name`, or `None` if nothing is close enough.
@@ -81,18 +89,23 @@ mod tests {
     }
 
     #[test]
-    fn test_suggest_builtin_finds_real_transposition_typo() {
-        assert_eq!(suggest_builtin("slpit"), Some("split"));
+    fn test_suggest_name_finds_real_transposition_typo() {
+        assert_eq!(suggest_name("slpit", []), Some("split".to_string()));
     }
 
     #[test]
-    fn test_suggest_builtin_finds_hyphen_for_underscore_typo() {
-        assert_eq!(suggest_builtin("date-add"), Some("date_add"));
+    fn test_suggest_name_finds_hyphen_for_underscore_typo() {
+        assert_eq!(suggest_name("date-add", []), Some("date_add".to_string()));
     }
 
     #[test]
-    fn test_suggest_builtin_no_suggestion_for_unrelated_name() {
-        assert_eq!(suggest_builtin("completely_unrelated_xyz"), None);
+    fn test_suggest_name_no_suggestion_for_unrelated_name() {
+        assert_eq!(suggest_name("completely_unrelated_xyz", []), None);
+    }
+
+    #[test]
+    fn test_suggest_name_considers_extra_candidates() {
+        assert_eq!(suggest_name("my_fnc", ["my_func"]), Some("my_func".to_string()));
     }
 
     #[test]

@@ -154,10 +154,11 @@ impl Error {
 }
 
 // help() text for an unresolved name (builtin call or bare reference), with a
-// "did you mean" hint when available.
+// "did you mean" hint when available. `candidates` are user-defined names that were in
+// scope at the point of failure, considered alongside builtins.
 #[cold]
-fn not_defined_help(name: &str) -> Cow<'static, str> {
-    match crate::suggest::suggest_builtin(name) {
+fn not_defined_help(name: &str, candidates: &[String]) -> Cow<'static, str> {
+    match crate::suggest::suggest_name(name, candidates.iter().map(|s| s.as_str())) {
         Some(similar) => Cow::Owned(format!(
             "'{name}' is not defined. A function with a similar name exists: `{similar}`."
         )),
@@ -266,8 +267,12 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::InvalidBase64String(_, _)) => Some(Cow::Borrowed(
                 "The provided string is not valid Base64. Check your input.",
             )),
-            InnerError::Runtime(RuntimeError::NotDefined(_, name)) => Some(not_defined_help(name)),
-            InnerError::Runtime(RuntimeError::UndefinedReference(_, name)) => Some(not_defined_help(name)),
+            InnerError::Runtime(RuntimeError::NotDefined(_, name, candidates)) => {
+                Some(not_defined_help(name, candidates))
+            }
+            InnerError::Runtime(RuntimeError::UndefinedReference(_, name, candidates)) => {
+                Some(not_defined_help(name, candidates))
+            }
             InnerError::Runtime(RuntimeError::DateTimeFormatError(_, _)) => Some(Cow::Borrowed(
                 "Invalid date/time format. Please check your format string.",
             )),
@@ -609,7 +614,7 @@ mod test {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }, "".to_string())),
+        }, "".to_string(), Box::new([]))),
         "source code"
     )]
     #[case::eval_index_out_of_bounds(
@@ -633,7 +638,7 @@ mod test {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }, "".to_string())),
+        }, "".to_string(), Box::new([]))),
         "source code"
     )]
     #[case::eval_invalid_number_of_arguments(
@@ -827,7 +832,7 @@ mod test {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }, "name".to_string()))
+        }, "name".to_string(), Box::new([])))
     )]
     #[case::eval_datetime_format_error(
         InnerError::Runtime(RuntimeError::DateTimeFormatError(Token {
@@ -855,7 +860,7 @@ mod test {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }, "bad".into()))
+        }, "bad".into(), Box::new([])))
     )]
     #[case::eval_invalid_types(
         InnerError::Runtime(RuntimeError::InvalidTypes {
@@ -1055,12 +1060,33 @@ mod test {
                 module_id: ArenaId::new(0),
             },
             "slpit".to_string(),
+            Box::new([]),
         ));
         let error = Error::from_error("source code", cause, module_loader);
         let help = error.help().map(|h| h.to_string());
         assert_eq!(
             help,
             Some("'slpit' is not defined. A function with a similar name exists: `split`.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_not_defined_help_suggests_similar_user_defined_name() {
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let cause = InnerError::Runtime(RuntimeError::NotDefined(
+            Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            "my_fnc".to_string(),
+            Box::new(["my_func".to_string()]),
+        ));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert_eq!(
+            help,
+            Some("'my_fnc' is not defined. A function with a similar name exists: `my_func`.".to_string())
         );
     }
 
@@ -1074,6 +1100,7 @@ mod test {
                 module_id: ArenaId::new(0),
             },
             "totally_unrelated_gibberish_zz".to_string(),
+            Box::new([]),
         ));
         let error = Error::from_error("source code", cause, module_loader);
         let help = error.help().map(|h| h.to_string());
@@ -1095,12 +1122,35 @@ mod test {
                 module_id: ArenaId::new(0),
             },
             "slpit".to_string(),
+            Box::new([]),
         ));
         let error = Error::from_error("source code", cause, module_loader);
         let help = error.help().map(|h| h.to_string());
         assert_eq!(
             help,
             Some("'slpit' is not defined. A function with a similar name exists: `split`.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_undefined_reference_help_suggests_similar_user_defined_name() {
+        // A bare identifier reference (not a call) that typos a user-defined name in scope,
+        // e.g. `let my_func = fn(): 1; | map(my_fnc)`.
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let cause = InnerError::Runtime(RuntimeError::UndefinedReference(
+            Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            "my_fnc".to_string(),
+            Box::new(["my_func".to_string()]),
+        ));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert_eq!(
+            help,
+            Some("'my_fnc' is not defined. A function with a similar name exists: `my_func`.".to_string())
         );
     }
 
