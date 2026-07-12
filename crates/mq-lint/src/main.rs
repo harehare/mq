@@ -1,3 +1,5 @@
+mod format;
+
 use std::io::{self, BufWriter, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -5,6 +7,7 @@ use std::str::FromStr;
 
 use clap::Parser;
 use colored::Colorize;
+use format::OutputFormat;
 use mq_hir::Hir;
 use mq_lint::{Diagnostic, LintConfig, LintContext, Linter, RuleId, Severity};
 
@@ -31,6 +34,12 @@ struct Cli {
     /// (reads stdin if no files are given, writing the fixed code to stdout)
     #[arg(long)]
     fix: bool,
+
+    /// Diagnostic output format: `text` (human-readable), `sarif` (SARIF 2.1.0 JSON, for
+    /// GitHub code scanning and other SARIF consumers), or `github` (GitHub Actions
+    /// `::error`/`::warning`/`::notice` workflow-command annotations)
+    #[arg(long, value_enum, default_value_t)]
+    format: OutputFormat,
 }
 
 #[derive(Clone, Copy)]
@@ -94,11 +103,13 @@ fn run() -> io::Result<bool> {
             return Ok(false);
         }
 
-        let had_diagnostics = lint_source(&mut w, &code, "<stdin>", &linter, &config, min_severity)?;
+        let diagnostics = collect_diagnostics(&code, &linter, &config, min_severity);
+        let had_diagnostics = !diagnostics.is_empty();
+        format::write_report(&mut w, cli.format, &[("<stdin>".to_string(), diagnostics)])?;
         return Ok(had_diagnostics);
     }
 
-    let mut had_diagnostics = false;
+    let mut results: Vec<(String, Vec<Diagnostic>)> = Vec::with_capacity(cli.files.len());
 
     for path in &cli.files {
         let code = std::fs::read_to_string(path)
@@ -111,21 +122,26 @@ fn run() -> io::Result<bool> {
                 std::fs::write(path, &fixed)
                     .map_err(|e| io::Error::other(format!("writing file {}: {}", path.display(), e)))?;
                 let issue_word = if fix_count == 1 { "issue" } else { "issues" };
-                writeln!(
-                    w,
-                    "{} {fix_count} {issue_word} in {label}",
-                    "fixed".bright_green().bold(),
-                )?;
+                if cli.format == OutputFormat::Text {
+                    writeln!(
+                        w,
+                        "{} {fix_count} {issue_word} in {label}",
+                        "fixed".bright_green().bold()
+                    )?;
+                } else {
+                    eprintln!("fixed {fix_count} {issue_word} in {label}");
+                }
             }
             fixed
         } else {
             code
         };
 
-        if lint_source(&mut w, &code, &label, &linter, &config, min_severity)? {
-            had_diagnostics = true;
-        }
+        results.push((label, collect_diagnostics(&code, &linter, &config, min_severity)));
     }
+
+    let had_diagnostics = results.iter().any(|(_, diagnostics)| !diagnostics.is_empty());
+    format::write_report(&mut w, cli.format, &results)?;
 
     Ok(had_diagnostics)
 }
@@ -156,19 +172,14 @@ fn list_rules(w: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
-/// Severities in the order categories are displayed, most severe first.
-const SEVERITY_ORDER: [Severity; 4] = [Severity::Error, Severity::Warn, Severity::Perf, Severity::Style];
-
-/// Lints a single source, writes diagnostics grouped by severity in a Credo-style report,
-/// and returns `true` if any were reported.
-fn lint_source(
-    w: &mut impl Write,
+/// Runs the linter over a single source, returning diagnostics at or above `min_severity`
+/// sorted by source position.
+pub(crate) fn collect_diagnostics(
     code: &str,
-    file_label: &str,
     linter: &Linter,
     config: &LintConfig,
     min_severity: Severity,
-) -> io::Result<bool> {
+) -> Vec<Diagnostic> {
     let mut hir = Hir::default();
     let (source_id, _) = hir.add_code(None, code);
     let ctx = LintContext::new(&hir, source_id, config);
@@ -179,127 +190,7 @@ fn lint_source(
         .filter(|d| d.severity >= min_severity)
         .collect();
     diagnostics.sort_by_key(|d| d.range.map(|r| (r.start.line, r.start.column)));
-
-    let mut printed_category = false;
-    for severity in SEVERITY_ORDER {
-        let group: Vec<&Diagnostic> = diagnostics.iter().filter(|d| d.severity == severity).collect();
-        if group.is_empty() {
-            continue;
-        }
-        if printed_category {
-            writeln!(w)?;
-        }
-        printed_category = true;
-        write_category(w, severity, &group, file_label)?;
-    }
-
-    if diagnostics.is_empty() {
-        writeln!(
-            w,
-            "{}  {}",
-            "✓".bright_green().bold(),
-            "No lint issues found.".bright_green()
-        )?;
-    } else {
-        writeln!(w)?;
-        write_summary(w, &diagnostics)?;
-    }
-
-    Ok(!diagnostics.is_empty())
-}
-
-/// Maps a severity to its Credo-style category title and one-letter marker.
-fn severity_category(severity: Severity) -> (colored::ColoredString, colored::ColoredString) {
-    match severity {
-        Severity::Error => ("## Errors".bright_red().bold(), "[E]".bright_red().bold()),
-        Severity::Warn => ("## Warnings".bright_yellow().bold(), "[W]".bright_yellow().bold()),
-        Severity::Perf => ("## Performance".blue().bold(), "[P]".blue().bold()),
-        Severity::Style => ("## Style".cyan().bold(), "[S]".cyan().bold()),
-    }
-}
-
-/// Uses mq's own pipe operator `|` as the gutter bar.
-fn severity_bar(severity: Severity) -> colored::ColoredString {
-    match severity {
-        Severity::Error => "|".bright_red(),
-        Severity::Warn => "|".bright_yellow(),
-        Severity::Perf => "|".blue(),
-        Severity::Style => "|".cyan(),
-    }
-}
-
-/// Writes one severity category: a heading followed by its diagnostics, each as a
-/// `[X] message` line with the `file:line:col .rule_id` location on the line below
-/// (the rule id rendered as an mq selector, e.g. `.unused_variable`).
-fn write_category(
-    w: &mut impl Write,
-    severity: Severity,
-    diagnostics: &[&Diagnostic],
-    file_label: &str,
-) -> io::Result<()> {
-    let (title, letter) = severity_category(severity);
-    let bar = severity_bar(severity);
-
-    writeln!(w, "{}\n", title)?;
-
-    for (i, diagnostic) in diagnostics.iter().enumerate() {
-        match diagnostic.severity {
-            Severity::Error => writeln!(w, "{bar} {} {}", letter, diagnostic.message().bright_red().bold())?,
-            Severity::Warn => writeln!(w, "{bar} {} {}", letter, diagnostic.message().bright_yellow().bold())?,
-            Severity::Perf => writeln!(w, "{bar} {} {}", letter, diagnostic.message().blue().bold())?,
-            Severity::Style => writeln!(w, "{bar} {} {}", letter, diagnostic.message().cyan().bold())?,
-        }
-
-        let loc = match &diagnostic.range {
-            Some(range) => format!("{}:{}:{}", file_label, range.start.line, range.start.column),
-            None => file_label.to_string(),
-        };
-        writeln!(
-            w,
-            "{bar}     {} {}",
-            loc.dimmed(),
-            format!(".{}", diagnostic.rule_id().as_str()).dimmed(),
-        )?;
-
-        if let Some(help) = diagnostic.help() {
-            writeln!(w, "{bar}       {}", format!("help: {help}").bright_blue())?;
-        }
-
-        if i + 1 < diagnostics.len() {
-            writeln!(w, "{bar}")?;
-        }
-    }
-
-    Ok(())
-}
-
-/// Writes the trailing summary line, e.g. `found 3 issues (2 warnings, 1 style).`
-fn write_summary(w: &mut impl Write, diagnostics: &[Diagnostic]) -> io::Result<()> {
-    let breakdown: Vec<String> = SEVERITY_ORDER
-        .into_iter()
-        .filter_map(|severity| {
-            let count = diagnostics.iter().filter(|d| d.severity == severity).count();
-            if count == 0 {
-                return None;
-            }
-            let (singular, plural) = match severity {
-                Severity::Error => ("error".bright_red(), "errors".bright_red()),
-                Severity::Warn => ("warning".bright_yellow(), "warnings".bright_yellow()),
-                Severity::Perf => ("performance".blue(), "performance".blue()),
-                Severity::Style => ("style".cyan(), "style".cyan()),
-            };
-            Some(format!("{count} {}", if count == 1 { singular } else { plural }))
-        })
-        .collect();
-
-    writeln!(
-        w,
-        "{} {} issue{} ({}).",
-        "found".bold(),
-        diagnostics.len().to_string().bold(),
-        if diagnostics.len() == 1 { "" } else { "s" },
-        breakdown.join(", "),
-    )
+    diagnostics
 }
 
 #[cfg(test)]
@@ -351,6 +242,22 @@ mod tests {
 
         let cli = Cli::try_parse_from(["mq-lint", "test.mq"]).unwrap();
         assert!(!cli.fix);
+    }
+
+    #[rstest]
+    #[case(vec!["mq-lint"], OutputFormat::Text)]
+    #[case(vec!["mq-lint", "--format", "text"], OutputFormat::Text)]
+    #[case(vec!["mq-lint", "--format", "sarif"], OutputFormat::Sarif)]
+    #[case(vec!["mq-lint", "--format", "github"], OutputFormat::Github)]
+    fn test_cli_format(#[case] args: Vec<&str>, #[case] expected: OutputFormat) {
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert_eq!(cli.format, expected);
+    }
+
+    #[test]
+    fn test_cli_format_invalid() {
+        let result = Cli::try_parse_from(["mq-lint", "--format", "bogus"]);
+        assert!(result.is_err());
     }
 
     #[rstest]
