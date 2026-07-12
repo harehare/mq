@@ -16,7 +16,9 @@ type Weak<T> = std::sync::Weak<T>;
 
 #[derive(Debug, PartialEq)]
 pub enum EnvError {
-    InvalidDefinition(String),
+    /// Unresolved identifier, plus the currently-defined names it was compared against
+    /// (for "did you mean" suggestions).
+    UndefinedReference(String, Vec<String>),
     AssignToImmutable(String),
     UndefinedVariable(String),
 }
@@ -34,9 +36,11 @@ impl EnvError {
     #[cold]
     pub fn to_runtime_error(&self, token_id: TokenId, token_arena: TokenArena) -> RuntimeError {
         match self {
-            EnvError::InvalidDefinition(def) => {
-                RuntimeError::InvalidDefinition((*get_token(token_arena, token_id)).clone(), def.to_string())
-            }
+            EnvError::UndefinedReference(def, candidates) => RuntimeError::UndefinedReference(
+                (*get_token(token_arena, token_id)).clone(),
+                def.to_string(),
+                candidates.clone().into(),
+            ),
             EnvError::AssignToImmutable(var) => {
                 RuntimeError::AssignToImmutable((*get_token(token_arena, token_id)).clone(), var.to_string())
             }
@@ -50,7 +54,9 @@ impl EnvError {
     #[cold]
     pub fn to_runtime_error_with_token(&self, token: Token) -> RuntimeError {
         match self {
-            EnvError::InvalidDefinition(def) => RuntimeError::InvalidDefinition(token, def.to_string()),
+            EnvError::UndefinedReference(def, candidates) => {
+                RuntimeError::UndefinedReference(token, def.to_string(), candidates.clone().into())
+            }
             EnvError::AssignToImmutable(var) => RuntimeError::AssignToImmutable(token, var.to_string()),
             EnvError::UndefinedVariable(var) => RuntimeError::UndefinedVariable(token, var.to_string()),
         }
@@ -146,7 +152,6 @@ impl EnvContext {
         }
     }
 
-    #[cfg(feature = "debugger")]
     fn iter_entries(&self) -> Box<dyn Iterator<Item = (Ident, &RuntimeValue)> + '_> {
         match self {
             EnvContext::Small(v) => Box::new(v.iter().map(|(k, v)| (*k, v))),
@@ -295,6 +300,29 @@ impl Env {
         }
     }
 
+    /// Collects the names of every binding visible from this scope (this scope plus all
+    /// ancestors) so a failed lookup can suggest a "did you mean" among user-defined
+    /// functions/variables, not just builtins. Cold path only - never called on the
+    /// `resolve()` success path.
+    #[cold]
+    pub(crate) fn defined_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .context
+            .iter_entries()
+            .map(|(ident, _)| ident.to_string())
+            .collect();
+
+        let mut current_parent = self.parent.as_ref().and_then(|p| p.upgrade());
+
+        while let Some(parent_cell) = current_parent {
+            let parent_env = borrow_env!(parent_cell);
+            names.extend(parent_env.context.iter_entries().map(|(ident, _)| ident.to_string()));
+            current_parent = parent_env.parent.as_ref().and_then(|p| p.upgrade());
+        }
+
+        names
+    }
+
     /// Returns the number of bindings in the current scope, excluding parent scopes.
     pub fn len(&self) -> usize {
         self.context.len()
@@ -308,7 +336,7 @@ impl Env {
 
     /// Looks up `ident` in this scope and its ancestors, falling back to built-in functions.
     ///
-    /// Returns [`EnvError::InvalidDefinition`] if the identifier is not found anywhere in
+    /// Returns [`EnvError::UndefinedReference`] if the identifier is not found anywhere in
     /// the scope chain and is not a built-in.
     #[inline(always)]
     pub fn resolve(&self, ident: Ident) -> Result<RuntimeValue, EnvError> {
@@ -330,7 +358,7 @@ impl Env {
         if ident.resolve_with(builtin::get_builtin_functions_by_str).is_some() {
             Ok(RuntimeValue::NativeFunction(ident))
         } else {
-            Err(EnvError::InvalidDefinition(ident.to_string()))
+            Err(EnvError::UndefinedReference(ident.to_string(), self.defined_names()))
         }
     }
 

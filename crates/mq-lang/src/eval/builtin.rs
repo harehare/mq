@@ -5940,9 +5940,9 @@ pub enum Error {
     #[error("")]
     InvalidBase64String(#[from] base64::DecodeError),
     #[error("")]
-    NotDefined(FunctionName),
+    NotDefined(FunctionName, Vec<String>),
     #[error("")]
-    InvalidDefinition(String),
+    UndefinedReference(String, Vec<String>),
     #[error("")]
     InvalidDateTimeFormat(String),
     #[error("")]
@@ -5968,7 +5968,7 @@ pub enum Error {
 impl From<env::EnvError> for Error {
     fn from(e: env::EnvError) -> Self {
         match e {
-            env::EnvError::InvalidDefinition(name) => Error::InvalidDefinition(name),
+            env::EnvError::UndefinedReference(name, candidates) => Error::UndefinedReference(name, candidates),
             env::EnvError::AssignToImmutable(name) => Error::AssignToImmutable(name),
             env::EnvError::UndefinedVariable(name) => Error::UndefinedVariable(name),
         }
@@ -5990,12 +5990,16 @@ impl Error {
             Error::InvalidBase64String(e) => {
                 RuntimeError::InvalidBase64String((*get_token(token_arena, node.token_id)).clone(), e.to_string())
             }
-            Error::NotDefined(name) => {
-                RuntimeError::NotDefined((*get_token(token_arena, node.token_id)).clone(), name.clone())
-            }
-            Error::InvalidDefinition(a) => {
-                RuntimeError::InvalidDefinition((*get_token(token_arena, node.token_id)).clone(), a.clone())
-            }
+            Error::NotDefined(name, candidates) => RuntimeError::NotDefined(
+                (*get_token(token_arena, node.token_id)).clone(),
+                name.clone(),
+                candidates.clone().into(),
+            ),
+            Error::UndefinedReference(a, candidates) => RuntimeError::UndefinedReference(
+                (*get_token(token_arena, node.token_id)).clone(),
+                a.clone(),
+                candidates.clone().into(),
+            ),
             Error::InvalidDateTimeFormat(msg) => {
                 RuntimeError::DateTimeFormatError((*get_token(token_arena, node.token_id)).clone(), msg.clone())
             }
@@ -6035,7 +6039,14 @@ pub fn eval_builtin(
     env: &Shared<SharedCell<Env>>,
 ) -> Result<RuntimeValue, Error> {
     get_builtin_functions(ident).map_or_else(
-        || Err(Error::NotDefined(ident.to_string())),
+        || {
+            #[cfg(not(feature = "sync"))]
+            let candidates = env.borrow().defined_names();
+            #[cfg(feature = "sync")]
+            let candidates = env.read().unwrap().defined_names();
+
+            Err(Error::NotDefined(ident.to_string(), candidates))
+        },
         |f| {
             let args_len = args.len() as u8;
             if f.num_params.is_valid(args_len) {
@@ -6418,7 +6429,7 @@ mod tests {
 
     #[rstest]
     #[case("div", vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(0.0.into())], Error::ZeroDivision)]
-    #[case("unknown_func", vec![RuntimeValue::Number(1.0.into())], Error::NotDefined("unknown_func".to_string()))]
+    #[case("unknown_func", vec![RuntimeValue::Number(1.0.into())], Error::NotDefined("unknown_func".to_string(), vec![]))]
     #[case("add", vec![], Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
     #[case("add", vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())],
         Error::InvalidTypes("add".to_string(), vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())]))]

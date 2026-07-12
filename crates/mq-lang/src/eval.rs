@@ -752,7 +752,12 @@ impl<T: ModuleResolver> Evaluator<T> {
                 }
                 _ => {
                     let token = get_token(Shared::clone(&self.token_arena), token_id);
-                    return Err(RuntimeError::NotDefined((*token).clone(), module_ident.name.to_string()).into());
+                    return Err(RuntimeError::NotDefined(
+                        (*token).clone(),
+                        module_ident.name.to_string(),
+                        Box::new([]),
+                    )
+                    .into());
                 }
             }
         }
@@ -785,7 +790,17 @@ impl<T: ModuleResolver> Evaluator<T> {
                                     .as_ref()
                                     .cloned()
                                     .unwrap_or(get_token(Shared::clone(&self.token_arena), token_id));
-                                Err(RuntimeError::NotDefined((*token).clone(), func_name.name.to_string()).into())
+                                #[cfg(not(feature = "sync"))]
+                                let candidates = module_exports.borrow().defined_names();
+                                #[cfg(feature = "sync")]
+                                let candidates = module_exports.read().unwrap().defined_names();
+
+                                Err(RuntimeError::NotDefined(
+                                    (*token).clone(),
+                                    func_name.name.to_string(),
+                                    candidates.into_boxed_slice(),
+                                )
+                                .into())
                             }
                         }
                     }
@@ -808,7 +823,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     .map(|m| (m.token.clone(), m.name.to_string()))
                     .unwrap_or_default();
                 let token = token.unwrap_or(get_token(Shared::clone(&self.token_arena), token_id));
-                Err(RuntimeError::NotDefined((*token).clone(), last_module).into())
+                Err(RuntimeError::NotDefined((*token).clone(), last_module, Box::new([])).into())
             }
         }
     }

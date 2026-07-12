@@ -38,6 +38,7 @@ toml = {workspace = true}
 smallvec = {workspace = true}
 smol_str = {workspace = true}
 string-interner = {workspace = true}
+strsim = {workspace = true}
 thiserror = {workspace = true}
 url = {workspace = true}
 toon-format = { version = "0.5", default-features = false }

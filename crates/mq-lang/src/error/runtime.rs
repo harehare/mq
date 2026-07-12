@@ -15,8 +15,16 @@ pub enum RuntimeError {
     UserDefined { message: String, token: ErrorToken },
     #[error("Invalid base64 string")]
     InvalidBase64String(ErrorToken, String),
+    // The boxed slice is a snapshot of currently-defined names (builtins excluded, since those
+    // are looked up separately) used to power "did you mean" suggestions. Boxed rather than
+    // `Vec` to keep this rarely-populated field from growing every `RuntimeError` beyond
+    // clippy's `result_large_err` threshold.
     #[error("\"{1}\" is not defined")]
-    NotDefined(ErrorToken, FunctionName),
+    NotDefined(ErrorToken, FunctionName, Box<[FunctionName]>),
+    // A bare identifier reference not bound in any scope. Distinct from InvalidDefinition
+    // below, which is a resolved-but-not-callable value.
+    #[error("\"{1}\" is not defined")]
+    UndefinedReference(ErrorToken, FunctionName, Box<[FunctionName]>),
     #[error("Unable to format date time, {1}")]
     DateTimeFormatError(ErrorToken, String),
     #[error("Index out of bounds {1}")]
@@ -88,7 +96,8 @@ impl RuntimeError {
         match self {
             RuntimeError::UserDefined { token, .. } => Some(token),
             RuntimeError::InvalidBase64String(token, _) => Some(token),
-            RuntimeError::NotDefined(token, _) => Some(token),
+            RuntimeError::NotDefined(token, _, _) => Some(token),
+            RuntimeError::UndefinedReference(token, _, _) => Some(token),
             RuntimeError::DateTimeFormatError(token, _) => Some(token),
             RuntimeError::IndexOutOfBounds(token, _) => Some(token),
             RuntimeError::InvalidDefinition(token, _) => Some(token),
@@ -135,7 +144,8 @@ mod tests {
     #[rstest]
     #[case(RuntimeError::UserDefined { message: "msg".to_string(), token: eof_token() }, true)]
     #[case(RuntimeError::InvalidBase64String(eof_token(), "bad".to_string()), true)]
-    #[case(RuntimeError::NotDefined(eof_token(), "f".to_string()), true)]
+    #[case(RuntimeError::NotDefined(eof_token(), "f".to_string(), Box::new([])), true)]
+    #[case(RuntimeError::UndefinedReference(eof_token(), "r".to_string(), Box::new([])), true)]
     #[case(RuntimeError::DateTimeFormatError(eof_token(), "err".to_string()), true)]
     #[case(RuntimeError::IndexOutOfBounds(eof_token(), Number::from(1.0)), true)]
     #[case(RuntimeError::InvalidDefinition(eof_token(), "d".to_string()), true)]

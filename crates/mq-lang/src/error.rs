@@ -8,6 +8,7 @@ use crate::{
     ModuleLoader, ModuleResolver, Token, TokenKind,
     error::{runtime::RuntimeError, syntax::SyntaxError},
     module::{self, error::ModuleError},
+    selector,
 };
 
 #[allow(clippy::useless_conversion)]
@@ -152,6 +153,36 @@ impl Error {
     }
 }
 
+// help() text for an unresolved name (builtin call or bare reference), with a
+// "did you mean" hint when available. `candidates` are user-defined names that were in
+// scope at the point of failure, considered alongside builtins.
+#[cold]
+fn not_defined_help(name: &str, candidates: &[String]) -> Cow<'static, str> {
+    match crate::suggest::suggest_name(name, candidates.iter().map(|s| s.as_str())) {
+        Some(similar) => Cow::Owned(format!(
+            "'{name}' is not defined. A function with a similar name exists: `{similar}`."
+        )),
+        None => Cow::Owned(format!("'{name}' is not defined. Did you forget to declare it?")),
+    }
+}
+
+// help() text for an unknown selector, with a "did you mean" hint when available.
+#[cold]
+fn selector_help(sel: &selector::UnknownSelector) -> Cow<'static, str> {
+    let raw = match &sel.0.kind {
+        TokenKind::Selector(s) => s.as_str(),
+        _ => "",
+    };
+    match crate::suggest::suggest_selector(raw) {
+        Some(similar) => Cow::Owned(format!(
+            "Unknown selector `{raw}`. A selector with a similar name exists: `{similar}`."
+        )),
+        None => Cow::Borrowed(
+            "Unknown selector. Valid selectors include node types (e.g. .h1, .p, .code) and bracket access (e.g. .[0], .[n][m]).",
+        ),
+    }
+}
+
 impl Diagnostic for Error {
     #[cold]
     fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
@@ -194,9 +225,7 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::InsufficientTokens(_)) => Some(Cow::Borrowed(
                 "Parsing could not continue here. Check for missing arguments, operators, or mismatched delimiters.",
             )),
-            InnerError::Syntax(SyntaxError::UnknownSelector(_)) => Some(Cow::Borrowed(
-                "Unknown selector. Valid selectors include node types (e.g. .h1, .p, .code) and bracket access (e.g. .[0], .[n][m]).",
-            )),
+            InnerError::Syntax(SyntaxError::UnknownSelector(sel)) => Some(selector_help(sel)),
             InnerError::Syntax(SyntaxError::ExpectedClosingParen(_, _)) => Some(Cow::Borrowed(
                 "Expected a closing parenthesis ')'. Check your parentheses for balance.",
             )),
@@ -238,18 +267,21 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::InvalidBase64String(_, _)) => Some(Cow::Borrowed(
                 "The provided string is not valid Base64. Check your input.",
             )),
-            InnerError::Runtime(RuntimeError::NotDefined(_, name)) => Some(Cow::Owned(format!(
-                "'{name}' is not defined. Did you forget to declare it?"
-            ))),
+            InnerError::Runtime(RuntimeError::NotDefined(_, name, candidates)) => {
+                Some(not_defined_help(name, candidates))
+            }
+            InnerError::Runtime(RuntimeError::UndefinedReference(_, name, candidates)) => {
+                Some(not_defined_help(name, candidates))
+            }
             InnerError::Runtime(RuntimeError::DateTimeFormatError(_, _)) => Some(Cow::Borrowed(
                 "Invalid date/time format. Please check your format string.",
             )),
             InnerError::Runtime(RuntimeError::IndexOutOfBounds(_, _)) => Some(Cow::Borrowed(
                 "Index out of bounds. Check your array or string indices.",
             )),
-            InnerError::Runtime(RuntimeError::InvalidDefinition(_, _)) => Some(Cow::Borrowed(
-                "Invalid definition. Please check your function or variable declaration.",
-            )),
+            InnerError::Runtime(RuntimeError::InvalidDefinition(_, name)) => Some(Cow::Owned(format!(
+                "'{name}' exists but is not a function, so it cannot be called."
+            ))),
             InnerError::Runtime(RuntimeError::AssignToImmutable(_, name)) => Some(Cow::Owned(format!(
                 "Cannot assign to immutable variable '{name}'. Consider declaring it as mutable."
             ))),
@@ -343,9 +375,7 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::InvalidAssignmentTarget(_))) => Some(
                 Cow::Borrowed("Invalid assignment target. Ensure you're assigning to a valid variable or property."),
             ),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnknownSelector(_))) => Some(Cow::Borrowed(
-                "Unknown selector. Valid selectors include node types (e.g. .h1, .p, .code) and bracket access (e.g. .[0], .[n][m]).",
-            )),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnknownSelector(sel))) => Some(selector_help(sel)),
             InnerError::Module(ModuleError::InvalidModule) => Some(Cow::Borrowed("Invalid module format or content.")),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::ParameterWithoutDefaultAfterDefault(_))) => {
                 Some(Cow::Borrowed(
@@ -584,7 +614,7 @@ mod test {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }, "".to_string())),
+        }, "".to_string(), Box::new([]))),
         "source code"
     )]
     #[case::eval_index_out_of_bounds(
@@ -601,6 +631,14 @@ mod test {
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
         }, "".to_string())),
+        "source code"
+    )]
+    #[case::eval_undefined_reference(
+        InnerError::Runtime(RuntimeError::UndefinedReference(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "".to_string(), Box::new([]))),
         "source code"
     )]
     #[case::eval_invalid_number_of_arguments(
@@ -794,7 +832,7 @@ mod test {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }, "name".to_string()))
+        }, "name".to_string(), Box::new([])))
     )]
     #[case::eval_datetime_format_error(
         InnerError::Runtime(RuntimeError::DateTimeFormatError(Token {
@@ -816,6 +854,13 @@ mod test {
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
         }, "bad".into()))
+    )]
+    #[case::eval_undefined_reference(
+        InnerError::Runtime(RuntimeError::UndefinedReference(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "bad".into(), Box::new([])))
     )]
     #[case::eval_invalid_types(
         InnerError::Runtime(RuntimeError::InvalidTypes {
@@ -1002,6 +1047,167 @@ mod test {
         assert!(
             help.as_deref().unwrap_or("").contains("cannot convert array to string"),
             "help text should contain the conversion message, got: {help:?}"
+        );
+    }
+
+    #[test]
+    fn test_not_defined_help_suggests_similar_builtin() {
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let cause = InnerError::Runtime(RuntimeError::NotDefined(
+            Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            "slpit".to_string(),
+            Box::new([]),
+        ));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert_eq!(
+            help,
+            Some("'slpit' is not defined. A function with a similar name exists: `split`.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_not_defined_help_suggests_similar_user_defined_name() {
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let cause = InnerError::Runtime(RuntimeError::NotDefined(
+            Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            "my_fnc".to_string(),
+            Box::new(["my_func".to_string()]),
+        ));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert_eq!(
+            help,
+            Some("'my_fnc' is not defined. A function with a similar name exists: `my_func`.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_not_defined_help_no_suggestion_for_unrelated_name() {
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let cause = InnerError::Runtime(RuntimeError::NotDefined(
+            Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            "totally_unrelated_gibberish_zz".to_string(),
+            Box::new([]),
+        ));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert_eq!(
+            help,
+            Some("'totally_unrelated_gibberish_zz' is not defined. Did you forget to declare it?".to_string())
+        );
+    }
+
+    #[test]
+    fn test_undefined_reference_help_suggests_similar_builtin() {
+        // A bare identifier reference (not a call) that typos a builtin name, e.g.
+        // passing it as a function value: `map(slpit)`.
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let cause = InnerError::Runtime(RuntimeError::UndefinedReference(
+            Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            "slpit".to_string(),
+            Box::new([]),
+        ));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert_eq!(
+            help,
+            Some("'slpit' is not defined. A function with a similar name exists: `split`.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_undefined_reference_help_suggests_similar_user_defined_name() {
+        // A bare identifier reference (not a call) that typos a user-defined name in scope,
+        // e.g. `let my_func = fn(): 1; | map(my_fnc)`.
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let cause = InnerError::Runtime(RuntimeError::UndefinedReference(
+            Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            "my_fnc".to_string(),
+            Box::new(["my_func".to_string()]),
+        ));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert_eq!(
+            help,
+            Some("'my_fnc' is not defined. A function with a similar name exists: `my_func`.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_invalid_definition_help_does_not_suggest_a_rename() {
+        // `x` already resolves to a real value here (just not a callable one, e.g.
+        // `let x = 42 | x(1)`), so a "did you mean" hint would be misleading.
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let cause = InnerError::Runtime(RuntimeError::InvalidDefinition(
+            Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            "x".to_string(),
+        ));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert_eq!(
+            help,
+            Some("'x' exists but is not a function, so it cannot be called.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_unknown_selector_help_suggests_similar_selector() {
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let token = Token {
+            range: Range::default(),
+            kind: TokenKind::Selector(smol_str::SmolStr::new(".hedaing")),
+            module_id: ArenaId::new(0),
+        };
+        let cause = InnerError::Syntax(SyntaxError::UnknownSelector(selector::UnknownSelector::new(token)));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert_eq!(
+            help,
+            Some("Unknown selector `.hedaing`. A selector with a similar name exists: `.heading`.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_unknown_selector_help_no_suggestion_falls_back_to_generic_text() {
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let token = Token {
+            range: Range::default(),
+            kind: TokenKind::Selector(smol_str::SmolStr::new(".totally_unrelated_gibberish_zz")),
+            module_id: ArenaId::new(0),
+        };
+        let cause = InnerError::Syntax(SyntaxError::UnknownSelector(selector::UnknownSelector::new(token)));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert_eq!(
+            help,
+            Some(
+                "Unknown selector. Valid selectors include node types (e.g. .h1, .p, .code) and bracket access (e.g. .[0], .[n][m]).".to_string()
+            )
         );
     }
 }
