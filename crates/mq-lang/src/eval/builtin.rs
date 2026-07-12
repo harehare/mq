@@ -2,7 +2,7 @@ pub(super) mod bytes;
 pub(crate) mod capability;
 pub(super) mod convert;
 pub(super) mod date;
-#[cfg(feature = "http-import-ureq")]
+#[cfg(feature = "http")]
 mod http;
 pub(super) mod path;
 mod random;
@@ -3878,7 +3878,7 @@ fn write_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
 /// returns the response body as a string. `body`, when given, is sent regardless of method.
 /// `headers`, a dict of string to string, is applied to the request when given.
 /// Requires the `--allow-net` CLI flag (see [`capability`]).
-#[cfg(feature = "http-import-ureq")]
+#[cfg(feature = "http")]
 #[mq_macros::mq_fn(name = "http", params = Range(2, 4))]
 fn http_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -4221,7 +4221,7 @@ mq_macros::builtin_dispatch! {
     COLLECTION,
     #[cfg(feature = "file-io")]
     WRITE_FILE,
-    #[cfg(feature = "http-import-ureq")]
+    #[cfg(feature = "http")]
     HTTP,
 }
 
@@ -5775,7 +5775,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &["path", "content"],
         },
     );
-    #[cfg(feature = "http-import-ureq")]
+    #[cfg(feature = "http")]
     map.insert(
         SmolStr::new("http"),
         BuiltinFunctionDoc {

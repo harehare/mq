@@ -3,7 +3,8 @@
 //! (`eval/builtin/http.rs`).
 //!
 //! [`is_global_ip`] has no I/O dependencies. [`SsrfSafeResolver`]/[`ssrf_safe_agent`] additionally
-//! require a concrete `ureq` transport, so they're gated behind `http-import-ureq`.
+//! require a concrete `ureq` transport, so they're gated behind `http-import-ureq` (HTTP module
+//! imports) or `http` (the `http` builtin) — either one pulls in `ureq`.
 
 /// Returns `true` if `url` uses the `https://` scheme.
 pub fn is_https(url: &str) -> bool {
@@ -48,11 +49,11 @@ pub fn is_global_ip(ip: std::net::IpAddr) -> bool {
 /// services. Filtering at the resolver level pins the connection to the
 /// addresses validated here, so a later re-resolution can't smuggle in an
 /// internal address.
-#[cfg(feature = "http-import-ureq")]
+#[cfg(any(feature = "http-import-ureq", feature = "http"))]
 #[derive(Debug, Default)]
 pub(crate) struct SsrfSafeResolver(ureq::unversioned::resolver::DefaultResolver);
 
-#[cfg(feature = "http-import-ureq")]
+#[cfg(any(feature = "http-import-ureq", feature = "http"))]
 impl ureq::unversioned::resolver::Resolver for SsrfSafeResolver {
     fn resolve(
         &self,
@@ -83,7 +84,7 @@ impl ureq::unversioned::resolver::Resolver for SsrfSafeResolver {
 /// [`SsrfSafeResolver`] so only publicly routable addresses are ever connected to.
 ///
 /// Shared by the HTTP module-import fetcher and the `http` builtin.
-#[cfg(feature = "http-import-ureq")]
+#[cfg(any(feature = "http-import-ureq", feature = "http"))]
 pub(crate) fn ssrf_safe_agent(timeout: std::time::Duration, https_only: bool) -> ureq::Agent {
     let config = ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
