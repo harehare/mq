@@ -46,6 +46,9 @@ pub fn start() -> DynResult<()> {
             supports_evaluate_for_hovers: Some(true),
             supports_exception_options: Some(false),
             supports_exception_filter_options: Some(false),
+            supports_conditional_breakpoints: Some(true),
+            supports_hit_conditional_breakpoints: Some(true),
+            supports_log_points: Some(true),
             ..Default::default()
         };
         let rsp = req.success(ResponseBody::Initialize(capabilities));

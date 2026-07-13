@@ -38,6 +38,14 @@ pub struct Breakpoint {
     pub enabled: bool,
     /// Optional source file name for the breakpoint
     pub source: Option<String>,
+    /// An mq expression that must evaluate truthy for the breakpoint to stop execution.
+    pub condition: Option<String>,
+    /// An expression controlling how many hits are ignored before stopping,
+    /// e.g. `">= 3"`, `"== 5"`. A bare number is treated as `>=`.
+    pub hit_condition: Option<String>,
+    /// If set, the breakpoint never stops execution; instead the message is logged.
+    /// Segments wrapped in `{}` are evaluated as mq expressions and interpolated.
+    pub log_message: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -98,6 +106,9 @@ pub struct Debugger {
     active: bool,
     /// Current call stack depth for step operations
     step_depth: Option<usize>,
+    /// Number of times each breakpoint's location has been reached (keyed by breakpoint id),
+    /// used to evaluate `hit_condition`.
+    hit_counts: std::collections::HashMap<usize, usize>,
 }
 
 impl Default for Debugger {
@@ -116,6 +127,7 @@ impl Debugger {
             current_command: DebuggerCommand::Continue,
             active: false,
             step_depth: None,
+            hit_counts: std::collections::HashMap::new(),
         }
     }
 
@@ -136,12 +148,30 @@ impl Debugger {
 
     /// Add a breakpoint at the specified line
     pub fn add_breakpoint(&mut self, line: usize, column: Option<usize>, source: Option<String>) -> usize {
+        self.add_breakpoint_with_options(line, column, source, None, None, None)
+    }
+
+    /// Add a breakpoint at the specified line with an optional condition, hit condition,
+    /// and log message (see [`Breakpoint`] for their semantics).
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_breakpoint_with_options(
+        &mut self,
+        line: usize,
+        column: Option<usize>,
+        source: Option<String>,
+        condition: Option<String>,
+        hit_condition: Option<String>,
+        log_message: Option<String>,
+    ) -> usize {
         let breakpoint = Breakpoint {
             id: self.next_breakpoint_id,
             line,
             column,
             enabled: true,
             source,
+            condition,
+            hit_condition,
+            log_message,
         };
         let id = breakpoint.id;
         self.breakpoints.insert(breakpoint);
@@ -164,13 +194,31 @@ impl Debugger {
     /// Remove a breakpoint by ID
     pub fn remove_breakpoint(&mut self, id: usize) -> bool {
         self.breakpoints.retain(|bp| bp.id != id);
+        self.hit_counts.remove(&id);
         true
     }
 
     /// Remove a breakpoints by source
     pub fn remove_breakpoints(&mut self, source: &Option<String>) -> bool {
+        let removed_ids: Vec<usize> = self
+            .breakpoints
+            .iter()
+            .filter(|bp| bp.source == *source)
+            .map(|bp| bp.id)
+            .collect();
         self.breakpoints.retain(|bp| bp.source != *source);
+        for id in removed_ids {
+            self.hit_counts.remove(&id);
+        }
         true
+    }
+
+    /// Records that a breakpoint's location was reached (after its `condition`, if any,
+    /// evaluated truthy), returning the updated hit count. Used to evaluate `hit_condition`.
+    pub fn record_hit(&mut self, id: usize) -> usize {
+        let count = self.hit_counts.entry(id).or_insert(0);
+        *count += 1;
+        *count
     }
 
     /// List all breakpoints
@@ -346,7 +394,49 @@ impl Debugger {
     /// Clear all breakpoints
     pub fn clear_breakpoints(&mut self) {
         self.breakpoints.clear();
+        self.hit_counts.clear();
     }
+}
+
+/// Evaluates a `hit_condition` expression (e.g. `">= 3"`, `"== 5"`, or a bare `"5"`,
+/// which is treated as `">= 5"`) against the current hit `count`.
+///
+/// Returns an error describing the malformed expression rather than panicking, since this
+/// is driven by user-supplied breakpoint configuration.
+pub fn hit_condition_satisfied(expr: &str, count: usize) -> Result<bool, String> {
+    let expr = expr.trim();
+    let (op, rest) = if let Some(rest) = expr.strip_prefix(">=") {
+        (">=", rest)
+    } else if let Some(rest) = expr.strip_prefix("<=") {
+        ("<=", rest)
+    } else if let Some(rest) = expr.strip_prefix("==") {
+        ("==", rest)
+    } else if let Some(rest) = expr.strip_prefix("!=") {
+        ("!=", rest)
+    } else if let Some(rest) = expr.strip_prefix('>') {
+        (">", rest)
+    } else if let Some(rest) = expr.strip_prefix('<') {
+        ("<", rest)
+    } else if let Some(rest) = expr.strip_prefix('=') {
+        ("==", rest)
+    } else {
+        (">=", expr)
+    };
+
+    let threshold: usize = rest
+        .trim()
+        .parse()
+        .map_err(|_| format!("invalid hit condition \"{}\"", expr))?;
+
+    Ok(match op {
+        ">=" => count >= threshold,
+        "<=" => count <= threshold,
+        "==" => count == threshold,
+        "!=" => count != threshold,
+        ">" => count > threshold,
+        "<" => count < threshold,
+        _ => unreachable!(),
+    })
 }
 
 type LineNo = usize;
@@ -412,6 +502,11 @@ pub trait DebuggerHandler: std::fmt::Debug + Send + Sync {
     fn on_step(&self, _context: &DebugContext) -> DebuggerAction {
         DebuggerAction::Continue
     }
+
+    /// Called when a logpoint breakpoint is reached; `message` is the already-interpolated
+    /// log text. Logpoints never pause execution, so unlike [`Self::on_breakpoint_hit`] this
+    /// does not return a [`DebuggerAction`].
+    fn on_log_point(&self, _breakpoint: &Breakpoint, _message: &str, _context: &DebugContext) {}
 }
 
 #[derive(Debug, Default)]
@@ -608,5 +703,79 @@ mod tests {
         assert!(dbg.is_active());
         dbg.deactivate();
         assert!(!dbg.is_active());
+    }
+
+    #[rstest]
+    #[case(">= 3", 2, false, "below threshold")]
+    #[case(">= 3", 3, true, "at threshold")]
+    #[case(">= 3", 4, true, "above threshold")]
+    #[case("<= 3", 4, false, "above threshold, <=")]
+    #[case("<= 3", 3, true, "at threshold, <=")]
+    #[case("== 3", 2, false, "not equal")]
+    #[case("== 3", 3, true, "equal")]
+    #[case("!= 3", 3, false, "equal, !=")]
+    #[case("!= 3", 4, true, "not equal, !=")]
+    #[case("> 3", 3, false, "not strictly greater")]
+    #[case("> 3", 4, true, "strictly greater")]
+    #[case("< 3", 2, true, "strictly less")]
+    #[case("< 3", 3, false, "not strictly less")]
+    #[case("= 3", 3, true, "bare = treated as ==")]
+    #[case("3", 3, true, "bare number treated as >=")]
+    #[case("3", 4, true, "bare number treated as >=, above")]
+    #[case("3", 2, false, "bare number treated as >=, below")]
+    #[case("  >=   3  ", 3, true, "surrounding whitespace is trimmed")]
+    fn test_hit_condition_satisfied(
+        #[case] expr: &str,
+        #[case] count: usize,
+        #[case] expected: bool,
+        #[case] _desc: &str,
+    ) {
+        assert_eq!(hit_condition_satisfied(expr, count), Ok(expected));
+    }
+
+    #[rstest]
+    #[case("not a number")]
+    #[case(">=")]
+    #[case("")]
+    fn test_hit_condition_satisfied_invalid(#[case] expr: &str) {
+        assert!(hit_condition_satisfied(expr, 1).is_err());
+    }
+
+    #[test]
+    fn test_record_hit_increments_per_breakpoint() {
+        let mut dbg = Debugger::new();
+        let id_a = dbg.add_breakpoint(1, None, None);
+        let id_b = dbg.add_breakpoint(2, None, None);
+
+        assert_eq!(dbg.record_hit(id_a), 1);
+        assert_eq!(dbg.record_hit(id_a), 2);
+        assert_eq!(dbg.record_hit(id_b), 1);
+    }
+
+    #[test]
+    fn test_remove_breakpoint_clears_hit_count() {
+        let mut dbg = Debugger::new();
+        let id = dbg.add_breakpoint(1, None, None);
+        dbg.record_hit(id);
+        assert!(dbg.remove_breakpoint(id));
+        assert_eq!(dbg.record_hit(id), 1, "hit count should restart after removal");
+    }
+
+    #[test]
+    fn test_add_breakpoint_with_options_stores_condition_hit_condition_and_log_message() {
+        let mut dbg = Debugger::new();
+        let id = dbg.add_breakpoint_with_options(
+            1,
+            None,
+            None,
+            Some("x > 1".to_string()),
+            Some(">= 2".to_string()),
+            Some("x is {x}".to_string()),
+        );
+
+        let breakpoint = dbg.list_breakpoints().into_iter().find(|bp| bp.id == id).unwrap();
+        assert_eq!(breakpoint.condition.as_deref(), Some("x > 1"));
+        assert_eq!(breakpoint.hit_condition.as_deref(), Some(">= 2"));
+        assert_eq!(breakpoint.log_message.as_deref(), Some("x is {x}"));
     }
 }

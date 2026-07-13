@@ -6,9 +6,9 @@
 //! # Features
 //!
 //! - Full DAP protocol support for mq debugging
-//! - Breakpoint management
+//! - Breakpoint management, including conditional breakpoints, hit count breakpoints, and logpoints
 //! - Step-through execution (step in, step out, step over)
-//! - Variable inspection
+//! - Variable inspection and watch expressions
 //! - Stack trace visualization
 //! - Expression evaluation in debug context
 //!

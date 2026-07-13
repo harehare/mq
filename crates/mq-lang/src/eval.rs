@@ -11,6 +11,8 @@ use crate::eval::debugger::DefaultDebuggerHandler;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::Source;
 use crate::module::resolver::DefaultModuleResolver;
+#[cfg(feature = "debugger")]
+use crate::parse;
 use crate::{
     Ident, Program, Shared, SharedCell, Token, TokenKind,
     arena::Arena,
@@ -31,7 +33,7 @@ use crate::{
 };
 
 #[cfg(feature = "debugger")]
-use debugger::{Breakpoint, DebugContext, Debugger};
+use debugger::{Breakpoint, DebugContext, Debugger, hit_condition_satisfied};
 
 pub mod builtin;
 #[cfg(feature = "debugger")]
@@ -97,6 +99,17 @@ impl EvalError {
 
 /// Result type for internal evaluation functions.
 pub(crate) type EvalResult = Result<RuntimeValue, EvalError>;
+
+/// Outcome of evaluating a matched breakpoint's `condition`/`hit_condition`/`log_message`.
+#[cfg(feature = "debugger")]
+enum BreakpointDecision {
+    /// The `condition` or `hit_condition` was not satisfied; keep running unnoticed.
+    Skip,
+    /// A logpoint fired; execution continues but the interpolated message should be reported.
+    Log(String),
+    /// Execution should pause and invoke `DebuggerHandler::on_breakpoint_hit`.
+    Stop,
+}
 
 /// Configuration options for the evaluator.
 #[derive(Debug, Clone)]
@@ -570,6 +583,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             column: Some(token.range.start.column),
             enabled: true,
             source: None,
+            ..Default::default()
         };
 
         let next_action = self
@@ -1023,6 +1037,114 @@ impl<T: ModuleResolver> Evaluator<T> {
             .map(|acc| acc.into())
     }
 
+    /// Decides what a matched breakpoint should do: evaluates its `condition` and
+    /// `hit_condition` (if any) and, for logpoints, interpolates the `log_message`.
+    #[cfg(feature = "debugger")]
+    fn evaluate_breakpoint(
+        &mut self,
+        breakpoint: &Breakpoint,
+        token: &Shared<Token>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<BreakpointDecision, EvalError> {
+        if let Some(condition) = &breakpoint.condition {
+            let value = self.eval_debug_expr(condition, token, env)?;
+            if !value.is_truthy() {
+                return Ok(BreakpointDecision::Skip);
+            }
+        }
+
+        if let Some(hit_condition) = &breakpoint.hit_condition {
+            let count = self.debugger.write().unwrap().record_hit(breakpoint.id);
+            let satisfied = hit_condition_satisfied(hit_condition, count)
+                .map_err(|msg| EvalError::from(RuntimeError::Runtime((**token).clone(), msg)))?;
+            if !satisfied {
+                return Ok(BreakpointDecision::Skip);
+            }
+        }
+
+        if let Some(log_message) = &breakpoint.log_message {
+            Ok(BreakpointDecision::Log(self.interpolate_log_message(
+                log_message,
+                token,
+                env,
+            )?))
+        } else {
+            Ok(BreakpointDecision::Stop)
+        }
+    }
+
+    /// Parses and evaluates an mq expression (a breakpoint condition or a `{}` segment of a
+    /// logpoint message) against `env`, the environment active at the breakpoint location.
+    ///
+    /// The debugger is temporarily deactivated for the duration of this nested evaluation so
+    /// that the condition/log expression itself cannot re-trigger breakpoint handling, and the
+    /// evaluator's environment is temporarily swapped to `env` so identifiers in scope there
+    /// (e.g. loop variables) resolve correctly.
+    #[cfg(feature = "debugger")]
+    fn eval_debug_expr(
+        &mut self,
+        code: &str,
+        token: &Shared<Token>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, EvalError> {
+        let program = parse(code, Shared::clone(&self.token_arena)).map_err(|e| {
+            RuntimeError::Runtime(
+                (**token).clone(),
+                format!("Invalid breakpoint expression \"{code}\": {e}"),
+            )
+        })?;
+
+        let saved_env = std::mem::replace(&mut self.env, Shared::clone(env));
+        self.debugger.write().unwrap().deactivate();
+        let result = self.eval(&program, std::iter::once(RuntimeValue::NONE));
+        self.debugger.write().unwrap().activate();
+        self.env = saved_env;
+
+        let values = result.map_err(|e| {
+            RuntimeError::Runtime(
+                (**token).clone(),
+                format!("Failed to evaluate breakpoint expression \"{code}\": {e}"),
+            )
+        })?;
+        Ok(values.into_iter().next_back().unwrap_or(RuntimeValue::NONE))
+    }
+
+    /// Interpolates `{expr}` segments of a logpoint message, evaluating each as an mq
+    /// expression. Unmatched `{` is emitted literally rather than treated as an error, since
+    /// this runs against user-supplied breakpoint configuration.
+    #[cfg(feature = "debugger")]
+    fn interpolate_log_message(
+        &mut self,
+        message: &str,
+        token: &Shared<Token>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<String, EvalError> {
+        let mut output = String::with_capacity(message.len());
+        let mut rest = message;
+
+        while let Some(start) = rest.find('{') {
+            output.push_str(&rest[..start]);
+            rest = &rest[start + 1..];
+
+            match rest.find('}') {
+                Some(end) => {
+                    let value = self.eval_debug_expr(&rest[..end], token, env)?;
+                    output.push_str(&value.to_string());
+                    rest = &rest[end + 1..];
+                }
+                None => {
+                    output.push('{');
+                    output.push_str(rest);
+                    rest = "";
+                    break;
+                }
+            }
+        }
+
+        output.push_str(rest);
+        Ok(output)
+    }
+
     fn eval_expr(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -1059,12 +1181,23 @@ impl<T: ModuleResolver> Evaluator<T> {
                 .get_hit_breakpoint(&debug_context, Shared::clone(token));
 
             if let Some(breakpoint) = breakpoint {
-                let next_action = self
-                    .debugger_handler
-                    .read()
-                    .unwrap()
-                    .on_breakpoint_hit(&breakpoint, &debug_context);
-                self.debugger.write().unwrap().next(next_action);
+                match self.evaluate_breakpoint(&breakpoint, token, env)? {
+                    BreakpointDecision::Skip => {}
+                    BreakpointDecision::Log(message) => {
+                        self.debugger_handler
+                            .read()
+                            .unwrap()
+                            .on_log_point(&breakpoint, &message, &debug_context);
+                    }
+                    BreakpointDecision::Stop => {
+                        let next_action = self
+                            .debugger_handler
+                            .read()
+                            .unwrap()
+                            .on_breakpoint_hit(&breakpoint, &debug_context);
+                        self.debugger.write().unwrap().next(next_action);
+                    }
+                }
             } else if self.debugger.write().unwrap().should_break(&debug_context) {
                 let next_action = self.debugger_handler.read().unwrap().on_step(&debug_context);
                 self.debugger.write().unwrap().next(next_action);
@@ -7931,5 +8064,129 @@ mod debugger_tests {
         let result = evaluator.eval(&program, runtime_values.into_iter());
 
         assert_eq!(result, Ok(vec![RuntimeValue::String("test".to_string())]));
+    }
+
+    #[derive(Debug, Default)]
+    struct RecordingDebuggerHandler {
+        breakpoint_hits: Shared<SharedCell<Vec<String>>>,
+        log_points: Shared<SharedCell<Vec<String>>>,
+    }
+
+    impl DebuggerHandler for RecordingDebuggerHandler {
+        fn on_breakpoint_hit(
+            &self,
+            _breakpoint: &crate::eval::debugger::Breakpoint,
+            context: &DebugContext,
+        ) -> DebuggerAction {
+            self.breakpoint_hits
+                .write()
+                .unwrap()
+                .push(context.current_value.to_string());
+            DebuggerAction::Continue
+        }
+
+        fn on_log_point(
+            &self,
+            _breakpoint: &crate::eval::debugger::Breakpoint,
+            message: &str,
+            _context: &DebugContext,
+        ) {
+            self.log_points.write().unwrap().push(message.to_string());
+        }
+    }
+
+    #[test]
+    fn test_conditional_breakpoint_stops_only_when_condition_is_true() {
+        let mut engine = crate::DefaultEngine::default();
+        let breakpoint_hits = Shared::new(SharedCell::new(Vec::new()));
+        engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
+            breakpoint_hits: Shared::clone(&breakpoint_hits),
+            log_points: Shared::default(),
+        }));
+        engine.debugger().write().unwrap().activate();
+        engine.debugger().write().unwrap().add_breakpoint_with_options(
+            2,
+            None,
+            None,
+            Some("x == 3".to_string()),
+            None,
+            None,
+        );
+
+        let query = "foreach (x, array(1, 2, 3, 4)):\n  x\nend";
+        engine.eval(query, crate::null_input().into_iter()).unwrap();
+
+        assert_eq!(*breakpoint_hits.read().unwrap(), vec!["3".to_string()]);
+    }
+
+    #[test]
+    fn test_hit_condition_breakpoint_ignores_earlier_hits() {
+        let mut engine = crate::DefaultEngine::default();
+        let breakpoint_hits = Shared::new(SharedCell::new(Vec::new()));
+        engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
+            breakpoint_hits: Shared::clone(&breakpoint_hits),
+            log_points: Shared::default(),
+        }));
+        engine.debugger().write().unwrap().activate();
+        engine.debugger().write().unwrap().add_breakpoint_with_options(
+            2,
+            None,
+            None,
+            None,
+            Some(">= 3".to_string()),
+            None,
+        );
+
+        let query = "foreach (x, array(1, 2, 3, 4)):\n  x\nend";
+        engine.eval(query, crate::null_input().into_iter()).unwrap();
+
+        assert_eq!(*breakpoint_hits.read().unwrap(), vec!["3".to_string(), "4".to_string()]);
+    }
+
+    #[test]
+    fn test_logpoint_never_stops_and_interpolates_message() {
+        let mut engine = crate::DefaultEngine::default();
+        let breakpoint_hits = Shared::new(SharedCell::new(Vec::new()));
+        let log_points = Shared::new(SharedCell::new(Vec::new()));
+        engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
+            breakpoint_hits: Shared::clone(&breakpoint_hits),
+            log_points: Shared::clone(&log_points),
+        }));
+        engine.debugger().write().unwrap().activate();
+        engine.debugger().write().unwrap().add_breakpoint_with_options(
+            2,
+            None,
+            None,
+            None,
+            None,
+            Some("x is {x}".to_string()),
+        );
+
+        let query = "foreach (x, array(1, 2, 3)):\n  x\nend";
+        engine.eval(query, crate::null_input().into_iter()).unwrap();
+
+        assert!(breakpoint_hits.read().unwrap().is_empty());
+        assert_eq!(
+            *log_points.read().unwrap(),
+            vec!["x is 1".to_string(), "x is 2".to_string(), "x is 3".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_invalid_breakpoint_condition_returns_error() {
+        let mut engine = crate::DefaultEngine::default();
+        engine.set_debugger_handler(Box::new(RecordingDebuggerHandler::default()));
+        engine.debugger().write().unwrap().activate();
+        engine.debugger().write().unwrap().add_breakpoint_with_options(
+            2,
+            None,
+            None,
+            Some("(".to_string()),
+            None,
+            None,
+        );
+
+        let query = "foreach (x, array(1)):\n  x\nend";
+        assert!(engine.eval(query, crate::null_input().into_iter()).is_err());
     }
 }

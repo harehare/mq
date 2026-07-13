@@ -21,10 +21,14 @@ mq-dbg query.mq input.md
 Once connected to a DAP client:
 
 1. **Set Breakpoints**: Click in the gutter or use your editor's breakpoint command
-2. **Start Debugging**: Launch the debugger with your query file
-3. **Step Through Code**: Use step over, step in, and step out commands
-4. **Inspect Variables**: Hover over variables or view them in the variables pane
-5. **View Call Stack**: See the current execution stack in the call stack pane
+2. **Conditional Breakpoints**: Only stop when an mq expression evaluates truthy, e.g. `x > 3`
+3. **Hit Count Breakpoints**: Only stop after N hits, e.g. `>= 3`, `== 5`, `3` (bare numbers are treated as `>=`)
+4. **Logpoints**: Log a message instead of stopping; wrap mq expressions in `{}` to interpolate their value, e.g. `x is {x}`
+5. **Start Debugging**: Launch the debugger with your query file
+6. **Step Through Code**: Use step over, step in, and step out commands
+7. **Inspect Variables**: Hover over variables or view them in the variables pane
+8. **Watch Expressions**: Add mq expressions to your editor's watch pane to re-evaluate them against the current scope every time execution stops
+9. **View Call Stack**: See the current execution stack in the call stack pane
 
 ### Example Debug Session
 

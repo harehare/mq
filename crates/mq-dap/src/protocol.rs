@@ -22,6 +22,8 @@ pub enum DebuggerMessage {
         line: usize,
         context: mq_lang::DebugContext,
     },
+    /// A logpoint breakpoint fired; should send an output event without stopping execution.
+    LogPoint { message: String },
     /// Program has terminated
     Terminated,
 }
