@@ -2,13 +2,14 @@
 //! exact counts via `tiktoken-rs` behind the opt-in `tiktoken` feature. The exact tier pulls in
 //! several MB of vendored vocabulary data once `model` is resolved at runtime (every encoding
 //! becomes reachable, so none can be dead-code-eliminated), hence the feature gate.
+//!
+//! The `model` argument is optional: `token_count(text)` always uses the heuristic estimate
+//! (via [`token_count_estimate`]), so callers who don't care about an exact, model-specific
+//! count aren't forced to name one just to satisfy the arity, whether or not `tiktoken` is
+//! compiled in.
 
 use super::Error;
 
-/// Kept in its own module (instead of `#[cfg(not(feature = "tiktoken"))]`-ing it out) so it's
-/// still compiled and tested under `--all-features`, even though [`token_count`] only calls it
-/// when `tiktoken` is off.
-#[cfg_attr(feature = "tiktoken", allow(dead_code))]
 mod heuristic {
     // Rough chars-per-token by script; CJK tokenizes much denser than Latin under typical BPE.
     const CJK_CHARS_PER_TOKEN: f64 = 1.6;
@@ -62,6 +63,13 @@ fn exact_token_count(text: &str, model: &str) -> Result<usize, Error> {
     tiktoken_rs::bpe_for_model(model)
         .map(|bpe| bpe.encode_ordinary(text).len())
         .map_err(|e| Error::Runtime(format!("token_count: {e}")))
+}
+
+/// No-model overload: always the dependency-free heuristic estimate, regardless of the
+/// `tiktoken` feature. Lets callers who don't need an exact, model-specific count avoid
+/// naming one at all.
+pub(super) fn token_count_estimate(text: &str) -> usize {
+    heuristic::token_count(text)
 }
 
 pub(super) fn token_count(text: &str, model: &str) -> Result<usize, Error> {

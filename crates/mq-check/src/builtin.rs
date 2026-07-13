@@ -312,6 +312,7 @@ fn register_string(ctx: &mut InferenceContext) {
     register_binary(ctx, "ends_with", Type::String, Type::String, Type::Bool);
     register_binary(ctx, "index", Type::String, Type::String, Type::Number);
     register_binary(ctx, "rindex", Type::String, Type::String, Type::Number);
+    register_unary(ctx, "token_count", Type::String, Type::Number);
     register_binary(ctx, "token_count", Type::String, Type::String, Type::Number);
 
     // String manipulation
@@ -1548,6 +1549,7 @@ mod tests {
     #[case::rtrim("rtrim(\"  hello  \")", true)]
     #[case::rindex("rindex(\"hello world hello\", \"hello\")", true)]
     #[case::token_count("token_count(\"hello world\", \"gpt-4\")", true)]
+    #[case::token_count_no_model("token_count(\"hello world\")", true)]
     #[case::token_count_number("token_count(42, \"gpt-4\")", false)] // Should fail: wrong type
     #[case::capture("capture(\"hello 42\", \"(?P<word>\\\\w+)\")", true)]
     #[case::is_regex_match("is_regex_match(\"hello123\", \"[0-9]+\")", true)]

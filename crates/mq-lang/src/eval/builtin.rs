@@ -1528,10 +1528,20 @@ fn utf8bytelen_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> R
 }
 
 /// Counts (or, with the `tiktoken` Cargo feature, exactly counts) the LLM tokens `text` would
-/// consume for `model`. See [`tokenizer`] for the heuristic/exact two-tier design.
-#[mq_macros::mq_fn(name = "token_count", params = Fixed(2))]
+/// consume. `model` is optional: without it, `text` is always run through the heuristic
+/// estimate, regardless of the `tiktoken` feature. See [`tokenizer`] for the heuristic/exact
+/// two-tier design.
+#[mq_macros::mq_fn(name = "token_count", params = Range(1, 2))]
 fn token_count_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
+        [RuntimeValue::String(text)] => Ok(RuntimeValue::Number(tokenizer::token_count_estimate(text).into())),
+        [node @ RuntimeValue::Markdown(_, _)] => Ok(RuntimeValue::Number(
+            node.markdown_node()
+                .map(|md| tokenizer::token_count_estimate(md.value().as_str()))
+                .unwrap_or(0)
+                .into(),
+        )),
+        [RuntimeValue::None] => Ok(RuntimeValue::Number(0.into())),
         [RuntimeValue::String(text), RuntimeValue::String(model)] => {
             tokenizer::token_count(text, model).map(|n| RuntimeValue::Number(n.into()))
         }
@@ -1540,11 +1550,12 @@ fn token_count_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
             .map(|md| tokenizer::token_count(md.value().as_str(), model).map(|n| RuntimeValue::Number(n.into())))
             .unwrap_or(Ok(RuntimeValue::Number(0.into()))),
         [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::Number(0.into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!("token_count should always receive exactly two arguments"),
+        _ => unreachable!("token_count should always receive one or two arguments"),
     }
 }
 
@@ -5384,8 +5395,8 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("token_count"),
         BuiltinFunctionDoc {
-            description: "Estimates how many LLM tokens the given text would consume for `model` (e.g. \"gpt-5\"), for context-window budgeting. Uses a lightweight chars-per-token heuristic by default; built with the `tiktoken` Cargo feature, counts exactly via tiktoken-rs instead.",
-            params: &["text", "model"],
+            description: "Estimates how many LLM tokens the given text would consume, for context-window budgeting. Uses a lightweight chars-per-token heuristic by default; built with the `tiktoken` Cargo feature, counts exactly via tiktoken-rs instead when `model` (e.g. \"gpt-5\") is given. `model` is optional; without it, the heuristic estimate is always used.",
+            params: &["text", "model?"],
         },
     );
     map.insert(
@@ -6517,6 +6528,8 @@ mod tests {
     #[case("len", vec![RuntimeValue::String("test".into())], Ok(RuntimeValue::Number(4.into())))]
     #[case("token_count", vec![RuntimeValue::String("Hello, world!".into()), RuntimeValue::String("gpt-4".into())], Ok(RuntimeValue::Number(4.into())))]
     #[case("token_count", vec![RuntimeValue::String("".into()), RuntimeValue::String("gpt-4".into())], Ok(RuntimeValue::Number(0.into())))]
+    #[case("token_count", vec![RuntimeValue::String("Hello, world!".into())], Ok(RuntimeValue::Number(4.into())))]
+    #[case("token_count", vec![RuntimeValue::String("".into())], Ok(RuntimeValue::Number(0.into())))]
     #[case("abs", vec![RuntimeValue::Number((-10).into())], Ok(RuntimeValue::Number(10.into())))]
     #[case("ceil", vec![RuntimeValue::Number(3.2.into())], Ok(RuntimeValue::Number(4.0.into())))]
     #[case("floor", vec![RuntimeValue::Number(3.8.into())], Ok(RuntimeValue::Number(3.0.into())))]
