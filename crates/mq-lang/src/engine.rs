@@ -127,6 +127,14 @@ impl<T: ModuleResolver> Engine<T> {
         capability::set_allow_net(allow);
     }
 
+    /// Enables or disables the `read_file`/`read_file_bytes` builtins for the current process.
+    ///
+    /// Disabled by default. This is a process-wide setting (see
+    /// [`capability`](crate::eval::builtin::capability)), not per-`Engine`.
+    pub fn set_allow_read(&self, allow: bool) {
+        capability::set_allow_read(allow);
+    }
+
     /// Enables or disables the `write_file` builtin for the current process.
     ///
     /// Disabled by default. This is a process-wide setting (see

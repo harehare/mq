@@ -3868,9 +3868,17 @@ fn path_join_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
     }
 }
 
+/// Reads the contents of `path` as a string. Requires the `--allow-read` CLI flag (see
+/// [`capability`]).
 #[cfg(feature = "file-io")]
 #[mq_macros::mq_fn(name = "read_file", params = Fixed(1))]
 fn read_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    if !capability::is_read_allowed() {
+        return Err(Error::Runtime(
+            "read_file: filesystem reads are disabled; re-run mq with --allow-read to enable read_file".into(),
+        ));
+    }
+
     match args.as_mut_slice() {
         [RuntimeValue::String(path)] => match std::fs::read_to_string(&path) {
             Ok(content) => Ok(RuntimeValue::String(content)),
@@ -3891,9 +3899,18 @@ fn file_exists_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+/// Reads the contents of `path` as raw bytes. Requires the `--allow-read` CLI flag (see
+/// [`capability`]).
 #[cfg(feature = "file-io")]
 #[mq_macros::mq_fn(name = "read_file_bytes", params = Fixed(1))]
 fn read_file_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    if !capability::is_read_allowed() {
+        return Err(Error::Runtime(
+            "read_file_bytes: filesystem reads are disabled; re-run mq with --allow-read to enable read_file_bytes"
+                .into(),
+        ));
+    }
+
     match args.as_mut_slice() {
         [RuntimeValue::String(path)] => match std::fs::read(&path) {
             Ok(content) => Ok(RuntimeValue::Bytes(content)),
@@ -5820,7 +5837,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("read_file"),
         BuiltinFunctionDoc {
-            description: "Reads the contents of a file at the given path and returns it as a string.",
+            description: "Reads the contents of a file at the given path and returns it as a string. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
             params: &["path"],
         },
     );
@@ -5836,7 +5853,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("read_file_bytes"),
         BuiltinFunctionDoc {
-            description: "Reads the contents of a file at the given path and returns it as raw bytes.",
+            description: "Reads the contents of a file at the given path and returns it as raw bytes. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
             params: &["path"],
         },
     );
@@ -9540,27 +9557,55 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // READ_ALLOWED is a single process-wide flag, so every case that toggles it must run in
+    // one #[test] function — cargo test runs tests in parallel by default, and two tests
+    // flipping the same global independently would race and flake.
     #[cfg(feature = "file-io")]
     #[test]
-    fn test_read_file_bytes() {
+    fn test_read_file_capability_gate_and_success() {
         use std::io::Write;
-        let mut tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
-        tmp.write_all(&[0x89, 0x50, 0x4e, 0x47]).expect("failed to write");
-        let path = tmp.path().to_string_lossy().to_string();
+
+        let mut text_tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        text_tmp.write_all(b"hello").expect("failed to write");
+        let text_path = text_tmp.path().to_string_lossy().to_string();
+
+        let mut bytes_tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        bytes_tmp.write_all(&[0x89, 0x50, 0x4e, 0x47]).expect("failed to write");
+        let bytes_path = bytes_tmp.path().to_string_lossy().to_string();
+
+        capability::set_allow_read(false);
+        assert!(
+            call("read_file", vec![RuntimeValue::String(text_path.clone())]).is_err(),
+            "read_file should be blocked when --allow-read is not set"
+        );
+        assert!(
+            call("read_file_bytes", vec![RuntimeValue::String(bytes_path.clone())]).is_err(),
+            "read_file_bytes should be blocked when --allow-read is not set"
+        );
+
+        capability::set_allow_read(true);
         assert_eq!(
-            call("read_file_bytes", vec![RuntimeValue::String(path)]),
+            call("read_file", vec![RuntimeValue::String(text_path.clone())]),
+            Ok(RuntimeValue::String("hello".to_string()))
+        );
+        assert_eq!(
+            call("read_file_bytes", vec![RuntimeValue::String(bytes_path.clone())]),
             Ok(RuntimeValue::Bytes(vec![0x89, 0x50, 0x4e, 0x47]))
         );
-    }
 
-    #[cfg(feature = "file-io")]
-    #[test]
-    fn test_read_file_bytes_with_nonexistent_file() {
         let result = call(
             "read_file_bytes",
             vec![RuntimeValue::String("/nonexistent/path/no_such_file.png".into())],
         );
-        assert!(result.is_err());
+        assert!(result.is_err(), "read_file_bytes should error for a nonexistent file");
+
+        let result = call(
+            "read_file",
+            vec![RuntimeValue::String("/nonexistent/path/no_such_file.md".into())],
+        );
+        assert!(result.is_err(), "read_file should error for a nonexistent file");
+
+        capability::set_allow_read(false);
     }
 
     // WRITE_ALLOWED is a single process-wide flag, so every case that toggles it must run in
