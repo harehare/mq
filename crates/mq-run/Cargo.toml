@@ -17,6 +17,7 @@ debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite", 
 default = ["std", "use_mimalloc", "http-import"]
 http-import = ["mq-lang/http-import-ureq"]
 std = []
+tiktoken = ["mq-lang/tiktoken"]
 use_mimalloc = ["mimalloc"]
 
 [dependencies]
