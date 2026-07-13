@@ -179,6 +179,7 @@ impl Crawler {
         conversion_options: mq_markdown::ConversionOptions,
         depth_limit: Option<usize>,
         allowed_domains: Option<Vec<String>>,
+        additional_seed_urls: Vec<Url>,
     ) -> Result<Self, String> {
         let initial_domain = start_url
             .domain()
@@ -188,6 +189,9 @@ impl Crawler {
 
         let to_visit = SegQueue::new();
         to_visit.push((start_url.clone(), 0));
+        for seed_url in additional_seed_urls {
+            to_visit.push((seed_url, 0));
+        }
 
         Ok(Self {
             allowed_domains,
@@ -704,6 +708,7 @@ mod tests {
             mq_markdown::ConversionOptions::default(),
             depth_limit,
             allowed_domains,
+            Vec::new(),
         )
         .await
         .unwrap()
@@ -767,6 +772,7 @@ mod tests {
             mq_markdown::ConversionOptions::default(),
             Some(2),
             None,
+            Vec::new(),
         )
         .await
         .unwrap();
@@ -790,10 +796,48 @@ mod tests {
             mq_markdown::ConversionOptions::default(),
             None,
             None,
+            Vec::new(),
         )
         .await
         .unwrap();
 
         assert_eq!(crawler.depth_limit, None);
+    }
+
+    #[tokio::test]
+    async fn test_crawler_new_with_additional_seed_urls() {
+        let start_url = Url::parse("http://start.invalid/").unwrap();
+        let http_client = HttpClient::new_reqwest(30.0).unwrap();
+        let seed_urls = vec![
+            Url::parse("http://start.invalid/from-sitemap-1").unwrap(),
+            Url::parse("http://start.invalid/from-sitemap-2").unwrap(),
+        ];
+        let crawler = Crawler::new(
+            http_client,
+            start_url.clone(),
+            0.0,
+            None,
+            None,
+            None,
+            1,
+            OutputFormat::Text,
+            mq_markdown::ConversionOptions::default(),
+            None,
+            None,
+            seed_urls.clone(),
+        )
+        .await
+        .unwrap();
+
+        let mut queued = Vec::new();
+        while let Some((url, depth)) = crawler.to_visit.pop() {
+            queued.push((url, depth));
+        }
+
+        assert_eq!(queued.len(), 3);
+        assert!(queued.contains(&(start_url, 0)));
+        for seed_url in seed_urls {
+            assert!(queued.contains(&(seed_url, 0)));
+        }
     }
 }

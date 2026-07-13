@@ -98,6 +98,11 @@ struct CliArgs {
     /// Output format for results and statistics
     #[clap(short = 'f', long, default_value_t = OutputFormat::Text)]
     format: OutputFormat,
+    /// Optional URL of a sitemap.xml (or sitemap index) to enumerate additional seed URLs from.
+    /// Discovered URLs are added to the crawl frontier alongside the start URL and are still
+    /// subject to robots.txt, domain filtering, and depth limits.
+    #[clap(long, value_name = "SITEMAP_URL")]
+    sitemap: Option<Url>,
     #[clap(flatten)]
     pub conversion: ConversionArgs,
 }
@@ -213,6 +218,22 @@ async fn main() {
         OutputFormat::Json => mq_crawler::crawler::OutputFormat::Json,
     };
 
+    let sitemap_seed_urls = if let Some(ref sitemap_url) = args.sitemap {
+        tracing::info!("Fetching seed URLs from sitemap: {}", sitemap_url);
+        match mq_crawler::sitemap::fetch_sitemap_urls(&client, sitemap_url).await {
+            Ok(urls) => {
+                tracing::info!("Discovered {} seed URL(s) from sitemap.", urls.len());
+                urls
+            }
+            Err(e) => {
+                tracing::error!("Failed to fetch sitemap {}: {}", sitemap_url, e);
+                return;
+            }
+        }
+    } else {
+        Vec::new()
+    };
+
     match Crawler::new(
         client,
         args.url.clone(),
@@ -229,6 +250,7 @@ async fn main() {
         },
         args.depth,
         effective_allowed,
+        sitemap_seed_urls,
     )
     .await
     {

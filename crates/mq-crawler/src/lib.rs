@@ -10,6 +10,7 @@
 //! - robots.txt compliance
 //! - HTML to markdown conversion
 //! - Link discovery and following
+//! - sitemap.xml ingestion as a seed-URL source
 //! - Crawl statistics and result tracking
 //! - Support for custom HTTP headers and user agents
 //! - Rate limiting and politeness delays
@@ -43,3 +44,4 @@
 pub mod crawler;
 pub mod http_client;
 pub mod robots;
+pub mod sitemap;
