@@ -12,6 +12,7 @@ mq-crawler is a web crawler that fetches HTML content from websites, converts it
 - **Headless Chrome**: Built-in headless Chrome for JavaScript-heavy sites (no external server needed)
 - **WebDriver support**: Browser-based crawling via Selenium WebDriver
 - **Domain filtering**: Restrict crawling to specific domains
+- **Sitemap ingestion**: Seed the crawl frontier from a `sitemap.xml` (or sitemap index) up front
 
 ## Installation
 
@@ -66,6 +67,7 @@ mq-crawl [OPTIONS] <URL>
 | `-q, --mq-query <QUERY>` | mq-lang query for processing content | — |
 | `--robots-path <PATH>` | Custom robots.txt file path | — |
 | `--allowed-domains <DOMAINS>` | Comma-separated list of extra domains to crawl; the start URL's domain is always included | start domain only |
+| `--sitemap <SITEMAP_URL>` | URL of a sitemap.xml (or sitemap index) to enumerate additional seed URLs from | — |
 | `--headless` | Use built-in headless Chrome (Chrome/Chromium must be installed) | — |
 | `--chrome-path <PATH>` | Path to Chrome/Chromium executable (requires `--headless`) | auto-detect |
 | `-U, --webdriver-url <URL>` | External WebDriver URL for browser-based crawling | — |
@@ -104,6 +106,18 @@ By default, only the start URL's domain is crawled. Use `--allowed-domains` to i
 # Also crawl docs.example.com and blog.example.com
 # The start URL's domain is always included automatically
 mq-crawl --allowed-domains docs.example.com,blog.example.com https://example.com
+```
+
+### Sitemap Ingestion
+
+Use `--sitemap` to seed the crawl frontier with every URL listed in a sitemap.xml, in addition to the start URL. Sitemap index files (`<sitemapindex>`) are followed recursively. Discovered URLs still respect robots.txt, `--allowed-domains`, and `--depth`:
+
+```bash
+mq-crawl --sitemap https://example.com/sitemap.xml https://example.com
+
+# Combine with --depth 0 to crawl exactly the pages listed in the sitemap
+# without following any links.
+mq-crawl --depth 0 --sitemap https://example.com/sitemap.xml https://example.com
 ```
 
 ### Headless Chrome

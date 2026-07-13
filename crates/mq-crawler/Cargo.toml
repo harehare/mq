@@ -21,6 +21,7 @@ futures = {workspace = true}
 miette = {workspace = true, features = ["fancy"]}
 mq-lang = {workspace = true}
 mq-markdown = {workspace = true}
+quick-xml = {workspace = true}
 reqwest = {workspace = true, features = ["json"]}
 robots_txt = {workspace = true}
 scraper = {workspace = true}

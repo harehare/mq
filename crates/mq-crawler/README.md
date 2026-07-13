@@ -26,6 +26,7 @@ Make web scraping and content extraction effortless with intelligent Markdown co
 - **Headless Chrome**: Built-in headless Chrome for JavaScript-heavy sites (no external server needed)
 - **WebDriver Support**: Use Selenium WebDriver for browser-based crawling
 - **Domain Filtering**: Restrict crawling to specific domains
+- **Sitemap Ingestion**: Seed the crawl frontier from a `sitemap.xml` (or sitemap index) up front
 
 ## Installation
 
@@ -106,6 +107,20 @@ mq-crawl -c 3 https://example.com
 
 # High-speed crawling with 10 workers
 mq-crawl -c 10 -d 0.1 https://example.com
+```
+
+### Sitemap Ingestion
+
+```bash
+# Seed the crawl frontier with every URL listed in a sitemap.xml,
+# in addition to the start URL. Sitemap index files (<sitemapindex>)
+# are followed recursively. Discovered URLs still respect robots.txt,
+# --allowed-domains, and --depth.
+mq-crawl --sitemap https://example.com/sitemap.xml https://example.com
+
+# Useful with --depth 0 to crawl exactly the pages listed in the sitemap
+# without following links at all.
+mq-crawl --depth 0 --sitemap https://example.com/sitemap.xml https://example.com
 ```
 
 ### Custom Robots.txt
@@ -223,6 +238,8 @@ Options:
           WebDriver URL for browser-based crawling (e.g., http://localhost:4444)
   -f, --format <FORMAT>
           Output format: text or json [default: text]
+      --sitemap <SITEMAP_URL>
+          URL of a sitemap.xml (or sitemap index) to enumerate additional seed URLs from
       --extract-scripts-as-code-blocks
           Extract <script> tags as code blocks in Markdown
       --generate-front-matter
