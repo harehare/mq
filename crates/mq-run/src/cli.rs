@@ -350,6 +350,11 @@ struct InputArgs {
     #[arg(long = "allow-net", default_value_t = false)]
     allow_net: bool,
 
+    /// Allow the `read_file`/`read_file_bytes` functions to read from the filesystem. Disabled
+    /// by default.
+    #[arg(long = "allow-read", default_value_t = false)]
+    allow_read: bool,
+
     /// Allow the `write_file` function to write to the filesystem. Disabled by default.
     #[arg(long = "allow-write", default_value_t = false)]
     allow_write: bool,
@@ -861,6 +866,7 @@ impl Cli {
             engine.set_allow_net(self.input.allow_net);
         }
 
+        engine.set_allow_read(self.input.allow_read);
         engine.set_allow_write(self.input.allow_write);
 
         #[cfg(feature = "debugger")]
@@ -1544,6 +1550,54 @@ mod tests {
         };
 
         assert!(cli.run().is_ok());
+    }
+
+    // READ_ALLOWED is a single process-wide flag (see mq_lang::eval::builtin::capability), so
+    // every case that toggles it must run in one #[test] function — cargo test runs tests in
+    // parallel by default, and two tests flipping the same global independently would race and
+    // flake. No other test in this file exercises read_file/read_file_bytes.
+    #[test]
+    fn test_allow_read_flag_gates_read_file() {
+        let (_, temp_file_path) = create_file("test_allow_read.md", "hello");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let query = format!("read_file(\"{}\")", temp_file_path.to_string_lossy());
+
+        let blocked_cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some(query.clone()),
+            files: None,
+            ..Cli::default()
+        };
+        assert!(
+            blocked_cli.run().is_err(),
+            "read_file should be blocked without --allow-read"
+        );
+
+        let allowed_cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                allow_read: true,
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some(query),
+            files: None,
+            ..Cli::default()
+        };
+        assert!(allowed_cli.run().is_ok(), "read_file should succeed with --allow-read");
     }
 
     #[test]
