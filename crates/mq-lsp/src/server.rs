@@ -11,7 +11,7 @@ use url::Url;
 use crate::error::LspError;
 use crate::{
     capabilities, code_action, completions, document_symbol, execute_command, goto_definition, hover, inlay_hints,
-    references, rename, semantic_tokens, workspace_symbol,
+    references, rename, semantic_tokens, signature_help, workspace_symbol,
 };
 use tower_lsp_server::{Client, LanguageServer, LspService, Server, jsonrpc, ls_types};
 
@@ -170,6 +170,22 @@ impl LanguageServer for Backend {
         };
 
         Ok(hover::response(Arc::clone(&self.hir), to_url(&url), type_env, position))
+    }
+
+    async fn signature_help(
+        &self,
+        params: ls_types::SignatureHelpParams,
+    ) -> jsonrpc::Result<Option<ls_types::SignatureHelp>> {
+        let url = params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+        let source_text = self.text_map.get(&url.to_string()).map(|text| Arc::clone(text.value()));
+
+        Ok(signature_help::response(
+            Arc::clone(&self.hir),
+            to_url(&url),
+            position,
+            source_text.as_deref().map(String::as_str),
+        ))
     }
 
     async fn inlay_hint(&self, params: ls_types::InlayHintParams) -> jsonrpc::Result<Option<Vec<ls_types::InlayHint>>> {
@@ -762,6 +778,53 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_signature_help() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+        let code = "def foo(a, b): a + b; | foo(1, 2)";
+
+        backend
+            .did_open(ls_types::DidOpenTextDocumentParams {
+                text_document: ls_types::TextDocumentItem {
+                    uri: to_uri(&uri),
+                    language_id: "mq".to_string(),
+                    version: 1,
+                    text: code.to_string(),
+                },
+            })
+            .await;
+
+        // Cursor right before the `2` argument.
+        let result = backend
+            .signature_help(ls_types::SignatureHelpParams {
+                text_document_position_params: ls_types::TextDocumentPositionParams {
+                    text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                    position: ls_types::Position::new(0, 31),
+                },
+                work_done_progress_params: Default::default(),
+                context: None,
+            })
+            .await;
+
+        assert!(result.is_ok());
+        let help = result.unwrap().unwrap();
+
+        assert_eq!(help.signatures.len(), 1);
+        assert_eq!(help.signatures[0].label, "foo(a, b)");
+        assert_eq!(help.active_parameter, Some(1));
     }
 
     #[tokio::test]
@@ -1449,6 +1512,7 @@ mod tests {
         assert!(capabilities.rename_provider.is_some());
         assert!(capabilities.document_symbol_provider.is_some());
         assert!(capabilities.workspace_symbol_provider.is_some());
+        assert!(capabilities.signature_help_provider.is_some());
 
         // Test shutdown
         let shutdown_result = backend.shutdown().await;

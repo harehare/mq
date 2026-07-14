@@ -2,8 +2,8 @@ use tower_lsp_server::ls_types::{
     CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions, DocumentFormattingOptions,
     DocumentRangeFormattingOptions, ExecuteCommandOptions, HoverProviderCapability, InlayHintOptions,
     InlayHintServerCapabilities, OneOf, RenameOptions, SemanticTokensFullOptions, SemanticTokensLegend,
-    SemanticTokensOptions, SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
-    TextDocumentSyncKind,
+    SemanticTokensOptions, SemanticTokensServerCapabilities, ServerCapabilities, SignatureHelpOptions,
+    TextDocumentSyncCapability, TextDocumentSyncKind,
 };
 
 use crate::semantic_tokens;
@@ -12,6 +12,11 @@ pub(crate) fn server_capabilities() -> ServerCapabilities {
     ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
+        signature_help_provider: Some(SignatureHelpOptions {
+            trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
+            retrigger_characters: None,
+            work_done_progress_options: Default::default(),
+        }),
         completion_provider: Some(CompletionOptions {
             trigger_characters: Some(vec!["|".to_string(), ":".to_string(), ".".to_string()]),
             ..Default::default()

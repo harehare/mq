@@ -17,6 +17,7 @@ pub mod references;
 pub mod rename;
 pub mod semantic_tokens;
 pub mod server;
+pub mod signature_help;
 pub mod workspace_symbol;
 
 #[derive(Parser, Debug)]
