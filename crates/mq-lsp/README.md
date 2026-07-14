@@ -8,6 +8,7 @@ Language Server Protocol (LSP) implementation for the [mq](https://mqlang.org/) 
 - 🧹 **Linting**: Optional `mq-lint` diagnostics (correctness, style, complexity, selector, and module rules), toggled with `--enable-lint`
 - 💡 **Code Completion**: Intelligent suggestions for selectors, functions, and variables
 - 📖 **Hover Information**: Inline documentation and type information
+- ✍️ **Signature Help**: Inline parameter hints while typing a function or macro call
 - 🎯 **Go To Definition**: Navigate to symbol definitions with a single click
 - 🔗 **Find References**: Locate all usages of a symbol across your workspace
 - 🗂️ **Document Symbols**: Outline view of all symbols in the current file
