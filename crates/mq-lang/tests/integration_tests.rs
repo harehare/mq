@@ -2731,6 +2731,14 @@ fn engine() -> DefaultEngine {
 #[case::sort_array("sort([3, 1, 2])", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])].into()))]
 #[case::utf8bytelen_simple(r##"utf8bytelen("あ")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
 #[case::rindex_simple(r##"rindex("banana", "a")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
+#[case::token_count_empty(r#"token_count("", "gpt-4")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
+#[case::token_count_simple(r#"token_count("Hello, world!", "gpt-4")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
+#[case::token_count_markdown(r#"token_count(to_md_text("Hello, world!"), "gpt-4")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
+#[case::token_count_none(r#"token_count(None, "gpt-4")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
+#[case::token_count_no_model_empty(r#"token_count("")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
+#[case::token_count_no_model_simple(r#"token_count("Hello, world!")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
+#[case::token_count_no_model_markdown(r#"to_md_text("Hello, world!") | token_count()"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
+#[case::token_count_no_model_none(r#"token_count(None)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
 #[case::explode_simple(r##"explode("abc")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(97.into()), RuntimeValue::Number(98.into()), RuntimeValue::Number(99.into())])].into()))]
 #[case::implode_simple(r##"implode([97, 98, 99])"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abc".to_string())].into()))]
 #[case::intern_simple(r##"intern("foo")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("foo".to_string())].into()))]
@@ -3673,6 +3681,9 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::html_unescape_non_string("html_unescape(42)", vec![RuntimeValue::None],)]
 // strip_tags: non-string/non-markdown/non-none → type error
 #[case::strip_tags_non_string("strip_tags(42)", vec![RuntimeValue::None],)]
+// token_count: non-string/non-markdown text → type error
+#[case::token_count_non_string(r#"token_count(42, "gpt-4")"#, vec![RuntimeValue::None],)]
+#[case::token_count_no_model_non_string(r#"token_count(42)"#, vec![RuntimeValue::None],)]
 // range: multi-char string with step → error
 #[case::range_multichar_with_step(r#"range("aa", "zz", 2)"#, vec![RuntimeValue::None],)]
 // range: invalid type → error
