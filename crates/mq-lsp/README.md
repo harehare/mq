@@ -4,7 +4,7 @@ Language Server Protocol (LSP) implementation for the [mq](https://mqlang.org/) 
 
 ## Features
 
-- 🔍 **Diagnostics**: Real-time syntax and semantic error reporting
+- 🔍 **Diagnostics**: Real-time syntax and semantic error reporting, via both `publishDiagnostics` (push) and `textDocument/diagnostic` (pull)
 - 🧹 **Linting**: Optional `mq-lint` diagnostics (correctness, style, complexity, selector, and module rules), toggled with `--enable-lint`
 - 💡 **Code Completion**: Intelligent suggestions for selectors, functions, and variables
 - 📖 **Hover Information**: Inline documentation and type information
