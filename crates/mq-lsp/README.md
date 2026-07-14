@@ -13,6 +13,7 @@ Language Server Protocol (LSP) implementation for the [mq](https://mqlang.org/) 
 - 🔗 **Find References**: Locate all usages of a symbol across your workspace
 - 🗂️ **Document Symbols**: Outline view of all symbols in the current file
 - 🗃️ **Workspace Symbols**: Search for symbols by name across all loaded files/modules
+- 📁 **Folding Ranges**: Collapse function/macro/module bodies, control-flow blocks, multi-line array/dict literals, and multi-line comment banners
 - 🎨 **Semantic Tokens**: Enhanced syntax highlighting based on semantic analysis
 - ✨ **Code Formatting**: Automatic code formatting following mq style guidelines
 - 🛠️ **Code Actions**: Quick fixes such as adding a missing `include`/`import` for an unresolved function or module reference

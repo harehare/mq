@@ -1,9 +1,10 @@
 use tower_lsp_server::ls_types::{
     CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions, DiagnosticOptions,
     DiagnosticServerCapabilities, DocumentFormattingOptions, DocumentRangeFormattingOptions, ExecuteCommandOptions,
-    HoverProviderCapability, InlayHintOptions, InlayHintServerCapabilities, OneOf, RenameOptions,
-    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions, SemanticTokensServerCapabilities,
-    ServerCapabilities, SignatureHelpOptions, TextDocumentSyncCapability, TextDocumentSyncKind,
+    FoldingRangeProviderCapability, HoverProviderCapability, InlayHintOptions, InlayHintServerCapabilities, OneOf,
+    RenameOptions, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+    SemanticTokensServerCapabilities, ServerCapabilities, SignatureHelpOptions, TextDocumentSyncCapability,
+    TextDocumentSyncKind,
 };
 
 use crate::semantic_tokens;
@@ -41,6 +42,7 @@ pub(crate) fn server_capabilities() -> ServerCapabilities {
         })),
         document_symbol_provider: Some(OneOf::Left(true)),
         workspace_symbol_provider: Some(OneOf::Left(true)),
+        folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
         diagnostic_provider: Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
             identifier: None,
             // Editing a module/import can change diagnostics in files that depend on it.

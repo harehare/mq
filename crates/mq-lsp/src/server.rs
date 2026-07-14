@@ -10,8 +10,8 @@ use url::Url;
 
 use crate::error::LspError;
 use crate::{
-    capabilities, code_action, completions, document_symbol, execute_command, goto_definition, hover, inlay_hints,
-    references, rename, semantic_tokens, signature_help, workspace_symbol,
+    capabilities, code_action, completions, document_symbol, execute_command, folding_range, goto_definition, hover,
+    inlay_hints, references, rename, semantic_tokens, signature_help, workspace_symbol,
 };
 use tower_lsp_server::{Client, LanguageServer, LspService, Server, jsonrpc, ls_types};
 
@@ -145,6 +145,16 @@ impl LanguageServer for Backend {
             to_url(&uri),
             &source_map_guard,
         ))
+    }
+
+    async fn folding_range(
+        &self,
+        params: ls_types::FoldingRangeParams,
+    ) -> jsonrpc::Result<Option<Vec<ls_types::FoldingRange>>> {
+        let uri = params.text_document.uri;
+        let source_text = self.text_map.get(&uri.to_string()).map(|text| Arc::clone(text.value()));
+
+        Ok(folding_range::response(source_text.as_deref().map(String::as_str)))
     }
 
     async fn symbol(
@@ -851,6 +861,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_folding_range() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+        let code = "def foo(a):\n  let b = a + 1\n  | b;\n| foo(1)";
+
+        backend
+            .did_open(ls_types::DidOpenTextDocumentParams {
+                text_document: ls_types::TextDocumentItem {
+                    uri: to_uri(&uri),
+                    language_id: "mq".to_string(),
+                    version: 1,
+                    text: code.to_string(),
+                },
+            })
+            .await;
+
+        let result = backend
+            .folding_range(ls_types::FoldingRangeParams {
+                text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+        let ranges = result.unwrap().unwrap();
+
+        assert!(
+            ranges
+                .iter()
+                .any(|r| r.kind == Some(ls_types::FoldingRangeKind::Region) && r.start_line == 0 && r.end_line == 2)
+        );
+    }
+
+    #[tokio::test]
     async fn test_semantic_tokens() {
         let (service, _) = LspService::new(|client| Backend {
             client,
@@ -1537,6 +1592,7 @@ mod tests {
         assert!(capabilities.workspace_symbol_provider.is_some());
         assert!(capabilities.signature_help_provider.is_some());
         assert!(capabilities.diagnostic_provider.is_some());
+        assert!(capabilities.folding_range_provider.is_some());
 
         // Test shutdown
         let shutdown_result = backend.shutdown().await;
