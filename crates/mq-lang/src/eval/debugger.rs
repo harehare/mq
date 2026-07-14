@@ -40,8 +40,9 @@ pub struct Breakpoint {
     pub source: Option<String>,
     /// An mq expression that must evaluate truthy for the breakpoint to stop execution.
     pub condition: Option<String>,
-    /// An expression controlling how many hits are ignored before stopping,
-    /// e.g. `">= 3"`, `"== 5"`. A bare number is treated as `>=`.
+    /// Controls how many hits are ignored before stopping. A bare number, e.g. `"5"`, is
+    /// shorthand for `"hit_count >= 5"`. Otherwise this is evaluated as an mq expression with
+    /// `hit_count` bound to the current hit count, e.g. `"hit_count >= 3 && x == 1"`.
     pub hit_condition: Option<String>,
     /// If set, the breakpoint never stops execution; instead the message is logged.
     /// Segments wrapped in `{}` are evaluated as mq expressions and interpolated.
@@ -398,47 +399,6 @@ impl Debugger {
     }
 }
 
-/// Evaluates a `hit_condition` expression (e.g. `">= 3"`, `"== 5"`, or a bare `"5"`,
-/// which is treated as `">= 5"`) against the current hit `count`.
-///
-/// Returns an error describing the malformed expression rather than panicking, since this
-/// is driven by user-supplied breakpoint configuration.
-pub fn hit_condition_satisfied(expr: &str, count: usize) -> Result<bool, String> {
-    let expr = expr.trim();
-    let (op, rest) = if let Some(rest) = expr.strip_prefix(">=") {
-        (">=", rest)
-    } else if let Some(rest) = expr.strip_prefix("<=") {
-        ("<=", rest)
-    } else if let Some(rest) = expr.strip_prefix("==") {
-        ("==", rest)
-    } else if let Some(rest) = expr.strip_prefix("!=") {
-        ("!=", rest)
-    } else if let Some(rest) = expr.strip_prefix('>') {
-        (">", rest)
-    } else if let Some(rest) = expr.strip_prefix('<') {
-        ("<", rest)
-    } else if let Some(rest) = expr.strip_prefix('=') {
-        ("==", rest)
-    } else {
-        (">=", expr)
-    };
-
-    let threshold: usize = rest
-        .trim()
-        .parse()
-        .map_err(|_| format!("invalid hit condition \"{}\"", expr))?;
-
-    Ok(match op {
-        ">=" => count >= threshold,
-        "<=" => count <= threshold,
-        "==" => count == threshold,
-        "!=" => count != threshold,
-        ">" => count > threshold,
-        "<" => count < threshold,
-        _ => unreachable!(),
-    })
-}
-
 type LineNo = usize;
 type BreakpointId = usize;
 
@@ -705,42 +665,6 @@ mod tests {
         assert!(!dbg.is_active());
     }
 
-    #[rstest]
-    #[case(">= 3", 2, false, "below threshold")]
-    #[case(">= 3", 3, true, "at threshold")]
-    #[case(">= 3", 4, true, "above threshold")]
-    #[case("<= 3", 4, false, "above threshold, <=")]
-    #[case("<= 3", 3, true, "at threshold, <=")]
-    #[case("== 3", 2, false, "not equal")]
-    #[case("== 3", 3, true, "equal")]
-    #[case("!= 3", 3, false, "equal, !=")]
-    #[case("!= 3", 4, true, "not equal, !=")]
-    #[case("> 3", 3, false, "not strictly greater")]
-    #[case("> 3", 4, true, "strictly greater")]
-    #[case("< 3", 2, true, "strictly less")]
-    #[case("< 3", 3, false, "not strictly less")]
-    #[case("= 3", 3, true, "bare = treated as ==")]
-    #[case("3", 3, true, "bare number treated as >=")]
-    #[case("3", 4, true, "bare number treated as >=, above")]
-    #[case("3", 2, false, "bare number treated as >=, below")]
-    #[case("  >=   3  ", 3, true, "surrounding whitespace is trimmed")]
-    fn test_hit_condition_satisfied(
-        #[case] expr: &str,
-        #[case] count: usize,
-        #[case] expected: bool,
-        #[case] _desc: &str,
-    ) {
-        assert_eq!(hit_condition_satisfied(expr, count), Ok(expected));
-    }
-
-    #[rstest]
-    #[case("not a number")]
-    #[case(">=")]
-    #[case("")]
-    fn test_hit_condition_satisfied_invalid(#[case] expr: &str) {
-        assert!(hit_condition_satisfied(expr, 1).is_err());
-    }
-
     #[test]
     fn test_record_hit_increments_per_breakpoint() {
         let mut dbg = Debugger::new();
@@ -769,13 +693,13 @@ mod tests {
             None,
             None,
             Some("x > 1".to_string()),
-            Some(">= 2".to_string()),
+            Some("hit_count >= 2".to_string()),
             Some("x is {x}".to_string()),
         );
 
         let breakpoint = dbg.list_breakpoints().into_iter().find(|bp| bp.id == id).unwrap();
         assert_eq!(breakpoint.condition.as_deref(), Some("x > 1"));
-        assert_eq!(breakpoint.hit_condition.as_deref(), Some(">= 2"));
+        assert_eq!(breakpoint.hit_condition.as_deref(), Some("hit_count >= 2"));
         assert_eq!(breakpoint.log_message.as_deref(), Some("x is {x}"));
     }
 }

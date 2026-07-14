@@ -33,7 +33,7 @@ use crate::{
 };
 
 #[cfg(feature = "debugger")]
-use debugger::{Breakpoint, DebugContext, Debugger, hit_condition_satisfied};
+use debugger::{Breakpoint, DebugContext, Debugger};
 
 pub mod builtin;
 #[cfg(feature = "debugger")]
@@ -1055,9 +1055,7 @@ impl<T: ModuleResolver> Evaluator<T> {
 
         if let Some(hit_condition) = &breakpoint.hit_condition {
             let count = self.debugger.write().unwrap().record_hit(breakpoint.id);
-            let satisfied = hit_condition_satisfied(hit_condition, count)
-                .map_err(|msg| EvalError::from(RuntimeError::Runtime((**token).clone(), msg)))?;
-            if !satisfied {
+            if !self.eval_hit_condition(hit_condition, count, token, env)? {
                 return Ok(BreakpointDecision::Skip);
             }
         }
@@ -1107,6 +1105,38 @@ impl<T: ModuleResolver> Evaluator<T> {
             )
         })?;
         Ok(values.into_iter().next_back().unwrap_or(RuntimeValue::NONE))
+    }
+
+    /// Evaluates a breakpoint's `hit_condition` against the current hit `count`.
+    ///
+    /// A bare integer (e.g. `"5"`) is shorthand for `hit_count >= 5`, matching the
+    /// hit-count-condition convention used by DAP clients such as VS Code. Anything else is
+    /// parsed and evaluated as a full mq expression with `hit_count` bound to `count` in a
+    /// child scope of `env`, so conditions can reference other in-scope variables too, e.g.
+    /// `hit_count >= 3 && x == 1`.
+    #[cfg(feature = "debugger")]
+    fn eval_hit_condition(
+        &mut self,
+        expr: &str,
+        count: usize,
+        token: &Shared<Token>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<bool, EvalError> {
+        let trimmed = expr.trim();
+        let code = match trimmed.parse::<usize>() {
+            Ok(threshold) => format!("hit_count >= {threshold}"),
+            Err(_) => trimmed.to_string(),
+        };
+
+        let hit_count_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+        define(
+            &hit_count_env,
+            Ident::new("hit_count"),
+            RuntimeValue::Number(count.into()),
+        );
+
+        let value = self.eval_debug_expr(&code, token, &hit_count_env)?;
+        Ok(value.is_truthy())
     }
 
     /// Interpolates `{expr}` segments of a logpoint message, evaluating each as an mq
@@ -8133,7 +8163,7 @@ mod debugger_tests {
             None,
             None,
             None,
-            Some(">= 3".to_string()),
+            Some("hit_count >= 3".to_string()),
             None,
         );
 
@@ -8141,6 +8171,54 @@ mod debugger_tests {
         engine.eval(query, crate::null_input().into_iter()).unwrap();
 
         assert_eq!(*breakpoint_hits.read().unwrap(), vec!["3".to_string(), "4".to_string()]);
+    }
+
+    #[test]
+    fn test_hit_condition_breakpoint_bare_number_is_shorthand_for_gte() {
+        let mut engine = crate::DefaultEngine::default();
+        let breakpoint_hits = Shared::new(SharedCell::new(Vec::new()));
+        engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
+            breakpoint_hits: Shared::clone(&breakpoint_hits),
+            log_points: Shared::default(),
+        }));
+        engine.debugger().write().unwrap().activate();
+        engine.debugger().write().unwrap().add_breakpoint_with_options(
+            2,
+            None,
+            None,
+            None,
+            Some("3".to_string()),
+            None,
+        );
+
+        let query = "foreach (x, array(1, 2, 3, 4)):\n  x\nend";
+        engine.eval(query, crate::null_input().into_iter()).unwrap();
+
+        assert_eq!(*breakpoint_hits.read().unwrap(), vec!["3".to_string(), "4".to_string()]);
+    }
+
+    #[test]
+    fn test_hit_condition_breakpoint_can_reference_in_scope_variables() {
+        let mut engine = crate::DefaultEngine::default();
+        let breakpoint_hits = Shared::new(SharedCell::new(Vec::new()));
+        engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
+            breakpoint_hits: Shared::clone(&breakpoint_hits),
+            log_points: Shared::default(),
+        }));
+        engine.debugger().write().unwrap().activate();
+        engine.debugger().write().unwrap().add_breakpoint_with_options(
+            2,
+            None,
+            None,
+            None,
+            Some("hit_count >= 2 && x == 4".to_string()),
+            None,
+        );
+
+        let query = "foreach (x, array(1, 2, 3, 4)):\n  x\nend";
+        engine.eval(query, crate::null_input().into_iter()).unwrap();
+
+        assert_eq!(*breakpoint_hits.read().unwrap(), vec!["4".to_string()]);
     }
 
     #[test]
