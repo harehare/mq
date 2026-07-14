@@ -11,7 +11,7 @@ use url::Url;
 use crate::error::LspError;
 use crate::{
     capabilities, code_action, completions, document_symbol, execute_command, goto_definition, hover, inlay_hints,
-    references, rename, semantic_tokens,
+    references, rename, semantic_tokens, workspace_symbol,
 };
 use tower_lsp_server::{Client, LanguageServer, LspService, Server, jsonrpc, ls_types};
 
@@ -143,6 +143,18 @@ impl LanguageServer for Backend {
         Ok(document_symbol::response(
             Arc::clone(&self.hir),
             to_url(&uri),
+            &source_map_guard,
+        ))
+    }
+
+    async fn symbol(
+        &self,
+        params: ls_types::WorkspaceSymbolParams,
+    ) -> jsonrpc::Result<Option<ls_types::WorkspaceSymbolResponse>> {
+        let source_map_guard = self.source_map.read().unwrap();
+        Ok(workspace_symbol::response(
+            Arc::clone(&self.hir),
+            &params.query,
             &source_map_guard,
         ))
     }
@@ -1201,6 +1213,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_workspace_symbol() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+
+        let uri_a = Url::parse("file:///a.mq").unwrap();
+        let code_a = "def test_func(): 1;";
+        let (nodes_a, _) = mq_lang::parse_recovery(code_a);
+        let (source_id_a, _) = backend.hir.write().unwrap().add_nodes(uri_a.clone(), &nodes_a);
+        backend
+            .source_map
+            .write()
+            .unwrap()
+            .insert(uri_a.to_string(), source_id_a);
+
+        let uri_b = Url::parse("file:///b.mq").unwrap();
+        let code_b = "def other_func(): 2;";
+        let (nodes_b, _) = mq_lang::parse_recovery(code_b);
+        let (source_id_b, _) = backend.hir.write().unwrap().add_nodes(uri_b.clone(), &nodes_b);
+        backend
+            .source_map
+            .write()
+            .unwrap()
+            .insert(uri_b.to_string(), source_id_b);
+
+        let result = backend
+            .symbol(ls_types::WorkspaceSymbolParams {
+                query: "test_func".to_string(),
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+        let symbols = result.unwrap().unwrap();
+
+        if let ls_types::WorkspaceSymbolResponse::Nested(symbols) = symbols {
+            assert_eq!(symbols.len(), 1);
+            assert_eq!(symbols[0].name, "test_func");
+        } else {
+            panic!("Expected nested workspace symbol response");
+        }
+
+        let result = backend
+            .symbol(ls_types::WorkspaceSymbolParams {
+                query: "func".to_string(),
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+        let symbols = result.unwrap().unwrap();
+
+        if let ls_types::WorkspaceSymbolResponse::Nested(symbols) = symbols {
+            let symbol_names: Vec<String> = symbols.iter().map(|s| s.name.clone()).collect();
+            assert!(symbol_names.contains(&"test_func".to_string()));
+            assert!(symbol_names.contains(&"other_func".to_string()));
+            assert_eq!(symbols.len(), 2);
+        } else {
+            panic!("Expected nested workspace symbol response");
+        }
+    }
+
+    #[tokio::test]
     async fn test_did_change() {
         let (service, _) = LspService::new(|client| Backend {
             client,
@@ -1362,6 +1447,8 @@ mod tests {
         assert!(capabilities.completion_provider.is_some());
         assert!(capabilities.code_action_provider.is_some());
         assert!(capabilities.rename_provider.is_some());
+        assert!(capabilities.document_symbol_provider.is_some());
+        assert!(capabilities.workspace_symbol_provider.is_some());
 
         // Test shutdown
         let shutdown_result = backend.shutdown().await;
