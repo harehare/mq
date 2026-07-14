@@ -4,7 +4,6 @@ use bimap::BiMap;
 use tower_lsp_server::ls_types::{DocumentSymbol, DocumentSymbolResponse, Position, Range, SymbolKind, SymbolTag};
 use url::Url;
 
-#[allow(deprecated)]
 pub(crate) fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
     url: Url,
@@ -32,7 +31,31 @@ pub(crate) fn response(
                             None
                         } else {
                             let is_deprecated = symbol.is_deprecated();
-                            Some(DocumentSymbol {
+                            let range = Range {
+                                start: Position {
+                                    line: text_range.start.line - 1,
+                                    character: (text_range.start.column - 1) as u32,
+                                },
+                                end: Position {
+                                    line: text_range.end.line - 1,
+                                    character: (text_range.end.column - 1) as u32,
+                                },
+                            };
+                            let selection_range = Range {
+                                start: Position {
+                                    line: text_range.start.line - 1,
+                                    character: (text_range.start.column - 1) as u32,
+                                },
+                                end: Position {
+                                    line: text_range.start.line - 1,
+                                    character: (text_range.start.column - 1) as u32,
+                                },
+                            };
+
+                            // `deprecated` is superseded by `tags`, but still set for
+                            // clients that predate tag support (LSP < 3.15).
+                            #[allow(deprecated)]
+                            let symbol = DocumentSymbol {
                                 name: name.to_string(),
                                 detail: None,
                                 kind,
@@ -41,29 +64,13 @@ pub(crate) fn response(
                                 } else {
                                     None
                                 },
-                                range: Range {
-                                    start: Position {
-                                        line: text_range.start.line - 1,
-                                        character: (text_range.start.column - 1) as u32,
-                                    },
-                                    end: Position {
-                                        line: text_range.end.line - 1,
-                                        character: (text_range.end.column - 1) as u32,
-                                    },
-                                },
-                                selection_range: Range {
-                                    start: Position {
-                                        line: text_range.start.line - 1,
-                                        character: (text_range.start.column - 1) as u32,
-                                    },
-                                    end: Position {
-                                        line: text_range.start.line - 1,
-                                        character: (text_range.start.column - 1) as u32,
-                                    },
-                                },
+                                range,
+                                selection_range,
                                 children: None,
                                 deprecated: Some(is_deprecated),
-                            })
+                            };
+
+                            Some(symbol)
                         }
                     })
                 })

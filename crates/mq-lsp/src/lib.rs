@@ -31,5 +31,6 @@ pub mod references;
 pub mod rename;
 pub mod semantic_tokens;
 pub mod server;
+pub mod workspace_symbol;
 
 pub use server::start;
