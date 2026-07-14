@@ -1,9 +1,9 @@
 use tower_lsp_server::ls_types::{
-    CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions, DocumentFormattingOptions,
-    DocumentRangeFormattingOptions, ExecuteCommandOptions, HoverProviderCapability, InlayHintOptions,
-    InlayHintServerCapabilities, OneOf, RenameOptions, SemanticTokensFullOptions, SemanticTokensLegend,
-    SemanticTokensOptions, SemanticTokensServerCapabilities, ServerCapabilities, SignatureHelpOptions,
-    TextDocumentSyncCapability, TextDocumentSyncKind,
+    CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions, DiagnosticOptions,
+    DiagnosticServerCapabilities, DocumentFormattingOptions, DocumentRangeFormattingOptions, ExecuteCommandOptions,
+    HoverProviderCapability, InlayHintOptions, InlayHintServerCapabilities, OneOf, RenameOptions,
+    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions, SemanticTokensServerCapabilities,
+    ServerCapabilities, SignatureHelpOptions, TextDocumentSyncCapability, TextDocumentSyncKind,
 };
 
 use crate::semantic_tokens;
@@ -41,6 +41,13 @@ pub(crate) fn server_capabilities() -> ServerCapabilities {
         })),
         document_symbol_provider: Some(OneOf::Left(true)),
         workspace_symbol_provider: Some(OneOf::Left(true)),
+        diagnostic_provider: Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
+            identifier: None,
+            // Editing a module/import can change diagnostics in files that depend on it.
+            inter_file_dependencies: true,
+            workspace_diagnostics: false,
+            work_done_progress_options: Default::default(),
+        })),
         definition_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
         code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {

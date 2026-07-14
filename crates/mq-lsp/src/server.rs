@@ -159,6 +159,21 @@ impl LanguageServer for Backend {
         ))
     }
 
+    async fn diagnostic(
+        &self,
+        params: ls_types::DocumentDiagnosticParams,
+    ) -> jsonrpc::Result<ls_types::DocumentDiagnosticReportResult> {
+        let uri = to_url(&params.text_document.uri);
+        let items = self.compute_diagnostics(&uri);
+
+        Ok(ls_types::DocumentDiagnosticReportResult::Report(
+            ls_types::DocumentDiagnosticReport::Full(ls_types::RelatedFullDocumentDiagnosticReport {
+                related_documents: None,
+                full_document_diagnostic_report: ls_types::FullDocumentDiagnosticReport { result_id: None, items },
+            }),
+        ))
+    }
+
     async fn hover(&self, params: ls_types::HoverParams) -> jsonrpc::Result<Option<ls_types::Hover>> {
         let url = params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
@@ -453,7 +468,11 @@ impl Backend {
         self.error_map.insert(uri_string, errors);
     }
 
-    async fn diagnostics(&self, uri: Url, version: Option<i32>) {
+    /// Computes the full diagnostic set for a document: cached parse/type errors from
+    /// `error_map`, HIR errors/warnings (e.g. unreachable code), and — when enabled — lint
+    /// diagnostics. Shared by the push (`publish_diagnostics`) and pull
+    /// (`textDocument/diagnostic`) flows so they can't drift apart.
+    fn compute_diagnostics(&self, uri: &Url) -> Vec<ls_types::Diagnostic> {
         let uri_string = uri.to_string();
 
         // Get errors for this specific file
@@ -465,79 +484,83 @@ impl Backend {
             diagnostics.extend(errors.iter().map(Into::into));
         }
 
-        {
-            let source_map_guard = self.source_map.read().unwrap();
-            if let Some(source_id) = source_map_guard.get_by_left(&uri_string) {
-                let hir_guard = self.hir.read().unwrap();
+        let source_map_guard = self.source_map.read().unwrap();
+        if let Some(source_id) = source_map_guard.get_by_left(&uri_string) {
+            let hir_guard = self.hir.read().unwrap();
 
-                // Build a set of text_ranges for this file's symbols for O(1) lookup
-                let range_set: FxHashSet<mq_lang::Range> = hir_guard
-                    .symbols()
-                    .filter_map(|(_, symbol)| {
-                        if symbol.source.source_id == Some(*source_id) {
-                            symbol.source.text_range
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                // Filter HIR errors to only include ones from this specific source
-                diagnostics.extend(hir_guard.error_ranges().into_iter().filter_map(|(message, item)| {
-                    if range_set.contains(&item) {
-                        Some(ls_types::Diagnostic::new_simple(
-                            ls_types::Range::new(
-                                ls_types::Position {
-                                    line: item.start.line - 1,
-                                    character: (item.start.column - 1) as u32,
-                                },
-                                ls_types::Position {
-                                    line: item.end.line - 1,
-                                    character: (item.end.column - 1) as u32,
-                                },
-                            ),
-                            message,
-                        ))
+            // Build a set of text_ranges for this file's symbols for O(1) lookup
+            let range_set: FxHashSet<mq_lang::Range> = hir_guard
+                .symbols()
+                .filter_map(|(_, symbol)| {
+                    if symbol.source.source_id == Some(*source_id) {
+                        symbol.source.text_range
                     } else {
                         None
                     }
-                }));
+                })
+                .collect();
 
-                // Add HIR warnings (including unreachable code warnings)
-                diagnostics.extend(hir_guard.warning_ranges().into_iter().filter_map(|(message, item)| {
-                    if range_set.contains(&item) {
-                        let mut diagnostic = ls_types::Diagnostic::new_simple(
-                            ls_types::Range::new(
-                                ls_types::Position {
-                                    line: item.start.line - 1,
-                                    character: (item.start.column - 1) as u32,
-                                },
-                                ls_types::Position {
-                                    line: item.end.line - 1,
-                                    character: (item.end.column - 1) as u32,
-                                },
-                            ),
-                            message,
-                        );
-                        diagnostic.severity = Some(ls_types::DiagnosticSeverity::WARNING);
-                        Some(diagnostic)
-                    } else {
-                        None
-                    }
-                }));
-
-                if self.config.enable_lint {
-                    let lint_ctx = mq_lint::LintContext::new(&hir_guard, *source_id, &self.config.lint_config);
-                    let linter = mq_lint::Linter::with_default_rules();
-                    diagnostics.extend(
-                        linter
-                            .run(&lint_ctx)
-                            .into_iter()
-                            .map(|d| (&LspError::LintWarning(d)).into()),
-                    );
+            // Filter HIR errors to only include ones from this specific source
+            diagnostics.extend(hir_guard.error_ranges().into_iter().filter_map(|(message, item)| {
+                if range_set.contains(&item) {
+                    Some(ls_types::Diagnostic::new_simple(
+                        ls_types::Range::new(
+                            ls_types::Position {
+                                line: item.start.line - 1,
+                                character: (item.start.column - 1) as u32,
+                            },
+                            ls_types::Position {
+                                line: item.end.line - 1,
+                                character: (item.end.column - 1) as u32,
+                            },
+                        ),
+                        message,
+                    ))
+                } else {
+                    None
                 }
+            }));
+
+            // Add HIR warnings (including unreachable code warnings)
+            diagnostics.extend(hir_guard.warning_ranges().into_iter().filter_map(|(message, item)| {
+                if range_set.contains(&item) {
+                    let mut diagnostic = ls_types::Diagnostic::new_simple(
+                        ls_types::Range::new(
+                            ls_types::Position {
+                                line: item.start.line - 1,
+                                character: (item.start.column - 1) as u32,
+                            },
+                            ls_types::Position {
+                                line: item.end.line - 1,
+                                character: (item.end.column - 1) as u32,
+                            },
+                        ),
+                        message,
+                    );
+                    diagnostic.severity = Some(ls_types::DiagnosticSeverity::WARNING);
+                    Some(diagnostic)
+                } else {
+                    None
+                }
+            }));
+
+            if self.config.enable_lint {
+                let lint_ctx = mq_lint::LintContext::new(&hir_guard, *source_id, &self.config.lint_config);
+                let linter = mq_lint::Linter::with_default_rules();
+                diagnostics.extend(
+                    linter
+                        .run(&lint_ctx)
+                        .into_iter()
+                        .map(|d| (&LspError::LintWarning(d)).into()),
+                );
             }
-        } // Guards are dropped here, before the await
+        }
+
+        diagnostics
+    }
+
+    async fn diagnostics(&self, uri: Url, version: Option<i32>) {
+        let diagnostics = self.compute_diagnostics(&uri);
 
         self.client
             .publish_diagnostics(to_uri(&uri), diagnostics, version)
@@ -1513,6 +1536,7 @@ mod tests {
         assert!(capabilities.document_symbol_provider.is_some());
         assert!(capabilities.workspace_symbol_provider.is_some());
         assert!(capabilities.signature_help_provider.is_some());
+        assert!(capabilities.diagnostic_provider.is_some());
 
         // Test shutdown
         let shutdown_result = backend.shutdown().await;
@@ -1587,6 +1611,89 @@ mod tests {
         // We can't directly test client.publish_diagnostics was called with correct diagnostics,
         // but we can verify the code doesn't panic
         backend.diagnostics(uri, None).await;
+    }
+
+    #[tokio::test]
+    async fn test_pull_diagnostics_returns_syntax_errors() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        // Unlike `publish_diagnostics`, the pull model's response can be asserted on directly.
+        let text = "let x = ;"; // Missing expression
+        let (_, errors) = mq_lang::parse_recovery(text);
+        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend.error_map.insert(
+            uri.to_string(),
+            errors
+                .error_ranges(text)
+                .into_iter()
+                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .collect(),
+        );
+
+        let result = backend
+            .diagnostic(ls_types::DocumentDiagnosticParams {
+                text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                identifier: None,
+                previous_result_id: None,
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+        let ls_types::DocumentDiagnosticReportResult::Report(ls_types::DocumentDiagnosticReport::Full(report)) =
+            result.unwrap()
+        else {
+            panic!("Expected a full document diagnostic report");
+        };
+
+        assert!(!report.full_document_diagnostic_report.items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_pull_diagnostics_empty_for_unknown_document() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///unknown.mq").unwrap();
+
+        let result = backend
+            .diagnostic(ls_types::DocumentDiagnosticParams {
+                text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                identifier: None,
+                previous_result_id: None,
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+        let ls_types::DocumentDiagnosticReportResult::Report(ls_types::DocumentDiagnosticReport::Full(report)) =
+            result.unwrap()
+        else {
+            panic!("Expected a full document diagnostic report");
+        };
+
+        assert!(report.full_document_diagnostic_report.items.is_empty());
     }
 
     #[tokio::test]
