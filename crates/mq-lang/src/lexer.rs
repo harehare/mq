@@ -511,6 +511,7 @@ fn interpolated_string(input: Span) -> IResult<Span, Token> {
 
 /// Parses `input` as an interpolated string body (like between `s"` and `"`) without requiring
 /// the surrounding quotes, e.g. for DAP logpoint messages.
+#[cfg(feature = "debugger")]
 pub(crate) fn parse_interpolation_segments(
     input: &str,
     module_id: ModuleId,
