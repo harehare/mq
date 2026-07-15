@@ -593,6 +593,29 @@ def http_delete(url, headers = {}): http(:delete, url, headers);
 # string), and returns the response body as a string
 def http_head(url, headers = {}): http(:head, url, headers);
 
+# Performs an HTTPS GET request, optionally with the given headers (a dict of string to
+# string), and parses the response body as JSON, returning the resulting data structure
+def http_get_json(url, headers = {}): _json_parse(http(:get, url, headers));
+
+# Performs an HTTPS POST request with the given body, optionally with the given headers
+# (a dict of string to string), and parses the response body as JSON, returning the
+# resulting data structure
+def http_post_json(url, body, headers = {}): _json_parse(http(:post, url, body, headers));
+
+# Performs an HTTPS PUT request with the given body, optionally with the given headers
+# (a dict of string to string), and parses the response body as JSON, returning the
+# resulting data structure
+def http_put_json(url, body, headers = {}): _json_parse(http(:put, url, body, headers));
+
+# Performs an HTTPS PATCH request with the given body, optionally with the given headers
+# (a dict of string to string), and parses the response body as JSON, returning the
+# resulting data structure
+def http_patch_json(url, body, headers = {}): _json_parse(http(:patch, url, body, headers));
+
+# Performs an HTTPS DELETE request, optionally with the given headers (a dict of string to
+# string), and parses the response body as JSON, returning the resulting data structure
+def http_delete_json(url, headers = {}): _json_parse(http(:delete, url, headers));
+
 # Prints the debug information of the given value(s).
 def debug(*args):
   if (len(args) == 1):
