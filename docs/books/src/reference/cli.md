@@ -46,10 +46,12 @@ Options:
           Path to the mq.lock file used for HTTP import integrity checks. Defaults to ./mq.lock (relative to the current directory)
       --allow-net
           Allow the `http` function to make outbound HTTPS requests. Disabled by default; requests are HTTPS-only and blocked from reaching loopback/private/link-local addresses regardless of this flag
+      --allow-read
+          Allow the `read_file`/`read_file_bytes` functions to read from the filesystem. Disabled by default
       --allow-write
           Allow the `write_file` function to write to the filesystem. Disabled by default
   -F, --output-format <OUTPUT_FORMAT>
-          Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, raw, none]
+          Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, raw, csv, toml, xml, yaml, none]
   -U, --update
           Update the input markdown (aliases: -i, --in-place, --inplace)
       --unbuffered

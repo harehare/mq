@@ -54,12 +54,10 @@ fn colorize_json_value(value: &serde_json::Value, indent: usize, theme: &ColorTh
     }
 }
 
-/// Converts a list of [`mq_lang::RuntimeValue`]s into a JSON string.
-/// Pass `Some(theme)` to enable ANSI color output.
-pub(crate) fn runtime_values_to_json(
-    runtime_values: &[mq_lang::RuntimeValue],
-    theme: Option<&ColorTheme<'_>>,
-) -> miette::Result<String> {
+/// Merges a list of [`mq_lang::RuntimeValue`]s into a single [`serde_json::Value`].
+/// A lone non-Markdown value is returned as-is; otherwise all values (with empty
+/// Markdown nodes filtered out) are collected into a JSON array.
+pub(crate) fn runtime_values_to_json_value(runtime_values: &[mq_lang::RuntimeValue]) -> serde_json::Value {
     let filtered: Vec<&mq_lang::RuntimeValue> = runtime_values
         .iter()
         .filter(|v| match v {
@@ -72,7 +70,7 @@ pub(crate) fn runtime_values_to_json(
         .iter()
         .all(|v| matches!(v, mq_lang::RuntimeValue::Markdown(_, _)));
 
-    let result = if !all_markdown && filtered.len() == 1 {
+    if !all_markdown && filtered.len() == 1 {
         filtered[0].clone().to_json_value()
     } else {
         let json_values: Vec<serde_json::Value> = filtered
@@ -85,7 +83,16 @@ pub(crate) fn runtime_values_to_json(
             })
             .collect();
         serde_json::Value::Array(json_values)
-    };
+    }
+}
+
+/// Converts a list of [`mq_lang::RuntimeValue`]s into a JSON string.
+/// Pass `Some(theme)` to enable ANSI color output.
+pub(crate) fn runtime_values_to_json(
+    runtime_values: &[mq_lang::RuntimeValue],
+    theme: Option<&ColorTheme<'_>>,
+) -> miette::Result<String> {
+    let result = runtime_values_to_json_value(runtime_values);
 
     if let Some(theme) = theme {
         Ok(colorize_json_value(&result, 0, theme))
