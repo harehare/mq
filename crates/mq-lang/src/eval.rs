@@ -1040,7 +1040,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     /// Decides what a matched breakpoint should do: evaluates its `condition` and
     /// `hit_condition` (if any) and, for logpoints, interpolates the `log_message`.
     #[cfg(feature = "debugger")]
-    fn evaluate_breakpoint(
+    fn eval_breakpoint(
         &mut self,
         breakpoint: &Breakpoint,
         token: &Shared<Token>,
@@ -1061,14 +1061,14 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
 
         if let Some(log_message) = &breakpoint.log_message {
-            Ok(BreakpointDecision::Log(self.interpolate_log_message(
+            return Ok(BreakpointDecision::Log(self.interpolate_log_message(
                 log_message,
                 token,
                 env,
-            )?))
-        } else {
-            Ok(BreakpointDecision::Stop)
+            )?));
         }
+
+        Ok(BreakpointDecision::Stop)
     }
 
     /// Parses and evaluates an mq expression (a breakpoint condition or a `{}` segment of a
@@ -1211,7 +1211,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 .get_hit_breakpoint(&debug_context, Shared::clone(token));
 
             if let Some(breakpoint) = breakpoint {
-                match self.evaluate_breakpoint(&breakpoint, token, env)? {
+                match self.eval_breakpoint(&breakpoint, token, env)? {
                     BreakpointDecision::Skip => {}
                     BreakpointDecision::Log(message) => {
                         self.debugger_handler
