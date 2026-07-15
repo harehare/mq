@@ -23,7 +23,7 @@ Once connected to a DAP client:
 1. **Set Breakpoints**: Click in the gutter or use your editor's breakpoint command
 2. **Conditional Breakpoints**: Only stop when an mq expression evaluates truthy, e.g. `x > 3`
 3. **Hit Count Breakpoints**: Only stop once the hit count condition is met. A bare number, e.g. `3`, is shorthand for `hit_count >= 3`; otherwise it's evaluated as an mq expression with `hit_count` bound to the current hit count, e.g. `hit_count >= 3 && x == 1`
-4. **Logpoints**: Log a message instead of stopping; wrap mq expressions in `{}` to interpolate their value, e.g. `x is {x}`
+4. **Logpoints**: Log a message instead of stopping; uses mq's own `${expr}` string interpolation syntax, e.g. `x is ${x}`. `${self}` yields the current pipeline value and `${$VAR}` reads the environment variable `VAR`
 5. **Start Debugging**: Launch the debugger with your query file
 6. **Step Through Code**: Use step over, step in, and step out commands
 7. **Inspect Variables**: Hover over variables or view them in the variables pane

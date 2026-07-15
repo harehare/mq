@@ -509,6 +509,41 @@ fn interpolated_string(input: Span) -> IResult<Span, Token> {
     ))
 }
 
+/// Parses `input` as an interpolated string body (like between `s"` and `"`) without requiring
+/// the surrounding quotes, e.g. for DAP logpoint messages.
+pub(crate) fn parse_interpolation_segments(
+    input: &str,
+    module_id: ModuleId,
+) -> Result<Vec<StringSegment>, SyntaxError> {
+    if input.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut segments = Vec::with_capacity(4);
+    let mut current = Span::new_extra(input, module_id);
+
+    // escaped_transform matches zero-length on empty input, so stop at EOF ourselves.
+    while !current.fragment().is_empty() {
+        match string_segment(current) {
+            Ok((remaining, segment)) => {
+                segments.push(segment);
+                current = remaining;
+            }
+            Err(_) => break,
+        }
+    }
+
+    if current.fragment().is_empty() {
+        Ok(segments)
+    } else {
+        Err(SyntaxError::UnexpectedToken(Token {
+            range: current.into(),
+            kind: TokenKind::Eof,
+            module_id,
+        }))
+    }
+}
+
 fn string_literal(input: Span) -> IResult<Span, Token> {
     let (span, start) = position(input)?;
     let (span, s) = delimited(

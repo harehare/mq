@@ -1043,6 +1043,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     fn eval_breakpoint(
         &mut self,
         breakpoint: &Breakpoint,
+        runtime_value: &RuntimeValue,
         token: &Shared<Token>,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<BreakpointDecision, EvalError> {
@@ -1063,6 +1064,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         if let Some(log_message) = &breakpoint.log_message {
             return Ok(BreakpointDecision::Log(self.interpolate_log_message(
                 log_message,
+                runtime_value,
                 token,
                 env,
             )?));
@@ -1071,13 +1073,11 @@ impl<T: ModuleResolver> Evaluator<T> {
         Ok(BreakpointDecision::Stop)
     }
 
-    /// Parses and evaluates an mq expression (a breakpoint condition or a `{}` segment of a
+    /// Parses and evaluates an mq expression (a breakpoint condition or a `${}` segment of a
     /// logpoint message) against `env`, the environment active at the breakpoint location.
     ///
-    /// The debugger is temporarily deactivated for the duration of this nested evaluation so
-    /// that the condition/log expression itself cannot re-trigger breakpoint handling, and the
-    /// evaluator's environment is temporarily swapped to `env` so identifiers in scope there
-    /// (e.g. loop variables) resolve correctly.
+    /// Deactivates the debugger for the duration so the expression can't re-trigger breakpoint
+    /// handling, and temporarily swaps in `env` so in-scope identifiers resolve correctly.
     #[cfg(feature = "debugger")]
     fn eval_debug_expr(
         &mut self,
@@ -1139,40 +1139,44 @@ impl<T: ModuleResolver> Evaluator<T> {
         Ok(value.is_truthy())
     }
 
-    /// Interpolates `{expr}` segments of a logpoint message, evaluating each as an mq
-    /// expression. Unmatched `{` is emitted literally rather than treated as an error, since
-    /// this runs against user-supplied breakpoint configuration.
+    /// Interpolates a logpoint message using mq's `${expr}` string interpolation syntax.
+    /// `${self}` is the current pipeline value, `${$VAR}` reads an env var, and any other
+    /// `${expr}` is evaluated as an mq expression against `env`.
     #[cfg(feature = "debugger")]
     fn interpolate_log_message(
         &mut self,
         message: &str,
+        runtime_value: &RuntimeValue,
         token: &Shared<Token>,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<String, EvalError> {
-        let mut output = String::with_capacity(message.len());
-        let mut rest = message;
+        let segments = crate::lexer::parse_interpolation_segments(message, token.module_id)
+            .map_err(|_| RuntimeError::Runtime((**token).clone(), format!("Invalid log message \"{message}\"")))?;
 
-        while let Some(start) = rest.find('{') {
-            output.push_str(&rest[..start]);
-            rest = &rest[start + 1..];
+        segments
+            .iter()
+            .try_fold(String::with_capacity(message.len()), |mut acc, segment| {
+                match segment {
+                    crate::lexer::token::StringSegment::Text(text, _) => acc.push_str(text),
+                    crate::lexer::token::StringSegment::Expr(expr_str, _) => {
+                        let expr_str = expr_str.trim();
 
-            match rest.find('}') {
-                Some(end) => {
-                    let value = self.eval_debug_expr(&rest[..end], token, env)?;
-                    output.push_str(&value.to_string());
-                    rest = &rest[end + 1..];
+                        if expr_str == constants::identifiers::SELF {
+                            acc.push_str(&runtime_value.to_string());
+                        } else if let Some(var) = expr_str.strip_prefix('$') {
+                            acc.push_str(
+                                &std::env::var(var)
+                                    .map_err(|_| RuntimeError::EnvNotFound((**token).clone(), var.into()))?,
+                            );
+                        } else {
+                            let value = self.eval_debug_expr(expr_str, token, env)?;
+                            acc.push_str(&value.to_string());
+                        }
+                    }
                 }
-                None => {
-                    output.push('{');
-                    output.push_str(rest);
-                    rest = "";
-                    break;
-                }
-            }
-        }
 
-        output.push_str(rest);
-        Ok(output)
+                Ok(acc)
+            })
     }
 
     fn eval_expr(
@@ -1211,7 +1215,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 .get_hit_breakpoint(&debug_context, Shared::clone(token));
 
             if let Some(breakpoint) = breakpoint {
-                match self.eval_breakpoint(&breakpoint, token, env)? {
+                match self.eval_breakpoint(&breakpoint, runtime_value, token, env)? {
                     BreakpointDecision::Skip => {}
                     BreakpointDecision::Log(message) => {
                         self.debugger_handler
@@ -8237,7 +8241,7 @@ mod debugger_tests {
             None,
             None,
             None,
-            Some("x is {x}".to_string()),
+            Some("x is ${x}, self is ${self}".to_string()),
         );
 
         let query = "foreach (x, array(1, 2, 3)):\n  x\nend";
@@ -8246,7 +8250,43 @@ mod debugger_tests {
         assert!(breakpoint_hits.read().unwrap().is_empty());
         assert_eq!(
             *log_points.read().unwrap(),
-            vec!["x is 1".to_string(), "x is 2".to_string(), "x is 3".to_string()]
+            vec![
+                "x is 1, self is 1".to_string(),
+                "x is 2, self is 2".to_string(),
+                "x is 3, self is 3".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_logpoint_message_supports_literal_braces_and_env_vars() {
+        let mut engine = crate::DefaultEngine::default();
+        let log_points = Shared::new(SharedCell::new(Vec::new()));
+        engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
+            breakpoint_hits: Shared::default(),
+            log_points: Shared::clone(&log_points),
+        }));
+        engine.debugger().write().unwrap().activate();
+
+        // SAFETY: no other threads read/write this env var concurrently in this test.
+        unsafe { std::env::set_var("MQ_TEST_LOGPOINT_VAR", "env-value") };
+        engine.debugger().write().unwrap().add_breakpoint_with_options(
+            2,
+            None,
+            None,
+            None,
+            None,
+            Some(r"literal \{x\} and ${$MQ_TEST_LOGPOINT_VAR}".to_string()),
+        );
+
+        let query = "foreach (x, array(1)):\n  x\nend";
+        engine.eval(query, crate::null_input().into_iter()).unwrap();
+        // SAFETY: matches the set_var call above.
+        unsafe { std::env::remove_var("MQ_TEST_LOGPOINT_VAR") };
+
+        assert_eq!(
+            *log_points.read().unwrap(),
+            vec!["literal {x} and env-value".to_string()]
         );
     }
 
