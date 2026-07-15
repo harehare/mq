@@ -244,6 +244,10 @@ enum OutputFormat {
     Table,
     Grep,
     Raw,
+    Csv,
+    Toml,
+    Xml,
+    Yaml,
     None,
 }
 
@@ -1473,7 +1477,7 @@ impl Cli {
             }
             OutputFormat::Json => {
                 let theme = (self.output.color_output && !Self::is_no_color()).then(mq_markdown::ColorTheme::from_env);
-                let json_str = crate::json::runtime_values_to_json(runtime_values, theme.as_ref())?;
+                let json_str = crate::output::json::runtime_values_to_json(runtime_values, theme.as_ref())?;
                 Self::write_ignore_pipe(&mut handle, json_str.as_bytes())?;
             }
             OutputFormat::Html => {
@@ -1495,12 +1499,28 @@ impl Cli {
             }
             OutputFormat::Table => {
                 let theme = (self.output.color_output && !Self::is_no_color()).then(mq_markdown::ColorTheme::from_env);
-                let table = crate::table::runtime_values_to_table(runtime_values, theme.as_ref());
+                let table = crate::output::table::runtime_values_to_table(runtime_values, theme.as_ref());
                 Self::write_ignore_pipe(&mut handle, format!("{}\n", table).as_bytes())?;
             }
             OutputFormat::Grep => {
                 let markdown = self.build_markdown(runtime_values);
                 Self::write_ignore_pipe(&mut handle, markdown.to_string().as_bytes())?;
+            }
+            OutputFormat::Csv => {
+                let csv_str = crate::output::csv::runtime_values_to_csv(runtime_values)?;
+                Self::write_ignore_pipe(&mut handle, csv_str.as_bytes())?;
+            }
+            OutputFormat::Toml => {
+                let toml_str = crate::output::toml::runtime_values_to_toml(runtime_values)?;
+                Self::write_ignore_pipe(&mut handle, toml_str.as_bytes())?;
+            }
+            OutputFormat::Xml => {
+                let xml_str = crate::output::xml::runtime_values_to_xml(runtime_values)?;
+                Self::write_ignore_pipe(&mut handle, xml_str.as_bytes())?;
+            }
+            OutputFormat::Yaml => {
+                let yaml_str = crate::output::yaml::runtime_values_to_yaml(runtime_values)?;
+                Self::write_ignore_pipe(&mut handle, yaml_str.as_bytes())?;
             }
             OutputFormat::None => {}
         }
@@ -1643,6 +1663,9 @@ mod tests {
             OutputFormat::Text,
             OutputFormat::Table,
             OutputFormat::Grep,
+            OutputFormat::Csv,
+            OutputFormat::Xml,
+            OutputFormat::Yaml,
         ] {
             let cli = Cli {
                 input: InputArgs::default(),

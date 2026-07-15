@@ -251,6 +251,31 @@ In {year}, the snowfall was above average.
     "<root>text</root>",
     Some("{\"text\": \"text\", \"attributes\": {}, \"tag\": \"root\", \"children\": []}\n")
 )]
+#[case::output_format_yaml(
+    vec!["--unbuffered", "-I", "json", "-F", "yaml", "self"],
+    r#"{"name": "Alice", "age": 30}"#,
+    Some("name: Alice\nage: 30.0\n")
+)]
+#[case::output_format_toml(
+    vec!["--unbuffered", "-I", "json", "-F", "toml", "self"],
+    r#"{"name": "Alice", "age": 30}"#,
+    Some("name = \"Alice\"\nage = 30.0\n")
+)]
+#[case::output_format_csv(
+    vec!["--unbuffered", "-I", "json", "-F", "csv", "self"],
+    r#"[{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]"#,
+    Some("age,name\n30,Alice\n25,Bob\n")
+)]
+#[case::output_format_xml_round_trip(
+    vec!["--unbuffered", "-I", "xml", "-F", "xml", "self"],
+    "<root>text</root>",
+    Some("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root>text</root>\n")
+)]
+#[case::output_format_xml_generic(
+    vec!["--unbuffered", "-I", "json", "-F", "xml", "self"],
+    r#"{"name": "Alice", "age": 30}"#,
+    Some("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root>\n  <name>Alice</name>\n  <age>30.0</age>\n</root>\n")
+)]
 #[case::select_skips_non_matching_wrapped_list_items(
     vec!["--unbuffered", r#"select(.code.lang == "bash") | to_text()"#],
     "- An [Amazon Bedrock Knowledge Base](https://aws.amazon.com/bedrock/knowledge-bases/)\n  indexes **one configurable [Confluence](https://www.atlassian.com/software/confluence)\n  space** (the space key is an OpenTofu variable)\n- [Confluence](https://www.atlassian.com/software/confluence) credentials are\n  rendered by OpenTofu into an [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/)\n  secret - the only credential store the Bedrock connector accepts\n\n```bash\necho \"hello\"\n```\n",
@@ -657,6 +682,18 @@ fn test_read_file_without_allow_read_is_blocked() -> Result<(), Box<dyn std::err
         .arg("--unbuffered")
         .arg(format!(r#"read_file("{}")"#, temp_file_path.to_string_lossy()))
         .arg(temp_file_path.to_string_lossy().to_string())
+        .assert();
+
+    assert.failure();
+    Ok(())
+}
+
+#[test]
+fn test_output_format_toml_requires_dict() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .args(["--unbuffered", "-I", "json", "-F", "toml", "self"])
+        .write_stdin(r#"["Alice", 30]"#)
         .assert();
 
     assert.failure();

@@ -25,6 +25,7 @@ clap = {workspace = true, features = ["derive"]}
 clap_complete = {workspace = true}
 clap_complete_nushell = {workspace = true}
 colored = {workspace = true}
+csv = {workspace = true}
 dirs = {workspace = true}
 miette = {workspace = true, features = ["fancy"]}
 mimalloc = {workspace = true, features = ["v3"], optional = true}
@@ -32,12 +33,15 @@ mq-dap = {workspace = true, optional = true}
 mq-lang = {workspace = true, features = ["file-io"]}
 mq-markdown = {workspace = true, features = ["json", "html-to-markdown", "color"]}
 mq-repl = {workspace = true}
+quick-xml = {workspace = true}
 rayon = {workspace = true}
 serde_json = {workspace = true}
+serde_yaml = {workspace = true}
 regex-lite = {workspace = true, optional = true}
 rustyline = {workspace = true, optional = true, default-features = false, features = ["custom-bindings", "with-file-history"]}
 strum = {workspace = true, features = ["derive"], optional = true}
 tabled = {workspace = true}
+toml = {workspace = true}
 which = "8.0.2"
 
 [dev-dependencies]
