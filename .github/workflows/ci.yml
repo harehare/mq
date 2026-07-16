@@ -44,7 +44,7 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Install tools
-        uses: taiki-e/install-action@5ebac0d9522d786674368e47e92963ba13f2c376 # v2.82.11
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb # v2.83.0
         with:
           tool: nextest,cargo-llvm-cov
       - name: Configure RUSTFLAGS for Windows
