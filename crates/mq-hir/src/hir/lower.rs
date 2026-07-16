@@ -447,7 +447,9 @@ impl Hir {
             ..
         } = &**node
         {
-            let _ = node.children_without_token().first().map(|child| {
+            let children = node.children_without_token();
+
+            let _ = children.first().map(|child| {
                 let module_name = child.name().unwrap();
                 let module_path = self.module_loader.get_module_path(&module_name);
 
@@ -464,6 +466,20 @@ impl Hir {
                         parent,
                         insertion_order: 0,
                     });
+
+                    // `import "path" as alias` also binds a plain Ident symbol for the
+                    // alias, mirroring how `module` registers its name (see add_module_expr).
+                    if let Some(alias_node) = children.get(1) {
+                        self.add_symbol(Symbol {
+                            value: alias_node.name(),
+                            kind: SymbolKind::Ident,
+                            source: SourceInfo::new(Some(source_id), Some(alias_node.range())),
+                            scope: scope_id,
+                            doc: node.comments(),
+                            parent,
+                            insertion_order: 0,
+                        });
+                    }
                 }
             });
         }

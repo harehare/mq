@@ -407,7 +407,7 @@ impl Macro {
             | Expr::Nodes
             | Expr::Self_
             | Expr::Include(_)
-            | Expr::Import(_)
+            | Expr::Import(_, _)
             | Expr::Break(None)
             | Expr::Continue => Ok(Shared::clone(node)),
             Expr::Break(Some(value)) => {
@@ -815,7 +815,7 @@ impl Macro {
             | Expr::Nodes
             | Expr::Self_
             | Expr::Include(_)
-            | Expr::Import(_)
+            | Expr::Import(_, _)
             | Expr::Macro(_, _, _)
             | Expr::Break(None)
             | Expr::Continue => Shared::clone(node),

@@ -586,6 +586,16 @@ fn test_module_imports() {
     println!("Module import result: {:?}", result);
 }
 
+#[test]
+fn test_import_does_not_type_error() {
+    assert!(check_types(r#"import "not_a_real_module""#).is_empty());
+}
+
+#[test]
+fn test_import_with_alias_does_not_type_error() {
+    assert!(check_types(r#"import "not_a_real_module" as m"#).is_empty());
+}
+
 // While Loop
 
 #[test]

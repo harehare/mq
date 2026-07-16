@@ -274,9 +274,12 @@ impl Node {
                 buf.push_str("include ");
                 format_literal(path, buf);
             }
-            Expr::Import(path) => {
+            Expr::Import(path, alias) => {
                 buf.push_str("import ");
                 format_literal(path, buf);
+                if let Some(alias) = alias {
+                    write!(buf, " as {}", alias).unwrap();
+                }
             }
         }
     }
@@ -998,8 +1001,15 @@ mod tests {
         r#"include "file.mq""#
     )]
     #[case::import(
-        Expr::Import(Literal::String("module.mq".to_string())),
+        Expr::Import(Literal::String("module.mq".to_string()), None),
         r#"import "module.mq""#
+    )]
+    #[case::import_as(
+        Expr::Import(
+            Literal::String("module.mq".to_string()),
+            Some(IdentWithToken::new("m"))
+        ),
+        r#"import "module.mq" as m"#
     )]
     fn test_to_code_include_import(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);

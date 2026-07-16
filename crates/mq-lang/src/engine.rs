@@ -501,6 +501,32 @@ mod tests {
         assert_eq!(values.len(), 1);
     }
 
+    #[test]
+    fn test_eval_import_as_alias() {
+        let (temp_dir, temp_file_path) =
+            create_file("greeter_engine_test.mq", r#"def greet(name): "Hello, " + name + "!";"#);
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let mut engine = DefaultEngine::default();
+        engine.set_search_paths(vec![temp_dir]);
+
+        let result = engine.eval(
+            r#"import "greeter_engine_test" as g | g::greet("World")"#,
+            vec!["".to_string().into()].into_iter(),
+        );
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(
+            result.unwrap().into_iter().next(),
+            Some(crate::RuntimeValue::String("Hello, World!".to_string()))
+        );
+    }
+
     #[rstest]
     #[case("add(1, 1)", "add(1, 1)")]
     #[case(".", ".")]

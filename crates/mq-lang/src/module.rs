@@ -184,7 +184,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             .filter(|node| {
                 matches!(
                     *node.expr,
-                    ast::Expr::Include(_) | ast::Expr::Module(_, _) | ast::Expr::Import(_)
+                    ast::Expr::Include(_) | ast::Expr::Module(_, _) | ast::Expr::Import(_, _)
                 )
             })
             .cloned()

@@ -1995,6 +1995,8 @@ s"test${val1}"
 "#
     )]
     #[case::include("include  \"test.mq\"", "include \"test.mq\"")]
+    #[case::import("import  \"test.mq\"", "import \"test.mq\"")]
+    #[case::import_as("import  \"test.mq\"   as   m", "import \"test.mq\" as m")]
     #[case::nodes("nodes|nodes", "nodes | nodes")]
     #[case::fn_("fn(): program;", "fn(): program;")]
     #[case::fn_multiline(
@@ -3014,6 +3016,15 @@ end
 | import "a.mq"
 | import "b.mq""#,
         r#"import "a.mq"
+| import "b.mq"
+| import "c.mq"
+"#
+    )]
+    #[case::sort_imports_with_alias(
+        r#"import "c.mq"
+| import "a.mq" as a
+| import "b.mq""#,
+        r#"import "a.mq" as a
 | import "b.mq"
 | import "c.mq"
 "#

@@ -460,7 +460,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     // Only allow 'let', 'def', or 'module' at the top-level of a module block
                     for node in &program {
                         match &*node.expr {
-                            Expr::Let(_, _) | Expr::Def(_, _, _) | Expr::Module(_, _) | Expr::Import(_) => {}
+                            Expr::Let(_, _) | Expr::Def(_, _, _) | Expr::Module(_, _) | Expr::Import(_, _) => {}
                             _ => {
                                 return Err(SyntaxError::UnexpectedToken((*self.token_arena[node.token_id]).clone()));
                             }
@@ -2151,9 +2151,28 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         match &token.kind {
             TokenKind::StringLiteral(module) => {
                 let module_name = module.to_owned();
+                let alias = if let Some(token) = self.tokens.peek()
+                    && matches!(token.kind, TokenKind::As)
+                {
+                    self.tokens.next();
+                    let name_token = match self.tokens.next() {
+                        Some(token) => token,
+                        None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+                    };
+
+                    match &name_token.kind {
+                        TokenKind::Ident(name) => {
+                            Some(IdentWithToken::new_with_token(name, Some(Shared::clone(name_token))))
+                        }
+                        _ => return Err(SyntaxError::UnexpectedToken((**name_token).clone())),
+                    }
+                } else {
+                    None
+                };
+
                 Ok(Shared::new(Node {
                     token_id,
-                    expr: Shared::new(Expr::Import(Literal::String(module_name))),
+                    expr: Shared::new(Expr::Import(Literal::String(module_name), alias)),
                 }))
             }
             _ => Err(SyntaxError::InsufficientTokens((*token).clone())),
@@ -7556,6 +7575,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Shared::new(Expr::Import(
                     Literal::String("name".to_owned()),
+                    None,
                 )),
             })
             ]))]
@@ -7563,6 +7583,8 @@ mod tests {
             vec![
             token(TokenKind::Import),
             token(TokenKind::StringLiteral("name".to_owned())),
+            token(TokenKind::As),
+            token(TokenKind::Ident(SmolStr::new("alias"))),
             token(TokenKind::Eof),
             ],
             Ok(vec![
@@ -7570,9 +7592,21 @@ mod tests {
                 token_id: 0.into(),
                 expr: Shared::new(Expr::Import(
                     Literal::String("name".to_owned()),
+                    Some(IdentWithToken::new_with_token(
+                        "alias",
+                        Some(Shared::new(token(TokenKind::Ident(SmolStr::new("alias"))))),
+                    )),
                 )),
             })
             ]))]
+    #[case::import_as_missing_ident(
+            vec![
+            token(TokenKind::Import),
+            token(TokenKind::StringLiteral("name".to_owned())),
+            token(TokenKind::As),
+            token(TokenKind::Eof),
+            ],
+            Err(SyntaxError::UnexpectedToken(token(TokenKind::Eof))))]
     #[case::qualified_access(
             vec![
             token(TokenKind::Ident(SmolStr::new("test"))),
