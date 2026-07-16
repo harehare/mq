@@ -53,6 +53,9 @@ mq-fmt --indent-width 4 file.mq
 
 # Sort imports and functions
 mq-fmt --sort-imports --sort-functions file.mq
+
+# Wrap long `|`-chained pipelines at 80 columns
+mq-fmt --max-width 80 file.mq
 ```
 
 ### Via mq
@@ -67,6 +70,7 @@ mq fmt --check file.mq
 | Option             | Short | Description                              | Default |
 | ------------------ | ----- | ---------------------------------------- | ------- |
 | `--indent-width`   | `-i`  | Number of spaces for indentation         | `2`     |
+| `--max-width`      | `-w`  | Wrap `\|`-chained pipelines that exceed this line width | unset (no wrapping) |
 | `--check`          | `-c`  | Check formatting without modifying files | `false` |
 | `--sort-imports`   |       | Sort import statements                   | `false` |
 | `--sort-functions` |       | Sort function definitions                | `false` |
