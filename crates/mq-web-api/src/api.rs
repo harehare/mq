@@ -141,6 +141,7 @@ pub struct FormatApiRequest {
     pub sort_imports: Option<bool>,
     pub sort_functions: Option<bool>,
     pub sort_fields: Option<bool>,
+    pub max_width: Option<usize>,
 }
 
 /// Response body for `POST /api/format`.
@@ -260,6 +261,7 @@ pub fn format_query(request: FormatApiRequest) -> miette::Result<FormatApiRespon
         sort_imports: request.sort_imports.unwrap_or(false),
         sort_functions: request.sort_functions.unwrap_or(false),
         sort_fields: request.sort_fields.unwrap_or(false),
+        max_width: request.max_width,
     };
     let formatted = Formatter::new(Some(config))
         .format(&request.query)
@@ -704,6 +706,7 @@ mod tests {
             sort_imports: None,
             sort_functions: None,
             sort_fields: None,
+            max_width: None,
         };
         let result = format_query(req);
         assert!(result.is_ok());
@@ -718,6 +721,7 @@ mod tests {
             sort_imports: Some(false),
             sort_functions: Some(false),
             sort_fields: Some(false),
+            max_width: None,
         };
         let result = format_query(req);
         assert!(result.is_ok());

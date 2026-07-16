@@ -15,11 +15,17 @@ use std::{fs, path::PathBuf};
     ## To check if files are formatted without modifying them:\n\
     mq-fmt --check file.mq\n\n\
     ## To format with custom indent width:\n\
-    mq-fmt --indent-width 4 file.mq")]
+    mq-fmt --indent-width 4 file.mq\n\n\
+    ## To wrap long pipelines at a maximum line width:\n\
+    mq-fmt --max-width 80 file.mq")]
 struct Cli {
     /// Number of spaces for indentation
     #[arg(short, long, default_value_t = 2)]
     indent_width: usize,
+
+    /// Maximum line width before long `|`-chained pipelines are wrapped onto multiple lines
+    #[arg(short = 'w', long)]
+    max_width: Option<usize>,
 
     /// Check if files are formatted without modifying them
     #[arg(short, long)]
@@ -49,6 +55,7 @@ fn main() -> miette::Result<()> {
         sort_imports: cli.sort_imports,
         sort_fields: cli.sort_fields,
         sort_functions: cli.sort_functions,
+        max_width: cli.max_width,
     }));
 
     let files = match cli.files {

@@ -30,6 +30,7 @@ pub struct FormatterConfig {
     pub sort_imports: bool,
     pub sort_functions: bool,
     pub sort_fields: bool,
+    pub max_width: Option<usize>,
 }
 
 impl Default for FormatterConfig {
@@ -39,6 +40,7 @@ impl Default for FormatterConfig {
             sort_imports: false,
             sort_functions: false,
             sort_fields: false,
+            max_width: None,
         }
     }
 }
@@ -212,7 +214,7 @@ impl Formatter {
     }
 
     fn format_node(&mut self, node: mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
-        let has_leading_new_line = node.has_new_line();
+        let has_leading_new_line = node.has_new_line() || (node.is_pipe() && self.should_wrap_pipe());
         let indent_level_consider_new_line = if has_leading_new_line { indent_level } else { 0 };
 
         if !matches!(
@@ -1570,8 +1572,15 @@ impl Formatter {
                     self.output.push(' ');
                 }
                 mq_lang::TokenKind::Pipe => {
-                    if node.has_new_line() {
+                    let force_wrap = !node.has_new_line() && self.should_wrap_pipe();
+
+                    if node.has_new_line() || force_wrap {
                         self.append_leading_trivia(node, indent_level);
+
+                        if force_wrap {
+                            self.append_newline();
+                        }
+
                         self.append_indent(indent_level);
                         self.output.push_str(&token.to_string());
                         self.output.push(' ');
@@ -1617,6 +1626,19 @@ impl Formatter {
         let start = self.output.rfind('\n').map_or(0, |pos| pos + 1);
         let last_line = &self.output[start..];
         last_line.chars().take_while(|c| *c == ' ').count() / self.config.indent_width
+    }
+
+    #[inline(always)]
+    fn current_line_width(&self) -> usize {
+        let start = self.output.rfind('\n').map_or(0, |pos| pos + 1);
+        self.output[start..].chars().count()
+    }
+
+    #[inline(always)]
+    fn should_wrap_pipe(&self) -> bool {
+        self.config
+            .max_width
+            .is_some_and(|max_width| self.current_line_width() >= max_width)
     }
 
     #[inline(always)]
@@ -3079,8 +3101,49 @@ macro mac_x(): test;"#,
             sort_imports: true,
             sort_functions: true,
             sort_fields: true,
+            max_width: None,
         };
         let result = Formatter::new(Some(config)).format(code);
         assert_eq!(result.unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::wraps_top_level_pipeline(
+        "select(\"h1\") | upcase() | add_class(\"title\") | trim() | to_text() | replace(\"a\",\"b\") | join(\",\")",
+        40,
+        "select(\"h1\") | upcase() | add_class(\"title\")\n| trim() | to_text() | replace(\"a\", \"b\")\n| join(\",\")\n"
+    )]
+    #[case::wraps_pipeline_inside_def(
+        "def foo(x):\n  select(\"h1\") | upcase() | add_class(\"title\") | trim() | to_text() | replace(\"a\",\"b\") | join(\",\");",
+        40,
+        "def foo(x):\n  select(\"h1\") | upcase() | add_class(\"title\")\n  | trim() | to_text() | replace(\"a\", \"b\")\n  | join(\",\");\n"
+    )]
+    #[case::keeps_short_pipeline_inline("select(\"h1\") | upcase()", 80, "select(\"h1\") | upcase()")]
+    fn test_format_with_max_width(#[case] code: &str, #[case] max_width: usize, #[case] expected: &str) {
+        let config = FormatterConfig {
+            max_width: Some(max_width),
+            ..Default::default()
+        };
+        let result = Formatter::new(Some(config)).format(code);
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_format_with_max_width_is_idempotent() {
+        let code = "select(\"h1\") | upcase() | add_class(\"title\") | trim() | to_text() | replace(\"a\",\"b\") | join(\",\")";
+        let config = || FormatterConfig {
+            max_width: Some(40),
+            ..Default::default()
+        };
+        let once = Formatter::new(Some(config())).format(code).unwrap();
+        let twice = Formatter::new(Some(config())).format(&once).unwrap();
+        assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn test_format_without_max_width_does_not_wrap() {
+        let code = "select(\"h1\") | upcase() | add_class(\"title\") | trim() | to_text() | replace(\"a\", \"b\") | join(\",\")";
+        let result = Formatter::default().format(code);
+        assert_eq!(result.unwrap(), code);
     }
 }

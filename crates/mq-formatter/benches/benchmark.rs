@@ -52,6 +52,7 @@ macro m(): test;"#;
         sort_imports: true,
         sort_functions: true,
         sort_fields: true,
+        max_width: None,
     };
     let mut formatter = Formatter::new(Some(config));
     formatter.format(code).unwrap();
