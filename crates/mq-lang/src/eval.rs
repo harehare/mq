@@ -238,9 +238,13 @@ impl<T: ModuleResolver> Evaluator<T> {
                         self.eval_include(module_id.to_owned(), &Shared::clone(&self.env))
                             .map_err(InnerError::from)?;
                     }
-                    ast::Expr::Import(module_path) => {
-                        self.eval_import(module_path.to_owned(), &Shared::clone(&self.env))
-                            .map_err(|e| e.into_inner_error())?;
+                    ast::Expr::Import(module_path, alias) => {
+                        self.eval_import(
+                            module_path.to_owned(),
+                            alias.as_ref().map(|ident| ident.name),
+                            &Shared::clone(&self.env),
+                        )
+                        .map_err(|e| e.into_inner_error())?;
                     }
                     ast::Expr::Module(ident, program) => {
                         self.eval_module(&RuntimeValue::NONE, ident, program, &Shared::clone(&self.env))
@@ -375,7 +379,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     pub(crate) fn import_module(&mut self, module: Module) -> Result<RuntimeValue, RuntimeError> {
-        self.import_module_with_env(module, &Shared::clone(&self.env))
+        self.import_module_with_env(module, None, &Shared::clone(&self.env))
             .map_err(|e| e.into_runtime_error())
     }
 
@@ -399,8 +403,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                 ast::Expr::Module(ident, program) => self
                     .eval_module(&RuntimeValue::NONE, ident, program, env)
                     .map_err(|e| e.into_runtime_error())?,
-                ast::Expr::Import(module_path) => self
-                    .eval_import(module_path.to_owned(), env)
+                ast::Expr::Import(module_path, alias) => self
+                    .eval_import(module_path.to_owned(), alias.as_ref().map(|ident| ident.name), env)
                     .map_err(|e| e.into_runtime_error())?,
                 _ => {
                     return Err(RuntimeError::InternalError(
@@ -644,8 +648,12 @@ impl<T: ModuleResolver> Evaluator<T> {
                         }
                     }
                 }
-                ast::Expr::Import(module_path) => {
-                    self.eval_import(module_path.to_owned(), &Shared::clone(&module_env))?;
+                ast::Expr::Import(module_path, alias) => {
+                    self.eval_import(
+                        module_path.to_owned(),
+                        alias.as_ref().map(|ident| ident.name),
+                        &Shared::clone(&module_env),
+                    )?;
                 }
                 ast::Expr::Module(ident, program) => {
                     // Collect macros from the module
@@ -670,7 +678,12 @@ impl<T: ModuleResolver> Evaluator<T> {
         Ok(runtime_value.clone())
     }
 
-    fn import_module_with_env(&mut self, module: Module, env: &Shared<SharedCell<Env>>) -> EvalResult {
+    fn import_module_with_env(
+        &mut self,
+        module: Module,
+        alias: Option<Ident>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> EvalResult {
         // Collect macros from the module
         // Create a new environment for the module exports
         let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
@@ -684,12 +697,19 @@ impl<T: ModuleResolver> Evaluator<T> {
             Shared::clone(&module_env),
         ));
 
-        define(&self.env, Ident::new(&module_name_to_use), module_runtime_value);
+        // The alias, if given, rebinds the module under that name instead of its canonical one.
+        let bind_name = alias.unwrap_or_else(|| Ident::new(&module_name_to_use));
+        define(&self.env, bind_name, module_runtime_value);
 
         Ok(RuntimeValue::Module(ModuleEnv::new(&module_name_to_use, module_env)))
     }
 
-    fn eval_import(&mut self, module_path: ast::Literal, env: &Shared<SharedCell<Env>>) -> EvalResult {
+    fn eval_import(
+        &mut self,
+        module_path: ast::Literal,
+        alias: Option<Ident>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> EvalResult {
         match module_path {
             ast::Literal::String(module_name) => {
                 let module = self
@@ -699,7 +719,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     Ok(module) => {
                         #[cfg(feature = "http-import")]
                         self.module_loader.push_http_boundary();
-                        let result = self.import_module_with_env(module, env);
+                        let result = self.import_module_with_env(module, alias, env);
                         #[cfg(feature = "http-import")]
                         self.module_loader.pop_http_boundary();
                         result
@@ -707,7 +727,13 @@ impl<T: ModuleResolver> Evaluator<T> {
                     Err(ModuleError::AlreadyLoaded(_)) => {
                         let canonical = self.module_loader.canonical_name(&module_name).to_owned();
                         match resolve(&canonical, env) {
-                            Ok(value) => Ok(value),
+                            Ok(value) => {
+                                // Already loaded under its canonical name; also bind the alias if given.
+                                if let Some(alias) = alias {
+                                    define(env, alias, value.clone());
+                                }
+                                Ok(value)
+                            }
                             Err(_) => {
                                 Err(RuntimeError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(canonical))).into())
                             }
@@ -1206,7 +1232,9 @@ impl<T: ModuleResolver> Evaluator<T> {
                 self.eval_include(module_id.to_owned(), env)?;
                 Ok(runtime_value.clone())
             }
-            ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned(), env),
+            ast::Expr::Import(module_path, alias) => {
+                self.eval_import(module_path.to_owned(), alias.as_ref().map(|ident| ident.name), env)
+            }
             ast::Expr::Module(ident, program) => self.eval_module(runtime_value, ident, program, env),
 
             ast::Expr::Match(value_node, arms) => self.eval_match(runtime_value, value_node, arms, env),
@@ -7052,7 +7080,10 @@ mod tests {
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
-                expr: Shared::new(ast::Expr::Import(ast::Literal::String("test_qualified".to_string()))),
+                expr: Shared::new(ast::Expr::Import(
+                    ast::Literal::String("test_qualified".to_string()),
+                    None,
+                )),
             }),
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -7073,6 +7104,82 @@ mod tests {
     }
 
     #[test]
+    fn test_import_alias_qualified_access() {
+        let (temp_dir, temp_file_path) = create_file("test_alias.mq", r#"def greet(name): "Hello, " + name + "!";"#);
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+
+        let program = vec![
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::Import(
+                    ast::Literal::String("test_alias".to_string()),
+                    Some(IdentWithToken::new("greeter")),
+                )),
+            }),
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::QualifiedAccess(
+                    vec![IdentWithToken::new("greeter")],
+                    ast::AccessTarget::Call(
+                        IdentWithToken::new("greet"),
+                        smallvec![ast_node(ast::Expr::Literal(ast::Literal::String("World".to_string())))],
+                    ),
+                )),
+            }),
+        ];
+        assert_eq!(
+            Evaluator::new(loader, token_arena())
+                .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
+            Ok(vec![RuntimeValue::String("Hello, World!".to_string())])
+        );
+    }
+
+    /// The canonical module name is not bound when the import is aliased, mirroring
+    /// how `import "x" as y` in other languages only exposes `y`.
+    #[test]
+    fn test_import_alias_does_not_bind_canonical_name() {
+        let (temp_dir, temp_file_path) = create_file("test_alias_only.mq", r#"let answer = 42"#);
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(DefaultModuleResolver::new(vec![temp_dir.clone()]));
+
+        let program = vec![
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::Import(
+                    ast::Literal::String("test_alias_only".to_string()),
+                    Some(IdentWithToken::new("m")),
+                )),
+            }),
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::QualifiedAccess(
+                    vec![IdentWithToken::new("test_alias_only")],
+                    ast::AccessTarget::Ident(IdentWithToken::new("answer")),
+                )),
+            }),
+        ];
+        let result = Evaluator::new(loader, token_arena())
+            .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter());
+        assert!(matches!(
+            result,
+            Err(InnerError::Runtime(RuntimeError::UndefinedReference(_, _, _)))
+        ));
+    }
+
+    #[test]
     fn test_import_qualified_access_value() {
         let (temp_dir, temp_file_path) = create_file("test_qualified_val.mq", r#"let answer = 42"#);
 
@@ -7087,9 +7194,10 @@ mod tests {
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
-                expr: Shared::new(ast::Expr::Import(ast::Literal::String(
-                    "test_qualified_val".to_string(),
-                ))),
+                expr: Shared::new(ast::Expr::Import(
+                    ast::Literal::String("test_qualified_val".to_string()),
+                    None,
+                )),
             }),
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -7112,7 +7220,7 @@ mod tests {
         vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
-                expr: Shared::new(ast::Expr::Import(ast::Literal::String(module_name.to_string()))),
+                expr: Shared::new(ast::Expr::Import(ast::Literal::String(module_name.to_string()), None)),
             }),
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -7228,9 +7336,10 @@ mod tests {
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
-                expr: Shared::new(ast::Expr::Import(ast::Literal::String(
-                    "test_qualified_math".to_string(),
-                ))),
+                expr: Shared::new(ast::Expr::Import(
+                    ast::Literal::String("test_qualified_math".to_string()),
+                    None,
+                )),
             }),
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -7258,7 +7367,7 @@ mod tests {
         let loader: ModuleLoader = ModuleLoader::default();
         let program = vec![Shared::new(ast::Node {
             token_id: 0.into(),
-            expr: Shared::new(ast::Expr::Import(ast::Literal::String("not_found".to_string()))),
+            expr: Shared::new(ast::Expr::Import(ast::Literal::String("not_found".to_string()), None)),
         })];
         assert_eq!(
             Evaluator::new(loader, token_arena())
@@ -7513,7 +7622,7 @@ mod tests {
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
-                expr: Shared::new(ast::Expr::Import(ast::Literal::String("test_macro".to_string()))),
+                expr: Shared::new(ast::Expr::Import(ast::Literal::String("test_macro".to_string()), None)),
             }),
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -7556,7 +7665,7 @@ mod tests {
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
-                expr: Shared::new(ast::Expr::Import(ast::Literal::String("test_macro2".to_string()))),
+                expr: Shared::new(ast::Expr::Import(ast::Literal::String("test_macro2".to_string()), None)),
             }),
             Shared::new(ast::Node {
                 token_id: 0.into(),

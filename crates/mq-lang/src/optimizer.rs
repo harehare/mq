@@ -424,7 +424,7 @@ impl Optimizer {
             | ast::Expr::Break(None)
             | ast::Expr::Continue
             | ast::Expr::Include(_)
-            | ast::Expr::Import(_)
+            | ast::Expr::Import(_, _)
             | ast::Expr::Module(_, _)
             | ast::Expr::Macro(_, _, _)
             | ast::Expr::Quote(_)
@@ -745,7 +745,7 @@ impl Optimizer {
             | ast::Expr::Break(None)
             | ast::Expr::Continue
             | ast::Expr::Include(_)
-            | ast::Expr::Import(_)
+            | ast::Expr::Import(_, _)
             | ast::Expr::Macro(_, _, _)
             | ast::Expr::Quote(_)
             | ast::Expr::QualifiedAccess(_, _) => node,

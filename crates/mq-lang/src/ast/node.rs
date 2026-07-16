@@ -194,7 +194,7 @@ impl Node {
             | Expr::Selector(_)
             | Expr::SelectorChain(_)
             | Expr::Include(_)
-            | Expr::Import(_)
+            | Expr::Import(_, _)
             | Expr::InterpolatedString(_)
             | Expr::QualifiedAccess(_, _)
             | Expr::Nodes
@@ -365,7 +365,8 @@ pub enum Expr {
     If(Branches),
     Match(Shared<Node>, MatchArms),
     Include(Literal),
-    Import(Literal),
+    /// `import "path"` or `import "path" as alias`; the alias rebinds the module name.
+    Import(Literal, Option<IdentWithToken>),
     Module(IdentWithToken, Program),
     QualifiedAccess(Vec<IdentWithToken>, AccessTarget),
     Self_,

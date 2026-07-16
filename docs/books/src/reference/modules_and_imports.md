@@ -70,6 +70,19 @@ import "math"
 | math::sub(10, 5)  # Returns 5
 ```
 
+### Import Aliases
+
+Use `import "module_path" as alias` to bind the module under a different name, useful for
+shortening long module paths or avoiding naming conflicts. Only the alias is bound; the
+module's original name is not available.
+
+```mq
+import "math" as m
+
+| m::add(10, 5)  # Returns 15
+| m::sub(10, 5)  # Returns 5
+```
+
 ## Include
 
 Loads functions from an external file directly into the current namespace using the syntax `include "module_name"`.

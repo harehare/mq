@@ -405,6 +405,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::pattern_match("match (v): | [1,2,3]: 1 end", "match", SymbolKind::Match)]
     #[case::pattern_match_arm("match (v): | 1: \"one\" end", "1", SymbolKind::Pattern { is_dict: false })]
     #[case::import("import \"foo\"", "foo", SymbolKind::Import(SourceId::default()))]
+    #[case::import_as("import \"foo\" as bar", "foo", SymbolKind::Import(SourceId::default()))]
+    #[case::import_as_alias_ident("import \"foo\" as bar", "bar", SymbolKind::Ident)]
     #[case::module("module a: def b(): 1; end", "a", SymbolKind::Module(SourceId::default()))]
     #[case::module_name_ident("module math: def add(): 1; end", "math", SymbolKind::Ident)]
     fn test_add_code(#[case] code: &str, #[case] expected_name: &str, #[case] expected_kind: SymbolKind) {
