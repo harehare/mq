@@ -45,6 +45,7 @@ pub enum RuleId {
     UnusedParameter,
     ConstantStringConcat,
     NegatedCondition,
+    DangerousCapabilityCall,
 }
 
 impl RuleId {
@@ -83,6 +84,7 @@ impl RuleId {
         RuleId::UnusedParameter,
         RuleId::ConstantStringConcat,
         RuleId::NegatedCondition,
+        RuleId::DangerousCapabilityCall,
     ];
 
     /// The rule's `snake_case` identifier, as used in config and CLI flags.
@@ -121,6 +123,7 @@ impl RuleId {
             RuleId::UnusedParameter => "unused_parameter",
             RuleId::ConstantStringConcat => "constant_string_concat",
             RuleId::NegatedCondition => "negated_condition",
+            RuleId::DangerousCapabilityCall => "dangerous_capability_call",
         }
     }
 }
@@ -239,6 +242,10 @@ pub enum LintMessage {
     },
     ConstantStringConcat,
     NegatedCondition,
+    DangerousCapabilityCall {
+        name: String,
+        flag: String,
+    },
 }
 
 impl LintMessage {
@@ -278,6 +285,7 @@ impl LintMessage {
             LintMessage::UnusedParameter { .. } => RuleId::UnusedParameter,
             LintMessage::ConstantStringConcat => RuleId::ConstantStringConcat,
             LintMessage::NegatedCondition => RuleId::NegatedCondition,
+            LintMessage::DangerousCapabilityCall { .. } => RuleId::DangerousCapabilityCall,
         }
     }
 
@@ -380,6 +388,10 @@ impl LintMessage {
             LintMessage::NegatedCondition => {
                 Some("invert the condition and swap the `then` and `else` branches".to_string())
             }
+            LintMessage::DangerousCapabilityCall { flag, .. } => Some(format!(
+                "review this call before enabling `{flag}`; if the code came from an untrusted or \
+                 HTTP-imported module, avoid granting the flag process-wide"
+            )),
         }
     }
 }
@@ -490,6 +502,12 @@ impl fmt::Display for LintMessage {
                 write!(
                     f,
                     "negated condition in `if`/`else` — consider swapping the branches and inverting the condition"
+                )
+            }
+            LintMessage::DangerousCapabilityCall { name, flag } => {
+                write!(
+                    f,
+                    "call to capability-gated function `{name}` (requires `{flag}` at runtime)"
                 )
             }
         }

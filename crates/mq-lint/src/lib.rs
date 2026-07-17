@@ -1,7 +1,7 @@
 //! Linter for the mq language.
 //!
 //! This crate provides static analysis rules for mq programs, organized into
-//! categories: correctness, style, complexity, selector, and module.
+//! categories: correctness, style, complexity, selector, module, and security.
 //!
 //! ## Example
 //!

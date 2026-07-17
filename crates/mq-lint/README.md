@@ -2,7 +2,7 @@
 
 Static analysis linter for the mq language.
 
-`mq-lint` analyses mq programs by walking the HIR (High-level Intermediate Representation) and reporting diagnostics across five categories: correctness, style, complexity, selector, and module.
+`mq-lint` analyses mq programs by walking the HIR (High-level Intermediate Representation) and reporting diagnostics across six categories: correctness, style, complexity, selector, module, and security.
 
 ## Usage
 
@@ -298,6 +298,23 @@ module a: def foo(): 1; end  # style: module `a` has no documentation comment
 module a: def foo(): 1; end
 | module b: def foo(): 2; end
 ```
+
+### Security
+
+| Rule ID                      | Severity | Description                                                                                |
+| ----------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| `dangerous_capability_call`  | warn     | Call to a capability-gated builtin (`http`, `read_file`, `read_file_bytes`, `write_file`) |
+
+**Example — `dangerous_capability_call`**
+
+```mq
+# warn: call to capability-gated function `http` (requires `--allow-net` at runtime)
+http("https://example.com", "GET")
+```
+
+This rule is especially useful for reviewing HTTP-imported third-party modules before enabling
+`--allow-net`/`--allow-read`/`--allow-write`, since those flags apply process-wide to every module
+in the query, including transitively imported ones.
 
 ## Support
 
