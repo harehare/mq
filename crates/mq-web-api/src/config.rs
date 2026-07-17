@@ -1,5 +1,5 @@
 use crate::rate_limiter::RateLimitConfig;
-use std::env;
+use std::{env, time::Duration};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -13,6 +13,8 @@ pub struct Config {
     pub otel_endpoint: Option<String>,
     /// Service name reported to the OpenTelemetry collector.
     pub otel_service_name: String,
+    /// Maximum duration a single query evaluation may run before it's aborted.
+    pub query_timeout: Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -32,6 +34,7 @@ impl Default for Config {
             rate_limit: RateLimitConfig::default(),
             otel_endpoint: None,
             otel_service_name: "mq-web-api".to_string(),
+            query_timeout: Duration::from_secs(10),
         }
     }
 }
@@ -125,6 +128,17 @@ impl Config {
             && !service_name.is_empty()
         {
             config.otel_service_name = service_name;
+        }
+
+        if let Ok(timeout_str) = env::var("QUERY_TIMEOUT_SECONDS") {
+            if let Ok(timeout) = timeout_str.parse::<u64>() {
+                config.query_timeout = Duration::from_secs(timeout);
+            } else {
+                eprintln!(
+                    "Warning: Invalid QUERY_TIMEOUT_SECONDS value '{}', using default {:?}",
+                    timeout_str, config.query_timeout
+                );
+            }
         }
 
         config

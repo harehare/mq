@@ -135,6 +135,7 @@ All settings are controlled through environment variables.
 | `RUST_LOG` | `mq_web_api=debug,tower_http=debug` | Log level filter |
 | `LOG_FORMAT` | `json` | Log format: `json` or `text` |
 | `CORS_ORIGINS` | `*` | Comma-separated allowed origins |
+| `QUERY_TIMEOUT_SECONDS` | `10` | Max seconds a single query may run before it's aborted |
 
 ### Rate Limiting
 

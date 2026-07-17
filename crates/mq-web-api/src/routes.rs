@@ -26,7 +26,9 @@ use crate::{
 };
 
 pub fn create_router(config: &Config, rate_limiter: Arc<RateLimiter>) -> Router {
-    let state = AppState {};
+    let state = AppState {
+        query_timeout: config.query_timeout,
+    };
 
     let cors = if config.cors_origins.contains(&"*".to_string()) {
         CorsLayer::new()
