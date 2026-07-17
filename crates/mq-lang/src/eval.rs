@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 
 #[cfg(feature = "debugger")]
 use crate::DebuggerHandler;
@@ -43,6 +44,10 @@ pub mod runtime_value;
 
 use env::Env;
 use runtime_value::RuntimeValue;
+
+/// Number of loop iterations / function calls between wall-clock deadline checks.
+/// Must be a power of two so the check is a cheap bitmask instead of a modulo.
+const TIMEOUT_CHECK_INTERVAL: u32 = 1024;
 
 static TYPE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("type"));
 static DYNAMIC_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("<dynamic>"));
@@ -116,6 +121,9 @@ enum BreakpointDecision {
 pub struct Options {
     /// Maximum depth of the call stack to prevent infinite recursion.
     pub max_call_stack_depth: u32,
+    /// Maximum wall-clock duration for a single evaluation. Disabled (`None`) by default;
+    /// checked periodically, so a run may overshoot the deadline slightly.
+    pub timeout: Option<Duration>,
 }
 
 #[cfg(debug_assertions)]
@@ -123,6 +131,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             max_call_stack_depth: 40,
+            timeout: None,
         }
     }
 }
@@ -132,6 +141,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             max_call_stack_depth: 192,
+            timeout: None,
         }
     }
 }
@@ -146,6 +156,10 @@ pub struct Evaluator<T: ModuleResolver = DefaultModuleResolver> {
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
 
     call_stack_depth: u32,
+    /// Deadline for the current `eval` call; `None` if no timeout is set.
+    deadline: Option<Instant>,
+    /// Step counter so `Instant::now()` is only sampled every `TIMEOUT_CHECK_INTERVAL` steps.
+    timeout_step: u32,
     pub(crate) options: Options,
     pub(crate) module_loader: module::ModuleLoader<T>,
     pub(crate) macro_expander: Macro,
@@ -162,6 +176,8 @@ impl<T: ModuleResolver> Default for Evaluator<T> {
             env: Shared::new(SharedCell::new(Env::default())),
             token_arena: Shared::new(SharedCell::new(Arena::new(10))),
             call_stack_depth: 0,
+            deadline: None,
+            timeout_step: 0,
             options: Options::default(),
             module_loader: module::ModuleLoader::new(T::default()),
             macro_expander: Macro::new(),
@@ -180,6 +196,8 @@ impl<T: ModuleResolver> Clone for Evaluator<T> {
             env: Shared::clone(&self.env),
             token_arena: Shared::clone(&self.token_arena),
             call_stack_depth: self.call_stack_depth,
+            deadline: self.deadline,
+            timeout_step: self.timeout_step,
             options: self.options.clone(),
             module_loader: self.module_loader.clone(),
             macro_expander: self.macro_expander.clone(),
@@ -242,6 +260,9 @@ impl<T: ModuleResolver> Evaluator<T> {
     where
         I: Iterator<Item = RuntimeValue>,
     {
+        self.deadline = self.options.timeout.map(|timeout| Instant::now() + timeout);
+        self.timeout_step = 0;
+
         // First pass: handle includes and imports, collect other nodes
         let program = program.iter().try_fold(
             Vec::with_capacity(program.len()),
@@ -1487,6 +1508,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 let mut results = Vec::with_capacity(values.len());
 
                 for value in values {
+                    self.check_timeout()?;
                     define(&env, ident, value.clone());
                     match self.eval_program(body, value, &env) {
                         Ok(result) => results.push(result),
@@ -1504,6 +1526,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 let mut results = Vec::with_capacity(s.len());
 
                 for c in s.chars() {
+                    self.check_timeout()?;
                     define(&env, ident, RuntimeValue::String(c.to_string()));
                     match self.eval_program(body, RuntimeValue::String(c.to_string()), &env) {
                         Ok(result) => results.push(result),
@@ -1546,6 +1569,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         let mut first = true;
 
         while cond_value.is_truthy() {
+            self.check_timeout()?;
             match self.eval_program(body, runtime_value.clone(), &env) {
                 Ok(mut new_runtime_value) => {
                     std::mem::swap(&mut runtime_value, &mut new_runtime_value);
@@ -1579,6 +1603,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         let env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
 
         loop {
+            self.check_timeout()?;
             match self.eval_program(body, runtime_value.clone(), &env) {
                 Ok(mut new_runtime_value) => {
                     std::mem::swap(&mut runtime_value, &mut new_runtime_value);
@@ -2010,6 +2035,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         if self.call_stack_depth >= self.options.max_call_stack_depth {
             return Err(RuntimeError::RecursionError(self.options.max_call_stack_depth).into());
         }
+        self.check_timeout()?;
         self.call_stack_depth += 1;
         Ok(())
     }
@@ -2018,6 +2044,27 @@ impl<T: ModuleResolver> Evaluator<T> {
     fn exit_scope(&mut self) {
         if self.call_stack_depth > 0 {
             self.call_stack_depth -= 1;
+        }
+    }
+
+    /// Checks the configured `timeout`; a no-op when unset.
+    #[inline(always)]
+    fn check_timeout(&mut self) -> Result<(), RuntimeError> {
+        let Some(deadline) = self.deadline else {
+            return Ok(());
+        };
+
+        self.timeout_step = self.timeout_step.wrapping_add(1);
+        if self.timeout_step & (TIMEOUT_CHECK_INTERVAL - 1) != 0 {
+            return Ok(());
+        }
+
+        if Instant::now() >= deadline {
+            Err(RuntimeError::Timeout(
+                self.options.timeout.expect("deadline implies options.timeout is set"),
+            ))
+        } else {
+            Ok(())
         }
     }
 

@@ -93,6 +93,11 @@ pub struct Cli {
     /// Optimization level for AST transformations (none = no changes, basic = constant folding and dead-branch elimination, full = all passes).
     #[arg(short='O', long = "optimize-level", value_enum, default_value_t = OptimizeLevel::None)]
     optimize_level: OptimizeLevel,
+
+    /// Maximum time in seconds allowed for query evaluation before aborting (e.g. 0.5, 5).
+    /// No timeout by default.
+    #[arg(long, value_name = "SECONDS")]
+    timeout: Option<f64>,
 }
 
 #[cfg(unix)]
@@ -873,6 +878,13 @@ impl Cli {
         engine.set_allow_read(self.input.allow_read);
         engine.set_allow_write(self.input.allow_write);
 
+        if let Some(secs) = self.timeout {
+            if secs <= 0.0 {
+                return Err(miette!("--timeout must be greater than 0"));
+            }
+            engine.set_timeout(std::time::Duration::from_secs_f64(secs));
+        }
+
         #[cfg(feature = "debugger")]
         {
             use crate::debugger::DebuggerHandler;
@@ -1618,6 +1630,62 @@ mod tests {
             ..Cli::default()
         };
         assert!(allowed_cli.run().is_ok(), "read_file should succeed with --allow-read");
+    }
+
+    #[rstest]
+    #[case(0.0)]
+    #[case(-1.0)]
+    fn test_timeout_rejects_non_positive(#[case] secs: f64) {
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some("1".to_string()),
+            files: None,
+            timeout: Some(secs),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_err());
+    }
+
+    #[test]
+    fn test_timeout_aborts_infinite_loop() {
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some("while(true): 1;".to_string()),
+            files: None,
+            timeout: Some(0.001),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_err());
+    }
+
+    #[test]
+    fn test_timeout_allows_normal_query() {
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some("1 + 1".to_string()),
+            files: None,
+            timeout: Some(5.0),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
     }
 
     #[test]

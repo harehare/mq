@@ -119,6 +119,15 @@ impl<T: ModuleResolver> Engine<T> {
         self.evaluator.options.max_call_stack_depth = max_call_stack_depth;
     }
 
+    /// Set the maximum wall-clock duration allowed for a single `eval` call.
+    ///
+    /// Disabled by default (no timeout). When exceeded, evaluation stops with
+    /// `RuntimeError::Timeout`; the deadline is checked periodically inside loops and
+    /// function calls, so it may be exceeded slightly before evaluation actually stops.
+    pub fn set_timeout(&mut self, timeout: std::time::Duration) {
+        self.evaluator.options.timeout = Some(timeout);
+    }
+
     /// Enables or disables the `http` builtin for the current process.
     ///
     /// Disabled by default. This is a process-wide setting (see
@@ -448,6 +457,43 @@ mod tests {
 
         engine.set_max_call_stack_depth(new_depth);
         assert_eq!(engine.evaluator.options.max_call_stack_depth, new_depth);
+    }
+
+    #[test]
+    fn test_set_timeout() {
+        let mut engine = DefaultEngine::default();
+        assert_eq!(engine.evaluator.options.timeout, None);
+
+        let timeout = std::time::Duration::from_secs(1);
+        engine.set_timeout(timeout);
+        assert_eq!(engine.evaluator.options.timeout, Some(timeout));
+    }
+
+    #[rstest]
+    #[case::while_loop("while(true): 1;")]
+    #[case::bare_loop("loop: 1;")]
+    #[case::foreach_large_array("foreach(x, range(999999)): x;")]
+    fn test_timeout_aborts_runaway_query(#[case] query: &str) {
+        let mut engine = DefaultEngine::default();
+        // A zero timeout guarantees the deadline is already passed by the first
+        // periodic check, regardless of how fast the machine running this test is.
+        engine.set_timeout(std::time::Duration::ZERO);
+
+        let started = std::time::Instant::now();
+        let result = engine.eval(query, vec!["".to_string().into()].into_iter());
+
+        assert!(matches!(
+            result.unwrap_err().cause,
+            crate::error::InnerError::Runtime(crate::error::runtime::RuntimeError::Timeout(_))
+        ));
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    #[test]
+    fn test_no_timeout_by_default() {
+        let mut engine = DefaultEngine::default();
+        let result = engine.eval("1 + 1", vec!["".to_string().into()].into_iter());
+        assert!(result.is_ok());
     }
 
     #[test]
