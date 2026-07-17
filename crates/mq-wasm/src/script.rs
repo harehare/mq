@@ -43,6 +43,8 @@ export interface Options {
     linkUrlStyle: 'angle' | 'none' | null,
     /** Domains permitted for HTTP module imports in addition to github.com/harehare (always allowed). */
     allowedDomains?: string[],
+    /** Maximum time in milliseconds a query may run before evaluation is aborted. Disabled (no timeout) if omitted. */
+    timeoutMs?: number,
 }
 
 export function definedValues(code: string, module?: string): Promise<ReadonlyArray<DefinedValue>>;
@@ -107,6 +109,7 @@ struct Options {
     link_title_style: Option<TitleSurroundStyle>,
     link_url_style: Option<UrlSurroundStyle>,
     allowed_domains: Option<Vec<String>>,
+    timeout_ms: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -629,6 +632,9 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
     let mut engine = mq_lang::Engine::new(resolver);
 
     engine.load_builtin_module();
+    if let Some(timeout_ms) = options.timeout_ms {
+        engine.set_timeout(std::time::Duration::from_millis(timeout_ms as u64));
+    }
 
     let input = match options.input_format.as_ref().unwrap_or(&InputFormat::Markdown) {
         InputFormat::Text => mq_lang::parse_text_input(content),
@@ -1245,6 +1251,7 @@ mod tests {
                 link_title_style: None,
                 link_url_style: None,
                 allowed_domains: None,
+                timeout_ms: None,
             })
             .unwrap(),
         );
@@ -1264,6 +1271,7 @@ mod tests {
                 link_title_style: None,
                 link_url_style: None,
                 allowed_domains: None,
+                timeout_ms: None,
             })
             .unwrap(),
         );
@@ -1283,10 +1291,33 @@ mod tests {
                 link_title_style: None,
                 link_url_style: Some(UrlSurroundStyle::Angle),
                 allowed_domains: None,
+                timeout_ms: None,
             })
             .unwrap(),
         );
         assert_eq!(result.await.unwrap(), "[test](<https://example.com>)\n");
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_script_run_timeout() {
+        let result = run(
+            "while(true): 1;",
+            "test",
+            serde_wasm_bindgen::to_value(&Options {
+                is_update: true,
+                input_format: None,
+                list_style: None,
+                link_title_style: None,
+                link_url_style: None,
+                allowed_domains: None,
+                // A zero timeout guarantees the deadline is already passed by the first
+                // periodic check, regardless of how fast the machine running this test is.
+                timeout_ms: Some(0),
+            })
+            .unwrap(),
+        );
+        assert!(result.await.is_err());
     }
 
     #[allow(unused)]
@@ -1303,6 +1334,7 @@ mod tests {
                     link_title_style: None,
                     link_url_style: None,
                     allowed_domains: None,
+                    timeout_ms: None,
                 })
                 .unwrap()
             )

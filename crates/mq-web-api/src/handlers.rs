@@ -6,6 +6,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
+use std::time::Duration;
 use tracing::{debug, error, info};
 use utoipa::{OpenApi, ToSchema};
 
@@ -19,7 +20,10 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct AppState {}
+pub struct AppState {
+    /// Maximum duration a single query evaluation may run before it's aborted.
+    pub query_timeout: Duration,
+}
 
 #[derive(Deserialize)]
 pub struct QueryParams {
@@ -122,7 +126,7 @@ pub struct ApiDoc;
 )]
 pub async fn get_query_api(
     ValidatedQuery(params): ValidatedQuery<QueryParams>,
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Result<Json<QueryApiResponse>, ProblemDetails> {
     debug!("GET /query called with query: {}", params.query);
 
@@ -142,8 +146,9 @@ pub async fn get_query_api(
         output_format: None,
         aggregate: None,
     };
+    let timeout = state.query_timeout;
 
-    match tokio::task::spawn_blocking(move || crate::api::query(request))
+    match tokio::task::spawn_blocking(move || crate::api::query(request, timeout))
         .await
         .map_err(|e| {
             error!("Query task panicked: {}", e);
@@ -178,14 +183,15 @@ pub async fn get_query_api(
     request_body = ApiRequest
 )]
 pub async fn post_query_api(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Json(request): Json<ApiRequest>,
 ) -> Result<Json<QueryApiResponse>, ProblemDetails> {
     debug!("POST /query called with query: {}", request.query);
     debug!("Processing request with input_format: {:?}", request.input_format);
 
     let query_str = request.query.clone();
-    match tokio::task::spawn_blocking(move || crate::api::query(request))
+    let timeout = state.query_timeout;
+    match tokio::task::spawn_blocking(move || crate::api::query(request, timeout))
         .await
         .map_err(|e| {
             error!("Query task panicked: {}", e);
@@ -252,7 +258,7 @@ fn sniff_input_format(body: &str) -> Option<InputFormat> {
     )
 )]
 pub async fn post_shorthand_query_api(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Path(query): Path<String>,
     ValidatedQuery(params): ValidatedQuery<ShorthandQueryParams>,
     body: String,
@@ -276,8 +282,9 @@ pub async fn post_shorthand_query_api(
         output_format,
         aggregate: None,
     };
+    let timeout = state.query_timeout;
 
-    match tokio::task::spawn_blocking(move || crate::api::query(request))
+    match tokio::task::spawn_blocking(move || crate::api::query(request, timeout))
         .await
         .map_err(|e| {
             error!("Shorthand query task panicked: {}", e);

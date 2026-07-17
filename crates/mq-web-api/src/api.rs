@@ -206,8 +206,8 @@ pub struct LintApiResponse {
     pub diagnostics: Vec<LintDiagnostic>,
 }
 
-pub fn query(request: ApiRequest) -> miette::Result<QueryApiResponse> {
-    execute_query(request)
+pub fn query(request: ApiRequest, timeout: std::time::Duration) -> miette::Result<QueryApiResponse> {
+    execute_query(request, timeout)
 }
 
 /// Type-checks the given query and returns any errors found.
@@ -343,9 +343,10 @@ fn type_error_kind(e: &mq_check::TypeError) -> String {
     .to_string()
 }
 
-fn execute_query(request: ApiRequest) -> miette::Result<QueryApiResponse> {
+fn execute_query(request: ApiRequest, timeout: std::time::Duration) -> miette::Result<QueryApiResponse> {
     let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
+    engine.set_timeout(timeout);
 
     if let Some(modules) = &request.modules {
         for module_name in modules {
@@ -528,7 +529,7 @@ mod tests {
             output_format: None,
             aggregate: None,
         };
-        let result = query(req);
+        let result = query(req, std::time::Duration::from_secs(10));
         assert!(result.is_ok(), "{:?}", result.err());
         assert!(!result.unwrap().results.is_empty());
     }
@@ -558,7 +559,7 @@ mod tests {
             output_format: None,
             aggregate: None,
         };
-        let result = query(req);
+        let result = query(req, std::time::Duration::from_secs(10));
         assert!(result.is_ok());
         assert!(!result.unwrap().results.is_empty());
     }
@@ -574,7 +575,7 @@ mod tests {
             output_format: None,
             aggregate: None,
         };
-        let result = query(req);
+        let result = query(req, std::time::Duration::from_secs(10));
         assert!(result.is_ok());
     }
 
@@ -589,7 +590,7 @@ mod tests {
             output_format: None,
             aggregate: None,
         };
-        let result = query(req);
+        let result = query(req, std::time::Duration::from_secs(10));
         assert!(result.is_err());
     }
 
@@ -605,7 +606,7 @@ mod tests {
             output_format: None,
             aggregate: None,
         };
-        let result = query(req);
+        let result = query(req, std::time::Duration::from_secs(10));
         assert!(result.is_ok());
     }
 
@@ -621,7 +622,7 @@ mod tests {
             output_format: None,
             aggregate: None,
         };
-        let result = query(req);
+        let result = query(req, std::time::Duration::from_secs(10));
         assert!(result.is_err());
     }
 
@@ -639,7 +640,7 @@ mod tests {
             output_format: None,
             aggregate: None,
         };
-        let result = query(req);
+        let result = query(req, std::time::Duration::from_secs(10));
         assert!(result.is_ok());
         let resp = result.unwrap();
         assert!(!resp.results.is_empty());
@@ -656,7 +657,7 @@ mod tests {
             output_format: Some(OutputFormat::Html),
             aggregate: None,
         };
-        let result = query(req);
+        let result = query(req, std::time::Duration::from_secs(10));
         assert!(result.is_ok());
         let resp = result.unwrap();
         assert!(!resp.results.is_empty());
@@ -674,7 +675,7 @@ mod tests {
             output_format: Some(OutputFormat::None),
             aggregate: None,
         };
-        let result = query(req);
+        let result = query(req, std::time::Duration::from_secs(10));
         assert!(result.is_ok());
         assert!(result.unwrap().results.is_empty());
     }
