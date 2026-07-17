@@ -314,6 +314,9 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::RecursionError(_)) => {
                 Some(Cow::Borrowed("Maximum recursion depth exceeded."))
             }
+            InnerError::Runtime(RuntimeError::Timeout(_)) => Some(Cow::Borrowed(
+                "Execution exceeded the configured timeout. Increase it or simplify the query.",
+            )),
             InnerError::Runtime(RuntimeError::ModuleLoadError(_)) => {
                 Some(Cow::Borrowed("Failed to load module. Check module paths and names."))
             }

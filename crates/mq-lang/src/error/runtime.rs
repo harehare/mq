@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use smol_str::SmolStr;
 use thiserror::Error;
 
@@ -33,6 +35,8 @@ pub enum RuntimeError {
     InvalidDefinition(ErrorToken, String),
     #[error("Maximum recursion depth exceeded ({0})")]
     RecursionError(u32),
+    #[error("Execution timed out after {:.3}s", .0.as_secs_f64())]
+    Timeout(Duration),
     #[error(r#"Invalid types for "{}", got {}"#, name, args.join(", "))]
     InvalidTypes {
         token: ErrorToken,
@@ -102,6 +106,7 @@ impl RuntimeError {
             RuntimeError::IndexOutOfBounds(token, _) => Some(token),
             RuntimeError::InvalidDefinition(token, _) => Some(token),
             RuntimeError::RecursionError(_) => None,
+            RuntimeError::Timeout(_) => None,
             RuntimeError::InvalidTypes { token, .. } => Some(token),
             RuntimeError::InvalidNumberOfArguments { token, .. } => Some(token),
             RuntimeError::InvalidRegularExpression(token, _) => Some(token),
@@ -150,6 +155,7 @@ mod tests {
     #[case(RuntimeError::IndexOutOfBounds(eof_token(), Number::from(1.0)), true)]
     #[case(RuntimeError::InvalidDefinition(eof_token(), "d".to_string()), true)]
     #[case(RuntimeError::RecursionError(10), false)]
+    #[case(RuntimeError::Timeout(Duration::from_secs(1)), false)]
     #[case(RuntimeError::InvalidTypes { token: eof_token(), name: "f".to_string(), args: vec![] }, true)]
     #[case(RuntimeError::InvalidNumberOfArguments { token: eof_token(), name: "f".to_string(), expected: 1, actual: 0 }, true)]
     #[case(RuntimeError::InvalidRegularExpression(eof_token(), "pat".to_string()), true)]
@@ -176,6 +182,10 @@ mod tests {
 
     #[rstest]
     #[case(RuntimeError::RecursionError(42), "Maximum recursion depth exceeded (42)")]
+    #[case(
+        RuntimeError::Timeout(Duration::from_millis(1500)),
+        "Execution timed out after 1.500s"
+    )]
     #[case(RuntimeError::RecursionLimit, "Maximum macro recursion depth exceeded")]
     #[case(RuntimeError::UndefinedMacro(Ident::new("foo")), "Undefined macro: foo")]
     #[case(RuntimeError::ArityMismatch { macro_name: Ident::new("bar"), expected: 2, got: 1 }, "Macro bar expects 2 arguments, got 1")]
