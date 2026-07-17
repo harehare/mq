@@ -2,7 +2,7 @@ use crossbeam_channel::{Receiver, Sender};
 use dap::prelude::*;
 use dap::responses::{
     ContinueResponse, EvaluateResponse, ScopesResponse, SetBreakpointsResponse, SetExceptionBreakpointsResponse,
-    SetVariableResponse, StackTraceResponse, ThreadsResponse, VariablesResponse,
+    SetExpressionResponse, SetVariableResponse, StackTraceResponse, ThreadsResponse, VariablesResponse,
 };
 use dap::types::Breakpoint;
 use mq_lang::Shared;
@@ -205,6 +205,10 @@ impl MqAdapter {
 
                 server.send_event(event)?;
             }
+            DebuggerMessage::LogPoint { message } => {
+                debug!(message = %message, "Sending output event for logpoint");
+                self.send_log_output(&message, server)?;
+            }
             DebuggerMessage::Terminated => {
                 debug!("Sending terminated event");
 
@@ -346,10 +350,13 @@ impl MqAdapter {
                 self.engine.debugger().write().unwrap().remove_breakpoints(&source);
 
                 for breakpoint in &breakpoints_vec {
-                    let id = self.engine.debugger().write().unwrap().add_breakpoint(
+                    let id = self.engine.debugger().write().unwrap().add_breakpoint_with_options(
                         breakpoint.line as usize,
                         breakpoint.column.map(|bp| bp as usize),
                         source.clone(),
+                        breakpoint.condition.clone(),
+                        breakpoint.hit_condition.clone(),
+                        breakpoint.log_message.clone(),
                     );
                     breakpoints_response.push(Breakpoint {
                         verified: true,
@@ -477,6 +484,21 @@ impl MqAdapter {
                     named_variables: None,
                     type_field: None,
                     variables_reference: None,
+                }));
+                server.respond(rsp)?;
+            }
+            Command::SetExpression(args) => {
+                debug!(?args, "Received SetExpression request");
+                self.eval(format!("let {} = {}", args.expression, args.value).as_str())?;
+
+                let value = args.value.clone();
+                let rsp = req.success(ResponseBody::SetExpression(SetExpressionResponse {
+                    value,
+                    type_field: None,
+                    presentation_hint: None,
+                    variables_reference: None,
+                    named_variables: None,
+                    indexed_variables: None,
                 }));
                 server.respond(rsp)?;
             }
@@ -718,6 +740,7 @@ mod tests {
             column: None,
             enabled: true,
             source: None,
+            ..Default::default()
         };
 
         let message = DebuggerMessage::BreakpointHit {
@@ -730,6 +753,23 @@ mod tests {
         let result = adapter.handle_debugger_message(message, &mut server);
         assert!(result.is_ok());
         assert!(adapter.current_debug_context.is_some());
+    }
+
+    #[test]
+    fn test_handle_debugger_message_log_point_does_not_stop_execution() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let message = DebuggerMessage::LogPoint {
+            message: "x is 3".to_string(),
+        };
+
+        let result = adapter.handle_debugger_message(message, &mut server);
+        assert!(result.is_ok());
+        // A logpoint must not be treated as a stop: no debug context should be recorded.
+        assert!(adapter.current_debug_context.is_none());
     }
 
     #[test]
@@ -1036,6 +1076,83 @@ mod tests {
 
         let result = adapter.handle_request(req, &mut server);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_request_set_breakpoints_forwards_condition_hit_condition_and_log_message() {
+        let mut adapter = MqAdapter::new();
+        adapter.query_file = Some("/path/to/test.mq".to_string());
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let source = dap::types::Source {
+            name: Some("test.mq".to_string()),
+            path: Some("/path/to/test.mq".to_string()),
+            adapter_data: None,
+            source_reference: None,
+            presentation_hint: None,
+            origin: None,
+            checksums: None,
+            sources: None,
+        };
+
+        let breakpoints = vec![dap::types::SourceBreakpoint {
+            line: 10,
+            column: None,
+            condition: Some("x > 1".to_string()),
+            hit_condition: Some(">= 2".to_string()),
+            log_message: Some("x is {x}".to_string()),
+        }];
+
+        #[allow(deprecated)]
+        let req = Request {
+            seq: 1,
+            command: Command::SetBreakpoints(dap::requests::SetBreakpointsArguments {
+                source,
+                breakpoints: Some(breakpoints),
+                lines: None,
+                source_modified: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
+
+        let debugger = adapter.engine.debugger();
+        let debugger = debugger.read().unwrap();
+        let stored = debugger.list_breakpoints();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].condition.as_deref(), Some("x > 1"));
+        assert_eq!(stored[0].hit_condition.as_deref(), Some(">= 2"));
+        assert_eq!(stored[0].log_message.as_deref(), Some("x is {x}"));
+    }
+
+    #[test]
+    fn test_handle_request_set_expression() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::SetExpression(dap::requests::SetExpressionArguments {
+                expression: "test_var".to_string(),
+                value: "42".to_string(),
+                frame_id: None,
+                format: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        // No active debug context yet, so evaluation fails, but the command must be handled
+        // (not fall through to UnhandledCommand) now that supportsSetExpression is advertised.
+        assert!(result.is_err());
+        assert!(!matches!(
+            result.unwrap_err().downcast_ref::<MqAdapterError>(),
+            Some(MqAdapterError::UnhandledCommand(_))
+        ));
     }
 
     #[test]

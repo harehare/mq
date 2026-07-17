@@ -101,6 +101,16 @@ impl mq_lang::DebuggerHandler for DapHandlerWrapper {
         }
     }
 
+    fn on_log_point(&self, breakpoint: &mq_lang::Breakpoint, message: &str, _context: &mq_lang::DebugContext) {
+        debug!(line = breakpoint.line, message = %message, "Logpoint hit");
+
+        if let Err(e) = self.handler.message_tx.send(DebuggerMessage::LogPoint {
+            message: message.to_string(),
+        }) {
+            error!(error = %e, "Failed to send logpoint message to DAP server");
+        }
+    }
+
     fn on_step(&self, context: &mq_lang::DebugContext) -> mq_lang::DebuggerAction {
         debug!(line = context.token.range.start.line + 1, "Step event");
 
@@ -175,6 +185,34 @@ mod tests {
     }
 
     #[test]
+    fn test_on_log_point_sends_message_without_blocking() {
+        let (message_tx, message_rx) = unbounded::<DebuggerMessage>();
+        let (_command_tx, command_rx) = unbounded::<DapCommand>();
+
+        let handler = DapDebuggerHandler::new(message_tx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+
+        let breakpoint = mq_lang::Breakpoint {
+            id: 1,
+            line: 10,
+            column: Some(5),
+            enabled: true,
+            source: None,
+            ..Default::default()
+        };
+        let context = mq_lang::DebugContext::default();
+
+        // Should return immediately without waiting on command_rx (nothing was sent to it).
+        wrapper.on_log_point(&breakpoint, "x is 3", &context);
+
+        let received_message = message_rx.try_recv().unwrap();
+        match received_message {
+            DebuggerMessage::LogPoint { message } => assert_eq!(message, "x is 3"),
+            _ => panic!("Expected LogPoint message"),
+        }
+    }
+
+    #[test]
     fn test_on_breakpoint_hit_continue() {
         let (message_tx, message_rx) = unbounded::<DebuggerMessage>();
         let (command_tx, command_rx) = unbounded::<DapCommand>();
@@ -188,6 +226,7 @@ mod tests {
             column: Some(5),
             enabled: true,
             source: None,
+            ..Default::default()
         };
         let context = mq_lang::DebugContext::default();
 
@@ -224,6 +263,7 @@ mod tests {
             column: Some(5),
             enabled: true,
             source: None,
+            ..Default::default()
         };
         let context = mq_lang::DebugContext::default();
 
@@ -247,6 +287,7 @@ mod tests {
             column: Some(5),
             enabled: true,
             source: None,
+            ..Default::default()
         };
         let context = mq_lang::DebugContext::default();
 
@@ -270,6 +311,7 @@ mod tests {
             column: Some(5),
             enabled: true,
             source: None,
+            ..Default::default()
         };
         let context = mq_lang::DebugContext::default();
 
@@ -293,6 +335,7 @@ mod tests {
             column: Some(5),
             enabled: true,
             source: None,
+            ..Default::default()
         };
         let context = mq_lang::DebugContext::default();
 
@@ -316,6 +359,7 @@ mod tests {
             column: Some(5),
             enabled: true,
             source: None,
+            ..Default::default()
         };
         let context = mq_lang::DebugContext::default();
 
