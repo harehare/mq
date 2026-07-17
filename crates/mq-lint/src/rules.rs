@@ -3,6 +3,7 @@
 pub mod complexity;
 pub mod correctness;
 pub mod module;
+pub mod security;
 pub mod selector;
 pub mod style;
 
@@ -16,5 +17,6 @@ pub fn all_rules() -> Vec<Box<dyn LintRule>> {
     rules.extend(complexity::all());
     rules.extend(selector::all());
     rules.extend(module::all());
+    rules.extend(security::all());
     rules
 }
