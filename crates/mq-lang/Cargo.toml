@@ -32,6 +32,7 @@ rand = {workspace = true}
 regex-lite = {workspace = true}
 ropey = {workspace = true, optional = true}
 rustc-hash = {workspace = true}
+scraper = {workspace = true, optional = true}
 serde = {workspace = true, features = ["derive", "rc"]}
 serde_json = {workspace = true}
 yaml-rust2 = {workspace = true}
@@ -59,6 +60,7 @@ web-time = {workspace = true}
 [features]
 ast-json = ["smallvec/serde", "smol_str/serde"]
 cst = ["dep:ropey"]
+css-selector = ["dep:scraper"]
 debugger = ["sync"]
 default = ["std"]
 file-io = []

@@ -13,8 +13,9 @@ version = "0.6.5"
 default-run = "mq"
 
 [features]
+css-selector = ["mq-lang/css-selector"]
 debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite", "mq-dap"]
-default = ["std", "use_mimalloc", "http-import"]
+default = ["std", "use_mimalloc", "http-import", "css-selector"]
 http-import = ["mq-lang/http-import-ureq"]
 std = []
 tiktoken = ["mq-lang/tiktoken"]

@@ -1,6 +1,8 @@
 pub(super) mod bytes;
 pub(crate) mod capability;
 pub(super) mod convert;
+#[cfg(feature = "css-selector")]
+mod css;
 pub(super) mod date;
 #[cfg(feature = "http")]
 mod http;
@@ -4043,6 +4045,69 @@ fn http_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
     }
 }
 
+/// Returns the outer HTML of every element in `html` matching the CSS `selector`, as an array
+/// of strings. Queries the raw HTML string directly, bypassing the Markdown conversion `-I html`
+/// otherwise applies, so tags/classes/ids/`data-*` attributes lost during that conversion are
+/// still available.
+#[cfg(feature = "css-selector")]
+#[mq_macros::mq_fn(name = "css", params = Fixed(2))]
+fn css_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(html), RuntimeValue::String(selector)] => Ok(RuntimeValue::Array(
+            css::select_html(html, selector)?
+                .into_iter()
+                .map(RuntimeValue::from)
+                .collect(),
+        )),
+        args => Err(Error::InvalidTypes(
+            ident.to_string(),
+            args.iter_mut().map(std::mem::take).collect(),
+        )),
+    }
+}
+
+/// Returns the text content of every element in `html` matching the CSS `selector`, as an array
+/// of strings.
+#[cfg(feature = "css-selector")]
+#[mq_macros::mq_fn(name = "css_text", params = Fixed(2))]
+fn css_text_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(html), RuntimeValue::String(selector)] => Ok(RuntimeValue::Array(
+            css::select_text(html, selector)?
+                .into_iter()
+                .map(RuntimeValue::from)
+                .collect(),
+        )),
+        args => Err(Error::InvalidTypes(
+            ident.to_string(),
+            args.iter_mut().map(std::mem::take).collect(),
+        )),
+    }
+}
+
+/// Returns the value of attribute `name` for every element in `html` matching the CSS
+/// `selector`, as an array; elements without that attribute produce `None` in the array.
+#[cfg(feature = "css-selector")]
+#[mq_macros::mq_fn(name = "css_attr", params = Fixed(3))]
+fn css_attr_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [
+            RuntimeValue::String(html),
+            RuntimeValue::String(selector),
+            RuntimeValue::String(name),
+        ] => Ok(RuntimeValue::Array(
+            css::select_attr(html, selector, name)?
+                .into_iter()
+                .map(|attr| attr.map(RuntimeValue::from).unwrap_or(RuntimeValue::NONE))
+                .collect(),
+        )),
+        args => Err(Error::InvalidTypes(
+            ident.to_string(),
+            args.iter_mut().map(std::mem::take).collect(),
+        )),
+    }
+}
+
 #[cfg(feature = "file-io")]
 fn collection_record(path: String, raw: &str) -> Result<RuntimeValue, Error> {
     let nodes = mq_markdown::Markdown::from_markdown_str(raw)
@@ -4370,6 +4435,12 @@ mq_macros::builtin_dispatch! {
     WRITE_FILE,
     #[cfg(feature = "http")]
     HTTP,
+    #[cfg(feature = "css-selector")]
+    CSS,
+    #[cfg(feature = "css-selector")]
+    CSS_TEXT,
+    #[cfg(feature = "css-selector")]
+    CSS_ATTR,
 }
 
 #[derive(Clone, Debug)]
@@ -5963,6 +6034,30 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Performs an HTTPS request with the given method (a string or symbol, e.g. \"post\" or :post — get, post, put, delete, patch, head, ... are all supported) and returns the response body as a string. An optional body argument (string) sends a request body regardless of method, and an optional headers argument (a dict of string to string, e.g. {\"Content-Type\": \"application/json\"}) is applied to the request. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
             params: &["method", "url", "body", "headers"],
+        },
+    );
+    #[cfg(feature = "css-selector")]
+    map.insert(
+        SmolStr::new("css"),
+        BuiltinFunctionDoc {
+            description: "Returns the outer HTML of every element in the html string matching the CSS selector, as an array of strings. Queries the raw HTML directly instead of going through the -I html Markdown conversion, so tags, classes, ids, and data-* attributes that conversion discards are still available.",
+            params: &["html", "selector"],
+        },
+    );
+    #[cfg(feature = "css-selector")]
+    map.insert(
+        SmolStr::new("css_text"),
+        BuiltinFunctionDoc {
+            description: "Returns the text content of every element in the html string matching the CSS selector, as an array of strings.",
+            params: &["html", "selector"],
+        },
+    );
+    #[cfg(feature = "css-selector")]
+    map.insert(
+        SmolStr::new("css_attr"),
+        BuiltinFunctionDoc {
+            description: "Returns the value of the named attribute for every element in the html string matching the CSS selector, as an array; elements without that attribute produce None.",
+            params: &["html", "selector", "name"],
         },
     );
 
