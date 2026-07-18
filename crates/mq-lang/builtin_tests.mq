@@ -908,6 +908,57 @@ def test_has():
   | assert_eq(result6, false)
 end
 
+def test_get_path():
+  let result1 = get_path({"a": {"b": [1, 2, 3]}}, ["a", "b", 1])
+  | assert_eq(result1, 2)
+
+  # Missing intermediate key short-circuits to None
+  | let result2 = get_path({"a": {"b": 1}}, ["a", "x", "y"])
+  | assert_eq(result2, None)
+
+  # Empty path returns the value itself
+  | let result3 = get_path({"a": 1}, [])
+  | assert_eq(result3, {"a": 1})
+
+  # Out-of-bounds array index yields None
+  | let result4 = get_path([1, 2, 3], [10])
+  | assert_eq(result4, None)
+end
+
+def test_set_path():
+  let result1 = set_path({"a": {"b": [1, 2, 3]}}, ["a", "b", 1], 99)
+  | assert_eq(result1, {"a": {"b": [1, 99, 3]}})
+
+  # Missing intermediate containers are created automatically
+  | let result2 = set_path({}, ["a", "b", 0], 42)
+  | assert_eq(result2, {"a": {"b": [42]}})
+
+  # Empty path replaces the whole value
+  | let result3 = set_path({"a": 1}, [], 99)
+  | assert_eq(result3, 99)
+
+  # A round-trip through paths()/get_path() reconstructs every leaf via set_path()
+  | let v = {"a": {"b": 1, "c": 2}, "d": [3, 4]}
+  | let result4 = fold(paths(v), v, fn(acc, p): set_path(acc, p, get_path(v, p) * 10);)
+  | assert_eq(result4, {"a": {"b": 10, "c": 20}, "d": [30, 40]})
+end
+
+def test_paths():
+  let result1 = paths({"a": {"b": 1, "c": 2}, "d": [3, 4]})
+  | assert_eq(result1, [["a", "b"], ["a", "c"], ["d", 0], ["d", 1]])
+
+  # Containers with no leaves contribute no paths
+  | let result2 = paths({})
+  | assert_eq(result2, [])
+
+  | let result3 = paths([])
+  | assert_eq(result3, [])
+
+  # A bare scalar has a single, empty leaf path
+  | let result4 = paths(42)
+  | assert_eq(result4, [[]])
+end
+
 def test_from_entries():
   let result1 = from_entries([["a", 1], ["b", 2]])
   | assert_eq(result1, {"a": 1, "b": 2})
