@@ -17,6 +17,7 @@ Language Server Protocol (LSP) implementation for the [mq](https://mqlang.org/) 
 - 🎨 **Semantic Tokens**: Enhanced syntax highlighting based on semantic analysis
 - ✨ **Code Formatting**: Automatic code formatting following mq style guidelines
 - 🛠️ **Code Actions**: Quick fixes such as adding a missing `include`/`import` for an unresolved function or module reference
+- 🧩 **Refactoring**: Extract a selected expression or pipeline into a variable/function, or inline a variable/function back into its call sites
 - ✏️ **Rename**: Rename a symbol and update all of its references across files
 
 ## Installation

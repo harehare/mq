@@ -14,6 +14,7 @@ pub mod folding_range;
 pub mod goto_definition;
 pub mod hover;
 pub mod inlay_hints;
+pub mod refactor;
 pub mod references;
 pub mod rename;
 pub mod semantic_tokens;
