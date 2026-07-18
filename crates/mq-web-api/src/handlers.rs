@@ -121,7 +121,7 @@ pub struct ApiDoc;
     params(
         ("query" = String, Query, description = "mq query string to execute"),
         ("input" = String, Query, description = "Input content to process"),
-        ("input_format" = Option<String>, Query, description = "Input format: markdown, mdx, text, html, raw, null, csv, tsv, psv, json, yaml, toml, xml, hcl, or toon")
+        ("input_format" = Option<String>, Query, description = "Input format: markdown, mdx, text, html, raw, null, csv, tsv, psv, json, yaml, toml, xml, or toon")
     )
 )]
 pub async fn get_query_api(
@@ -221,7 +221,7 @@ pub async fn post_query_api(
 /// `input_format` when the caller doesn't pass `?input_format=`.
 ///
 /// Only formats with an unambiguous leading marker are detected here
-/// (HTML, XML, JSON). Formats like CSV/TSV/PSV/YAML/TOML/HCL/TOON have no
+/// (HTML, XML, JSON). Formats like CSV/TSV/PSV/YAML/TOML/TOON have no
 /// reliable content signature and are indistinguishable from plain
 /// Markdown/text without an explicit `?input_format=`.
 fn sniff_input_format(body: &str) -> Option<InputFormat> {
@@ -248,10 +248,10 @@ fn sniff_input_format(body: &str) -> Option<InputFormat> {
     description = "Curl-friendly shortcut that reads the mq query from the URL path and the input content from the raw request body, e.g. `curl --data-binary @doc.md https://api.mqlang.org/.h1`. Reserved characters in the query (`|`, `?`, `#`) must be percent-encoded.",
     params(
         ("query" = String, Path, description = "mq query expression", example = ".h1"),
-        ("input_format" = Option<String>, Query, description = "Input format: markdown, mdx, text, html, raw, null, csv, tsv, psv, json, yaml, toml, xml, hcl, or toon. If omitted, html/xml/json are auto-detected from the body's leading bytes; csv/tsv/psv/yaml/toml/hcl/toon have no reliable signature and require this parameter."),
+        ("input_format" = Option<String>, Query, description = "Input format: markdown, mdx, text, html, raw, null, csv, tsv, psv, json, yaml, toml, xml, or toon. If omitted, html/xml/json are auto-detected from the body's leading bytes; csv/tsv/psv/yaml/toml/toon have no reliable signature and require this parameter."),
         ("output_format" = Option<String>, Query, description = "Output format: markdown, html, text, json, or none"),
     ),
-    request_body(content = String, content_type = "text/markdown", description = "Raw content to query: Markdown/MDX/HTML/text natively, or CSV/TSV/PSV/JSON/YAML/TOML/XML/HCL/TOON via the matching `input_format`"),
+    request_body(content = String, content_type = "text/markdown", description = "Raw content to query: Markdown/MDX/HTML/text natively, or CSV/TSV/PSV/JSON/YAML/TOML/XML/TOON via the matching `input_format`"),
     responses(
         (status = 200, description = "Query executed successfully", body = QueryApiResponse),
         (status = 400, description = "Invalid query or request"),

@@ -1307,17 +1307,9 @@ fn register_bytes(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_unary(ctx, "_cbor_parse", Type::Bytes, Type::Var(a));
 
-    // _hcl_parse: string -> a
-    let a = ctx.fresh_var();
-    register_unary(ctx, "_hcl_parse", Type::String, Type::Var(a));
-
     // _cbor_stringify: (a) -> bytes
     let a = ctx.fresh_var();
     register_unary(ctx, "_cbor_stringify", Type::Var(a), Type::Bytes);
-
-    // _hcl_stringify: (a) -> string
-    let a = ctx.fresh_var();
-    register_unary(ctx, "_hcl_stringify", Type::Var(a), Type::String);
 
     // add: (bytes, bytes) -> bytes
     register_binary(ctx, "add", Type::Bytes, Type::Bytes, Type::Bytes);
