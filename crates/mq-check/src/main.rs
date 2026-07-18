@@ -1,9 +1,12 @@
+mod format;
+
 use std::io::{self, BufWriter, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
 use colored::Colorize;
+use format::OutputFormat;
 use mq_check::{TypeChecker, TypeCheckerOptions, TypeError};
 use mq_hir::Hir;
 use url::Url;
@@ -30,6 +33,12 @@ struct Cli {
     /// Disable exhaustiveness checking for pattern match expressions
     #[arg(long)]
     no_exhaustive_patterns: bool,
+
+    /// Diagnostic output format: `text` (human-readable), `json` (a single JSON array of
+    /// diagnostics), or `sarif` (SARIF 2.1.0 JSON, for GitHub code scanning and other SARIF
+    /// consumers)
+    #[arg(long, value_enum, default_value_t)]
+    format: OutputFormat,
 }
 
 /// Options for a single file check
@@ -52,6 +61,11 @@ fn main() -> ExitCode {
 
 fn run() -> io::Result<()> {
     let cli = Cli::parse();
+
+    if cli.format != OutputFormat::Text {
+        return run_machine_format(&cli);
+    }
+
     let mut w = BufWriter::new(io::stderr());
     let multi = cli.files.len() > 1;
     let tc_options = TypeCheckerOptions {
@@ -120,6 +134,79 @@ fn run() -> io::Result<()> {
     } else {
         Ok(())
     }
+}
+
+/// Runs syntax and type checks across all inputs and writes a single machine-readable
+/// report (JSON or SARIF) to stdout, instead of the colored text report.
+fn run_machine_format(cli: &Cli) -> io::Result<()> {
+    let tc_options = TypeCheckerOptions {
+        strict_array: cli.strict_array,
+        no_exhaustive_patterns: cli.no_exhaustive_patterns,
+    };
+
+    let mut results: Vec<(String, Vec<format::CheckDiagnostic>)> = Vec::new();
+
+    if cli.files.is_empty() {
+        let mut code = String::new();
+        io::stdin().read_to_string(&mut code)?;
+        let source_url = Url::parse("file:///stdin").ok();
+        results.push((
+            "<stdin>".to_string(),
+            collect_check_diagnostics(&code, source_url, cli.no_builtins, &tc_options),
+        ));
+    } else {
+        for path in &cli.files {
+            let code = std::fs::read_to_string(path)
+                .map_err(|e| io::Error::other(format!("reading file {}: {}", path.display(), e)))?;
+            let source_url = Url::from_file_path(std::fs::canonicalize(path).unwrap_or(path.clone())).ok();
+            results.push((
+                path.display().to_string(),
+                collect_check_diagnostics(&code, source_url, cli.no_builtins, &tc_options),
+            ));
+        }
+    }
+
+    let had_errors = results
+        .iter()
+        .any(|(_, diagnostics)| diagnostics.iter().any(|d| d.severity == format::Severity::Error));
+
+    let mut w = BufWriter::new(io::stdout());
+    format::write_report(&mut w, cli.format, &results)?;
+    w.flush()?;
+
+    if had_errors {
+        Err(io::Error::other("type check failed"))
+    } else {
+        Ok(())
+    }
+}
+
+/// Runs syntax and type checks on a single source, returning every diagnostic found.
+/// Type checking is skipped when syntax errors are present, matching the text report's behavior.
+fn collect_check_diagnostics(
+    code: &str,
+    source_url: Option<Url>,
+    no_builtins: bool,
+    type_checker_options: &TypeCheckerOptions,
+) -> Vec<format::CheckDiagnostic> {
+    let mut hir = Hir::default();
+
+    if no_builtins {
+        hir.builtin.disabled = true;
+    }
+
+    hir.add_code(source_url, code);
+
+    let mut diagnostics = format::syntax_diagnostics(&hir);
+    let has_syntax_errors = diagnostics.iter().any(|d| d.severity == format::Severity::Error);
+
+    if !has_syntax_errors {
+        let mut checker = TypeChecker::with_options(*type_checker_options);
+        let errors = checker.check(&hir);
+        diagnostics.extend(format::type_diagnostics(&errors));
+    }
+
+    diagnostics
 }
 
 /// Runs syntax and type checks on a single source, returns `true` if any errors were found.
@@ -445,5 +532,38 @@ mod tests {
     fn test_cli_no_builtins() {
         let cli = Cli::try_parse_from(["mq-check", "--no-builtins"]).unwrap();
         assert!(cli.no_builtins);
+    }
+
+    #[rstest]
+    #[case(vec!["mq-check"], OutputFormat::Text)]
+    #[case(vec!["mq-check", "--format", "text"], OutputFormat::Text)]
+    #[case(vec!["mq-check", "--format", "json"], OutputFormat::Json)]
+    #[case(vec!["mq-check", "--format", "sarif"], OutputFormat::Sarif)]
+    fn test_cli_format(#[case] args: Vec<&str>, #[case] expected: OutputFormat) {
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert_eq!(cli.format, expected);
+    }
+
+    #[test]
+    fn test_cli_format_invalid() {
+        let result = Cli::try_parse_from(["mq-check", "--format", "bogus"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_collect_check_diagnostics_reports_undefined_symbol() {
+        let diagnostics = collect_check_diagnostics("undefined_fn()", None, false, &TypeCheckerOptions::default());
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.code == "typechecker::undefined_symbol" || d.code == "hir::unresolved_symbol")
+        );
+        assert!(diagnostics.iter().any(|d| d.severity == format::Severity::Error));
+    }
+
+    #[test]
+    fn test_collect_check_diagnostics_no_errors_on_valid_code() {
+        let diagnostics = collect_check_diagnostics(".h1", None, true, &TypeCheckerOptions::default());
+        assert!(!diagnostics.iter().any(|d| d.severity == format::Severity::Error));
     }
 }

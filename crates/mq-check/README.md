@@ -110,6 +110,7 @@ When used as a command-line tool (`mq-typecheck`), the following options are ava
 | `--show-types`   | Display inferred types for all user-defined symbols                |
 | `--no-builtins`  | Disable automatic builtin preloading                               |
 | `--strict-array` | Reject heterogeneous arrays (e.g., `[1, "hello"]` is a type error) |
+| `--format`       | Diagnostic output format: `text` (default), `json`, or `sarif`      |
 
 ### `--strict-array`
 
@@ -119,6 +120,33 @@ Enforces that all elements in an array literal share the same type.
 echo '[1, "hello"]' | mq-check --strict-array
 # Error: heterogeneous array: [number, string]
 ```
+
+### CI Integration
+
+`--format` controls how diagnostics are rendered, independent of `--show-types` and the other checks above:
+
+- `text` (default) — colored, human-readable report.
+- `json` — a single JSON array of diagnostics (syntax errors/warnings and type errors) across every
+  checked file, each with `file`, `severity` (`error`/`warning`), `code`, `message`, and an optional
+  `range`.
+- `sarif` — a single SARIF 2.1.0 log covering every checked file, suitable for
+  [`github/codeql-action/upload-sarif`](https://github.com/github/codeql-action/tree/main/upload-sarif) or any
+  other SARIF-consuming tool.
+
+```bash
+mq-check --format json script.mq
+mq-check --format sarif $(git ls-files '*.mq') > mq-check.sarif
+```
+
+```yaml
+# .github/workflows/check.yml
+- run: mq-check --format sarif $(git ls-files '*.mq') > mq-check.sarif
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: mq-check.sarif
+```
+
+Exits with a non-zero status if any error-severity diagnostic was found, regardless of `--format`.
 
 ## Development
 

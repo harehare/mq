@@ -2511,6 +2511,7 @@ dependencies = [
  "mq-lang",
  "rstest",
  "rustc-hash",
+ "serde_json",
  "slotmap",
  "smol_str",
  "thiserror 2.0.18",
