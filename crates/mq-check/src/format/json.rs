@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use super::{CheckDiagnostic, Severity};
+use super::CheckDiagnostic;
 
 /// Writes a single JSON array of diagnostics across every checked file.
 pub(super) fn write_json_report(w: &mut impl Write, results: &[(String, Vec<CheckDiagnostic>)]) -> io::Result<()> {
@@ -10,7 +10,7 @@ pub(super) fn write_json_report(w: &mut impl Write, results: &[(String, Vec<Chec
             diagnostics.iter().map(move |diagnostic| {
                 serde_json::json!({
                     "file": file_label,
-                    "severity": severity_str(diagnostic.severity),
+                    "severity": diagnostic.severity.as_str(),
                     "code": diagnostic.code,
                     "message": diagnostic.message,
                     "range": diagnostic.range.map(|range| serde_json::json!({
@@ -31,17 +31,10 @@ pub(super) fn write_json_report(w: &mut impl Write, results: &[(String, Vec<Chec
     )
 }
 
-/// Maps a check [`Severity`] to its JSON string representation.
-fn severity_str(severity: Severity) -> &'static str {
-    match severity {
-        Severity::Error => "error",
-        Severity::Warning => "warning",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::format::Severity;
 
     #[test]
     fn test_write_json_report_produces_expected_shape() {

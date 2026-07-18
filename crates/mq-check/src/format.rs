@@ -15,6 +15,16 @@ pub(crate) enum Severity {
     Warning,
 }
 
+impl Severity {
+    /// Returns the wire representation shared by the JSON and SARIF output formats.
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            Severity::Error => "error",
+            Severity::Warning => "warning",
+        }
+    }
+}
+
 /// A single syntax or type-check diagnostic, in a form suitable for machine consumption.
 #[derive(Clone, Debug)]
 pub(crate) struct CheckDiagnostic {

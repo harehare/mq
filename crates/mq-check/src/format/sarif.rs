@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use super::{CheckDiagnostic, Severity};
+use super::CheckDiagnostic;
 
 /// Writes a single SARIF 2.1.0 log document covering every checked file.
 ///
@@ -24,7 +24,7 @@ pub(super) fn write_sarif_report(w: &mut impl Write, results: &[(String, Vec<Che
 
                 serde_json::json!({
                     "ruleId": diagnostic.code,
-                    "level": sarif_level(diagnostic.severity),
+                    "level": diagnostic.severity.as_str(),
                     "message": {"text": diagnostic.message},
                     "locations": [{"physicalLocation": physical_location}],
                 })
@@ -50,17 +50,10 @@ pub(super) fn write_sarif_report(w: &mut impl Write, results: &[(String, Vec<Che
     writeln!(w, "{}", serde_json::to_string_pretty(&sarif).map_err(io::Error::other)?)
 }
 
-/// Maps a check [`Severity`] to a SARIF result `level` (`error` or `warning`).
-fn sarif_level(severity: Severity) -> &'static str {
-    match severity {
-        Severity::Error => "error",
-        Severity::Warning => "warning",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::format::Severity;
 
     #[test]
     fn test_write_sarif_report_produces_valid_sarif_shape() {
@@ -94,11 +87,5 @@ mod tests {
         write_sarif_report(&mut buf, &results).unwrap();
         let json: serde_json::Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
         assert_eq!(json["runs"][0]["results"].as_array().unwrap().len(), 0);
-    }
-
-    #[test]
-    fn test_sarif_level_maps_severity() {
-        assert_eq!(sarif_level(Severity::Error), "error");
-        assert_eq!(sarif_level(Severity::Warning), "warning");
     }
 }
