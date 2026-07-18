@@ -53,7 +53,11 @@ pub(crate) fn server_capabilities() -> ServerCapabilities {
         definition_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
         code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
-            code_action_kinds: Some(vec![CodeActionKind::QUICKFIX]),
+            code_action_kinds: Some(vec![
+                CodeActionKind::QUICKFIX,
+                CodeActionKind::REFACTOR_EXTRACT,
+                CodeActionKind::REFACTOR_INLINE,
+            ]),
             resolve_provider: Some(false),
             ..Default::default()
         })),

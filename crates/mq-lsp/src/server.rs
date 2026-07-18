@@ -1179,7 +1179,11 @@ mod tests {
             Some(ls_types::CodeActionProviderCapability::Options(options)) => {
                 assert_eq!(
                     options.code_action_kinds,
-                    Some(vec![ls_types::CodeActionKind::QUICKFIX])
+                    Some(vec![
+                        ls_types::CodeActionKind::QUICKFIX,
+                        ls_types::CodeActionKind::REFACTOR_EXTRACT,
+                        ls_types::CodeActionKind::REFACTOR_INLINE,
+                    ])
                 );
             }
             other => panic!("expected CodeActionProviderCapability::Options, got {other:?}"),

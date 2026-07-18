@@ -105,7 +105,7 @@ pub(crate) fn response(
     source_text: Option<&str>,
 ) -> Option<Vec<CodeActionOrCommand>> {
     let hir_guard = hir.read().unwrap();
-    hir_guard.source_by_url(&url)?;
+    let doc_source_id = hir_guard.source_by_url(&url)?;
     let uri = &params.text_document.uri;
 
     // For a `module::func()` call, the unresolved error is reported on the `func`
@@ -173,6 +173,20 @@ pub(crate) fn response(
             let title = format!("Fix: {}", matched.help().unwrap_or_else(|| matched.message()));
             actions.push(lint_fix_action(uri, diagnostic, title, range, replacement));
         }
+    }
+
+    if let Some(source_text) = source_text {
+        if let Some(action) =
+            crate::refactor::inline_action(&hir_guard, doc_source_id, uri, params.range.start, source_text)
+        {
+            actions.push(action);
+        }
+        actions.extend(crate::refactor::extract_actions(
+            &hir_guard,
+            uri,
+            params.range,
+            source_text,
+        ));
     }
 
     if actions.is_empty() { None } else { Some(actions) }
@@ -553,11 +567,18 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(actions.len(), 1);
-        let CodeActionOrCommand::CodeAction(action) = &actions[0] else {
-            panic!("expected a CodeAction");
-        };
-        assert_eq!(action.kind, Some(CodeActionKind::QUICKFIX));
+        // The selection also happens to align with a whole expression node, so the
+        // refactor::extract_actions added alongside this quickfix (see response()) also
+        // fire here; find the quickfix specifically rather than assuming it's the only action.
+        let action = actions
+            .iter()
+            .find_map(|action| match action {
+                CodeActionOrCommand::CodeAction(action) if action.kind == Some(CodeActionKind::QUICKFIX) => {
+                    Some(action)
+                }
+                _ => None,
+            })
+            .expect("expected a quickfix action");
         let edits = action
             .edit
             .as_ref()

@@ -13,6 +13,7 @@
 //! - **Semantic Tokens**: Provides semantic tokens for syntax highlighting.
 //! - **Formatting**: Formats the document according to the MDQ language formatting rules.
 //! - **Code Actions**: Suggests quick fixes, such as adding a missing `include` for an unresolved standard library function call, or a missing `import` for an unresolved `module::func()` qualified access.
+//! - **Refactoring**: Extracts a selected expression/pipeline into a variable or function, and inlines a variable or function back into its call sites.
 //! - **Rename**: Renames a symbol and all of its references across files.
 //!
 //! # Usage
@@ -28,6 +29,7 @@ pub mod folding_range;
 pub mod goto_definition;
 pub mod hover;
 pub mod inlay_hints;
+pub mod refactor;
 pub mod references;
 pub mod rename;
 pub mod semantic_tokens;
