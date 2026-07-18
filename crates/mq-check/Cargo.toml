@@ -12,7 +12,7 @@ repository = "https://github.com/harehare/mq"
 version = "0.6.5"
 
 [features]
-cli = ["dep:clap", "dep:colored", "dep:url"]
+cli = ["dep:clap", "dep:colored", "dep:serde_json", "dep:url"]
 
 [[bin]]
 name = "mq-check"
@@ -31,6 +31,7 @@ miette = {workspace = true, features = ["fancy"]}
 mq-hir = {workspace = true}
 mq-lang = {workspace = true, features = ["cst", "file-io"]}
 rustc-hash = {workspace = true}
+serde_json = {workspace = true, optional = true}
 slotmap = {workspace = true}
 smol_str = {workspace = true}
 thiserror = {workspace = true}
