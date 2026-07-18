@@ -2657,6 +2657,7 @@ dependencies = [
  "rstest",
  "rustc-hash",
  "scopeguard",
+ "scraper",
  "serde",
  "serde_json",
  "sha2",
