@@ -952,6 +952,56 @@ def has(v, key):
     false
 end
 
+# Retrieves a nested value by following an array of keys/indices, e.g. `get_path(d, ["a", "b", 0])`.
+# Returns None as soon as any intermediate step is missing.
+def get_path(value, path):
+  do
+    var result = value
+    | var i = 0
+    | while (i < len(path)):
+        result = get(result, path[i])
+        | i += 1
+      end
+    | result
+  end
+end
+
+# Sets a nested value by following an array of keys/indices, e.g. `set_path(d, ["a", "b", 0], 1)`.
+# Missing intermediate dicts/arrays are created automatically, choosing an array when the
+# corresponding path element is a number and a dict otherwise.
+def set_path(value, path, new_value):
+  if (is_empty(path)):
+    new_value
+  else:
+    do
+      let key = first(path)
+      | let rest = skip(path, 1)
+      | let container = if (is_dict(value) || is_array(value)): value elif (is_number(key)): [] else: {}
+      | let updated = set_path(get(container, key), rest, new_value)
+      | set(container, key, updated)
+    end
+end
+
+# Returns an array of leaf-path arrays for a value, e.g. `paths({"a": {"b": 1}})` returns `[["a", "b"]]`.
+# Each returned path can be passed to `get_path`/`set_path`. Containers with no leaves (e.g. `{}`, `[]`)
+# contribute no paths.
+def paths(value):
+  if (is_dict(value)):
+    fold(entries(value), [], fn(acc, entry): acc + map(paths(entry[1]), fn(p): [entry[0]] + p;);)
+  elif (is_array(value)):
+    do
+      var result = []
+      | var i = 0
+      | while (i < len(value)):
+          result = result + map(paths(value[i]), fn(p): [i] + p;)
+          | i += 1
+        end
+      | result
+    end
+  else:
+    [[]]
+end
+
 # Builds a dict from an array of [key, value] pairs, as produced by `entries`.
 # If the same key appears more than once, the last occurrence wins.
 def from_entries(arr):
