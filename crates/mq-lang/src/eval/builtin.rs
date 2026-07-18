@@ -6284,6 +6284,11 @@ fn collect_string_values(args: &[RuntimeValue]) -> Vec<String> {
 /// Supports filtered matching for selectors that accept arguments:
 /// - `Heading`: filters by depth using numeric or range args (e.g. `.h(1..2)`, `.h(1, 2)`)
 /// - `Code`: filters by language using string args (e.g. `.code("rust")`)
+/// - `Callout`: filters by kind using string args (e.g. `.callout("NOTE")`)
+/// - `WikiLink`: filters by target using string args (e.g. `.wikilink("Some Page")`)
+/// - `Embed`: filters by target using string args (e.g. `.embed("image.png")`)
+/// - `MdxJsxFlowElement`: filters by element name using string args (e.g. `.mdx_jsx_flow_element("Alert")`)
+/// - `MdxJsxTextElement`: filters by element name using string args (e.g. `.mdx_jsx_text_element("Alert")`)
 /// - `List`: filters by list item index using a numeric arg (e.g. `.[v]` where `v` evaluates to an index)
 /// - `Table`: filters table cells by positional args where `args[0]` is the row and `args[1]` is the
 ///   column; a `None`/[`RuntimeValue::None`] value in either position acts as a wildcard matching any
@@ -6319,6 +6324,73 @@ pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, ar
             if let mq_markdown::Node::Code(mq_markdown::Code { lang, .. }) = node {
                 let node_lang = lang.as_deref().unwrap_or("");
                 langs.iter().any(|l| l == node_lang)
+            } else {
+                false
+            }
+        }
+        Selector::Callout => {
+            let kinds = collect_string_values(args);
+
+            if kinds.is_empty() {
+                return eval_selector(node, selector);
+            }
+
+            if let mq_markdown::Node::Callout(mq_markdown::Callout { kind, .. }) = node {
+                kinds.iter().any(|k| k == kind)
+            } else {
+                false
+            }
+        }
+        Selector::WikiLink => {
+            let targets = collect_string_values(args);
+
+            if targets.is_empty() {
+                return eval_selector(node, selector);
+            }
+
+            if let mq_markdown::Node::WikiLink(mq_markdown::WikiLink { target, .. }) = node {
+                targets.iter().any(|t| t == target)
+            } else {
+                false
+            }
+        }
+        Selector::Embed => {
+            let targets = collect_string_values(args);
+
+            if targets.is_empty() {
+                return eval_selector(node, selector);
+            }
+
+            if let mq_markdown::Node::Embed(mq_markdown::Embed { target, .. }) = node {
+                targets.iter().any(|t| t == target)
+            } else {
+                false
+            }
+        }
+        Selector::MdxJsxFlowElement => {
+            let names = collect_string_values(args);
+
+            if names.is_empty() {
+                return eval_selector(node, selector);
+            }
+
+            if let mq_markdown::Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement { name, .. }) = node {
+                let node_name = name.as_deref().unwrap_or("");
+                names.iter().any(|n| n == node_name)
+            } else {
+                false
+            }
+        }
+        Selector::MdxJsxTextElement => {
+            let names = collect_string_values(args);
+
+            if names.is_empty() {
+                return eval_selector(node, selector);
+            }
+
+            if let mq_markdown::Node::MdxJsxTextElement(mq_markdown::MdxJsxTextElement { name, .. }) = node {
+                let node_name = name.as_deref().unwrap_or("");
+                names.iter().any(|n| n == node_name)
             } else {
                 false
             }
@@ -9121,6 +9193,156 @@ mod tests {
         Selector::Code,
         vec![],
         true
+    )]
+    #[case::callout_kind_match(
+        Node::Callout(mq_markdown::Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
+        Selector::Callout,
+        vec![RuntimeValue::String("NOTE".into())],
+        true
+    )]
+    #[case::callout_kind_no_match(
+        Node::Callout(mq_markdown::Callout { kind: "WARNING".to_string(), title: None, values: vec![], position: None }),
+        Selector::Callout,
+        vec![RuntimeValue::String("NOTE".into())],
+        false
+    )]
+    #[case::callout_multi_kind_match(
+        Node::Callout(mq_markdown::Callout { kind: "TIP".to_string(), title: None, values: vec![], position: None }),
+        Selector::Callout,
+        vec![RuntimeValue::String("NOTE".into()), RuntimeValue::String("TIP".into())],
+        true
+    )]
+    #[case::callout_no_args_fallback(
+        Node::Callout(mq_markdown::Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
+        Selector::Callout,
+        vec![],
+        true
+    )]
+    #[case::callout_non_callout_node(
+        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Selector::Callout,
+        vec![RuntimeValue::String("NOTE".into())],
+        false
+    )]
+    #[case::wikilink_target_match(
+        Node::WikiLink(mq_markdown::WikiLink { target: "Some Page".to_string(), text: None, position: None }),
+        Selector::WikiLink,
+        vec![RuntimeValue::String("Some Page".into())],
+        true
+    )]
+    #[case::wikilink_target_no_match(
+        Node::WikiLink(mq_markdown::WikiLink { target: "Other Page".to_string(), text: None, position: None }),
+        Selector::WikiLink,
+        vec![RuntimeValue::String("Some Page".into())],
+        false
+    )]
+    #[case::wikilink_multi_target_match(
+        Node::WikiLink(mq_markdown::WikiLink { target: "Other Page".to_string(), text: None, position: None }),
+        Selector::WikiLink,
+        vec![RuntimeValue::String("Some Page".into()), RuntimeValue::String("Other Page".into())],
+        true
+    )]
+    #[case::wikilink_no_args_fallback(
+        Node::WikiLink(mq_markdown::WikiLink { target: "Some Page".to_string(), text: None, position: None }),
+        Selector::WikiLink,
+        vec![],
+        true
+    )]
+    #[case::wikilink_non_wikilink_node(
+        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Selector::WikiLink,
+        vec![RuntimeValue::String("Some Page".into())],
+        false
+    )]
+    #[case::embed_target_match(
+        Node::Embed(mq_markdown::Embed { target: "image.png".to_string(), display: None, position: None }),
+        Selector::Embed,
+        vec![RuntimeValue::String("image.png".into())],
+        true
+    )]
+    #[case::embed_target_no_match(
+        Node::Embed(mq_markdown::Embed { target: "note.md".to_string(), display: None, position: None }),
+        Selector::Embed,
+        vec![RuntimeValue::String("image.png".into())],
+        false
+    )]
+    #[case::embed_multi_target_match(
+        Node::Embed(mq_markdown::Embed { target: "note.md".to_string(), display: None, position: None }),
+        Selector::Embed,
+        vec![RuntimeValue::String("image.png".into()), RuntimeValue::String("note.md".into())],
+        true
+    )]
+    #[case::embed_no_args_fallback(
+        Node::Embed(mq_markdown::Embed { target: "image.png".to_string(), display: None, position: None }),
+        Selector::Embed,
+        vec![],
+        true
+    )]
+    #[case::embed_non_embed_node(
+        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Selector::Embed,
+        vec![RuntimeValue::String("image.png".into())],
+        false
+    )]
+    #[case::mdx_jsx_flow_element_name_match(
+        Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement { name: Some("Alert".to_string()), attributes: Vec::new(), children: Vec::new(), position: None }),
+        Selector::MdxJsxFlowElement,
+        vec![RuntimeValue::String("Alert".into())],
+        true
+    )]
+    #[case::mdx_jsx_flow_element_name_no_match(
+        Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement { name: Some("div".to_string()), attributes: Vec::new(), children: Vec::new(), position: None }),
+        Selector::MdxJsxFlowElement,
+        vec![RuntimeValue::String("Alert".into())],
+        false
+    )]
+    #[case::mdx_jsx_flow_element_multi_name_match(
+        Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement { name: Some("div".to_string()), attributes: Vec::new(), children: Vec::new(), position: None }),
+        Selector::MdxJsxFlowElement,
+        vec![RuntimeValue::String("Alert".into()), RuntimeValue::String("div".into())],
+        true
+    )]
+    #[case::mdx_jsx_flow_element_no_args_fallback(
+        Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement { name: Some("Alert".to_string()), attributes: Vec::new(), children: Vec::new(), position: None }),
+        Selector::MdxJsxFlowElement,
+        vec![],
+        true
+    )]
+    #[case::mdx_jsx_flow_element_non_matching_node(
+        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Selector::MdxJsxFlowElement,
+        vec![RuntimeValue::String("Alert".into())],
+        false
+    )]
+    #[case::mdx_jsx_text_element_name_match(
+        Node::MdxJsxTextElement(mq_markdown::MdxJsxTextElement { name: Some(SmolStr::new("Alert")), attributes: Vec::new(), children: Vec::new(), position: None }),
+        Selector::MdxJsxTextElement,
+        vec![RuntimeValue::String("Alert".into())],
+        true
+    )]
+    #[case::mdx_jsx_text_element_name_no_match(
+        Node::MdxJsxTextElement(mq_markdown::MdxJsxTextElement { name: Some(SmolStr::new("span")), attributes: Vec::new(), children: Vec::new(), position: None }),
+        Selector::MdxJsxTextElement,
+        vec![RuntimeValue::String("Alert".into())],
+        false
+    )]
+    #[case::mdx_jsx_text_element_multi_name_match(
+        Node::MdxJsxTextElement(mq_markdown::MdxJsxTextElement { name: Some(SmolStr::new("span")), attributes: Vec::new(), children: Vec::new(), position: None }),
+        Selector::MdxJsxTextElement,
+        vec![RuntimeValue::String("Alert".into()), RuntimeValue::String("span".into())],
+        true
+    )]
+    #[case::mdx_jsx_text_element_no_args_fallback(
+        Node::MdxJsxTextElement(mq_markdown::MdxJsxTextElement { name: Some(SmolStr::new("Alert")), attributes: Vec::new(), children: Vec::new(), position: None }),
+        Selector::MdxJsxTextElement,
+        vec![],
+        true
+    )]
+    #[case::mdx_jsx_text_element_non_matching_node(
+        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Selector::MdxJsxTextElement,
+        vec![RuntimeValue::String("Alert".into())],
+        false
     )]
     #[case::non_heading_node(
         Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
