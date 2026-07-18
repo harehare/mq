@@ -359,8 +359,8 @@ struct InputArgs {
     #[arg(long = "allow-net", default_value_t = false)]
     allow_net: bool,
 
-    /// Allow the `read_file`/`read_file_bytes` functions to read from the filesystem. Disabled
-    /// by default.
+    /// Allow the `read_file`/`read_file_bytes`/`collection`/`file_exists` functions to read
+    /// from the filesystem. Disabled by default.
     #[arg(long = "allow-read", default_value_t = false)]
     allow_read: bool,
 

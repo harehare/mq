@@ -3922,9 +3922,17 @@ fn read_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
     }
 }
 
+/// Checks whether `path` exists on the filesystem. Requires the `--allow-read` CLI flag (see
+/// [`capability`]).
 #[cfg(feature = "file-io")]
 #[mq_macros::mq_fn(name = "file_exists", params = Fixed(1))]
 fn file_exists_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    if !capability::is_read_allowed() {
+        return Err(Error::Runtime(
+            "file_exists: filesystem reads are disabled; re-run mq with --allow-read to enable file_exists".into(),
+        ));
+    }
+
     match args.as_mut_slice() {
         [RuntimeValue::String(path)] => Ok(std::path::Path::new(path).exists().into()),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
@@ -4091,9 +4099,17 @@ fn collect_markdown_files(
     Ok(paths)
 }
 
+/// Recursively reads every Markdown file under `dir`. Requires the `--allow-read` CLI flag (see
+/// [`capability`]).
 #[cfg(feature = "file-io")]
 #[mq_macros::mq_fn(name = "collection", params = Fixed(1))]
 fn collection_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    if !capability::is_read_allowed() {
+        return Err(Error::Runtime(
+            "collection: filesystem reads are disabled; re-run mq with --allow-read to enable collection".into(),
+        ));
+    }
+
     match args.as_mut_slice() {
         [RuntimeValue::String(dir)] => {
             let mut ancestors = std::collections::HashSet::new();
@@ -5886,7 +5902,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("file_exists"),
         BuiltinFunctionDoc {
-            description: "Checks if a file exists at the given path.",
+            description: "Checks if a file exists at the given path. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
             params: &["path"],
         },
     );
@@ -5902,7 +5918,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("collection"),
         BuiltinFunctionDoc {
-            description: "Recursively reads every Markdown file in the given directory (including subdirectories and symlinked files/directories) and returns an array of `{path, title, frontmatter, content}` dicts, sorted by path, so they can be filtered, sorted, or aggregated as a single dataset. `content` holds the file's Markdown nodes with frontmatter stripped. Symlink cycles are detected and only visited once.",
+            description: "Recursively reads every Markdown file in the given directory (including subdirectories and symlinked files/directories) and returns an array of `{path, title, frontmatter, content}` dicts, sorted by path, so they can be filtered, sorted, or aggregated as a single dataset. `content` holds the file's Markdown nodes with frontmatter stripped. Symlink cycles are detected and only visited once. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
             params: &["dir"],
         },
     );
@@ -9570,45 +9586,24 @@ mod tests {
         }
     }
 
+    // READ_ALLOWED is a single process-wide flag shared by read_file, read_file_bytes,
+    // file_exists, and collection, so every case that toggles it must run in one #[test]
+    // function — cargo test
+    // runs tests in parallel by default, and two tests flipping the same global independently
+    // would race and flake.
     #[cfg(feature = "file-io")]
     #[test]
-    fn test_file_exists_with_existing_file() {
+    fn test_read_capability_gate_and_success() {
         use std::io::Write;
-        let mut tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
-        tmp.write_all(b"hello").expect("failed to write");
-        let path = tmp.path().to_string_lossy().to_string();
-        assert_eq!(
-            call("file_exists", vec![RuntimeValue::String(path)]),
-            Ok(RuntimeValue::Boolean(true))
-        );
-    }
 
-    #[cfg(feature = "file-io")]
-    #[test]
-    fn test_file_exists_with_nonexistent_file() {
-        assert_eq!(
-            call(
-                "file_exists",
-                vec![RuntimeValue::String("/nonexistent/path/no_such_file.md".into())]
-            ),
-            Ok(RuntimeValue::Boolean(false))
-        );
-    }
-
-    #[cfg(feature = "file-io")]
-    #[test]
-    fn test_file_exists_invalid_type() {
-        let result = call("file_exists", vec![RuntimeValue::Number(42.into())]);
-        assert!(result.is_err());
-    }
-
-    // READ_ALLOWED is a single process-wide flag, so every case that toggles it must run in
-    // one #[test] function — cargo test runs tests in parallel by default, and two tests
-    // flipping the same global independently would race and flake.
-    #[cfg(feature = "file-io")]
-    #[test]
-    fn test_read_file_capability_gate_and_success() {
-        use std::io::Write;
+        let get = |entry: &RuntimeValue, key: &str| match entry {
+            RuntimeValue::Dict(d) => d.get(&Ident::new(key)).cloned().unwrap_or(RuntimeValue::NONE),
+            other => panic!("expected Dict, got {other:?}"),
+        };
+        let as_entries = |result: RuntimeValue| match result {
+            RuntimeValue::Array(entries) => entries,
+            other => panic!("expected Array, got {other:?}"),
+        };
 
         let mut text_tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
         text_tmp.write_all(b"hello").expect("failed to write");
@@ -9618,6 +9613,9 @@ mod tests {
         bytes_tmp.write_all(&[0x89, 0x50, 0x4e, 0x47]).expect("failed to write");
         let bytes_path = bytes_tmp.path().to_string_lossy().to_string();
 
+        let collection_dir = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(collection_dir.path().join("root.md"), "# Root\n").expect("failed to write");
+
         capability::set_allow_read(false);
         assert!(
             call("read_file", vec![RuntimeValue::String(text_path.clone())]).is_err(),
@@ -9626,6 +9624,20 @@ mod tests {
         assert!(
             call("read_file_bytes", vec![RuntimeValue::String(bytes_path.clone())]).is_err(),
             "read_file_bytes should be blocked when --allow-read is not set"
+        );
+        assert!(
+            call(
+                "collection",
+                vec![RuntimeValue::String(
+                    collection_dir.path().to_string_lossy().into_owned()
+                )],
+            )
+            .is_err(),
+            "collection should be blocked when --allow-read is not set"
+        );
+        assert!(
+            call("file_exists", vec![RuntimeValue::String(text_path.clone())]).is_err(),
+            "file_exists should be blocked when --allow-read is not set"
         );
 
         capability::set_allow_read(true);
@@ -9649,6 +9661,232 @@ mod tests {
             vec![RuntimeValue::String("/nonexistent/path/no_such_file.md".into())],
         );
         assert!(result.is_err(), "read_file should error for a nonexistent file");
+
+        assert_eq!(
+            call("file_exists", vec![RuntimeValue::String(text_path.clone())]),
+            Ok(RuntimeValue::Boolean(true))
+        );
+        assert_eq!(
+            call(
+                "file_exists",
+                vec![RuntimeValue::String("/nonexistent/path/no_such_file.md".into())]
+            ),
+            Ok(RuntimeValue::Boolean(false))
+        );
+        assert!(call("file_exists", vec![RuntimeValue::Number(42.into())]).is_err());
+
+        // Basic collection: YAML/TOML frontmatter, title, content, sorted by path.
+        {
+            let dir = tempfile::tempdir().expect("failed to create temp dir");
+            std::fs::write(
+                dir.path().join("b.md"),
+                "---\ntitle: Hello\ntags:\n  - rust\n---\n\n# Hello\n\nbody text\n",
+            )
+            .expect("failed to write");
+            std::fs::write(dir.path().join("a.md"), "+++\ntitle = \"World\"\n+++\n\n# World\n")
+                .expect("failed to write");
+            std::fs::write(dir.path().join("c.md"), "# No frontmatter\n\nplain\n").expect("failed to write");
+            std::fs::write(dir.path().join("ignore.txt"), "not markdown").expect("failed to write");
+
+            let entries = as_entries(
+                call(
+                    "collection",
+                    vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+                )
+                .expect("collection should succeed"),
+            );
+            assert_eq!(entries.len(), 3);
+
+            // sorted by path: a.md, b.md, c.md
+            assert_eq!(get(&entries[0], "title"), RuntimeValue::String("World".into()));
+            let mut toml_frontmatter = BTreeMap::new();
+            toml_frontmatter.insert(Ident::new("title"), RuntimeValue::String("World".into()));
+            assert_eq!(get(&entries[0], "frontmatter"), RuntimeValue::Dict(toml_frontmatter));
+
+            assert_eq!(get(&entries[1], "title"), RuntimeValue::String("Hello".into()));
+            match get(&entries[1], "frontmatter") {
+                RuntimeValue::Dict(d) => {
+                    assert_eq!(d.get(&Ident::new("title")), Some(&RuntimeValue::String("Hello".into())));
+                    assert_eq!(
+                        d.get(&Ident::new("tags")),
+                        Some(&RuntimeValue::Array(vec![RuntimeValue::String("rust".into())]))
+                    );
+                }
+                other => panic!("expected Dict, got {other:?}"),
+            }
+            match get(&entries[1], "content") {
+                RuntimeValue::Array(nodes) => {
+                    assert!(nodes.iter().any(|n| match n {
+                        RuntimeValue::Markdown(node, _) => node.value().contains("body text"),
+                        _ => false,
+                    }));
+                    assert!(
+                        !nodes
+                            .iter()
+                            .any(|n| matches!(n, RuntimeValue::Markdown(node, _) if node.is_yaml()))
+                    );
+                }
+                other => panic!("expected Array, got {other:?}"),
+            }
+
+            assert_eq!(get(&entries[2], "title"), RuntimeValue::String("No frontmatter".into()));
+            assert_eq!(get(&entries[2], "frontmatter"), RuntimeValue::NONE);
+        }
+
+        // Recurses into subdirectories.
+        {
+            let dir = tempfile::tempdir().expect("failed to create temp dir");
+            std::fs::write(dir.path().join("root.md"), "# Root\n").expect("failed to write");
+
+            let sub = dir.path().join("sub");
+            std::fs::create_dir(&sub).expect("failed to create subdir");
+            std::fs::write(sub.join("nested.md"), "# Nested\n").expect("failed to write");
+
+            let nested_sub = sub.join("deeper");
+            std::fs::create_dir(&nested_sub).expect("failed to create nested subdir");
+            std::fs::write(nested_sub.join("deepest.md"), "# Deepest\n").expect("failed to write");
+
+            let entries = as_entries(
+                call(
+                    "collection",
+                    vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+                )
+                .expect("collection should succeed"),
+            );
+            assert_eq!(entries.len(), 3);
+
+            let titles: Vec<_> = entries
+                .iter()
+                .map(|entry| match get(entry, "title") {
+                    RuntimeValue::String(s) => s,
+                    other => panic!("expected String, got {other:?}"),
+                })
+                .collect();
+            assert!(titles.contains(&"Root".to_string()));
+            assert!(titles.contains(&"Nested".to_string()));
+            assert!(titles.contains(&"Deepest".to_string()));
+        }
+
+        #[cfg(unix)]
+        {
+            // Follows symlinks to both files and directories.
+            {
+                let dir = tempfile::tempdir().expect("failed to create temp dir");
+                std::fs::write(dir.path().join("real.md"), "# Real\n").expect("failed to write");
+
+                let real_sub = dir.path().join("real_sub");
+                std::fs::create_dir(&real_sub).expect("failed to create subdir");
+                std::fs::write(real_sub.join("inside.md"), "# Inside\n").expect("failed to write");
+
+                // Symlink to a file, placed directly in the root directory.
+                std::os::unix::fs::symlink(dir.path().join("real.md"), dir.path().join("linked.md"))
+                    .expect("failed to create file symlink");
+
+                // Symlink to a directory, which should be traversed like a normal directory.
+                std::os::unix::fs::symlink(&real_sub, dir.path().join("linked_dir"))
+                    .expect("failed to create dir symlink");
+
+                let entries = as_entries(
+                    call(
+                        "collection",
+                        vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+                    )
+                    .expect("collection should succeed"),
+                );
+                let titles: Vec<_> = entries
+                    .iter()
+                    .map(|entry| match get(entry, "title") {
+                        RuntimeValue::String(s) => s,
+                        other => panic!("expected String, got {other:?}"),
+                    })
+                    .collect();
+
+                // real.md, linked.md (-> real.md), real_sub/inside.md, linked_dir/inside.md (-> real_sub/inside.md)
+                assert_eq!(entries.len(), 4);
+                assert_eq!(titles.iter().filter(|t| *t == "Real").count(), 2);
+                assert_eq!(titles.iter().filter(|t| *t == "Inside").count(), 2);
+            }
+
+            // Detects and stops at symlink cycles.
+            {
+                let dir = tempfile::tempdir().expect("failed to create temp dir");
+                std::fs::write(dir.path().join("root.md"), "# Root\n").expect("failed to write");
+
+                let sub = dir.path().join("sub");
+                std::fs::create_dir(&sub).expect("failed to create subdir");
+
+                // Symlink back to the root directory, creating a cycle.
+                std::os::unix::fs::symlink(dir.path(), sub.join("back_to_root")).expect("failed to create dir symlink");
+
+                let entries = as_entries(
+                    call(
+                        "collection",
+                        vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+                    )
+                    .expect("collection should succeed despite the symlink cycle"),
+                );
+                assert_eq!(entries.len(), 1);
+            }
+
+            // Skips broken symlinks instead of erroring.
+            {
+                let dir = tempfile::tempdir().expect("failed to create temp dir");
+                std::fs::write(dir.path().join("root.md"), "# Root\n").expect("failed to write");
+
+                std::os::unix::fs::symlink(dir.path().join("does_not_exist.md"), dir.path().join("broken.md"))
+                    .expect("failed to create broken symlink");
+
+                let entries = as_entries(
+                    call(
+                        "collection",
+                        vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+                    )
+                    .expect("collection should succeed despite the broken symlink"),
+                );
+                assert_eq!(entries.len(), 1);
+            }
+        }
+
+        // Skips empty subdirectories.
+        {
+            let dir = tempfile::tempdir().expect("failed to create temp dir");
+            std::fs::write(dir.path().join("root.md"), "# Root\n").expect("failed to write");
+            std::fs::create_dir(dir.path().join("empty_sub")).expect("failed to create empty subdir");
+
+            let entries = as_entries(
+                call(
+                    "collection",
+                    vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+                )
+                .expect("collection should succeed with an empty subdirectory present"),
+            );
+            assert_eq!(entries.len(), 1);
+        }
+
+        // Errors when the path is a file rather than a directory.
+        {
+            let dir = tempfile::tempdir().expect("failed to create temp dir");
+            let file_path = dir.path().join("not_a_dir.md");
+            std::fs::write(&file_path, "# Root\n").expect("failed to write");
+
+            let result = call(
+                "collection",
+                vec![RuntimeValue::String(file_path.to_string_lossy().into_owned())],
+            );
+            assert!(result.is_err());
+        }
+
+        // Errors for a nonexistent directory.
+        assert!(
+            call(
+                "collection",
+                vec![RuntimeValue::String("/nonexistent/path/no_such_dir".into())],
+            )
+            .is_err()
+        );
+
+        // Errors for an invalid argument type.
+        assert!(call("collection", vec![RuntimeValue::Number(42.into())]).is_err());
 
         capability::set_allow_read(false);
     }
@@ -9703,257 +9941,5 @@ mod tests {
         );
 
         capability::set_allow_write(false);
-    }
-
-    #[cfg(feature = "file-io")]
-    #[test]
-    fn test_collection() {
-        let dir = tempfile::tempdir().expect("failed to create temp dir");
-        std::fs::write(
-            dir.path().join("b.md"),
-            "---\ntitle: Hello\ntags:\n  - rust\n---\n\n# Hello\n\nbody text\n",
-        )
-        .expect("failed to write");
-        std::fs::write(dir.path().join("a.md"), "+++\ntitle = \"World\"\n+++\n\n# World\n").expect("failed to write");
-        std::fs::write(dir.path().join("c.md"), "# No frontmatter\n\nplain\n").expect("failed to write");
-        std::fs::write(dir.path().join("ignore.txt"), "not markdown").expect("failed to write");
-
-        let result = call(
-            "collection",
-            vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
-        )
-        .expect("collection should succeed");
-
-        let entries = match result {
-            RuntimeValue::Array(entries) => entries,
-            other => panic!("expected Array, got {other:?}"),
-        };
-        assert_eq!(entries.len(), 3);
-
-        // sorted by path: a.md, b.md, c.md
-        let get = |entry: &RuntimeValue, key: &str| match entry {
-            RuntimeValue::Dict(d) => d.get(&Ident::new(key)).cloned().unwrap_or(RuntimeValue::NONE),
-            other => panic!("expected Dict, got {other:?}"),
-        };
-
-        assert_eq!(get(&entries[0], "title"), RuntimeValue::String("World".into()));
-        let mut toml_frontmatter = BTreeMap::new();
-        toml_frontmatter.insert(Ident::new("title"), RuntimeValue::String("World".into()));
-        assert_eq!(get(&entries[0], "frontmatter"), RuntimeValue::Dict(toml_frontmatter));
-
-        assert_eq!(get(&entries[1], "title"), RuntimeValue::String("Hello".into()));
-        match get(&entries[1], "frontmatter") {
-            RuntimeValue::Dict(d) => {
-                assert_eq!(d.get(&Ident::new("title")), Some(&RuntimeValue::String("Hello".into())));
-                assert_eq!(
-                    d.get(&Ident::new("tags")),
-                    Some(&RuntimeValue::Array(vec![RuntimeValue::String("rust".into())]))
-                );
-            }
-            other => panic!("expected Dict, got {other:?}"),
-        }
-        match get(&entries[1], "content") {
-            RuntimeValue::Array(nodes) => {
-                assert!(nodes.iter().any(|n| match n {
-                    RuntimeValue::Markdown(node, _) => node.value().contains("body text"),
-                    _ => false,
-                }));
-                assert!(
-                    !nodes
-                        .iter()
-                        .any(|n| matches!(n, RuntimeValue::Markdown(node, _) if node.is_yaml()))
-                );
-            }
-            other => panic!("expected Array, got {other:?}"),
-        }
-
-        assert_eq!(get(&entries[2], "title"), RuntimeValue::String("No frontmatter".into()));
-        assert_eq!(get(&entries[2], "frontmatter"), RuntimeValue::NONE);
-    }
-
-    #[cfg(feature = "file-io")]
-    #[test]
-    fn test_collection_recurses_into_subdirectories() {
-        let dir = tempfile::tempdir().expect("failed to create temp dir");
-        std::fs::write(dir.path().join("root.md"), "# Root\n").expect("failed to write");
-
-        let sub = dir.path().join("sub");
-        std::fs::create_dir(&sub).expect("failed to create subdir");
-        std::fs::write(sub.join("nested.md"), "# Nested\n").expect("failed to write");
-
-        let nested_sub = sub.join("deeper");
-        std::fs::create_dir(&nested_sub).expect("failed to create nested subdir");
-        std::fs::write(nested_sub.join("deepest.md"), "# Deepest\n").expect("failed to write");
-
-        let result = call(
-            "collection",
-            vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
-        )
-        .expect("collection should succeed");
-
-        let entries = match result {
-            RuntimeValue::Array(entries) => entries,
-            other => panic!("expected Array, got {other:?}"),
-        };
-        assert_eq!(entries.len(), 3);
-
-        let get = |entry: &RuntimeValue, key: &str| match entry {
-            RuntimeValue::Dict(d) => d.get(&Ident::new(key)).cloned().unwrap_or(RuntimeValue::NONE),
-            other => panic!("expected Dict, got {other:?}"),
-        };
-        let titles: Vec<_> = entries
-            .iter()
-            .map(|entry| match get(entry, "title") {
-                RuntimeValue::String(s) => s,
-                other => panic!("expected String, got {other:?}"),
-            })
-            .collect();
-        assert!(titles.contains(&"Root".to_string()));
-        assert!(titles.contains(&"Nested".to_string()));
-        assert!(titles.contains(&"Deepest".to_string()));
-    }
-
-    #[cfg(all(feature = "file-io", unix))]
-    #[test]
-    fn test_collection_follows_symlinks() {
-        let dir = tempfile::tempdir().expect("failed to create temp dir");
-        std::fs::write(dir.path().join("real.md"), "# Real\n").expect("failed to write");
-
-        let real_sub = dir.path().join("real_sub");
-        std::fs::create_dir(&real_sub).expect("failed to create subdir");
-        std::fs::write(real_sub.join("inside.md"), "# Inside\n").expect("failed to write");
-
-        // Symlink to a file, placed directly in the root directory.
-        std::os::unix::fs::symlink(dir.path().join("real.md"), dir.path().join("linked.md"))
-            .expect("failed to create file symlink");
-
-        // Symlink to a directory, which should be traversed like a normal directory.
-        std::os::unix::fs::symlink(&real_sub, dir.path().join("linked_dir")).expect("failed to create dir symlink");
-
-        let result = call(
-            "collection",
-            vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
-        )
-        .expect("collection should succeed");
-
-        let entries = match result {
-            RuntimeValue::Array(entries) => entries,
-            other => panic!("expected Array, got {other:?}"),
-        };
-
-        let get = |entry: &RuntimeValue, key: &str| match entry {
-            RuntimeValue::Dict(d) => d.get(&Ident::new(key)).cloned().unwrap_or(RuntimeValue::NONE),
-            other => panic!("expected Dict, got {other:?}"),
-        };
-        let titles: Vec<_> = entries
-            .iter()
-            .map(|entry| match get(entry, "title") {
-                RuntimeValue::String(s) => s,
-                other => panic!("expected String, got {other:?}"),
-            })
-            .collect();
-
-        // real.md, linked.md (-> real.md), real_sub/inside.md, linked_dir/inside.md (-> real_sub/inside.md)
-        assert_eq!(entries.len(), 4);
-        assert_eq!(titles.iter().filter(|t| *t == "Real").count(), 2);
-        assert_eq!(titles.iter().filter(|t| *t == "Inside").count(), 2);
-    }
-
-    #[cfg(all(feature = "file-io", unix))]
-    #[test]
-    fn test_collection_handles_symlink_cycle() {
-        let dir = tempfile::tempdir().expect("failed to create temp dir");
-        std::fs::write(dir.path().join("root.md"), "# Root\n").expect("failed to write");
-
-        let sub = dir.path().join("sub");
-        std::fs::create_dir(&sub).expect("failed to create subdir");
-
-        // Symlink back to the root directory, creating a cycle.
-        std::os::unix::fs::symlink(dir.path(), sub.join("back_to_root")).expect("failed to create dir symlink");
-
-        let result = call(
-            "collection",
-            vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
-        )
-        .expect("collection should succeed despite the symlink cycle");
-
-        let entries = match result {
-            RuntimeValue::Array(entries) => entries,
-            other => panic!("expected Array, got {other:?}"),
-        };
-        assert_eq!(entries.len(), 1);
-    }
-
-    #[cfg(feature = "file-io")]
-    #[test]
-    fn test_collection_skips_empty_subdirectories() {
-        let dir = tempfile::tempdir().expect("failed to create temp dir");
-        std::fs::write(dir.path().join("root.md"), "# Root\n").expect("failed to write");
-        std::fs::create_dir(dir.path().join("empty_sub")).expect("failed to create empty subdir");
-
-        let result = call(
-            "collection",
-            vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
-        )
-        .expect("collection should succeed with an empty subdirectory present");
-
-        let entries = match result {
-            RuntimeValue::Array(entries) => entries,
-            other => panic!("expected Array, got {other:?}"),
-        };
-        assert_eq!(entries.len(), 1);
-    }
-
-    #[cfg(all(feature = "file-io", unix))]
-    #[test]
-    fn test_collection_skips_broken_symlinks() {
-        let dir = tempfile::tempdir().expect("failed to create temp dir");
-        std::fs::write(dir.path().join("root.md"), "# Root\n").expect("failed to write");
-
-        std::os::unix::fs::symlink(dir.path().join("does_not_exist.md"), dir.path().join("broken.md"))
-            .expect("failed to create broken symlink");
-
-        let result = call(
-            "collection",
-            vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
-        )
-        .expect("collection should succeed despite the broken symlink");
-
-        let entries = match result {
-            RuntimeValue::Array(entries) => entries,
-            other => panic!("expected Array, got {other:?}"),
-        };
-        assert_eq!(entries.len(), 1);
-    }
-
-    #[cfg(feature = "file-io")]
-    #[test]
-    fn test_collection_with_path_that_is_a_file() {
-        let dir = tempfile::tempdir().expect("failed to create temp dir");
-        let file_path = dir.path().join("not_a_dir.md");
-        std::fs::write(&file_path, "# Root\n").expect("failed to write");
-
-        let result = call(
-            "collection",
-            vec![RuntimeValue::String(file_path.to_string_lossy().into_owned())],
-        );
-        assert!(result.is_err());
-    }
-
-    #[cfg(feature = "file-io")]
-    #[test]
-    fn test_collection_with_nonexistent_dir() {
-        let result = call(
-            "collection",
-            vec![RuntimeValue::String("/nonexistent/path/no_such_dir".into())],
-        );
-        assert!(result.is_err());
-    }
-
-    #[cfg(feature = "file-io")]
-    #[test]
-    fn test_collection_invalid_type() {
-        let result = call("collection", vec![RuntimeValue::Number(42.into())]);
-        assert!(result.is_err());
     }
 }

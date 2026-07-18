@@ -570,7 +570,7 @@
                 </tr>
                 <tr>
                   <td><code>collection</code></td>
-                  <td>Recursively reads every Markdown file in the given directory (including subdirectories and symlinked files/directories) and returns an array of `{path, title, frontmatter, content}` dicts, sorted by path, so they can be filtered, sorted, or aggregated as a single dataset. `content` holds the file's Markdown nodes with frontmatter stripped. Symlink cycles are detected and only visited once.</td>
+                  <td>Recursively reads every Markdown file in the given directory (including subdirectories and symlinked files/directories) and returns an array of `{path, title, frontmatter, content}` dicts, sorted by path, so they can be filtered, sorted, or aggregated as a single dataset. `content` holds the file's Markdown nodes with frontmatter stripped. Symlink cycles are detected and only visited once. Requires the --allow-read CLI flag; otherwise returns a runtime error.</td>
                   <td><code>dir</code></td>
                   <td><code>collection(dir)</code></td>
                 </tr>
@@ -729,7 +729,7 @@
                 </tr>
                 <tr>
                   <td><code>file_exists</code></td>
-                  <td>Checks if a file exists at the given path.</td>
+                  <td>Checks if a file exists at the given path. Requires the --allow-read CLI flag; otherwise returns a runtime error.</td>
                   <td><code>path</code></td>
                   <td><code>file_exists(path)</code></td>
                 </tr>
@@ -3047,7 +3047,7 @@
                 </tr>
                 <tr>
                   <td><code>collection</code></td>
-                  <td>Recursively reads every Markdown file in the given directory (including subdirectories and symlinked files/directories) and returns an array of `{path, title, frontmatter, content}` dicts, sorted by path, so they can be filtered, sorted, or aggregated as a single dataset. `content` holds the file's Markdown nodes with frontmatter stripped. Symlink cycles are detected and only visited once.</td>
+                  <td>Recursively reads every Markdown file in the given directory (including subdirectories and symlinked files/directories) and returns an array of `{path, title, frontmatter, content}` dicts, sorted by path, so they can be filtered, sorted, or aggregated as a single dataset. `content` holds the file's Markdown nodes with frontmatter stripped. Symlink cycles are detected and only visited once. Requires the --allow-read CLI flag; otherwise returns a runtime error.</td>
                   <td><code>dir</code></td>
                   <td><code>collection(dir)</code></td>
                 </tr>
@@ -3206,7 +3206,7 @@
                 </tr>
                 <tr>
                   <td><code>file_exists</code></td>
-                  <td>Checks if a file exists at the given path.</td>
+                  <td>Checks if a file exists at the given path. Requires the --allow-read CLI flag; otherwise returns a runtime error.</td>
                   <td><code>path</code></td>
                   <td><code>file_exists(path)</code></td>
                 </tr>

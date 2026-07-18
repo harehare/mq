@@ -1,6 +1,6 @@
 //! Process-wide opt-in flags gating capabilities with real-world side effects:
-//! `http` (network), `read_file`/`read_file_bytes` (filesystem reads), and `write_file`
-//! (filesystem writes).
+//! `http` (network), `read_file`/`read_file_bytes`/`collection`/`file_exists` (filesystem
+//! reads), and `write_file` (filesystem writes).
 //!
 //! All default to `false`. A host must explicitly enable them via
 //! [`set_allow_net`]/[`set_allow_read`]/[`set_allow_write`] (wired to the

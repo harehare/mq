@@ -689,6 +689,91 @@ fn test_read_file_without_allow_read_is_blocked() -> Result<(), Box<dyn std::err
 }
 
 #[test]
+fn test_collection() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempfile::tempdir()?;
+    std::fs::write(temp_dir.path().join("a.md"), "# Hello\n")?;
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("--allow-read")
+        .arg("-I")
+        .arg("null")
+        .arg(format!(
+            r#"collection("{}") | map(self, fn(page): get(page, "title");)"#,
+            temp_dir.path().to_string_lossy()
+        ))
+        .write_stdin("")
+        .assert();
+
+    assert.success().code(0).stdout("[\"Hello\"]\n");
+    Ok(())
+}
+
+#[test]
+fn test_collection_without_allow_read_is_blocked() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempfile::tempdir()?;
+    std::fs::write(temp_dir.path().join("a.md"), "# Hello\n")?;
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg(format!(r#"collection("{}")"#, temp_dir.path().to_string_lossy()))
+        .write_stdin("")
+        .assert();
+
+    assert.failure();
+    Ok(())
+}
+
+#[test]
+fn test_file_exists() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file_path) = create_file("test_file_exists.md", "test");
+    let temp_file_path_clone = temp_file_path.clone();
+
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("--allow-read")
+        .arg(format!(r#"file_exists("{}")"#, temp_file_path.to_string_lossy()))
+        .arg(temp_file_path.to_string_lossy().to_string())
+        .assert();
+
+    assert.success().code(0).stdout("true\n");
+    Ok(())
+}
+
+#[test]
+fn test_file_exists_without_allow_read_is_blocked() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file_path) = create_file("test_file_exists_blocked.md", "test");
+    let temp_file_path_clone = temp_file_path.clone();
+
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg(format!(r#"file_exists("{}")"#, temp_file_path.to_string_lossy()))
+        .arg(temp_file_path.to_string_lossy().to_string())
+        .assert();
+
+    assert.failure();
+    Ok(())
+}
+
+#[test]
 fn test_output_format_toml_requires_dict() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
