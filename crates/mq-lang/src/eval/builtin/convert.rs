@@ -488,6 +488,12 @@ pub(super) fn strip_tags(input: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(result))
 }
 
+/// Sanitize HTML using an allowlist of safe tags/attributes (XSS protection).
+#[inline(always)]
+pub(super) fn sanitize_html(input: &str) -> Result<RuntimeValue, Error> {
+    Ok(RuntimeValue::String(ammonia::clean(input)))
+}
+
 /// Compute MD5 hash and return lowercase hex string.
 ///
 /// Note: MD5 is cryptographically broken and should not be used for security
@@ -796,6 +802,21 @@ mod tests {
     #[case("a > b", "a > b")]
     fn test_strip_tags(#[case] input: &str, #[case] expected: &str) {
         let result = strip_tags(input).unwrap();
+        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+    }
+
+    // Test sanitize_html
+    #[rstest]
+    #[case("<script>alert('xss')</script><p>hi</p>", "<p>hi</p>")]
+    #[case(r#"<img src=x onerror="alert(1)">"#, r#"<img src="x">"#)]
+    #[case(
+        r#"<a href="javascript:alert(1)">click</a>"#,
+        r#"<a rel="noopener noreferrer">click</a>"#
+    )]
+    #[case("<b>bold</b> and <i>italic</i>", "<b>bold</b> and <i>italic</i>")]
+    #[case("", "")]
+    fn test_sanitize_html(#[case] input: &str, #[case] expected: &str) {
+        let result = sanitize_html(input).unwrap();
         assert_eq!(result, RuntimeValue::String(expected.to_string()));
     }
 

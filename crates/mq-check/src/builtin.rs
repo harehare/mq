@@ -360,6 +360,7 @@ fn register_string(ctx: &mut InferenceContext) {
             "html_escape",
             "html_unescape",
             "strip_tags",
+            "sanitize_html",
         ],
         vec![Type::String],
         Type::String,
@@ -402,6 +403,7 @@ fn register_string(ctx: &mut InferenceContext) {
             "html_escape",
             "html_unescape",
             "strip_tags",
+            "sanitize_html",
             "utf8bytelen",
         ],
     );
@@ -1567,6 +1569,8 @@ mod tests {
     #[case::html_unescape_number("html_unescape(42)", false)] // Should fail: wrong type
     #[case::strip_tags("strip_tags(\"<b>hi</b>\")", true)]
     #[case::strip_tags_number("strip_tags(42)", false)] // Should fail: wrong type
+    #[case::sanitize_html("sanitize_html(\"<script>alert(1)</script>\")", true)]
+    #[case::sanitize_html_number("sanitize_html(42)", false)] // Should fail: wrong type
     fn test_string_case_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
