@@ -41,7 +41,7 @@ mq-crawl https://docs.example.com --depth 2 --allowed-domains docs.example.com \
 
 - `--headless` needs local Chrome (or `--webdriver-url` for a remote WebDriver).
 - `--allowed-domains` is an **exact-match** domain list, not a wildcard — list every subdomain you want crawled.
-- `-o DIR` saves one Markdown file per page instead of stdout; aggregate them with `mq -I null 'collection("./crawled") | map(self, fn(page): get(page, "title");)' /dev/null`.
+- `-o DIR` saves one Markdown file per page instead of stdout; aggregate them with `mq -I null --allow-read 'collection("./crawled") | map(self, fn(page): get(page, "title");)' /dev/null` (`collection` reads from disk, so it requires `--allow-read`).
 
 ## In-Query HTTP (`--allow-net`)
 
