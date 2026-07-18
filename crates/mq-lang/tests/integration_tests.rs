@@ -3132,6 +3132,9 @@ fn engine() -> DefaultEngine {
 // strip_tags
 #[case::strip_tags_basic(r#"strip_tags("<p>Hello <em>world</em>!</p>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("Hello world!".to_string())].into()))]
 #[case::strip_tags_no_tags(r#"strip_tags("plain text")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("plain text".to_string())].into()))]
+// sanitize_html
+#[case::sanitize_html_script(r#"sanitize_html("<script>alert('xss')</script><p>hi</p>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("<p>hi</p>".to_string())].into()))]
+#[case::sanitize_html_safe_tags(r#"sanitize_html("<b>bold</b>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("<b>bold</b>".to_string())].into()))]
 // to_number conversion
 #[case::to_number_string(r#"to_number("42")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // to_boolean conversion
@@ -3381,6 +3384,8 @@ fn engine() -> DefaultEngine {
 #[case::html_unescape_none("html_unescape(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // strip_tags: None input → None
 #[case::strip_tags_none("strip_tags(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+// sanitize_html: None input → None
+#[case::sanitize_html_none("sanitize_html(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // ltrim: None input → None
 #[case::ltrim_none("ltrim(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // rtrim: None input → None
@@ -3681,6 +3686,8 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::html_unescape_non_string("html_unescape(42)", vec![RuntimeValue::None],)]
 // strip_tags: non-string/non-markdown/non-none → type error
 #[case::strip_tags_non_string("strip_tags(42)", vec![RuntimeValue::None],)]
+// sanitize_html: non-string/non-markdown/non-none → type error
+#[case::sanitize_html_non_string("sanitize_html(42)", vec![RuntimeValue::None],)]
 // token_count: non-string/non-markdown text → type error
 #[case::token_count_non_string(r#"token_count(42, "gpt-4")"#, vec![RuntimeValue::None],)]
 #[case::token_count_no_model_non_string(r#"token_count(42)"#, vec![RuntimeValue::None],)]

@@ -835,6 +835,25 @@ fn html_unescape_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Share
     }
 }
 
+#[mq_macros::mq_fn(name = "sanitize_html", params = Fixed(1))]
+fn sanitize_html_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::sanitize_html(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| {
+                convert::sanitize_html(md.value().as_str()).and_then(|o| match o {
+                    RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                    a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                })
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("sanitize_html should always receive exactly one argument"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "strip_tags", params = Fixed(1))]
 fn strip_tags_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -4191,6 +4210,7 @@ mq_macros::builtin_dispatch! {
     HTML_ESCAPE,
     HTML_UNESCAPE,
     STRIP_TAGS,
+    SANITIZE_HTML,
     TO_MARKDOWN_STRING,
     TO_STRING,
     TO_NUMBER,
@@ -5059,6 +5079,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Removes HTML tags from the given string, keeping the surrounding text content.",
             params: &["string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("sanitize_html"),
+        BuiltinFunctionDoc {
+            description: "Sanitizes the given HTML string using an allowlist of safe tags and attributes, removing scripts and other XSS vectors.",
+            params: &["html"],
         },
     );
     map.insert(
