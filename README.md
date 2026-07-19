@@ -188,7 +188,7 @@ Options:
   -f, --from-file
           load filter from the file
   -I, --input-format <INPUT_FORMAT>
-          Set input format [possible values: markdown, mdx, html, text, null, raw, bytes, cbor, csv, hcl, json, psv, toml, toon, tsv, xml, yaml]
+          Set input format [possible values: markdown, mdx, html, text, null, raw, bytes, cbor, csv, json, psv, toml, toon, tsv, xml, yaml]
   -L, --directory <MODULE_DIRECTORIES>
           Search modules from the directory
   -M, --module-names <MODULE_NAMES>
@@ -197,8 +197,12 @@ Options:
           Import modules by name, making them available as `name::fn()` in queries
       --args <NAME> <VALUE>
           Sets a named string argument. NAME is accessible directly in queries, and also via ARGS."named" when --args or --argv is given
+      --argjson <NAME> <JSON_VALUE>
+          Sets a named JSON argument. NAME is accessible directly in queries
       --rawfile <NAME> <FILE>
           Sets file contents that can be referenced at runtime
+      --slurpfile <NAME> <FILE>
+          Sets a named argument from a JSON file. NAME is bound to an array of every JSON value found in FILE (jq --slurpfile compatible), so a file containing a single JSON value becomes a one-element array
       --stream
           Enable streaming mode for processing large files line by line
       --allowed-domain <ALLOWED_DOMAINS>
@@ -213,10 +217,12 @@ Options:
           Path to the mq.lock file used for HTTP import integrity checks. Defaults to ./mq.lock (relative to the current directory)
       --allow-net
           Allow the `http` function to make outbound HTTPS requests. Disabled by default; requests are HTTPS-only and blocked from reaching loopback/private/link-local addresses regardless of this flag
+      --allow-read
+          Allow the `read_file`/`read_file_bytes`/`collection`/`file_exists` functions to read from the filesystem. Disabled by default
       --allow-write
           Allow the `write_file` function to write to the filesystem. Disabled by default
   -F, --output-format <OUTPUT_FORMAT>
-          Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, raw, none]
+          Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, raw, csv, toml, xml, yaml, none]
   -U, --update
           Update the input markdown (aliases: -i, --in-place, --inplace)
       --unbuffered
@@ -257,6 +263,8 @@ Options:
           Positional string arguments, available as ARGS."positional" in queries
   -O, --optimize-level <OPTIMIZE_LEVEL>
           Optimization level for AST transformations (none = no changes, basic = constant folding and dead-branch elimination, full = all passes) [default: none] [possible values: none, basic, full]
+      --timeout <SECONDS>
+          Maximum time in seconds allowed for query evaluation before aborting (e.g. 0.5, 5). No timeout by default
   -h, --help
           Print help
   -V, --version
@@ -275,7 +283,6 @@ Use -I <format> to force a specific format:
 
 .cbor / -I cbor  import "cbor" | cbor::cbor_parse()  (reads as bytes)
 .csv  / -I csv   import "csv"  | csv::csv_parse(true)
-.hcl  / -I hcl   import "hcl"  | hcl::hcl_parse()
 .json / -I json  import "json" | json::json_parse()
 .psv  / -I psv   import "csv"  | csv::psv_parse(true)
 .toml / -I toml  import "toml" | toml::toml_parse()

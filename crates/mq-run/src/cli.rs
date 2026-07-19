@@ -314,6 +314,12 @@ struct InputArgs {
     #[arg(long="rawfile", num_args = 2, value_names = ["NAME", "FILE"])]
     raw_file: Option<Vec<String>>,
 
+    /// Sets a named argument from a JSON file. NAME is bound to an array of every JSON
+    /// value found in FILE (jq --slurpfile compatible), so a file containing a single
+    /// JSON value becomes a one-element array.
+    #[arg(long = "slurpfile", num_args = 2, value_names = ["NAME", "FILE"])]
+    slurp_file: Option<Vec<String>>,
+
     /// Enable streaming mode for processing large files line by line
     #[arg(long, default_value_t = false)]
     stream: bool,
@@ -816,7 +822,11 @@ impl Cli {
             }
         }
 
-        if self.input.args.is_some() || self.argv.is_some() || self.input.argjson.is_some() {
+        if self.input.args.is_some()
+            || self.argv.is_some()
+            || self.input.argjson.is_some()
+            || self.input.slurp_file.is_some()
+        {
             let mut named: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = BTreeMap::new();
             if let Some(args) = &self.input.args {
                 for v in args.chunks(2) {
@@ -829,6 +839,25 @@ impl Cli {
                 for v in argjson.chunks(2) {
                     let json_value: serde_json::Value = serde_json::from_str(&v[1]).into_diagnostic()?;
                     let runtime_value: mq_lang::RuntimeValue = json_value.into();
+                    engine.define_value(&v[0], runtime_value.clone());
+                    named.insert(mq_lang::Ident::new(&v[0]), runtime_value);
+                }
+            }
+
+            if let Some(slurp_file) = &self.input.slurp_file {
+                for v in slurp_file.chunks(2) {
+                    let path = PathBuf::from_str(&v[1]).into_diagnostic()?;
+
+                    if !path.exists() {
+                        return Err(miette!("File not found: {}", path.display()));
+                    }
+
+                    let content = fs::read_to_string(&path).into_diagnostic()?;
+                    let json_values: Vec<serde_json::Value> = serde_json::Deserializer::from_str(&content)
+                        .into_iter::<serde_json::Value>()
+                        .collect::<Result<_, _>>()
+                        .into_diagnostic()?;
+                    let runtime_value = mq_lang::RuntimeValue::Array(json_values.into_iter().map(Into::into).collect());
                     engine.define_value(&v[0], runtime_value.clone());
                     named.insert(mq_lang::Ident::new(&v[0]), runtime_value);
                 }
@@ -3707,6 +3736,118 @@ mod tests {
         let actual: serde_json::Value = serde_json::from_str(result.trim()).expect("output should be valid JSON");
         let expected: serde_json::Value = serde_json::from_str(r#"{"count": 42, "name": "Alice"}"#).unwrap();
         assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case::single_object("single_object", r#"{"a": 1}"#, "data", r#"[{"a": 1}]"#)]
+    #[case::single_array("single_array", "[1, 2, 3]", "data", r#"[[1, 2, 3]]"#)]
+    #[case::multiple_concatenated_values("multiple_values", "1 2 3", "data", "[1, 2, 3]")]
+    fn test_slurpfile(#[case] suffix: &str, #[case] file_content: &str, #[case] query: &str, #[case] expected: &str) {
+        let (_, data_file) = create_file(&format!("test_slurpfile_{suffix}.json"), file_content);
+        let (_, output_file) = create_file(&format!("test_slurpfile_{suffix}_out.md"), "");
+        let data_file_clone = data_file.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            std::fs::remove_file(&data_file_clone).ok();
+            std::fs::remove_file(&output_file_clone).ok();
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                slurp_file: Some(vec!["data".to_string(), data_file.to_string_lossy().to_string()]),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some(query.to_string()),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let result = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert_eq!(result.trim(), expected, "query: {}", query);
+    }
+
+    #[test]
+    fn test_slurpfile_invalid_json_errors() {
+        let (_, data_file) = create_file("test_slurpfile_invalid.json", "not valid json");
+        let data_file_clone = data_file.clone();
+
+        defer! {
+            std::fs::remove_file(&data_file_clone).ok();
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                slurp_file: Some(vec!["data".to_string(), data_file.to_string_lossy().to_string()]),
+                ..Default::default()
+            },
+            query: Some("data".to_string()),
+            ..Cli::default()
+        };
+
+        assert!(
+            cli.run().is_err(),
+            "--slurpfile with malformed JSON should return an error"
+        );
+    }
+
+    #[test]
+    fn test_slurpfile_missing_file_errors() {
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                slurp_file: Some(vec!["data".to_string(), "/nonexistent/path/to/file.json".to_string()]),
+                ..Default::default()
+            },
+            query: Some("data".to_string()),
+            ..Cli::default()
+        };
+
+        assert!(
+            cli.run().is_err(),
+            "--slurpfile with a missing file should return an error"
+        );
+    }
+
+    #[test]
+    fn test_slurpfile_combined_with_args_and_argjson() {
+        let (_, data_file) = create_file("test_slurpfile_combined.json", r#"{"c": 3}"#);
+        let (_, output_file) = create_file("test_slurpfile_combined_out.md", "");
+        let data_file_clone = data_file.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            std::fs::remove_file(&data_file_clone).ok();
+            std::fs::remove_file(&output_file_clone).ok();
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                args: Some(vec!["name".to_string(), "Alice".to_string()]),
+                argjson: Some(vec!["count".to_string(), "42".to_string()]),
+                slurp_file: Some(vec!["data".to_string(), data_file.to_string_lossy().to_string()]),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some("data".to_string()),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let result = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert_eq!(result.trim(), r#"[{"c": 3}]"#, "query: data");
     }
 
     #[test]
