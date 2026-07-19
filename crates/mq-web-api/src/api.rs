@@ -60,8 +60,6 @@ pub enum InputFormat {
     Toml,
     #[serde(rename = "xml")]
     Xml,
-    #[serde(rename = "hcl")]
-    Hcl,
     #[serde(rename = "toon")]
     Toon,
 }
@@ -79,7 +77,6 @@ impl InputFormat {
             Self::Yaml => Some(r#"import "yaml" | yaml::yaml_parse()"#),
             Self::Toml => Some(r#"import "toml" | toml::toml_parse()"#),
             Self::Xml => Some(r#"import "xml" | xml::xml_parse()"#),
-            Self::Hcl => Some(r#"import "hcl" | hcl::hcl_parse()"#),
             Self::Toon => Some(r#"import "toon" | toon::toon_parse()"#),
             Self::Markdown | Self::Mdx | Self::Text | Self::Html | Self::Raw | Self::Null => None,
         }
@@ -391,7 +388,6 @@ fn execute_query(request: ApiRequest, timeout: std::time::Duration) -> miette::R
         | InputFormat::Yaml
         | InputFormat::Toml
         | InputFormat::Xml
-        | InputFormat::Hcl
         | InputFormat::Toon => mq_lang::raw_input(&request.input.unwrap_or_default()),
     };
 
@@ -517,7 +513,6 @@ mod tests {
     #[case(InputFormat::Yaml, "name: Alice\nage: 30")]
     #[case(InputFormat::Toml, "name = \"Alice\"\nage = 30")]
     #[case(InputFormat::Xml, "<person><name>Alice</name></person>")]
-    #[case(InputFormat::Hcl, r#"resource "aws_instance" "example" { ami = "abc-123" }"#)]
     #[case(InputFormat::Toon, "name: Alice\nage: 30")]
     fn test_execute_module_backed_formats(#[case] input_format: InputFormat, #[case] input: &str) {
         let req = ApiRequest {

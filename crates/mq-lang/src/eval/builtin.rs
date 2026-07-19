@@ -3363,32 +3363,6 @@ fn _cbor_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
-#[mq_macros::mq_fn(name = "_hcl_parse", params = Fixed(1))]
-fn _hcl_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
-        [RuntimeValue::String(s)] => {
-            let value: serde_json::Value =
-                hcl::from_str(s).map_err(|e| Error::Runtime(format!("Failed to parse HCL: {}", e)))?;
-            Ok(value.into())
-        }
-        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!("_hcl_parse should always receive exactly one argument"),
-    }
-}
-
-#[mq_macros::mq_fn(name = "_hcl_stringify", params = Fixed(1))]
-fn _hcl_stringify_impl(_ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
-        [value] => {
-            let json_value = std::mem::take(value).to_json_value();
-            let s =
-                hcl::to_string(&json_value).map_err(|e| Error::Runtime(format!("Failed to serialize HCL: {}", e)))?;
-            Ok(RuntimeValue::String(s))
-        }
-        _ => unreachable!("_hcl_stringify should always receive exactly one argument"),
-    }
-}
-
 #[mq_macros::mq_fn(name = "_cbor_stringify", params = Fixed(1))]
 fn _cbor_stringify_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -4407,8 +4381,6 @@ mq_macros::builtin_dispatch! {
     _TOML_PARSE,
     _CBOR_PARSE,
     _CBOR_STRINGIFY,
-    _HCL_PARSE,
-    _HCL_STRINGIFY,
     _XML_PARSE,
     SET_VARIABLE,
     GET_VARIABLE,
@@ -4898,20 +4870,6 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         SmolStr::new("_cbor_stringify"),
         BuiltinFunctionDoc {
             description: "Serializes a value to CBOR bytes.",
-            params: &["value"],
-        },
-    );
-    map.insert(
-        SmolStr::new("_hcl_parse"),
-        BuiltinFunctionDoc {
-            description: "Parses an HCL string into a data structure.",
-            params: &["hcl_string"],
-        },
-    );
-    map.insert(
-        SmolStr::new("_hcl_stringify"),
-        BuiltinFunctionDoc {
-            description: "Serializes a value to an HCL string.",
             params: &["value"],
         },
     );
@@ -8649,64 +8607,6 @@ mod tests {
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
-    }
-
-    #[rstest]
-    #[case::simple_block(
-        r#"resource "aws_instance" "example" { ami = "abc-123" }"#,
-        {
-            let mut instance = BTreeMap::new();
-            instance.insert(Ident::new("ami"), RuntimeValue::String("abc-123".to_string()));
-            let mut example = BTreeMap::new();
-            example.insert(Ident::new("example"), RuntimeValue::Dict(instance));
-            let mut resource = BTreeMap::new();
-            resource.insert(Ident::new("aws_instance"), RuntimeValue::Dict(example));
-            let mut map = BTreeMap::new();
-            map.insert(Ident::new("resource"), RuntimeValue::Dict(resource));
-            Ok(RuntimeValue::Dict(map))
-        }
-    )]
-    fn test_hcl_parse(#[case] input: &str, #[case] expected: Result<RuntimeValue, Error>) {
-        let ident = Ident::new("_hcl_parse");
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            vec![RuntimeValue::String(input.to_string())],
-            &Shared::new(SharedCell::new(Env::default())),
-        );
-        assert_eq!(result, expected);
-    }
-
-    #[rstest]
-    #[case::invalid_type(RuntimeValue::Number(1.into()))]
-    fn test_hcl_parse_invalid_type(#[case] input: RuntimeValue) {
-        let ident = Ident::new("_hcl_parse");
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            vec![input],
-            &Shared::new(SharedCell::new(Env::default())),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_hcl_stringify_dict() {
-        let ident = Ident::new("_hcl_stringify");
-        let mut map = BTreeMap::new();
-        map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
-        map.insert(Ident::new("age"), RuntimeValue::Number(30.into()));
-        let input = RuntimeValue::Dict(map);
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            vec![input],
-            &Shared::new(SharedCell::new(Env::default())),
-        );
-        assert!(result.is_ok());
-        let s = result.unwrap().to_string();
-        assert!(s.contains("name") && s.contains("Alice"));
-        assert!(s.contains("age"));
     }
 
     #[rstest]

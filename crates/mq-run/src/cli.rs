@@ -37,7 +37,6 @@ use crate::reference;
     Use -I <format> to force a specific format:\n\n\
     .cbor / -I cbor  import \"cbor\" | cbor::cbor_parse()  (reads as bytes)\n\
     .csv  / -I csv   import \"csv\"  | csv::csv_parse(true)\n\
-    .hcl  / -I hcl   import \"hcl\"  | hcl::hcl_parse()\n\
     .json / -I json  import \"json\" | json::json_parse()\n\
     .psv  / -I psv   import \"csv\"  | csv::psv_parse(true)\n\
     .toml / -I toml  import \"toml\" | toml::toml_parse()\n\
@@ -116,7 +115,7 @@ const UNIX_EXECUTABLE_BITS: u32 = 0o111;
 ///
 /// Module-backed formats (auto-import and parse, sorted alphabetically):
 /// - Cbor: Reads input as raw bytes and parses via the `cbor` module.
-/// - Csv/Hcl/Json/Psv/Toml/Toon/Tsv/Xml/Yaml: Auto-import the matching module and parse.
+/// - Csv/Json/Psv/Toml/Toon/Tsv/Xml/Yaml: Auto-import the matching module and parse.
 #[derive(Clone, Debug, Default, clap::ValueEnum, PartialEq)]
 enum InputFormat {
     #[default]
@@ -129,7 +128,6 @@ enum InputFormat {
     Bytes,
     Cbor,
     Csv,
-    Hcl,
     Json,
     Psv,
     Toml,
@@ -149,7 +147,6 @@ impl InputFormat {
             "jsonl" | "ndjson" => Self::Text,
             "cbor" => Self::Cbor,
             "csv" => Self::Csv,
-            "hcl" => Self::Hcl,
             "json" => Self::Json,
             "psv" => Self::Psv,
             "toml" => Self::Toml,
@@ -170,7 +167,6 @@ impl InputFormat {
             // Module-backed formats (alphabetical order)
             Self::Cbor => Some(r#"import "cbor" | cbor::cbor_parse()"#),
             Self::Csv => Some(r#"import "csv" | csv::csv_parse(true)"#),
-            Self::Hcl => Some(r#"import "hcl" | hcl::hcl_parse()"#),
             Self::Json => Some(r#"import "json" | json::json_parse()"#),
             Self::Psv => Some(r#"import "csv" | csv::psv_parse(true)"#),
             Self::Toml => Some(r#"import "toml" | toml::toml_parse()"#),
@@ -965,7 +961,6 @@ impl Cli {
                 InputFormat::Cbor => mq_lang::bytes_input(content.as_bytes()),
                 // Module-backed text formats (alphabetical): pass raw string; the module handles parsing.
                 InputFormat::Csv
-                | InputFormat::Hcl
                 | InputFormat::Json
                 | InputFormat::Psv
                 | InputFormat::Toml
@@ -3153,7 +3148,6 @@ mod tests {
     #[case("jsonl", InputFormat::Text)]
     #[case("ndjson", InputFormat::Text)]
     #[case("cbor", InputFormat::Cbor)]
-    #[case("hcl", InputFormat::Hcl)]
     #[case("unknown", InputFormat::Markdown)] // default fallback
     fn test_from_extension(#[case] ext: &str, #[case] expected: InputFormat) {
         assert_eq!(InputFormat::from_extension(ext), expected);
@@ -3351,7 +3345,6 @@ mod tests {
     #[case(InputFormat::Bytes, None)]
     #[case(InputFormat::Cbor, Some(r#"import "cbor" | cbor::cbor_parse()"#))]
     #[case(InputFormat::Json, Some(r#"import "json" | json::json_parse()"#))]
-    #[case(InputFormat::Hcl, Some(r#"import "hcl" | hcl::hcl_parse()"#))]
     #[case(InputFormat::Markdown, None)]
     #[case(InputFormat::Raw, None)]
     fn test_module_query_prefix(#[case] fmt: InputFormat, #[case] expected: Option<&str>) {
