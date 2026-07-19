@@ -3899,14 +3899,8 @@ fn path_join_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
 /// Reads the contents of `path` as a string. Requires the `--allow-read` CLI flag (see
 /// [`capability`]).
 #[cfg(feature = "file-io")]
-#[mq_macros::mq_fn(name = "read_file", params = Fixed(1))]
+#[mq_macros::mq_fn(name = "read_file", params = Fixed(1), capability = "read")]
 fn read_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    if !capability::is_read_allowed() {
-        return Err(Error::Runtime(
-            "read_file: filesystem reads are disabled; re-run mq with --allow-read to enable read_file".into(),
-        ));
-    }
-
     match args.as_mut_slice() {
         [RuntimeValue::String(path)] => match std::fs::read_to_string(&path) {
             Ok(content) => Ok(RuntimeValue::String(content)),
@@ -3920,14 +3914,8 @@ fn read_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
 /// Checks whether `path` exists on the filesystem. Requires the `--allow-read` CLI flag (see
 /// [`capability`]).
 #[cfg(feature = "file-io")]
-#[mq_macros::mq_fn(name = "file_exists", params = Fixed(1))]
+#[mq_macros::mq_fn(name = "file_exists", params = Fixed(1), capability = "read")]
 fn file_exists_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    if !capability::is_read_allowed() {
-        return Err(Error::Runtime(
-            "file_exists: filesystem reads are disabled; re-run mq with --allow-read to enable file_exists".into(),
-        ));
-    }
-
     match args.as_mut_slice() {
         [RuntimeValue::String(path)] => Ok(std::path::Path::new(path).exists().into()),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
@@ -3938,15 +3926,8 @@ fn file_exists_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
 /// Reads the contents of `path` as raw bytes. Requires the `--allow-read` CLI flag (see
 /// [`capability`]).
 #[cfg(feature = "file-io")]
-#[mq_macros::mq_fn(name = "read_file_bytes", params = Fixed(1))]
+#[mq_macros::mq_fn(name = "read_file_bytes", params = Fixed(1), capability = "read")]
 fn read_file_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    if !capability::is_read_allowed() {
-        return Err(Error::Runtime(
-            "read_file_bytes: filesystem reads are disabled; re-run mq with --allow-read to enable read_file_bytes"
-                .into(),
-        ));
-    }
-
     match args.as_mut_slice() {
         [RuntimeValue::String(path)] => match std::fs::read(&path) {
             Ok(content) => Ok(RuntimeValue::Bytes(content)),
@@ -3960,13 +3941,8 @@ fn read_file_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Sha
 /// Writes `content` (string or bytes) to `path`, creating or truncating the file.
 /// Requires the `--allow-write` CLI flag (see [`capability`]).
 #[cfg(feature = "file-io")]
-#[mq_macros::mq_fn(name = "write_file", params = Fixed(2))]
+#[mq_macros::mq_fn(name = "write_file", params = Fixed(2), capability = "write")]
 fn write_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    if !capability::is_write_allowed() {
-        return Err(Error::Runtime(
-            "write_file: filesystem writes are disabled; re-run mq with --allow-write to enable write_file".into(),
-        ));
-    }
     fn write(path: &str, content: impl AsRef<[u8]>) -> Result<RuntimeValue, Error> {
         std::fs::write(path, content)
             .map(|()| RuntimeValue::NONE)
@@ -3989,7 +3965,7 @@ fn write_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
 /// `headers`, a dict of string to string, is applied to the request when given.
 /// Requires the `--allow-net` CLI flag (see [`capability`]).
 #[cfg(feature = "http")]
-#[mq_macros::mq_fn(name = "http", params = Range(2, 4))]
+#[mq_macros::mq_fn(name = "http", params = Range(2, 4), capability = "net")]
 fn http_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [
@@ -4160,14 +4136,8 @@ fn collect_markdown_files(
 /// Recursively reads every Markdown file under `dir`. Requires the `--allow-read` CLI flag (see
 /// [`capability`]).
 #[cfg(feature = "file-io")]
-#[mq_macros::mq_fn(name = "collection", params = Fixed(1))]
+#[mq_macros::mq_fn(name = "collection", params = Fixed(1), capability = "read")]
 fn collection_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    if !capability::is_read_allowed() {
-        return Err(Error::Runtime(
-            "collection: filesystem reads are disabled; re-run mq with --allow-read to enable collection".into(),
-        ));
-    }
-
     match args.as_mut_slice() {
         [RuntimeValue::String(dir)] => {
             let mut ancestors = std::collections::HashSet::new();

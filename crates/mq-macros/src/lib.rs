@@ -17,6 +17,11 @@ use syn::{
 ///   (`SORT_DESC`).
 /// - `params`: The `ParamNum` variant without the `ParamNum::` prefix (e.g., `None`, `Fixed(1)`,
 ///   `Range(0, 255)`).
+/// - `capability` (optional): one of `"read"`, `"write"`, `"net"`. When given, a guard is
+///   inserted as the first statement of the function body that returns
+///   `Err(Error::Runtime(...))` unless the matching `capability::is_{read,write,net}_allowed()`
+///   check passes — the same gate every capability-restricted builtin needs, generated instead
+///   of hand-written per function.
 ///
 /// # Example
 /// ```ignore
@@ -31,10 +36,15 @@ use syn::{
 /// }
 /// // Generates: static SORT_DESC: LazyLock<BuiltinFunction> = LazyLock::new(|| ...);
 /// // Register SORT_DESC in `builtin_dispatch!` to make it callable.
+///
+/// #[mq_fn(name = "read_file", params = Fixed(1), capability = "read")]
+/// fn read_file_impl(...) -> Result<RuntimeValue, Error> {
+///     // capability::is_read_allowed() is checked before this body runs.
+/// }
 /// ```
 #[proc_macro_attribute]
 pub fn mq_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let item_fn = parse_macro_input!(item as syn::ItemFn);
+    let mut item_fn = parse_macro_input!(item as syn::ItemFn);
 
     let parser = Punctuated::<Meta, Token![,]>::parse_terminated;
     let metas = match parser.parse(attr) {
@@ -44,6 +54,7 @@ pub fn mq_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let mut name_lit: Option<LitStr> = None;
     let mut params_expr: Option<Expr> = None;
+    let mut capability_lit: Option<LitStr> = None;
 
     for meta in &metas {
         match meta {
@@ -57,6 +68,14 @@ pub fn mq_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             Meta::NameValue(nv) if nv.path.is_ident("params") => {
                 params_expr = Some(nv.value.clone());
+            }
+            Meta::NameValue(nv) if nv.path.is_ident("capability") => {
+                if let Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(s), ..
+                }) = &nv.value
+                {
+                    capability_lit = Some(s.clone());
+                }
             }
             _ => {
                 return syn::Error::new_spanned(meta, "unknown mq_fn attribute key")
@@ -83,6 +102,30 @@ pub fn mq_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
                 .into();
         }
     };
+
+    if let Some(capability) = &capability_lit {
+        let (getter, phrase, verb, flag) = match capability.value().as_str() {
+            "read" => ("is_read_allowed", "filesystem reads", "are", "--allow-read"),
+            "write" => ("is_write_allowed", "filesystem writes", "are", "--allow-write"),
+            "net" => ("is_net_allowed", "network access", "is", "--allow-net"),
+            other => {
+                return syn::Error::new_spanned(
+                    capability,
+                    format!("unknown capability {other:?}, expected \"read\", \"write\", or \"net\""),
+                )
+                .to_compile_error()
+                .into();
+            }
+        };
+        let getter_ident = Ident::new(getter, Span::call_site());
+        let message = format!("{{name}}: {phrase} {verb} disabled; re-run mq with {flag} to enable {{name}}");
+        let check: syn::Stmt = syn::parse_quote! {
+            if !capability::#getter_ident() {
+                return Err(Error::Runtime(format!(#message, name = #name)));
+            }
+        };
+        item_fn.block.stmts.insert(0, check);
+    }
 
     let fn_ident = &item_fn.sig.ident;
     let static_name = name.value().to_uppercase();

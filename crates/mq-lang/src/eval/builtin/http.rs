@@ -2,10 +2,11 @@
 //! `patch`, `head`, ...) and returns the response body as a string.
 //!
 //! Gated at compile time by the `http` feature (implied by `http-import-ureq`) and at
-//! runtime by the `--allow-net` CLI flag (see [`super::capability`]) — both must be satisfied before a
-//! request is made. Requests go through the same SSRF-hardened agent used for HTTP module
-//! imports (see [`crate::module::resolver::ssrf`]): HTTPS only, no automatic redirects, and
-//! DNS resolution filtered to publicly routable addresses so a hostname can't be rebound to
+//! runtime by the `--allow-net` CLI flag (checked by the `#[mq_fn(capability = "net")]` guard
+//! on `http_impl` in the parent module, see [`super::capability`]) — both must be satisfied
+//! before a request is made. Requests go through the same SSRF-hardened agent used for HTTP
+//! module imports (see [`crate::module::resolver::ssrf`]): HTTPS only, no automatic redirects,
+//! and DNS resolution filtered to publicly routable addresses so a hostname can't be rebound to
 //! an internal address after the initial check.
 
 use std::collections::BTreeMap;
@@ -14,6 +15,7 @@ use std::sync::LazyLock;
 use ureq::http;
 
 use super::Error;
+#[cfg(test)]
 use super::capability;
 use crate::module::resolver::ssrf::{is_https, ssrf_safe_agent};
 use crate::{Ident, RuntimeValue};
@@ -28,16 +30,6 @@ static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| ssrf_safe_agent(TIMEOUT, 
 /// Builds an `Error::Runtime` with the `http: ` prefix shared by every error in this module.
 fn err(msg: impl std::fmt::Display) -> Error {
     Error::Runtime(format!("http: {msg}"))
-}
-
-fn ensure_net_allowed() -> Result<(), Error> {
-    if capability::is_net_allowed() {
-        Ok(())
-    } else {
-        Err(err(
-            "network access is disabled; re-run mq with --allow-net to enable http",
-        ))
-    }
 }
 
 fn ensure_https(url: &str) -> Result<(), Error> {
@@ -102,7 +94,6 @@ pub(super) fn request(
     body: Option<&str>,
     headers: Option<&BTreeMap<Ident, RuntimeValue>>,
 ) -> Result<RuntimeValue, Error> {
-    ensure_net_allowed()?;
     ensure_https(url)?;
     let method = parse_method(method)?;
     let builder = apply_headers(http::Request::builder().method(method).uri(url), headers)?;
