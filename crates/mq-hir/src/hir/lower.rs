@@ -251,9 +251,72 @@ impl Hir {
         SymbolKind::QualifiedAccess
     );
     simple_expr!(add_try_expr, mq_lang::CstNodeKind::Try, SymbolKind::Try);
-    simple_expr!(add_catch_expr, mq_lang::CstNodeKind::Catch, SymbolKind::Catch);
     simple_expr!(add_array_expr, mq_lang::CstNodeKind::Array, SymbolKind::Array);
     simple_expr!(add_spread_expr, mq_lang::CstNodeKind::Spread, SymbolKind::Spread);
+
+    /// Lowers a `CstNodeKind::Catch` node into a `SymbolKind::Catch` symbol.
+    ///
+    /// `catch(e):` carries an optional error binder before the leading `(`,
+    /// `Ident`, `)` tokens; when present, it declares `e` as a `Parameter`
+    /// in a fresh child scope so the catch body can reference it without
+    /// resolving to an unrelated same-named symbol in an enclosing scope.
+    fn add_catch_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Catch,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Catch,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+                insertion_order: 0,
+            });
+
+            let has_binder = node
+                .children
+                .first()
+                .and_then(|child| child.token.clone())
+                .is_some_and(|token| matches!(token.kind, mq_lang::TokenKind::LParen));
+
+            let body_scope_id = if has_binder {
+                self.add_scope(Scope::new(
+                    SourceInfo::new(Some(source_id), Some(node.node_range())),
+                    ScopeKind::Block(symbol_id),
+                    Some(scope_id),
+                ))
+            } else {
+                scope_id
+            };
+
+            let mut children = node.children_without_token().into_iter();
+
+            if has_binder && let Some(binder) = children.next() {
+                self.add_symbol(Symbol {
+                    value: binder.name(),
+                    kind: SymbolKind::Parameter,
+                    source: SourceInfo::new(Some(source_id), Some(binder.range())),
+                    scope: body_scope_id,
+                    doc: Vec::new(),
+                    parent: Some(symbol_id),
+                    insertion_order: 0,
+                });
+            }
+
+            for child in children {
+                self.add_expr(&child, source_id, body_scope_id, Some(symbol_id));
+            }
+        }
+    }
 
     /// Lowers a `CstNodeKind::Assign` node into a `SymbolKind::Assign` symbol.
     ///
