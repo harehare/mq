@@ -367,6 +367,23 @@ def group_by(arr, f):
       end
 end
 
+# Counts occurrences of each key extracted from the elements of an array,
+# returning a dict of `{key: count}`.
+def frequencies_by(arr, f):
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  else:
+    fold(arr, dict(), fn(acc, x):
+      let key = to_string(f(x))
+      | let existing = get(acc, key)
+      | let count = if (is_none(existing)): 1 else: existing + 1
+      | set(acc, key, count);
+    )
+end
+
+# Counts occurrences of each element in an array, returning a dict of `{value: count}`.
+def tally(arr): frequencies_by(arr, identity);
+
 # Returns true if any element in the array satisfies the provided function.
 def any(v, f): if (is_empty(v)): false else: len(filter(v, f)) != 0;
 
@@ -791,6 +808,17 @@ end
 
 # Returns a new function that takes the same arguments as the original function but with the first two arguments flipped.
 def flip(f, a, b): f(b, a);
+
+# Returns a new predicate function that negates the result of the given function.
+def complement(f): fn(x): !f(x);;
+
+# Composes functions into one function, applying them right-to-left.
+# `comp(f, g, h)(x)` is equivalent to `f(g(h(x)))`.
+def comp(*fns): fn(x): fold(reverse(fns), x, fn(acc, f): f(acc););;
+
+# Returns a function that applies each given function to its argument and collects the results into an array.
+# `juxt(f, g, h)(x)` is equivalent to `[f(x), g(x), h(x)]`.
+def juxt(*fns): fn(x): map(fns, fn(f): f(x););;
 
 # Returns the sum of the elements in an array after applying a transformation function to each element.
 def sum(arr): sum_by(arr, identity);
