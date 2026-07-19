@@ -3701,7 +3701,12 @@ mod tests {
 
         assert!(cli.run().is_ok());
         let result = fs::read_to_string(&output_file).expect("Failed to read output");
-        assert_eq!(result.trim(), r#"{"count": 42, "name": "Alice"}"#);
+        // `named` is backed by a `BTreeMap<Ident, _>`, whose key order depends on the
+        // global string interner's symbol assignment order rather than the key text,
+        // so compare parsed JSON values instead of the raw serialized string.
+        let actual: serde_json::Value = serde_json::from_str(result.trim()).expect("output should be valid JSON");
+        let expected: serde_json::Value = serde_json::from_str(r#"{"count": 42, "name": "Alice"}"#).unwrap();
+        assert_eq!(actual, expected);
     }
 
     #[test]
