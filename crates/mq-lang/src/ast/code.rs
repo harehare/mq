@@ -241,10 +241,13 @@ impl Node {
                 node.format_to_code(buf, indent);
                 buf.push(')');
             }
-            Expr::Try(try_expr, catch_expr) => {
+            Expr::Try(try_expr, error_binder, catch_expr) => {
                 buf.push_str("try ");
                 try_expr.format_to_code(buf, indent);
-                buf.push_str(" catch: ");
+                match error_binder {
+                    Some(binder) => write!(buf, " catch({}): ", binder).unwrap(),
+                    None => buf.push_str(" catch: "),
+                }
                 catch_expr.format_to_code(buf, indent);
             }
             Expr::Module(name, program) => {
@@ -950,9 +953,18 @@ mod tests {
     #[case::simple(
         Expr::Try(
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("risky")))),
+            None,
             Shared::new(create_node(Expr::Literal(Literal::String("error".to_string()))))
         ),
         r#"try risky catch: "error""#
+    )]
+    #[case::with_binder(
+        Expr::Try(
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("risky")))),
+            Some(IdentWithToken::new("e")),
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("e"))))
+        ),
+        "try risky catch(e): e"
     )]
     fn test_to_code_try(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
