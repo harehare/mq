@@ -1061,12 +1061,24 @@ impl Formatter {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
 
-        if let Some(colon) = node.children.first() {
+        // Optional error binder: `catch(e):`. Render the `(`, ident, `)` as-is
+        // before the colon-or-do separator handled below.
+        let colon_index = match Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::RParen)) {
+            Some(rparen_index) => {
+                node.children.iter().take(rparen_index + 1).for_each(|child| {
+                    self.format_node(mq_lang::Shared::clone(child), 0);
+                });
+                rparen_index + 1
+            }
+            None => 0,
+        };
+
+        if let Some(colon) = node.children.get(colon_index) {
             self.output.push_str(&colon.to_string());
             self.append_space();
         }
 
-        for child in node.children.iter().skip(1) {
+        for child in node.children.iter().skip(colon_index + 1) {
             let child_indent = if child.has_new_line() {
                 indent_level + 1
             } else {
@@ -2275,6 +2287,25 @@ catch:
 "
     )]
     #[case::try_catch_oneline("try: process() catch: handle_error()", "try: process() catch: handle_error()")]
+    #[case::try_catch_with_binder(
+        "try: process() catch(e): handle_error(e)",
+        "try: process() catch(e): handle_error(e)"
+    )]
+    #[case::try_catch_with_binder_extra_spaces(
+        "try: process() catch( e ): handle_error(e)",
+        "try: process() catch(e): handle_error(e)"
+    )]
+    #[case::try_catch_with_binder_multiline(
+        r#"try:
+  process()
+catch(e):
+  handle_error(e)"#,
+        "try:
+  process()
+catch(e):
+  handle_error(e)
+"
+    )]
     #[case::try_catch_with_finally(
         r#"try:
   process()
