@@ -3580,6 +3580,130 @@ mod tests {
         assert_eq!(result.trim(), expected, "query: {}", query);
     }
 
+    #[rstest]
+    #[case::string_value(
+        "string_value",
+        vec!["name".to_string(), r#""Alice""#.to_string()],
+        "name",
+        "Alice"
+    )]
+    #[case::number_value(
+        "number_value",
+        vec!["count".to_string(), "42".to_string()],
+        "count",
+        "42"
+    )]
+    #[case::bool_value(
+        "bool_value",
+        vec!["flag".to_string(), "true".to_string()],
+        "flag",
+        "true"
+    )]
+    #[case::null_value(
+        "null_value",
+        vec!["n".to_string(), "null".to_string()],
+        "n",
+        ""
+    )]
+    #[case::array_value(
+        "array_value",
+        vec!["list".to_string(), "[1,2,3]".to_string()],
+        "list",
+        r#"[1, 2, 3]"#
+    )]
+    #[case::object_value(
+        "object_value",
+        vec!["obj".to_string(), r#"{"a":1}"#.to_string()],
+        "obj",
+        r#"{"a": 1}"#
+    )]
+    #[case::args_named_access(
+        "args_named_access",
+        vec!["count".to_string(), "42".to_string()],
+        r#"ARGS | ."named""#,
+        r#"{"count": 42}"#
+    )]
+    fn test_argjson(#[case] suffix: &str, #[case] argjson: Vec<String>, #[case] query: &str, #[case] expected: &str) {
+        let (_, output_file) = create_file(&format!("test_argjson_{suffix}.md"), "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                argjson: Some(argjson),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some(query.to_string()),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let result = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert_eq!(result.trim(), expected, "query: {}", query);
+    }
+
+    #[test]
+    fn test_argjson_invalid_json_errors() {
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                argjson: Some(vec!["name".to_string(), "not valid json".to_string()]),
+                ..Default::default()
+            },
+            query: Some("name".to_string()),
+            ..Cli::default()
+        };
+
+        assert!(
+            cli.run().is_err(),
+            "--argjson with malformed JSON should return an error"
+        );
+    }
+
+    #[test]
+    fn test_argjson_combined_with_args_and_argv() {
+        let (_, output_file) = create_file("test_argjson_combined.md", "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                args: Some(vec!["name".to_string(), "Alice".to_string()]),
+                argjson: Some(vec!["count".to_string(), "42".to_string()]),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some(r#"ARGS | ."named""#.to_string()),
+            argv: Some(vec!["x".to_string()]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let result = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert_eq!(result.trim(), r#"{"count": 42, "name": "Alice"}"#);
+    }
+
     #[test]
     fn test_files_without_data_single_file() {
         let (_, input_file) = create_file("test_files_no_data_single.md", "# hello");
