@@ -4,6 +4,7 @@ Hashi = "Hashi"
 # CLI help abbreviation syntax: b[reakpoint], l[ist]
 reakpoint = "reakpoint"
 ist = "ist"
+juxt = "juxt"
 
 [default.extend-identifiers]
 # bimap is a crate name (bijective map)
@@ -15,3 +16,4 @@ caf = "caf"
 abd = "abd"
 hel = "hel"
 fo = "fo"
+
