@@ -306,6 +306,10 @@ struct InputArgs {
     #[arg(long, num_args = 2, value_names = ["NAME", "VALUE"], aliases = ["arg", "define"])]
     args: Option<Vec<String>>,
 
+    /// Sets a named JSON argument. NAME is accessible directly in queries
+    #[arg(long, num_args = 2, value_names = ["NAME", "JSON_VALUE"])]
+    argjson: Option<Vec<String>>,
+
     /// Sets file contents that can be referenced at runtime
     #[arg(long="rawfile", num_args = 2, value_names = ["NAME", "FILE"])]
     raw_file: Option<Vec<String>>,
@@ -812,7 +816,7 @@ impl Cli {
             }
         }
 
-        if self.input.args.is_some() || self.argv.is_some() {
+        if self.input.args.is_some() || self.argv.is_some() || self.input.argjson.is_some() {
             let mut named: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = BTreeMap::new();
             if let Some(args) = &self.input.args {
                 for v in args.chunks(2) {
@@ -820,6 +824,16 @@ impl Cli {
                     named.insert(mq_lang::Ident::new(&v[0]), mq_lang::RuntimeValue::String(v[1].clone()));
                 }
             }
+
+            if let Some(argjson) = &self.input.argjson {
+                for v in argjson.chunks(2) {
+                    let json_value: serde_json::Value = serde_json::from_str(&v[1]).into_diagnostic()?;
+                    let runtime_value: mq_lang::RuntimeValue = json_value.into();
+                    engine.define_value(&v[0], runtime_value.clone());
+                    named.insert(mq_lang::Ident::new(&v[0]), runtime_value);
+                }
+            }
+
             let positional: Vec<mq_lang::RuntimeValue> = self
                 .argv
                 .as_deref()
@@ -3564,6 +3578,135 @@ mod tests {
         assert!(cli.run().is_ok());
         let result = fs::read_to_string(&output_file).expect("Failed to read output");
         assert_eq!(result.trim(), expected, "query: {}", query);
+    }
+
+    #[rstest]
+    #[case::string_value(
+        "string_value",
+        vec!["name".to_string(), r#""Alice""#.to_string()],
+        "name",
+        "Alice"
+    )]
+    #[case::number_value(
+        "number_value",
+        vec!["count".to_string(), "42".to_string()],
+        "count",
+        "42"
+    )]
+    #[case::bool_value(
+        "bool_value",
+        vec!["flag".to_string(), "true".to_string()],
+        "flag",
+        "true"
+    )]
+    #[case::null_value(
+        "null_value",
+        vec!["n".to_string(), "null".to_string()],
+        "n",
+        ""
+    )]
+    #[case::array_value(
+        "array_value",
+        vec!["list".to_string(), "[1,2,3]".to_string()],
+        "list",
+        r#"[1, 2, 3]"#
+    )]
+    #[case::object_value(
+        "object_value",
+        vec!["obj".to_string(), r#"{"a":1}"#.to_string()],
+        "obj",
+        r#"{"a": 1}"#
+    )]
+    #[case::args_named_access(
+        "args_named_access",
+        vec!["count".to_string(), "42".to_string()],
+        r#"ARGS | ."named""#,
+        r#"{"count": 42}"#
+    )]
+    fn test_argjson(#[case] suffix: &str, #[case] argjson: Vec<String>, #[case] query: &str, #[case] expected: &str) {
+        let (_, output_file) = create_file(&format!("test_argjson_{suffix}.md"), "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                argjson: Some(argjson),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some(query.to_string()),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let result = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert_eq!(result.trim(), expected, "query: {}", query);
+    }
+
+    #[test]
+    fn test_argjson_invalid_json_errors() {
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                argjson: Some(vec!["name".to_string(), "not valid json".to_string()]),
+                ..Default::default()
+            },
+            query: Some("name".to_string()),
+            ..Cli::default()
+        };
+
+        assert!(
+            cli.run().is_err(),
+            "--argjson with malformed JSON should return an error"
+        );
+    }
+
+    #[test]
+    fn test_argjson_combined_with_args_and_argv() {
+        let (_, output_file) = create_file("test_argjson_combined.md", "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                args: Some(vec!["name".to_string(), "Alice".to_string()]),
+                argjson: Some(vec!["count".to_string(), "42".to_string()]),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Raw,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some(r#"ARGS | ."named""#.to_string()),
+            argv: Some(vec!["x".to_string()]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let result = fs::read_to_string(&output_file).expect("Failed to read output");
+        // `named` is backed by a `BTreeMap<Ident, _>`, whose key order depends on the
+        // global string interner's symbol assignment order rather than the key text,
+        // so compare parsed JSON values instead of the raw serialized string.
+        let actual: serde_json::Value = serde_json::from_str(result.trim()).expect("output should be valid JSON");
+        let expected: serde_json::Value = serde_json::from_str(r#"{"count": 42, "name": "Alice"}"#).unwrap();
+        assert_eq!(actual, expected);
     }
 
     #[test]
