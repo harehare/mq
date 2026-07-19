@@ -306,6 +306,10 @@ struct InputArgs {
     #[arg(long, num_args = 2, value_names = ["NAME", "VALUE"], aliases = ["arg", "define"])]
     args: Option<Vec<String>>,
 
+    /// Sets a named JSON argument. NAME is accessible directly in queries
+    #[arg(long, num_args = 2, value_names = ["NAME", "JSON_VALUE"])]
+    argjson: Option<Vec<String>>,
+
     /// Sets file contents that can be referenced at runtime
     #[arg(long="rawfile", num_args = 2, value_names = ["NAME", "FILE"])]
     raw_file: Option<Vec<String>>,
@@ -812,7 +816,7 @@ impl Cli {
             }
         }
 
-        if self.input.args.is_some() || self.argv.is_some() {
+        if self.input.args.is_some() || self.argv.is_some() || self.input.argjson.is_some() {
             let mut named: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = BTreeMap::new();
             if let Some(args) = &self.input.args {
                 for v in args.chunks(2) {
@@ -820,6 +824,16 @@ impl Cli {
                     named.insert(mq_lang::Ident::new(&v[0]), mq_lang::RuntimeValue::String(v[1].clone()));
                 }
             }
+
+            if let Some(argjson) = &self.input.argjson {
+                for v in argjson.chunks(2) {
+                    let json_value: serde_json::Value = serde_json::from_str(&v[1]).into_diagnostic()?;
+                    let runtime_value: mq_lang::RuntimeValue = json_value.into();
+                    engine.define_value(&v[0], runtime_value.clone());
+                    named.insert(mq_lang::Ident::new(&v[0]), runtime_value);
+                }
+            }
+
             let positional: Vec<mq_lang::RuntimeValue> = self
                 .argv
                 .as_deref()
