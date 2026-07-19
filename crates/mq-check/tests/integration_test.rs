@@ -527,6 +527,19 @@ fn test_try_catch() {
     );
 }
 
+#[test]
+fn test_try_catch_error_binder() {
+    assert!(check_types(r#"try: 42 / 0 catch(e): e["message"];"#).is_empty());
+}
+
+#[test]
+fn test_try_catch_error_binder_undefined_field() {
+    assert!(
+        !check_types(r#"try: 42 / 0 catch(e): e["not_a_field"];"#).is_empty(),
+        "accessing a field the error binder doesn't have should be a type error"
+    );
+}
+
 // Polymorphic Function Type Checking
 
 #[rstest]

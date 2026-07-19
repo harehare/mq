@@ -138,6 +138,22 @@ pub struct DeferredTupleAccess {
     pub range: Option<mq_lang::Range>,
 }
 
+/// A deferred try/catch branch-type merge for post-unification resolution.
+///
+/// A branch's type may depend on another deferred pass (e.g. record field
+/// access), so deciding Union-vs-Equal must wait until that pass has run.
+#[derive(Debug, Clone)]
+pub struct DeferredTryCatch {
+    /// The `Try` symbol whose type is being resolved
+    pub symbol_id: SymbolId,
+    /// The try body's type
+    pub try_ty: Type,
+    /// The catch body's type
+    pub catch_ty: Type,
+    /// Source range for error reporting
+    pub range: Option<mq_lang::Range>,
+}
+
 /// A single variable type narrowing entry.
 ///
 /// Represents a narrowing of a variable's type within a specific branch,
@@ -211,6 +227,8 @@ pub struct InferenceContext {
     deferred_tuple_accesses: Vec<DeferredTupleAccess>,
     /// Deferred bracket accesses on function call return values (e.g. `f(x)["key"]`)
     deferred_call_return_accesses: Vec<DeferredCallReturnAccess>,
+    /// Deferred try/catch branch-type merges for post-unification resolution
+    deferred_try_catches: Vec<DeferredTryCatch>,
     /// Type narrowings collected from type predicate conditions in if/elif expressions
     type_narrowings: Vec<TypeNarrowing>,
     /// Cross-arm narrowings collected from match expressions
@@ -242,6 +260,7 @@ impl InferenceContext {
             deferred_selector_accesses: Vec::new(),
             deferred_tuple_accesses: Vec::new(),
             deferred_call_return_accesses: Vec::new(),
+            deferred_try_catches: Vec::new(),
             type_narrowings: Vec::new(),
             cross_arm_narrowings: Vec::new(),
             strict_array,
@@ -359,6 +378,16 @@ impl InferenceContext {
     /// Takes all deferred call return accesses (consumes them)
     pub fn take_deferred_call_return_accesses(&mut self) -> Vec<DeferredCallReturnAccess> {
         std::mem::take(&mut self.deferred_call_return_accesses)
+    }
+
+    /// Adds a deferred try/catch branch-type merge
+    pub fn add_deferred_try_catch(&mut self, entry: DeferredTryCatch) {
+        self.deferred_try_catches.push(entry);
+    }
+
+    /// Takes all deferred try/catch entries (consumes them)
+    pub fn take_deferred_try_catches(&mut self) -> Vec<DeferredTryCatch> {
+        std::mem::take(&mut self.deferred_try_catches)
     }
 
     /// Adds a type narrowing collected from a type predicate condition

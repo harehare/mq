@@ -352,6 +352,14 @@ impl TypeChecker {
             unify::solve_constraints(&mut ctx);
         }
 
+        // Resolve deferred try/catch branch-type merges, then retry accesses/operators
+        // that depend on a `let v = try: ... catch: ...` variable's now-final type.
+        deferred::resolve_deferred_try_catches(&mut ctx);
+        if deferred::resolve_deferred_tuple_accesses(&mut ctx) {
+            unify::solve_constraints(&mut ctx);
+        }
+        deferred::resolve_deferred_overloads(&mut ctx);
+
         // Check operators inside user-defined function bodies against call-site types.
         // Uses local substitution (original params → call-site args) without modifying
         // global state, so multiple call sites don't interfere.
