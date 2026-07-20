@@ -308,6 +308,11 @@ impl Repl {
 
         engine.load_builtin_module();
 
+        Self::with_engine(engine, input)
+    }
+
+    /// Creates a REPL from a pre-configured engine (e.g. with capabilities already set).
+    pub fn with_engine(engine: mq_lang::DefaultEngine, input: Vec<mq_lang::RuntimeValue>) -> Self {
         Self {
             command_context: Rc::new(RefCell::new(CommandContext::new(engine, input))),
         }

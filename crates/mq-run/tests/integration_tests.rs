@@ -689,6 +689,67 @@ fn test_read_file_without_allow_read_is_blocked() -> Result<(), Box<dyn std::err
 }
 
 #[test]
+fn test_repl_with_allow_read_permits_read_file() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file_path) = create_file("test_repl_read_file.md", "repl-read-content");
+    let temp_file_path_clone = temp_file_path.clone();
+
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    #[cfg(unix)]
+    let path = temp_file_path.to_string_lossy().to_string();
+    #[cfg(windows)]
+    let path = temp_file_path.to_string_lossy().replace("\\", "/");
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--allow-read")
+        .arg("repl")
+        .write_stdin(format!("read_file(\"{}\")\n", path))
+        .assert();
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("repl-read-content"),
+        "expected repl output to contain file contents, got: {stdout}"
+    );
+    Ok(())
+}
+
+#[test]
+fn test_repl_without_allow_read_is_blocked() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file_path) = create_file("test_repl_read_file_blocked.md", "repl-read-content");
+    let temp_file_path_clone = temp_file_path.clone();
+
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    #[cfg(unix)]
+    let path = temp_file_path.to_string_lossy().to_string();
+    #[cfg(windows)]
+    let path = temp_file_path.to_string_lossy().replace("\\", "/");
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("repl")
+        .write_stdin(format!("read_file(\"{}\")\n", path))
+        .assert();
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("filesystem reads are disabled"),
+        "expected repl output to report reads are disabled, got: {stderr}"
+    );
+    Ok(())
+}
+
+#[test]
 fn test_collection() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = tempfile::tempdir()?;
     std::fs::write(temp_dir.path().join("a.md"), "# Hello\n")?;
