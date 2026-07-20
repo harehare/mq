@@ -374,10 +374,12 @@ impl Optimizer {
                 token_id,
                 expr: Shared::new(ast::Expr::Paren(self.substitute_literals(Shared::clone(inner), env))),
             }),
-            ast::Expr::Try(try_expr, catch_expr) => Shared::new(ast::Node {
+            // No error binder: neither branch introduces a new binding, so substitution is safe.
+            ast::Expr::Try(try_expr, None, catch_expr) => Shared::new(ast::Node {
                 token_id,
                 expr: Shared::new(ast::Expr::Try(
                     self.substitute_literals(Shared::clone(try_expr), env),
+                    None,
                     self.substitute_literals(Shared::clone(catch_expr), env),
                 )),
             }),
@@ -411,6 +413,7 @@ impl Optimizer {
             | ast::Expr::While(_, _)
             | ast::Expr::Loop(_)
             | ast::Expr::Foreach(_, _, _)
+            | ast::Expr::Try(_, Some(_), _)
             | ast::Expr::Let(_, _)
             | ast::Expr::Var(_, _)
             | ast::Expr::As(_, _)
@@ -480,10 +483,11 @@ impl Optimizer {
                     ops.iter().map(|o| self.apply_inline(Shared::clone(o), fns)).collect(),
                 )),
             }),
-            ast::Expr::Try(try_expr, catch_expr) => Shared::new(ast::Node {
+            ast::Expr::Try(try_expr, None, catch_expr) => Shared::new(ast::Node {
                 token_id,
                 expr: Shared::new(ast::Expr::Try(
                     self.apply_inline(Shared::clone(try_expr), fns),
+                    None,
                     self.apply_inline(Shared::clone(catch_expr), fns),
                 )),
             }),
@@ -621,7 +625,7 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::Assign(ident.clone(), opt_inner)),
                 })
             }
-            ast::Expr::Try(try_expr, catch_expr) => {
+            ast::Expr::Try(try_expr, error_binder, catch_expr) => {
                 let opt_try = self.optimize_node(Shared::clone(try_expr), user_defs);
                 let opt_catch = self.optimize_node(Shared::clone(catch_expr), user_defs);
                 if ptr_eq(&opt_try, try_expr) && ptr_eq(&opt_catch, catch_expr) {
@@ -629,7 +633,7 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Try(opt_try, opt_catch)),
+                    expr: Shared::new(ast::Expr::Try(opt_try, error_binder.clone(), opt_catch)),
                 })
             }
             ast::Expr::Break(Some(val)) => {
@@ -1193,7 +1197,7 @@ fn has_recursion(node: &Shared<ast::Node>, fn_name: Ident) -> bool {
         ast::Expr::If(branches) => branches.iter().any(|(cond, body)| {
             cond.as_ref().is_some_and(|c| has_recursion(c, fn_name)) || has_recursion(body, fn_name)
         }),
-        ast::Expr::Try(t, c) => has_recursion(t, fn_name) || has_recursion(c, fn_name),
+        ast::Expr::Try(t, _, c) => has_recursion(t, fn_name) || has_recursion(c, fn_name),
         ast::Expr::SelectorCall(_, args) => args.iter().any(|a| has_recursion(a, fn_name)),
         ast::Expr::Paren(inner) => has_recursion(inner, fn_name),
         _ => false,
@@ -1219,7 +1223,8 @@ fn has_free_vars(node: &Shared<ast::Node>, params: &[Ident]) -> bool {
         ast::Expr::If(branches) => branches
             .iter()
             .any(|(cond, body)| cond.as_ref().is_some_and(|c| has_free_vars(c, params)) || has_free_vars(body, params)),
-        ast::Expr::Try(t, c) => has_free_vars(t, params) || has_free_vars(c, params),
+        // Try with an error binder falls through to `_ => true` (unsafe to inline).
+        ast::Expr::Try(t, None, c) => has_free_vars(t, params) || has_free_vars(c, params),
         ast::Expr::Paren(inner) => has_free_vars(inner, params),
         _ => true,
     }
@@ -1295,10 +1300,12 @@ fn substitute_params(
                 expr: Shared::new(ast::Expr::If(branches)),
             })
         }
-        ast::Expr::Try(t, c) => Shared::new(ast::Node {
+        // `has_free_vars` already excludes error-binder bodies from inlining.
+        ast::Expr::Try(t, error_binder, c) => Shared::new(ast::Node {
             token_id,
             expr: Shared::new(ast::Expr::Try(
                 substitute_params(Shared::clone(t), params, args, call_token_id),
+                error_binder.clone(),
                 substitute_params(Shared::clone(c), params, args, call_token_id),
             )),
         }),
@@ -1391,7 +1398,7 @@ fn contains_self_call(node: &Shared<ast::Node>, fn_name: Ident) -> bool {
         ast::Expr::If(branches) => branches.iter().any(|(cond, body)| {
             cond.as_ref().is_some_and(|c| contains_self_call(c, fn_name)) || contains_self_call(body, fn_name)
         }),
-        ast::Expr::Try(t, c) => contains_self_call(t, fn_name) || contains_self_call(c, fn_name),
+        ast::Expr::Try(t, _, c) => contains_self_call(t, fn_name) || contains_self_call(c, fn_name),
         ast::Expr::SelectorCall(_, args) => args.iter().any(|a| contains_self_call(a, fn_name)),
         ast::Expr::Paren(inner) | ast::Expr::Break(Some(inner)) | ast::Expr::Unquote(inner) => {
             contains_self_call(inner, fn_name)
@@ -1528,7 +1535,7 @@ fn collect_called_fns_node(node: &Shared<ast::Node>, set: &mut FxHashSet<Ident>)
                 collect_called_fns_node(o, set);
             }
         }
-        ast::Expr::Try(t, c) => {
+        ast::Expr::Try(t, _, c) => {
             collect_called_fns_node(t, set);
             collect_called_fns_node(c, set);
         }

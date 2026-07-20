@@ -211,8 +211,24 @@ pub(super) fn generate_symbol_constraints(
 
         // Parameters and pattern variables get fresh type variables
         SymbolKind::Parameter | SymbolKind::PatternVariable { .. } => {
-            let ty_var = ctx.fresh_var();
-            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            // `catch(e):` always binds `e` to `{message: string}` (see `Evaluator::eval_try`).
+            let is_catch_error_binder = matches!(kind, SymbolKind::Parameter)
+                && hir
+                    .symbol(symbol_id)
+                    .and_then(|s| s.parent)
+                    .and_then(|parent_id| hir.symbol(parent_id))
+                    .is_some_and(|parent| matches!(parent.kind, SymbolKind::Catch));
+
+            if is_catch_error_binder {
+                let ty = Type::record(
+                    std::collections::BTreeMap::from([("message".to_string(), Type::String)]),
+                    Type::RowEmpty,
+                );
+                ctx.set_symbol_type(symbol_id, ty);
+            } else {
+                let ty_var = ctx.fresh_var();
+                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            }
         }
 
         // Variables get fresh type variables, constrained to their initializer
@@ -1856,8 +1872,8 @@ pub(super) fn generate_symbol_constraints(
                     // Different concrete types: use Union type to represent both possibilities
                     let union_ty = Type::union(vec![resolved_try, resolved_catch]);
                     ctx.set_symbol_type(symbol_id, union_ty);
-                } else {
-                    // Same type or at least one is a type variable: unify them
+                } else if both_concrete {
+                    // Same concrete type: unify them directly.
                     ctx.add_constraint(Constraint::Equal(
                         try_ty.clone(),
                         catch_ty,
@@ -1865,6 +1881,16 @@ pub(super) fn generate_symbol_constraints(
                         ConstraintOrigin::General,
                     ));
                     ctx.set_symbol_type(symbol_id, try_ty);
+                } else {
+                    // A branch type is still pending deferred resolution — decide later.
+                    let ty_var = ctx.fresh_var();
+                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                    ctx.add_deferred_try_catch(infer::DeferredTryCatch {
+                        symbol_id,
+                        try_ty,
+                        catch_ty,
+                        range,
+                    });
                 }
             } else if !children.is_empty() {
                 let try_ty = ctx.get_or_create_symbol_type(children[0]);

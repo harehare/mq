@@ -400,6 +400,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::block("do \"hello\" end", "hello", SymbolKind::String)]
     #[case::try_("try: 1 catch: 2", "try", SymbolKind::Try)]
     #[case::catch_("try: 1 catch: 2", "catch", SymbolKind::Catch)]
+    #[case::catch_with_binder("try: 1 catch(e): e", "catch", SymbolKind::Catch)]
+    #[case::catch_error_binder_param("try: 1 catch(e): e", "e", SymbolKind::Parameter)]
     #[case::symbol_ident(":foo", "foo", SymbolKind::Symbol)]
     #[case::symbol_string(":\"hello\"", "hello", SymbolKind::Symbol)]
     #[case::pattern_match("match (v): | [1,2,3]: 1 end", "match", SymbolKind::Match)]
@@ -595,6 +597,68 @@ end"#;
         assert_eq!(resolved_symbol.value.as_deref(), Some("x"));
 
         assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
+    }
+
+    #[test]
+    fn test_catch_error_binder_resolution() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = "try: 1 catch(e): e";
+        hir.add_code(None, code);
+
+        let binder_symbol = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Parameter && s.value.as_deref() == Some("e"));
+        assert!(binder_symbol.is_some(), "catch(e) should declare e as a Parameter");
+
+        let ref_symbol = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Ref && s.value.as_deref() == Some("e"));
+        assert!(ref_symbol.is_some(), "Should have a Ref symbol for e in the catch body");
+
+        let (ref_id, _) = ref_symbol.unwrap();
+        let resolved = hir.resolve_reference_symbol(ref_id);
+
+        assert_eq!(
+            resolved,
+            Some(binder_symbol.unwrap().0),
+            "e in the catch body should resolve to the catch(e) binder"
+        );
+        assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
+    }
+
+    #[test]
+    fn test_catch_error_binder_shadows_outer_variable() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = "let e = \"hello\" | try: 1 catch(e): e";
+        hir.add_code(None, code);
+
+        let outer_e = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Variable && s.value.as_deref() == Some("e"))
+            .unwrap()
+            .0;
+        let binder_e = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Parameter && s.value.as_deref() == Some("e"))
+            .unwrap()
+            .0;
+
+        let ref_symbol = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Ref && s.value.as_deref() == Some("e"));
+        let (ref_id, _) = ref_symbol.unwrap();
+        let resolved = hir.resolve_reference_symbol(ref_id);
+
+        assert_eq!(
+            resolved,
+            Some(binder_e),
+            "e inside the catch body should resolve to the catch(e) binder, not the outer `let e`"
+        );
+        assert_ne!(resolved, Some(outer_e));
     }
 
     #[test]

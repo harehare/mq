@@ -395,6 +395,50 @@ fn check_union_members(
     }
 }
 
+/// Resolves deferred try/catch branch-type merges, after other deferred passes
+/// (record/tuple access, overloads, ...) have settled the branch types.
+pub(crate) fn resolve_deferred_try_catches(ctx: &mut InferenceContext) -> bool {
+    let entries = ctx.take_deferred_try_catches();
+    if entries.is_empty() {
+        return false;
+    }
+
+    for entry in entries {
+        let Some(result_ty) = ctx.get_symbol_type(entry.symbol_id).cloned() else {
+            continue;
+        };
+        let resolved_try = ctx.resolve_type(&entry.try_ty);
+        let resolved_catch = ctx.resolve_type(&entry.catch_ty);
+        let both_concrete = !resolved_try.is_var() && !resolved_catch.is_var();
+        let same_discriminant =
+            both_concrete && std::mem::discriminant(&resolved_try) == std::mem::discriminant(&resolved_catch);
+
+        let merged_ty = if both_concrete && !same_discriminant {
+            types::Type::union(vec![resolved_try, resolved_catch])
+        } else {
+            ctx.add_constraint(Constraint::Equal(
+                entry.try_ty.clone(),
+                entry.catch_ty,
+                entry.range,
+                ConstraintOrigin::General,
+            ));
+            entry.try_ty
+        };
+        ctx.add_constraint(Constraint::Equal(
+            result_ty,
+            merged_ty,
+            entry.range,
+            ConstraintOrigin::General,
+        ));
+
+        // Solve immediately so an outer try/catch that depends on this result
+        // (nested `try: (try: ... catch: ...) catch: ...`) sees it resolved.
+        unify::solve_constraints(ctx);
+    }
+
+    true
+}
+
 /// Resolves deferred overloads after the first round of unification.
 ///
 /// Binary/unary operators whose operands were type variables during constraint

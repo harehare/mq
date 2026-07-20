@@ -1192,6 +1192,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         token_id: question_token_id,
                         expr: Shared::new(Expr::Try(
                             call_node,
+                            None,
                             Shared::new(Node {
                                 token_id,
                                 expr: Shared::new(Expr::Literal(Literal::None)),
@@ -1640,6 +1641,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 token_id,
                 expr: Shared::new(Expr::Try(
                     try_expr,
+                    None,
                     Shared::new(Node {
                         token_id,
                         expr: Shared::new(Expr::Literal(Literal::None)),
@@ -1649,7 +1651,26 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
 
         // Expect 'catch' keyword
-        self.next_token(|token_kind| matches!(token_kind, TokenKind::Catch))?;
+        let catch_token_id = self.next_token(|token_kind| matches!(token_kind, TokenKind::Catch))?;
+
+        // Optional error binder: `catch(e):` binds `e` to a dict describing the failure.
+        let error_binder = if self.is_next_token(|token_kind| matches!(token_kind, TokenKind::LParen)) {
+            let args = self.parse_args()?;
+            match args.as_slice() {
+                [arg] => match &*arg.expr {
+                    Expr::Ident(ident) => Some(ident.clone()),
+                    _ => return Err(SyntaxError::UnexpectedToken((*self.token_arena[arg.token_id]).clone())),
+                },
+                _ => {
+                    return Err(SyntaxError::UnexpectedToken(
+                        (*self.token_arena[catch_token_id]).clone(),
+                    ));
+                }
+            }
+        } else {
+            None
+        };
+
         self.consume_colon_or_do();
 
         // Parse catch expression
@@ -1660,7 +1681,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         Ok(Shared::new(Node {
             token_id,
-            expr: Shared::new(Expr::Try(try_expr, catch_expr)),
+            expr: Shared::new(Expr::Try(try_expr, error_binder, catch_expr)),
         }))
     }
 
@@ -4071,9 +4092,37 @@ mod tests {
                     token_id: 2.into(),
                     expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("error_expr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("error_expr")))))))),
                 }),
+                None,
                 Shared::new(Node {
                     token_id: 5.into(),
                     expr: Shared::new(Expr::Literal(Literal::String("fallback".to_owned()))),
+                }),
+            )),
+        })]))]
+    #[case::try_catch_with_binder(
+        vec![
+            token(TokenKind::Try),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("error_expr"))),
+            token(TokenKind::Catch),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("e"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("e"))),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![Shared::new(Node {
+            token_id: 2.into(),
+            expr: Shared::new(Expr::Try(
+                Shared::new(Node {
+                    token_id: 2.into(),
+                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("error_expr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("error_expr")))))))),
+                }),
+                Some(IdentWithToken::new_with_token("e", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("e"))))))),
+                Shared::new(Node {
+                    token_id: 6.into(),
+                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("e", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("e")))))))),
                 }),
             )),
         })]))]
@@ -7049,6 +7098,7 @@ mod tests {
                         token_id: 2.into(),
                         expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("error_expr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("error_expr")))))))),
                     }),
+                    None,
                     Shared::new(Node {
                         token_id: 0.into(),
                         expr: Shared::new(Expr::Literal(Literal::None)),
@@ -7364,6 +7414,7 @@ mod tests {
                             ],
                         )),
                     }),
+                    None,
                     Shared::new(Node {
                         token_id: 1.into(),
                         expr: Shared::new(Expr::Literal(Literal::None)),
@@ -7390,6 +7441,7 @@ mod tests {
                                     SmallVec::new(),
                                 )),
                             }),
+                            None,
                             Shared::new(Node {
                                 token_id: 0.into(),
                                 expr: Shared::new(Expr::Literal(Literal::None)),
@@ -7422,6 +7474,7 @@ mod tests {
                                     ],
                                 )),
                             }),
+                            None,
                             Shared::new(Node {
                                 token_id: 1.into(),
                                 expr: Shared::new(Expr::Literal(Literal::None)),

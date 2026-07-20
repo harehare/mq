@@ -58,6 +58,7 @@ static DYNAMIC_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("<dynamic>")
 static SPREAD_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(constants::builtins::SPREAD));
 static ARRAY_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(constants::builtins::ARRAY));
 static DICT_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(constants::builtins::DICT));
+static ERROR_MESSAGE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("message"));
 
 /// Control flow signals for internal evaluation.
 ///
@@ -1413,7 +1414,9 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Expr::Or(operands) => self.eval_or(runtime_value, operands, env),
             ast::Expr::While(cond, program) => self.eval_while(runtime_value, cond, program, env),
             ast::Expr::Loop(program) => self.eval_loop(runtime_value, program, env),
-            ast::Expr::Try(try_expr, catch_expr) => self.eval_try(runtime_value, try_expr, catch_expr, env),
+            ast::Expr::Try(try_expr, error_binder, catch_expr) => {
+                self.eval_try(runtime_value, try_expr, error_binder, catch_expr, env)
+            }
             ast::Expr::Foreach(ident, values, body) => {
                 self.eval_foreach(runtime_value, ident.name, values, body, node.token_id, env)
             }
@@ -1630,12 +1633,24 @@ impl<T: ModuleResolver> Evaluator<T> {
         &mut self,
         runtime_value: &RuntimeValue,
         try_expr: &Shared<ast::Node>,
+        error_binder: &Option<IdentWithToken>,
         catch_expr: &Shared<ast::Node>,
         env: &Shared<SharedCell<Env>>,
     ) -> EvalResult {
         match self.eval_expr(runtime_value, try_expr, env) {
             Ok(result) => Ok(result),
-            Err(_) => self.eval_expr(runtime_value, catch_expr, env),
+            // Control flow signals (break/continue) are not errors; let them propagate.
+            Err(EvalError::Flow(flow)) => Err(EvalError::Flow(flow)),
+            Err(EvalError::Runtime(err)) => match error_binder {
+                Some(binder) => {
+                    let mut error_dict = BTreeMap::new();
+                    error_dict.insert(*ERROR_MESSAGE_IDENT, RuntimeValue::String(err.to_string()));
+                    let catch_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+                    define(&catch_env, binder.name, RuntimeValue::Dict(error_dict));
+                    self.eval_expr(runtime_value, catch_expr, &catch_env)
+                }
+                None => self.eval_expr(runtime_value, catch_expr, env),
+            },
         }
     }
 

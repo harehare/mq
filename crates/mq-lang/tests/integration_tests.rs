@@ -138,6 +138,13 @@ fn engine() -> DefaultEngine {
     ",
       vec![RuntimeValue::Number(0.into())],
       Ok(vec![RuntimeValue::Number(42.into())].into()))]
+// break inside a try body must propagate to the loop, not be swallowed by catch
+#[case::loop_break_through_try_catch("
+    loop:
+      try: break: 42 catch(e): 0;
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::Number(42.into())].into()))]
 #[case::loop_break_with_value_complex("
     var x = 0 |
     loop:
@@ -3017,6 +3024,16 @@ fn engine() -> DefaultEngine {
 #[case::try_no_catch_failure("try: undefined_func()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // try/catch: nested try blocks
 #[case::try_nested("try: (try: undefined_func() catch: \"inner\") catch: \"outer\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("inner".to_string())].into()))]
+// try/catch(e): error binder is bound to a dict with the failure message
+#[case::try_catch_binder(r#"try: error("boom") catch(e): e["message"]"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("boom".to_string())].into()))]
+// try/catch(e): the full error dict is accessible when bound directly
+#[case::try_catch_binder_dict(r#"try: error("boom") catch(e): e"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(BTreeMap::from([
+    (Ident::new("message"), RuntimeValue::String("boom".to_string())),
+]))].into()))]
+// try/catch(e): the binder is unused when the try expression succeeds
+#[case::try_catch_binder_unused_on_success("try: 42 catch(e): 0", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
+// try/catch(e): binder name does not leak outside the catch expression
+#[case::try_catch_binder_scoped(r#"try: error("boom") catch(e): e["message"] | try: e catch: "e is undefined outside catch""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("e is undefined outside catch".to_string())].into()))]
 // foreach over string: iterates each character
 #[case::foreach_string("foreach(c, \"abc\"): c;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string()), RuntimeValue::String("c".to_string())])].into()))]
 // foreach over string with break

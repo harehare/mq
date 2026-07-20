@@ -6,6 +6,7 @@ The try-catch expression allows you to handle errors gracefully by providing a f
 
 ```
 try <expr> catch <expr>
+try <expr> catch(<binder>) <expr>
 ```
 
 ## Behavior
@@ -13,6 +14,8 @@ try <expr> catch <expr>
 - If the `try` expression succeeds, its result is returned
 - If the `try` expression fails (produces an error), the `catch` expression is evaluated instead
 - The `catch` expression receives the same input as the `try` expression
+- With `catch(<binder>)`, `<binder>` is bound to a dict describing the failure (currently `{"message": <string>}`) for the duration of the `catch` expression
+- `break`/`continue` inside the `try` expression are not treated as errors; they propagate to the enclosing loop instead of triggering `catch`
 
 ## Examples
 
@@ -41,6 +44,14 @@ try: do get("data") | from_json(); catch: []
 ```mq
 # Multiple fallback levels
 try: get("primary") catch: try: get("secondary") catch: "default"
+```
+
+### Error Binder
+
+```mq
+# Bind the failure to `e` and inspect its message
+try: error("boom") catch(e): e["message"]
+# => "boom"
 ```
 
 ## Error Suppression (`?`)

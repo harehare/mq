@@ -1774,6 +1774,11 @@ impl<'a> Parser<'a> {
             children: Vec::new(),
         };
 
+        // Optional error binder: `catch(e):`
+        if self.peek().is_some_and(|t| matches!(t.kind, TokenKind::LParen)) {
+            children.append(&mut self.parse_params()?);
+        }
+
         self.push_colon_or_do_token_if_present(&mut children)?;
 
         let leading_trivia = self.parse_leading_trivia();

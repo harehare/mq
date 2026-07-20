@@ -340,12 +340,12 @@ impl Macro {
                     expr: Shared::new(Expr::Unquote(expanded_inner)),
                 }))
             }
-            Expr::Try(try_expr, catch_expr) => {
+            Expr::Try(try_expr, error_binder, catch_expr) => {
                 let expanded_try = self.expand_node(try_expr, evaluator)?;
                 let expanded_catch = self.expand_node(catch_expr, evaluator)?;
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Try(expanded_try, expanded_catch)),
+                    expr: Shared::new(Expr::Try(expanded_try, error_binder.clone(), expanded_catch)),
                 }))
             }
             Expr::InterpolatedString(segments) => {
@@ -731,12 +731,12 @@ impl Macro {
                     expr: Shared::new(Expr::Paren(substituted_inner)),
                 })
             }
-            Expr::Try(try_expr, catch_expr) => {
+            Expr::Try(try_expr, error_binder, catch_expr) => {
                 let substituted_try = self.substitute_node(try_expr, substitutions);
                 let substituted_catch = self.substitute_node(catch_expr, substitutions);
                 Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Try(substituted_try, substituted_catch)),
+                    expr: Shared::new(Expr::Try(substituted_try, error_binder.clone(), substituted_catch)),
                 })
             }
             Expr::InterpolatedString(segments) => {
@@ -1065,12 +1065,12 @@ impl Macro {
                     expr: Shared::new(Expr::Paren(substituted_inner)),
                 })
             }
-            Expr::Try(try_expr, catch_expr) => {
+            Expr::Try(try_expr, error_binder, catch_expr) => {
                 let substituted_try = self.substitute_in_quote(try_expr, substitutions);
                 let substituted_catch = self.substitute_in_quote(catch_expr, substitutions);
                 Shared::new(Node {
                     token_id: node.token_id,
-                    expr: Shared::new(Expr::Try(substituted_try, substituted_catch)),
+                    expr: Shared::new(Expr::Try(substituted_try, error_binder.clone(), substituted_catch)),
                 })
             }
             Expr::InterpolatedString(segments) => {

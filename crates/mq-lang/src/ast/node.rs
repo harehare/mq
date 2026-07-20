@@ -161,7 +161,7 @@ impl Node {
                 Range { start, end }
             }
             Expr::Paren(node) => node.range(Shared::clone(&arena)),
-            Expr::Try(try_expr, catch_expr) => {
+            Expr::Try(try_expr, _, catch_expr) => {
                 let start = try_expr.range(Shared::clone(&arena)).start;
                 let end = catch_expr.range(Shared::clone(&arena)).end;
                 Range { start, end }
@@ -374,7 +374,10 @@ pub enum Expr {
     Paren(Shared<Node>),
     Quote(Shared<Node>),
     Unquote(Shared<Node>),
-    Try(Shared<Node>, Shared<Node>),
+    /// `try <expr> catch: <expr>` or `try <expr> catch(<binder>): <expr>`.
+    /// When present, `binder` is bound to a dict describing the failure (currently `{"message": ...}`)
+    /// while evaluating the catch expression.
+    Try(Shared<Node>, Option<IdentWithToken>, Shared<Node>),
     Break(Option<Shared<Node>>),
     Continue,
 }
@@ -485,6 +488,7 @@ mod tests {
                 token_id: ArenaId::new(0),
                 expr: Shared::new(Expr::Literal(Literal::String("try".to_string()))),
             }),
+            None,
             Shared::new(Node {
                 token_id: ArenaId::new(1),
                 expr: Shared::new(Expr::Literal(Literal::String("catch".to_string()))),
