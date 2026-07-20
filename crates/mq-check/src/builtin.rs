@@ -323,6 +323,11 @@ fn register_string(ctx: &mut InferenceContext) {
     register_ternary(ctx, "replace", Type::Var(a), Type::String, Type::String, Type::Var(a));
     register_ternary(ctx, "gsub", Type::String, Type::String, Type::String, Type::String);
     register_binary(ctx, "split", Type::String, Type::String, Type::array(Type::String));
+
+    // word_wrap: (string, number) -> string
+    register_binary(ctx, "word_wrap", Type::String, Type::Number, Type::String);
+    // truncate: (string, number, string) -> string
+    register_ternary(ctx, "truncate", Type::String, Type::Number, Type::String, Type::String);
     register_binary(ctx, "join", Type::array(Type::String), Type::String, Type::String);
 
     // contains: (string, string) -> bool
@@ -410,6 +415,10 @@ fn register_string(ctx: &mut InferenceContext) {
     // gsub/replace: (none, string, string) -> none
     register_ternary(ctx, "gsub", Type::None, Type::String, Type::String, Type::None);
     register_ternary(ctx, "replace", Type::None, Type::String, Type::String, Type::None);
+
+    // word_wrap/truncate: none propagation
+    register_binary(ctx, "word_wrap", Type::None, Type::Number, Type::None);
+    register_ternary(ctx, "truncate", Type::None, Type::Number, Type::String, Type::None);
 
     // lines: (string) -> [string]
     register_unary(ctx, "lines", Type::String, Type::array(Type::String));

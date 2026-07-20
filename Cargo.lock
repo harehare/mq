@@ -2620,6 +2620,7 @@ dependencies = [
  "tiktoken-rs",
  "toml 1.1.2+spec-1.1.0",
  "toon-format",
+ "unicode-width 0.2.2",
  "ureq",
  "url",
  "uuid",

@@ -35,6 +35,7 @@ use std::io;
 use std::process::exit;
 use std::sync::LazyLock;
 use thiserror::Error;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use self::range::{generate_char_range, generate_multi_char_range, generate_numeric_range};
 use self::regex::{capture_re, is_match_re, match_re, replace_re, scan_re, split_re};
@@ -1183,6 +1184,52 @@ fn repeat_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
             vec![std::mem::take(a), std::mem::take(b)],
         )),
         _ => unreachable!("repeat should always receive exactly two arguments"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "word_wrap", params = Fixed(2))]
+fn word_wrap_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s), RuntimeValue::Number(width)] => Ok(word_wrap(s, width.value() as usize).into()),
+        [node @ RuntimeValue::Markdown(_, _), RuntimeValue::Number(width)] => {
+            let width = width.value() as usize;
+            node.markdown_node()
+                .map(|md| Ok(node.update_markdown_value(&word_wrap(&md.value(), width))))
+                .unwrap_or_else(|| Ok(RuntimeValue::NONE))
+        }
+        [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("word_wrap should always receive exactly two arguments"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "truncate", params = Fixed(3))]
+fn truncate_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [
+            RuntimeValue::String(s),
+            RuntimeValue::Number(len),
+            RuntimeValue::String(ellipsis),
+        ] => Ok(truncate_str(s, len.value() as usize, ellipsis).into()),
+        [
+            node @ RuntimeValue::Markdown(_, _),
+            RuntimeValue::Number(len),
+            RuntimeValue::String(ellipsis),
+        ] => {
+            let len = len.value() as usize;
+            node.markdown_node()
+                .map(|md| Ok(node.update_markdown_value(&truncate_str(&md.value(), len, ellipsis))))
+                .unwrap_or_else(|| Ok(RuntimeValue::NONE))
+        }
+        [RuntimeValue::None, RuntimeValue::Number(_), RuntimeValue::String(_)] => Ok(RuntimeValue::NONE),
+        [a, b, c] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+        )),
+        _ => unreachable!("truncate should always receive exactly three arguments"),
     }
 }
 
@@ -4250,6 +4297,8 @@ mq_macros::builtin_dispatch! {
     GSUB,
     REPLACE,
     REPEAT,
+    WORD_WRAP,
+    TRUNCATE,
     EXPLODE,
     IMPLODE,
     TRIM,
@@ -5358,6 +5407,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Repeats the given string a specified number of times.",
             params: &["string", "count"],
+        },
+    );
+    map.insert(
+        SmolStr::new("word_wrap"),
+        BuiltinFunctionDoc {
+            description: "Wraps the given string into lines no wider than the specified display width, breaking on word boundaries (CJK and other wide characters count as two columns).",
+            params: &["string", "width"],
+        },
+    );
+    map.insert(
+        SmolStr::new("truncate"),
+        BuiltinFunctionDoc {
+            description: "Truncates the given string to the specified display width, appending the ellipsis string when truncated (CJK and other wide characters count as two columns).",
+            params: &["string", "width", "ellipsis"],
         },
     );
     map.insert(
@@ -6597,6 +6660,105 @@ fn eval_recursive_selector(node: &mq_markdown::Node) -> RuntimeValue {
             .map(RuntimeValue::new_markdown)
             .collect(),
     )
+}
+
+/// Wraps `text` on word boundaries to `width` display columns (Unicode East Asian Width, so CJK counts as 2).
+fn word_wrap(text: &str, width: usize) -> String {
+    if width == 0 {
+        return text.to_string();
+    }
+
+    text.split('\n')
+        .map(|line| word_wrap_line(line, width))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn word_wrap_line(line: &str, width: usize) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut current_width = 0usize;
+
+    for word in line.split_whitespace() {
+        let word_width = word.width();
+
+        if word_width > width {
+            if !current.is_empty() {
+                lines.push(std::mem::take(&mut current));
+                current_width = 0;
+            }
+            for c in word.chars() {
+                let cw = c.width().unwrap_or(0);
+                if current_width > 0 && current_width + cw > width {
+                    lines.push(std::mem::take(&mut current));
+                    current_width = 0;
+                }
+                current.push(c);
+                current_width += cw;
+            }
+            continue;
+        }
+
+        let needed = if current.is_empty() {
+            word_width
+        } else {
+            current_width + 1 + word_width
+        };
+
+        if !current.is_empty() && needed > width {
+            lines.push(std::mem::take(&mut current));
+            current_width = 0;
+        }
+
+        if !current.is_empty() {
+            current.push(' ');
+            current_width += 1;
+        }
+        current.push_str(word);
+        current_width += word_width;
+    }
+
+    lines.push(current);
+    lines.join("\n")
+}
+
+/// Truncates `text` to `max_width` display columns, appending `ellipsis` (CJK counts as 2 columns).
+fn truncate_str(text: &str, max_width: usize, ellipsis: &str) -> String {
+    if text.width() <= max_width {
+        return text.to_string();
+    }
+
+    let ellipsis_width = ellipsis.width();
+
+    if ellipsis_width >= max_width {
+        let mut result = String::new();
+        let mut width = 0;
+        for c in ellipsis.chars() {
+            let cw = c.width().unwrap_or(0);
+            if width + cw > max_width {
+                break;
+            }
+            result.push(c);
+            width += cw;
+        }
+        return result;
+    }
+
+    let target_width = max_width - ellipsis_width;
+    let mut result = String::new();
+    let mut width = 0;
+
+    for c in text.chars() {
+        let cw = c.width().unwrap_or(0);
+        if width + cw > target_width {
+            break;
+        }
+        result.push(c);
+        width += cw;
+    }
+
+    result.push_str(ellipsis);
+    result
 }
 
 fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
