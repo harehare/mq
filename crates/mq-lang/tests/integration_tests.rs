@@ -3269,6 +3269,11 @@ fn engine() -> DefaultEngine {
 #[case::stem_basic(r#"stem("file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("file".to_string())].into()))]
 #[case::stem_no_ext(r#"stem("file")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("file".to_string())].into()))]
 #[case::path_join_basic(r#"path_join("/path", "file.txt") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
+// glob_match: glob pattern matching against a path
+#[case::glob_match_true(r#"glob_match("*.md", "file.md")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::glob_match_false(r#"glob_match("*.md", "file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
+#[case::glob_match_star_no_cross_separator(r#"glob_match("*.md", "dir/file.md")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
+#[case::glob_match_recursive(r#"glob_match("docs/**/*.md", "docs/sub/a.md")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 // add: various type combinations
 #[case::add_string_number(r#"add("hello", 42)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello42".to_string())].into()))]
 #[case::add_number_string(r#"add(42, "!")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("!42".to_string())].into()))]
@@ -3742,6 +3747,8 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::stem_non_string("stem(42)", vec![RuntimeValue::None],)]
 // path_join: non-string → type error
 #[case::path_join_non_string(r#"path_join(42, "component")"#, vec![RuntimeValue::None],)]
+// glob_match: non-string → type error
+#[case::glob_match_non_string(r#"glob_match(42, "file.md")"#, vec![RuntimeValue::None],)]
 // min: mixed types → type error
 #[case::min_mixed_types(r#"min("str", 42)"#, vec![RuntimeValue::None],)]
 // max: mixed types → type error

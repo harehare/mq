@@ -21,6 +21,7 @@ md5 = {workspace = true}
 sha2 = {workspace = true}
 chrono = {workspace = true}
 dirs = {workspace = true}
+glob = {workspace = true}
 itertools = {workspace = true}
 miette = {workspace = true}
 mq-markdown = {workspace = true, features = ["html-to-markdown", "json", "obsidian"]}

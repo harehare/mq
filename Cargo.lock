@@ -2589,6 +2589,7 @@ dependencies = [
  "csv",
  "dirs 6.0.0",
  "getrandom 0.4.3",
+ "glob",
  "html-escape",
  "itertools 0.15.0",
  "md5",

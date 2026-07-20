@@ -1283,6 +1283,7 @@ fn register_file_io(ctx: &mut InferenceContext) {
         Type::String,
     );
     register_binary(ctx, "path_join", Type::String, Type::String, Type::String);
+    register_binary(ctx, "glob_match", Type::String, Type::String, Type::Bool);
 
     // write_file: (string, string | bytes) -> none
     register_binary(ctx, "write_file", Type::String, Type::String, Type::None);
@@ -1851,6 +1852,7 @@ mod tests {
     #[case::extname("extname(\"a/b.md\")", true)]
     #[case::stem("stem(\"a/b.md\")", true)]
     #[case::path_join("path_join(\"a\", \"b.md\")", true)]
+    #[case::glob_match("glob_match(\"*.md\", \"a.md\")", true)]
     #[case::write_file_string("write_file(\"a.md\", \"content\")", true)]
     #[case::write_file_bytes("write_file(\"a.md\", to_bytes(\"content\"))", true)]
     #[case::http_get("http(\"get\", \"https://example.invalid\")", true)]
@@ -1875,6 +1877,7 @@ mod tests {
     #[case::collection_number("collection(42)", false)] // Should fail: wrong type
     #[case::basename_number("basename(42)", false)] // Should fail: wrong type
     #[case::path_join_number("path_join(42, \"b\")", false)] // Should fail: wrong type
+    #[case::glob_match_number("glob_match(42, \"a.md\")", false)] // Should fail: wrong type
     #[case::write_file_number("write_file(42, \"content\")", false)] // Should fail: wrong type
     #[case::http_get_number("http(\"get\", 42)", false)] // Should fail: wrong type
     #[case::http_headers_number("http(\"get\", \"https://example.invalid\", 42)", false)] // Should fail: wrong type

@@ -39,6 +39,17 @@ pub(super) fn stem(path: &str) -> String {
         .unwrap_or_default()
 }
 
+/// Returns whether `path` matches the glob `pattern` (e.g. `*.md`, `docs/**/*.rs`).
+pub(super) fn glob_match(pattern: &str, path: &str) -> Result<bool, Error> {
+    let options = glob::MatchOptions {
+        require_literal_separator: true,
+        ..glob::MatchOptions::new()
+    };
+    glob::Pattern::new(pattern)
+        .map(|p| p.matches_with(path, options))
+        .map_err(|e| Error::Runtime(format!("glob_match: invalid pattern {:?}: {}", pattern, e)))
+}
+
 /// Joins a base path with a component path, returning the resulting path string.
 pub(super) fn path_join(base: &str, component: &str) -> Result<String, Error> {
     let joined = Path::new(base).join(component);
@@ -100,5 +111,25 @@ mod tests {
     #[case("/a", "b/c", "/a/b/c")]
     fn test_path_join(#[case] base: &str, #[case] component: &str, #[case] expected: &str) {
         assert_eq!(path_join(base, component).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case("*.md", "file.md", true)]
+    #[case("*.md", "file.txt", false)]
+    #[case("*.md", "dir/file.md", false)]
+    #[case("docs/*.md", "docs/a.md", true)]
+    #[case("docs/*.md", "docs/sub/a.md", false)]
+    #[case("docs/**/*.md", "docs/sub/a.md", true)]
+    #[case("docs/**/*.md", "docs/a.md", true)]
+    #[case("**/*.rs", "src/lib.rs", true)]
+    #[case("file?.md", "file1.md", true)]
+    #[case("file?.md", "file12.md", false)]
+    fn test_glob_match(#[case] pattern: &str, #[case] path: &str, #[case] expected: bool) {
+        assert_eq!(glob_match(pattern, path).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_glob_match_invalid_pattern() {
+        assert!(glob_match("[", "file.md").is_err());
     }
 }
