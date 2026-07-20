@@ -3943,6 +3943,21 @@ fn path_join_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
     }
 }
 
+/// Returns whether `path` matches the glob `pattern` (e.g. `*.md`, `docs/**/*.rs`).
+#[mq_macros::mq_fn(name = "glob_match", params = Fixed(2))]
+fn glob_match_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(pattern), RuntimeValue::String(path)] => {
+            path::glob_match(pattern, path).map(RuntimeValue::Boolean)
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("glob_match should always receive exactly two arguments"),
+    }
+}
+
 /// Reads the contents of `path` as a string. Requires the `--allow-read` CLI flag (see
 /// [`capability`]).
 #[cfg(feature = "file-io")]
@@ -4414,6 +4429,7 @@ mq_macros::builtin_dispatch! {
     EXTNAME,
     STEM,
     PATH_JOIN,
+    GLOB_MATCH,
     #[cfg(feature = "file-io")]
     READ_FILE,
     #[cfg(feature = "file-io")]
@@ -6085,6 +6101,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Joins a base path with a component path and returns the resulting path string (e.g. path_join(\"/a/b\", \"c.txt\") → \"/a/b/c.txt\").",
             params: &["base", "component"],
+        },
+    );
+    map.insert(
+        SmolStr::new("glob_match"),
+        BuiltinFunctionDoc {
+            description: "Checks whether the given path matches the glob pattern (e.g. \"*.md\", \"docs/**/*.rs\"), commonly used to filter file lists.",
+            params: &["pattern", "path"],
         },
     );
     map.insert(
