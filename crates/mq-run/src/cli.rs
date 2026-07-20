@@ -767,9 +767,13 @@ impl Cli {
         }
 
         match &self.commands {
-            Some(Commands::Repl) => mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]).run(),
+            Some(Commands::Repl) => {
+                let engine = self.create_engine()?;
+                mq_repl::Repl::with_engine(engine, vec![mq_lang::RuntimeValue::String("".to_string())]).run()
+            }
             None if self.query.is_none() => {
-                mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]).run()
+                let engine = self.create_engine()?;
+                mq_repl::Repl::with_engine(engine, vec![mq_lang::RuntimeValue::String("".to_string())]).run()
             }
             #[cfg(feature = "debugger")]
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
