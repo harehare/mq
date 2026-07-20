@@ -3288,6 +3288,24 @@ fn engine() -> DefaultEngine {
 #[case::set_array_extend("set([1, 2], 4, 99) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
 // repeat: via builtin
 #[case::repeat_string_builtin(r#"repeat("ab", 3)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ababab".to_string())].into()))]
+// word_wrap: wraps ASCII text on word boundaries
+#[case::word_wrap_ascii(r#"word_wrap("the quick brown fox", 10)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("the quick\nbrown fox".to_string())].into()))]
+// word_wrap: text shorter than width is unchanged
+#[case::word_wrap_short(r#"word_wrap("hi", 10)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hi".to_string())].into()))]
+// word_wrap: a single word longer than width is hard-broken
+#[case::word_wrap_hard_break(r#"word_wrap("abcdefgh", 3)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abc\ndef\ngh".to_string())].into()))]
+// word_wrap: CJK characters count as two display columns each
+#[case::word_wrap_cjk(r#"word_wrap("あいうえお", 4)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("あい\nうえ\nお".to_string())].into()))]
+// word_wrap: width 0 returns the text unchanged
+#[case::word_wrap_zero_width(r#"word_wrap("ab cd", 0)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ab cd".to_string())].into()))]
+#[case::word_wrap_none("word_wrap(None, 10)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+// truncate: text shorter than the width is unchanged
+#[case::truncate_short(r#"truncate("hello", 10, "...")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
+// truncate: text longer than width is cut and ellipsis appended
+#[case::truncate_ascii(r#"truncate("hello world", 8, "...")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello...".to_string())].into()))]
+// truncate: CJK characters count as two display columns each
+#[case::truncate_cjk(r#"truncate("あいうえお", 6, "...")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("あ...".to_string())].into()))]
+#[case::truncate_none("truncate(None, 10, \"...\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // update: non-None non-Markdown returns second value
 #[case::update_non_markdown_returns_value("update(42, 99)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(99.into())].into()))]
 // match expression

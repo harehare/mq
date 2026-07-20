@@ -669,6 +669,8 @@ fn test_cross_arm_narrowing(#[case] code: &str, #[case] should_succeed: bool, #[
 #[case::split_dot("split(., \"x\")", true, "dynamic as string, separator explicit")]
 #[case::starts_with_dot("starts_with(., \"hello\")", true, "dynamic as string")]
 #[case::replace_two_explicit("replace(\"l\", \"r\")", true, "dynamic piped + 2 explicit = 3 args")]
+#[case::word_wrap_dot("word_wrap(., 10)", true, "dynamic as string, width explicit")]
+#[case::truncate_dot("truncate(., 10, \"...\")", true, "dynamic as string, width and ellipsis explicit")]
 // pipe chains: dynamic pinned to concrete type, then further typed ops
 #[case::chain_to_len("upcase(.) | len", true, "dynamic -> string -> number")]
 #[case::chain_two_string_ops("upcase(.) | trim(.)", true, "string -> string")]
@@ -684,6 +686,8 @@ fn test_cross_arm_narrowing(#[case] code: &str, #[case] should_succeed: bool, #[
 #[case::string_pinned_abs_fails("upcase(.) | abs(.)", false, "upcase pins to string, abs needs number")]
 #[case::number_pinned_upcase_fails("len() | upcase(.)", false, "len pins to number, upcase needs string")]
 #[case::replace_arity_error("replace(\"l\")", false, "1 explicit + dynamic = 2, needs 3")]
+#[case::word_wrap_width_wrong_type("word_wrap(\"hello\", \"wide\")", false, "width must be a number")]
+#[case::truncate_ellipsis_wrong_type("truncate(\"hello\", 3, 42)", false, "ellipsis must be a string")]
 fn test_dynamic_piped_input(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types_with_builtins(code);
     assert_eq!(result.is_empty(), should_succeed, "{}: {result:?}", description);
