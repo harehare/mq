@@ -40,11 +40,6 @@
     "test": "vitest run"
   },
   "packageManager": "pnpm@10.33.0",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
-  },
   "sideEffects": false,
   "type": "module",
   "types": "dist/index.d.ts"

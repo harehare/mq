@@ -5,5 +5,6 @@ minimumReleaseAgeExclude:
 - '@typescript/*'
 
 overrides:
-  dompurify: ">=3.4.0"
+  dompurify: ">=3.4.11"
+  "@babel/core": "^7.29.7"
 
