@@ -103,41 +103,35 @@ struct CliArgs {
     /// subject to robots.txt, domain filtering, and depth limits.
     #[clap(long, value_name = "SITEMAP_URL")]
     sitemap: Option<Url>,
-    /// Maximum number of retry attempts for a request that fails with a network error,
-    /// a 429 (Too Many Requests), or a 5xx server error.
+    /// Max retry attempts on network error, 429, or 5xx.
     #[clap(long, default_value_t = 3)]
     max_retries: u32,
-    /// Delay (in seconds) before the first retry.
+    /// Delay (seconds) before the first retry.
     #[clap(long, default_value_t = 0.5)]
     retry_initial_backoff: f64,
-    /// Maximum delay (in seconds) between retries.
+    /// Max delay (seconds) between retries.
     #[clap(long, default_value_t = 10.0)]
     retry_max_backoff: f64,
-    /// Multiplier applied to the retry delay after each failed attempt.
+    /// Retry delay multiplier per failed attempt.
     #[clap(long, default_value_t = 2.0)]
     retry_backoff_multiplier: f64,
-    /// Custom HTTP header to send with every request, in "Key: Value" form.
-    /// Can be specified multiple times. Only applies to non-browser crawling.
+    /// Custom header ("Key: Value"), repeatable. Non-browser crawling only.
     #[clap(long = "header", value_name = "KEY: VALUE")]
     headers: Vec<String>,
-    /// Cookie to send with every request, in "name=value" form. Can be specified
-    /// multiple times; all values are combined into a single Cookie header.
-    /// Only applies to non-browser crawling.
+    /// Cookie ("name=value"), repeatable, combined into one Cookie header. Non-browser crawling only.
     #[clap(long, value_name = "NAME=VALUE")]
     cookie: Vec<String>,
-    /// HTTP Basic authentication credentials, in "username:password" form.
-    /// Only applies to non-browser crawling.
+    /// HTTP Basic auth ("username:password"). Non-browser crawling only.
     #[clap(long, value_name = "USER:PASS", conflicts_with = "bearer_token")]
     basic_auth: Option<String>,
-    /// Bearer token sent as "Authorization: Bearer <token>".
-    /// Only applies to non-browser crawling.
+    /// Bearer token for "Authorization: Bearer <token>". Non-browser crawling only.
     #[clap(long, value_name = "TOKEN", conflicts_with = "basic_auth")]
     bearer_token: Option<String>,
     #[clap(flatten)]
     pub conversion: ConversionArgs,
 }
 
-/// Parses a "Key: Value" header string into a `(HeaderName, HeaderValue)` pair.
+/// Parses a "Key: Value" header string.
 fn parse_header(raw: &str) -> Result<(reqwest::header::HeaderName, reqwest::header::HeaderValue), String> {
     let (name, value) = raw
         .split_once(':')
@@ -149,8 +143,7 @@ fn parse_header(raw: &str) -> Result<(reqwest::header::HeaderName, reqwest::head
     Ok((name, value))
 }
 
-/// Builds the default `HeaderMap` (custom headers plus a combined Cookie header)
-/// applied to every request made by the reqwest-based HTTP client.
+/// Builds the default headers (custom headers plus a combined Cookie header).
 fn build_header_map(headers: &[String], cookies: &[String]) -> Result<reqwest::header::HeaderMap, String> {
     let mut header_map = reqwest::header::HeaderMap::new();
 

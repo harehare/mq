@@ -11,20 +11,18 @@ use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use tokio::time::sleep;
 use url::Url;
 
-/// Configuration for retrying failed requests with exponential backoff.
+/// Exponential backoff config for retrying failed requests.
 ///
-/// Retries apply to network-level failures and to responses with status
-/// `429 Too Many Requests` or any `5xx` server error. Other client errors
-/// (e.g. `404`, `401`, `403`) are not retried.
+/// Retries on network errors, `429`, and `5xx`; other client errors (e.g. `404`) are not retried.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RetryConfig {
-    /// Maximum number of retry attempts after the initial request fails.
+    /// Retry attempts after the initial request fails.
     pub max_retries: u32,
     /// Delay before the first retry.
     pub initial_backoff: Duration,
-    /// Upper bound on the backoff delay between retries.
+    /// Upper bound on the backoff delay.
     pub max_backoff: Duration,
-    /// Multiplier applied to the backoff delay after each failed attempt.
+    /// Multiplier applied to the backoff delay after each attempt.
     pub backoff_multiplier: f64,
 }
 
@@ -54,18 +52,16 @@ impl RetryConfig {
     }
 }
 
-/// Authentication credentials applied as a default `Authorization` header
-/// on requests made by a `reqwest`-based [`HttpClient`].
+/// Default `Authorization` header credentials for a `reqwest`-based [`HttpClient`].
 #[derive(Debug, Clone)]
 pub enum AuthConfig {
-    /// HTTP Basic authentication (`Authorization: Basic <base64(user:pass)>`).
+    /// `Authorization: Basic <base64(user:pass)>`.
     Basic { username: String, password: Option<String> },
-    /// Bearer token authentication (`Authorization: Bearer <token>`).
+    /// `Authorization: Bearer <token>`.
     Bearer { token: String },
 }
 
-/// Distinguishes transient failures (worth retrying) from failures that
-/// will not be resolved by retrying the same request.
+/// Transient (worth retrying) vs. fatal failures.
 enum FetchError {
     Retryable(String),
     Fatal(String),
@@ -145,13 +141,9 @@ impl HttpClient {
         )
     }
 
-    /// Create a new reqwest-based HTTP client with full control over retry
-    /// behavior, default headers/cookies, and authentication.
+    /// Create a reqwest-based HTTP client with retry, default headers/cookies, and auth.
     ///
-    /// `headers` is sent as default headers on every request (useful for
-    /// custom headers or a static `Cookie` header). `auth`, if provided,
-    /// sets the `Authorization` header and takes precedence over any
-    /// `Authorization` entry already present in `headers`.
+    /// `auth`, if set, overrides any `Authorization` entry already in `headers`.
     pub fn new_reqwest_with_options(
         timeout: f64,
         max_idle_per_host: usize,
