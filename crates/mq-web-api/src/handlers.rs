@@ -12,9 +12,9 @@ use utoipa::{OpenApi, ToSchema};
 
 use crate::{
     api::{
-        ApiRequest, CheckApiRequest, CheckApiResponse, CheckError, FormatApiRequest, FormatApiResponse, FunctionDoc,
-        FunctionsApiResponse, InputFormat, LintApiRequest, LintApiResponse, LintDiagnostic, OutputFormat,
-        QueryApiResponse, SelectorDoc, SelectorsApiResponse,
+        ApiRequest, BatchApiRequest, BatchApiResponse, BatchItemResult, CheckApiRequest, CheckApiResponse, CheckError,
+        FormatApiRequest, FormatApiResponse, FunctionDoc, FunctionsApiResponse, InputFormat, LintApiRequest,
+        LintApiResponse, LintDiagnostic, OutputFormat, QueryApiResponse, SelectorDoc, SelectorsApiResponse,
     },
     problem::ProblemDetails,
 };
@@ -80,6 +80,7 @@ pub async fn health_check() -> Json<HealthResponse> {
         get_query_api,
         post_query_api,
         post_shorthand_query_api,
+        post_batch_api,
         post_check_api,
         post_format_api,
         get_functions_api,
@@ -92,6 +93,9 @@ pub async fn health_check() -> Json<HealthResponse> {
         schemas(InputFormat),
         schemas(OutputFormat),
         schemas(QueryApiResponse),
+        schemas(BatchApiRequest),
+        schemas(BatchApiResponse),
+        schemas(BatchItemResult),
         schemas(CheckApiRequest),
         schemas(CheckApiResponse),
         schemas(CheckError),
@@ -211,6 +215,52 @@ pub async fn post_query_api(
             error!("Failed to process query '{}': {}", query_str, e);
             Err(ProblemDetails::new(StatusCode::BAD_REQUEST)
                 .with_title("Invalid query")
+                .with_detail("error", &e.to_string()))
+        }
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/batch",
+    responses(
+        (status = 200, description = "Batch processed (see per-item `error` fields for per-document failures)", body = BatchApiResponse),
+        (status = 400, description = "Invalid request parameters, or `inputs` exceeds the batch size limit"),
+    ),
+    request_body = BatchApiRequest
+)]
+pub async fn post_batch_api(
+    State(state): State<AppState>,
+    Json(request): Json<BatchApiRequest>,
+) -> Result<Json<BatchApiResponse>, ProblemDetails> {
+    debug!(
+        "POST /batch called with query: {}, {} documents",
+        request.query,
+        request.inputs.len()
+    );
+
+    let query_str = request.query.clone();
+    let timeout = state.query_timeout;
+    match tokio::task::spawn_blocking(move || crate::api::batch_query(request, timeout))
+        .await
+        .map_err(|e| {
+            error!("Batch task panicked: {}", e);
+            ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .with_title("Internal error")
+                .with_detail("error", &e.to_string())
+        })? {
+        Ok(response) => {
+            info!(
+                "Successfully processed batch query: {}, documents: {}",
+                query_str,
+                response.items.len()
+            );
+            Ok(Json(response))
+        }
+        Err(e) => {
+            error!("Failed to process batch query '{}': {}", query_str, e);
+            Err(ProblemDetails::new(StatusCode::BAD_REQUEST)
+                .with_title("Invalid batch request")
                 .with_detail("error", &e.to_string()))
         }
     }

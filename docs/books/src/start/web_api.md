@@ -12,6 +12,7 @@ The server exposes the following endpoints:
 | `POST` | `/{query}` | Curl-friendly shortcut: query in the path, raw body (Markdown/HTML/XML/JSON/CSV/...) |
 | `GET` | `/api/v1/query` | Execute a query (query-string parameters) |
 | `POST` | `/api/v1/query` | Execute a query (JSON body) |
+| `POST` | `/api/v1/batch` | Execute a query against multiple documents in one request |
 | `POST` | `/api/v1/check` | Type-check a query |
 | `POST` | `/api/v1/format` | Format a query |
 | `GET` | `/api/v1/functions` | List builtin mq functions |
@@ -130,6 +131,20 @@ curl -X POST http://localhost:8080/api/v1/query \
   -d '{
     "query": ".h",
     "input": "# Title\n\nContent",
+    "input_format": "markdown"
+  }'
+```
+
+### Batch query (multiple documents in one request)
+
+`POST /api/v1/batch` runs one query against multiple documents in a single request, avoiding an HTTP round trip per document. Each document is processed independently — one failing document doesn't fail the others, and `items` in the response is ordered like `inputs` (max 100 entries).
+
+```bash
+curl -X POST http://localhost:8080/api/v1/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": ".h1",
+    "inputs": ["# Doc One\n\nBody.", "# Doc Two\n\nBody."],
     "input_format": "markdown"
   }'
 ```
