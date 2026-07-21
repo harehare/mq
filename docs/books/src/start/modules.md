@@ -46,6 +46,7 @@ import "github.com/harehare/<module-name>"
 | [changelog.mq](https://github.com/harehare/changelog.mq) | [Keep a Changelog](https://keepachangelog.com) Markdown parser and serializer |
 | [dotenv.mq](https://github.com/harehare/dotenv.mq) | `.env` file parser and serializer — quotes, comments, and escape sequences |
 | [jsonpath.mq](https://github.com/harehare/jsonpath.mq) | [JSONPath](https://en.wikipedia.org/wiki/JSONPath) ([RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)-style) query engine for mq's parsed JSON values |
+| [jsonschema.mq](https://github.com/harehare/jsonschema.mq) | [JSON Schema](https://json-schema.org) validator |
 | [xpath.mq](https://github.com/harehare/xpath.mq) | Abbreviated [XPath](https://www.w3.org/TR/1999/REC-xpath-19991116/) query engine for `xml.mq`'s parsed value tree |
 
 
@@ -77,12 +78,20 @@ import "github.com/harehare/<module-name>"
 | [case.mq](https://github.com/harehare/case.mq) | String case conversion utilities implemented as an mq module |
 | [emoji.mq](https://github.com/harehare/emoji.mq) | GitHub-style emoji shortcode <-> Unicode emoji conversion |
 
-## Interpreters
+## Generators
+
+| Module | Description |
+|---|---|
+| [qrcode.mq](https://github.com/harehare/qrcode.mq) | [QR Code](https://www.qrcode.com/en/about/standards.html) (ISO/IEC 18004) encoder — ASCII-art and SVG rendering |
+| [badge.mq](https://github.com/harehare/badge.mq) | [shields.io](https://shields.io) badge generator |
+
+## Interpreters & Examples
 
 | Module | Description |
 |---|---|
 | [lisp.mq](https://github.com/harehare/lisp.mq) | Scheme-like Lisp interpreter |
 | [bf.mq](https://github.com/harehare/bf.mq) | Brainfuck interpreter |
+| [jq.mq](https://github.com/harehare/jq.mq) | Implementation of the [jq](https://jqlang.org) JSON processor, written in mq |
 
 ## Libraries & Toolkits
 
@@ -90,5 +99,6 @@ import "github.com/harehare/<module-name>"
 |---|---|
 | [parser_combinator.mq](https://github.com/harehare/parser_combinator.mq) | A small parser-combinator toolkit, in the spirit of Rust's [nom](https://github.com/rust-bakery/nom) |
 | [diff.mq](https://github.com/harehare/diff.mq) | Text and array diffing utilities, built on mq's native Myers-diff engine |
+| [template.mq](https://github.com/harehare/template.mq) | A lightweight Mustache/Handlebars-style templating engine |
 
 
