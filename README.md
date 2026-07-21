@@ -157,7 +157,7 @@ The [Playground](https://mqlang.org/playground) lets you run mq queries in the b
 
 ### mq-web-api
 
-[mq-web-api](https://github.com/harehare/mq/tree/main/crates/mq-web-api) is an HTTP/REST server that exposes mq queries over the network, with a curl-friendly shortcut endpoint, JSON API, OpenAPI spec, and Swagger UI. See the [mq-web-api documentation](https://mqlang.org/book/start/web_api.html) for endpoints, configuration, and self-hosting instructions.
+[mq-web-api](https://github.com/harehare/mq/tree/main/crates/mq-web-api) is an HTTP/REST server that exposes mq queries over the network, with a curl-friendly shortcut endpoint, JSON API, OpenAPI spec, and Swagger UI. See the [mq-web-api documentation](https://mqlang.org/book/start/web_api) for endpoints, configuration, and self-hosting instructions.
 
 ```bash
 curl --data-binary @doc.md https://api.mqlang.org/.h1
