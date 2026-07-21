@@ -30,6 +30,7 @@ mq-hir = {workspace = true}
 mq-lang = {workspace = true, features = ["cst"]}
 mq-lint = {workspace = true}
 mq-markdown = {workspace = true, features = ["json"]}
+rayon = {workspace = true}
 serde = {workspace = true, features = ["derive"]}
 serde_json = {workspace = true}
 thiserror = {workspace = true}

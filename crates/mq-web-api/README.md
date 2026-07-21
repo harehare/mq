@@ -10,6 +10,7 @@ HTTP/REST server that exposes the [mq](https://mqlang.org/) markdown query langu
 | `POST` | `/{query}` | Curl-friendly shortcut: query in the path, raw body (Markdown/HTML/XML/JSON/CSV/...) |
 | `GET` | `/api/v1/query` | Execute a query (query-string parameters) |
 | `POST` | `/api/v1/query` | Execute a query (JSON body) |
+| `POST` | `/api/v1/batch` | Execute a query against multiple documents in one request |
 | `POST` | `/api/v1/check` | Type-check a query |
 | `POST` | `/api/v1/format` | Format a query |
 | `GET` | `/api/v1/functions` | List builtin mq functions |
@@ -85,6 +86,42 @@ For queries that need `modules`, `args`, or `aggregate`, use `POST /api/v1/query
 | `modules` | `string[]?` | Builtin module names to load (e.g. `"json"`, `"csv"`) |
 | `args` | `object?` | String variables passed to the engine |
 | `aggregate` | `bool?` | Aggregate all input nodes before querying (equivalent to CLI `-A`) |
+
+### `POST /api/v1/batch`
+
+Runs one query against multiple documents in a single request, avoiding an HTTP round trip per document. Each document is processed independently — one failing document doesn't fail the others.
+
+```json
+{
+  "query": ".h1",
+  "inputs": ["# Doc One\n\nBody.", "# Doc Two\n\nBody."],
+  "input_format": "markdown",
+  "output_format": "markdown"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `query` | `string` | mq query string |
+| `inputs` | `string[]` | Documents to run the query against, one per entry (max 100) |
+| `input_format` | `string?` | Same as `POST /api/v1/query` |
+| `output_format` | `string?` | Same as `POST /api/v1/query` |
+| `modules` | `string[]?` | Same as `POST /api/v1/query` |
+| `args` | `object?` | Same as `POST /api/v1/query` |
+| `aggregate` | `bool?` | Same as `POST /api/v1/query` |
+
+Response, `items` ordered like `inputs`:
+
+```json
+{
+  "items": [
+    { "results": ["# Doc One"], "error": null },
+    { "results": ["# Doc Two"], "error": null }
+  ]
+}
+```
+
+Returns HTTP 400 if `inputs` has more than 100 entries.
 
 ### `POST /api/v1/check`
 
@@ -232,6 +269,18 @@ curl -X POST http://localhost:8080/api/v1/query \
   -d '{
     "query": ".h",
     "input": "# Title\n\nContent",
+    "input_format": "markdown"
+  }'
+```
+
+### Batch query (multiple documents in one request)
+
+```bash
+curl -X POST http://localhost:8080/api/v1/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": ".h1",
+    "inputs": ["# Doc One\n\nBody.", "# Doc Two\n\nBody."],
     "input_format": "markdown"
   }'
 ```

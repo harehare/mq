@@ -2,8 +2,12 @@ use std::collections::HashMap;
 
 use miette::miette;
 use mq_formatter::{Formatter, FormatterConfig};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+/// Maximum number of documents allowed in a single `POST /api/v1/batch` request.
+pub const MAX_BATCH_SIZE: usize = 100;
 
 #[derive(Deserialize, Serialize, ToSchema, Clone, Debug)]
 pub struct ApiRequest {
@@ -26,6 +30,36 @@ pub struct ApiRequest {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct QueryApiResponse {
     pub results: Vec<String>,
+}
+
+/// Request body for `POST /api/v1/batch`. Runs `query` against each entry
+/// of `inputs`, avoiding one HTTP round trip per document.
+#[derive(Deserialize, Serialize, ToSchema, Clone, Debug)]
+pub struct BatchApiRequest {
+    #[schema(example = ".h")]
+    pub query: String,
+    /// At most [`MAX_BATCH_SIZE`] entries are accepted.
+    pub inputs: Vec<String>,
+    pub input_format: Option<InputFormat>,
+    pub modules: Option<Vec<String>>,
+    pub args: Option<HashMap<String, String>>,
+    pub output_format: Option<OutputFormat>,
+    pub aggregate: Option<bool>,
+}
+
+/// Result of running the batch query against a single input document.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct BatchItemResult {
+    /// Empty when `error` is set.
+    pub results: Vec<String>,
+    /// A failure here doesn't affect other documents in the batch.
+    pub error: Option<String>,
+}
+
+/// Response body for `POST /api/v1/batch`. `items` is ordered like `inputs`.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct BatchApiResponse {
+    pub items: Vec<BatchItemResult>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema, Debug, Clone, Default, PartialEq, Eq)]
@@ -205,6 +239,46 @@ pub struct LintApiResponse {
 
 pub fn query(request: ApiRequest, timeout: std::time::Duration) -> miette::Result<QueryApiResponse> {
     execute_query(request, timeout)
+}
+
+/// Runs `request.query` against every document in `request.inputs` in
+/// parallel, each with its own engine instance.
+pub fn batch_query(request: BatchApiRequest, timeout: std::time::Duration) -> miette::Result<BatchApiResponse> {
+    if request.inputs.len() > MAX_BATCH_SIZE {
+        return Err(miette!(
+            "Batch request exceeds maximum of {} documents (got {})",
+            MAX_BATCH_SIZE,
+            request.inputs.len()
+        ));
+    }
+
+    let items = request
+        .inputs
+        .par_iter()
+        .map(|input| {
+            let item_request = ApiRequest {
+                query: request.query.clone(),
+                input: Some(input.clone()),
+                input_format: request.input_format.clone(),
+                modules: request.modules.clone(),
+                args: request.args.clone(),
+                output_format: request.output_format.clone(),
+                aggregate: request.aggregate,
+            };
+            match execute_query(item_request, timeout) {
+                Ok(response) => BatchItemResult {
+                    results: response.results,
+                    error: None,
+                },
+                Err(e) => BatchItemResult {
+                    results: vec![],
+                    error: Some(e.to_string()),
+                },
+            }
+        })
+        .collect();
+
+    Ok(BatchApiResponse { items })
 }
 
 /// Type-checks the given query and returns any errors found.
@@ -673,6 +747,76 @@ mod tests {
         let result = query(req, std::time::Duration::from_secs(10));
         assert!(result.is_ok());
         assert!(result.unwrap().results.is_empty());
+    }
+
+    #[test]
+    fn test_batch_query_multiple_documents() {
+        let req = BatchApiRequest {
+            query: ".h1".to_string(),
+            inputs: vec!["# Title One".to_string(), "# Title Two".to_string()],
+            input_format: Some(InputFormat::Markdown),
+            modules: None,
+            args: None,
+            output_format: None,
+            aggregate: None,
+        };
+        let result = batch_query(req, std::time::Duration::from_secs(10));
+        assert!(result.is_ok());
+        let resp = result.unwrap();
+        assert_eq!(resp.items.len(), 2);
+        assert!(resp.items[0].error.is_none());
+        assert_eq!(resp.items[0].results, vec!["# Title One\n"]);
+        assert_eq!(resp.items[1].results, vec!["# Title Two\n"]);
+    }
+
+    #[test]
+    fn test_batch_query_preserves_order_and_isolates_errors() {
+        let req = BatchApiRequest {
+            query: "invalid query".to_string(),
+            inputs: vec!["# Title One".to_string()],
+            input_format: Some(InputFormat::Markdown),
+            modules: None,
+            args: None,
+            output_format: None,
+            aggregate: None,
+        };
+        let result = batch_query(req, std::time::Duration::from_secs(10));
+        assert!(result.is_ok());
+        let resp = result.unwrap();
+        assert_eq!(resp.items.len(), 1);
+        assert!(resp.items[0].error.is_some());
+        assert!(resp.items[0].results.is_empty());
+    }
+
+    #[test]
+    fn test_batch_query_empty_inputs() {
+        let req = BatchApiRequest {
+            query: ".h1".to_string(),
+            inputs: vec![],
+            input_format: Some(InputFormat::Markdown),
+            modules: None,
+            args: None,
+            output_format: None,
+            aggregate: None,
+        };
+        let result = batch_query(req, std::time::Duration::from_secs(10));
+        assert!(result.is_ok());
+        assert!(result.unwrap().items.is_empty());
+    }
+
+    #[test]
+    fn test_batch_query_exceeds_max_size() {
+        let req = BatchApiRequest {
+            query: ".h1".to_string(),
+            inputs: vec!["# Title".to_string(); MAX_BATCH_SIZE + 1],
+            input_format: Some(InputFormat::Markdown),
+            modules: None,
+            args: None,
+            output_format: None,
+            aggregate: None,
+        };
+        let result = batch_query(req, std::time::Duration::from_secs(10));
+        assert!(result.is_err());
     }
 
     #[test]
