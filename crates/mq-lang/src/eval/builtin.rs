@@ -610,6 +610,26 @@ fn sample_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     }
 }
 
+/// Returns a random string of `len` characters, each independently chosen (with
+/// replacement) from `charset`.
+#[mq_macros::mq_fn(name = "random_string", params = Fixed(2))]
+fn random_string_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(len), RuntimeValue::String(charset)] if len.is_int() && len.value() >= 0.0 => {
+            let len = len.to_int() as usize;
+            let charset: Vec<char> = charset.chars().collect();
+            random::next_string(len, &charset)
+                .map(RuntimeValue::String)
+                .ok_or_else(|| Error::Runtime("random_string: charset must not be empty".to_string()))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("random_string should always receive exactly two arguments"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "from_hex", params = Fixed(1))]
 fn from_hex_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -4272,6 +4292,7 @@ mq_macros::builtin_dispatch! {
     UUID_V7,
     RAND,
     RAND_INT,
+    RANDOM_STRING,
     SHUFFLE,
     SAMPLE,
     MIN,
@@ -5325,6 +5346,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Generates a pseudo-random integer uniformly distributed in [min, max] (inclusive). Not cryptographically secure.",
             params: &["min", "max"],
+        },
+    );
+    map.insert(
+        SmolStr::new("random_string"),
+        BuiltinFunctionDoc {
+            description: "Generates a random string of `len` characters, each independently chosen (with replacement) from `charset`. Not cryptographically secure.",
+            params: &["len", "charset"],
         },
     );
     map.insert(
@@ -7082,6 +7110,81 @@ mod tests {
             &env,
         );
         assert!(result.is_err(), "rand_int(10, 1) should error since min > max");
+    }
+
+    #[test]
+    fn test_random_string_uses_only_charset_chars_and_requested_length() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("random_string"),
+            vec![RuntimeValue::Number(12.into()), RuntimeValue::String("abc".into())],
+            &env,
+        )
+        .unwrap();
+        match result {
+            RuntimeValue::String(s) => {
+                assert_eq!(s.chars().count(), 12);
+                assert!(s.chars().all(|c| "abc".contains(c)));
+            }
+            other => panic!("random_string should return a string, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_random_string_zero_length_is_empty() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("random_string"),
+            vec![RuntimeValue::Number(0.into()), RuntimeValue::String("abc".into())],
+            &env,
+        )
+        .unwrap();
+        assert_eq!(result, RuntimeValue::String("".into()));
+    }
+
+    #[test]
+    fn test_random_string_empty_charset_errors() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("random_string"),
+            vec![RuntimeValue::Number(5.into()), RuntimeValue::String("".into())],
+            &env,
+        );
+        assert!(
+            result.is_err(),
+            "random_string(5, \"\") should error since charset is empty"
+        );
+    }
+
+    #[test]
+    fn test_random_string_calls_are_unique() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let values: std::collections::HashSet<String> = (0..200)
+            .map(|_| {
+                match eval_builtin(
+                    &RuntimeValue::None,
+                    &Ident::new("random_string"),
+                    vec![
+                        RuntimeValue::Number(16.into()),
+                        RuntimeValue::String("abcdefghijklmnopqrstuvwxyz0123456789".into()),
+                    ],
+                    &env,
+                )
+                .unwrap()
+                {
+                    RuntimeValue::String(s) => s.to_string(),
+                    other => panic!("random_string should return a string, got {other:?}"),
+                }
+            })
+            .collect();
+        assert_eq!(
+            values.len(),
+            200,
+            "random_string(16, ...) should not repeat across calls"
+        );
     }
 
     #[test]
