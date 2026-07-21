@@ -42,6 +42,17 @@ pub(super) fn sample(items: &[RuntimeValue], n: usize) -> Vec<RuntimeValue> {
     items
 }
 
+/// Returns a random string of `len` characters, each chosen uniformly at random
+/// (with replacement) from `charset`. Returns `None` if `charset` is empty.
+pub(super) fn next_string(len: usize, charset: &[char]) -> Option<String> {
+    if charset.is_empty() {
+        return None;
+    }
+
+    let mut rng = rand::rng();
+    Some((0..len).map(|_| charset[rng.random_range(0..charset.len())]).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,5 +140,24 @@ mod tests {
     fn test_sample_zero() {
         let items = nums(&[1, 2, 3]);
         assert_eq!(sample(&items, 0), Vec::<RuntimeValue>::new());
+    }
+
+    #[test]
+    fn test_next_string_uses_only_charset_chars() {
+        let charset: Vec<char> = "abc".chars().collect();
+        let s = next_string(20, &charset).unwrap();
+        assert_eq!(s.chars().count(), 20);
+        assert!(s.chars().all(|c| charset.contains(&c)));
+    }
+
+    #[test]
+    fn test_next_string_zero_length() {
+        let charset: Vec<char> = "abc".chars().collect();
+        assert_eq!(next_string(0, &charset), Some(String::new()));
+    }
+
+    #[test]
+    fn test_next_string_empty_charset() {
+        assert_eq!(next_string(5, &[]), None);
     }
 }

@@ -438,6 +438,9 @@ fn register_string(ctx: &mut InferenceContext) {
     register_nullary(ctx, "uuid", Type::String);
     register_nullary(ctx, "uuid_v4", Type::String);
     register_nullary(ctx, "uuid_v7", Type::String);
+
+    // random_string: (number, string) -> string
+    register_binary(ctx, "random_string", Type::Number, Type::String, Type::String);
 }
 
 /// Array functions: flatten, reverse, sort, uniq, compact, len, slice, insert, range, repeat
@@ -1645,6 +1648,8 @@ mod tests {
     #[case::uuid("uuid()", true)]
     #[case::uuid_v4("uuid_v4()", true)]
     #[case::uuid_v7("uuid_v7()", true)]
+    #[case::random_string("random_string(10, \"abc\")", true)]
+    #[case::random_string_wrong_types("random_string(\"10\", 1)", false)] // Should fail: wrong types
     fn test_string_encoding_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
