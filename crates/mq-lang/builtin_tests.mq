@@ -859,6 +859,15 @@ def test_ngram():
 
   | let result3 = ngram("abc", 4)
   | assert_eq(result3, [])
+
+  | let result4 = ngram([1, 2, 3, 4], 2)
+  | assert_eq(result4, [[1, 2], [2, 3], [3, 4]])
+
+  | let result5 = ngram([1, 2, 3], 1)
+  | assert_eq(result5, [[1], [2], [3]])
+
+  | let result6 = ngram([1, 2], 4)
+  | assert_eq(result6, [])
 end
 
 def test_zip():

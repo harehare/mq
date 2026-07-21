@@ -842,7 +842,8 @@ def geomean(arr):
     end
 end
 
-# Returns the n-grams of an array, which are contiguous subarrays of length n.
+# Returns the n-grams of an array or string, which are overlapping contiguous
+# subarrays (or substrings) of length n, sliding one element at a time.
 def ngram(s, n):
   if (n <= 0):
     error("n must be a positive integer")
@@ -856,6 +857,16 @@ def ngram(s, n):
           | var i = 0
           | while (i <= len(s) - n):
               result += [s[i:i + n]]
+              | i += 1
+            end
+          | result
+        end
+      | :array:
+        do
+          var result = []
+          | var i = 0
+          | while (i <= len(s) - n):
+              result += [slice(s, i, i + n)]
               | i += 1
             end
           | result
