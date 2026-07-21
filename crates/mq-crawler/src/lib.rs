@@ -12,7 +12,9 @@
 //! - Link discovery and following
 //! - sitemap.xml ingestion as a seed-URL source
 //! - Crawl statistics and result tracking
-//! - Support for custom HTTP headers and user agents
+//! - Support for custom HTTP headers, cookies, and user agents
+//! - Basic and bearer authentication for protected sites
+//! - Automatic retry with exponential backoff for failed requests
 //! - Rate limiting and politeness delays
 //!
 //! # Usage

@@ -13,6 +13,9 @@ mq-crawler is a web crawler that fetches HTML content from websites, converts it
 - **WebDriver support**: Browser-based crawling via Selenium WebDriver
 - **Domain filtering**: Restrict crawling to specific domains
 - **Sitemap ingestion**: Seed the crawl frontier from a `sitemap.xml` (or sitemap index) up front
+- **Retry with backoff**: Automatically retries failed requests (network errors, 429, 5xx) with exponential backoff
+- **Custom headers & cookies**: Send custom HTTP headers and cookies with every request
+- **Authentication**: Basic and bearer-token authentication for protected sites
 
 ## Installation
 
@@ -68,6 +71,14 @@ mq-crawl [OPTIONS] <URL>
 | `--robots-path <PATH>` | Custom robots.txt file path | — |
 | `--allowed-domains <DOMAINS>` | Comma-separated list of extra domains to crawl; the start URL's domain is always included | start domain only |
 | `--sitemap <SITEMAP_URL>` | URL of a sitemap.xml (or sitemap index) to enumerate additional seed URLs from | — |
+| `--max-retries <N>` | Maximum retry attempts for failed requests (network errors, 429, 5xx) | `3` |
+| `--retry-initial-backoff <SECONDS>` | Delay before the first retry | `0.5` |
+| `--retry-max-backoff <SECONDS>` | Maximum delay between retries | `10` |
+| `--retry-backoff-multiplier <FLOAT>` | Multiplier applied to the retry delay after each failed attempt | `2` |
+| `--header <KEY: VALUE>` | Custom HTTP header to send with every request (repeatable); non-browser crawling only | — |
+| `--cookie <NAME=VALUE>` | Cookie to send with every request (repeatable); non-browser crawling only | — |
+| `--basic-auth <USER:PASS>` | HTTP Basic authentication credentials; non-browser crawling only | — |
+| `--bearer-token <TOKEN>` | Bearer token for `Authorization` header; non-browser crawling only | — |
 | `--headless` | Use built-in headless Chrome (Chrome/Chromium must be installed) | — |
 | `--chrome-path <PATH>` | Path to Chrome/Chromium executable (requires `--headless`) | auto-detect |
 | `-U, --webdriver-url <URL>` | External WebDriver URL for browser-based crawling | — |
@@ -118,6 +129,36 @@ mq-crawl --sitemap https://example.com/sitemap.xml https://example.com
 # Combine with --depth 0 to crawl exactly the pages listed in the sitemap
 # without following any links.
 mq-crawl --depth 0 --sitemap https://example.com/sitemap.xml https://example.com
+```
+
+### Retry & Backoff
+
+Failed requests (network errors, `429 Too Many Requests`, and `5xx` server errors) are retried automatically with exponential backoff:
+
+```bash
+# Retry up to 5 times, starting at a 1s delay and doubling up to a 30s cap
+mq-crawl --max-retries 5 --retry-initial-backoff 1 --retry-max-backoff 30 https://example.com
+
+# Disable retries entirely
+mq-crawl --max-retries 0 https://example.com
+```
+
+### Custom Headers, Cookies & Authentication
+
+Use `--header`, `--cookie`, `--basic-auth`, or `--bearer-token` to crawl sites that require authentication. These apply to standard (non-browser) crawling only — they are ignored with `--headless` or `-U/--webdriver-url`:
+
+```bash
+# Custom header
+mq-crawl --header "X-Api-Key: secret" https://example.com
+
+# One or more cookies (combined into a single Cookie header)
+mq-crawl --cookie "session=abc123" --cookie "theme=dark" https://example.com
+
+# HTTP Basic authentication
+mq-crawl --basic-auth alice:s3cret https://example.com
+
+# Bearer token authentication
+mq-crawl --bearer-token eyJhbGciOi... https://example.com
 ```
 
 ### Headless Chrome
