@@ -103,8 +103,70 @@ struct CliArgs {
     /// subject to robots.txt, domain filtering, and depth limits.
     #[clap(long, value_name = "SITEMAP_URL")]
     sitemap: Option<Url>,
+    /// Maximum number of retry attempts for a request that fails with a network error,
+    /// a 429 (Too Many Requests), or a 5xx server error.
+    #[clap(long, default_value_t = 3)]
+    max_retries: u32,
+    /// Delay (in seconds) before the first retry.
+    #[clap(long, default_value_t = 0.5)]
+    retry_initial_backoff: f64,
+    /// Maximum delay (in seconds) between retries.
+    #[clap(long, default_value_t = 10.0)]
+    retry_max_backoff: f64,
+    /// Multiplier applied to the retry delay after each failed attempt.
+    #[clap(long, default_value_t = 2.0)]
+    retry_backoff_multiplier: f64,
+    /// Custom HTTP header to send with every request, in "Key: Value" form.
+    /// Can be specified multiple times. Only applies to non-browser crawling.
+    #[clap(long = "header", value_name = "KEY: VALUE")]
+    headers: Vec<String>,
+    /// Cookie to send with every request, in "name=value" form. Can be specified
+    /// multiple times; all values are combined into a single Cookie header.
+    /// Only applies to non-browser crawling.
+    #[clap(long, value_name = "NAME=VALUE")]
+    cookie: Vec<String>,
+    /// HTTP Basic authentication credentials, in "username:password" form.
+    /// Only applies to non-browser crawling.
+    #[clap(long, value_name = "USER:PASS", conflicts_with = "bearer_token")]
+    basic_auth: Option<String>,
+    /// Bearer token sent as "Authorization: Bearer <token>".
+    /// Only applies to non-browser crawling.
+    #[clap(long, value_name = "TOKEN", conflicts_with = "basic_auth")]
+    bearer_token: Option<String>,
     #[clap(flatten)]
     pub conversion: ConversionArgs,
+}
+
+/// Parses a "Key: Value" header string into a `(HeaderName, HeaderValue)` pair.
+fn parse_header(raw: &str) -> Result<(reqwest::header::HeaderName, reqwest::header::HeaderValue), String> {
+    let (name, value) = raw
+        .split_once(':')
+        .ok_or_else(|| format!("Invalid header '{}': expected 'Key: Value'", raw))?;
+    let name = reqwest::header::HeaderName::from_bytes(name.trim().as_bytes())
+        .map_err(|e| format!("Invalid header name in '{}': {}", raw, e))?;
+    let value = reqwest::header::HeaderValue::from_str(value.trim())
+        .map_err(|e| format!("Invalid header value in '{}': {}", raw, e))?;
+    Ok((name, value))
+}
+
+/// Builds the default `HeaderMap` (custom headers plus a combined Cookie header)
+/// applied to every request made by the reqwest-based HTTP client.
+fn build_header_map(headers: &[String], cookies: &[String]) -> Result<reqwest::header::HeaderMap, String> {
+    let mut header_map = reqwest::header::HeaderMap::new();
+
+    for raw in headers {
+        let (name, value) = parse_header(raw)?;
+        header_map.insert(name, value);
+    }
+
+    if !cookies.is_empty() {
+        let cookie_value = cookies.join("; ");
+        let value = reqwest::header::HeaderValue::from_str(&cookie_value)
+            .map_err(|e| format!("Invalid cookie value '{}': {}", cookie_value, e))?;
+        header_map.insert(reqwest::header::COOKIE, value);
+    }
+
+    Ok(header_map)
 }
 
 /// Options for Markdown conversion.
@@ -153,25 +215,65 @@ async fn main() {
         v
     });
 
-    let client = if let Some(url) = args.webdriver_url {
-        mq_crawler::http_client::HttpClient::Fantoccini({
-            let fantoccini_client = fantoccini::ClientBuilder::rustls()
-                .expect("Failed to create rustls client builder")
-                .connect(url.as_ref())
-                .await
-                .expect("Failed to connect to WebDriver");
+    let retry_config = mq_crawler::http_client::RetryConfig {
+        max_retries: args.max_retries,
+        initial_backoff: std::time::Duration::from_secs_f64(args.retry_initial_backoff.max(0.0)),
+        max_backoff: std::time::Duration::from_secs_f64(args.retry_max_backoff.max(0.0)),
+        backoff_multiplier: args.retry_backoff_multiplier,
+    };
 
-            fantoccini_client
-                .update_timeouts(TimeoutConfiguration::new(
-                    Some(std::time::Duration::from_secs_f64(args.script_timeout)),
-                    Some(std::time::Duration::from_secs_f64(args.page_load_timeout)),
-                    Some(std::time::Duration::from_secs_f64(args.implicit_timeout)),
-                ))
-                .await
-                .expect("Failed to set timeouts on Fantoccini client");
+    let header_map = match build_header_map(&args.headers, &args.cookie) {
+        Ok(header_map) => header_map,
+        Err(e) => {
+            tracing::error!("{}", e);
+            return;
+        }
+    };
 
-            fantoccini_client
+    let auth = if let Some(ref basic) = args.basic_auth {
+        let (username, password) = basic.split_once(':').unwrap_or((basic.as_str(), ""));
+        Some(mq_crawler::http_client::AuthConfig::Basic {
+            username: username.to_string(),
+            password: if password.is_empty() {
+                None
+            } else {
+                Some(password.to_string())
+            },
         })
+    } else {
+        args.bearer_token
+            .clone()
+            .map(|token| mq_crawler::http_client::AuthConfig::Bearer { token })
+    };
+
+    if (args.webdriver_url.is_some() || args.headless) && (!header_map.is_empty() || auth.is_some()) {
+        tracing::warn!(
+            "--header, --cookie, --basic-auth, and --bearer-token only apply to non-browser crawling and will be ignored."
+        );
+    }
+
+    let client = if let Some(url) = args.webdriver_url {
+        mq_crawler::http_client::HttpClient::Fantoccini(
+            {
+                let fantoccini_client = fantoccini::ClientBuilder::rustls()
+                    .expect("Failed to create rustls client builder")
+                    .connect(url.as_ref())
+                    .await
+                    .expect("Failed to connect to WebDriver");
+
+                fantoccini_client
+                    .update_timeouts(TimeoutConfiguration::new(
+                        Some(std::time::Duration::from_secs_f64(args.script_timeout)),
+                        Some(std::time::Duration::from_secs_f64(args.page_load_timeout)),
+                        Some(std::time::Duration::from_secs_f64(args.implicit_timeout)),
+                    ))
+                    .await
+                    .expect("Failed to set timeouts on Fantoccini client");
+
+                fantoccini_client
+            },
+            retry_config.clone(),
+        )
     } else if args.headless {
         let headless_wait_secs = if !args.headless_wait.is_finite() || args.headless_wait < 0.0 {
             tracing::warn!(
@@ -203,14 +305,27 @@ async fn main() {
             strategy_timeout,
         };
 
-        mq_crawler::http_client::HttpClient::new_chromium(args.chrome_path, wait_config)
+        mq_crawler::http_client::HttpClient::new_chromium(args.chrome_path, wait_config, retry_config.clone())
             .await
             .expect("Failed to launch headless Chrome. Ensure Chrome or Chromium is installed.")
     } else if effective_allowed.is_some() {
-        mq_crawler::http_client::HttpClient::new_reqwest_multi_domain(args.page_load_timeout, args.concurrency.max(5))
-            .unwrap()
+        mq_crawler::http_client::HttpClient::new_reqwest_with_options(
+            args.page_load_timeout,
+            args.concurrency.max(5),
+            retry_config,
+            header_map,
+            auth,
+        )
+        .unwrap()
     } else {
-        mq_crawler::http_client::HttpClient::new_reqwest(args.page_load_timeout).unwrap()
+        mq_crawler::http_client::HttpClient::new_reqwest_with_options(
+            args.page_load_timeout,
+            3,
+            retry_config,
+            header_map,
+            auth,
+        )
+        .unwrap()
     };
 
     let format = match args.format {

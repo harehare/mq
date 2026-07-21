@@ -27,6 +27,9 @@ Make web scraping and content extraction effortless with intelligent Markdown co
 - **WebDriver Support**: Use Selenium WebDriver for browser-based crawling
 - **Domain Filtering**: Restrict crawling to specific domains
 - **Sitemap Ingestion**: Seed the crawl frontier from a `sitemap.xml` (or sitemap index) up front
+- **Retry with Backoff**: Automatically retries failed requests (network errors, 429, 5xx) with exponential backoff
+- **Custom Headers & Cookies**: Send custom HTTP headers and cookies with every request
+- **Authentication**: Basic and bearer-token authentication for protected sites
 
 ## Installation
 
@@ -122,6 +125,37 @@ mq-crawl --sitemap https://example.com/sitemap.xml https://example.com
 # without following links at all.
 mq-crawl --depth 0 --sitemap https://example.com/sitemap.xml https://example.com
 ```
+
+### Retry & Backoff
+
+```bash
+# Retry failed requests (network errors, 429, 5xx) up to 5 times,
+# starting at a 1s delay and doubling up to a 30s cap
+mq-crawl --max-retries 5 --retry-initial-backoff 1 --retry-max-backoff 30 https://example.com
+
+# Disable retries entirely
+mq-crawl --max-retries 0 https://example.com
+```
+
+### Custom Headers, Cookies & Authentication
+
+```bash
+# Send a custom header with every request
+mq-crawl --header "X-Api-Key: secret" https://example.com
+
+# Send one or more cookies
+mq-crawl --cookie "session=abc123" --cookie "theme=dark" https://example.com
+
+# HTTP Basic authentication
+mq-crawl --basic-auth alice:s3cret https://example.com
+
+# Bearer token authentication
+mq-crawl --bearer-token eyJhbGciOi... https://example.com
+```
+
+> **Note**: `--header`, `--cookie`, `--basic-auth`, and `--bearer-token` apply
+> only to standard (non-browser) crawling; they are ignored with `--headless`
+> or `-U/--webdriver-url`.
 
 ### Custom Robots.txt
 
@@ -240,6 +274,22 @@ Options:
           Output format: text or json [default: text]
       --sitemap <SITEMAP_URL>
           URL of a sitemap.xml (or sitemap index) to enumerate additional seed URLs from
+      --max-retries <MAX_RETRIES>
+          Maximum retry attempts for failed requests (network errors, 429, 5xx) [default: 3]
+      --retry-initial-backoff <RETRY_INITIAL_BACKOFF>
+          Delay in seconds before the first retry [default: 0.5]
+      --retry-max-backoff <RETRY_MAX_BACKOFF>
+          Maximum delay in seconds between retries [default: 10]
+      --retry-backoff-multiplier <RETRY_BACKOFF_MULTIPLIER>
+          Multiplier applied to the retry delay after each failed attempt [default: 2]
+      --header <KEY: VALUE>
+          Custom HTTP header to send with every request (repeatable); non-browser crawling only
+      --cookie <NAME=VALUE>
+          Cookie to send with every request (repeatable); non-browser crawling only
+      --basic-auth <USER:PASS>
+          HTTP Basic authentication credentials; non-browser crawling only
+      --bearer-token <TOKEN>
+          Bearer token for Authorization header; non-browser crawling only
       --extract-scripts-as-code-blocks
           Extract <script> tags as code blocks in Markdown
       --generate-front-matter

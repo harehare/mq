@@ -2490,6 +2490,7 @@ dependencies = [
 name = "mq-crawler"
 version = "0.6.5"
 dependencies = [
+ "base64",
  "chromiumoxide",
  "clap",
  "crossbeam",
