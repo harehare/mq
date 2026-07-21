@@ -9,6 +9,7 @@
   - [TUI](start/tui.md)
   - [Web crawler](start/crawler.md)
   - [MCP](start/mcp.md)
+  - [Web API](start/web_api.md)
   - [Debugger](start/debugger.md)
   - [External Subcommands](start/external_subcommands.md)
   - [Language Bindings](start/language_bindings.md)

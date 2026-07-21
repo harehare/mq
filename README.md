@@ -155,6 +155,14 @@ The [Playground](https://mqlang.org/playground) lets you run mq queries in the b
 
 [mq-web](https://www.npmjs.com/package/mq-web) is the official WebAssembly build for browser.
 
+### mq-web-api
+
+[mq-web-api](https://github.com/harehare/mq/tree/main/crates/mq-web-api) is an HTTP/REST server that exposes mq queries over the network, with a curl-friendly shortcut endpoint, JSON API, OpenAPI spec, and Swagger UI. See the [mq-web-api documentation](https://mqlang.org/book/start/web_api.html) for endpoints, configuration, and self-hosting instructions.
+
+```bash
+curl --data-binary @doc.md https://api.mqlang.org/.h1
+```
+
 ## Language Bindings
 
 Language bindings are available for Elixir, Python, Ruby, Java, and Go. See the [Language Bindings documentation](https://mqlang.org/book/start/language_bindings.html) for details.
