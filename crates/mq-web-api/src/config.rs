@@ -1,3 +1,4 @@
+use crate::query_cache::QueryCacheConfig;
 use crate::rate_limiter::RateLimitConfig;
 use std::{env, time::Duration};
 
@@ -15,6 +16,8 @@ pub struct Config {
     pub otel_service_name: String,
     /// Maximum duration a single query evaluation may run before it's aborted.
     pub query_timeout: Duration,
+    /// Short-lived cache for repeated `{query, input, input_format, args}` combinations.
+    pub query_cache: QueryCacheConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +38,7 @@ impl Default for Config {
             otel_endpoint: None,
             otel_service_name: "mq-web-api".to_string(),
             query_timeout: Duration::from_secs(10),
+            query_cache: QueryCacheConfig::default(),
         }
     }
 }
@@ -137,6 +141,38 @@ impl Config {
                 eprintln!(
                     "Warning: Invalid QUERY_TIMEOUT_SECONDS value '{}', using default {:?}",
                     timeout_str, config.query_timeout
+                );
+            }
+        }
+
+        if let Ok(enabled_str) = env::var("QUERY_CACHE_ENABLED") {
+            match enabled_str.parse::<bool>() {
+                Ok(enabled) => config.query_cache.enabled = enabled,
+                Err(_) => eprintln!(
+                    "Warning: Invalid QUERY_CACHE_ENABLED value '{}', using default {}",
+                    enabled_str, config.query_cache.enabled
+                ),
+            }
+        }
+
+        if let Ok(ttl_str) = env::var("QUERY_CACHE_TTL_SECONDS") {
+            if let Ok(ttl) = ttl_str.parse::<u64>() {
+                config.query_cache.ttl = Duration::from_secs(ttl);
+            } else {
+                eprintln!(
+                    "Warning: Invalid QUERY_CACHE_TTL_SECONDS value '{}', using default {:?}",
+                    ttl_str, config.query_cache.ttl
+                );
+            }
+        }
+
+        if let Ok(max_entries_str) = env::var("QUERY_CACHE_MAX_ENTRIES") {
+            if let Ok(max_entries) = max_entries_str.parse::<usize>() {
+                config.query_cache.max_entries = max_entries;
+            } else {
+                eprintln!(
+                    "Warning: Invalid QUERY_CACHE_MAX_ENTRIES value '{}', using default {}",
+                    max_entries_str, config.query_cache.max_entries
                 );
             }
         }

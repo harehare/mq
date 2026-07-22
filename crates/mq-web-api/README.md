@@ -174,6 +174,21 @@ All settings are controlled through environment variables.
 | `CORS_ORIGINS` | `*` | Comma-separated allowed origins |
 | `QUERY_TIMEOUT_SECONDS` | `10` | Max seconds a single query may run before it's aborted |
 
+### Query Cache
+
+Repeated requests to `GET/POST /api/v1/query` and `POST /{query}` with the same
+`query`, `input`, `input_format`, `modules`, `args`, `output_format`, and
+`aggregate` are served from a short-lived in-memory cache instead of
+re-evaluating the query. Queries that call a nondeterministic builtin (`now`,
+`uuid`, `uuid_v4`, `uuid_v7`, `rand`, `rand_int`, `random_string`) are never
+cached.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QUERY_CACHE_ENABLED` | `true` | Enable the query result cache |
+| `QUERY_CACHE_TTL_SECONDS` | `30` | How long a cached result stays fresh |
+| `QUERY_CACHE_MAX_ENTRIES` | `1000` | Max number of cached query results |
+
 ### Rate Limiting
 
 | Variable | Default | Description |

@@ -27,7 +27,7 @@ pub struct ApiRequest {
     pub aggregate: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct QueryApiResponse {
     pub results: Vec<String>,
 }

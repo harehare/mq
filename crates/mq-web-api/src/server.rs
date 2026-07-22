@@ -142,6 +142,9 @@ pub async fn start_server(config: Config) -> Result<(), Box<dyn std::error::Erro
     info!("  RATE_LIMIT_WINDOW_SIZE_SECONDS: Window size in seconds (default: 3600)");
     info!("  RATE_LIMIT_CLEANUP_INTERVAL_SECONDS: Cleanup interval in seconds (default: 3600)");
     info!("  QUERY_TIMEOUT_SECONDS: Max seconds a single query may run before it's aborted (default: 10)");
+    info!("  QUERY_CACHE_ENABLED: Cache repeated query/input combinations (default: true)");
+    info!("  QUERY_CACHE_TTL_SECONDS: How long a cached result stays fresh (default: 30)");
+    info!("  QUERY_CACHE_MAX_ENTRIES: Max number of cached query results (default: 1000)");
 
     // Start cleanup service
     let mut cleanup_service = CleanupService::new(
