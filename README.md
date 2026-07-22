@@ -226,7 +226,7 @@ Options:
   -F, --output-format <OUTPUT_FORMAT>
           Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, raw, none]
   -U, --update
-          Update the input markdown (aliases: -i, --in-place, --inplace)
+          Update matching Markdown nodes and write the result to stdout
       --unbuffered
           Unbuffered output
       --list-style <LIST_STYLE>
