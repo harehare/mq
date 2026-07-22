@@ -23,15 +23,15 @@ resolver = "3"
 
 [workspace.dependencies]
 # Internal crates
-mq-check = {path = "crates/mq-check", version = "0.6.5"}
-mq-dap = {path = "crates/mq-dap", version = "0.6.5"}
-mq-formatter = {path = "crates/mq-formatter", version = "0.6.5"}
-mq-hir = {path = "crates/mq-hir", version = "0.6.5"}
-mq-lang = {path = "crates/mq-lang", version = "0.6.5"}
-mq-lint = {path = "crates/mq-lint", version = "0.6.5"}
-mq-macros = {path = "crates/mq-macros", version = "0.6.5"}
-mq-markdown = {path = "crates/mq-markdown", version = "0.6.5"}
-mq-repl = {path = "crates/mq-repl", version = "0.6.5"}
+mq-check = {path = "crates/mq-check", version = "0.7.0"}
+mq-dap = {path = "crates/mq-dap", version = "0.7.0"}
+mq-formatter = {path = "crates/mq-formatter", version = "0.7.0"}
+mq-hir = {path = "crates/mq-hir", version = "0.7.0"}
+mq-lang = {path = "crates/mq-lang", version = "0.7.0"}
+mq-lint = {path = "crates/mq-lint", version = "0.7.0"}
+mq-macros = {path = "crates/mq-macros", version = "0.7.0"}
+mq-markdown = {path = "crates/mq-markdown", version = "0.7.0"}
+mq-repl = {path = "crates/mq-repl", version = "0.7.0"}
 # External dependencies
 ammonia = "4.1.3"
 arbitrary = {version = "1.4.2", features = ["derive"]}
