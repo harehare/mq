@@ -2,6 +2,9 @@ import { defineConfig } from "@vscode/test-cli";
 
 export default defineConfig({
   files: "out/test/**/*.test.js",
+  // Pinned instead of "stable" so @vscode/test-electron skips the network
+  // call to resolve the latest release and downloads this version directly.
+  version: "1.128.0",
   mocha: {
     ui: "tdd",
     timeout: 30_000,

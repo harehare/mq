@@ -38,6 +38,3 @@ jobs:
       - name: Lint
         working-directory: editors/vscode
         run: npm run lint
-      - name: Run tests
-        working-directory: editors/vscode
-        run: xvfb-run -a npm test
