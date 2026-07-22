@@ -18,6 +18,7 @@ otel = ["opentelemetry", "opentelemetry-otlp", "opentelemetry_sdk", "tracing-ope
 
 [dependencies]
 axum = {workspace = true}
+colored = {workspace = true}
 miette = {workspace = true}
 mimalloc = {workspace = true, features = ["v3"], optional = true}
 opentelemetry = {workspace = true, optional = true}

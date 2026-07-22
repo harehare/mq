@@ -56,6 +56,7 @@
 //! - `RATE_LIMIT_WINDOW` - Time window in seconds
 //!
 pub mod api;
+pub mod banner;
 pub mod cleanup;
 pub mod config;
 pub mod handlers;
