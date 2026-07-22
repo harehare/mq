@@ -56,11 +56,13 @@
 //! - `RATE_LIMIT_WINDOW` - Time window in seconds
 //!
 pub mod api;
+pub mod banner;
 pub mod cleanup;
 pub mod config;
 pub mod handlers;
 pub mod middleware;
 pub mod problem;
+pub mod query_cache;
 pub mod rate_limiter;
 pub mod routes;
 pub mod server;
@@ -68,4 +70,5 @@ pub mod server;
 pub use api::{ApiRequest, InputFormat, query};
 pub use cleanup::CleanupService;
 pub use config::Config;
+pub use query_cache::{QueryCache, QueryCacheConfig};
 pub use rate_limiter::{RateLimitConfig, RateLimitError, RateLimiter};

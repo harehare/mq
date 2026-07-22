@@ -22,12 +22,14 @@ use crate::{
         post_check_api, post_format_api, post_lint_api, post_query_api, post_shorthand_query_api,
     },
     middleware::rate_limit_middleware,
+    query_cache::QueryCache,
     rate_limiter::RateLimiter,
 };
 
 pub fn create_router(config: &Config, rate_limiter: Arc<RateLimiter>) -> Router {
     let state = AppState {
         query_timeout: config.query_timeout,
+        query_cache: Arc::new(QueryCache::new(config.query_cache.clone())),
     };
 
     let cors = if config.cors_origins.contains(&"*".to_string()) {

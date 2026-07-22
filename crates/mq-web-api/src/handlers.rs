@@ -5,6 +5,7 @@ use axum::{
     response::Json,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
 use tracing::{debug, error, info};
@@ -17,12 +18,45 @@ use crate::{
         LintApiResponse, LintDiagnostic, OutputFormat, QueryApiResponse, SelectorDoc, SelectorsApiResponse,
     },
     problem::ProblemDetails,
+    query_cache::{self, QueryCache},
 };
 
 #[derive(Clone)]
 pub struct AppState {
     /// Maximum duration a single query evaluation may run before it's aborted.
     pub query_timeout: Duration,
+    /// Short-lived cache of `execute_query` results.
+    pub query_cache: Arc<QueryCache>,
+}
+
+/// Returns a cached response for `request` if one is fresh, otherwise runs
+/// `crate::api::query` on the blocking pool and caches a successful result.
+///
+/// Mirrors the `Result<miette::Result<QueryApiResponse>, JoinError>` shape of
+/// a bare `spawn_blocking(...).await` so call sites keep handling the panic
+/// case (`JoinError`, -> 500) and the query-error case (`Err`, -> 400)
+/// exactly as they did before caching was introduced.
+async fn execute_query_with_cache(
+    state: &AppState,
+    request: ApiRequest,
+) -> Result<miette::Result<QueryApiResponse>, tokio::task::JoinError> {
+    let cache_key = query_cache::cache_key(&request);
+
+    if let Some(key) = &cache_key
+        && let Some(cached) = state.query_cache.get(key).await
+    {
+        debug!("Query cache hit");
+        return Ok(Ok(cached));
+    }
+
+    let timeout = state.query_timeout;
+    let result = tokio::task::spawn_blocking(move || crate::api::query(request, timeout)).await?;
+
+    if let (Ok(response), Some(key)) = (&result, cache_key) {
+        state.query_cache.insert(key, response.clone()).await;
+    }
+
+    Ok(result)
 }
 
 #[derive(Deserialize)]
@@ -150,16 +184,13 @@ pub async fn get_query_api(
         output_format: None,
         aggregate: None,
     };
-    let timeout = state.query_timeout;
 
-    match tokio::task::spawn_blocking(move || crate::api::query(request, timeout))
-        .await
-        .map_err(|e| {
-            error!("Query task panicked: {}", e);
-            ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
-                .with_title("Internal error")
-                .with_detail("error", &e.to_string())
-        })? {
+    match execute_query_with_cache(&state, request).await.map_err(|e| {
+        error!("Query task panicked: {}", e);
+        ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .with_title("Internal error")
+            .with_detail("error", &e.to_string())
+    })? {
         Ok(response) => {
             info!(
                 "Successfully processed query: {}, results count: {}",
@@ -194,15 +225,12 @@ pub async fn post_query_api(
     debug!("Processing request with input_format: {:?}", request.input_format);
 
     let query_str = request.query.clone();
-    let timeout = state.query_timeout;
-    match tokio::task::spawn_blocking(move || crate::api::query(request, timeout))
-        .await
-        .map_err(|e| {
-            error!("Query task panicked: {}", e);
-            ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
-                .with_title("Internal error")
-                .with_detail("error", &e.to_string())
-        })? {
+    match execute_query_with_cache(&state, request).await.map_err(|e| {
+        error!("Query task panicked: {}", e);
+        ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .with_title("Internal error")
+            .with_detail("error", &e.to_string())
+    })? {
         Ok(response) => {
             info!(
                 "Successfully processed query: {}, results count: {}",
@@ -332,16 +360,13 @@ pub async fn post_shorthand_query_api(
         output_format,
         aggregate: None,
     };
-    let timeout = state.query_timeout;
 
-    match tokio::task::spawn_blocking(move || crate::api::query(request, timeout))
-        .await
-        .map_err(|e| {
-            error!("Shorthand query task panicked: {}", e);
-            ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
-                .with_title("Internal error")
-                .with_detail("error", &e.to_string())
-        })? {
+    match execute_query_with_cache(&state, request).await.map_err(|e| {
+        error!("Shorthand query task panicked: {}", e);
+        ProblemDetails::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .with_title("Internal error")
+            .with_detail("error", &e.to_string())
+    })? {
         Ok(response) => {
             info!(
                 "Successfully processed shorthand query: {}, results count: {}",

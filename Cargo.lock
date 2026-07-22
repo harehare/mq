@@ -2784,6 +2784,7 @@ name = "mq-web-api"
 version = "0.7.0"
 dependencies = [
  "axum",
+ "colored 3.1.1",
  "miette",
  "mimalloc",
  "mq-check",
