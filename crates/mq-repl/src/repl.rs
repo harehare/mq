@@ -147,6 +147,44 @@ fn text_muted(s: &str) -> ColoredString {
     }
 }
 
+/// mq's brand gradient, matching the wordmark on docs/index.html
+/// (`from-[#85d4ff] to-[#67b8e3]`).
+const LOGO_GRADIENT_START: (u8, u8, u8) = (133, 212, 255);
+const LOGO_GRADIENT_END: (u8, u8, u8) = (103, 184, 227);
+
+/// A plain-ASCII "M" mark, three rows tall so it can sit beside the three
+/// welcome lines the same way each row pairs up. Kept to `|`, `\`, `/` and
+/// spaces (no box-drawing or emoji) so it renders identically regardless of
+/// the terminal's font or Unicode support; [`gradient_mark_line`] renders it
+/// bold so it still reads as a thicker mark without needing a second variant.
+const LOGO_MARK: [&str; 3] = [r"|\  /|", r"| \/ |", r"|    |"];
+
+/// Colors one row of [`LOGO_MARK`] with mq's brand gradient, left to right,
+/// with a bold ANSI attribute layered on for extra visual weight. Falls back
+/// to a flat, bold `logo_primary` on terminals without 24-bit color, same as
+/// the rest of the banner.
+fn gradient_mark_line(line: &str) -> String {
+    if !is_truecolor_supported() {
+        return logo_primary(line).bold().to_string();
+    }
+
+    let chars: Vec<char> = line.chars().collect();
+    let last = chars.len().saturating_sub(1).max(1) as f32;
+
+    chars
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let t = i as f32 / last;
+            let lerp = |start: u8, end: u8| (start as f32 + (end as f32 - start as f32) * t) as u8;
+            let r = lerp(LOGO_GRADIENT_START.0, LOGO_GRADIENT_END.0);
+            let g = lerp(LOGO_GRADIENT_START.1, LOGO_GRADIENT_END.1);
+            let b = lerp(LOGO_GRADIENT_START.2, LOGO_GRADIENT_END.2);
+            c.to_string().truecolor(r, g, b).bold().to_string()
+        })
+        .collect()
+}
+
 /// Check if a Unicode character is available in the current environment
 fn is_char_available() -> bool {
     // Check environment variables that might indicate character support
@@ -320,12 +358,16 @@ impl Repl {
 
     fn print_welcome() {
         let version = mq_lang::DefaultEngine::version();
+        let lines = [
+            format!("{} {}", logo_primary("mq").bold(), text_muted(&format!("v{version}"))),
+            text_muted("Query. Filter. Transform Markdown.").to_string(),
+            format!("Type {} to see available commands.", logo_primary("/help")),
+        ];
 
         println!();
-        println!("  {} {}", logo_primary("mq").bold(), text_muted(&format!("v{version}")));
-        println!("  {}", text_muted("Query. Filter. Transform Markdown."));
-        println!();
-        println!("  Type {} to see available commands.", logo_primary("/help"));
+        for (mark, line) in LOGO_MARK.iter().zip(lines.iter()) {
+            println!("  {}   {}", gradient_mark_line(mark), line);
+        }
         println!();
     }
 
