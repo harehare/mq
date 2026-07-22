@@ -17,6 +17,7 @@ pub struct ApiRequest {
     pub input: Option<String>,
     pub input_format: Option<InputFormat>,
     /// Names of builtin modules to load (e.g. "json", "csv", "table").
+    #[schema(example = json!(["table"]))]
     pub modules: Option<Vec<String>>,
     /// String variable definitions passed to the engine (name → value).
     pub args: Option<HashMap<String, String>>,
@@ -41,6 +42,8 @@ pub struct BatchApiRequest {
     /// At most [`MAX_BATCH_SIZE`] entries are accepted.
     pub inputs: Vec<String>,
     pub input_format: Option<InputFormat>,
+    /// Names of builtin modules to load (e.g. "json", "csv", "table").
+    #[schema(example = json!(["table"]))]
     pub modules: Option<Vec<String>>,
     pub args: Option<HashMap<String, String>>,
     pub output_format: Option<OutputFormat>,
