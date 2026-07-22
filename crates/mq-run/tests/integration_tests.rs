@@ -29,6 +29,16 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[rstest]
+#[case("-i")]
+#[case("--in-place")]
+#[case("--inplace")]
+fn update_does_not_accept_misleading_in_place_aliases(#[case] alias: &str) {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.arg(alias).arg("self").write_stdin("# Title\n").assert().failure();
+}
+
+#[rstest]
 #[case::json(
     vec!["--unbuffered", "-F", "json", ".code_inline"],
     "`inline code`",
