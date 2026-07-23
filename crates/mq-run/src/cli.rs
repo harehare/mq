@@ -3,6 +3,7 @@ use colored::Colorize;
 use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::DefaultEngine;
+use mq_lang::Shared;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::io::BufRead;
@@ -864,7 +865,9 @@ impl Cli {
                         .into_iter::<serde_json::Value>()
                         .collect::<Result<_, _>>()
                         .into_diagnostic()?;
-                    let runtime_value = mq_lang::RuntimeValue::Array(json_values.into_iter().map(Into::into).collect());
+                    let runtime_value = mq_lang::RuntimeValue::Array(mq_lang::Shared::new(
+                        json_values.into_iter().map(Into::into).collect(),
+                    ));
                     engine.define_value(&v[0], runtime_value.clone());
                     named.insert(mq_lang::Ident::new(&v[0]), runtime_value);
                 }
@@ -880,13 +883,16 @@ impl Cli {
             let args_map: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = [
                 (
                     mq_lang::Ident::new("positional"),
-                    mq_lang::RuntimeValue::Array(positional),
+                    mq_lang::RuntimeValue::Array(Shared::new(positional)),
                 ),
-                (mq_lang::Ident::new("named"), mq_lang::RuntimeValue::Dict(named)),
+                (
+                    mq_lang::Ident::new("named"),
+                    mq_lang::RuntimeValue::Dict(Shared::new(named)),
+                ),
             ]
             .into_iter()
             .collect();
-            engine.define_value("ARGS", mq_lang::RuntimeValue::Dict(args_map));
+            engine.define_value("ARGS", mq_lang::RuntimeValue::Dict(Shared::new(args_map)));
         }
 
         if let Some(raw_file) = &self.input.raw_file {
@@ -1420,7 +1426,7 @@ impl Cli {
         match value {
             mq_lang::RuntimeValue::Markdown(node, _) => nodes.push((**node).clone()),
             mq_lang::RuntimeValue::Array(items) => {
-                for item in items {
+                for item in items.iter() {
                     Self::collect_markdown_nodes(item, nodes);
                 }
             }

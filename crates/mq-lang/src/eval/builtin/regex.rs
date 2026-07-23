@@ -1,4 +1,5 @@
 use crate::Ident;
+use crate::Shared;
 use crate::eval::runtime_value::RuntimeValue;
 use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap};
@@ -16,7 +17,7 @@ pub(super) fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error
             .find_iter(input)
             .map(|m| RuntimeValue::String(m.as_str().to_string()))
             .collect();
-        return Ok(RuntimeValue::Array(matches));
+        return Ok(RuntimeValue::Array(Shared::new(matches)));
     }
     let re = RegexBuilder::new(pattern)
         .size_limit(1 << 20)
@@ -27,7 +28,7 @@ pub(super) fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error
         .find_iter(input)
         .map(|m| RuntimeValue::String(m.as_str().to_string()))
         .collect();
-    Ok(RuntimeValue::Array(matches))
+    Ok(RuntimeValue::Array(Shared::new(matches)))
 }
 
 pub(super) fn is_match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
@@ -51,7 +52,7 @@ pub(super) fn capture_re_inner(re: &Regex, input: &str) -> Result<RuntimeValue, 
                     result.insert(Ident::new(name), RuntimeValue::String(m.as_str().to_string()));
                 }
             }
-            Ok(RuntimeValue::Dict(result))
+            Ok(RuntimeValue::Dict(Shared::new(result)))
         }
         _ => Ok(RuntimeValue::new_dict()),
     }
@@ -87,7 +88,7 @@ fn scan_re_inner(re: &Regex, input: &str) -> RuntimeValue {
         .captures_iter(input)
         .map(|caps| {
             if has_groups {
-                RuntimeValue::Array(
+                RuntimeValue::Array(Shared::new(
                     caps.iter()
                         .skip(1)
                         .map(|m| {
@@ -95,13 +96,13 @@ fn scan_re_inner(re: &Regex, input: &str) -> RuntimeValue {
                                 .unwrap_or(RuntimeValue::NONE)
                         })
                         .collect(),
-                )
+                ))
             } else {
                 RuntimeValue::String(caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default())
             }
         })
         .collect();
-    RuntimeValue::Array(matches)
+    RuntimeValue::Array(Shared::new(matches))
 }
 
 pub(super) fn scan_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
@@ -119,15 +120,15 @@ pub(super) fn scan_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error>
 #[inline(always)]
 pub(super) fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
     if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
-        return Ok(RuntimeValue::Array(
+        return Ok(RuntimeValue::Array(Shared::new(
             re.split(input).map(|s| s.to_owned().into()).collect::<Vec<_>>(),
-        ));
+        )));
     }
     let re = Regex::new(pattern).map_err(|_| Error::InvalidRegularExpression(pattern.to_string()))?;
     REGEX_CACHE.write().unwrap().insert(pattern.to_string(), re.clone());
-    Ok(RuntimeValue::Array(
+    Ok(RuntimeValue::Array(Shared::new(
         re.split(input).map(|s| s.to_owned().into()).collect::<Vec<_>>(),
-    ))
+    )))
 }
 
 #[cfg(test)]
@@ -136,7 +137,9 @@ mod tests {
     use rstest::rstest;
 
     fn strings(v: Vec<&str>) -> RuntimeValue {
-        RuntimeValue::Array(v.into_iter().map(|s| RuntimeValue::String(s.to_string())).collect())
+        RuntimeValue::Array(Shared::new(
+            v.into_iter().map(|s| RuntimeValue::String(s.to_string())).collect(),
+        ))
     }
 
     #[rstest]
@@ -258,23 +261,23 @@ mod tests {
         let result = scan_re("2024-06 2025-07", r"(\d{4})-(\d{2})").unwrap();
         assert_eq!(
             result,
-            RuntimeValue::Array(vec![
-                RuntimeValue::Array(vec![
+            RuntimeValue::Array(Shared::new(vec![
+                RuntimeValue::Array(Shared::new(vec![
                     RuntimeValue::String("2024".to_string()),
                     RuntimeValue::String("06".to_string()),
-                ]),
-                RuntimeValue::Array(vec![
+                ])),
+                RuntimeValue::Array(Shared::new(vec![
                     RuntimeValue::String("2025".to_string()),
                     RuntimeValue::String("07".to_string()),
-                ]),
-            ])
+                ])),
+            ]))
         );
     }
 
     #[test]
     fn test_scan_re_no_match() {
         let result = scan_re("no digits here", r"\d+").unwrap();
-        assert_eq!(result, RuntimeValue::Array(vec![]));
+        assert_eq!(result, RuntimeValue::Array(Shared::new(vec![])));
     }
 
     #[test]

@@ -7,6 +7,8 @@
 
 use miette::miette;
 use mq_lang::RuntimeValue;
+#[cfg(test)]
+use mq_lang::Shared;
 use std::collections::BTreeSet;
 
 fn cell_value(value: &RuntimeValue) -> String {
@@ -93,10 +95,10 @@ mod tests {
         let mut m2 = std::collections::BTreeMap::new();
         m2.insert(mq_lang::Ident::new("name"), RuntimeValue::String("Bob".to_string()));
         m2.insert(mq_lang::Ident::new("age"), RuntimeValue::String("25".to_string()));
-        let values = vec![RuntimeValue::Array(vec![
-            RuntimeValue::Dict(m1),
-            RuntimeValue::Dict(m2),
-        ])];
+        let values = vec![RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Dict(Shared::new(m1)),
+            RuntimeValue::Dict(Shared::new(m2)),
+        ]))];
         let result = runtime_values_to_csv(&values).unwrap();
         assert_eq!(result, "age,name\n30,Alice\n25,Bob\n");
     }
@@ -105,7 +107,7 @@ mod tests {
     fn test_single_dict() {
         let mut map = std::collections::BTreeMap::new();
         map.insert(mq_lang::Ident::new("a"), RuntimeValue::String("1".to_string()));
-        let values = vec![RuntimeValue::Dict(map)];
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_csv(&values).unwrap();
         assert_eq!(result, "a\n1\n");
     }
@@ -114,7 +116,7 @@ mod tests {
     fn test_needs_quoting() {
         let mut map = std::collections::BTreeMap::new();
         map.insert(mq_lang::Ident::new("a"), RuntimeValue::String("has,comma".to_string()));
-        let values = vec![RuntimeValue::Dict(map)];
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_csv(&values).unwrap();
         assert_eq!(result, "a\n\"has,comma\"\n");
     }
@@ -136,26 +138,26 @@ mod tests {
         m1.insert(mq_lang::Ident::new("b"), RuntimeValue::String("2".to_string()));
         let mut m2 = std::collections::BTreeMap::new();
         m2.insert(mq_lang::Ident::new("a"), RuntimeValue::String("3".to_string()));
-        let values = vec![RuntimeValue::Array(vec![
-            RuntimeValue::Dict(m1),
-            RuntimeValue::Dict(m2),
-        ])];
+        let values = vec![RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Dict(Shared::new(m1)),
+            RuntimeValue::Dict(Shared::new(m2)),
+        ]))];
         let result = runtime_values_to_csv(&values).unwrap();
         assert_eq!(result, "a,b\n1,2\n3,\n");
     }
 
     #[test]
     fn test_array_of_arrays() {
-        let values = vec![RuntimeValue::Array(vec![
-            RuntimeValue::Array(vec![
+        let values = vec![RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::String("h1".to_string()),
                 RuntimeValue::String("h2".to_string()),
-            ]),
-            RuntimeValue::Array(vec![
+            ])),
+            RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::String("v1".to_string()),
                 RuntimeValue::String("v2".to_string()),
-            ]),
-        ])];
+            ])),
+        ]))];
         let result = runtime_values_to_csv(&values).unwrap();
         assert_eq!(result, "h1,h2\nv1,v2\n");
     }

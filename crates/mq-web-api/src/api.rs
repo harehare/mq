@@ -502,7 +502,7 @@ fn collect_markdown_nodes(value: &mq_lang::RuntimeValue, nodes: &mut Vec<mq_mark
     match value {
         mq_lang::RuntimeValue::Markdown(node, _) => nodes.push((**node).clone()),
         mq_lang::RuntimeValue::Array(items) => {
-            for item in items {
+            for item in items.iter() {
                 collect_markdown_nodes(item, nodes);
             }
         }

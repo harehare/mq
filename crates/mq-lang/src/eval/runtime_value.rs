@@ -88,7 +88,10 @@ pub enum RuntimeValue {
     /// A symbol (interned identifier).
     Symbol(Ident),
     /// An array of runtime values.
-    Array(Vec<RuntimeValue>),
+    ///
+    /// Behind [`Shared`] for clone-on-write: cloning is an O(1) refcount bump; mutating
+    /// builtins must go through [`array_mut`] instead of mutating directly.
+    Array(Shared<Vec<RuntimeValue>>),
     /// A markdown node with an optional selector for indexing.
     Markdown(Box<Node>, Option<Selector>),
     /// A user-defined function with parameters, body (program), and captured environment.
@@ -96,7 +99,9 @@ pub enum RuntimeValue {
     /// A built-in native function identified by name.
     NativeFunction(Ident),
     /// A dictionary mapping identifiers to runtime values.
-    Dict(BTreeMap<Ident, RuntimeValue>),
+    ///
+    /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see [`dict_mut`].
+    Dict(Shared<BTreeMap<Ident, RuntimeValue>>),
     /// A module with its exports.
     Module(ModuleEnv),
     /// An AST node (quoted expression).
@@ -180,23 +185,23 @@ impl From<usize> for RuntimeValue {
 
 impl From<Vec<RuntimeValue>> for RuntimeValue {
     fn from(arr: Vec<RuntimeValue>) -> Self {
-        RuntimeValue::Array(arr)
+        RuntimeValue::Array(Shared::new(arr))
     }
 }
 
 impl From<BTreeMap<Ident, RuntimeValue>> for RuntimeValue {
     fn from(map: BTreeMap<Ident, RuntimeValue>) -> Self {
-        RuntimeValue::Dict(map)
+        RuntimeValue::Dict(Shared::new(map))
     }
 }
 
 impl From<Vec<(String, Number)>> for RuntimeValue {
     fn from(v: Vec<(String, Number)>) -> Self {
-        RuntimeValue::Dict(
+        RuntimeValue::Dict(Shared::new(
             v.into_iter()
                 .map(|(k, v)| (Ident::new(&k), RuntimeValue::Number(v)))
                 .collect::<BTreeMap<Ident, RuntimeValue>>(),
-        )
+        ))
     }
 }
 
@@ -208,7 +213,7 @@ impl From<mq_markdown::AttrValue> for RuntimeValue {
             mq_markdown::AttrValue::Integer(n) => RuntimeValue::Number(n.into()),
             mq_markdown::AttrValue::Boolean(b) => RuntimeValue::Boolean(b),
             mq_markdown::AttrValue::Array(arr) => {
-                RuntimeValue::Array(arr.into_iter().map(RuntimeValue::from).collect())
+                RuntimeValue::Array(Shared::new(arr.into_iter().map(RuntimeValue::from).collect()))
             }
             mq_markdown::AttrValue::Null => RuntimeValue::NONE,
         }
@@ -226,7 +231,9 @@ impl From<yaml_rust2::Yaml> for RuntimeValue {
                 .map(|f| RuntimeValue::Number(f.into()))
                 .unwrap_or(RuntimeValue::NONE),
             yaml_rust2::Yaml::String(s) => RuntimeValue::String(s),
-            yaml_rust2::Yaml::Array(arr) => RuntimeValue::Array(arr.into_iter().map(RuntimeValue::from).collect()),
+            yaml_rust2::Yaml::Array(arr) => {
+                RuntimeValue::Array(Shared::new(arr.into_iter().map(RuntimeValue::from).collect()))
+            }
             yaml_rust2::Yaml::Hash(map) => {
                 let mut btree = BTreeMap::new();
                 for (k, v) in map {
@@ -236,7 +243,7 @@ impl From<yaml_rust2::Yaml> for RuntimeValue {
                     };
                     btree.insert(Ident::new(&key), RuntimeValue::from(v));
                 }
-                RuntimeValue::Dict(btree)
+                RuntimeValue::Dict(Shared::new(btree))
             }
             yaml_rust2::Yaml::Alias(_) => RuntimeValue::NONE,
         }
@@ -256,13 +263,15 @@ impl From<serde_json::Value> for RuntimeValue {
                 }
             }
             serde_json::Value::String(s) => RuntimeValue::String(s),
-            serde_json::Value::Array(arr) => RuntimeValue::Array(arr.into_iter().map(RuntimeValue::from).collect()),
+            serde_json::Value::Array(arr) => {
+                RuntimeValue::Array(Shared::new(arr.into_iter().map(RuntimeValue::from).collect()))
+            }
             serde_json::Value::Object(obj) => {
                 let mut map = BTreeMap::new();
                 for (k, v) in obj {
                     map.insert(Ident::new(&k), RuntimeValue::from(v));
                 }
-                RuntimeValue::Dict(map)
+                RuntimeValue::Dict(Shared::new(map))
             }
         }
     }
@@ -282,7 +291,7 @@ impl From<ciborium::Value> for RuntimeValue {
             ciborium::Value::Bytes(b) => RuntimeValue::Bytes(b),
             ciborium::Value::Array(arr) => {
                 let items = arr.into_iter().map(Into::into).collect();
-                RuntimeValue::Array(items)
+                RuntimeValue::Array(Shared::new(items))
             }
             ciborium::Value::Map(pairs) => {
                 let mut map = BTreeMap::new();
@@ -293,7 +302,7 @@ impl From<ciborium::Value> for RuntimeValue {
                     };
                     map.insert(key, v.into());
                 }
-                RuntimeValue::Dict(map)
+                RuntimeValue::Dict(Shared::new(map))
             }
             ciborium::Value::Tag(_, inner) => (*inner).into(),
             _ => RuntimeValue::NONE,
@@ -373,9 +382,22 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
     })
 }
 
+/// Clone-on-write access to an array's elements.
+///
+/// Bare `Shared::make_mut` is ambiguous (it also matches the `Rc<[T]>`/`Arc<[T]>` slice
+/// specialization), so this pins the type down.
+#[inline(always)]
+pub(crate) fn array_mut(array: &mut Shared<Vec<RuntimeValue>>) -> &mut Vec<RuntimeValue> {
+    Shared::<Vec<RuntimeValue>>::make_mut(array)
+}
+
+/// Clone-on-write access to a dict's entries; see [`array_mut`].
+#[inline(always)]
+pub(crate) fn dict_mut(map: &mut Shared<BTreeMap<Ident, RuntimeValue>>) -> &mut BTreeMap<Ident, RuntimeValue> {
+    Shared::<BTreeMap<Ident, RuntimeValue>>::make_mut(map)
+}
+
 impl RuntimeValue {
-    /// An empty array constant.
-    pub const EMPTY_ARRAY: RuntimeValue = Self::Array(Vec::new());
     /// The boolean `false` value.
     pub const FALSE: RuntimeValue = Self::Boolean(false);
     /// The `None` (null) value.
@@ -383,10 +405,18 @@ impl RuntimeValue {
     /// The boolean `true` value.
     pub const TRUE: RuntimeValue = Self::Boolean(true);
 
+    /// Returns a new empty array.
+    ///
+    /// Not a `const` because `Shared::new` (`Rc`/`Arc::new`) isn't const-evaluable.
+    #[inline(always)]
+    pub fn empty_array() -> RuntimeValue {
+        RuntimeValue::Array(Shared::new(Vec::new()))
+    }
+
     /// Creates a new empty dictionary.
     #[inline(always)]
     pub fn new_dict() -> RuntimeValue {
-        RuntimeValue::Dict(BTreeMap::new())
+        RuntimeValue::Dict(Shared::new(BTreeMap::new()))
     }
 
     /// Creates a new markdown runtime value from the given node.
@@ -607,9 +637,14 @@ impl RuntimeValue {
                 .unwrap_or(serde_json::Value::Null),
             RuntimeValue::String(s) => serde_json::Value::String(s),
             RuntimeValue::Symbol(i) => serde_json::Value::String(i.to_string()),
-            RuntimeValue::Array(arr) => serde_json::Value::Array(arr.into_iter().map(Self::to_json_value).collect()),
+            RuntimeValue::Array(arr) => serde_json::Value::Array(
+                Shared::unwrap_or_clone(arr)
+                    .into_iter()
+                    .map(Self::to_json_value)
+                    .collect(),
+            ),
             RuntimeValue::Dict(map) => {
-                let obj: serde_json::Map<String, serde_json::Value> = map
+                let obj: serde_json::Map<String, serde_json::Value> = Shared::unwrap_or_clone(map)
                     .into_iter()
                     .map(|(k, v)| (k.to_string(), v.to_json_value()))
                     .collect();
@@ -629,9 +664,15 @@ impl RuntimeValue {
             RuntimeValue::String(s) => ciborium::Value::Text(s),
             RuntimeValue::Symbol(i) => ciborium::Value::Text(i.to_string()),
             RuntimeValue::Bytes(b) => ciborium::Value::Bytes(b),
-            RuntimeValue::Array(arr) => ciborium::Value::Array(arr.into_iter().map(Self::to_cbor_value).collect()),
+            RuntimeValue::Array(arr) => ciborium::Value::Array(
+                Shared::unwrap_or_clone(arr)
+                    .into_iter()
+                    .map(Self::to_cbor_value)
+                    .collect(),
+            ),
             RuntimeValue::Dict(map) => ciborium::Value::Map(
-                map.into_iter()
+                Shared::unwrap_or_clone(map)
+                    .into_iter()
                     .map(|(k, v)| (ciborium::Value::Text(k.to_string()), v.to_cbor_value()))
                     .collect(),
             ),
@@ -737,7 +778,7 @@ impl RuntimeValues {
                         RuntimeValue::Symbol(i) => RuntimeValue::new_markdown(node.with_value(&i.as_str())),
                         RuntimeValue::Boolean(b) => RuntimeValue::new_markdown(node.with_value(b.to_string().as_str())),
                         RuntimeValue::Number(n) => RuntimeValue::new_markdown(node.with_value(n.to_string().as_str())),
-                        RuntimeValue::Array(array) => RuntimeValue::Array(
+                        RuntimeValue::Array(array) => RuntimeValue::Array(Shared::new(
                             array
                                 .iter()
                                 .filter_map(|o| {
@@ -751,11 +792,11 @@ impl RuntimeValues {
                                     }
                                 })
                                 .collect::<Vec<_>>(),
-                        ),
+                        )),
                         RuntimeValue::Bytes(b) => RuntimeValue::new_markdown(node.with_value(bytes_to_hex(b).as_str())),
                         RuntimeValue::Dict(map) => {
                             let mut new_dict = BTreeMap::new();
-                            for (k, v) in map {
+                            for (k, v) in map.iter() {
                                 if !v.is_none() && !v.is_empty() {
                                     new_dict.insert(
                                         *k,
@@ -763,7 +804,7 @@ impl RuntimeValues {
                                     );
                                 }
                             }
-                            RuntimeValue::Dict(new_dict)
+                            RuntimeValue::Dict(Shared::new(new_dict))
                         }
                     }
                 } else {
@@ -803,15 +844,15 @@ mod tests {
     #[case(RuntimeValue::Boolean(false), "false")]
     #[case(RuntimeValue::String("hello".to_string()), r#""hello""#)]
     #[case(RuntimeValue::None, "")]
-    #[case(RuntimeValue::Array(vec![
+    #[case(RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::Number(Number::from(1.0)),
             RuntimeValue::String("test".to_string())
-        ]), r#"[1, "test"]"#)]
+        ])), r#"[1, "test"]"#)]
     #[case(RuntimeValue::Dict({
             let mut map = BTreeMap::new();
             map.insert(Ident::new("key1"), RuntimeValue::String("value1".to_string()));
             map.insert(Ident::new("key2"), RuntimeValue::Number(Number::from(42.0)));
-            map
+            Shared::new(map)
         }), r#"{"key1": "value1", "key2": 42}"#)]
     fn test_string_method(#[case] value: RuntimeValue, #[case] expected: &str) {
         assert_eq!(value.string(), expected);
@@ -823,7 +864,7 @@ mod tests {
         assert_eq!(format!("{}", RuntimeValue::Number(Number::from(42.0))), "42");
         assert_eq!(format!("{}", RuntimeValue::String(String::from("test"))), "test");
         assert_eq!(format!("{}", RuntimeValue::None), "");
-        let map_val = RuntimeValue::Dict(BTreeMap::default());
+        let map_val = RuntimeValue::Dict(Shared::new(BTreeMap::default()));
         assert_eq!(format!("{}", map_val), "{}");
     }
 
@@ -837,7 +878,7 @@ mod tests {
         let mut map = BTreeMap::default();
         map.insert(Ident::new("name"), RuntimeValue::String("MQ".to_string()));
         map.insert(Ident::new("version"), RuntimeValue::Number(Number::from(1.0)));
-        let map_val = RuntimeValue::Dict(map);
+        let map_val = RuntimeValue::Dict(Shared::new(map));
         let debug_str = format!("{:?}", map_val);
         assert!(debug_str == r#"{"name": "MQ", "version": 1}"# || debug_str == r#"{"version": 1, "name": "MQ"}"#);
     }
@@ -872,7 +913,7 @@ mod tests {
             .name(),
             "markdown"
         );
-        assert_eq!(RuntimeValue::Dict(BTreeMap::default()).name(), "dict");
+        assert_eq!(RuntimeValue::Dict(Shared::new(BTreeMap::default())).name(), "dict");
     }
 
     #[test]
@@ -883,8 +924,8 @@ mod tests {
         assert!(!RuntimeValue::Number(Number::from(0.0)).is_truthy());
         assert!(RuntimeValue::String(String::from("test")).is_truthy());
         assert!(!RuntimeValue::String(String::from("")).is_truthy());
-        assert!(RuntimeValue::Array(vec!["".to_string().into()]).is_truthy());
-        assert!(!RuntimeValue::Array(Vec::new()).is_truthy());
+        assert!(RuntimeValue::Array(Shared::new(vec!["".to_string().into()])).is_truthy());
+        assert!(!RuntimeValue::Array(Shared::new(Vec::new())).is_truthy());
         assert!(
             RuntimeValue::Markdown(
                 Box::new(mq_markdown::Node::Text(mq_markdown::Text {
@@ -905,7 +946,7 @@ mod tests {
             )
             .is_truthy()
         );
-        assert!(!RuntimeValue::Array(Vec::new()).is_truthy());
+        assert!(!RuntimeValue::Array(Shared::new(Vec::new())).is_truthy());
         assert!(!RuntimeValue::None.is_truthy());
         assert!(RuntimeValue::NativeFunction(Ident::new("name")).is_truthy());
         assert!(
@@ -916,14 +957,17 @@ mod tests {
             )
             .is_truthy()
         );
-        assert!(RuntimeValue::Dict(BTreeMap::default()).is_truthy());
+        assert!(RuntimeValue::Dict(Shared::new(BTreeMap::default())).is_truthy());
     }
 
     #[test]
     fn test_runtime_value_partial_ord() {
         assert!(RuntimeValue::Number(Number::from(1.0)) < RuntimeValue::Number(Number::from(2.0)));
         assert!(RuntimeValue::String(String::from("a")) < RuntimeValue::String(String::from("b")));
-        assert!(RuntimeValue::Array(Vec::new()) < RuntimeValue::Array(vec!["a".to_string().into()]));
+        assert!(
+            RuntimeValue::Array(Shared::new(Vec::new()))
+                < RuntimeValue::Array(Shared::new(vec!["a".to_string().into()]))
+        );
         assert!(
             RuntimeValue::Markdown(
                 Box::new(mq_markdown::Node::Text(mq_markdown::Text {
@@ -958,7 +1002,7 @@ mod tests {
         assert_eq!(RuntimeValue::Number(Number::from(42.0)).len(), 42);
         assert_eq!(RuntimeValue::String(String::from("test")).len(), 4);
         assert_eq!(RuntimeValue::Boolean(true).len(), 1);
-        assert_eq!(RuntimeValue::Array(vec![RuntimeValue::None]).len(), 1);
+        assert_eq!(RuntimeValue::Array(Shared::new(vec![RuntimeValue::None])).len(), 1);
         assert_eq!(
             RuntimeValue::Markdown(
                 Box::new(mq_markdown::Node::Text(mq_markdown::Text {
@@ -973,7 +1017,7 @@ mod tests {
         let mut map = BTreeMap::default();
         map.insert(Ident::new("a"), RuntimeValue::String("alpha".to_string()));
         map.insert(Ident::new("b"), RuntimeValue::String("beta".to_string()));
-        assert_eq!(RuntimeValue::Dict(map).len(), 2);
+        assert_eq!(RuntimeValue::Dict(Shared::new(map)).len(), 2);
     }
 
     #[test]
@@ -988,10 +1032,10 @@ mod tests {
 
     #[test]
     fn test_runtime_value_debug_output() {
-        let array = RuntimeValue::Array(vec![
+        let array = RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::Number(Number::from(1.0)),
             RuntimeValue::String("hello".to_string()),
-        ]);
+        ]));
         assert_eq!(format!("{:?}", array), r#"[1, "hello"]"#);
 
         let node = mq_markdown::Node::Text(mq_markdown::Text {
@@ -1013,7 +1057,7 @@ mod tests {
 
         let mut map = BTreeMap::default();
         map.insert(Ident::new("a"), RuntimeValue::String("alpha".to_string()));
-        let map_val = RuntimeValue::Dict(map);
+        let map_val = RuntimeValue::Dict(Shared::new(map));
         assert_eq!(format!("{:?}", map_val), r#"{"a": "alpha"}"#);
     }
 
@@ -1086,17 +1130,17 @@ mod tests {
         let mut map1_data = BTreeMap::default();
         map1_data.insert(Ident::new("a"), RuntimeValue::Number(Number::from(1.0)));
         map1_data.insert(Ident::new("b"), RuntimeValue::String("hello".to_string()));
-        let map1 = RuntimeValue::Dict(map1_data);
+        let map1 = RuntimeValue::Dict(Shared::new(map1_data));
 
         let mut map2_data = BTreeMap::default();
         map2_data.insert(Ident::new("a"), RuntimeValue::Number(Number::from(1.0)));
         map2_data.insert(Ident::new("b"), RuntimeValue::String("hello".to_string()));
-        let map2 = RuntimeValue::Dict(map2_data);
+        let map2 = RuntimeValue::Dict(Shared::new(map2_data));
 
         let mut map3_data = BTreeMap::default();
         map3_data.insert(Ident::new("a"), RuntimeValue::Number(Number::from(1.0)));
         map3_data.insert(Ident::new("c"), RuntimeValue::String("world".to_string()));
-        let map3 = RuntimeValue::Dict(map3_data);
+        let map3 = RuntimeValue::Dict(Shared::new(map3_data));
 
         assert_eq!(map1, map2);
         assert_ne!(map1, map3);
@@ -1104,12 +1148,12 @@ mod tests {
 
     #[test]
     fn test_runtime_value_map_is_empty() {
-        let empty_map = RuntimeValue::Dict(BTreeMap::default());
+        let empty_map = RuntimeValue::Dict(Shared::new(BTreeMap::default()));
         assert!(empty_map.is_empty());
 
         let mut map_data = BTreeMap::default();
         map_data.insert(Ident::new("a"), RuntimeValue::Number(Number::from(1.0)));
-        let non_empty_map = RuntimeValue::Dict(map_data);
+        let non_empty_map = RuntimeValue::Dict(Shared::new(map_data));
         assert!(!non_empty_map.is_empty());
     }
 
@@ -1117,11 +1161,11 @@ mod tests {
     fn test_runtime_value_map_partial_ord() {
         let mut map1_data = BTreeMap::default();
         map1_data.insert(Ident::new("a"), RuntimeValue::Number(Number::from(1.0)));
-        let map1 = RuntimeValue::Dict(map1_data);
+        let map1 = RuntimeValue::Dict(Shared::new(map1_data));
 
         let mut map2_data = BTreeMap::default();
         map2_data.insert(Ident::new("b"), RuntimeValue::Number(Number::from(2.0)));
-        let map2 = RuntimeValue::Dict(map2_data);
+        let map2 = RuntimeValue::Dict(Shared::new(map2_data));
 
         assert_eq!(map1.partial_cmp(&map2), None);
         assert_eq!(map2.partial_cmp(&map1), None);
@@ -1205,7 +1249,10 @@ mod tests {
 
     #[test]
     fn test_to_json_value_array() {
-        let arr = RuntimeValue::Array(vec![RuntimeValue::Boolean(true), RuntimeValue::String("x".to_string())]);
+        let arr = RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Boolean(true),
+            RuntimeValue::String("x".to_string()),
+        ]));
         match arr.to_json_value() {
             serde_json::Value::Array(items) => {
                 assert_eq!(items[0], serde_json::Value::Bool(true));
@@ -1219,7 +1266,7 @@ mod tests {
     fn test_to_json_value_dict() {
         let mut map = BTreeMap::new();
         map.insert(Ident::new("k"), RuntimeValue::Boolean(false));
-        let obj = RuntimeValue::Dict(map).to_json_value();
+        let obj = RuntimeValue::Dict(Shared::new(map)).to_json_value();
         match obj {
             serde_json::Value::Object(m) => {
                 assert_eq!(m["k"], serde_json::Value::Bool(false));
@@ -1256,7 +1303,7 @@ mod tests {
             value: "hi".to_string(),
             position: None,
         });
-        let arr = RuntimeValue::Array(vec![RuntimeValue::Markdown(Box::new(node), None)]);
+        let arr = RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Box::new(node), None)]));
         match arr.to_json_value() {
             serde_json::Value::Array(items) => {
                 assert_ne!(items[0], serde_json::Value::Null);
@@ -1270,8 +1317,8 @@ mod tests {
     #[case(RuntimeValue::None, true)]
     #[case(RuntimeValue::Boolean(true), false)]
     #[case(RuntimeValue::String("".to_string()), true)]
-    #[case(RuntimeValue::Array(vec![]), true)]
-    #[case(RuntimeValue::Dict(BTreeMap::new()), true)]
+    #[case(RuntimeValue::Array(Shared::new(vec![])), true)]
+    #[case(RuntimeValue::Dict(Shared::new(BTreeMap::new())), true)]
     #[case(RuntimeValue::Bytes(vec![]), true)]
     #[case(RuntimeValue::Bytes(vec![1]), false)]
     fn test_is_empty(#[case] value: RuntimeValue, #[case] expected: bool) {
@@ -1284,8 +1331,8 @@ mod tests {
     #[case(RuntimeValue::Boolean(false), false)]
     #[case(RuntimeValue::String("hi".to_string()), true)]
     #[case(RuntimeValue::String("".to_string()), false)]
-    #[case(RuntimeValue::Array(vec![RuntimeValue::None]), true)]
-    #[case(RuntimeValue::Array(vec![]), false)]
+    #[case(RuntimeValue::Array(Shared::new(vec![RuntimeValue::None])), true)]
+    #[case(RuntimeValue::Array(Shared::new(vec![])), false)]
     #[case(RuntimeValue::Symbol(Ident::new("s")), true)]
     #[case(RuntimeValue::NativeFunction(Ident::new("f")), true)]
     fn test_is_truthy_variants(#[case] value: RuntimeValue, #[case] expected: bool) {
@@ -1315,9 +1362,9 @@ mod tests {
 
     #[test]
     fn test_is_array_dict() {
-        assert!(RuntimeValue::Array(vec![]).is_array());
+        assert!(RuntimeValue::Array(Shared::new(vec![])).is_array());
         assert!(!RuntimeValue::None.is_array());
-        assert!(RuntimeValue::Dict(BTreeMap::new()).is_dict());
+        assert!(RuntimeValue::Dict(Shared::new(BTreeMap::new())).is_dict());
         assert!(!RuntimeValue::None.is_dict());
     }
 
@@ -1413,7 +1460,7 @@ mod tests {
 
     #[test]
     fn test_negated_array_returns_self() {
-        let arr = RuntimeValue::Array(vec![RuntimeValue::Number(1.into())]);
+        let arr = RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into())]));
         assert_eq!(arr.clone().negated(), arr);
     }
 
@@ -1455,7 +1502,7 @@ mod tests {
 
     #[test]
     fn test_to_cbor_value_array() {
-        let arr = RuntimeValue::Array(vec![RuntimeValue::Boolean(false)]);
+        let arr = RuntimeValue::Array(Shared::new(vec![RuntimeValue::Boolean(false)]));
         match arr.to_cbor_value() {
             ciborium::Value::Array(items) => {
                 assert_eq!(items[0], ciborium::Value::Bool(false));
@@ -1468,7 +1515,7 @@ mod tests {
     fn test_to_cbor_value_dict() {
         let mut map = BTreeMap::new();
         map.insert(Ident::new("k"), RuntimeValue::Boolean(true));
-        let obj = RuntimeValue::Dict(map).to_cbor_value();
+        let obj = RuntimeValue::Dict(Shared::new(map)).to_cbor_value();
         match obj {
             ciborium::Value::Map(pairs) => {
                 assert_eq!(pairs[0].0, ciborium::Value::Text("k".to_string()));
@@ -1674,11 +1721,11 @@ mod tests {
     #[test]
     fn test_update_with_markdown_to_array_with_none_filtered() {
         let orig: RuntimeValues = vec![md("item")].into();
-        let updated: RuntimeValues = vec![RuntimeValue::Array(vec![
+        let updated: RuntimeValues = vec![RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::String("a".to_string()),
             RuntimeValue::None,
             RuntimeValue::String("b".to_string()),
-        ])]
+        ]))]
         .into();
         let result = orig.update_with(updated);
         if let RuntimeValue::Array(items) = &result[0] {
@@ -1694,7 +1741,7 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert(Ident::new("a"), RuntimeValue::String("val".to_string()));
         map.insert(Ident::new("b"), RuntimeValue::None);
-        let updated: RuntimeValues = vec![RuntimeValue::Dict(map)].into();
+        let updated: RuntimeValues = vec![RuntimeValue::Dict(Shared::new(map))].into();
         let result = orig.update_with(updated);
         if let RuntimeValue::Dict(m) = &result[0] {
             assert!(m.contains_key(&Ident::new("a")));

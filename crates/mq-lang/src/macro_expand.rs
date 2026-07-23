@@ -1418,11 +1418,11 @@ mod tests {
     )]
     #[case::foreach_collection(
         "macro make_value(x): x * 2 | foreach(item, [1, 2, 3]): make_value(item);",
-        vec![RuntimeValue::Array(vec![
+        vec![RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::Number(2.into()),
             RuntimeValue::Number(4.into()),
             RuntimeValue::Number(6.into())
-        ])],
+        ]))],
     )]
     #[case::match_value(
         "macro get_val(x): x | match(get_val(5)): | 1: 10 | _: 20 end",
@@ -1621,11 +1621,11 @@ mod tests {
     )]
     #[case::unquote_in_foreach(
         "macro test(arr): quote: foreach(item, unquote(arr)): item * 2; | test([1, 2, 3])",
-        vec![RuntimeValue::Array(vec![
+        vec![RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::Number(2.into()),
             RuntimeValue::Number(4.into()),
             RuntimeValue::Number(6.into())
-        ])],
+        ]))],
     )]
     #[case::unquote_in_let(
         "macro test(x): quote do let y = unquote(x) | y * 2; | test(10)",
@@ -2372,11 +2372,11 @@ mod tests {
         let result = eval_program(&expanded).expect("Failed to eval");
         assert_eq!(
             result,
-            vec![RuntimeValue::Array(vec![
+            vec![RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::Number(10.into()),
                 RuntimeValue::Number(20.into()),
                 RuntimeValue::Number(30.into())
-            ])]
+            ]))]
         );
     }
 

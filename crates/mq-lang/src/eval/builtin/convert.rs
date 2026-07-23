@@ -287,7 +287,7 @@ pub(super) fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error>
             .map(|n| RuntimeValue::Number(n.into()))
             .map_err(|e| Error::Runtime(format!("{}", e))),
         RuntimeValue::Array(array) => {
-            let result_value: Result<Vec<RuntimeValue>, Error> = std::mem::take(array)
+            let result_value: Result<Vec<RuntimeValue>, Error> = crate::Shared::unwrap_or_clone(std::mem::take(array))
                 .into_iter()
                 .map(|o| match o {
                     node @ RuntimeValue::Markdown(_, _) => node
@@ -309,7 +309,7 @@ pub(super) fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error>
                 })
                 .collect();
 
-            result_value.map(RuntimeValue::Array)
+            result_value.map(|v| RuntimeValue::Array(crate::Shared::new(v)))
         }
         RuntimeValue::Boolean(true) => Ok(RuntimeValue::Number(1.into())),
         RuntimeValue::Boolean(false) => Ok(RuntimeValue::Number(0.into())),
@@ -335,14 +335,14 @@ pub(super) fn to_boolean(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
 pub(super) fn to_array(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
     match value {
         RuntimeValue::Array(array) => Ok(RuntimeValue::Array(std::mem::take(array))),
-        RuntimeValue::String(s) => Ok(RuntimeValue::Array(
+        RuntimeValue::String(s) => Ok(RuntimeValue::Array(crate::Shared::new(
             s.chars().map(|c| RuntimeValue::String(c.to_string())).collect(),
-        )),
-        RuntimeValue::Bytes(bytes) => Ok(RuntimeValue::Array(
+        ))),
+        RuntimeValue::Bytes(bytes) => Ok(RuntimeValue::Array(crate::Shared::new(
             bytes.iter().map(|b| RuntimeValue::Number((*b).into())).collect(),
-        )),
-        RuntimeValue::None => Ok(RuntimeValue::Array(Vec::new())),
-        value => Ok(RuntimeValue::Array(vec![std::mem::take(value)])),
+        ))),
+        RuntimeValue::None => Ok(RuntimeValue::empty_array()),
+        value => Ok(RuntimeValue::Array(crate::Shared::new(vec![std::mem::take(value)]))),
     }
 }
 
@@ -615,7 +615,7 @@ pub(super) fn flatten(args: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
     let mut result = Vec::new();
     for arg in args {
         match arg {
-            RuntimeValue::Array(arr) => result.extend(flatten(arr)),
+            RuntimeValue::Array(arr) => result.extend(flatten(crate::Shared::unwrap_or_clone(arr))),
             other => result.push(other),
         }
     }
@@ -893,10 +893,10 @@ mod tests {
 
     #[test]
     fn test_to_number_array() {
-        let mut input = RuntimeValue::Array(vec![
+        let mut input = RuntimeValue::Array(crate::Shared::new(vec![
             RuntimeValue::String("42".to_string()),
             RuntimeValue::Boolean(true),
-        ]);
+        ]));
         let result = to_number(&mut input).unwrap();
         match result {
             RuntimeValue::Array(arr) => {
@@ -924,16 +924,22 @@ mod tests {
     #[case::boolean_false(RuntimeValue::Boolean(false), vec![RuntimeValue::Boolean(false)])]
     fn test_to_array(#[case] mut input: RuntimeValue, #[case] expected: Vec<RuntimeValue>) {
         let result = to_array(&mut input).unwrap();
-        assert_eq!(result, RuntimeValue::Array(expected));
+        assert_eq!(result, RuntimeValue::Array(crate::Shared::new(expected)));
     }
 
     #[test]
     fn test_to_array_already_array() {
-        let mut input = RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]);
+        let mut input = RuntimeValue::Array(crate::Shared::new(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+        ]));
         let result = to_array(&mut input).unwrap();
         assert_eq!(
             result,
-            RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()),])
+            RuntimeValue::Array(crate::Shared::new(vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(2.into()),
+            ]))
         );
     }
 
@@ -943,22 +949,22 @@ mod tests {
     #[case::number(RuntimeValue::Number(42.into()), "42")]
     #[case::none(RuntimeValue::None, "")]
     #[case::array(
-        RuntimeValue::Array(vec![
+        RuntimeValue::Array(crate::Shared::new(vec![
             RuntimeValue::String("a".to_string()),
             RuntimeValue::String("b".to_string()),
             RuntimeValue::String("c".to_string()),
-        ]),
+        ])),
         "a,b,c"
     )]
     #[case::array_with_none(
-        RuntimeValue::Array(vec![
+        RuntimeValue::Array(crate::Shared::new(vec![
             RuntimeValue::String("a".to_string()),
             RuntimeValue::None,
             RuntimeValue::String("c".to_string()),
-        ]),
+        ])),
         "a,,c"
     )]
-    #[case::empty_array(RuntimeValue::Array(vec![]), "")]
+    #[case::empty_array(RuntimeValue::Array(crate::Shared::new(vec![])), "")]
     fn test_to_text(#[case] input: RuntimeValue, #[case] expected: &str) {
         let result = to_text(&input).unwrap();
         match result {
@@ -998,9 +1004,9 @@ mod tests {
     )]
     #[case::nested_array(
         vec![
-            RuntimeValue::Array(vec![RuntimeValue::Number(1.into())]),
+            RuntimeValue::Array(crate::Shared::new(vec![RuntimeValue::Number(1.into())])),
             RuntimeValue::Number(2.into()),
-            RuntimeValue::Array(vec![RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())]),
+            RuntimeValue::Array(crate::Shared::new(vec![RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())])),
         ],
         vec![
             RuntimeValue::Number(1.into()),
@@ -1011,10 +1017,10 @@ mod tests {
     )]
     #[case::deeply_nested(
         vec![
-            RuntimeValue::Array(vec![
-                RuntimeValue::Array(vec![RuntimeValue::Number(1.into())]),
+            RuntimeValue::Array(crate::Shared::new(vec![
+                RuntimeValue::Array(crate::Shared::new(vec![RuntimeValue::Number(1.into())])),
                 RuntimeValue::Number(2.into()),
-            ]),
+            ])),
         ],
         vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]
     )]
@@ -1027,9 +1033,9 @@ mod tests {
     #[test]
     fn test_flatten_with_empty_nested() {
         let input = vec![
-            RuntimeValue::Array(vec![]),
+            RuntimeValue::Array(crate::Shared::new(vec![])),
             RuntimeValue::Number(1.into()),
-            RuntimeValue::Array(vec![]),
+            RuntimeValue::Array(crate::Shared::new(vec![])),
         ];
         let result = flatten(input);
         assert_eq!(result, vec![RuntimeValue::Number(1.into())]);
