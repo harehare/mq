@@ -87,7 +87,8 @@ mq '.h | to_text' file.md                 # Headings as plain text
 mq -U '.code.lang |= "rust"' file.md        # Update in place
 
 # Multi-file
-mq -A 'pluck(.code.value)' *.md             # Collect all code values
+mq -A 'pluck(.code.value)' *.md             # Collect code values, per file
+mq --eval-all -A '.h | to_text' *.md        # Combine all files into one query (e.g. cross-file TOC)
 mq -S 's"\n---\n"' 'identity' *.md       # Merge with separator
 
 # mq accepts multiple file args directly (shell glob expansion) —
@@ -129,6 +130,7 @@ A small, stable cheat sheet — not exhaustive. See below for everything else.
 | `-U, --update`          | Update file in place           |
 | `-S, --separator`       | Insert separator between files |
 | `--stream`              | Process line by line           |
+| `--eval-all`            | Evaluate once against all files combined |
 | `mq repl`               | Interactive REPL session       |
 
 For the full CLI option list (all flags, possible format values, auto-parsing by file extension, `ARGS` handling), run `mq --help`.

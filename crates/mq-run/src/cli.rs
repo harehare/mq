@@ -324,6 +324,15 @@ struct InputArgs {
     #[arg(long, default_value_t = false)]
     stream: bool,
 
+    /// Evaluate the query once against all input files combined (like yq's `eval-all`),
+    /// instead of once per file. Enables cross-file aggregation in a single query.
+    #[arg(
+        long = "eval-all",
+        default_value_t = false,
+        conflicts_with_all = ["update", "count", "stream", "separator"]
+    )]
+    eval_all: bool,
+
     /// Allow HTTP imports from additional domain(s) beyond the default.
     /// By default only `raw.githubusercontent.com/harehare` is permitted.
     /// Use `github.com/{user}/{repo}` to allow a specific repository (expanded automatically),
@@ -1142,6 +1151,10 @@ impl Cli {
             return self.process_batch_count(&query, &files);
         }
 
+        if self.input.eval_all {
+            return self.execute_eval_all(&query, &files);
+        }
+
         if files.len() > self.parallel_threshold {
             files.par_iter().try_for_each(|(file, content)| {
                 let mut engine = self.create_engine()?;
@@ -1165,6 +1178,32 @@ impl Cli {
         }
 
         Ok(())
+    }
+
+    /// `__FILE__`-family vars aren't set here: no single file is "current" once combined.
+    fn execute_eval_all(&self, query: &str, files: &[(Option<PathBuf>, ContentData)]) -> miette::Result<()> {
+        if !self.all_files_same_prefix(files) {
+            return Err(miette!(
+                "--eval-all requires all input files to use the same input format"
+            ));
+        }
+
+        let effective_query = self.effective_query(query, files.first().map(|(f, _)| f).unwrap_or(&None));
+        let mut engine = self.create_engine()?;
+
+        let mut combined_input = Vec::new();
+        for (file, content) in files {
+            combined_input.extend(self.resolve_input(file, content)?);
+        }
+
+        let is_grep = matches!(self.output.output_format, OutputFormat::Grep);
+        let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| combined_input.clone());
+
+        let runtime_values = engine
+            .eval(&effective_query, combined_input.into_iter())
+            .map_err(|e| *e)?;
+
+        self.emit_results(runtime_values, grep_input, &None)
     }
 
     fn execute_compiled(
@@ -2690,6 +2729,87 @@ mod tests {
         assert!(cli.run().is_ok());
         let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
         assert!(!output_content.is_empty(), "Aggregated output should not be empty");
+    }
+
+    #[test]
+    fn test_eval_all_combines_nodes_across_files() {
+        let (_, temp_file1) = create_file("test_eval_all1.md", "# File One\n\n## Sub A");
+        let (_, temp_file2) = create_file("test_eval_all2.md", "# File Two\n\n## Sub B");
+        let (_, output_file) = create_file("test_eval_all_output.md", "");
+        let temp_file1_clone = temp_file1.clone();
+        let temp_file2_clone = temp_file2.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file1_clone.exists() {
+                std::fs::remove_file(&temp_file1_clone).ok();
+            }
+            if temp_file2_clone.exists() {
+                std::fs::remove_file(&temp_file2_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        // -A alone aggregates per file (2 separate counts); --eval-all -A must combine
+        // both files into a single collection before "nodes" runs, giving one total.
+        let cli = Cli {
+            input: InputArgs {
+                aggregate: true,
+                eval_all: true,
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                output_format: OutputFormat::Text,
+                ..Default::default()
+            },
+            commands: None,
+            query: Some(".h | len".to_string()),
+            files: Some(vec![temp_file1, temp_file2]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert_eq!(
+            output_content.trim(),
+            "4",
+            "should count headings across both files as one"
+        );
+    }
+
+    #[test]
+    fn test_eval_all_rejects_mixed_input_formats() {
+        let (_, temp_md) = create_file("test_eval_all_mixed.md", "# Test");
+        let (_, temp_json) = create_file("test_eval_all_mixed.json", r#"{"a":1}"#);
+        let temp_md_clone = temp_md.clone();
+        let temp_json_clone = temp_json.clone();
+
+        defer! {
+            if temp_md_clone.exists() {
+                std::fs::remove_file(&temp_md_clone).ok();
+            }
+            if temp_json_clone.exists() {
+                std::fs::remove_file(&temp_json_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                eval_all: true,
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_md, temp_json]),
+            ..Cli::default()
+        };
+
+        let err = cli.run().unwrap_err();
+        assert!(err.to_string().contains("--eval-all requires"));
     }
 
     #[test]

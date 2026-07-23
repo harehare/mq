@@ -213,6 +213,8 @@ Options:
           Sets a named argument from a JSON file. NAME is bound to an array of every JSON value found in FILE (jq --slurpfile compatible), so a file containing a single JSON value becomes a one-element array
       --stream
           Enable streaming mode for processing large files line by line
+      --eval-all
+          Evaluate the query once against all input files combined (like yq's `eval-all`), instead of once per file. Enables cross-file aggregation in a single query
       --allowed-domain <ALLOWED_DOMAINS>
           Allow HTTP imports from additional domain(s) beyond the default. By default only `raw.githubusercontent.com/harehare` is permitted. Use `github.com/{user}/{repo}` to allow a specific repository (expanded automatically), or a plain domain like `example.com` to allow any path under that host. Repeat to allow multiple extra domains
       --refresh-modules
