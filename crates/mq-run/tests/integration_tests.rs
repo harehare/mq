@@ -1165,6 +1165,60 @@ fn test_count_update_error() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[test]
+fn test_eval_all_aggregates_across_files() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file1) = create_file("test_eval_all_int1.md", "# File One\n\n## Sub A\n");
+    let (_, temp_file2) = create_file("test_eval_all_int2.md", "# File Two\n\n## Sub B\n");
+    let temp_file1_clone = temp_file1.clone();
+    let temp_file2_clone = temp_file2.clone();
+
+    defer! {
+        if temp_file1_clone.exists() {
+            std::fs::remove_file(&temp_file1_clone).ok();
+        }
+        if temp_file2_clone.exists() {
+            std::fs::remove_file(&temp_file2_clone).ok();
+        }
+    }
+
+    // Without --eval-all, aggregation with -A happens per file: two separate counts.
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-A")
+        .arg(".h | len")
+        .arg(temp_file1.to_string_lossy().to_string())
+        .arg(temp_file2.to_string_lossy().to_string())
+        .assert();
+    assert.success().stdout("2\n2\n");
+
+    // With --eval-all, both files' nodes are combined before -A's "nodes" runs.
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("--eval-all")
+        .arg("-A")
+        .arg(".h | len")
+        .arg(temp_file1.to_string_lossy().to_string())
+        .arg(temp_file2.to_string_lossy().to_string())
+        .assert();
+    assert.success().stdout("4\n");
+
+    Ok(())
+}
+
+#[test]
+fn test_eval_all_conflicts_with_update() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--eval-all")
+        .arg("--update")
+        .arg("self")
+        .write_stdin("# title\n")
+        .assert()
+        .failure();
+    Ok(())
+}
+
 #[rstest]
 #[case::bash("bash", "_mq()")]
 #[case::elvish("elvish", "edit:completion:arg-completer[mq]")]
