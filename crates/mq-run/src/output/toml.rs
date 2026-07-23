@@ -7,6 +7,8 @@
 //! a dict (JSON object); anything else is a descriptive error rather than a panic.
 
 use miette::miette;
+#[cfg(test)]
+use mq_lang::Shared;
 
 /// Converts a list of [`mq_lang::RuntimeValue`]s into a TOML string.
 pub(crate) fn runtime_values_to_toml(runtime_values: &[mq_lang::RuntimeValue]) -> miette::Result<String> {
@@ -31,7 +33,7 @@ mod tests {
     fn test_dict_value() {
         let mut map = std::collections::BTreeMap::new();
         map.insert(mq_lang::Ident::new("name"), RuntimeValue::String("Alice".to_string()));
-        let values = vec![RuntimeValue::Dict(map)];
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_toml(&values).unwrap();
         assert!(result.contains("name = \"Alice\""));
     }
@@ -41,8 +43,8 @@ mod tests {
         let mut inner = std::collections::BTreeMap::new();
         inner.insert(mq_lang::Ident::new("city"), RuntimeValue::String("NYC".to_string()));
         let mut outer = std::collections::BTreeMap::new();
-        outer.insert(mq_lang::Ident::new("address"), RuntimeValue::Dict(inner));
-        let values = vec![RuntimeValue::Dict(outer)];
+        outer.insert(mq_lang::Ident::new("address"), RuntimeValue::Dict(Shared::new(inner)));
+        let values = vec![RuntimeValue::Dict(Shared::new(outer))];
         let result = runtime_values_to_toml(&values).unwrap();
         assert!(result.contains("[address]"));
         assert!(result.contains("city = \"NYC\""));
@@ -57,7 +59,9 @@ mod tests {
 
     #[test]
     fn test_array_top_level_errors() {
-        let values = vec![RuntimeValue::Array(vec![RuntimeValue::String("a".to_string())])];
+        let values = vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(
+            "a".to_string(),
+        )]))];
         let result = runtime_values_to_toml(&values);
         assert!(result.is_err());
     }

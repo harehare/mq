@@ -8,6 +8,8 @@
 //! arrays becoming repeated `<item>` elements.
 
 use miette::miette;
+#[cfg(test)]
+use mq_lang::Shared;
 use mq_lang::{Ident, RuntimeValue};
 use quick_xml::Writer;
 use quick_xml::escape::escape;
@@ -32,7 +34,7 @@ fn write_element(writer: &mut Writer<&mut Vec<u8>>, map: &BTreeMap<Ident, Runtim
 
     let mut start = BytesStart::new(tag.as_str());
     if let Some(RuntimeValue::Dict(attrs)) = map.get(&Ident::new("attributes")) {
-        for (k, v) in attrs {
+        for (k, v) in attrs.iter() {
             start.push_attribute((k.to_string().as_str(), escape(v.to_string()).as_ref()));
         }
     }
@@ -141,11 +143,11 @@ mod tests {
         attrs.insert(Ident::new("id"), RuntimeValue::String("1".to_string()));
         let mut map = BTreeMap::new();
         map.insert(Ident::new("tag"), RuntimeValue::String("root".to_string()));
-        map.insert(Ident::new("attributes"), RuntimeValue::Dict(attrs));
-        map.insert(Ident::new("children"), RuntimeValue::Array(vec![]));
+        map.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
+        map.insert(Ident::new("children"), RuntimeValue::Array(Shared::new(vec![])));
         map.insert(Ident::new("text"), RuntimeValue::String("hello".to_string()));
 
-        let values = vec![RuntimeValue::Dict(map)];
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_xml(&values).unwrap();
         assert!(result.contains("<root id=\"1\">hello</root>"));
     }
@@ -154,7 +156,7 @@ mod tests {
     fn test_generic_dict() {
         let mut map = BTreeMap::new();
         map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
-        let values = vec![RuntimeValue::Dict(map)];
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_xml(&values).unwrap();
         assert!(result.contains("<root>"));
         assert!(result.contains("<name>Alice</name>"));
@@ -162,10 +164,10 @@ mod tests {
 
     #[test]
     fn test_generic_array_becomes_items() {
-        let values = vec![RuntimeValue::Array(vec![
+        let values = vec![RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::String("a".to_string()),
             RuntimeValue::String("b".to_string()),
-        ])];
+        ]))];
         let result = runtime_values_to_xml(&values).unwrap();
         assert!(result.contains("<item>a</item>"));
         assert!(result.contains("<item>b</item>"));
@@ -180,7 +182,7 @@ mod tests {
 
     #[test]
     fn test_empty_dict() {
-        let values = vec![RuntimeValue::Dict(BTreeMap::new())];
+        let values = vec![RuntimeValue::Dict(Shared::new(BTreeMap::new()))];
         let result = runtime_values_to_xml(&values).unwrap();
         assert!(result.contains("<root/>"));
     }

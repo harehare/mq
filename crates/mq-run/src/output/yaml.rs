@@ -4,6 +4,8 @@
 //! [`serde_json::Value`] (see [`crate::json`]) and serializing that with `serde_yaml`.
 
 use miette::miette;
+#[cfg(test)]
+use mq_lang::Shared;
 
 /// Converts a list of [`mq_lang::RuntimeValue`]s into a YAML string.
 pub(crate) fn runtime_values_to_yaml(runtime_values: &[mq_lang::RuntimeValue]) -> miette::Result<String> {
@@ -27,17 +29,17 @@ mod tests {
     fn test_dict_value() {
         let mut map = std::collections::BTreeMap::new();
         map.insert(mq_lang::Ident::new("name"), RuntimeValue::String("Alice".to_string()));
-        let values = vec![RuntimeValue::Dict(map)];
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_yaml(&values).unwrap();
         assert!(result.contains("name: Alice"));
     }
 
     #[test]
     fn test_array_value() {
-        let values = vec![RuntimeValue::Array(vec![
+        let values = vec![RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::String("a".to_string()),
             RuntimeValue::String("b".to_string()),
-        ])];
+        ]))];
         let result = runtime_values_to_yaml(&values).unwrap();
         assert!(result.contains("- a"));
         assert!(result.contains("- b"));

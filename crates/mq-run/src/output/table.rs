@@ -7,6 +7,7 @@
 //! Markdown nodes with children are displayed with a nested children table.
 
 use mq_lang::RuntimeValue;
+use mq_lang::Shared;
 use mq_markdown::ColorTheme;
 use std::collections::{BTreeMap, BTreeSet};
 use tabled::Table;
@@ -90,9 +91,9 @@ pub(crate) fn runtime_values_to_table<'a>(runtime_values: &[RuntimeValue], theme
                     end_map.insert(mq_lang::Ident::new("column"), pos.end.column.to_string().into());
 
                     let mut pos_map = BTreeMap::new();
-                    pos_map.insert(mq_lang::Ident::new("start"), RuntimeValue::Dict(start_map));
-                    pos_map.insert(mq_lang::Ident::new("end"), RuntimeValue::Dict(end_map));
-                    let pos_str = format_cell_value(&RuntimeValue::Dict(pos_map), theme);
+                    pos_map.insert(mq_lang::Ident::new("start"), RuntimeValue::Dict(Shared::new(start_map)));
+                    pos_map.insert(mq_lang::Ident::new("end"), RuntimeValue::Dict(Shared::new(end_map)));
+                    let pos_str = format_cell_value(&RuntimeValue::Dict(Shared::new(pos_map)), theme);
                     rows.push(vec!["position".to_string(), pos_str]);
                 }
                 builder.push_record([build_nested_table(&rows, theme)]);
@@ -212,7 +213,7 @@ fn format_cell_value<'a>(value: &RuntimeValue, theme: Option<&'a ColorTheme<'a>>
             let all_dicts = items.iter().all(|v| matches!(v, RuntimeValue::Dict(_)));
             if all_dicts {
                 let mut header_set: BTreeSet<String> = BTreeSet::new();
-                for item in items {
+                for item in items.iter() {
                     if let RuntimeValue::Dict(map) = item {
                         for key in map.keys() {
                             header_set.insert(key.to_string());
@@ -221,7 +222,7 @@ fn format_cell_value<'a>(value: &RuntimeValue, theme: Option<&'a ColorTheme<'a>>
                 }
                 let headers: Vec<String> = header_set.into_iter().collect();
                 let mut table_rows = vec![headers.clone()];
-                for item in items {
+                for item in items.iter() {
                     if let RuntimeValue::Dict(map) = item {
                         let row: Vec<String> = headers
                             .iter()
@@ -281,7 +282,7 @@ mod tests {
         let mut map = std::collections::BTreeMap::new();
         map.insert(mq_lang::Ident::new("name"), RuntimeValue::String("Alice".to_string()));
         map.insert(mq_lang::Ident::new("age"), RuntimeValue::String("30".to_string()));
-        let values = vec![RuntimeValue::Dict(map)];
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let table = runtime_values_to_table(&values, None);
         let s = table.to_string();
         assert!(s.contains("name") && s.contains("age"));
@@ -295,7 +296,7 @@ mod tests {
             map.insert(mq_lang::Ident::new("key"), RuntimeValue::String(val.to_string()));
             let mut outer = std::collections::BTreeMap::new();
             outer.insert(mq_lang::Ident::new("name"), RuntimeValue::String(name.to_string()));
-            RuntimeValue::Dict(outer)
+            RuntimeValue::Dict(Shared::new(outer))
         };
         let values = vec![make_dict("Alice", "a"), make_dict("Bob", "b")];
         let table = runtime_values_to_table(&values, None);
@@ -308,7 +309,7 @@ mod tests {
         let mut map = std::collections::BTreeMap::new();
         map.insert(mq_lang::Ident::new("x"), RuntimeValue::Boolean(true));
         map.insert(mq_lang::Ident::new("y"), RuntimeValue::Boolean(false));
-        let values = vec![RuntimeValue::Dict(map)];
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let theme = plain();
         let table = runtime_values_to_table(&values, Some(&theme));
         let s = table.to_string();
@@ -321,10 +322,10 @@ mod tests {
         m1.insert(mq_lang::Ident::new("a"), RuntimeValue::String("1".to_string()));
         let mut m2 = std::collections::BTreeMap::new();
         m2.insert(mq_lang::Ident::new("a"), RuntimeValue::String("2".to_string()));
-        let values = vec![RuntimeValue::Array(vec![
-            RuntimeValue::Dict(m1),
-            RuntimeValue::Dict(m2),
-        ])];
+        let values = vec![RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Dict(Shared::new(m1)),
+            RuntimeValue::Dict(Shared::new(m2)),
+        ]))];
         let table = runtime_values_to_table(&values, None);
         let s = table.to_string();
         assert!(s.contains('1') && s.contains('2'));
@@ -332,10 +333,10 @@ mod tests {
 
     #[test]
     fn test_table_array_of_non_dicts() {
-        let values = vec![RuntimeValue::Array(vec![
+        let values = vec![RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::String("x".to_string()),
             RuntimeValue::String("y".to_string()),
-        ])];
+        ]))];
         let table = runtime_values_to_table(&values, None);
         let s = table.to_string();
         assert!(s.contains('x') && s.contains('y'));
@@ -346,8 +347,8 @@ mod tests {
         let mut inner = std::collections::BTreeMap::new();
         inner.insert(mq_lang::Ident::new("sub"), RuntimeValue::String("val".to_string()));
         let mut outer = std::collections::BTreeMap::new();
-        outer.insert(mq_lang::Ident::new("nested"), RuntimeValue::Dict(inner));
-        let values = vec![RuntimeValue::Dict(outer)];
+        outer.insert(mq_lang::Ident::new("nested"), RuntimeValue::Dict(Shared::new(inner)));
+        let values = vec![RuntimeValue::Dict(Shared::new(outer))];
         let table = runtime_values_to_table(&values, None);
         let s = table.to_string();
         assert!(s.contains("sub") && s.contains("val"));
@@ -367,8 +368,8 @@ mod tests {
     #[test]
     fn test_table_empty_array_in_cell() {
         let mut map = std::collections::BTreeMap::new();
-        map.insert(mq_lang::Ident::new("arr"), RuntimeValue::Array(vec![]));
-        let values = vec![RuntimeValue::Dict(map)];
+        map.insert(mq_lang::Ident::new("arr"), RuntimeValue::Array(Shared::new(vec![])));
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let table = runtime_values_to_table(&values, None);
         assert!(!table.to_string().is_empty());
     }
@@ -454,9 +455,12 @@ mod tests {
         let mut outer = std::collections::BTreeMap::new();
         outer.insert(
             mq_lang::Ident::new("items"),
-            RuntimeValue::Array(vec![RuntimeValue::Dict(inner1), RuntimeValue::Dict(inner2)]),
+            RuntimeValue::Array(Shared::new(vec![
+                RuntimeValue::Dict(Shared::new(inner1)),
+                RuntimeValue::Dict(Shared::new(inner2)),
+            ])),
         );
-        let values = vec![RuntimeValue::Dict(outer)];
+        let values = vec![RuntimeValue::Dict(Shared::new(outer))];
         let table = runtime_values_to_table(&values, None);
         let s = table.to_string();
         assert!(s.contains("v1") || s.contains("v2") || s.contains("items"));
@@ -470,7 +474,7 @@ mod tests {
         });
         let mut map = std::collections::BTreeMap::new();
         map.insert(mq_lang::Ident::new("md"), RuntimeValue::Markdown(Box::new(node), None));
-        let values = vec![RuntimeValue::Dict(map)];
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let table = runtime_values_to_table(&values, None);
         let s = table.to_string();
         assert!(s.contains("node_value") || s.contains("md"));
@@ -479,7 +483,7 @@ mod tests {
     #[test]
     fn test_table_empty_dict() {
         let map = std::collections::BTreeMap::new();
-        let values = vec![RuntimeValue::Dict(map)];
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let table = runtime_values_to_table(&values, None);
         assert!(!table.to_string().is_empty());
     }
@@ -492,7 +496,7 @@ mod tests {
         let mut m2 = std::collections::BTreeMap::new();
         m2.insert(mq_lang::Ident::new("a"), RuntimeValue::String("3".to_string()));
         // m2 is missing key "b" — format_cell_value should return ""
-        let values = vec![RuntimeValue::Dict(m1), RuntimeValue::Dict(m2)];
+        let values = vec![RuntimeValue::Dict(Shared::new(m1)), RuntimeValue::Dict(Shared::new(m2))];
         let table = runtime_values_to_table(&values, None);
         let s = table.to_string();
         assert!(s.contains('1') && s.contains('3'));

@@ -4,6 +4,8 @@
 //! Supports optional ANSI color output using the [`mq_markdown::ColorTheme`].
 
 use miette::miette;
+#[cfg(test)]
+use mq_lang::Shared;
 use mq_markdown::ColorTheme;
 
 fn json_quote(s: &str) -> String {
@@ -179,7 +181,7 @@ mod tests {
     #[test]
     fn test_colorize_array_empty() {
         let theme = plain_theme();
-        let values = vec![RuntimeValue::Array(vec![])];
+        let values = vec![RuntimeValue::Array(Shared::new(vec![]))];
         let result = runtime_values_to_json(&values, Some(&theme)).unwrap();
         assert_eq!(result, "[]");
     }
@@ -187,10 +189,10 @@ mod tests {
     #[test]
     fn test_colorize_array_non_empty() {
         let theme = plain_theme();
-        let values = vec![RuntimeValue::Array(vec![
+        let values = vec![RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::String("x".to_string()),
             RuntimeValue::String("y".to_string()),
-        ])];
+        ]))];
         let result = runtime_values_to_json(&values, Some(&theme)).unwrap();
         assert!(result.contains('[') && result.contains(']'));
         assert!(result.contains("\"x\"") && result.contains("\"y\""));
@@ -199,7 +201,7 @@ mod tests {
     #[test]
     fn test_colorize_object_empty() {
         let theme = plain_theme();
-        let values = vec![RuntimeValue::Dict(std::collections::BTreeMap::new())];
+        let values = vec![RuntimeValue::Dict(Shared::new(std::collections::BTreeMap::new()))];
         let result = runtime_values_to_json(&values, Some(&theme)).unwrap();
         assert_eq!(result, "{}");
     }
@@ -209,7 +211,7 @@ mod tests {
         let theme = plain_theme();
         let mut map = std::collections::BTreeMap::new();
         map.insert(mq_lang::Ident::new("key"), RuntimeValue::String("val".to_string()));
-        let values = vec![RuntimeValue::Dict(map)];
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_json(&values, Some(&theme)).unwrap();
         assert!(result.contains("key") && result.contains("val"));
     }
