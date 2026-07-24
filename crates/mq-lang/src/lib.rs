@@ -47,6 +47,7 @@ mod engine;
 mod error;
 mod eval;
 mod ident;
+mod io;
 mod lexer;
 mod macro_expand;
 mod module;
@@ -85,6 +86,7 @@ pub use eval::builtin::{
 };
 pub use eval::runtime_value::{RuntimeValue, RuntimeValues};
 pub use ident::Ident;
+pub use io::{Io, IoError, NativeIo, SandboxedIo};
 pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
 #[cfg(feature = "http-import")]

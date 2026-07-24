@@ -1,5 +1,6 @@
-use crate::{ModuleError, ModuleResolver};
-use std::{borrow::Cow, fs, path::PathBuf};
+use crate::io::{Io, NativeIo};
+use crate::{ModuleError, ModuleResolver, Shared};
+use std::{borrow::Cow, path::PathBuf};
 
 pub(crate) const DEFAULT_PATHS: [&str; 5] = [
     "$HOME/.mq",
@@ -10,19 +11,31 @@ pub(crate) const DEFAULT_PATHS: [&str; 5] = [
 ];
 
 /// Resolves mq modules from the local filesystem, searching a configurable list of directories.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct LocalFsModuleResolver {
     pub(crate) paths: Option<Vec<PathBuf>>,
+    io: Shared<dyn Io>,
+}
+
+impl Default for LocalFsModuleResolver {
+    fn default() -> Self {
+        Self {
+            paths: None,
+            io: Shared::new(NativeIo::default()),
+        }
+    }
 }
 
 impl ModuleResolver for LocalFsModuleResolver {
     fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
-        let file_path = Self::search(module_name, &self.paths)?;
-        fs::read_to_string(&file_path).map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))
+        let file_path = self.search(module_name)?;
+        self.io
+            .read_to_string(&file_path)
+            .map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))
     }
 
     fn get_path(&self, module_name: &str) -> Result<String, ModuleError> {
-        let file_path = Self::search(module_name, &self.paths)?;
+        let file_path = self.search(module_name)?;
         Ok(file_path.to_str().unwrap_or_default().to_string())
     }
 
@@ -38,24 +51,35 @@ impl ModuleResolver for LocalFsModuleResolver {
 }
 
 impl LocalFsModuleResolver {
-    /// Creates a new resolver.  `None` falls back to the default search paths.
+    /// Creates a new resolver backed by [`NativeIo`]. `None` falls back to the default search paths.
     pub fn new(paths: Option<Vec<PathBuf>>) -> Self {
-        Self { paths }
+        Self {
+            paths,
+            ..Self::default()
+        }
+    }
+
+    /// Creates a new resolver backed by the given [`Io`]. `None` falls back to the default
+    /// search paths.
+    pub(crate) fn with_io(io: Shared<dyn Io>, paths: Option<Vec<PathBuf>>) -> Self {
+        Self { paths, io }
     }
 
     fn module_file_name(name: &str) -> String {
         format!("{}.mq", name)
     }
 
-    fn search(name: &str, search_paths: &Option<Vec<PathBuf>>) -> Result<PathBuf, ModuleError> {
-        let home = dirs::home_dir()
+    fn search(&self, name: &str) -> Result<PathBuf, ModuleError> {
+        let home = self
+            .io
+            .home_dir()
             .map(|p| p.to_str().unwrap_or("").to_string())
             .ok_or(ModuleError::IOError(Cow::Borrowed(
                 "Could not determine home directory",
             )))?;
-        let origin = std::env::current_dir().ok();
+        let origin = self.io.current_dir();
 
-        search_paths
+        self.paths
             .as_ref()
             .map(|p| {
                 p.iter()
@@ -75,7 +99,7 @@ impl LocalFsModuleResolver {
 
                 PathBuf::from(path).join(Self::module_file_name(name))
             })
-            .find(|p| p.is_file())
+            .find(|p| self.io.exists(p).unwrap_or(false))
             .ok_or_else(|| ModuleError::NotFound(Cow::Owned(Self::module_file_name(name))))
     }
 }
@@ -174,5 +198,33 @@ mod tests {
         let resolver = LocalFsModuleResolver::new(Some(vec![dir1.path().to_path_buf(), dir2.path().to_path_buf()]));
         assert_eq!(resolver.resolve(name).unwrap(), "content from dir1");
         assert_eq!(resolver.resolve(other).unwrap(), "content from dir2 only");
+    }
+
+    #[test]
+    fn test_with_io_denies_reads_when_sandboxed() {
+        use crate::io::SandboxedIo;
+
+        let dir = TempDir::new().unwrap();
+        write_module(&dir, "mymod", "def foo(): 1;");
+
+        let resolver = LocalFsModuleResolver::with_io(
+            Shared::new(SandboxedIo::new(NativeIo::default())),
+            Some(vec![dir.path().to_path_buf()]),
+        );
+        assert!(matches!(resolver.resolve("mymod"), Err(ModuleError::NotFound(_))));
+    }
+
+    #[test]
+    fn test_with_io_allows_reads_when_granted() {
+        use crate::io::SandboxedIo;
+
+        let dir = TempDir::new().unwrap();
+        write_module(&dir, "mymod", "def foo(): 1;");
+
+        let resolver = LocalFsModuleResolver::with_io(
+            Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)),
+            Some(vec![dir.path().to_path_buf()]),
+        );
+        assert_eq!(resolver.resolve("mymod").unwrap(), "def foo(): 1;");
     }
 }

@@ -1,11 +1,11 @@
 pub(super) mod bytes;
-pub(crate) mod capability;
 pub(super) mod convert;
 #[cfg(feature = "css-selector")]
 mod css;
 pub(super) mod date;
 #[cfg(feature = "http")]
 mod http;
+pub(crate) mod io_context;
 pub(super) mod path;
 mod random;
 mod range;
@@ -18,6 +18,8 @@ use crate::error::runtime::RuntimeError;
 use crate::eval::builtin::convert::Convert;
 use crate::eval::env::{self, Env};
 use crate::ident::all_symbols;
+#[cfg(feature = "file-io")]
+use crate::io::Io;
 use crate::number::{self};
 use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
@@ -3984,61 +3986,65 @@ fn glob_match_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
     }
 }
 
-/// Reads the contents of `path` as a string. Requires the `--allow-read` CLI flag (see
-/// [`capability`]).
+/// Reads the contents of `path` as a string. Requires the ambient [`Io`]'s read
+/// permission (see [`io_context`]).
 #[cfg(feature = "file-io")]
-#[mq_macros::mq_fn(name = "read_file", params = Fixed(1), capability = "read")]
+#[mq_macros::mq_fn(name = "read_file", params = Fixed(1))]
 fn read_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(path)] => match std::fs::read_to_string(&path) {
-            Ok(content) => Ok(RuntimeValue::String(content)),
-            Err(e) => Err(Error::Runtime(format!("Failed to read file {}: {}", path, e))),
-        },
+        [RuntimeValue::String(path)] => io_context::current()
+            .read_to_string(std::path::Path::new(path.as_str()))
+            .map(RuntimeValue::String)
+            .map_err(|e| Error::Runtime(format!("Failed to read file {}: {}", path, e))),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("read_file should always receive exactly one argument"),
     }
 }
 
-/// Checks whether `path` exists on the filesystem. Requires the `--allow-read` CLI flag (see
-/// [`capability`]).
+/// Checks whether `path` exists on the filesystem. Requires the ambient [`Io`]'s read
+/// permission (see [`io_context`]).
 #[cfg(feature = "file-io")]
-#[mq_macros::mq_fn(name = "file_exists", params = Fixed(1), capability = "read")]
+#[mq_macros::mq_fn(name = "file_exists", params = Fixed(1))]
 fn file_exists_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(path)] => Ok(std::path::Path::new(path).exists().into()),
+        [RuntimeValue::String(path)] => io_context::current()
+            .exists(std::path::Path::new(path.as_str()))
+            .map(RuntimeValue::Boolean)
+            .map_err(|e| Error::Runtime(format!("Failed to check {}: {}", path, e))),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("file_exists should always receive exactly one argument"),
     }
 }
 
-/// Reads the contents of `path` as raw bytes. Requires the `--allow-read` CLI flag (see
-/// [`capability`]).
+/// Reads the contents of `path` as raw bytes. Requires the ambient [`Io`]'s read
+/// permission (see [`io_context`]).
 #[cfg(feature = "file-io")]
-#[mq_macros::mq_fn(name = "read_file_bytes", params = Fixed(1), capability = "read")]
+#[mq_macros::mq_fn(name = "read_file_bytes", params = Fixed(1))]
 fn read_file_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(path)] => match std::fs::read(&path) {
-            Ok(content) => Ok(RuntimeValue::Bytes(content)),
-            Err(e) => Err(Error::Runtime(format!("Failed to read file {}: {}", path, e))),
-        },
+        [RuntimeValue::String(path)] => io_context::current()
+            .read_bytes(std::path::Path::new(path.as_str()))
+            .map(RuntimeValue::Bytes)
+            .map_err(|e| Error::Runtime(format!("Failed to read file {}: {}", path, e))),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("read_file_bytes should always receive exactly one argument"),
     }
 }
 
 /// Writes `content` (string or bytes) to `path`, creating or truncating the file.
-/// Requires the `--allow-write` CLI flag (see [`capability`]).
+/// Requires the ambient [`Io`]'s write permission (see [`io_context`]).
 #[cfg(feature = "file-io")]
-#[mq_macros::mq_fn(name = "write_file", params = Fixed(2), capability = "write")]
+#[mq_macros::mq_fn(name = "write_file", params = Fixed(2))]
 fn write_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    fn write(path: &str, content: impl AsRef<[u8]>) -> Result<RuntimeValue, Error> {
-        std::fs::write(path, content)
+    fn write(path: &str, content: &[u8]) -> Result<RuntimeValue, Error> {
+        io_context::current()
+            .write(std::path::Path::new(path), content)
             .map(|()| RuntimeValue::NONE)
             .map_err(|e| Error::Runtime(format!("Failed to write file {}: {}", path, e)))
     }
 
     match args.as_mut_slice() {
-        [RuntimeValue::String(path), RuntimeValue::String(content)] => write(path, content.as_str()),
+        [RuntimeValue::String(path), RuntimeValue::String(content)] => write(path, content.as_bytes()),
         [RuntimeValue::String(path), RuntimeValue::Bytes(content)] => write(path, content),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -4051,9 +4057,9 @@ fn write_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
 /// Performs an HTTPS request with the given method (`"get"`/`:get`, `"post"`/`:post`, etc.) and
 /// returns the response body as a string. `body`, when given, is sent regardless of method.
 /// `headers`, a dict of string to string, is applied to the request when given.
-/// Requires the `--allow-net` CLI flag (see [`capability`]).
+/// Requires the ambient [`Io`]'s net permission (see [`io_context`]).
 #[cfg(feature = "http")]
-#[mq_macros::mq_fn(name = "http", params = Range(2, 4), capability = "net")]
+#[mq_macros::mq_fn(name = "http", params = Range(2, 4))]
 fn http_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [
@@ -4191,25 +4197,25 @@ fn collection_record(path: String, raw: &str) -> Result<RuntimeValue, Error> {
 
 #[cfg(feature = "file-io")]
 fn collect_markdown_files(
+    io: &dyn Io,
     dir: &std::path::Path,
     ancestors: &mut std::collections::HashSet<std::path::PathBuf>,
 ) -> Result<Vec<std::path::PathBuf>, Error> {
-    let canonical = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    let canonical = io.canonicalize(dir);
     if !ancestors.insert(canonical.clone()) {
         return Ok(Vec::new());
     }
 
-    let entries = std::fs::read_dir(dir)
+    let entries = io
+        .read_dir(dir)
         .map_err(|e| Error::Runtime(format!("Failed to read directory {}: {}", dir.display(), e)))?;
 
     let mut paths = Vec::new();
 
-    for entry in entries.filter_map(|entry| entry.ok()) {
-        let path = entry.path();
-
-        if path.is_dir() {
-            paths.extend(collect_markdown_files(&path, ancestors)?);
-        } else if path.is_file()
+    for (path, is_dir) in entries {
+        if is_dir {
+            paths.extend(collect_markdown_files(io, &path, ancestors)?);
+        } else if io.exists(&path).unwrap_or(false)
             && path
                 .extension()
                 .and_then(|ext| ext.to_str())
@@ -4223,21 +4229,23 @@ fn collect_markdown_files(
     Ok(paths)
 }
 
-/// Recursively reads every Markdown file under `dir`. Requires the `--allow-read` CLI flag (see
-/// [`capability`]).
+/// Recursively reads every Markdown file under `dir`. Requires the ambient [`Io`]'s read
+/// permission (see [`io_context`]).
 #[cfg(feature = "file-io")]
-#[mq_macros::mq_fn(name = "collection", params = Fixed(1), capability = "read")]
+#[mq_macros::mq_fn(name = "collection", params = Fixed(1))]
 fn collection_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(dir)] => {
+            let io = io_context::current();
             let mut ancestors = std::collections::HashSet::new();
-            let mut paths = collect_markdown_files(std::path::Path::new(dir.as_str()), &mut ancestors)?;
+            let mut paths = collect_markdown_files(io.as_ref(), std::path::Path::new(dir.as_str()), &mut ancestors)?;
             paths.sort();
 
             let records = paths
                 .into_iter()
                 .map(|path| {
-                    let raw = std::fs::read_to_string(&path)
+                    let raw = io
+                        .read_to_string(&path)
                         .map_err(|e| Error::Runtime(format!("Failed to read file {}: {}", path.display(), e)))?;
                     collection_record(path.to_string_lossy().into_owned(), &raw)
                 })
@@ -6896,6 +6904,9 @@ mod tests {
 
     use mq_markdown::Node;
     use rstest::rstest;
+
+    #[cfg(feature = "file-io")]
+    use crate::io::{NativeIo, SandboxedIo};
 
     use super::*;
 
@@ -10099,11 +10110,6 @@ mod tests {
         }
     }
 
-    // READ_ALLOWED is a single process-wide flag shared by read_file, read_file_bytes,
-    // file_exists, and collection, so every case that toggles it must run in one #[test]
-    // function — cargo test
-    // runs tests in parallel by default, and two tests flipping the same global independently
-    // would race and flake.
     #[cfg(feature = "file-io")]
     #[test]
     fn test_read_capability_gate_and_success() {
@@ -10129,14 +10135,14 @@ mod tests {
         let collection_dir = tempfile::tempdir().expect("failed to create temp dir");
         std::fs::write(collection_dir.path().join("root.md"), "# Root\n").expect("failed to write");
 
-        capability::set_allow_read(false);
+        // No ambient Io guard installed yet: the default is all-denied.
         assert!(
             call("read_file", vec![RuntimeValue::String(text_path.clone())]).is_err(),
-            "read_file should be blocked when --allow-read is not set"
+            "read_file should be blocked when read access is not allowed"
         );
         assert!(
             call("read_file_bytes", vec![RuntimeValue::String(bytes_path.clone())]).is_err(),
-            "read_file_bytes should be blocked when --allow-read is not set"
+            "read_file_bytes should be blocked when read access is not allowed"
         );
         assert!(
             call(
@@ -10146,14 +10152,14 @@ mod tests {
                 )],
             )
             .is_err(),
-            "collection should be blocked when --allow-read is not set"
+            "collection should be blocked when read access is not allowed"
         );
         assert!(
             call("file_exists", vec![RuntimeValue::String(text_path.clone())]).is_err(),
-            "file_exists should be blocked when --allow-read is not set"
+            "file_exists should be blocked when read access is not allowed"
         );
 
-        capability::set_allow_read(true);
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
         assert_eq!(
             call("read_file", vec![RuntimeValue::String(text_path.clone())]),
             Ok(RuntimeValue::String("hello".to_string()))
@@ -10405,17 +10411,11 @@ mod tests {
 
         // Errors for an invalid argument type.
         assert!(call("collection", vec![RuntimeValue::Number(42.into())]).is_err());
-
-        capability::set_allow_read(false);
     }
 
-    // WRITE_ALLOWED is a single process-wide flag, so every case that toggles it must run in
-    // one #[test] function — cargo test runs tests in parallel by default, and two tests
-    // flipping the same global independently would race and flake.
     #[cfg(feature = "file-io")]
     #[test]
     fn test_write_file_capability_gate_and_success() {
-        capability::set_allow_write(false);
         let tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
         let path = tmp.path().to_string_lossy().to_string();
         assert!(
@@ -10424,10 +10424,10 @@ mod tests {
                 vec![RuntimeValue::String(path.clone()), RuntimeValue::String("hello".into())]
             )
             .is_err(),
-            "write_file should be blocked when --allow-write is not set"
+            "write_file should be blocked when write access is not allowed"
         );
 
-        capability::set_allow_write(true);
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_write(true)));
         assert_eq!(
             call(
                 "write_file",
@@ -10457,7 +10457,5 @@ mod tests {
             result.is_err(),
             "write_file should error when the parent directory doesn't exist"
         );
-
-        capability::set_allow_write(false);
     }
 }
