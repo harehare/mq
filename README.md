@@ -61,17 +61,21 @@ Since LLM inputs are primarily in Markdown format, mq provides efficient tools f
 curl -sSL https://mqlang.org/install.sh | bash
 ```
 
-The installer will:
+Downloads the latest mq binary for your platform, installs it to `~/.local/bin/`, and updates your shell profile to add mq to your PATH.
 
-- Download the latest mq binary for your platform
-- Install it to `~/.local/bin/`
-- Update your shell profile to add mq to your PATH
+### Package Managers
 
-### Cargo
+| Method                 | Command                                     |
+| ---------------------- | ------------------------------------------- |
+| Homebrew (macOS/Linux) | `brew install mq`                           |
+| Arch (yay)             | `yay -S mq-bin`                             |
+| Cargo (crates.io)      | `cargo install mq-run`                      |
+| Docker                 | `docker run --rm ghcr.io/harehare/mq:0.7.0` |
+
+<details>
+<summary>More install options: cargo variants, binstall, pre-built binaries</summary>
 
 ```sh
-# Install from crates.io
-cargo install mq-run
 # Install from Github
 cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.7.0
 # Latest Development Version
@@ -82,82 +86,57 @@ cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --fea
 cargo binstall mq-run@0.7.0
 ```
 
-### Binaries
+Pre-built binaries for macOS, Linux, and Windows are also available on the [GitHub releases page](https://github.com/harehare/mq/releases).
 
-You can download pre-built binaries from the [GitHub releases page](https://github.com/harehare/mq/releases):
+</details>
 
-```sh
-# macOS (Apple Silicon)
-curl -L https://github.com/harehare/mq/releases/download/v0.7.0/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
-# Linux x86_64
-curl -L https://github.com/harehare/mq/releases/download/v0.7.0/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
-# Linux arm64
-curl -L https://github.com/harehare/mq/releases/download/v0.7.0/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
-# Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.7.0/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
-```
+### Editor & CI Integrations
 
-### Homebrew
-
-```sh
-# Using Homebrew (macOS and Linux)
-brew install mq
-```
-
-### Arch
-
-```sh
-# Using yay (ArchLinux)
-yay -S mq-bin
-```
-
-### Docker
-
-```sh
-$ docker run --rm ghcr.io/harehare/mq:0.7.0
-```
-
-### Visual Studio Code Extension
-
-[![Visual Studio Marketplace Version](https://vsmarketplacebadges.dev/version/harehare.vscode-mq.svg?style=flat-square&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq)
-[![Open VSX Version](https://img.shields.io/open-vsx/v/harehare/vscode-mq?style=flat-square&logo=eclipseide)](https://open-vsx.org/extension/harehare/vscode-mq)
-
-You can install the VSCode extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq).
-
-For VS Code compatible editors, it is also available on the [Open VSX Registry](https://open-vsx.org/extension/harehare/vscode-mq).
-
-### Neovim
-
-You can install the Neovim plugin by following the instructions in the [mq.nvim README](https://github.com/harehare/mq/blob/main/editors/neovim/README.md).
-
-### Zed
-
-You can install the Zed extension from the [zed-mq](https://github.com/harehare/mq/blob/main/editors/zed/README.md) repository.
-
-### GitHub Actions
-
-You can use mq in your GitHub Actions workflows with the [Setup mq](https://github.com/marketplace/actions/setup-mq) action:
+| Integration    | Link                                                                                                                                                                                                                                                                                                                                                                                    |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| VS Code        | [![Visual Studio Marketplace Version](https://vsmarketplacebadges.dev/version/harehare.vscode-mq.svg?style=flat-square&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq) [![Open VSX Version](https://img.shields.io/open-vsx/v/harehare/vscode-mq?style=flat-square&logo=eclipseide)](https://open-vsx.org/extension/harehare/vscode-mq) |
+| Neovim         | [![Neovim README](https://img.shields.io/badge/neovim-README-57A143?style=flat-square&logo=neovim&logoColor=white)](https://github.com/harehare/mq/blob/main/editors/neovim/README.md)                                                                                                                                                                                                  |
+| Zed            | [![Zed README](https://img.shields.io/badge/zed-README-084CCF?style=flat-square&logo=zed&logoColor=white)](https://github.com/harehare/mq/blob/main/editors/zed/README.md)                                                                                                                                                                                                              |
+| GitHub Actions | [![Setup mq](https://img.shields.io/badge/marketplace-Setup%20mq-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/setup-mq)                                                                                                                                                                                                         |
 
 ```yaml
 steps:
-  - uses: actions/checkout@v6
+  - uses: actions/checkout@v7
   - uses: harehare/setup-mq@v1
   - run: mq '.code' README.md
 ```
 
-## Web
+## Packages
 
-### Playground
+mq is a Rust + TypeScript monorepo. The core Rust crates:
 
-The [Playground](https://mqlang.org/playground) lets you run mq queries in the browser with no install.
+| Name                                  | Description                                           | Crates.io                                                                                                             |
+| ------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [`mq-run`](crates/mq-run)             | Command-line interface for mq                         | [![Crates.io](https://img.shields.io/crates/v/mq-run?style=flat-square)](https://crates.io/crates/mq-run)             |
+| [`mq-lang`](crates/mq-lang)           | Core language implementation                          | [![Crates.io](https://img.shields.io/crates/v/mq-lang?style=flat-square)](https://crates.io/crates/mq-lang)           |
+| [`mq-markdown`](crates/mq-markdown)   | Markdown parsing and manipulation utilities           | [![Crates.io](https://img.shields.io/crates/v/mq-markdown?style=flat-square)](https://crates.io/crates/mq-markdown)   |
+| [`mq-lsp`](crates/mq-lsp)             | Language Server Protocol implementation               | [![Crates.io](https://img.shields.io/crates/v/mq-lsp?style=flat-square)](https://crates.io/crates/mq-lsp)             |
+| [`mq-repl`](crates/mq-repl)           | Interactive REPL                                      | [![Crates.io](https://img.shields.io/crates/v/mq-repl?style=flat-square)](https://crates.io/crates/mq-repl)           |
+| [`mq-formatter`](crates/mq-formatter) | Code formatter for the mq query language              | [![Crates.io](https://img.shields.io/crates/v/mq-formatter?style=flat-square)](https://crates.io/crates/mq-formatter) |
+| [`mq-lint`](crates/mq-lint)           | Static analysis linter                                | [![Crates.io](https://img.shields.io/crates/v/mq-lint?style=flat-square)](https://crates.io/crates/mq-lint)           |
+| [`mq-check`](crates/mq-check)         | Type checker                                          | [![Crates.io](https://img.shields.io/crates/v/mq-check?style=flat-square)](https://crates.io/crates/mq-check)         |
+| [`mq-hir`](crates/mq-hir)             | High-level Internal Representation (HIR)              | [![Crates.io](https://img.shields.io/crates/v/mq-hir?style=flat-square)](https://crates.io/crates/mq-hir)             |
+| [`mq-dap`](crates/mq-dap)             | Debug Adapter Protocol implementation                 | [![Crates.io](https://img.shields.io/crates/v/mq-dap?style=flat-square)](https://crates.io/crates/mq-dap)             |
+| [`mq-crawler`](crates/mq-crawler)     | Directory crawler for batch Markdown processing       | [![Crates.io](https://img.shields.io/crates/v/mq-crawler?style=flat-square)](https://crates.io/crates/mq-crawler)     |
+| [`mq-web-api`](crates/mq-web-api)     | HTTP/REST server exposing mq queries over the network | [![Crates.io](https://img.shields.io/crates/v/mq-web-api?style=flat-square)](https://crates.io/crates/mq-web-api)     |
+| [`mq-macros`](crates/mq-macros)       | Procedural macros for builtin function registration   | [![Crates.io](https://img.shields.io/crates/v/mq-macros?style=flat-square)](https://crates.io/crates/mq-macros)       |
+| [`mq-test`](crates/mq-test)           | Test runner for mq                                    | [![Crates.io](https://img.shields.io/crates/v/mq-test?style=flat-square)](https://crates.io/crates/mq-test)           |
+| [`mq-ffi`](crates/mq-ffi)             | C API for integrating mq into C applications          | —                                                                                                                     |
+| [`mq-wasm`](crates/mq-wasm)           | WebAssembly bindings                                  | —                                                                                                                     |
 
-### mq-web (npm)
+And the following npm packages:
 
-[mq-web](https://www.npmjs.com/package/mq-web) is the official WebAssembly build for browser.
+| Name                              | Description                                | npm                                                                                                         |
+| --------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| [`mq-web`](packages/mq-web)       | Official WebAssembly build for the browser | [![npm](https://img.shields.io/npm/v/mq-web?style=flat-square)](https://www.npmjs.com/package/mq-web)       |
+| [`mq-nodejs`](packages/mq-nodejs) | Node.js bindings                           | [![npm](https://img.shields.io/npm/v/mq-nodejs?style=flat-square)](https://www.npmjs.com/package/mq-nodejs) |
 
-### mq-web-api
-
-[mq-web-api](https://github.com/harehare/mq/tree/main/crates/mq-web-api) is an HTTP/REST server that exposes mq queries over the network, with a curl-friendly shortcut endpoint, JSON API, OpenAPI spec, and Swagger UI. See the [mq-web-api documentation](https://mqlang.org/book/start/web_api) for endpoints, configuration, and self-hosting instructions.
+See the [mq-web-api documentation](https://mqlang.org/book/start/web_api) for the REST API, and try queries with no install in the [Playground](https://mqlang.org/playground):
 
 ```bash
 curl --data-binary @doc.md https://api.mqlang.org/.h1
@@ -187,8 +166,8 @@ Commands:
   help        Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -A, --aggregate
