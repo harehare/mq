@@ -136,7 +136,12 @@ And the following npm packages:
 | [`mq-web`](packages/mq-web)       | Official WebAssembly build for the browser | [![npm](https://img.shields.io/npm/v/mq-web?style=flat-square)](https://www.npmjs.com/package/mq-web)       |
 | [`mq-nodejs`](packages/mq-nodejs) | Node.js bindings                           | [![npm](https://img.shields.io/npm/v/mq-nodejs?style=flat-square)](https://www.npmjs.com/package/mq-nodejs) |
 
-See the [mq-web-api documentation](https://mqlang.org/book/start/web_api) for the REST API, and try queries with no install in the [Playground](https://mqlang.org/playground):
+mq is also available as a hosted REST API:
+
+| Resource         | Link                                                                    |
+| ---------------- | ------------------------------------------------------------------------ |
+| REST API docs    | [mqlang.org/book/start/web_api](https://mqlang.org/book/start/web_api) |
+| Playground       | [mqlang.org/playground](https://mqlang.org/playground)                 |
 
 ```bash
 curl --data-binary @doc.md https://api.mqlang.org/.h1
