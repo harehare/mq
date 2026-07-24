@@ -70,6 +70,7 @@ sync = []
 http-import = []
 http = ["dep:ureq"]
 http-import-ureq = ["http-import", "http"]
+mock-io = []
 tiktoken = ["dep:tiktoken-rs"]
 
 [dev-dependencies]

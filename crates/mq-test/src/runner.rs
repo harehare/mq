@@ -100,7 +100,10 @@ impl TestRunner {
             }
 
             let query = Self::build_test_query(&content, &tests);
-            let mut engine = mq_lang::DefaultEngine::default();
+            let mut engine = mq_lang::Engine::with_io(
+                mq_lang::DefaultModuleResolver::default(),
+                mq_lang::Shared::new(mq_lang::MemIo::default()),
+            );
             engine.load_builtin_module();
             engine.define_string_value("TEST_FILE", file.to_string_lossy().as_ref());
 
@@ -664,6 +667,60 @@ mod tests {
         assert!(files[0]["file"].as_str().unwrap().ends_with("lib.mq"));
         assert_eq!(files[0]["totalLines"], 2);
         assert_eq!(files[0]["coveredLines"], 1);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_read_file_write_file_use_the_in_memory_mock_not_the_real_disk() {
+        let dir = temp_project_dir("mock_io");
+        let test_file = dir.join("tests.mq");
+        // "/definitely/not/a/real/writable/path.txt" would fail against a real, sandboxed
+        // filesystem `Io` (no such directory, no write permission) — succeeding here proves
+        // `write_file`/`read_file` went through the engine's in-memory mock instead.
+        fs::write(
+            &test_file,
+            concat!(
+                "include \"test\"\n",
+                "|\n",
+                "def test_write_then_read_file():\n",
+                "  write_file(\"/definitely/not/a/real/writable/path.txt\", \"hello-mock\")\n",
+                "  | assert_eq(read_file(\"/definitely/not/a/real/writable/path.txt\"), \"hello-mock\")\n",
+                "end\n",
+            ),
+        )
+        .unwrap();
+
+        TestRunner::new(vec![test_file]).run().unwrap();
+
+        assert!(
+            !Path::new("/definitely/not/a/real/writable/path.txt").exists(),
+            "write_file must not touch the real filesystem"
+        );
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_mock_fetch_lets_a_test_seed_its_own_http_response() {
+        let dir = temp_project_dir("mock_fetch");
+        let test_file = dir.join("tests.mq");
+        // No real network call is made — `mock_fetch` seeds the in-memory mock's response
+        // for the URL, and `http()` reads it back, entirely from within the test function.
+        fs::write(
+            &test_file,
+            concat!(
+                "include \"test\"\n",
+                "|\n",
+                "def test_reads_mocked_api_response():\n",
+                "  mock_fetch(\"https://api.example.com/data\", \"{\\\"ok\\\": true}\")\n",
+                "  | assert_eq(http(\"get\", \"https://api.example.com/data\"), \"{\\\"ok\\\": true}\")\n",
+                "end\n",
+            ),
+        )
+        .unwrap();
+
+        TestRunner::new(vec![test_file]).run().unwrap();
 
         fs::remove_dir_all(&dir).ok();
     }

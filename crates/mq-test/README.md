@@ -164,6 +164,40 @@ Tests use the built-in `assert_eq` and related helpers from the `test` module:
 The runner automatically generates a `run_tests(flatten([...]))` call from all
 discovered test functions — test files do not need to maintain a manual list.
 
+### Mocking File and Network I/O
+
+Each test file runs against an in-memory, hermetic `Io` — no real disk or network access —
+so `read_file`/`write_file`/`http` are always allowed, regardless of the `--allow-read` /
+`--allow-write` / `--allow-net` flags the CLI itself requires.
+
+Files can be seeded from within a test simply by writing them first:
+
+```mq
+include "test"
+|
+
+def test_reads_a_file_it_wrote():
+  write_file("/config.json", "{}")
+  | assert_eq(read_file("/config.json"), "{}")
+end
+```
+
+`mock_fetch(url, body)` seeds the response body a subsequent `http()` call for `url`
+returns, so a test can exercise code that calls `http()` without making a real request:
+
+```mq
+include "test"
+|
+
+def test_reads_a_mocked_api_response():
+  mock_fetch("https://api.example.com/data", "{\"ok\": true}")
+  | assert_eq(http("get", "https://api.example.com/data"), "{\"ok\": true}")
+end
+```
+
+State (files written, mocked responses) does not leak between test files — each gets a
+fresh in-memory `Io`.
+
 ## Example
 
 ```mq

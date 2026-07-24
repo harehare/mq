@@ -4,13 +4,15 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-/// In-memory [`Io`] fake for unit tests that only need to assert *what was
-/// asked for*, not real filesystem/network behavior. Test-only: not exported
-/// from the crate root, not intended for use by embeddings.
+/// In-memory [`Io`] — file writes, environment variables, and fetch/HTTP responses all
+/// live in-process instead of touching the real filesystem/network. Useful both for unit
+/// tests that only need to assert *what was asked for*, and for embeddings (e.g. `mq-test`)
+/// that want a hermetic `Io` a query can read from and, via [`Self::set_fetch_response`],
+/// write to at runtime.
 ///
 /// Uses a `Mutex` unconditionally (rather than switching between `RefCell`
 /// and `RwLock` under the `sync` feature like the rest of this crate) since
-/// it's test-only code where the extra lock overhead is irrelevant and this
+/// the extra lock overhead is irrelevant for an in-memory fake, and this
 /// avoids maintaining two variants.
 #[derive(Debug, Default)]
 pub struct MemIo {
@@ -124,6 +126,14 @@ impl Io for MemIo {
     fn current_dir(&self) -> Option<PathBuf> {
         self.cwd.clone()
     }
+
+    fn set_fetch_response(&self, url: &str, body: &str) -> Result<(), IoError> {
+        self.fetch_responses
+            .lock()
+            .unwrap()
+            .insert(url.to_string(), body.to_string());
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -167,6 +177,21 @@ mod tests {
             io.fetch("https://missing.example.com"),
             Err(IoError::NotFound(_))
         ));
+    }
+
+    #[test]
+    fn test_set_fetch_response_seeds_a_new_url_at_runtime() {
+        let io = MemIo::default();
+        assert!(matches!(io.fetch("https://example.com"), Err(IoError::NotFound(_))));
+        io.set_fetch_response("https://example.com", "body").unwrap();
+        assert_eq!(io.fetch("https://example.com").unwrap(), "body");
+    }
+
+    #[test]
+    fn test_set_fetch_response_overwrites_an_existing_url() {
+        let io = MemIo::default().with_fetch_response("https://example.com", "old");
+        io.set_fetch_response("https://example.com", "new").unwrap();
+        assert_eq!(io.fetch("https://example.com").unwrap(), "new");
     }
 
     #[test]

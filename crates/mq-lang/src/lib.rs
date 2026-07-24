@@ -86,6 +86,8 @@ pub use eval::builtin::{
 };
 pub use eval::runtime_value::{RuntimeValue, RuntimeValues};
 pub use ident::Ident;
+#[cfg(feature = "mock-io")]
+pub use io::MemIo;
 pub use io::{Io, IoError, NativeIo, SandboxedIo};
 pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
