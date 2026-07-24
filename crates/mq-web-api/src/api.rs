@@ -418,9 +418,12 @@ fn type_error_kind(e: &mq_check::TypeError) -> String {
 }
 
 fn execute_query(request: ApiRequest, timeout: std::time::Duration) -> miette::Result<QueryApiResponse> {
-    let sandboxed_io: mq_lang::Shared<dyn mq_lang::Io> =
+    let sandboxed_io: mq_lang::Shared<mq_lang::SandboxedIo<mq_lang::NativeIo>> =
         mq_lang::Shared::new(mq_lang::SandboxedIo::new(mq_lang::NativeIo::default()));
-    let resolver = mq_lang::DefaultModuleResolver::with_io(mq_lang::Shared::clone(&sandboxed_io), vec![]);
+    let resolver = mq_lang::DefaultModuleResolver::with_io(
+        mq_lang::Shared::clone(&sandboxed_io) as mq_lang::Shared<dyn mq_lang::Io>,
+        vec![],
+    );
     let mut engine = mq_lang::Engine::new(resolver);
     engine.set_io(sandboxed_io);
     engine.load_builtin_module();
