@@ -4089,6 +4089,22 @@ fn http_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
     }
 }
 
+#[cfg(all(feature = "http", feature = "mock-io"))]
+#[mq_macros::mq_fn(name = "mock_fetch", params = Fixed(2))]
+fn mock_fetch_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(url), RuntimeValue::String(body)] => io_context::current()
+            .set_fetch_response(url, body)
+            .map(|()| RuntimeValue::NONE)
+            .map_err(|e| Error::Runtime(format!("Failed to mock fetch response for {}: {}", url, e))),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("mock_fetch should always receive exactly two arguments"),
+    }
+}
+
 /// Returns the outer HTML of every element in `html` matching the CSS `selector`, as an array
 /// of strings. Queries the raw HTML string directly, bypassing the Markdown conversion `-I html`
 /// otherwise applies, so tags/classes/ids/`data-*` attributes lost during that conversion are
@@ -4479,6 +4495,8 @@ mq_macros::builtin_dispatch! {
     WRITE_FILE,
     #[cfg(feature = "http")]
     HTTP,
+    #[cfg(all(feature = "http", feature = "mock-io"))]
+    MOCK_FETCH,
     #[cfg(feature = "css-selector")]
     CSS,
     #[cfg(feature = "css-selector")]
@@ -6087,6 +6105,14 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &["method", "url", "body", "headers"],
         },
     );
+    #[cfg(all(feature = "http", feature = "mock-io"))]
+    map.insert(
+        SmolStr::new("mock_fetch"),
+        BuiltinFunctionDoc {
+            description: "Seeds the response body a subsequent http() call for the given url returns, instead of making a real request. Only meaningful against a mock Io (e.g. mq-test's engine); other Io implementations return a runtime error.",
+            params: &["url", "body"],
+        },
+    );
     #[cfg(feature = "css-selector")]
     map.insert(
         SmolStr::new("css"),
@@ -6905,7 +6931,9 @@ mod tests {
     use mq_markdown::Node;
     use rstest::rstest;
 
-    #[cfg(feature = "file-io")]
+    #[cfg(all(feature = "http", feature = "mock-io"))]
+    use crate::io::MemIo;
+    #[cfg(any(feature = "file-io", feature = "http"))]
     use crate::io::{NativeIo, SandboxedIo};
 
     use super::*;
@@ -10456,6 +10484,62 @@ mod tests {
         assert!(
             result.is_err(),
             "write_file should error when the parent directory doesn't exist"
+        );
+    }
+
+    #[cfg(all(feature = "http", feature = "mock-io"))]
+    #[test]
+    fn test_mock_fetch_seeds_a_response_the_http_builtin_then_reads_back() {
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(MemIo::default()).allow_net(true)));
+
+        assert_eq!(
+            call(
+                "mock_fetch",
+                vec![
+                    RuntimeValue::String("https://example.invalid".into()),
+                    RuntimeValue::String("body".into()),
+                ]
+            ),
+            Ok(RuntimeValue::NONE)
+        );
+        assert_eq!(
+            call(
+                "http",
+                vec![
+                    RuntimeValue::Symbol(Ident::new("get")),
+                    RuntimeValue::String("https://example.invalid".into()),
+                ]
+            ),
+            Ok(RuntimeValue::String("body".into()))
+        );
+    }
+
+    #[cfg(all(feature = "http", feature = "mock-io"))]
+    #[test]
+    fn test_mock_fetch_is_refused_by_non_mock_io() {
+        assert!(
+            call(
+                "mock_fetch",
+                vec![
+                    RuntimeValue::String("https://example.invalid".into()),
+                    RuntimeValue::String("body".into()),
+                ]
+            )
+            .is_err(),
+            "mock_fetch should be refused when the ambient Io isn't a mock"
+        );
+
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_net(true)));
+        assert!(
+            call(
+                "mock_fetch",
+                vec![
+                    RuntimeValue::String("https://example.invalid".into()),
+                    RuntimeValue::String("body".into()),
+                ]
+            )
+            .is_err(),
+            "mock_fetch should be refused against a real, network-backed Io"
         );
     }
 }

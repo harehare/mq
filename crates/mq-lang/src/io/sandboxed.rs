@@ -141,6 +141,13 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         }
         self.inner.http_request(method, url, body, headers)
     }
+
+    fn set_fetch_response(&self, url: &str, body: &str) -> Result<(), IoError> {
+        if !self.allow_net {
+            return Err(denied("network access is disabled"));
+        }
+        self.inner.set_fetch_response(url, body)
+    }
 }
 
 #[cfg(test)]

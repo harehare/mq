@@ -14,7 +14,7 @@ version = "0.7.0"
 clap = {workspace = true, features = ["derive"]}
 glob = {workspace = true}
 miette = {workspace = true, features = ["fancy"]}
-mq-lang = {workspace = true, features = ["cst", "debugger", "file-io"]}
+mq-lang = {workspace = true, features = ["cst", "debugger", "file-io", "http", "mock-io"]}
 rustc-hash = {workspace = true}
 serde_json = {workspace = true}
 

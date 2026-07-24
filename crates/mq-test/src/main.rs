@@ -1,9 +1,5 @@
 mod coverage;
 mod highlight;
-// Builder methods (`with_file`, `with_env`, ...) are for library consumers seeding fixtures
-// programmatically; the CLI itself only relies on `MockIo::default()` via `runner`.
-#[allow(dead_code)]
-mod mock_io;
 mod runner;
 
 use clap::Parser;

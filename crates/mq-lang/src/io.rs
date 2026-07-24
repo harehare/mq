@@ -16,17 +16,24 @@
 //! cache/lockfile logic into `NativeIo`, is left for a follow-up.
 
 mod error;
-#[cfg(test)]
+#[cfg(any(test, feature = "mock-io"))]
 mod mem;
 mod native;
 mod sandboxed;
 
 pub use error::IoError;
-#[cfg(test)]
-pub(crate) use mem::MemIo;
 pub use native::NativeIo;
 pub use sandboxed::SandboxedIo;
 
+/// `pub` here (rather than gated by the `mock-io` feature) would still not leak `MemIo`
+/// externally, since the `io` module itself is private to the crate (see `mod io;` in
+/// `lib.rs`) — but it's gated anyway so the "unused" build (neither `test` nor `mock-io`)
+/// doesn't warn. The crate-root re-export in `lib.rs` is what actually governs external
+/// visibility, since [`MemIo`] and the `mock_fetch` builtin are opt-in, testing-focused surface.
+#[cfg(any(test, feature = "mock-io"))]
+pub use mem::MemIo;
+
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 /// Marker supertrait carrying the `Send + Sync` bound for [`Io`] only when the
@@ -86,4 +93,14 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
 
     fn home_dir(&self) -> Option<PathBuf>;
     fn current_dir(&self) -> Option<PathBuf>;
+
+    /// Seeds the response body a subsequent `fetch`/`http_request` call for `url` returns,
+    /// backing the `mock_fetch` builtin. Only meaningful against an `Io` that keeps mock
+    /// state (see [`MemIo`]); the default implementation refuses, since there is no sensible
+    /// way to "seed" a real filesystem/network-backed `Io`.
+    fn set_fetch_response(&self, _url: &str, _body: &str) -> Result<(), IoError> {
+        Err(IoError::Other(Cow::Borrowed(
+            "set_fetch_response is not supported by this Io implementation",
+        )))
+    }
 }
