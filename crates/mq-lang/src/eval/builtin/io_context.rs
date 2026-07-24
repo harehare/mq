@@ -11,34 +11,32 @@ use crate::Shared;
 use crate::io::{Io, NativeIo, SandboxedIo};
 
 thread_local! {
-    static STACK: RefCell<Vec<Shared<dyn Io>>> = const { RefCell::new(Vec::new()) };
+    static CURRENT: RefCell<Option<Shared<dyn Io>>> = const { RefCell::new(None) };
     /// All-denied, so a builtin called outside `Evaluator::eval` (e.g. directly in a unit test)
     /// fails safe rather than silently getting full host access.
     static DEFAULT_IO: Shared<dyn Io> = Shared::new(SandboxedIo::new(NativeIo::default()));
 }
 
 #[must_use]
-pub(crate) struct ScopedIo;
+pub(crate) struct ScopedIo(Option<Shared<dyn Io>>);
 
 impl Drop for ScopedIo {
     fn drop(&mut self) {
-        STACK.with(|stack| {
-            stack.borrow_mut().pop();
-        });
+        CURRENT.with(|current| *current.borrow_mut() = self.0.take());
     }
 }
 
 /// Installs `io` as the ambient instance until the returned guard is dropped, restoring
 /// whatever was active before (supports re-entrant `eval` calls).
 pub(crate) fn scoped(io: Shared<dyn Io>) -> ScopedIo {
-    STACK.with(|stack| stack.borrow_mut().push(io));
-    ScopedIo
+    let previous = CURRENT.with(|current| current.borrow_mut().replace(io));
+    ScopedIo(previous)
 }
 
 #[cfg_attr(not(any(feature = "file-io", feature = "http")), allow(dead_code))]
 pub(crate) fn current() -> Shared<dyn Io> {
-    STACK
-        .with(|stack| stack.borrow().last().cloned())
+    CURRENT
+        .with(|current| current.borrow().clone())
         .unwrap_or_else(|| DEFAULT_IO.with(Shared::clone))
 }
 
