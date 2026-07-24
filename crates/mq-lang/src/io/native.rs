@@ -11,15 +11,16 @@ use std::path::{Path, PathBuf};
 /// is follow-up work. This is a plain, uncached HTTPS GET through the same
 /// SSRF-hardened agent used elsewhere in this crate.
 #[derive(Debug, Clone)]
+#[cfg_attr(not(feature = "http-import-ureq"), derive(Default))]
 pub struct NativeIo {
     #[cfg(feature = "http-import-ureq")]
     timeout: std::time::Duration,
 }
 
+#[cfg(feature = "http-import-ureq")]
 impl Default for NativeIo {
     fn default() -> Self {
         Self {
-            #[cfg(feature = "http-import-ureq")]
             timeout: std::time::Duration::from_secs(10),
         }
     }
@@ -50,8 +51,8 @@ impl Io for NativeIo {
         std::fs::write(path, content).map_err(|e| io_err(e, path))
     }
 
-    fn exists(&self, path: &Path) -> bool {
-        path.exists()
+    fn exists(&self, path: &Path) -> Result<bool, IoError> {
+        Ok(path.exists())
     }
 
     fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError> {
@@ -118,6 +119,79 @@ impl Io for NativeIo {
             "network access is not compiled into this build",
         )))
     }
+
+    #[cfg(feature = "http")]
+    fn http_request(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<&str>,
+        headers: &[(String, String)],
+    ) -> Result<String, IoError> {
+        /// Matches the `http()` builtin's existing limits.
+        const MAX_RESPONSE_SIZE: u64 = 10 * 1024 * 1024;
+        const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+        static AGENT: std::sync::LazyLock<ureq::Agent> =
+            std::sync::LazyLock::new(|| crate::module::resolver::ssrf::ssrf_safe_agent(TIMEOUT, true));
+
+        if !crate::module::resolver::ssrf::is_https(url) {
+            return Err(IoError::Other(Cow::Owned(format!(
+                "only https:// URLs are allowed, got {url:?}"
+            ))));
+        }
+
+        let method: ureq::http::Method = method
+            .parse()
+            .map_err(|_| IoError::Other(Cow::Owned(format!("invalid HTTP method {method:?}"))))?;
+
+        let mut builder = ureq::http::Request::builder().method(method).uri(url);
+        for (name, value) in headers {
+            builder = builder.header(name, value);
+        }
+
+        let mut response = match body {
+            Some(body) => {
+                let request = builder
+                    .body(body.to_string())
+                    .map_err(|e| IoError::Other(Cow::Owned(e.to_string())))?;
+                AGENT.run(request)
+            }
+            None => {
+                let request = builder
+                    .body(())
+                    .map_err(|e| IoError::Other(Cow::Owned(e.to_string())))?;
+                AGENT.run(request)
+            }
+        }
+        .map_err(|e| IoError::Other(Cow::Owned(e.to_string())))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(IoError::Other(Cow::Owned(format!(
+                "request failed with status {status}"
+            ))));
+        }
+
+        response
+            .body_mut()
+            .with_config()
+            .limit(MAX_RESPONSE_SIZE)
+            .read_to_string()
+            .map_err(|e| IoError::Other(Cow::Owned(format!("failed to read response body: {e}"))))
+    }
+
+    #[cfg(not(feature = "http"))]
+    fn http_request(
+        &self,
+        _method: &str,
+        _url: &str,
+        _body: Option<&str>,
+        _headers: &[(String, String)],
+    ) -> Result<String, IoError> {
+        Err(IoError::Other(Cow::Borrowed(
+            "network access is not compiled into this build",
+        )))
+    }
 }
 
 #[cfg(test)]
@@ -133,7 +207,7 @@ mod tests {
         io.write(&path, b"hello world").unwrap();
         assert_eq!(io.read_to_string(&path).unwrap(), "hello world");
         assert_eq!(io.read_bytes(&path).unwrap(), b"hello world");
-        assert!(io.exists(&path));
+        assert!(io.exists(&path).unwrap());
     }
 
     #[test]
@@ -143,7 +217,7 @@ mod tests {
         let io = NativeIo::default();
 
         assert!(matches!(io.read_to_string(&path), Err(IoError::NotFound(_))));
-        assert!(!io.exists(&path));
+        assert!(!io.exists(&path).unwrap());
     }
 
     #[test]

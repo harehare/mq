@@ -2,87 +2,51 @@
 //! `patch`, `head`, ...) and returns the response body as a string.
 //!
 //! Gated at compile time by the `http` feature (implied by `http-import-ureq`) and at
-//! runtime by the `--allow-net` CLI flag (checked by the `#[mq_fn(capability = "net")]` guard
-//! on `http_impl` in the parent module, see [`super::capability`]) — both must be satisfied
-//! before a request is made. Requests go through the same SSRF-hardened agent used for HTTP
-//! module imports (see [`crate::module::resolver::ssrf`]): HTTPS only, no automatic redirects,
-//! and DNS resolution filtered to publicly routable addresses so a hostname can't be rebound to
+//! runtime by the ambient [`Io`](crate::io::Io)'s net permission (see
+//! [`super::io_context`]) — both must be satisfied before a request is made. Requests
+//! ultimately go through the same SSRF-hardened agent used for HTTP module imports (see
+//! [`crate::module::resolver::ssrf`]): HTTPS only, no automatic redirects, and DNS
+//! resolution filtered to publicly routable addresses so a hostname can't be rebound to
 //! an internal address after the initial check.
 
 use std::collections::BTreeMap;
-use std::sync::LazyLock;
-
-use ureq::http;
 
 use super::Error;
-#[cfg(test)]
-use super::capability;
-use crate::module::resolver::ssrf::{is_https, ssrf_safe_agent};
+use super::io_context;
 use crate::{Ident, RuntimeValue};
-
-/// Maximum response body size read from `http` (10 MiB).
-const MAX_RESPONSE_SIZE: u64 = 10 * 1024 * 1024;
-const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-
-/// Built once and reused so repeated calls share connection pooling.
-static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| ssrf_safe_agent(TIMEOUT, true));
 
 /// Builds an `Error::Runtime` with the `http: ` prefix shared by every error in this module.
 fn err(msg: impl std::fmt::Display) -> Error {
     Error::Runtime(format!("http: {msg}"))
 }
 
-fn ensure_https(url: &str) -> Result<(), Error> {
-    if is_https(url) {
-        Ok(())
-    } else {
-        Err(err(format!("only https:// URLs are allowed, got {url:?}")))
-    }
-}
-
-/// Accepts either a string (`"post"`) or a symbol (`:post`) method name, case-insensitively.
-fn parse_method(value: &RuntimeValue) -> Result<http::Method, Error> {
+/// Accepts either a string (`"post"`) or a symbol (`:post`) method name, case-insensitively,
+/// returning the normalized (uppercased) method name.
+fn parse_method(value: &RuntimeValue) -> Result<String, Error> {
     let name = match value {
-        RuntimeValue::Symbol(name) => name.as_str(),
+        RuntimeValue::Symbol(name) => name.as_str().to_string(),
         RuntimeValue::String(name) => name.clone(),
         other => return Err(err(format!("method must be a string or symbol, got {other}"))),
     };
-    name.to_ascii_uppercase()
-        .parse::<http::Method>()
-        .map_err(|_| err(format!("invalid HTTP method {name:?}")))
+    let upper = name.to_ascii_uppercase();
+    upper
+        .parse::<ureq::http::Method>()
+        .map_err(|_| err(format!("invalid HTTP method {name:?}")))?;
+    Ok(upper)
 }
 
-fn read_body(mut response: http::Response<ureq::Body>) -> Result<RuntimeValue, Error> {
-    let status = response.status();
-    if !status.is_success() {
-        return Err(err(format!("request failed with status {status}")));
-    }
-    response
-        .body_mut()
-        .with_config()
-        .limit(MAX_RESPONSE_SIZE)
-        .read_to_string()
-        .map(RuntimeValue::String)
-        .map_err(|e| err(format!("failed to read response body: {e}")))
-}
-
-/// Applies `headers` to `builder`, requiring every value to be a string. Invalid header
-/// names/values (e.g. containing CR/LF) are caught later when the request is built.
-fn apply_headers(
-    mut builder: http::request::Builder,
-    headers: Option<&BTreeMap<Ident, RuntimeValue>>,
-) -> Result<http::request::Builder, Error> {
+/// Extracts `(name, value)` pairs from `headers`, requiring every value to be a string.
+fn extract_headers(headers: Option<&BTreeMap<Ident, RuntimeValue>>) -> Result<Vec<(String, String)>, Error> {
     let Some(headers) = headers else {
-        return Ok(builder);
+        return Ok(Vec::new());
     };
-    for (name, value) in headers {
-        let value = match value {
-            RuntimeValue::String(value) => value.as_str(),
-            other => return Err(err(format!("header {name:?} must be a string, got {other}"))),
-        };
-        builder = builder.header(name.as_str(), value);
-    }
-    Ok(builder)
+    headers
+        .iter()
+        .map(|(name, value)| match value {
+            RuntimeValue::String(value) => Ok((name.as_str(), value.clone())),
+            other => Err(err(format!("header {name:?} must be a string, got {other}"))),
+        })
+        .collect()
 }
 
 /// Performs an HTTPS request with the given `method` and returns the response body as a string.
@@ -94,23 +58,12 @@ pub(super) fn request(
     body: Option<&str>,
     headers: Option<&BTreeMap<Ident, RuntimeValue>>,
 ) -> Result<RuntimeValue, Error> {
-    ensure_https(url)?;
     let method = parse_method(method)?;
-    let builder = apply_headers(http::Request::builder().method(method).uri(url), headers)?;
-
-    let response = match body {
-        Some(body) => {
-            let request = builder.body(body.to_string()).map_err(err)?;
-            AGENT.run(request)
-        }
-        None => {
-            let request = builder.body(()).map_err(err)?;
-            AGENT.run(request)
-        }
-    }
-    .map_err(err)?;
-
-    read_body(response)
+    let headers = extract_headers(headers)?;
+    io_context::current()
+        .http_request(&method, url, body, &headers)
+        .map(RuntimeValue::String)
+        .map_err(err)
 }
 
 #[cfg(test)]
@@ -119,6 +72,7 @@ mod tests {
 
     use super::*;
     use crate::Ident;
+    use crate::io::{MemIo, NativeIo, SandboxedIo};
 
     const ALL_METHODS: &[&str] = &[
         "get", "head", "post", "put", "delete", "connect", "options", "trace", "patch",
@@ -142,11 +96,8 @@ mod tests {
     #[case::mixed_case("PoSt", "POST")]
     #[case::webdav_extension_token("propfind", "PROPFIND")]
     fn test_parse_method_accepts_symbol_and_string(#[case] input: &str, #[case] expected: &str) {
-        assert_eq!(parse_method(&symbol(input)).unwrap().as_str(), expected);
-        assert_eq!(
-            parse_method(&RuntimeValue::String(input.into())).unwrap().as_str(),
-            expected
-        );
+        assert_eq!(parse_method(&symbol(input)).unwrap(), expected);
+        assert_eq!(parse_method(&RuntimeValue::String(input.into())).unwrap(), expected);
     }
 
     #[rstest]
@@ -166,24 +117,24 @@ mod tests {
         assert!(parse_method(&value).is_err());
     }
 
-    // `capability::NET_ALLOWED` is a single process-wide flag, so every case that flips it
-    // must run in one #[test] function — cargo test runs tests in parallel by default, and
-    // two tests toggling the same global independently would race and flake.
     #[test]
     fn test_net_capability_gate_and_https_enforcement() {
-        capability::set_allow_net(false);
+        // No guard installed: ambient Io falls back to all-denied.
         for name in ALL_METHODS {
             assert!(
                 request(&symbol(name), "https://example.invalid", None, None).is_err(),
-                "http({name}, ..) should be blocked when --allow-net is not set"
+                "http({name}, ..) should be blocked when net access is not allowed"
             );
         }
         assert!(
             request(&symbol("post"), "https://example.invalid", Some("{}"), None).is_err(),
-            "http should be blocked when --allow-net is not set, even with a body"
+            "http should be blocked when net access is not allowed, even with a body"
         );
 
-        capability::set_allow_net(true);
+        let _guard = io_context::scoped(crate::Shared::new(
+            SandboxedIo::new(NativeIo::default()).allow_net(true),
+        ));
+
         for name in ALL_METHODS {
             assert!(
                 request(&symbol(name), "http://example.invalid", None, None).is_err(),
@@ -233,15 +184,21 @@ mod tests {
             .is_err(),
             "http should surface a request error for an unresolvable host even with headers set"
         );
-
-        capability::set_allow_net(false);
     }
 
     #[test]
-    fn test_apply_headers_accepts_string_values() {
-        let builder = http::Request::builder()
-            .method(http::Method::GET)
-            .uri("https://example.invalid");
+    fn test_request_uses_ambient_mem_io() {
+        let _guard = io_context::scoped(crate::Shared::new(
+            SandboxedIo::new(MemIo::default().with_fetch_response("https://example.invalid", "body")).allow_net(true),
+        ));
+        assert_eq!(
+            request(&symbol("get"), "https://example.invalid", None, None).unwrap(),
+            RuntimeValue::String("body".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_headers_accepts_string_values() {
         let headers = BTreeMap::from([
             (Ident::new("X-Test"), RuntimeValue::String("value".into())),
             (
@@ -249,28 +206,19 @@ mod tests {
                 RuntimeValue::String("application/json".into()),
             ),
         ]);
-        let request = apply_headers(builder, Some(&headers)).unwrap().body(()).unwrap();
-
-        assert_eq!(request.headers().get("X-Test").unwrap(), "value");
-        assert_eq!(request.headers().get("Content-Type").unwrap(), "application/json");
+        let extracted = extract_headers(Some(&headers)).unwrap();
+        assert!(extracted.contains(&("Content-Type".to_string(), "application/json".to_string())));
+        assert!(extracted.contains(&("X-Test".to_string(), "value".to_string())));
     }
 
     #[test]
-    fn test_apply_headers_rejects_non_string_values() {
-        let builder = http::Request::builder()
-            .method(http::Method::GET)
-            .uri("https://example.invalid");
+    fn test_extract_headers_rejects_non_string_values() {
         let headers = BTreeMap::from([(Ident::new("X-Test"), RuntimeValue::from(1usize))]);
-
-        assert!(apply_headers(builder, Some(&headers)).is_err());
+        assert!(extract_headers(Some(&headers)).is_err());
     }
 
     #[test]
-    fn test_apply_headers_passthrough_when_none() {
-        let builder = http::Request::builder()
-            .method(http::Method::GET)
-            .uri("https://example.invalid");
-
-        assert!(apply_headers(builder, None).unwrap().body(()).is_ok());
+    fn test_extract_headers_passthrough_when_none() {
+        assert!(extract_headers(None).unwrap().is_empty());
     }
 }

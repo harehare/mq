@@ -4,11 +4,16 @@
 //! call `std::fs`/`std::env`/a network client directly. Concrete
 //! implementations are injected per [`Engine`](crate::Engine) instance.
 //!
-//! This module currently defines the trait and its concrete implementations
-//! only; no existing call site in this crate routes through it yet (that is
-//! follow-up work). See [`NativeIo`] for a real filesystem/environment/
-//! network-backed implementation, and [`SandboxedIo`] for a decorator that
-//! enforces per-instance read/write/net permissions.
+//! See [`NativeIo`] for a real filesystem/environment/network-backed
+//! implementation, and [`SandboxedIo`] for a decorator that enforces
+//! per-instance read/write/net permissions. The ambient instance active
+//! during an [`Engine::eval`](crate::Engine::eval) call is reachable from
+//! builtins via [`crate::eval::builtin::io_context::current`].
+//!
+//! `LocalFsModuleResolver` (local module resolution) routes through this
+//! trait; `HttpModuleResolver`/`UreqFetcher` (HTTP module imports) do not yet
+//! — that unification, including relocating `UreqFetcher`'s on-disk
+//! cache/lockfile logic into `NativeIo`, is left for a follow-up.
 
 mod error;
 #[cfg(test)]
@@ -49,11 +54,11 @@ impl<T> IoSyncBound for T {}
 /// Implementations do not need to enforce permissions themselves unless they
 /// choose to (see [`SandboxedIo`] for a decorator that does); `Io` itself is
 /// purely a capability abstraction, not a policy.
-pub trait Io: std::fmt::Debug + IoSyncBound {
+pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
     fn read_to_string(&self, path: &Path) -> Result<String, IoError>;
     fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, IoError>;
     fn write(&self, path: &Path, content: &[u8]) -> Result<(), IoError>;
-    fn exists(&self, path: &Path) -> bool;
+    fn exists(&self, path: &Path) -> Result<bool, IoError>;
 
     /// `(path, is_dir)` pairs for the immediate entries of a directory.
     fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError>;
@@ -66,6 +71,18 @@ pub trait Io: std::fmt::Debug + IoSyncBound {
     /// Callers are responsible for URL/domain policy (HTTPS-only, allowlisting,
     /// etc.) before calling this — `fetch` is a minimal transport primitive.
     fn fetch(&self, url: &str) -> Result<String, IoError>;
+
+    /// General-purpose HTTP request (arbitrary method/body/headers), backing
+    /// the `http()` builtin. `headers` values must already be validated by
+    /// the caller; `fetch` above is the narrower primitive module resolution
+    /// uses.
+    fn http_request(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<&str>,
+        headers: &[(String, String)],
+    ) -> Result<String, IoError>;
 
     fn home_dir(&self) -> Option<PathBuf>;
     fn current_dir(&self) -> Option<PathBuf>;

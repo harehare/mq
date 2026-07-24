@@ -9,6 +9,7 @@ pub mod lockfile;
 pub mod ssrf;
 pub(crate) mod std_resolver;
 
+use crate::Shared;
 use crate::module::error::ModuleError;
 use std::path::PathBuf;
 
@@ -108,7 +109,9 @@ impl ModuleResolver for DefaultModuleResolver {
 }
 
 impl DefaultModuleResolver {
-    /// Creates a new resolver with the given filesystem search paths.
+    /// Creates a new resolver with the given filesystem search paths, backed by
+    /// [`NativeIo`](crate::io::NativeIo) for local module resolution — i.e. full,
+    /// ungated disk access, matching this resolver's historical behavior.
     ///
     /// An empty `paths` slice falls back to the built-in default search directories.
     pub fn new(paths: Vec<PathBuf>) -> Self {
@@ -118,6 +121,26 @@ impl DefaultModuleResolver {
             } else {
                 Some(paths)
             }),
+            std_resolver: std_resolver::StdModuleResolver,
+            #[cfg(feature = "http-import-ureq")]
+            http_resolver: http_resolver::HttpModuleResolver::default(),
+        }
+    }
+
+    /// Creates a new resolver whose local filesystem module resolution goes through `io`
+    /// instead of a bare [`NativeIo`](crate::io::NativeIo) — e.g. a
+    /// [`SandboxedIo`](crate::io::SandboxedIo) so `include`/`import` respect the same
+    /// read permission as the `read_file`/`write_file`/`http` builtins. HTTP module
+    /// imports are unaffected (still `NativeIo`-only, if the `http-import-ureq` feature
+    /// is enabled).
+    ///
+    /// An empty `paths` slice falls back to the built-in default search directories.
+    pub fn with_io(io: Shared<dyn crate::io::Io>, paths: Vec<PathBuf>) -> Self {
+        Self {
+            local_fs_resolver: local_fs_resolver::LocalFsModuleResolver::with_io(
+                io,
+                if paths.is_empty() { None } else { Some(paths) },
+            ),
             std_resolver: std_resolver::StdModuleResolver,
             #[cfg(feature = "http-import-ureq")]
             http_resolver: http_resolver::HttpModuleResolver::default(),

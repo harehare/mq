@@ -11,10 +11,12 @@ use web_time::Instant;
 use crate::DebuggerHandler;
 use crate::Module;
 use crate::ast::constants;
+use crate::eval::builtin::io_context;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::DefaultDebuggerHandler;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::Source;
+use crate::io::{Io, NativeIo, SandboxedIo};
 use crate::module::resolver::DefaultModuleResolver;
 #[cfg(feature = "debugger")]
 use crate::parse;
@@ -156,7 +158,7 @@ impl Default for Options {
 /// Evaluates abstract syntax trees and manages the runtime environment,
 /// including variable bindings, function calls, and module loading.
 #[derive(Debug)]
-pub struct Evaluator<T: ModuleResolver = DefaultModuleResolver> {
+pub struct Evaluator<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedIo<NativeIo>> {
     env: Shared<SharedCell<Env>>,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
 
@@ -168,6 +170,11 @@ pub struct Evaluator<T: ModuleResolver = DefaultModuleResolver> {
     pub(crate) options: Options,
     pub(crate) module_loader: module::ModuleLoader<T>,
     pub(crate) macro_expander: Macro,
+    /// Ambient during `eval()` for builtins to reach (see [`io_context`]). Defaults to an
+    /// all-denied [`SandboxedIo`], matching the fail-safe default the retired process-wide
+    /// capability flags used to have. Statically dispatched: `IO` is fixed per `Evaluator`
+    /// instantiation rather than a `dyn Io` trait object.
+    pub(crate) io: Shared<IO>,
 
     #[cfg(feature = "debugger")]
     debugger: Shared<SharedCell<Debugger>>,
@@ -175,7 +182,7 @@ pub struct Evaluator<T: ModuleResolver = DefaultModuleResolver> {
     pub(crate) debugger_handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
 }
 
-impl<T: ModuleResolver> Default for Evaluator<T> {
+impl<T: ModuleResolver, IO: Io + Default> Default for Evaluator<T, IO> {
     fn default() -> Self {
         Self {
             env: Shared::new(SharedCell::new(Env::default())),
@@ -186,6 +193,7 @@ impl<T: ModuleResolver> Default for Evaluator<T> {
             options: Options::default(),
             module_loader: module::ModuleLoader::new(T::default()),
             macro_expander: Macro::new(),
+            io: Shared::new(IO::default()),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
@@ -195,7 +203,7 @@ impl<T: ModuleResolver> Default for Evaluator<T> {
     }
 }
 
-impl<T: ModuleResolver> Clone for Evaluator<T> {
+impl<T: ModuleResolver, IO: Io> Clone for Evaluator<T, IO> {
     fn clone(&self) -> Self {
         Self {
             env: Shared::clone(&self.env),
@@ -206,6 +214,7 @@ impl<T: ModuleResolver> Clone for Evaluator<T> {
             options: self.options.clone(),
             module_loader: self.module_loader.clone(),
             macro_expander: self.macro_expander.clone(),
+            io: Shared::clone(&self.io),
             #[cfg(feature = "debugger")]
             debugger: Shared::clone(&self.debugger),
             #[cfg(feature = "debugger")]
@@ -214,7 +223,7 @@ impl<T: ModuleResolver> Clone for Evaluator<T> {
     }
 }
 
-impl<T: ModuleResolver> Evaluator<T> {
+impl<T: ModuleResolver> Evaluator<T, SandboxedIo<NativeIo>> {
     pub(crate) fn new(
         module_loader: module::ModuleLoader<T>,
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
@@ -236,6 +245,14 @@ impl<T: ModuleResolver> Evaluator<T> {
             env: Shared::clone(&env),
             ..Default::default()
         }
+    }
+}
+
+impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
+    /// Sets the [`Io`] used by builtins (via ambient access, see [`io_context`]) for the
+    /// duration of `eval()` calls on this evaluator.
+    pub(crate) fn set_io(&mut self, io: Shared<IO>) {
+        self.io = io;
     }
 
     /// Helper method to temporarily take the macro_expander to avoid borrow conflicts.
@@ -265,6 +282,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     where
         I: Iterator<Item = RuntimeValue>,
     {
+        let _io_guard = io_context::scoped(Shared::clone(&self.io) as Shared<dyn Io>);
         self.deadline = self.options.timeout.map(|timeout| Instant::now() + timeout);
         self.timeout_step = 0;
 
@@ -2239,7 +2257,7 @@ fn resolve(ident: &str, env: &Shared<SharedCell<Env>>) -> Result<RuntimeValue, E
 
 /// Implementation of MacroEvaluator trait for Evaluator.
 /// This allows the macro expander to evaluate macro bodies during collection.
-impl<T: ModuleResolver> MacroEvaluator for Evaluator<T> {
+impl<T: ModuleResolver, IO: Io> MacroEvaluator for Evaluator<T, IO> {
     fn eval_macro_body(&mut self, body: &Shared<ast::Node>, _token_id: TokenId) -> Result<RuntimeValue, RuntimeError> {
         let value = self.eval_macro(body);
 

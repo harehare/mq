@@ -17,6 +17,13 @@ pub struct SandboxedIo<Inner: Io = NativeIo> {
     allow_net: bool,
 }
 
+impl<Inner: Io + Default> Default for SandboxedIo<Inner> {
+    /// All three permission flags default to `false` (fail safe), matching [`Inner::default()`](Default).
+    fn default() -> Self {
+        Self::new(Inner::default())
+    }
+}
+
 impl<Inner: Io> SandboxedIo<Inner> {
     pub fn new(inner: Inner) -> Self {
         Self {
@@ -55,41 +62,42 @@ impl<Inner: Io> SandboxedIo<Inner> {
     }
 }
 
-fn denied(what: &'static str, flag: &'static str) -> IoError {
-    IoError::PermissionDenied(Cow::Owned(format!(
-        "{what} disabled; construct SandboxedIo with `{flag}(true)` to enable"
-    )))
+fn denied(what: &'static str) -> IoError {
+    IoError::PermissionDenied(Cow::Borrowed(what))
 }
 
 impl<Inner: Io> Io for SandboxedIo<Inner> {
     fn read_to_string(&self, path: &Path) -> Result<String, IoError> {
         if !self.allow_read {
-            return Err(denied("filesystem reads are", "allow_read"));
+            return Err(denied("filesystem reads are disabled"));
         }
         self.inner.read_to_string(path)
     }
 
     fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, IoError> {
         if !self.allow_read {
-            return Err(denied("filesystem reads are", "allow_read"));
+            return Err(denied("filesystem reads are disabled"));
         }
         self.inner.read_bytes(path)
     }
 
     fn write(&self, path: &Path, content: &[u8]) -> Result<(), IoError> {
         if !self.allow_write {
-            return Err(denied("filesystem writes are", "allow_write"));
+            return Err(denied("filesystem writes are disabled"));
         }
         self.inner.write(path, content)
     }
 
-    fn exists(&self, path: &Path) -> bool {
-        self.allow_read && self.inner.exists(path)
+    fn exists(&self, path: &Path) -> Result<bool, IoError> {
+        if !self.allow_read {
+            return Err(denied("filesystem reads are disabled"));
+        }
+        self.inner.exists(path)
     }
 
     fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError> {
         if !self.allow_read {
-            return Err(denied("filesystem reads are", "allow_read"));
+            return Err(denied("filesystem reads are disabled"));
         }
         self.inner.read_dir(path)
     }
@@ -116,9 +124,22 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
 
     fn fetch(&self, url: &str) -> Result<String, IoError> {
         if !self.allow_net {
-            return Err(denied("network access is", "allow_net"));
+            return Err(denied("network access is disabled"));
         }
         self.inner.fetch(url)
+    }
+
+    fn http_request(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<&str>,
+        headers: &[(String, String)],
+    ) -> Result<String, IoError> {
+        if !self.allow_net {
+            return Err(denied("network access is disabled"));
+        }
+        self.inner.http_request(method, url, body, headers)
     }
 }
 
@@ -134,14 +155,17 @@ mod tests {
             io.read_to_string(Path::new("/a.txt")),
             Err(IoError::PermissionDenied(_))
         ));
-        assert!(!io.exists(Path::new("/a.txt")));
+        assert!(matches!(
+            io.exists(Path::new("/a.txt")),
+            Err(IoError::PermissionDenied(_))
+        ));
     }
 
     #[test]
     fn test_read_allowed_delegates_to_inner() {
         let io = SandboxedIo::new(MemIo::default().with_file("/a.txt", "content")).allow_read(true);
         assert_eq!(io.read_to_string(Path::new("/a.txt")).unwrap(), "content");
-        assert!(io.exists(Path::new("/a.txt")));
+        assert!(io.exists(Path::new("/a.txt")).unwrap());
     }
 
     #[test]
@@ -179,6 +203,21 @@ mod tests {
         assert_eq!(io.env_var("FOO").unwrap(), "bar");
         assert_eq!(io.home_dir(), Some(PathBuf::from("/home/x")));
         assert_eq!(io.current_dir(), Some(PathBuf::from("/proj")));
+    }
+
+    #[test]
+    fn test_http_request_denied_by_default_then_allowed() {
+        let io = SandboxedIo::new(MemIo::default().with_fetch_response("https://example.com", "body"));
+        assert!(matches!(
+            io.http_request("GET", "https://example.com", None, &[]),
+            Err(IoError::PermissionDenied(_))
+        ));
+
+        let io = io.allow_net(true);
+        assert_eq!(
+            io.http_request("GET", "https://example.com", None, &[]).unwrap(),
+            "body"
+        );
     }
 
     #[test]

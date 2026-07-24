@@ -2,9 +2,9 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use crate::eval::builtin::capability;
 #[cfg(feature = "debugger")]
 use crate::eval::env::Env;
+use crate::io::{Io, NativeIo, SandboxedIo};
 #[cfg(feature = "debugger")]
 use crate::module::ModuleId;
 use crate::{
@@ -70,8 +70,8 @@ impl From<crate::ast::Program> for CompiledProgram {
 /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
 /// ```
 #[derive(Debug, Clone)]
-pub struct Engine<T: ModuleResolver = DefaultModuleResolver> {
-    pub(crate) evaluator: Evaluator<T>,
+pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedIo<NativeIo>> {
+    pub(crate) evaluator: Evaluator<T, IO>,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
     optimization_level: OptimizationLevel,
 }
@@ -90,13 +90,19 @@ fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
     token_arena
 }
 
-impl<T: ModuleResolver> Default for Engine<T> {
+impl<T: ModuleResolver> Default for Engine<T, SandboxedIo<NativeIo>> {
     fn default() -> Self {
         Self::new(T::default())
     }
 }
 
-impl<T: ModuleResolver> Engine<T> {
+// `new` is pinned to the default `IO` (rather than generic over any `IO: Default`) because Rust
+// doesn't use a generic parameter's default as an inference fallback — callers like
+// `Engine::new(resolver)` have no other way to pin `IO`. Mirrors the `HashMap::new`/
+// `HashMap::with_hasher` split. To use a different `IO`, annotate the binding's type, e.g.
+// `let engine: Engine<T, MyIo> = Engine::new(resolver);` (this only fixes the *value* passed at
+// construction; use `set_io` afterwards to install it).
+impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
     pub fn new(module_resolver: T) -> Self {
         let token_arena = create_default_token_arena();
         Self {
@@ -106,6 +112,26 @@ impl<T: ModuleResolver> Engine<T> {
         }
     }
 
+    /// Returns a reference to the underlying evaluator.
+    ///
+    /// This is primarily intended for advanced use cases such as debugging,
+    /// where direct access to the evaluator internals is required.
+    #[cfg(feature = "debugger")]
+    pub fn switch_env(&self, env: Shared<SharedCell<Env>>) -> Self {
+        #[cfg(not(feature = "sync"))]
+        let token_arena = Shared::new(SharedCell::new(self.token_arena.borrow().clone()));
+        #[cfg(feature = "sync")]
+        let token_arena = Shared::new(SharedCell::new(self.token_arena.read().unwrap().clone()));
+
+        Self {
+            evaluator: Evaluator::with_env(Shared::clone(&token_arena), Shared::clone(&env)),
+            token_arena: Shared::clone(&token_arena),
+            optimization_level: self.optimization_level,
+        }
+    }
+}
+
+impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// Set the optimization level for AST transformations applied before evaluation.
     pub fn set_optimization_level(&mut self, level: OptimizationLevel) {
         self.optimization_level = level;
@@ -128,28 +154,17 @@ impl<T: ModuleResolver> Engine<T> {
         self.evaluator.options.timeout = Some(timeout);
     }
 
-    /// Enables or disables the `http` builtin for the current process.
+    /// Sets the [`Io`] this engine uses for file, environment-variable, and network
+    /// access — both for builtins (`read_file`, `write_file`, `http`, ...) and for
+    /// local module resolution (`include`/`import`). Defaults to an all-denied
+    /// [`SandboxedIo`](crate::SandboxedIo) wrapping [`NativeIo`](crate::NativeIo),
+    /// so a host must opt in explicitly.
     ///
-    /// Disabled by default. This is a process-wide setting (see
-    /// [`capability`](crate::eval::builtin::capability)), not per-`Engine`.
-    pub fn set_allow_net(&self, allow: bool) {
-        capability::set_allow_net(allow);
-    }
-
-    /// Enables or disables the `read_file`/`read_file_bytes` builtins for the current process.
-    ///
-    /// Disabled by default. This is a process-wide setting (see
-    /// [`capability`](crate::eval::builtin::capability)), not per-`Engine`.
-    pub fn set_allow_read(&self, allow: bool) {
-        capability::set_allow_read(allow);
-    }
-
-    /// Enables or disables the `write_file` builtin for the current process.
-    ///
-    /// Disabled by default. This is a process-wide setting (see
-    /// [`capability`](crate::eval::builtin::capability)), not per-`Engine`.
-    pub fn set_allow_write(&self, allow: bool) {
-        capability::set_allow_write(allow);
+    /// This only affects the evaluator side (builtins); pass the same `io` to
+    /// [`DefaultModuleResolver::with_io`] when constructing the resolver so
+    /// local-filesystem module resolution is gated consistently.
+    pub fn set_io(&mut self, io: Shared<IO>) {
+        self.evaluator.set_io(io);
     }
 
     /// Set search paths for module loading.
@@ -332,24 +347,6 @@ impl<T: ModuleResolver> Engine<T> {
     #[cfg(feature = "debugger")]
     pub fn token_arena(&self) -> Shared<SharedCell<Arena<Shared<Token>>>> {
         Shared::clone(&self.token_arena)
-    }
-
-    /// Returns a reference to the underlying evaluator.
-    ///
-    /// This is primarily intended for advanced use cases such as debugging,
-    /// where direct access to the evaluator internals is required.
-    #[cfg(feature = "debugger")]
-    pub fn switch_env(&self, env: Shared<SharedCell<Env>>) -> Self {
-        #[cfg(not(feature = "sync"))]
-        let token_arena = Shared::new(SharedCell::new(self.token_arena.borrow().clone()));
-        #[cfg(feature = "sync")]
-        let token_arena = Shared::new(SharedCell::new(self.token_arena.read().unwrap().clone()));
-
-        Self {
-            evaluator: Evaluator::with_env(Shared::clone(&token_arena), Shared::clone(&env)),
-            token_arena: Shared::clone(&token_arena),
-            optimization_level: self.optimization_level,
-        }
     }
 
     #[cfg(feature = "debugger")]

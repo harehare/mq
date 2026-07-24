@@ -72,8 +72,8 @@ impl Io for MemIo {
         Ok(())
     }
 
-    fn exists(&self, path: &Path) -> bool {
-        self.files.lock().unwrap().contains_key(path)
+    fn exists(&self, path: &Path) -> Result<bool, IoError> {
+        Ok(self.files.lock().unwrap().contains_key(path))
     }
 
     fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError> {
@@ -107,6 +107,16 @@ impl Io for MemIo {
             .ok_or_else(|| IoError::NotFound(Cow::Owned(url.to_string())))
     }
 
+    fn http_request(
+        &self,
+        _method: &str,
+        url: &str,
+        _body: Option<&str>,
+        _headers: &[(String, String)],
+    ) -> Result<String, IoError> {
+        self.fetch(url)
+    }
+
     fn home_dir(&self) -> Option<PathBuf> {
         self.home.clone()
     }
@@ -125,7 +135,7 @@ mod tests {
         let io = MemIo::default().with_file("/a.txt", "hello");
         assert_eq!(io.read_to_string(Path::new("/a.txt")).unwrap(), "hello");
         assert_eq!(io.read_bytes(Path::new("/a.txt")).unwrap(), b"hello");
-        assert!(io.exists(Path::new("/a.txt")));
+        assert!(io.exists(Path::new("/a.txt")).unwrap());
     }
 
     #[test]
@@ -135,7 +145,7 @@ mod tests {
             io.read_to_string(Path::new("/missing.txt")),
             Err(IoError::NotFound(_))
         ));
-        assert!(!io.exists(Path::new("/missing.txt")));
+        assert!(!io.exists(Path::new("/missing.txt")).unwrap());
     }
 
     #[test]
