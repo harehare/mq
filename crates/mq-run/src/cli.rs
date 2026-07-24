@@ -806,7 +806,18 @@ impl Cli {
     }
 
     fn create_engine(&self) -> miette::Result<DefaultEngine> {
+        // --module-directories/--module-names/include/import resolve modules from
+        // directories the invoker explicitly configured, so module resolution keeps
+        // full native access (unchanged from before this Io existed) — --allow-read/
+        // write/net instead gate what a running query's read_file/write_file/http
+        // builtins can do at runtime, via the ambient Io set below.
         let mut engine = mq_lang::DefaultEngine::default();
+        engine.set_io(Shared::new(
+            mq_lang::SandboxedIo::new(mq_lang::NativeIo::default())
+                .allow_read(self.input.allow_read)
+                .allow_write(self.input.allow_write)
+                .allow_net(self.input.allow_net),
+        ));
         engine.load_builtin_module();
         engine.set_optimization_level(self.optimize_level.clone().into());
 
@@ -924,11 +935,7 @@ impl Cli {
             } else if self.input.refresh_modules {
                 engine.clear_http_cache().map_err(|e| miette!(e.to_string()))?;
             }
-            engine.set_allow_net(self.input.allow_net);
         }
-
-        engine.set_allow_read(self.input.allow_read);
-        engine.set_allow_write(self.input.allow_write);
 
         if let Some(secs) = self.timeout {
             if secs <= 0.0 {
@@ -1665,10 +1672,6 @@ mod tests {
         assert!(cli.run().is_ok());
     }
 
-    // READ_ALLOWED is a single process-wide flag (see mq_lang::eval::builtin::capability), so
-    // every case that toggles it must run in one #[test] function — cargo test runs tests in
-    // parallel by default, and two tests flipping the same global independently would race and
-    // flake. No other test in this file exercises read_file/read_file_bytes.
     #[test]
     fn test_allow_read_flag_gates_read_file() {
         let (_, temp_file_path) = create_file("test_allow_read.md", "hello");

@@ -11,10 +11,12 @@ use web_time::Instant;
 use crate::DebuggerHandler;
 use crate::Module;
 use crate::ast::constants;
+use crate::eval::builtin::io_context;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::DefaultDebuggerHandler;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::Source;
+use crate::io::{Io, NativeIo, SandboxedIo};
 use crate::module::resolver::DefaultModuleResolver;
 #[cfg(feature = "debugger")]
 use crate::parse;
@@ -168,6 +170,10 @@ pub struct Evaluator<T: ModuleResolver = DefaultModuleResolver> {
     pub(crate) options: Options,
     pub(crate) module_loader: module::ModuleLoader<T>,
     pub(crate) macro_expander: Macro,
+    /// Ambient during `eval()` for builtins to reach (see [`io_context`]). Defaults to an
+    /// all-denied [`SandboxedIo`], matching the fail-safe default the retired process-wide
+    /// capability flags used to have.
+    pub(crate) io: Shared<dyn Io>,
 
     #[cfg(feature = "debugger")]
     debugger: Shared<SharedCell<Debugger>>,
@@ -186,6 +192,7 @@ impl<T: ModuleResolver> Default for Evaluator<T> {
             options: Options::default(),
             module_loader: module::ModuleLoader::new(T::default()),
             macro_expander: Macro::new(),
+            io: Shared::new(SandboxedIo::new(NativeIo::default())),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
@@ -206,6 +213,7 @@ impl<T: ModuleResolver> Clone for Evaluator<T> {
             options: self.options.clone(),
             module_loader: self.module_loader.clone(),
             macro_expander: self.macro_expander.clone(),
+            io: Shared::clone(&self.io),
             #[cfg(feature = "debugger")]
             debugger: Shared::clone(&self.debugger),
             #[cfg(feature = "debugger")]
@@ -224,6 +232,12 @@ impl<T: ModuleResolver> Evaluator<T> {
             token_arena,
             ..Default::default()
         }
+    }
+
+    /// Sets the [`Io`] used by builtins (via ambient access, see [`io_context`]) for the
+    /// duration of `eval()` calls on this evaluator.
+    pub(crate) fn set_io(&mut self, io: Shared<dyn Io>) {
+        self.io = io;
     }
 
     #[allow(unused)]
@@ -265,6 +279,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     where
         I: Iterator<Item = RuntimeValue>,
     {
+        let _io_guard = io_context::scoped(Shared::clone(&self.io));
         self.deadline = self.options.timeout.map(|timeout| Instant::now() + timeout);
         self.timeout_step = 0;
 

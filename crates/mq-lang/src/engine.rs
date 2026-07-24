@@ -2,9 +2,9 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use crate::eval::builtin::capability;
 #[cfg(feature = "debugger")]
 use crate::eval::env::Env;
+use crate::io::Io;
 #[cfg(feature = "debugger")]
 use crate::module::ModuleId;
 use crate::{
@@ -128,28 +128,17 @@ impl<T: ModuleResolver> Engine<T> {
         self.evaluator.options.timeout = Some(timeout);
     }
 
-    /// Enables or disables the `http` builtin for the current process.
+    /// Sets the [`Io`] this engine uses for file, environment-variable, and network
+    /// access — both for builtins (`read_file`, `write_file`, `http`, ...) and for
+    /// local module resolution (`include`/`import`). Defaults to an all-denied
+    /// [`SandboxedIo`](crate::SandboxedIo) wrapping [`NativeIo`](crate::NativeIo),
+    /// so a host must opt in explicitly.
     ///
-    /// Disabled by default. This is a process-wide setting (see
-    /// [`capability`](crate::eval::builtin::capability)), not per-`Engine`.
-    pub fn set_allow_net(&self, allow: bool) {
-        capability::set_allow_net(allow);
-    }
-
-    /// Enables or disables the `read_file`/`read_file_bytes` builtins for the current process.
-    ///
-    /// Disabled by default. This is a process-wide setting (see
-    /// [`capability`](crate::eval::builtin::capability)), not per-`Engine`.
-    pub fn set_allow_read(&self, allow: bool) {
-        capability::set_allow_read(allow);
-    }
-
-    /// Enables or disables the `write_file` builtin for the current process.
-    ///
-    /// Disabled by default. This is a process-wide setting (see
-    /// [`capability`](crate::eval::builtin::capability)), not per-`Engine`.
-    pub fn set_allow_write(&self, allow: bool) {
-        capability::set_allow_write(allow);
+    /// This only affects the evaluator side (builtins); pass the same `io` to
+    /// [`DefaultModuleResolver::with_io`] when constructing the resolver so
+    /// local-filesystem module resolution is gated consistently.
+    pub fn set_io(&mut self, io: Shared<dyn Io>) {
+        self.evaluator.set_io(io);
     }
 
     /// Set search paths for module loading.
