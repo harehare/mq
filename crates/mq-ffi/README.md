@@ -9,12 +9,15 @@ C-compatible API for the [mq](https://mqlang.org/) Markdown processing library, 
 ```bash
 git clone https://github.com/harehare/mq
 cd mq/crates/mq-ffi
-cargo build --release
+cargo build --profile release-ffi
 ```
 
 The compiled library will be available at:
-- **Static library**: `target/release/libmq_ffi.a`
-- **Dynamic library**: `target/release/libmq_ffi.so` (Linux) or `.dylib` (macOS) or `.dll` (Windows)
+- **Static library**: `target/release-ffi/libmq_ffi.a`
+- **Dynamic library**: `target/release-ffi/libmq_ffi.so` (Linux) or `.dylib` (macOS) or `.dll` (Windows)
+
+> [!IMPORTANT]
+> Always build mq-ffi with `--profile release-ffi`, not `--release`. The workspace's default `release` profile sets `panic = 'abort'` (for CLI binary size), which would make a panic anywhere inside the evaluator immediately abort the host process embedding this library, bypassing the panic-catching at each `extern "C"` boundary. `release-ffi` inherits all other `release` settings but keeps Rust's default unwinding panic strategy so panics are caught and reported through the normal error channel (`MqResult.error_msg`, etc.) instead.
 
 ## Usage
 

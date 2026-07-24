@@ -56,6 +56,16 @@
 //! - `"html"` - HTML content converted to markdown
 //! - `"text"` - Plain text, split by lines
 //!
+//! # Panic Safety
+//!
+//! Every `extern "C"` function in this crate catches panics at its boundary
+//! (via [`std::panic::catch_unwind`]) and converts them into the function's
+//! normal error channel instead of letting them unwind into the calling C/C++
+//! code. This only works if the library is built with an unwinding panic
+//! strategy; build it with `cargo build --profile release-ffi` rather than
+//! `--release` (see the crate's `README.md`), since the workspace's default
+//! `release` profile sets `panic = "abort"`.
+//!
 use libc::c_void;
 use mq_lang::DefaultEngine;
 use mq_lang::{Engine, RuntimeValue};
@@ -102,6 +112,22 @@ fn to_c_string(s: String) -> *mut c_char {
     CString::new(s).map_or_else(|_| ptr::null_mut(), |cs| cs.into_raw())
 }
 
+// Extracts a human-readable message from a caught panic payload.
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".to_string()
+    }
+}
+
+// Converts a caught panic payload into a C string error message.
+fn panic_to_c_string(payload: Box<dyn std::any::Any + Send>) -> *mut c_char {
+    to_c_string(format!("Internal error: {}", panic_message(&*payload)))
+}
+
 // Helper function to convert C string to Rust string slice
 unsafe fn c_str_to_rust_str_slice<'a>(s: *const c_char) -> Result<&'a str, std::str::Utf8Error> {
     if s.is_null() {
@@ -132,21 +158,26 @@ unsafe fn c_str_array_to_strings(items: *const *const c_char, items_len: usize) 
 /// The caller is responsible for destroying the engine using `mq_destroy`.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_create() -> *mut MqContext {
-    let mut engine = DefaultEngine::default();
-    engine.load_builtin_module();
-    let boxed_engine = Box::new(engine);
-    Box::into_raw(boxed_engine) as *mut MqContext
+    std::panic::catch_unwind(|| {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let boxed_engine = Box::new(engine);
+        Box::into_raw(boxed_engine) as *mut MqContext
+    })
+    .unwrap_or(ptr::null_mut())
 }
 
 /// Destroys an mq_lang engine.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_destroy(engine_ptr: *mut MqContext) {
-    if engine_ptr.is_null() {
-        return;
-    }
-    unsafe {
-        let _ = Box::from_raw(engine_ptr as *mut Engine);
-    }
+    let _ = std::panic::catch_unwind(move || {
+        if engine_ptr.is_null() {
+            return;
+        }
+        unsafe {
+            let _ = Box::from_raw(engine_ptr as *mut Engine);
+        }
+    });
 }
 
 /// Evaluates mq code with the given input.
@@ -167,6 +198,20 @@ pub unsafe extern "C" fn mq_eval(
     code_c: *const c_char,
     input_c: *const c_char,
     input_format_c: *const c_char, // "markdown" or "mdx" or "text"
+) -> MqResult {
+    std::panic::catch_unwind(move || unsafe { mq_eval_inner(engine_ptr, code_c, input_c, input_format_c) })
+        .unwrap_or_else(|payload| MqResult {
+            values: ptr::null_mut(),
+            values_len: 0,
+            error_msg: panic_to_c_string(payload),
+        })
+}
+
+unsafe fn mq_eval_inner(
+    engine_ptr: *mut MqContext,
+    code_c: *const c_char,
+    input_c: *const c_char,
+    input_format_c: *const c_char,
 ) -> MqResult {
     if engine_ptr.is_null() {
         return MqResult {
@@ -311,38 +356,42 @@ pub unsafe extern "C" fn mq_eval(
 /// - If `s` is null, the function safely returns without performing any operations
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_free_string(s: *mut c_char) {
-    if s.is_null() {
-        return;
-    }
+    let _ = std::panic::catch_unwind(move || {
+        if s.is_null() {
+            return;
+        }
 
-    unsafe {
-        let _ = CString::from_raw(s);
-    }
+        unsafe {
+            let _ = CString::from_raw(s);
+        }
+    });
 }
 
 /// Frees the MqResult structure including its contents.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_free_result(result: MqResult) {
-    if !result.error_msg.is_null() {
-        unsafe {
-            mq_free_string(result.error_msg);
-        }
-    }
-
-    if !result.values.is_null() {
-        unsafe {
-            // Reconstruct the Vec from the raw parts to properly deallocate it
-            // along with its elements.
-            let values_vec = Vec::from_raw_parts(result.values, result.values_len, result.values_len);
-            for value_ptr in values_vec {
-                if !value_ptr.is_null() {
-                    // This was already a CString, so free it with mq_free_string
-                    mq_free_string(value_ptr);
-                }
+    let _ = std::panic::catch_unwind(move || {
+        if !result.error_msg.is_null() {
+            unsafe {
+                mq_free_string(result.error_msg);
             }
-            // The Vec itself is dropped here, freeing the memory it owned for the pointers.
         }
-    }
+
+        if !result.values.is_null() {
+            unsafe {
+                // Reconstruct the Vec from the raw parts to properly deallocate it
+                // along with its elements.
+                let values_vec = Vec::from_raw_parts(result.values, result.values_len, result.values_len);
+                for value_ptr in values_vec {
+                    if !value_ptr.is_null() {
+                        // This was already a CString, so free it with mq_free_string
+                        mq_free_string(value_ptr);
+                    }
+                }
+                // The Vec itself is dropped here, freeing the memory it owned for the pointers.
+            }
+        }
+    });
 }
 
 /// Converts HTML to Markdown with the given conversion options.
@@ -384,6 +433,22 @@ pub extern "C" fn mq_free_result(result: MqResult) {
 /// ```
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_html_to_markdown(
+    html_input_c: *const c_char,
+    options: MqConversionOptions,
+    error_msg: *mut *mut c_char,
+) -> *mut c_char {
+    std::panic::catch_unwind(move || unsafe { mq_html_to_markdown_inner(html_input_c, options, error_msg) })
+        .unwrap_or_else(|payload| {
+            if !error_msg.is_null() {
+                unsafe {
+                    *error_msg = panic_to_c_string(payload);
+                }
+            }
+            ptr::null_mut()
+        })
+}
+
+unsafe fn mq_html_to_markdown_inner(
     html_input_c: *const c_char,
     options: MqConversionOptions,
     error_msg: *mut *mut c_char,
@@ -461,22 +526,26 @@ impl From<MqOptimizationLevel> for mq_lang::OptimizationLevel {
 /// Has no effect if `engine_ptr` is null.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_set_optimization_level(engine_ptr: *mut MqContext, level: MqOptimizationLevel) {
-    if engine_ptr.is_null() {
-        return;
-    }
-    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
-    engine.set_optimization_level(level.into());
+    let _ = std::panic::catch_unwind(move || {
+        if engine_ptr.is_null() {
+            return;
+        }
+        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+        engine.set_optimization_level(level.into());
+    });
 }
 
 /// Sets the maximum call stack depth for function calls, to guard against
 /// runaway recursion in untrusted mq code. Has no effect if `engine_ptr` is null.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_set_max_call_stack_depth(engine_ptr: *mut MqContext, max_call_stack_depth: u32) {
-    if engine_ptr.is_null() {
-        return;
-    }
-    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
-    engine.set_max_call_stack_depth(max_call_stack_depth);
+    let _ = std::panic::catch_unwind(move || {
+        if engine_ptr.is_null() {
+            return;
+        }
+        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+        engine.set_max_call_stack_depth(max_call_stack_depth);
+    });
 }
 
 /// Sets the search paths used to resolve modules loaded via `mq_import_module`
@@ -493,15 +562,17 @@ pub unsafe extern "C" fn mq_set_search_paths(
     paths: *const *const c_char,
     paths_len: usize,
 ) {
-    if engine_ptr.is_null() {
-        return;
-    }
-    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
-    let search_paths = unsafe { c_str_array_to_strings(paths, paths_len) }
-        .into_iter()
-        .map(PathBuf::from)
-        .collect();
-    engine.set_search_paths(search_paths);
+    let _ = std::panic::catch_unwind(move || {
+        if engine_ptr.is_null() {
+            return;
+        }
+        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+        let search_paths = unsafe { c_str_array_to_strings(paths, paths_len) }
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        engine.set_search_paths(search_paths);
+    });
 }
 
 /// Defines a string variable that can be referenced from mq code evaluated
@@ -521,21 +592,23 @@ pub unsafe extern "C" fn mq_define_string_value(
     name_c: *const c_char,
     value_c: *const c_char,
 ) {
-    if engine_ptr.is_null() {
-        return;
-    }
-    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+    let _ = std::panic::catch_unwind(move || {
+        if engine_ptr.is_null() {
+            return;
+        }
+        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
 
-    let name = match unsafe { c_str_to_rust_str_slice(name_c) } {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-    let value = match unsafe { c_str_to_rust_str_slice(value_c) } {
-        Ok(s) => s,
-        Err(_) => return,
-    };
+        let name = match unsafe { c_str_to_rust_str_slice(name_c) } {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let value = match unsafe { c_str_to_rust_str_slice(value_c) } {
+            Ok(s) => s,
+            Err(_) => return,
+        };
 
-    engine.define_string_value(name, value);
+        engine.define_string_value(name, value);
+    });
 }
 
 /// Imports an external module by name, searched for in the paths configured via
@@ -550,20 +623,23 @@ pub unsafe extern "C" fn mq_define_string_value(
 /// - The returned pointer, if non-null, must be freed with `mq_free_string`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_import_module(engine_ptr: *mut MqContext, module_name_c: *const c_char) -> *mut c_char {
-    if engine_ptr.is_null() {
-        return to_c_string("Engine pointer is null".to_string());
-    }
-    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+    std::panic::catch_unwind(move || {
+        if engine_ptr.is_null() {
+            return to_c_string("Engine pointer is null".to_string());
+        }
+        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
 
-    let module_name = match unsafe { c_str_to_rust_str_slice(module_name_c) } {
-        Ok(s) => s,
-        Err(_) => return to_c_string("Invalid UTF-8 sequence in module_name".to_string()),
-    };
+        let module_name = match unsafe { c_str_to_rust_str_slice(module_name_c) } {
+            Ok(s) => s,
+            Err(_) => return to_c_string("Invalid UTF-8 sequence in module_name".to_string()),
+        };
 
-    match engine.import_module(module_name) {
-        Ok(()) => ptr::null_mut(),
-        Err(e) => to_c_string(format!("Error importing module: {}", e)),
-    }
+        match engine.import_module(module_name) {
+            Ok(()) => ptr::null_mut(),
+            Err(e) => to_c_string(format!("Error importing module: {}", e)),
+        }
+    })
+    .unwrap_or_else(panic_to_c_string)
 }
 
 /// Loads an external module by name, searched for in the paths configured via
@@ -578,20 +654,23 @@ pub unsafe extern "C" fn mq_import_module(engine_ptr: *mut MqContext, module_nam
 /// - The returned pointer, if non-null, must be freed with `mq_free_string`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_load_module(engine_ptr: *mut MqContext, module_name_c: *const c_char) -> *mut c_char {
-    if engine_ptr.is_null() {
-        return to_c_string("Engine pointer is null".to_string());
-    }
-    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+    std::panic::catch_unwind(move || {
+        if engine_ptr.is_null() {
+            return to_c_string("Engine pointer is null".to_string());
+        }
+        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
 
-    let module_name = match unsafe { c_str_to_rust_str_slice(module_name_c) } {
-        Ok(s) => s,
-        Err(_) => return to_c_string("Invalid UTF-8 sequence in module_name".to_string()),
-    };
+        let module_name = match unsafe { c_str_to_rust_str_slice(module_name_c) } {
+            Ok(s) => s,
+            Err(_) => return to_c_string("Invalid UTF-8 sequence in module_name".to_string()),
+        };
 
-    match engine.load_module(module_name) {
-        Ok(()) => ptr::null_mut(),
-        Err(e) => to_c_string(format!("Error loading module: {}", e)),
-    }
+        match engine.load_module(module_name) {
+            Ok(()) => ptr::null_mut(),
+            Err(e) => to_c_string(format!("Error loading module: {}", e)),
+        }
+    })
+    .unwrap_or_else(panic_to_c_string)
 }
 
 /// Replaces the HTTP resolver's domain allowlist used when importing modules
@@ -610,63 +689,71 @@ pub unsafe extern "C" fn mq_set_http_allowed_domains(
     domains: *const *const c_char,
     domains_len: usize,
 ) {
-    #[cfg(feature = "http-import")]
-    {
-        if engine_ptr.is_null() {
-            return;
+    let _ = std::panic::catch_unwind(move || {
+        #[cfg(feature = "http-import")]
+        {
+            if engine_ptr.is_null() {
+                return;
+            }
+            let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+            let domains = unsafe { c_str_array_to_strings(domains, domains_len) };
+            engine.set_http_allowed_domains(domains);
         }
-        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
-        let domains = unsafe { c_str_array_to_strings(domains, domains_len) };
-        engine.set_http_allowed_domains(domains);
-    }
-    #[cfg(not(feature = "http-import"))]
-    {
-        let _ = (engine_ptr, domains, domains_len);
-    }
+        #[cfg(not(feature = "http-import"))]
+        {
+            let _ = (engine_ptr, domains, domains_len);
+        }
+    });
 }
 
 /// Clears locally-cached HTTP module files, forcing a re-fetch of all cached
 /// modules on the next import. Has no effect if `engine_ptr` is null.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_clear_http_cache(engine_ptr: *mut MqContext) -> *mut c_char {
-    #[cfg(feature = "http-import")]
-    {
-        if engine_ptr.is_null() {
-            return ptr::null_mut();
+    std::panic::catch_unwind(move || {
+        #[cfg(feature = "http-import")]
+        {
+            if engine_ptr.is_null() {
+                return ptr::null_mut();
+            }
+            let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+            match engine.clear_http_cache() {
+                Ok(()) => ptr::null_mut(),
+                Err(e) => to_c_string(format!("Error clearing HTTP cache: {}", e)),
+            }
         }
-        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
-        match engine.clear_http_cache() {
-            Ok(()) => ptr::null_mut(),
-            Err(e) => to_c_string(format!("Error clearing HTTP cache: {}", e)),
+        #[cfg(not(feature = "http-import"))]
+        {
+            let _ = engine_ptr;
+            to_c_string("This library was built without the http-import feature".to_string())
         }
-    }
-    #[cfg(not(feature = "http-import"))]
-    {
-        let _ = engine_ptr;
-        to_c_string("This library was built without the http-import feature".to_string())
-    }
+    })
+    .unwrap_or_else(panic_to_c_string)
 }
 
 /// Clears all HTTP module cache including versioned modules and lock files.
 /// Has no effect if `engine_ptr` is null.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_clear_http_cache_all(engine_ptr: *mut MqContext) -> *mut c_char {
-    #[cfg(feature = "http-import")]
-    {
-        if engine_ptr.is_null() {
-            return ptr::null_mut();
+    std::panic::catch_unwind(move || {
+        #[cfg(feature = "http-import")]
+        {
+            if engine_ptr.is_null() {
+                return ptr::null_mut();
+            }
+            let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+            match engine.clear_http_cache_all() {
+                Ok(()) => ptr::null_mut(),
+                Err(e) => to_c_string(format!("Error clearing HTTP cache: {}", e)),
+            }
         }
-        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
-        match engine.clear_http_cache_all() {
-            Ok(()) => ptr::null_mut(),
-            Err(e) => to_c_string(format!("Error clearing HTTP cache: {}", e)),
+        #[cfg(not(feature = "http-import"))]
+        {
+            let _ = engine_ptr;
+            to_c_string("This library was built without the http-import feature".to_string())
         }
-    }
-    #[cfg(not(feature = "http-import"))]
-    {
-        let _ = engine_ptr;
-        to_c_string("This library was built without the http-import feature".to_string())
-    }
+    })
+    .unwrap_or_else(panic_to_c_string)
 }
 
 #[cfg(test)]
@@ -1556,5 +1643,33 @@ mod tests {
         }
 
         mq_destroy(engine);
+    }
+
+    #[test]
+    fn test_panic_message_str_payload() {
+        let payload = std::panic::catch_unwind(|| panic!("boom")).unwrap_err();
+        assert_eq!(panic_message(&*payload), "boom");
+    }
+
+    #[test]
+    fn test_panic_message_string_payload() {
+        let payload = std::panic::catch_unwind(|| panic!("boom {}", 42)).unwrap_err();
+        assert_eq!(panic_message(&*payload), "boom 42");
+    }
+
+    #[test]
+    fn test_panic_message_unknown_payload() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new(123u32);
+        assert_eq!(panic_message(&*payload), "unknown panic");
+    }
+
+    #[test]
+    fn test_panic_to_c_string() {
+        let payload = std::panic::catch_unwind(|| panic!("boom")).unwrap_err();
+        let c_str = panic_to_c_string(payload);
+        assert!(!c_str.is_null());
+        let msg = unsafe { c_string_to_rust_string(c_str) };
+        assert_eq!(msg, "Internal error: boom");
+        unsafe { mq_free_string(c_str) };
     }
 }
