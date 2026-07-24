@@ -132,6 +132,23 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
 }
 
 impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
+    /// Like the [`SandboxedIo<NativeIo>`]-pinned [`Engine::new`], but generic over `IO` and
+    /// takes the [`Io`] value up front — for hosts that need to select the `Io` *type* at
+    /// construction time, not just its value via [`set_io`](Self::set_io). Useful for e.g. a
+    /// test runner that wants an in-memory mock `Io` installed from the start.
+    ///
+    /// This only wires the evaluator side (builtins); pass the same `io` to
+    /// [`DefaultModuleResolver::with_io`] when constructing the resolver so local-filesystem
+    /// module resolution is gated consistently.
+    pub fn with_io(module_resolver: T, io: Shared<IO>) -> Self {
+        let token_arena = create_default_token_arena();
+        Self {
+            evaluator: Evaluator::with_io(ModuleLoader::new(module_resolver), Shared::clone(&token_arena), io),
+            token_arena,
+            optimization_level: OptimizationLevel::default(),
+        }
+    }
+
     /// Set the optimization level for AST transformations applied before evaluation.
     pub fn set_optimization_level(&mut self, level: OptimizationLevel) {
         self.optimization_level = level;

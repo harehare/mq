@@ -249,6 +249,33 @@ impl<T: ModuleResolver> Evaluator<T, SandboxedIo<NativeIo>> {
 }
 
 impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
+    /// Like the [`SandboxedIo<NativeIo>`]-pinned [`Evaluator::new`], but generic over `IO`
+    /// and takes the [`Io`] value up front — for hosts that need to select the `Io` *type*
+    /// at construction time (not just its value via [`set_io`](Self::set_io)), e.g. a test
+    /// runner installing an in-memory mock instead of the default sandboxed real filesystem.
+    pub(crate) fn with_io(
+        module_loader: module::ModuleLoader<T>,
+        token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+        io: Shared<IO>,
+    ) -> Self {
+        Self {
+            env: Shared::new(SharedCell::new(Env::default())),
+            token_arena,
+            call_stack_depth: 0,
+            deadline: None,
+            timeout_step: 0,
+            options: Options::default(),
+            module_loader,
+            macro_expander: Macro::new(),
+            io,
+            #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
+            #[cfg(feature = "debugger")]
+            debugger: Shared::new(SharedCell::new(Debugger::new())),
+            #[cfg(feature = "debugger")]
+            debugger_handler: Shared::new(SharedCell::new(Box::new(DefaultDebuggerHandler))),
+        }
+    }
+
     /// Sets the [`Io`] used by builtins (via ambient access, see [`io_context`]) for the
     /// duration of `eval()` calls on this evaluator.
     pub(crate) fn set_io(&mut self, io: Shared<IO>) {
