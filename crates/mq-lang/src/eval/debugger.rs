@@ -474,7 +474,7 @@ pub struct DefaultDebuggerHandler;
 
 impl DebuggerHandler for DefaultDebuggerHandler {}
 
-impl<T: ModuleResolver> Evaluator<T> {
+impl<T: ModuleResolver, IO: crate::io::Io> Evaluator<T, IO> {
     pub fn debugger(&self) -> Shared<SharedCell<Debugger>> {
         Shared::clone(&self.debugger)
     }

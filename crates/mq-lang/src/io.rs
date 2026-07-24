@@ -54,7 +54,7 @@ impl<T> IoSyncBound for T {}
 /// Implementations do not need to enforce permissions themselves unless they
 /// choose to (see [`SandboxedIo`] for a decorator that does); `Io` itself is
 /// purely a capability abstraction, not a policy.
-pub trait Io: std::fmt::Debug + IoSyncBound {
+pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
     fn read_to_string(&self, path: &Path) -> Result<String, IoError>;
     fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, IoError>;
     fn write(&self, path: &Path, content: &[u8]) -> Result<(), IoError>;

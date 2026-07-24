@@ -17,6 +17,13 @@ pub struct SandboxedIo<Inner: Io = NativeIo> {
     allow_net: bool,
 }
 
+impl<Inner: Io + Default> Default for SandboxedIo<Inner> {
+    /// All three permission flags default to `false` (fail safe), matching [`Inner::default()`](Default).
+    fn default() -> Self {
+        Self::new(Inner::default())
+    }
+}
+
 impl<Inner: Io> SandboxedIo<Inner> {
     pub fn new(inner: Inner) -> Self {
         Self {
