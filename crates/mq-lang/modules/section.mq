@@ -1,5 +1,20 @@
 def _is_section(section): is_dict(section) && section[:type] == :section;
 
+# Normalizes input into an array of Markdown nodes.
+# section::* functions operate on the full document, so calling them without
+# aggregating input first (missing `-A` on the CLI, or `nodes |` inline) means
+# a single node is passed instead of an array, which silently produces
+# meaningless results. Detect that case, warn on stderr, and treat the single
+# node as a one-element array so the result stays sane either way.
+def _ensure_aggregated(md_nodes):
+  if (is_array(md_nodes)):
+    md_nodes
+  else:
+    do
+      [md_nodes] | stderr("mq: section functions expect all document nodes; got a single node. Pass `-A` on the command line or pipe through `nodes` first.")
+    end
+end
+
 def _h_level_num(md):
   if (is_h1(md)): 1
   elif (is_h2(md)): 2
@@ -13,50 +28,54 @@ end
 # Returns sections whose title contains the specified pattern.
 # If depth is true, each section spans until the next header at the same or higher level.
 def section(md_nodes, pattern, depth = false):
-  if (depth):
-    if (is_empty(md_nodes)):
-      []
+  let agg_nodes = _ensure_aggregated(md_nodes)
+  | if (depth):
+      if (is_empty(agg_nodes)):
+        []
+      else:
+        do
+          let n = len(agg_nodes)
+          | let match_indices = do foreach (i, range(n - 1)): if (is_h(agg_nodes[i]) && contains(to_text(agg_nodes[i]), pattern)): i; | compact();
+          | var result = []
+          | var i = 0
+          | while (i < len(match_indices)):
+              let start = match_indices[i]
+              | let lvl = _h_level_num(agg_nodes[start])
+              | let boundaries = do foreach (j, range(n - 1)): if (is_h(agg_nodes[j]) && _h_level_num(agg_nodes[j]) <= lvl): j; | compact();
+              | let boundaries_with_end = boundaries + n
+              | let end_node = first(filter(boundaries_with_end, fn(b): b > start;))
+              | result += [{type: :section, header: agg_nodes[start], children: agg_nodes[start + 1:end_node]}]
+              | i += 1
+              | result
+            end
+        end
     else:
       do
-        let n = len(md_nodes)
-        | let match_indices = do foreach (i, range(n - 1)): if (is_h(md_nodes[i]) && contains(to_text(md_nodes[i]), pattern)): i; | compact();
-        | var result = []
-        | var i = 0
-        | while (i < len(match_indices)):
-            let start = match_indices[i]
-            | let lvl = _h_level_num(md_nodes[start])
-            | let boundaries = do foreach (j, range(n - 1)): if (is_h(md_nodes[j]) && _h_level_num(md_nodes[j]) <= lvl): j; | compact();
-            | let boundaries_with_end = boundaries + n
-            | let end_node = first(filter(boundaries_with_end, fn(b): b > start;))
-            | result += [{type: :section, header: md_nodes[start], children: md_nodes[start + 1:end_node]}]
-            | i += 1
-            | result
-          end
+        sections(agg_nodes) | title_contains(pattern)
       end
-  else:
-    sections(md_nodes) | title_contains(pattern)
 end
 
 # Splits markdown nodes into sections based on headers.
 def sections(md_nodes):
-  if (is_empty(md_nodes)):
-    []
-  else:
-    do
-      let indices = do foreach (i, range(len(md_nodes) - 1)): if (is_h(md_nodes[i])): i; | compact();
-      | let indices_with_end = indices + len(md_nodes)
-      | let indices_len = len(indices)
-      | var result = []
-      | var i = 0
-      | while (i < indices_len):
-          let start_node = indices[i]
-          | let end_node = indices_with_end[i + 1]
-          | let children = md_nodes[start_node + 1:end_node]
-          | result += [{type: :section, header: md_nodes[start_node], children: children}]
-          | i = i + 1
-          | result
-        end
-    end
+  let agg_nodes = _ensure_aggregated(md_nodes)
+  | if (is_empty(agg_nodes)):
+      []
+    else:
+      do
+        let indices = do foreach (i, range(len(agg_nodes) - 1)): if (is_h(agg_nodes[i])): i; | compact();
+        | let indices_with_end = indices + len(agg_nodes)
+        | let indices_len = len(indices)
+        | var result = []
+        | var i = 0
+        | while (i < indices_len):
+            let start_node = indices[i]
+            | let end_node = indices_with_end[i + 1]
+            | let children = agg_nodes[start_node + 1:end_node]
+            | result += [{type: :section, header: agg_nodes[start_node], children: children}]
+            | i = i + 1
+            | result
+          end
+      end
 end
 
 # Filters sections based on a given predicate function.
@@ -71,24 +90,25 @@ end
 
 # Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.
 def split(md_nodes, level):
-  if (is_empty(md_nodes)):
-    []
-  else:
-    do
-      let indices = do foreach (i, range(len(md_nodes) - 1)): if (is_h_level(md_nodes[i], level)): i; | compact();
-      | let indices_with_end = indices + len(md_nodes)
-      | let indices_len = len(indices)
-      | var result = []
-      | var i = 0
-      | while (i < len(indices)):
-          let start_node = indices[i]
-          | let end_node = indices_with_end[i + 1]
-          | let children = md_nodes[start_node + 1:end_node]
-          | result += [{type: :section, header: md_nodes[start_node], children: children}]
-          | i += 1
-          | result
-        end
-    end
+  let agg_nodes = _ensure_aggregated(md_nodes)
+  | if (is_empty(agg_nodes)):
+      []
+    else:
+      do
+        let indices = do foreach (i, range(len(agg_nodes) - 1)): if (is_h_level(agg_nodes[i], level)): i; | compact();
+        | let indices_with_end = indices + len(agg_nodes)
+        | let indices_len = len(indices)
+        | var result = []
+        | var i = 0
+        | while (i < len(indices)):
+            let start_node = indices[i]
+            | let end_node = indices_with_end[i + 1]
+            | let children = agg_nodes[start_node + 1:end_node]
+            | result += [{type: :section, header: agg_nodes[start_node], children: children}]
+            | i += 1
+            | result
+          end
+      end
 end
 
 # Filters the given list of sections, returning only those whose title contains the specified text.
