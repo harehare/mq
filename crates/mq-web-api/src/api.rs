@@ -418,7 +418,11 @@ fn type_error_kind(e: &mq_check::TypeError) -> String {
 }
 
 fn execute_query(request: ApiRequest, timeout: std::time::Duration) -> miette::Result<QueryApiResponse> {
-    let mut engine = mq_lang::DefaultEngine::default();
+    let sandboxed_io: mq_lang::Shared<dyn mq_lang::Io> =
+        mq_lang::Shared::new(mq_lang::SandboxedIo::new(mq_lang::NativeIo::default()));
+    let resolver = mq_lang::DefaultModuleResolver::with_io(mq_lang::Shared::clone(&sandboxed_io), vec![]);
+    let mut engine = mq_lang::Engine::new(resolver);
+    engine.set_io(sandboxed_io);
     engine.load_builtin_module();
     engine.set_timeout(timeout);
 
@@ -680,6 +684,31 @@ mod tests {
         };
         let result = query(req, std::time::Duration::from_secs(10));
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_modules_does_not_read_local_filesystem() {
+        let module_name = "mq_web_api_test_local_fs_module_should_not_be_readable";
+        let module_path = std::env::current_dir().unwrap().join(format!("{module_name}.mq"));
+        std::fs::write(&module_path, "def leaked(): 1;").expect("failed to write test module");
+
+        let req = ApiRequest {
+            query: ".h".to_string(),
+            input: Some("# Title".to_string()),
+            input_format: Some(InputFormat::Markdown),
+            modules: Some(vec![module_name.to_string()]),
+            args: None,
+            output_format: None,
+            aggregate: None,
+        };
+        let result = query(req, std::time::Duration::from_secs(10));
+
+        std::fs::remove_file(&module_path).expect("failed to remove test module");
+
+        assert!(
+            result.is_err(),
+            "a module present on the server's local disk must not be resolvable via a request-supplied module name"
+        );
     }
 
     #[test]
