@@ -1,0 +1,72 @@
+//! Abstracts every environment-dependent operation the mq engine needs — file
+//! read/write, environment-variable access, and network fetch — behind a
+//! single trait, so the core evaluator, parser, and module resolvers never
+//! call `std::fs`/`std::env`/a network client directly. Concrete
+//! implementations are injected per [`Engine`](crate::Engine) instance.
+//!
+//! This module currently defines the trait and its concrete implementations
+//! only; no existing call site in this crate routes through it yet (that is
+//! follow-up work). See [`NativeIo`] for a real filesystem/environment/
+//! network-backed implementation, and [`SandboxedIo`] for a decorator that
+//! enforces per-instance read/write/net permissions.
+
+mod error;
+#[cfg(test)]
+mod mem;
+mod native;
+mod sandboxed;
+
+pub use error::IoError;
+#[cfg(test)]
+pub(crate) use mem::MemIo;
+pub use native::NativeIo;
+pub use sandboxed::SandboxedIo;
+
+use std::path::{Path, PathBuf};
+
+/// Marker supertrait carrying the `Send + Sync` bound for [`Io`] only when the
+/// `sync` feature is enabled, mirroring the `Rc`/`Arc` split of
+/// [`crate::Shared`]. WASM/single-threaded embeddings (e.g. `mq-wasm`'s
+/// `Rc<RefCell<..>>`-backed fetch cache) cannot satisfy `Send + Sync`, so the
+/// bound must not be unconditional.
+#[cfg(feature = "sync")]
+pub trait IoSyncBound: Send + Sync {}
+#[cfg(feature = "sync")]
+impl<T: Send + Sync> IoSyncBound for T {}
+
+#[cfg(not(feature = "sync"))]
+pub trait IoSyncBound {}
+#[cfg(not(feature = "sync"))]
+impl<T> IoSyncBound for T {}
+
+/// Abstracts file, environment-variable, and network access for the mq
+/// engine. All methods are synchronous, matching the existing sync contract
+/// of [`ModuleResolver::resolve`](crate::module::resolver::ModuleResolver::resolve)
+/// and the sync evaluator loop. Hosts whose only primitive is async (e.g. a
+/// browser `fetch`) are expected to pre-populate a cache asynchronously and
+/// answer these calls synchronously from that cache.
+///
+/// Implementations do not need to enforce permissions themselves unless they
+/// choose to (see [`SandboxedIo`] for a decorator that does); `Io` itself is
+/// purely a capability abstraction, not a policy.
+pub trait Io: std::fmt::Debug + IoSyncBound {
+    fn read_to_string(&self, path: &Path) -> Result<String, IoError>;
+    fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, IoError>;
+    fn write(&self, path: &Path, content: &[u8]) -> Result<(), IoError>;
+    fn exists(&self, path: &Path) -> bool;
+
+    /// `(path, is_dir)` pairs for the immediate entries of a directory.
+    fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError>;
+
+    /// Falls back to the original path unchanged if canonicalization fails.
+    fn canonicalize(&self, path: &Path) -> PathBuf;
+
+    fn env_var(&self, name: &str) -> Result<String, IoError>;
+
+    /// Callers are responsible for URL/domain policy (HTTPS-only, allowlisting,
+    /// etc.) before calling this — `fetch` is a minimal transport primitive.
+    fn fetch(&self, url: &str) -> Result<String, IoError>;
+
+    fn home_dir(&self) -> Option<PathBuf>;
+    fn current_dir(&self) -> Option<PathBuf>;
+}
