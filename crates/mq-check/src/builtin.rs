@@ -1217,6 +1217,12 @@ fn register_markdown(ctx: &mut InferenceContext) {
     // Markdown attribute functions
     register_unary(ctx, "get_title", Type::Markdown, Type::String);
     register_unary(ctx, "get_url", Type::Markdown, Type::String);
+    register_unary(
+        ctx,
+        "get_location",
+        Type::Markdown,
+        Type::dict(Type::String, Type::Number),
+    );
 
     // Other markdown functions
     register_nullary(ctx, "to_hr", Type::Markdown);
@@ -2367,6 +2373,7 @@ mod tests {
     #[case::set_children("to_markdown(\"# heading\") | first() | set_children([\"new\"])", true)]
     #[case::get_title("to_markdown(\"[link](url)\") | first() | get_title", true)]
     #[case::get_url("to_markdown(\"[link](url)\") | first() | get_url", true)]
+    #[case::get_location("to_markdown(\"# heading\") | first() | get_location", true)]
     #[case::set_check("to_markdown(\"- [ ] task\") | first() | set_check(true)", true)]
     #[case::set_list_ordered("to_markdown(\"- item\") | first() | set_list_ordered(false)", true)]
     #[case::set_code_block_lang("to_markdown(\"```\\ncode\\n```\") | first() | set_code_block_lang(\"rust\")", true)]
