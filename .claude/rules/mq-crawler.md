@@ -6,20 +6,22 @@ paths: crates/mq-crawler/**
 
 ## Purpose
 
-Tool for crawling directories and collecting Markdown files for batch processing.
+Web crawler that fetches pages over HTTP(S), converts HTML to Markdown, and collects the
+results for batch processing with mq. It is not a filesystem/directory crawler.
 
 ## Coding Rules
 
-- Implement efficient directory traversal
-- Handle filesystem errors gracefully using `miette`
-- Support configurable file filtering (extensions, patterns, ignore files)
-- Respect `.gitignore` and similar ignore patterns when appropriate
-- Avoid following symlinks infinitely; detect and handle cycles
-- Provide progress feedback for large directory trees
-- Write tests for various directory structures and edge cases
-- Document all configuration options and filtering rules
-- Handle permissions errors gracefully
-- Support concurrent/parallel crawling where appropriate
-- Limit resource usage (memory, file handles) appropriately
-- Provide clear error messages for inaccessible paths
-- Test with edge cases: empty directories, deep nesting, large file counts
+- Respect `robots.txt` directives before fetching a URL
+- Support seeding crawls from `sitemap.xml` in addition to a single start URL
+- Limit crawl depth, breadth, and total page count (e.g. `--max-pages`) appropriately
+- Support concurrent/parallel fetching with configurable concurrency limits
+- Apply rate limiting / politeness delays between requests to the same host
+- Retry failed requests with exponential backoff
+- Support custom HTTP headers, cookies, user agents, and basic/bearer authentication
+- Handle HTTP and network errors gracefully using `miette`
+- Convert fetched HTML to Markdown via `mq-markdown`
+- Track crawl statistics (pages crawled/skipped/failed, links discovered, duration)
+- Support checkpointing crawl progress to disk and resuming via `--resume-from`
+- Write tests for various HTML structures, robots.txt rules, and sitemap formats
+- Document all CLI flags and configuration options
+- Test edge cases: unreachable hosts, malformed HTML, redirects, disallowed paths, empty sitemaps
