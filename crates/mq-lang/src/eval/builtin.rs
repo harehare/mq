@@ -4252,10 +4252,40 @@ fn mock_fetch_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
     }
 }
 
-/// Returns the outer HTML of every element in `html` matching the CSS `selector`, as an array
-/// of strings. Queries the raw HTML string directly, bypassing the Markdown conversion `-I html`
-/// otherwise applies, so tags/classes/ids/`data-*` attributes lost during that conversion are
-/// still available.
+#[cfg(feature = "process-io")]
+fn runtime_args_to_strings(command: &str, arr: &[RuntimeValue]) -> Result<Vec<String>, Error> {
+    arr.iter()
+        .map(|v| match v {
+            RuntimeValue::String(s) => Ok(s.clone()),
+            other => Err(Error::Runtime(format!(
+                "system: `{command}` arguments must be strings, got {other}"
+            ))),
+        })
+        .collect()
+}
+
+#[cfg(feature = "process-io")]
+#[mq_macros::mq_fn(name = "system", params = Range(1, 2))]
+fn system_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(command)] => io_context::current()
+            .execute(command, &[])
+            .map(RuntimeValue::String)
+            .map_err(|e| Error::Runtime(format!("Failed to execute {}: {}", command, e))),
+        [RuntimeValue::String(command), RuntimeValue::Array(arr)] => {
+            let cmd_args = runtime_args_to_strings(command, arr)?;
+            io_context::current()
+                .execute(command, &cmd_args)
+                .map(RuntimeValue::String)
+                .map_err(|e| Error::Runtime(format!("Failed to execute {}: {}", command, e)))
+        }
+        args => Err(Error::InvalidTypes(
+            ident.to_string(),
+            args.iter_mut().map(std::mem::take).collect(),
+        )),
+    }
+}
+
 #[cfg(feature = "css-selector")]
 #[mq_macros::mq_fn(name = "css", params = Fixed(2))]
 fn css_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
@@ -4649,6 +4679,8 @@ mq_macros::builtin_dispatch! {
     HTTP,
     #[cfg(all(feature = "http", feature = "mock-io"))]
     MOCK_FETCH,
+    #[cfg(feature = "process-io")]
+    SYSTEM,
     #[cfg(feature = "css-selector")]
     CSS,
     #[cfg(feature = "css-selector")]
@@ -6288,6 +6320,14 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &["url", "body"],
         },
     );
+    #[cfg(feature = "process-io")]
+    map.insert(
+        SmolStr::new("system"),
+        BuiltinFunctionDoc {
+            description: "Runs command as a child process, optionally passing an array of string args, and returns its captured stdout as a string. The command is never run through a shell, so shell metacharacters in args are never interpreted. A non-zero exit status is a runtime error that includes the process's stderr. Requires the --allow-run CLI flag; otherwise returns a runtime error.",
+            params: &["command", "args"],
+        },
+    );
     #[cfg(feature = "css-selector")]
     map.insert(
         SmolStr::new("css"),
@@ -7108,7 +7148,7 @@ mod tests {
 
     #[cfg(all(feature = "http", feature = "mock-io"))]
     use crate::io::MemIo;
-    #[cfg(any(feature = "file-io", feature = "http"))]
+    #[cfg(any(feature = "file-io", feature = "http", feature = "process-io"))]
     use crate::io::{NativeIo, SandboxedIo};
 
     use super::*;
@@ -10660,6 +10700,50 @@ mod tests {
             result.is_err(),
             "write_file should error when the parent directory doesn't exist"
         );
+    }
+
+    #[cfg(feature = "process-io")]
+    #[test]
+    fn test_system_capability_gate_and_success() {
+        assert!(
+            call("system", vec![RuntimeValue::String("echo".into())]).is_err(),
+            "system should be blocked when run access is not allowed"
+        );
+
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_run(true)));
+
+        let result = call(
+            "system",
+            vec![
+                RuntimeValue::String("echo".into()),
+                RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("hello".into())])),
+            ],
+        )
+        .unwrap();
+        assert_eq!(result, RuntimeValue::String("hello\n".to_string()));
+
+        assert!(
+            call(
+                "system",
+                vec![RuntimeValue::String("mq-this-command-should-not-exist".into())]
+            )
+            .is_err(),
+            "system should error for a missing command"
+        );
+
+        assert!(
+            call(
+                "system",
+                vec![
+                    RuntimeValue::String("echo".into()),
+                    RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into())])),
+                ],
+            )
+            .is_err(),
+            "system should error when args contains a non-string value"
+        );
+
+        assert!(call("system", vec![RuntimeValue::Number(42.into())]).is_err());
     }
 
     #[cfg(feature = "file-io")]
