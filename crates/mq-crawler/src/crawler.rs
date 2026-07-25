@@ -35,7 +35,7 @@ pub struct CrawlResult {
     pub total_pages_visited: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct CrawlResultStats {
     pub pages_crawled: usize,
     pub pages_skipped_robots: usize,
@@ -93,6 +93,26 @@ impl CrawlResult {
     }
 }
 
+/// A snapshot of crawl progress that can be written to disk and later
+/// reloaded to resume an interrupted crawl via `--resume-from`.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct CrawlCheckpoint {
+    /// URLs that have already been visited (queued, in-flight, or completed).
+    pub visited: Vec<Url>,
+    /// URLs still pending, paired with their crawl depth.
+    pub frontier: Vec<(Url, usize)>,
+    /// Cumulative statistics from the crawl(s) that produced this checkpoint.
+    pub stats: CrawlResultStats,
+}
+
+impl CrawlCheckpoint {
+    /// Loads a checkpoint previously written by [`Crawler::save_checkpoint`].
+    pub fn load(path: &str) -> Result<Self, String> {
+        let data = fs::read_to_string(path).map_err(|e| format!("Failed to read checkpoint file '{}': {}", path, e))?;
+        serde_json::from_str(&data).map_err(|e| format!("Failed to parse checkpoint file '{}': {}", path, e))
+    }
+}
+
 // Helper function to sanitize filename components
 fn sanitize_filename_component(component: &str, max_len: usize) -> String {
     let mut sanitized: String = component
@@ -146,6 +166,8 @@ fn extract_links(html_content: &str, base_url: &Url) -> Vec<Url> {
 #[derive(Debug, Clone)]
 pub struct Crawler {
     allowed_domains: Option<Vec<String>>,
+    checkpoint_interval_pages: usize,
+    checkpoint_path: Option<String>,
     conversion_options: mq_markdown::ConversionOptions,
     crawl_delay: Duration,
     custom_robots_path: Option<String>,
@@ -155,6 +177,7 @@ pub struct Crawler {
     format: OutputFormat,
     http_client: HttpClient,
     initial_domain: String,
+    max_pages: Option<usize>,
     mq_query: String,
     output_path: Option<String>,
     result: Arc<RwLock<CrawlResult>>,
@@ -180,6 +203,10 @@ impl Crawler {
         depth_limit: Option<usize>,
         allowed_domains: Option<Vec<String>>,
         additional_seed_urls: Vec<Url>,
+        max_pages: Option<usize>,
+        checkpoint_path: Option<String>,
+        checkpoint_interval_pages: usize,
+        resume_checkpoint: Option<CrawlCheckpoint>,
     ) -> Result<Self, String> {
         let initial_domain = start_url
             .domain()
@@ -188,25 +215,49 @@ impl Crawler {
         let user_agent = format!("mq crawler/0.1 ({})", env!("CARGO_PKG_HOMEPAGE"));
 
         let to_visit = SegQueue::new();
-        to_visit.push((start_url.clone(), 0));
-        for seed_url in additional_seed_urls {
-            to_visit.push((seed_url, 0));
+        let visited = DashSet::new();
+        let mut initial_result = CrawlResult::default();
+
+        if let Some(checkpoint) = resume_checkpoint {
+            tracing::info!(
+                "Resuming crawl from checkpoint: {} visited, {} queued.",
+                checkpoint.visited.len(),
+                checkpoint.frontier.len()
+            );
+            for url in checkpoint.visited {
+                visited.insert(url);
+            }
+            for (url, depth) in checkpoint.frontier {
+                to_visit.push((url, depth));
+            }
+            initial_result.pages_crawled = checkpoint.stats.pages_crawled;
+            initial_result.pages_skipped_robots = checkpoint.stats.pages_skipped_robots;
+            initial_result.pages_failed = checkpoint.stats.pages_failed;
+            initial_result.links_discovered = checkpoint.stats.links_discovered;
+        } else {
+            to_visit.push((start_url.clone(), 0));
+            for seed_url in additional_seed_urls {
+                to_visit.push((seed_url, 0));
+            }
         }
 
         Ok(Self {
             allowed_domains,
+            checkpoint_interval_pages: checkpoint_interval_pages.max(1),
+            checkpoint_path,
             http_client,
             to_visit: Arc::new(to_visit),
-            visited: Arc::new(DashSet::new()),
+            visited: Arc::new(visited),
             robots_cache: Arc::new(DashMap::new()),
             crawl_delay: Duration::from_secs_f64(crawl_delay_secs),
             domain_last_request: Arc::new(DashMap::new()),
+            max_pages,
             mq_query: mq_query.unwrap_or("identity()".to_string()),
             user_agent,
             output_path,
             initial_domain,
             custom_robots_path,
-            result: Arc::new(RwLock::new(CrawlResult::default())),
+            result: Arc::new(RwLock::new(initial_result)),
             notify: Arc::new(Notify::new()),
             concurrency: concurrency.max(1),
             format,
@@ -278,10 +329,14 @@ impl Crawler {
     async fn run_parallel(&mut self) -> Result<(), String> {
         let semaphore = Arc::new(Semaphore::new(self.concurrency));
         let active_tasks = Arc::new(AtomicUsize::new(0));
+        let mut pages_at_last_checkpoint = self.result.read().await.pages_crawled;
 
         loop {
-            // Termination condition: queue empty AND no tasks in flight
-            if self.to_visit.is_empty() && active_tasks.load(Ordering::SeqCst) == 0 {
+            let max_pages_reached = self.max_pages.is_some_and(|max| self.visited.len() >= max);
+
+            // Termination condition: no tasks in flight, and either the queue is
+            // empty or we have hit the --max-pages limit.
+            if (self.to_visit.is_empty() || max_pages_reached) && active_tasks.load(Ordering::SeqCst) == 0 {
                 break;
             }
 
@@ -290,26 +345,38 @@ impl Crawler {
             let notified = self.notify.notified();
 
             // Drain the queue, spawning tasks up to the semaphore limit
-            while let Some((url, depth)) = self.to_visit.pop() {
-                if self.should_skip_url_without_visited_check(&url) || !self.visited.insert(url.clone()) {
-                    continue;
+            if !max_pages_reached {
+                while let Some((url, depth)) = self.to_visit.pop() {
+                    if self.should_skip_url_without_visited_check(&url) || !self.visited.insert(url.clone()) {
+                        continue;
+                    }
+
+                    let permit = semaphore.clone().acquire_owned().await.expect("Semaphore closed");
+                    active_tasks.fetch_add(1, Ordering::SeqCst);
+
+                    let crawler = self.clone();
+                    let active_tasks_clone = active_tasks.clone();
+                    let notify_clone = self.notify.clone();
+                    tokio::spawn(async move {
+                        let _permit = permit;
+                        crawler.process_url_with_rate_limit(url, depth).await;
+                        active_tasks_clone.fetch_sub(1, Ordering::SeqCst);
+                        // Wake the main loop so it can either spawn new tasks or
+                        // detect the termination condition.
+                        notify_clone.notify_one();
+                    });
+
+                    if self.max_pages.is_some_and(|max| self.visited.len() >= max) {
+                        tracing::info!(
+                            "Reached --max-pages limit ({}); no further URLs will be queued.",
+                            self.max_pages.expect("checked by is_some_and above")
+                        );
+                        break;
+                    }
                 }
-
-                let permit = semaphore.clone().acquire_owned().await.expect("Semaphore closed");
-                active_tasks.fetch_add(1, Ordering::SeqCst);
-
-                let crawler = self.clone();
-                let active_tasks_clone = active_tasks.clone();
-                let notify_clone = self.notify.clone();
-                tokio::spawn(async move {
-                    let _permit = permit;
-                    crawler.process_url_with_rate_limit(url, depth).await;
-                    active_tasks_clone.fetch_sub(1, Ordering::SeqCst);
-                    // Wake the main loop so it can either spawn new tasks or
-                    // detect the termination condition.
-                    notify_clone.notify_one();
-                });
             }
+
+            self.maybe_save_checkpoint(&mut pages_at_last_checkpoint).await;
 
             // Block until a task finishes or a new URL is enqueued.
             // If notify_one() was already called since we created `notified`
@@ -317,8 +384,83 @@ impl Crawler {
             notified.await;
         }
 
+        if self.checkpoint_path.is_some()
+            && let Err(e) = self.save_checkpoint().await
+        {
+            tracing::warn!("Failed to save final checkpoint: {}", e);
+        }
+
         self.finalize_crawl().await;
         Ok(())
+    }
+
+    /// Saves a checkpoint if `--checkpoint-path` is set and at least
+    /// `checkpoint_interval_pages` pages have been crawled since the last save.
+    async fn maybe_save_checkpoint(&self, pages_at_last_checkpoint: &mut usize) {
+        if self.checkpoint_path.is_none() {
+            return;
+        }
+
+        let pages_crawled = self.result.read().await.pages_crawled;
+        if pages_crawled < pages_at_last_checkpoint.saturating_add(self.checkpoint_interval_pages) {
+            return;
+        }
+
+        *pages_at_last_checkpoint = pages_crawled;
+        if let Err(e) = self.save_checkpoint().await {
+            tracing::warn!("Failed to save checkpoint: {}", e);
+        }
+    }
+
+    /// Snapshots the current visited set and pending frontier to
+    /// `checkpoint_path`, so the crawl can later be resumed with `--resume-from`.
+    /// The write is atomic (temp file + rename) so a crash mid-write cannot
+    /// leave behind a corrupt checkpoint.
+    async fn save_checkpoint(&self) -> Result<(), String> {
+        let Some(path) = self.checkpoint_path.clone() else {
+            return Ok(());
+        };
+
+        let visited: Vec<Url> = self.visited.iter().map(|entry| entry.clone()).collect();
+        let frontier = self.snapshot_frontier();
+        let stats = self.result.read().await.to_stats();
+        let visited_len = visited.len();
+        let frontier_len = frontier.len();
+
+        let checkpoint = CrawlCheckpoint {
+            visited,
+            frontier,
+            stats,
+        };
+        let json =
+            serde_json::to_string_pretty(&checkpoint).map_err(|e| format!("Failed to serialize checkpoint: {}", e))?;
+
+        let tmp_path = format!("{}.tmp", path);
+        fs::write(&tmp_path, json).map_err(|e| format!("Failed to write checkpoint to '{}': {}", tmp_path, e))?;
+        fs::rename(&tmp_path, &path).map_err(|e| format!("Failed to finalize checkpoint file '{}': {}", path, e))?;
+
+        tracing::info!(
+            "Checkpoint saved to '{}' ({} visited, {} queued).",
+            path,
+            visited_len,
+            frontier_len
+        );
+        Ok(())
+    }
+
+    /// Drains `to_visit` and pushes every item back, returning a snapshot of
+    /// its contents. Safe to call concurrently with producers pushing new
+    /// items; items pushed during the drain may be missing from the snapshot
+    /// but are never lost from the queue itself.
+    fn snapshot_frontier(&self) -> Vec<(Url, usize)> {
+        let mut items = Vec::new();
+        while let Some(item) = self.to_visit.pop() {
+            items.push(item);
+        }
+        for item in &items {
+            self.to_visit.push(item.clone());
+        }
+        items
     }
 
     fn should_skip_url_without_visited_check(&self, url: &Url) -> bool {
@@ -558,6 +700,7 @@ impl Crawler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use httpmock::{Method::GET, MockServer};
     use rstest::rstest;
     use url::Url;
 
@@ -709,6 +852,10 @@ mod tests {
             depth_limit,
             allowed_domains,
             Vec::new(),
+            None,
+            None,
+            1,
+            None,
         )
         .await
         .unwrap()
@@ -773,6 +920,10 @@ mod tests {
             Some(2),
             None,
             Vec::new(),
+            None,
+            None,
+            1,
+            None,
         )
         .await
         .unwrap();
@@ -797,6 +948,10 @@ mod tests {
             None,
             None,
             Vec::new(),
+            None,
+            None,
+            1,
+            None,
         )
         .await
         .unwrap();
@@ -825,6 +980,10 @@ mod tests {
             None,
             None,
             seed_urls.clone(),
+            None,
+            None,
+            1,
+            None,
         )
         .await
         .unwrap();
@@ -839,5 +998,169 @@ mod tests {
         for seed_url in seed_urls {
             assert!(queued.contains(&(seed_url, 0)));
         }
+    }
+
+    #[tokio::test]
+    async fn test_max_pages_limits_total_visited() {
+        let server = MockServer::start_async().await;
+        let port = server.address().port();
+
+        let index_mock = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/");
+                then.status(200).body(
+                    r#"<html><body>
+                        <a href="/page1">1</a>
+                        <a href="/page2">2</a>
+                        <a href="/page3">3</a>
+                        <a href="/page4">4</a>
+                        <a href="/page5">5</a>
+                    </body></html>"#,
+                );
+            })
+            .await;
+        let page1_mock = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/page1");
+                then.status(200).body("<html><body>Page 1</body></html>");
+            })
+            .await;
+
+        let start_url = Url::parse(&format!("http://localhost:{}/", port)).unwrap();
+        let http_client = HttpClient::new_reqwest(30.0).unwrap();
+
+        let mut crawler = Crawler::new(
+            http_client,
+            start_url,
+            0.0,
+            None,
+            None,
+            None,
+            1,
+            OutputFormat::Text,
+            mq_markdown::ConversionOptions::default(),
+            None,
+            None,
+            Vec::new(),
+            Some(2),
+            None,
+            1,
+            None,
+        )
+        .await
+        .unwrap();
+
+        crawler.run().await.unwrap();
+
+        assert_eq!(crawler.visited.len(), 2);
+        assert!(!crawler.to_visit.is_empty(), "unvisited URLs should remain queued");
+        index_mock.assert_async().await;
+        page1_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_save_checkpoint_captures_visited_and_frontier() {
+        let start_url = Url::parse("http://start.invalid/").unwrap();
+        let http_client = HttpClient::new_reqwest(30.0).unwrap();
+        let checkpoint_file = tempfile::NamedTempFile::new().unwrap();
+        let checkpoint_path = checkpoint_file.path().to_string_lossy().to_string();
+
+        let crawler = Crawler::new(
+            http_client,
+            start_url.clone(),
+            0.0,
+            None,
+            None,
+            None,
+            1,
+            OutputFormat::Text,
+            mq_markdown::ConversionOptions::default(),
+            None,
+            None,
+            Vec::new(),
+            None,
+            Some(checkpoint_path.clone()),
+            1,
+            None,
+        )
+        .await
+        .unwrap();
+
+        // Drain the default seeded start URL so the frontier reflects only
+        // the mid-crawl state set up below.
+        while crawler.to_visit.pop().is_some() {}
+
+        // Simulate mid-crawl state: one page visited, one still queued.
+        crawler.visited.insert(start_url.clone());
+        let queued_url = Url::parse("http://start.invalid/page1").unwrap();
+        crawler.to_visit.push((queued_url.clone(), 1));
+
+        crawler.save_checkpoint().await.unwrap();
+
+        let loaded = CrawlCheckpoint::load(&checkpoint_path).unwrap();
+        assert_eq!(loaded.visited, vec![start_url]);
+        assert_eq!(loaded.frontier, vec![(queued_url, 1)]);
+
+        // The frontier snapshot must not have drained the live queue.
+        assert!(!crawler.to_visit.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_resume_from_checkpoint_restores_state() {
+        let start_url = Url::parse("http://start.invalid/").unwrap();
+        let http_client = HttpClient::new_reqwest(30.0).unwrap();
+
+        let visited_url = Url::parse("http://start.invalid/already-visited").unwrap();
+        let queued_url = Url::parse("http://start.invalid/still-queued").unwrap();
+        let checkpoint = CrawlCheckpoint {
+            visited: vec![visited_url.clone()],
+            frontier: vec![(queued_url.clone(), 3)],
+            stats: CrawlResultStats {
+                pages_crawled: 5,
+                pages_skipped_robots: 1,
+                pages_failed: 2,
+                links_discovered: 7,
+                total_pages_visited: 1,
+                duration_secs: None,
+            },
+        };
+
+        let crawler = Crawler::new(
+            http_client,
+            start_url.clone(),
+            0.0,
+            None,
+            None,
+            None,
+            1,
+            OutputFormat::Text,
+            mq_markdown::ConversionOptions::default(),
+            None,
+            None,
+            Vec::new(),
+            None,
+            None,
+            1,
+            Some(checkpoint),
+        )
+        .await
+        .unwrap();
+
+        // The checkpoint's visited set is restored, and the start URL is not
+        // re-queued alongside it.
+        assert!(crawler.visited.contains(&visited_url));
+        assert_eq!(crawler.visited.len(), 1);
+
+        let mut queued = Vec::new();
+        while let Some(item) = crawler.to_visit.pop() {
+            queued.push(item);
+        }
+        assert_eq!(queued, vec![(queued_url, 3)]);
+
+        let result = crawler.result.read().await;
+        assert_eq!(result.pages_crawled, 5);
+        assert_eq!(result.pages_skipped_robots, 1);
+        assert_eq!(result.pages_failed, 2);
+        assert_eq!(result.links_discovered, 7);
     }
 }
