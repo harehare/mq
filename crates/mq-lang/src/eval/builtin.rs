@@ -4061,10 +4061,12 @@ fn write_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
     }
 }
 
+#[cfg(feature = "file-io")]
 fn is_embeddable_image_url(url: &str) -> bool {
     !url.starts_with("data:") && !url.contains("://")
 }
 
+#[cfg(feature = "file-io")]
 fn guess_image_mime_type(path: &std::path::Path) -> Option<&'static str> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     Some(match ext.as_str() {
@@ -4081,6 +4083,7 @@ fn guess_image_mime_type(path: &std::path::Path) -> Option<&'static str> {
     })
 }
 
+#[cfg(feature = "file-io")]
 fn image_extension_for_mime(mime: &str) -> Option<&'static str> {
     Some(match mime {
         "image/png" => "png",
