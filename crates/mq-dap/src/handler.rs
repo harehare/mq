@@ -43,14 +43,20 @@ pub struct DapHandlerWrapper {
     handler: DapDebuggerHandler,
     command_rx: Receiver<DapCommand>,
     pause_requested: Arc<AtomicBool>,
+    exception_breakpoints_enabled: Arc<AtomicBool>,
 }
 
 impl DapHandlerWrapper {
-    pub fn new(handler: DapDebuggerHandler, command_rx: Receiver<DapCommand>) -> Self {
+    pub fn new(
+        handler: DapDebuggerHandler,
+        command_rx: Receiver<DapCommand>,
+        exception_breakpoints_enabled: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             handler,
             command_rx,
             pause_requested: Arc::new(AtomicBool::new(false)),
+            exception_breakpoints_enabled,
         }
     }
 
@@ -146,6 +152,32 @@ impl mq_lang::DebuggerHandler for DapHandlerWrapper {
             }
         }
     }
+
+    fn on_error(&self, message: &str, context: &mq_lang::DebugContext) {
+        if !self.exception_breakpoints_enabled.load(SeqCst) {
+            return;
+        }
+
+        debug!(message = %message, "Uncaught error, exception breakpoints enabled");
+
+        let dap_message = DebuggerMessage::ExceptionPaused {
+            thread_id: self.handler.thread_id,
+            message: message.to_string(),
+            context: context.clone(),
+        };
+
+        if let Err(e) = self.handler.message_tx.send(dap_message) {
+            error!(error = %e, "Failed to send exception message to DAP server");
+            return;
+        }
+
+        // Block until the client resumes (e.g. via continue/next), mirroring on_breakpoint_hit.
+        // The error propagates regardless of which command is received; this wait only gives
+        // the client a chance to inspect state before that happens.
+        if let Err(e) = self.command_rx.recv() {
+            error!(error = %e, "Failed to receive command from DAP server");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -178,7 +210,7 @@ mod tests {
         let (_command_tx, command_rx) = unbounded::<DapCommand>();
 
         let handler = DapDebuggerHandler::new(message_tx);
-        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx, Arc::new(AtomicBool::new(false)));
 
         let debug_str = format!("{:?}", wrapper);
         assert!(debug_str.contains("DapHandlerWrapper"));
@@ -190,7 +222,7 @@ mod tests {
         let (_command_tx, command_rx) = unbounded::<DapCommand>();
 
         let handler = DapDebuggerHandler::new(message_tx);
-        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx, Arc::new(AtomicBool::new(false)));
 
         let breakpoint = mq_lang::Breakpoint {
             id: 1,
@@ -218,7 +250,7 @@ mod tests {
         let (command_tx, command_rx) = unbounded::<DapCommand>();
 
         let handler = DapDebuggerHandler::new(message_tx);
-        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx, Arc::new(AtomicBool::new(false)));
 
         let breakpoint = mq_lang::Breakpoint {
             id: 1,
@@ -255,7 +287,7 @@ mod tests {
         let (command_tx, command_rx) = unbounded::<DapCommand>();
 
         let handler = DapDebuggerHandler::new(message_tx);
-        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx, Arc::new(AtomicBool::new(false)));
 
         let breakpoint = mq_lang::Breakpoint {
             id: 1,
@@ -279,7 +311,7 @@ mod tests {
         let (command_tx, command_rx) = unbounded::<DapCommand>();
 
         let handler = DapDebuggerHandler::new(message_tx);
-        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx, Arc::new(AtomicBool::new(false)));
 
         let breakpoint = mq_lang::Breakpoint {
             id: 1,
@@ -303,7 +335,7 @@ mod tests {
         let (command_tx, command_rx) = unbounded::<DapCommand>();
 
         let handler = DapDebuggerHandler::new(message_tx);
-        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx, Arc::new(AtomicBool::new(false)));
 
         let breakpoint = mq_lang::Breakpoint {
             id: 1,
@@ -327,7 +359,7 @@ mod tests {
         let (command_tx, command_rx) = unbounded::<DapCommand>();
 
         let handler = DapDebuggerHandler::new(message_tx);
-        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx, Arc::new(AtomicBool::new(false)));
 
         let breakpoint = mq_lang::Breakpoint {
             id: 1,
@@ -351,7 +383,7 @@ mod tests {
         let (_command_tx, command_rx) = unbounded::<DapCommand>();
 
         let handler = DapDebuggerHandler::new(message_tx);
-        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx, Arc::new(AtomicBool::new(false)));
 
         let breakpoint = mq_lang::Breakpoint {
             id: 1,
@@ -376,7 +408,7 @@ mod tests {
         let (command_tx, command_rx) = unbounded::<DapCommand>();
 
         let handler = DapDebuggerHandler::new(message_tx);
-        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx, Arc::new(AtomicBool::new(false)));
 
         let context = mq_lang::DebugContext::default();
 
@@ -411,7 +443,7 @@ mod tests {
             let (command_tx, command_rx) = unbounded::<DapCommand>();
 
             let handler = DapDebuggerHandler::new(message_tx);
-            let wrapper = DapHandlerWrapper::new(handler, command_rx);
+            let wrapper = DapHandlerWrapper::new(handler, command_rx, Arc::new(AtomicBool::new(false)));
 
             let context = mq_lang::DebugContext::default();
 
@@ -430,7 +462,7 @@ mod tests {
         let (_command_tx, command_rx) = unbounded::<DapCommand>();
 
         let handler = DapDebuggerHandler::new(message_tx);
-        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx, Arc::new(AtomicBool::new(false)));
 
         let context = mq_lang::DebugContext::default();
 
@@ -439,5 +471,65 @@ mod tests {
 
         let action = wrapper.on_step(&context);
         assert!(matches!(action, mq_lang::DebuggerAction::Continue));
+    }
+
+    #[test]
+    fn test_on_error_does_not_send_or_block_when_exception_breakpoints_disabled() {
+        let (message_tx, message_rx) = unbounded::<DebuggerMessage>();
+        let (_command_tx, command_rx) = unbounded::<DapCommand>();
+
+        let handler = DapDebuggerHandler::new(message_tx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx, Arc::new(AtomicBool::new(false)));
+
+        let context = mq_lang::DebugContext::default();
+
+        // Drop the command sender: if on_error tried to block on command_rx.recv(), this call
+        // would still return (recv fails), but we additionally assert nothing was sent at all.
+        drop(_command_tx);
+
+        wrapper.on_error("boom", &context);
+
+        assert!(message_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_on_error_sends_exception_paused_and_blocks_when_enabled() {
+        let (message_tx, message_rx) = unbounded::<DebuggerMessage>();
+        let (command_tx, command_rx) = unbounded::<DapCommand>();
+
+        let handler = DapDebuggerHandler::new(message_tx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx, Arc::new(AtomicBool::new(true)));
+
+        let context = mq_lang::DebugContext::default();
+
+        // Unblock on_error's wait immediately.
+        command_tx.send(DapCommand::Continue).unwrap();
+
+        wrapper.on_error("boom", &context);
+
+        let received_message = message_rx.try_recv().unwrap();
+        match received_message {
+            DebuggerMessage::ExceptionPaused { thread_id, message, .. } => {
+                assert_eq!(thread_id, 1);
+                assert_eq!(message, "boom");
+            }
+            _ => panic!("Expected ExceptionPaused message"),
+        }
+    }
+
+    #[test]
+    fn test_on_error_recv_error_does_not_panic() {
+        let (message_tx, _message_rx) = unbounded::<DebuggerMessage>();
+        let (command_tx, command_rx) = unbounded::<DapCommand>();
+
+        let handler = DapDebuggerHandler::new(message_tx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx, Arc::new(AtomicBool::new(true)));
+
+        let context = mq_lang::DebugContext::default();
+
+        // Don't send any command, so recv will fail once command_tx is dropped.
+        drop(command_tx);
+
+        wrapper.on_error("boom", &context);
     }
 }

@@ -98,6 +98,11 @@ pub struct Cli {
     /// No timeout by default.
     #[arg(long, value_name = "SECONDS")]
     timeout: Option<f64>,
+
+    /// Enter the interactive debugger when an uncaught error occurs (mq-dbg only).
+    #[cfg(feature = "debugger")]
+    #[arg(long = "stop-on-error", default_value_t = false)]
+    stop_on_error: bool,
 }
 
 #[cfg(unix)]
@@ -948,7 +953,7 @@ impl Cli {
         #[cfg(feature = "debugger")]
         {
             use crate::debugger::DebuggerHandler;
-            let handler = DebuggerHandler::new(engine.clone());
+            let handler = DebuggerHandler::new(engine.clone(), self.stop_on_error);
             engine.set_debugger_handler(Box::new(handler));
             engine.debugger().write().unwrap().activate();
         }

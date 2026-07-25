@@ -309,6 +309,61 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
     where
         I: Iterator<Item = RuntimeValue>,
     {
+        let result = self.eval_body(program, input);
+
+        #[cfg(feature = "debugger")]
+        if let Err(ref e) = result {
+            self.notify_uncaught_error(e);
+        }
+
+        result
+    }
+
+    /// Notifies the debugger handler of an error that propagated all the way out of
+    /// [`Self::eval`], i.e. one not caught by any `try`/`catch` in the query. A no-op unless
+    /// the debugger is active.
+    #[cfg(feature = "debugger")]
+    fn notify_uncaught_error(&mut self, error: &InnerError) {
+        if !self.debugger.read().unwrap().is_active() {
+            return;
+        }
+
+        let token = match error.token() {
+            Some(token) => Shared::new(token.clone()),
+            None => Shared::new(Token {
+                kind: TokenKind::Eof,
+                range: crate::Range::default(),
+                module_id: Module::TOP_LEVEL_MODULE_ID,
+            }),
+        };
+        let context = DebugContext {
+            token: Shared::clone(&token),
+            call_stack: self.debugger.read().unwrap().current_call_stack(),
+            env: Shared::clone(&self.env),
+            source: Source {
+                name: if token.module_id == Module::TOP_LEVEL_MODULE_ID {
+                    None
+                } else {
+                    Some(self.module_loader.module_name(token.module_id).to_string())
+                },
+                code: self
+                    .module_loader
+                    .get_source_code_for_debug(token.module_id)
+                    .unwrap_or_default(),
+            },
+            ..Default::default()
+        };
+
+        self.debugger_handler
+            .read()
+            .unwrap()
+            .on_error(&error.to_string(), &context);
+    }
+
+    fn eval_body<I>(&mut self, program: &Program, input: I) -> Result<Vec<RuntimeValue>, InnerError>
+    where
+        I: Iterator<Item = RuntimeValue>,
+    {
         let _io_guard = io_context::scoped(Shared::clone(&self.io) as Shared<dyn Io>);
         self.deadline = self.options.timeout.map(|timeout| Instant::now() + timeout);
         self.timeout_step = 0;
@@ -8331,6 +8386,7 @@ mod debugger_tests {
     struct RecordingDebuggerHandler {
         breakpoint_hits: Shared<SharedCell<Vec<String>>>,
         log_points: Shared<SharedCell<Vec<String>>>,
+        errors: Shared<SharedCell<Vec<String>>>,
     }
 
     impl DebuggerHandler for RecordingDebuggerHandler {
@@ -8354,6 +8410,10 @@ mod debugger_tests {
         ) {
             self.log_points.write().unwrap().push(message.to_string());
         }
+
+        fn on_error(&self, message: &str, _context: &DebugContext) {
+            self.errors.write().unwrap().push(message.to_string());
+        }
     }
 
     #[test]
@@ -8363,6 +8423,7 @@ mod debugger_tests {
         engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
             breakpoint_hits: Shared::clone(&breakpoint_hits),
             log_points: Shared::default(),
+            errors: Shared::default(),
         }));
         engine.debugger().write().unwrap().activate();
         engine.debugger().write().unwrap().add_breakpoint_with_options(
@@ -8387,6 +8448,7 @@ mod debugger_tests {
         engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
             breakpoint_hits: Shared::clone(&breakpoint_hits),
             log_points: Shared::default(),
+            errors: Shared::default(),
         }));
         engine.debugger().write().unwrap().activate();
         engine.debugger().write().unwrap().add_breakpoint_with_options(
@@ -8411,6 +8473,7 @@ mod debugger_tests {
         engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
             breakpoint_hits: Shared::clone(&breakpoint_hits),
             log_points: Shared::default(),
+            errors: Shared::default(),
         }));
         engine.debugger().write().unwrap().activate();
         engine.debugger().write().unwrap().add_breakpoint_with_options(
@@ -8435,6 +8498,7 @@ mod debugger_tests {
         engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
             breakpoint_hits: Shared::clone(&breakpoint_hits),
             log_points: Shared::default(),
+            errors: Shared::default(),
         }));
         engine.debugger().write().unwrap().activate();
         engine.debugger().write().unwrap().add_breakpoint_with_options(
@@ -8460,6 +8524,7 @@ mod debugger_tests {
         engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
             breakpoint_hits: Shared::clone(&breakpoint_hits),
             log_points: Shared::clone(&log_points),
+            errors: Shared::default(),
         }));
         engine.debugger().write().unwrap().activate();
         engine.debugger().write().unwrap().add_breakpoint_with_options(
@@ -8492,6 +8557,7 @@ mod debugger_tests {
         engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
             breakpoint_hits: Shared::default(),
             log_points: Shared::clone(&log_points),
+            errors: Shared::default(),
         }));
         engine.debugger().write().unwrap().activate();
 
@@ -8533,5 +8599,57 @@ mod debugger_tests {
 
         let query = "foreach (x, array(1)):\n  x\nend";
         assert!(engine.eval(query, crate::null_input().into_iter()).is_err());
+    }
+
+    #[test]
+    fn test_uncaught_error_notifies_debugger_handler() {
+        let mut engine = crate::DefaultEngine::default();
+        let errors = Shared::new(SharedCell::new(Vec::new()));
+        engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
+            errors: Shared::clone(&errors),
+            ..Default::default()
+        }));
+        engine.debugger().write().unwrap().activate();
+
+        let query = r#"error("boom")"#;
+        let result = engine.eval(query, crate::null_input().into_iter());
+
+        assert!(result.is_err());
+        assert_eq!(errors.read().unwrap().len(), 1);
+        assert!(errors.read().unwrap()[0].contains("boom"));
+    }
+
+    #[test]
+    fn test_error_caught_by_try_catch_does_not_notify_debugger_handler() {
+        let mut engine = crate::DefaultEngine::default();
+        let errors = Shared::new(SharedCell::new(Vec::new()));
+        engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
+            errors: Shared::clone(&errors),
+            ..Default::default()
+        }));
+        engine.debugger().write().unwrap().activate();
+
+        let query = r#"try: error("boom") catch: "caught""#;
+        let result = engine.eval(query, crate::null_input().into_iter());
+
+        assert_eq!(result.unwrap(), vec![RuntimeValue::String("caught".to_string())].into());
+        assert!(errors.read().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_uncaught_error_does_not_notify_when_debugger_inactive() {
+        let mut engine = crate::DefaultEngine::default();
+        let errors = Shared::new(SharedCell::new(Vec::new()));
+        engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
+            errors: Shared::clone(&errors),
+            ..Default::default()
+        }));
+        // Debugger left inactive (default state).
+
+        let query = r#"error("boom")"#;
+        let result = engine.eval(query, crate::null_input().into_iter());
+
+        assert!(result.is_err());
+        assert!(errors.read().unwrap().is_empty());
     }
 }

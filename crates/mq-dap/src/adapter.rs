@@ -9,6 +9,8 @@ use mq_lang::Shared;
 use std::borrow::Cow;
 use std::io;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
 use std::thread;
 use tracing::{debug, error};
 
@@ -19,6 +21,11 @@ use crate::protocol::{DapCommand, DebuggerMessage, LaunchArgs};
 
 type DynResult<T> = miette::Result<T, Box<dyn std::error::Error>>;
 
+/// The `filter` ID for the "Uncaught Exceptions" exception breakpoint filter advertised in
+/// `Initialize`'s `exceptionBreakpointFilters` capability (see [`crate::server::start`]) and
+/// checked in [`MqAdapter::handle_request`]'s handling of `setExceptionBreakpoints`.
+pub const UNCAUGHT_EXCEPTIONS_FILTER: &str = "uncaught";
+
 /// Main DAP adapter for mq debugger
 pub struct MqAdapter {
     engine: mq_lang::DefaultEngine,
@@ -27,6 +34,7 @@ pub struct MqAdapter {
     debugger_message_tx: Option<Sender<DebuggerMessage>>,
     dap_command_tx: Option<Sender<DapCommand>>,
     current_debug_context: Option<mq_lang::DebugContext>,
+    exception_breakpoints_enabled: Arc<AtomicBool>,
 }
 
 impl Default for MqAdapter {
@@ -40,13 +48,18 @@ impl MqAdapter {
         // Create channels for communication between DAP server and debugger handler
         let (message_tx, message_rx) = crossbeam_channel::unbounded::<DebuggerMessage>();
         let (command_tx, command_rx) = crossbeam_channel::unbounded::<DapCommand>();
+        let exception_breakpoints_enabled = Arc::new(AtomicBool::new(false));
 
         let dap_handler = DapDebuggerHandler::new(message_tx.clone());
         let mut engine = mq_lang::DefaultEngine::default();
 
         // Set up the debugger handler
         {
-            let handler_boxed = Box::new(DapHandlerWrapper::new(dap_handler, command_rx));
+            let handler_boxed = Box::new(DapHandlerWrapper::new(
+                dap_handler,
+                command_rx,
+                Arc::clone(&exception_breakpoints_enabled),
+            ));
             engine.set_debugger_handler(handler_boxed);
         }
 
@@ -57,6 +70,7 @@ impl MqAdapter {
             dap_command_tx: Some(command_tx),
             query_file: None,
             current_debug_context: None,
+            exception_breakpoints_enabled,
         }
     }
 
@@ -209,6 +223,26 @@ impl MqAdapter {
                 debug!(message = %message, "Sending output event for logpoint");
                 self.send_log_output(&message, server)?;
             }
+            DebuggerMessage::ExceptionPaused {
+                thread_id,
+                message,
+                context,
+            } => {
+                // Store the current debug context for variable inspection
+                self.current_debug_context = Some(context);
+                debug!(message = %message, "Sending stopped event for exception");
+
+                let event = Event::Stopped(events::StoppedEventBody {
+                    reason: types::StoppedEventReason::Exception,
+                    description: Some("Paused on error".to_string()),
+                    thread_id: Some(thread_id),
+                    preserve_focus_hint: None,
+                    text: Some(message),
+                    all_threads_stopped: None,
+                    hit_breakpoint_ids: None,
+                });
+                server.send_event(event)?;
+            }
             DebuggerMessage::Terminated => {
                 debug!("Sending terminated event");
 
@@ -320,8 +354,12 @@ impl MqAdapter {
                 let rsp = req.success(ResponseBody::Launch);
                 server.respond(rsp)?;
             }
-            Command::SetExceptionBreakpoints(_) => {
-                debug!("Received SetExceptionBreakpoints request");
+            Command::SetExceptionBreakpoints(args) => {
+                debug!(?args, "Received SetExceptionBreakpoints request");
+
+                let enabled = args.filters.iter().any(|filter| filter == UNCAUGHT_EXCEPTIONS_FILTER);
+                self.exception_breakpoints_enabled.store(enabled, SeqCst);
+
                 let rsp = req.success(ResponseBody::SetExceptionBreakpoints(SetExceptionBreakpointsResponse {
                     breakpoints: None,
                 }));
@@ -773,6 +811,24 @@ mod tests {
     }
 
     #[test]
+    fn test_handle_debugger_message_exception_paused() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let message = DebuggerMessage::ExceptionPaused {
+            thread_id: 1,
+            message: "boom".to_string(),
+            context: mq_lang::DebugContext::default(),
+        };
+
+        let result = adapter.handle_debugger_message(message, &mut server);
+        assert!(result.is_ok());
+        assert!(adapter.current_debug_context.is_some());
+    }
+
+    #[test]
     fn test_handle_debugger_message_step_completed() {
         let mut adapter = MqAdapter::new();
         let input = BufReader::new(Cursor::new(Vec::new()));
@@ -1126,6 +1182,49 @@ mod tests {
         assert_eq!(stored[0].condition.as_deref(), Some("x > 1"));
         assert_eq!(stored[0].hit_condition.as_deref(), Some(">= 2"));
         assert_eq!(stored[0].log_message.as_deref(), Some("x is {x}"));
+    }
+
+    #[test]
+    fn test_handle_request_set_exception_breakpoints_enables_uncaught_filter() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::SetExceptionBreakpoints(dap::requests::SetExceptionBreakpointsArguments {
+                filters: vec![UNCAUGHT_EXCEPTIONS_FILTER.to_string()],
+                filter_options: None,
+                exception_options: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
+        assert!(adapter.exception_breakpoints_enabled.load(SeqCst));
+    }
+
+    #[test]
+    fn test_handle_request_set_exception_breakpoints_disables_when_filter_absent() {
+        let mut adapter = MqAdapter::new();
+        adapter.exception_breakpoints_enabled.store(true, SeqCst);
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::SetExceptionBreakpoints(dap::requests::SetExceptionBreakpointsArguments {
+                filters: vec![],
+                filter_options: None,
+                exception_options: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
+        assert!(!adapter.exception_breakpoints_enabled.load(SeqCst));
     }
 
     #[test]
