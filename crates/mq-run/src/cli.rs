@@ -384,6 +384,12 @@ struct InputArgs {
     /// Disabled by default.
     #[arg(long = "allow-write", default_value_t = false)]
     allow_write: bool,
+
+    /// Allow the `system` function to execute external commands.
+    /// Disabled by default. Commands run directly (never through a shell), so shell
+    /// metacharacters in arguments are never interpreted.
+    #[arg(long = "allow-run", default_value_t = false)]
+    allow_run: bool,
 }
 
 #[derive(Clone, Debug, clap::Args, Default)]
@@ -810,14 +816,15 @@ impl Cli {
         // --module-directories/--module-names/include/import resolve modules from
         // directories the invoker explicitly configured, so module resolution keeps
         // full native access (unchanged from before this Io existed) — --allow-read/
-        // write/net instead gate what a running query's read_file/write_file/http
-        // builtins can do at runtime, via the ambient Io set below.
+        // write/net/run instead gate what a running query's read_file/write_file/http/
+        // system builtins can do at runtime, via the ambient Io set below.
         let mut engine = mq_lang::DefaultEngine::default();
         engine.set_io(Shared::new(
             mq_lang::SandboxedIo::new(mq_lang::NativeIo::default())
                 .allow_read(self.input.allow_read)
                 .allow_write(self.input.allow_write)
-                .allow_net(self.input.allow_net),
+                .allow_net(self.input.allow_net)
+                .allow_run(self.input.allow_run),
         ));
         engine.load_builtin_module();
         engine.set_optimization_level(self.optimize_level.clone().into());
@@ -1715,6 +1722,41 @@ mod tests {
             ..Cli::default()
         };
         assert!(allowed_cli.run().is_ok(), "read_file should succeed with --allow-read");
+    }
+
+    #[test]
+    fn test_allow_run_flag_gates_system() {
+        let query = "system(\"echo\", [\"hello\"])";
+
+        let blocked_cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some(query.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+        assert!(
+            blocked_cli.run().is_err(),
+            "system should be blocked without --allow-run"
+        );
+
+        let allowed_cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                allow_run: true,
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some(query.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+        assert!(allowed_cli.run().is_ok(), "system should succeed with --allow-run");
     }
 
     #[rstest]

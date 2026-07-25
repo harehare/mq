@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 /// Wraps an inner [`Io`] (typically [`NativeIo`]) with instance-owned
-/// read/write/net permission flags, enforced by every operation. All three
+/// read/write/net/run permission flags, enforced by every operation. All four
 /// flags default to `false` (fail safe).
 ///
 /// Every operation enforces its own permission independently of any external
@@ -15,10 +15,11 @@ pub struct SandboxedIo<Inner: Io = NativeIo> {
     allow_read: bool,
     allow_write: bool,
     allow_net: bool,
+    allow_run: bool,
 }
 
 impl<Inner: Io + Default> Default for SandboxedIo<Inner> {
-    /// All three permission flags default to `false` (fail safe), matching [`Inner::default()`](Default).
+    /// All four permission flags default to `false` (fail safe), matching [`Inner::default()`](Default).
     fn default() -> Self {
         Self::new(Inner::default())
     }
@@ -31,6 +32,7 @@ impl<Inner: Io> SandboxedIo<Inner> {
             allow_read: false,
             allow_write: false,
             allow_net: false,
+            allow_run: false,
         }
     }
 
@@ -49,6 +51,13 @@ impl<Inner: Io> SandboxedIo<Inner> {
         self
     }
 
+    /// Gates [`Io::execute`], the primitive backing the `system()` builtin — external process
+    /// execution, akin to Deno's `--allow-run`.
+    pub fn allow_run(mut self, allow: bool) -> Self {
+        self.allow_run = allow;
+        self
+    }
+
     pub fn is_read_allowed(&self) -> bool {
         self.allow_read
     }
@@ -59,6 +68,10 @@ impl<Inner: Io> SandboxedIo<Inner> {
 
     pub fn is_net_allowed(&self) -> bool {
         self.allow_net
+    }
+
+    pub fn is_run_allowed(&self) -> bool {
+        self.allow_run
     }
 }
 
@@ -148,6 +161,13 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         }
         self.inner.set_fetch_response(url, body)
     }
+
+    fn execute(&self, command: &str, args: &[String]) -> Result<String, IoError> {
+        if !self.allow_run {
+            return Err(denied("process execution is disabled"));
+        }
+        self.inner.execute(command, args)
+    }
 }
 
 #[cfg(test)]
@@ -233,5 +253,18 @@ mod tests {
         assert!(io.is_read_allowed());
         assert!(!io.is_write_allowed());
         assert!(io.is_net_allowed());
+        assert!(!io.is_run_allowed());
+    }
+
+    #[test]
+    fn test_execute_denied_by_default_then_allowed() {
+        let io = SandboxedIo::new(MemIo::default().with_command_response("echo", &["hi".to_string()], "hi"));
+        assert!(matches!(
+            io.execute("echo", &["hi".to_string()]),
+            Err(IoError::PermissionDenied(_))
+        ));
+
+        let io = io.allow_run(true);
+        assert_eq!(io.execute("echo", &["hi".to_string()]).unwrap(), "hi");
     }
 }

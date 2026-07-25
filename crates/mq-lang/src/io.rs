@@ -1,12 +1,13 @@
 //! Abstracts every environment-dependent operation the mq engine needs — file
-//! read/write, environment-variable access, and network fetch — behind a
-//! single trait, so the core evaluator, parser, and module resolvers never
-//! call `std::fs`/`std::env`/a network client directly. Concrete
-//! implementations are injected per [`Engine`](crate::Engine) instance.
+//! read/write, environment-variable access, network fetch, and external
+//! process execution — behind a single trait, so the core evaluator, parser,
+//! and module resolvers never call `std::fs`/`std::env`/a network
+//! client/`std::process::Command` directly. Concrete implementations are
+//! injected per [`Engine`](crate::Engine) instance.
 //!
-//! See [`NativeIo`] for a real filesystem/environment/network-backed
+//! See [`NativeIo`] for a real filesystem/environment/network/process-backed
 //! implementation, and [`SandboxedIo`] for a decorator that enforces
-//! per-instance read/write/net permissions. The ambient instance active
+//! per-instance read/write/net/run permissions. The ambient instance active
 //! during an [`Engine::eval`](crate::Engine::eval) call is reachable from
 //! builtins via [`crate::eval::builtin::io_context::current`].
 //!
@@ -93,6 +94,13 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
 
     fn home_dir(&self) -> Option<PathBuf>;
     fn current_dir(&self) -> Option<PathBuf>;
+
+    /// Runs `command` with `args` as a child process — never through a shell, so shell
+    /// metacharacters in `args` are never interpreted — and returns its captured stdout as a
+    /// string. A non-zero exit status is reported as an error that includes the process's
+    /// stderr. Callers are responsible for policy (which commands are permitted) before calling
+    /// this, same as [`fetch`](Self::fetch)'s URL/domain policy.
+    fn execute(&self, command: &str, args: &[String]) -> Result<String, IoError>;
 
     /// Seeds the response body a subsequent `fetch`/`http_request` call for `url` returns,
     /// backing the `mock_fetch` builtin. Only meaningful against an `Io` that keeps mock

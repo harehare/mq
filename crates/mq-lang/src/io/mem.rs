@@ -19,8 +19,18 @@ pub struct MemIo {
     files: Mutex<HashMap<PathBuf, Vec<u8>>>,
     env: Mutex<HashMap<String, String>>,
     fetch_responses: Mutex<HashMap<String, String>>,
+    command_responses: Mutex<HashMap<String, String>>,
     home: Option<PathBuf>,
     cwd: Option<PathBuf>,
+}
+
+/// Key `execute`/`with_command_response` use to look up a mocked command's output:
+/// the command followed by its space-joined args, e.g. `"git status --short"`.
+fn command_key(command: &str, args: &[String]) -> String {
+    std::iter::once(command)
+        .chain(args.iter().map(String::as_str))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl MemIo {
@@ -36,6 +46,12 @@ impl MemIo {
 
     pub fn with_fetch_response(self, url: impl Into<String>, body: impl Into<String>) -> Self {
         self.fetch_responses.lock().unwrap().insert(url.into(), body.into());
+        self
+    }
+
+    pub fn with_command_response(self, command: impl Into<String>, args: &[String], output: impl Into<String>) -> Self {
+        let key = command_key(&command.into(), args);
+        self.command_responses.lock().unwrap().insert(key, output.into());
         self
     }
 
@@ -134,6 +150,16 @@ impl Io for MemIo {
             .insert(url.to_string(), body.to_string());
         Ok(())
     }
+
+    fn execute(&self, command: &str, args: &[String]) -> Result<String, IoError> {
+        let key = command_key(command, args);
+        self.command_responses
+            .lock()
+            .unwrap()
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| IoError::NotFound(Cow::Owned(format!("command `{key}`"))))
+    }
 }
 
 #[cfg(test)]
@@ -192,6 +218,16 @@ mod tests {
         let io = MemIo::default().with_fetch_response("https://example.com", "old");
         io.set_fetch_response("https://example.com", "new").unwrap();
         assert_eq!(io.fetch("https://example.com").unwrap(), "new");
+    }
+
+    #[test]
+    fn test_execute_returns_seeded_response_and_not_found_otherwise() {
+        let io = MemIo::default().with_command_response("git", &["status".to_string()], "clean");
+        assert_eq!(io.execute("git", &["status".to_string()]).unwrap(), "clean");
+        assert!(matches!(
+            io.execute("git", &["log".to_string()]),
+            Err(IoError::NotFound(_))
+        ));
     }
 
     #[test]

@@ -33,7 +33,10 @@ pub(crate) fn scoped(io: Shared<dyn Io>) -> ScopedIo {
     ScopedIo(previous)
 }
 
-#[cfg_attr(not(any(feature = "file-io", feature = "http")), allow(dead_code))]
+#[cfg_attr(
+    not(any(feature = "file-io", feature = "http", feature = "process-io")),
+    allow(dead_code)
+)]
 pub(crate) fn current() -> Shared<dyn Io> {
     CURRENT
         .with(|current| current.borrow().clone())

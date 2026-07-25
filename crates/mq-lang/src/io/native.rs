@@ -192,6 +192,31 @@ impl Io for NativeIo {
             "network access is not compiled into this build",
         )))
     }
+
+    #[cfg(feature = "process-io")]
+    fn execute(&self, command: &str, args: &[String]) -> Result<String, IoError> {
+        let output = std::process::Command::new(command)
+            .args(args)
+            .output()
+            .map_err(|e| IoError::Other(Cow::Owned(format!("failed to execute `{command}`: {e}"))))?;
+
+        if !output.status.success() {
+            return Err(IoError::Other(Cow::Owned(format!(
+                "`{command}` exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            ))));
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+
+    #[cfg(not(feature = "process-io"))]
+    fn execute(&self, _command: &str, _args: &[String]) -> Result<String, IoError> {
+        Err(IoError::Other(Cow::Borrowed(
+            "process execution is not compiled into this build",
+        )))
+    }
 }
 
 #[cfg(test)]
@@ -264,5 +289,53 @@ mod tests {
     fn test_fetch_rejects_non_https() {
         let io = NativeIo::default();
         assert!(matches!(io.fetch("http://example.com"), Err(IoError::Other(_))));
+    }
+
+    #[cfg(all(feature = "process-io", not(windows)))]
+    #[test]
+    fn test_execute_captures_stdout() {
+        let io = NativeIo::default();
+        let output = io.execute("echo", &["hello".to_string()]).unwrap();
+        assert_eq!(output.trim(), "hello");
+    }
+
+    #[cfg(all(feature = "process-io", windows))]
+    #[test]
+    fn test_execute_captures_stdout() {
+        let io = NativeIo::default();
+        let output = io
+            .execute("cmd", &["/C".to_string(), "echo hello".to_string()])
+            .unwrap();
+        assert_eq!(output.trim(), "hello");
+    }
+
+    #[cfg(all(feature = "process-io", not(windows)))]
+    #[test]
+    fn test_execute_reports_non_zero_exit_status() {
+        let io = NativeIo::default();
+        assert!(matches!(
+            io.execute("sh", &["-c".to_string(), "exit 1".to_string()]),
+            Err(IoError::Other(_))
+        ));
+    }
+
+    #[cfg(all(feature = "process-io", windows))]
+    #[test]
+    fn test_execute_reports_non_zero_exit_status() {
+        let io = NativeIo::default();
+        assert!(matches!(
+            io.execute("cmd", &["/C".to_string(), "exit 1".to_string()]),
+            Err(IoError::Other(_))
+        ));
+    }
+
+    #[cfg(feature = "process-io")]
+    #[test]
+    fn test_execute_reports_missing_command() {
+        let io = NativeIo::default();
+        assert!(matches!(
+            io.execute("mq-this-command-should-not-exist", &[]),
+            Err(IoError::Other(_))
+        ));
     }
 }

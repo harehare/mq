@@ -31,7 +31,7 @@ dirs = {workspace = true}
 miette = {workspace = true, features = ["fancy"]}
 mimalloc = {workspace = true, features = ["v3"], optional = true}
 mq-dap = {workspace = true, optional = true}
-mq-lang = {workspace = true, features = ["file-io"]}
+mq-lang = {workspace = true, features = ["file-io", "process-io"]}
 mq-markdown = {workspace = true, features = ["json", "html-to-markdown", "color"]}
 mq-repl = {workspace = true}
 quick-xml = {workspace = true}
