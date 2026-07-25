@@ -13,6 +13,8 @@ mq-crawler is a web crawler that fetches HTML content from websites, converts it
 - **WebDriver support**: Browser-based crawling via Selenium WebDriver
 - **Domain filtering**: Restrict crawling to specific domains
 - **Sitemap ingestion**: Seed the crawl frontier from a `sitemap.xml` (or sitemap index) up front
+- **Max pages limit**: Cap the total number of pages visited to bound resource usage
+- **Checkpoint & resume**: Periodically snapshot crawl progress and resume an interrupted crawl later
 - **Retry with backoff**: Automatically retries failed requests (network errors, 429, 5xx) with exponential backoff
 - **Custom headers & cookies**: Send custom HTTP headers and cookies with every request
 - **Authentication**: Basic and bearer-token authentication for protected sites
@@ -67,6 +69,10 @@ mq-crawl [OPTIONS] <URL>
 | `-d, --crawl-delay <SECONDS>` | Delay between requests in seconds | `1` |
 | `-c, --concurrency <N>` | Number of concurrent workers | `1` |
 | `--depth <DEPTH>` | Maximum crawl depth (0 = start URL only) | unlimited |
+| `--max-pages <N>` | Maximum total number of pages to visit before stopping | unlimited |
+| `--checkpoint-path <PATH>` | File to periodically save crawl progress to (JSON), enabling `--resume-from` | — |
+| `--checkpoint-interval-pages <N>` | Pages crawled between checkpoint saves (requires `--checkpoint-path`) | `20` |
+| `--resume-from <PATH>` | Resume a crawl from a checkpoint file written via `--checkpoint-path` | — |
 | `-q, --mq-query <QUERY>` | mq-lang query for processing content | — |
 | `--robots-path <PATH>` | Custom robots.txt file path | — |
 | `--allowed-domains <DOMAINS>` | Comma-separated list of extra domains to crawl; the start URL's domain is always included | start domain only |
@@ -130,6 +136,32 @@ mq-crawl --sitemap https://example.com/sitemap.xml https://example.com
 # without following any links.
 mq-crawl --depth 0 --sitemap https://example.com/sitemap.xml https://example.com
 ```
+
+### Limiting Crawl Size
+
+Use `--max-pages` to cap the total number of pages visited (queued, in-flight, or crawled), independent of `--depth`. This is useful as a safety valve on deep or link-heavy sites:
+
+```bash
+# Stop after visiting 500 pages, regardless of depth
+mq-crawl --max-pages 500 https://example.com
+```
+
+### Checkpoint & Resume
+
+For large crawls that may be interrupted (network loss, process restart, `--max-pages` cutoff), use `--checkpoint-path` to periodically save the visited set and pending frontier to a JSON file, and `--resume-from` to continue from it later:
+
+```bash
+# Save a checkpoint every 20 pages (default) to crawl-state.json
+mq-crawl --checkpoint-path crawl-state.json https://example.com
+
+# Save more frequently
+mq-crawl --checkpoint-path crawl-state.json --checkpoint-interval-pages 5 https://example.com
+
+# Resume an interrupted crawl from the last checkpoint
+mq-crawl --resume-from crawl-state.json --checkpoint-path crawl-state.json https://example.com
+```
+
+A checkpoint is also written once the crawl stops for any reason (queue exhausted, `--max-pages` reached), so `--resume-from` reflects the true end state of the previous run. Pass `--checkpoint-path` alongside `--resume-from` if you want the resumed run to keep checkpointing as it continues.
 
 ### Retry & Backoff
 

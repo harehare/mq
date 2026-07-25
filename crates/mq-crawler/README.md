@@ -27,6 +27,8 @@ Make web scraping and content extraction effortless with intelligent Markdown co
 - **WebDriver Support**: Use Selenium WebDriver for browser-based crawling
 - **Domain Filtering**: Restrict crawling to specific domains
 - **Sitemap Ingestion**: Seed the crawl frontier from a `sitemap.xml` (or sitemap index) up front
+- **Max Pages Limit**: Cap the total number of pages visited to bound resource usage
+- **Checkpoint & Resume**: Periodically snapshot crawl progress and resume an interrupted crawl later
 - **Retry with Backoff**: Automatically retries failed requests (network errors, 429, 5xx) with exponential backoff
 - **Custom Headers & Cookies**: Send custom HTTP headers and cookies with every request
 - **Authentication**: Basic and bearer-token authentication for protected sites
@@ -111,6 +113,28 @@ mq-crawl -c 3 https://example.com
 # High-speed crawling with 10 workers
 mq-crawl -c 10 -d 0.1 https://example.com
 ```
+
+### Limiting Crawl Size
+
+```bash
+# Stop after visiting 500 pages, regardless of depth
+mq-crawl --max-pages 500 https://example.com
+```
+
+### Checkpoint & Resume
+
+```bash
+# Save a checkpoint every 20 pages (default) to crawl-state.json
+mq-crawl --checkpoint-path crawl-state.json https://example.com
+
+# Save more frequently
+mq-crawl --checkpoint-path crawl-state.json --checkpoint-interval-pages 5 https://example.com
+
+# Resume an interrupted crawl from the last checkpoint
+mq-crawl --resume-from crawl-state.json --checkpoint-path crawl-state.json https://example.com
+```
+
+A checkpoint is also written once the crawl stops for any reason (queue exhausted, `--max-pages` reached), so `--resume-from` reflects the true end state of the previous run.
 
 ### Sitemap Ingestion
 
@@ -244,58 +268,71 @@ Arguments:
 
 Options:
   -d, --crawl-delay <CRAWL_DELAY>
-          Delay (in seconds) between crawl requests [default: 1]
+          Delay (in seconds) between crawl requests to avoid overloading servers [default: 1]
   -c, --concurrency <CONCURRENCY>
-          Number of concurrent workers [default: 1]
+          Number of concurrent workers for parallel processing [default: 1]
       --depth <DEPTH>
-          Maximum crawl depth (0 = only start URL, 1 = start URL + direct links)
+          Maximum crawl depth. 0 means only the specified URL, 1 means specified URL and its direct links, etc. If not specified, crawling depth is unlimited
+      --max-pages <MAX_PAGES>
+          Maximum total number of pages to visit (queued, in-flight, or crawled) before stopping. If not specified, crawling continues until the frontier is exhausted or --depth is reached
+      --checkpoint-path <PATH>
+          Path to write periodic crawl checkpoints to (JSON). Enables resuming an interrupted crawl later with --resume-from. A checkpoint is written every --checkpoint-interval-pages pages, and once more when the crawl stops
+      --checkpoint-interval-pages <CHECKPOINT_INTERVAL_PAGES>
+          Number of successfully crawled pages between checkpoint saves. Only used when --checkpoint-path is set [default: 20]
+      --resume-from <PATH>
+          Resume a previous crawl from a checkpoint file written via --checkpoint-path. The visited set and pending frontier are restored; the URL argument is only used to determine crawl configuration such as the allowed domain
       --implicit-timeout <IMPLICIT_TIMEOUT>
-          Timeout for element finding (WebDriver only) [default: 5]
+          Timeout (in seconds) for implicit waits (element finding) [default: 5]
   -q, --mq-query <MQ_QUERY>
-          Optional mq query to process the crawled Markdown
+          Optional mq_lang query to process the crawled Markdown content
       --page-load-timeout <PAGE_LOAD_TIMEOUT>
-          Timeout for loading a page [default: 30]
+          Timeout (in seconds) for loading a single page [default: 30]
   -o, --output <OUTPUT>
-          Output directory for markdown files (stdout if not provided)
+          Optional path to an output DIRECTORY where markdown files will be saved. If not provided, output is printed to stdout
       --robots-path <ROBOTS_PATH>
-          Path to custom robots.txt file
+          Optional path to a custom robots.txt file. If not provided, robots.txt will be fetched from the site
       --script-timeout <SCRIPT_TIMEOUT>
-          Timeout for executing scripts (WebDriver only) [default: 10]
-      --allowed-domains <DOMAIN>
-          Comma-separated list of extra domains to crawl; the start URL's domain is always included
-          Example: --allowed-domains docs.example.com,blog.example.com
-      --headless
-          Use built-in headless Chrome (Chrome/Chromium must be installed; cannot be used with --webdriver-url)
-      --chrome-path <PATH>
-          Path to Chrome/Chromium executable (only used with --headless)
+          Timeout (in seconds) for executing scripts on the page [default: 10]
   -U, --webdriver-url <WEBDRIVER_URL>
-          WebDriver URL for browser-based crawling (e.g., http://localhost:4444)
+          Optional WebDriver URL for browser-based crawling (e.g., http://localhost:4444). When specified, uses a headless browser to render JavaScript before extracting content
+      --headless
+          Use a built-in headless Chrome to render JavaScript without an external WebDriver server. Requires Chrome or Chromium to be installed on the system. Cannot be used together with --webdriver-url
+      --chrome-path <PATH>
+          Path to the Chrome/Chromium executable for headless crawling. If not specified, Chrome is auto-detected from standard installation paths. Only used when --headless is set
+      --headless-wait <HEADLESS_WAIT>
+          Wait time (in seconds) after page load in headless mode. When --headless-network-idle or --headless-wait-for-selector is used, this value also acts as the maximum timeout for those strategies (default 30 s). Only used when --headless is set [default: 0]
+      --headless-network-idle
+          Wait for the browser's networkIdle CDP lifecycle event after page load. Effective for SPAs that issue XHR/fetch requests after the load event. The wait is bounded by --headless-wait (or 30 s if not set). Only used when --headless is set
+      --headless-wait-for-selector <SELECTOR>
+          Wait until the given CSS selector is present in the DOM after page load. Useful when the page's content is injected by JavaScript. Example: --headless-wait-for-selector "main" The wait is bounded by --headless-wait (or 30 s if not set). Only used when --headless is set
+      --allowed-domains <DOMAIN>
+          Comma-separated list of domains to crawl in addition to the start URL's domain. If not specified, only the start URL's domain is crawled. If specified, the start URL's domain is always included automatically. Example: --allowed-domains example.com,docs.example.com
   -f, --format <FORMAT>
-          Output format: text or json [default: text]
+          Output format for results and statistics [default: text] [possible values: text, json]
       --sitemap <SITEMAP_URL>
-          URL of a sitemap.xml (or sitemap index) to enumerate additional seed URLs from
+          Optional URL of a sitemap.xml (or sitemap index) to enumerate additional seed URLs from. Discovered URLs are added to the crawl frontier alongside the start URL and are still subject to robots.txt, domain filtering, and depth limits
       --max-retries <MAX_RETRIES>
-          Maximum retry attempts for failed requests (network errors, 429, 5xx) [default: 3]
+          Max retry attempts on network error, 429, or 5xx [default: 3]
       --retry-initial-backoff <RETRY_INITIAL_BACKOFF>
-          Delay in seconds before the first retry [default: 0.5]
+          Delay (seconds) before the first retry [default: 0.5]
       --retry-max-backoff <RETRY_MAX_BACKOFF>
-          Maximum delay in seconds between retries [default: 10]
+          Max delay (seconds) between retries [default: 10]
       --retry-backoff-multiplier <RETRY_BACKOFF_MULTIPLIER>
-          Multiplier applied to the retry delay after each failed attempt [default: 2]
+          Retry delay multiplier per failed attempt [default: 2]
       --header <KEY: VALUE>
-          Custom HTTP header to send with every request (repeatable); non-browser crawling only
+          Custom header ("Key: Value"), repeatable. Non-browser crawling only
       --cookie <NAME=VALUE>
-          Cookie to send with every request (repeatable); non-browser crawling only
+          Cookie ("name=value"), repeatable, combined into one Cookie header. Non-browser crawling only
       --basic-auth <USER:PASS>
-          HTTP Basic authentication credentials; non-browser crawling only
+          HTTP Basic auth ("username:password"). Non-browser crawling only
       --bearer-token <TOKEN>
-          Bearer token for Authorization header; non-browser crawling only
+          Bearer token for "Authorization: Bearer <token>". Non-browser crawling only
       --extract-scripts-as-code-blocks
           Extract <script> tags as code blocks in Markdown
       --generate-front-matter
           Generate YAML front matter from page metadata
       --use-title-as-h1
-          Use the HTML <title> as the first H1 heading
+          Use the HTML <title> as the first H1 in Markdown
   -h, --help
           Print help
   -V, --version

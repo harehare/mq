@@ -34,6 +34,24 @@ struct CliArgs {
     /// If not specified, crawling depth is unlimited.
     #[clap(long)]
     depth: Option<usize>,
+    /// Maximum total number of pages to visit (queued, in-flight, or crawled) before stopping.
+    /// If not specified, crawling continues until the frontier is exhausted or --depth is reached.
+    #[clap(long)]
+    max_pages: Option<usize>,
+    /// Path to write periodic crawl checkpoints to (JSON). Enables resuming an
+    /// interrupted crawl later with --resume-from. A checkpoint is written every
+    /// --checkpoint-interval-pages pages, and once more when the crawl stops.
+    #[clap(long, value_name = "PATH")]
+    checkpoint_path: Option<String>,
+    /// Number of successfully crawled pages between checkpoint saves.
+    /// Only used when --checkpoint-path is set.
+    #[clap(long, default_value_t = 20, requires = "checkpoint_path")]
+    checkpoint_interval_pages: usize,
+    /// Resume a previous crawl from a checkpoint file written via --checkpoint-path.
+    /// The visited set and pending frontier are restored; the URL argument is only
+    /// used to determine crawl configuration such as the allowed domain.
+    #[clap(long, value_name = "PATH")]
+    resume_from: Option<String>,
     /// Timeout (in seconds) for implicit waits (element finding).
     #[clap(long, default_value_t = 5.0)]
     implicit_timeout: f64,
@@ -342,6 +360,18 @@ async fn main() {
         Vec::new()
     };
 
+    let resume_checkpoint = if let Some(ref resume_path) = args.resume_from {
+        match mq_crawler::crawler::CrawlCheckpoint::load(resume_path) {
+            Ok(checkpoint) => Some(checkpoint),
+            Err(e) => {
+                tracing::error!("Failed to load checkpoint '{}': {}", resume_path, e);
+                return;
+            }
+        }
+    } else {
+        None
+    };
+
     match Crawler::new(
         client,
         args.url.clone(),
@@ -359,6 +389,10 @@ async fn main() {
         args.depth,
         effective_allowed,
         sitemap_seed_urls,
+        args.max_pages,
+        args.checkpoint_path,
+        args.checkpoint_interval_pages,
+        resume_checkpoint,
     )
     .await
     {
