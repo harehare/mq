@@ -24,6 +24,13 @@ pub enum DebuggerMessage {
     },
     /// A logpoint breakpoint fired; should send an output event without stopping execution.
     LogPoint { message: String },
+    /// An uncaught error was raised while the "Uncaught Exceptions" filter is enabled,
+    /// should send a stopped event with reason `exception`.
+    ExceptionPaused {
+        thread_id: i64,
+        message: String,
+        context: mq_lang::DebugContext,
+    },
     /// Program has terminated
     Terminated,
 }

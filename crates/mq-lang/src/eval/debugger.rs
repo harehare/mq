@@ -467,6 +467,14 @@ pub trait DebuggerHandler: std::fmt::Debug + Send + Sync {
     /// log text. Logpoints never pause execution, so unlike [`Self::on_breakpoint_hit`] this
     /// does not return a [`DebuggerAction`].
     fn on_log_point(&self, _breakpoint: &Breakpoint, _message: &str, _context: &DebugContext) {}
+
+    /// Called when a runtime error propagates out of the top-level `eval()` call while the
+    /// debugger is active, i.e. one not caught by any `try`/`catch` in the query. `message` is
+    /// the error's display text; `context.token` locates where the error is attributed.
+    /// Like [`Self::on_log_point`] this never blocks on its own; implementors that want an
+    /// "uncaught exceptions" style pause should wait for a debugger command themselves,
+    /// mirroring [`Self::on_breakpoint_hit`]. The default is a no-op.
+    fn on_error(&self, _message: &str, _context: &DebugContext) {}
 }
 
 #[derive(Debug, Default)]

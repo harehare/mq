@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::io::{self, BufReader, BufWriter};
 use tracing::{debug, error, info};
 
-use crate::adapter::MqAdapter;
+use crate::adapter::{MqAdapter, UNCAUGHT_EXCEPTIONS_FILTER};
 use crate::error::MqAdapterError;
 use crate::log::DebugConsoleWriter;
 
@@ -49,6 +49,14 @@ pub fn start() -> DynResult<()> {
             supports_conditional_breakpoints: Some(true),
             supports_hit_conditional_breakpoints: Some(true),
             supports_log_points: Some(true),
+            exception_breakpoint_filters: Some(vec![types::ExceptionBreakpointsFilter {
+                filter: UNCAUGHT_EXCEPTIONS_FILTER.to_string(),
+                label: "Uncaught Exceptions".to_string(),
+                description: Some("Break when a query raises an error that isn't caught by a try/catch.".to_string()),
+                default: Some(true),
+                supports_condition: None,
+                condition_description: None,
+            }]),
             ..Default::default()
         };
         let rsp = req.success(ResponseBody::Initialize(capabilities));
