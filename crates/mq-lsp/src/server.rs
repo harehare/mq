@@ -285,6 +285,14 @@ impl LanguageServer for Backend {
         ))
     }
 
+    async fn prepare_rename(
+        &self,
+        params: ls_types::TextDocumentPositionParams,
+    ) -> jsonrpc::Result<Option<ls_types::PrepareRenameResponse>> {
+        let url = to_url(&params.text_document.uri);
+        Ok(rename::prepare(Arc::clone(&self.hir), url, params.position))
+    }
+
     async fn formatting(
         &self,
         params: ls_types::DocumentFormattingParams,
@@ -1191,7 +1199,7 @@ mod tests {
 
         match capabilities.rename_provider {
             Some(ls_types::OneOf::Right(options)) => {
-                assert_eq!(options.prepare_provider, Some(false));
+                assert_eq!(options.prepare_provider, Some(true));
             }
             other => panic!("expected rename_provider OneOf::Right(RenameOptions), got {other:?}"),
         }
@@ -1234,6 +1242,75 @@ mod tests {
         let edits = edit.changes.unwrap().into_values().next().unwrap();
         assert_eq!(edits.len(), 2);
         assert!(edits.iter().all(|e| e.new_text == "renamed_func"));
+    }
+
+    #[tokio::test]
+    async fn test_prepare_rename_valid_symbol() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        let code = "def test_func(): 1;\ndef main(): test_func();";
+        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+
+        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+
+        let result = backend
+            .prepare_rename(ls_types::TextDocumentPositionParams {
+                text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                position: ls_types::Position::new(0, 6),
+            })
+            .await;
+
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Some(ls_types::PrepareRenameResponse::RangeWithPlaceholder { placeholder, .. }) => {
+                assert_eq!(placeholder, "test_func");
+            }
+            other => panic!("expected PrepareRenameResponse::RangeWithPlaceholder, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_prepare_rename_rejects_builtin() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        let code = "\"hello\" | len";
+        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+
+        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+
+        let result = backend
+            .prepare_rename(ls_types::TextDocumentPositionParams {
+                text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                position: ls_types::Position::new(0, 11),
+            })
+            .await;
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
     }
 
     #[tokio::test]
