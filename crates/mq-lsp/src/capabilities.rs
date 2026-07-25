@@ -62,7 +62,7 @@ pub(crate) fn server_capabilities() -> ServerCapabilities {
             ..Default::default()
         })),
         rename_provider: Some(OneOf::Right(RenameOptions {
-            prepare_provider: Some(false),
+            prepare_provider: Some(true),
             work_done_progress_options: Default::default(),
         })),
         semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(

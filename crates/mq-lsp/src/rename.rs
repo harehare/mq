@@ -5,7 +5,7 @@ use std::{
 };
 
 use bimap::BiMap;
-use tower_lsp_server::ls_types::{self, Position, Range, TextEdit, WorkspaceEdit};
+use tower_lsp_server::ls_types::{self, Position, PrepareRenameResponse, Range, TextEdit, WorkspaceEdit};
 use url::Url;
 
 fn to_range(text_range: mq_lang::Range) -> Range {
@@ -13,6 +13,48 @@ fn to_range(text_range: mq_lang::Range) -> Range {
         Position::new(text_range.start.line - 1, (text_range.start.column - 1) as u32),
         Position::new(text_range.end.line - 1, (text_range.end.column - 1) as u32),
     )
+}
+
+/// Validates that the symbol at `position` can be renamed, without performing the rename itself.
+///
+/// Returns the range of the identifier under the cursor together with its current text as a
+/// placeholder, so clients can reject the rename (or seed their input box) before the user commits
+/// to a new name. Mirrors the eligibility checks in [`response`]: no symbol at the position,
+/// builtin symbols, and unresolved references are all rejected here.
+pub(crate) fn prepare(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> Option<PrepareRenameResponse> {
+    let hir_guard = hir.read().unwrap();
+    let source = hir_guard.source_by_url(&url)?;
+
+    let (symbol_id, symbol) = hir_guard.find_symbol_in_position(
+        source,
+        mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
+    )?;
+
+    if hir_guard.is_builtin_symbol(&symbol) {
+        return None;
+    }
+
+    let def_id = match symbol.kind {
+        mq_hir::SymbolKind::Call
+        | mq_hir::SymbolKind::Ref
+        | mq_hir::SymbolKind::CallDynamic
+        | mq_hir::SymbolKind::Argument
+        | mq_hir::SymbolKind::QualifiedAccess => hir_guard.resolve_reference_symbol(symbol_id)?,
+        _ => symbol_id,
+    };
+
+    let def_symbol = hir_guard.symbol(def_id)?;
+    if hir_guard.is_builtin_symbol(def_symbol) {
+        return None;
+    }
+
+    let text_range = symbol.source.text_range?;
+    let placeholder = symbol.value.map(|v| v.to_string()).unwrap_or_default();
+
+    Some(PrepareRenameResponse::RangeWithPlaceholder {
+        range: to_range(text_range),
+        placeholder,
+    })
 }
 
 /// Renames the symbol at `position` and all of its references, across every
@@ -256,6 +298,47 @@ mod tests {
             assert_eq!(edits.len(), 1);
             assert_eq!(edits[0].new_text, "csv_load");
         }
+    }
+
+    #[test]
+    fn test_prepare_rename_returns_range_and_placeholder() {
+        let code = "def func1(): 1; | func1()";
+        let (hir, url, _) = setup(code);
+
+        let result = prepare(hir, url, Position::new(0, 5));
+
+        match result {
+            Some(PrepareRenameResponse::RangeWithPlaceholder { placeholder, .. }) => {
+                assert_eq!(placeholder, "func1");
+            }
+            other => panic!("expected RangeWithPlaceholder, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_prepare_rename_rejects_builtin() {
+        let code = "\"hello\" | len";
+        let (hir, url, _) = setup(code);
+
+        let result = prepare(hir, url, Position::new(0, 11));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_prepare_rename_rejects_no_symbol_at_position() {
+        let (hir, url, _) = setup("let x = 1");
+
+        let result = prepare(hir, url, Position::new(5, 5));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_prepare_rename_rejects_unresolved_call() {
+        let code = "totally_unknown_fn()";
+        let (hir, url, _) = setup(code);
+
+        let result = prepare(hir, url, Position::new(0, 5));
+        assert!(result.is_none());
     }
 
     #[test]
