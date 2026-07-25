@@ -137,3 +137,25 @@ def test_section_by_level_empty():
   let secs = section::by_level([], 1)
   | assert_eq(secs, [])
 end
+
+# A single node (not wrapped in an array) means the caller forgot to aggregate
+# input (missing `-A`/`nodes |`). This should be normalized to a one-element
+# array instead of silently producing meaningless results.
+def test_section_sections_single_node_normalized():
+  let single = first(test_sections)
+  | let secs = section::sections(single)
+  | assert_eq(len(secs), 1)
+  | assert_eq(section::title(first(secs)), "Introduction")
+end
+
+def test_section_section_single_node_normalized():
+  let single = first(test_sections)
+  | let secs = section::section(single, "Introduction")
+  | assert_eq(len(secs), 1)
+end
+
+def test_section_split_single_node_normalized():
+  let single = first(test_sections)
+  | let secs = section::split(single, 1)
+  | assert_eq(len(secs), 1)
+end

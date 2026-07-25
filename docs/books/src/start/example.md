@@ -219,7 +219,7 @@ The section module provides functions for splitting and filtering Markdown docum
 | `include` | `include "section"` then `fn()` | No namespace prefix |
 | `-A` flag | `mq -A 'section::fn()'` | Aggregate mode: processes all nodes at once |
 
-> **Note**: Section functions need all document nodes at once. Use `-A` on the command line, or `nodes` in inline queries.
+> **Note**: Section functions need all document nodes at once. Use `-A` on the command line, or `nodes` in inline queries. If you forget and call a `section::*` function on a single node, mq prints a warning on stderr (e.g. `mq: section functions expect all document nodes; got a single node. Pass -A on the command line or pipe through nodes first.`) and treats the node as a one-element array instead of silently producing meaningless results.
 
 ### Extract Sections by Title
 
