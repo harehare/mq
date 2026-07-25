@@ -375,12 +375,13 @@ struct InputArgs {
     #[arg(long = "allow-net", default_value_t = false)]
     allow_net: bool,
 
-    /// Allow the `read_file`/`read_file_bytes`/`collection`/`file_exists` functions to read
-    /// from the filesystem. Disabled by default.
+    /// Allow the `read_file`/`read_file_bytes`/`collection`/`file_exists`/`embed_images`
+    /// functions to read from the filesystem. Disabled by default.
     #[arg(long = "allow-read", default_value_t = false)]
     allow_read: bool,
 
-    /// Allow the `write_file` function to write to the filesystem. Disabled by default.
+    /// Allow the `write_file`/`extract_images` functions to write to the filesystem.
+    /// Disabled by default.
     #[arg(long = "allow-write", default_value_t = false)]
     allow_write: bool,
 }

@@ -4061,6 +4061,143 @@ fn write_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
     }
 }
 
+fn is_embeddable_image_url(url: &str) -> bool {
+    !url.starts_with("data:") && !url.contains("://")
+}
+
+fn guess_image_mime_type(path: &std::path::Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "avif" => "image/avif",
+        "tif" | "tiff" => "image/tiff",
+        _ => return None,
+    })
+}
+
+fn image_extension_for_mime(mime: &str) -> Option<&'static str> {
+    Some(match mime {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/svg+xml" => "svg",
+        "image/bmp" => "bmp",
+        "image/x-icon" | "image/vnd.microsoft.icon" => "ico",
+        "image/avif" => "avif",
+        "image/tiff" => "tiff",
+        _ => return None,
+    })
+}
+
+/// Reads the local image file referenced by an `.image` node's `url` and inlines it as a
+/// `data:` URI, base64-encoding the bytes and inferring the MIME type from the file
+/// extension. The path is resolved relative to `base_dir` (default `"."`). URLs that are
+/// already `data:` URIs, or that contain a `://` scheme (e.g. `https://`), are left
+/// unchanged, as are non-image nodes. Requires the ambient [`Io`]'s read permission (see
+/// [`io_context`]).
+#[cfg(feature = "file-io")]
+#[mq_macros::mq_fn(name = "embed_images", params = Range(1, 2))]
+fn embed_images_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [a @ RuntimeValue::Markdown(_, _)] => embed_image(a, "."),
+        [a @ RuntimeValue::Markdown(_, _), RuntimeValue::String(base_dir)] => {
+            let base_dir = std::mem::take(base_dir);
+            embed_image(a, &base_dir)
+        }
+        [a, ..] => Ok(std::mem::take(a)),
+        _ => unreachable!("embed_images should always receive one or two arguments"),
+    }
+}
+
+#[cfg(feature = "file-io")]
+fn embed_image(arg: &mut RuntimeValue, base_dir: &str) -> Result<RuntimeValue, Error> {
+    let RuntimeValue::Markdown(node, _) = arg else {
+        unreachable!()
+    };
+    let mq_markdown::Node::Image(image) = &mut **node else {
+        return Ok(std::mem::take(arg));
+    };
+
+    if !is_embeddable_image_url(&image.url) {
+        return Ok(std::mem::take(arg));
+    }
+
+    let path = std::path::Path::new(base_dir).join(&image.url);
+    let bytes = io_context::current()
+        .read_bytes(&path)
+        .map_err(|e| Error::Runtime(format!("Failed to read image {}: {}", path.display(), e)))?;
+    let mime = guess_image_mime_type(&path)
+        .ok_or_else(|| Error::Runtime(format!("Unsupported image extension for {}", path.display())))?;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    image.url = format!("data:{mime};base64,{encoded}");
+
+    Ok(std::mem::take(arg))
+}
+
+/// Decodes an `.image` node's `data:` URI and writes the bytes to a file under `dir`,
+/// named by the content's MD5 hash with an extension inferred from the MIME type, then
+/// replaces `url` with that file's path. Nodes whose `url` is not a base64-encoded `data:`
+/// URI (including non-image nodes) are left unchanged. Requires the ambient [`Io`]'s write
+/// permission (see [`io_context`]).
+#[cfg(feature = "file-io")]
+#[mq_macros::mq_fn(name = "extract_images", params = Fixed(2))]
+fn extract_images_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [a @ RuntimeValue::Markdown(_, _), RuntimeValue::String(dir)] => {
+            let dir = std::mem::take(dir);
+            extract_image(a, &dir)
+        }
+        [a, ..] => Ok(std::mem::take(a)),
+        _ => unreachable!("extract_images should always receive exactly two arguments"),
+    }
+}
+
+#[cfg(feature = "file-io")]
+fn extract_image(arg: &mut RuntimeValue, dir: &str) -> Result<RuntimeValue, Error> {
+    let RuntimeValue::Markdown(node, _) = arg else {
+        unreachable!()
+    };
+    let mq_markdown::Node::Image(image) = &mut **node else {
+        return Ok(std::mem::take(arg));
+    };
+
+    let Some(data) = image.url.strip_prefix("data:") else {
+        return Ok(std::mem::take(arg));
+    };
+    let Some((meta, payload)) = data.split_once(',') else {
+        return Err(Error::Runtime(format!("Malformed data URI: {}", image.url)));
+    };
+    let Some(mime) = meta.strip_suffix(";base64") else {
+        return Err(Error::Runtime(format!(
+            "Only base64-encoded data URIs can be extracted: {}",
+            image.url
+        )));
+    };
+    let ext =
+        image_extension_for_mime(mime).ok_or_else(|| Error::Runtime(format!("Unsupported image MIME type: {mime}")))?;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(payload)?;
+    let hash = match convert::md5_bytes(&bytes)? {
+        RuntimeValue::String(s) => s,
+        _ => unreachable!(),
+    };
+    let path = std::path::Path::new(dir).join(format!("{hash}.{ext}"));
+
+    io_context::current()
+        .write(&path, &bytes)
+        .map_err(|e| Error::Runtime(format!("Failed to write image {}: {}", path.display(), e)))?;
+
+    image.url = path.to_string_lossy().into_owned();
+
+    Ok(std::mem::take(arg))
+}
+
 /// Performs an HTTPS request with the given method (`"get"`/`:get`, `"post"`/`:post`, etc.) and
 /// returns the response body as a string. `body`, when given, is sent regardless of method.
 /// `headers`, a dict of string to string, is applied to the request when given.
@@ -4501,6 +4638,10 @@ mq_macros::builtin_dispatch! {
     COLLECTION,
     #[cfg(feature = "file-io")]
     WRITE_FILE,
+    #[cfg(feature = "file-io")]
+    EMBED_IMAGES,
+    #[cfg(feature = "file-io")]
+    EXTRACT_IMAGES,
     #[cfg(feature = "http")]
     HTTP,
     #[cfg(all(feature = "http", feature = "mock-io"))]
@@ -6110,6 +6251,22 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Writes content (string or bytes) to the file at the given path, creating or truncating it. Requires the --allow-write CLI flag; otherwise returns a runtime error.",
             params: &["path", "content"],
+        },
+    );
+    #[cfg(feature = "file-io")]
+    map.insert(
+        SmolStr::new("embed_images"),
+        BuiltinFunctionDoc {
+            description: "Inlines an `.image` node's local file into its `url` as a base64 `data:` URI, resolving the path relative to the given base directory (default \".\") and inferring the MIME type from the file extension. URLs that are already `data:` URIs or contain a `://` scheme (e.g. `https://`), and non-image nodes, are left unchanged. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
+            params: &["base_dir"],
+        },
+    );
+    #[cfg(feature = "file-io")]
+    map.insert(
+        SmolStr::new("extract_images"),
+        BuiltinFunctionDoc {
+            description: "Decodes an `.image` node's base64 `data:` URI and writes the bytes to a file under the given directory, named by the content's MD5 hash with an extension inferred from the MIME type, then replaces `url` with that file's path. Nodes whose `url` is not a base64 `data:` URI, including non-image nodes, are left unchanged. Requires the --allow-write CLI flag; otherwise returns a runtime error.",
+            params: &["dir"],
         },
     );
     #[cfg(feature = "http")]
@@ -10499,6 +10656,183 @@ mod tests {
         assert!(
             result.is_err(),
             "write_file should error when the parent directory doesn't exist"
+        );
+    }
+
+    #[cfg(feature = "file-io")]
+    fn image_value(url: &str) -> RuntimeValue {
+        RuntimeValue::Markdown(
+            Box::new(mq_markdown::Node::Image(mq_markdown::Image {
+                alt: "alt".to_string(),
+                url: url.to_string(),
+                title: None,
+                position: None,
+            })),
+            None,
+        )
+    }
+
+    #[cfg(feature = "file-io")]
+    fn image_url(value: &RuntimeValue) -> String {
+        match value {
+            RuntimeValue::Markdown(node, _) => match &**node {
+                mq_markdown::Node::Image(image) => image.url.clone(),
+                other => panic!("expected Image node, got {other:?}"),
+            },
+            other => panic!("expected Markdown value, got {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "file-io")]
+    #[test]
+    fn test_embed_images_capability_gate_and_success() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(dir.path().join("img.png"), [0x89, 0x50, 0x4e, 0x47]).expect("failed to write");
+        let base_dir = dir.path().to_string_lossy().to_string();
+
+        assert!(
+            call(
+                "embed_images",
+                vec![image_value("img.png"), RuntimeValue::String(base_dir.clone())]
+            )
+            .is_err(),
+            "embed_images should be blocked when read access is not allowed"
+        );
+
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
+
+        let result = call(
+            "embed_images",
+            vec![image_value("img.png"), RuntimeValue::String(base_dir.clone())],
+        )
+        .expect("embed_images should succeed");
+        assert_eq!(image_url(&result), "data:image/png;base64,iVBORw==");
+
+        // Default base_dir (".") combined with an absolute path.
+        let absolute_path = dir.path().join("img.png").to_string_lossy().to_string();
+        let result = call("embed_images", vec![image_value(&absolute_path)]).expect("embed_images should succeed");
+        assert_eq!(image_url(&result), "data:image/png;base64,iVBORw==");
+
+        // Already-embedded, remote, and non-image nodes pass through unchanged.
+        let already_embedded = "data:image/png;base64,aGVsbG8=";
+        assert_eq!(
+            call(
+                "embed_images",
+                vec![image_value(already_embedded), RuntimeValue::String(base_dir.clone())]
+            ),
+            Ok(image_value(already_embedded))
+        );
+        assert_eq!(
+            call(
+                "embed_images",
+                vec![
+                    image_value("https://example.com/img.png"),
+                    RuntimeValue::String(base_dir.clone())
+                ]
+            ),
+            Ok(image_value("https://example.com/img.png"))
+        );
+        let text_node = RuntimeValue::Markdown(
+            Box::new(mq_markdown::Node::Text(mq_markdown::Text {
+                value: "hello".to_string(),
+                position: None,
+            })),
+            None,
+        );
+        assert_eq!(
+            call(
+                "embed_images",
+                vec![text_node.clone(), RuntimeValue::String(base_dir.clone())]
+            ),
+            Ok(text_node)
+        );
+
+        let result = call(
+            "embed_images",
+            vec![image_value("no_such_file.png"), RuntimeValue::String(base_dir.clone())],
+        );
+        assert!(result.is_err(), "embed_images should error for a nonexistent file");
+
+        let result = call(
+            "embed_images",
+            vec![image_value("img.unsupported"), RuntimeValue::String(base_dir)],
+        );
+        assert!(
+            result.is_err(),
+            "embed_images should error for an unsupported extension"
+        );
+    }
+
+    #[cfg(feature = "file-io")]
+    #[test]
+    fn test_extract_images_capability_gate_and_success() {
+        let bytes = [0x89, 0x50, 0x4e, 0x47];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let data_url = format!("data:image/png;base64,{encoded}");
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let out_dir = dir.path().to_string_lossy().to_string();
+
+        assert!(
+            call(
+                "extract_images",
+                vec![image_value(&data_url), RuntimeValue::String(out_dir.clone())]
+            )
+            .is_err(),
+            "extract_images should be blocked when write access is not allowed"
+        );
+
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_write(true)));
+
+        let result = call(
+            "extract_images",
+            vec![image_value(&data_url), RuntimeValue::String(out_dir.clone())],
+        )
+        .expect("extract_images should succeed");
+        let hash = match convert::md5_bytes(&bytes).unwrap() {
+            RuntimeValue::String(s) => s,
+            _ => unreachable!(),
+        };
+        let expected_path = dir.path().join(format!("{hash}.png"));
+        assert_eq!(image_url(&result), expected_path.to_string_lossy());
+        assert_eq!(std::fs::read(&expected_path).unwrap(), bytes);
+
+        // Non-data-URI and non-image nodes pass through unchanged.
+        assert_eq!(
+            call(
+                "extract_images",
+                vec![image_value("img.png"), RuntimeValue::String(out_dir.clone())]
+            ),
+            Ok(image_value("img.png"))
+        );
+
+        let result = call(
+            "extract_images",
+            vec![
+                image_value("data:image/png;base64"),
+                RuntimeValue::String(out_dir.clone()),
+            ],
+        );
+        assert!(result.is_err(), "extract_images should error on a malformed data URI");
+
+        let result = call(
+            "extract_images",
+            vec![
+                image_value(&format!("data:image/png,{encoded}")),
+                RuntimeValue::String(out_dir.clone()),
+            ],
+        );
+        assert!(result.is_err(), "extract_images should error on a non-base64 data URI");
+
+        let result = call(
+            "extract_images",
+            vec![
+                image_value(&format!("data:application/pdf;base64,{encoded}")),
+                RuntimeValue::String(out_dir),
+            ],
+        );
+        assert!(
+            result.is_err(),
+            "extract_images should error on an unsupported MIME type"
         );
     }
 
