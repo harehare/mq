@@ -2,6 +2,7 @@ use clap::Parser;
 use glob::glob;
 use miette::IntoDiagnostic;
 use miette::miette;
+use std::io::{Read, Write};
 use std::{fs, path::PathBuf};
 
 #[derive(Parser, Debug)]
@@ -43,7 +44,8 @@ struct Cli {
     #[arg(long, default_value_t = false)]
     sort_fields: bool,
 
-    /// Path to the mq file(s) to format
+    /// Path to the mq file(s) to format. Pass `-` to read from stdin and write
+    /// the formatted result to stdout instead of modifying files on disk.
     files: Option<Vec<PathBuf>>,
 }
 
@@ -57,6 +59,26 @@ fn main() -> miette::Result<()> {
         sort_functions: cli.sort_functions,
         max_width: cli.max_width,
     }));
+
+    if let Some(files) = &cli.files
+        && files.len() == 1
+        && files[0].as_os_str() == "-"
+    {
+        let mut content = String::new();
+        std::io::stdin().read_to_string(&mut content).into_diagnostic()?;
+
+        let formatted = formatter.format(&content).map_err(|e| miette!("<stdin>: {e}"))?;
+
+        if cli.check {
+            return if formatted != content {
+                Err(miette!("The input is not formatted: <stdin>"))
+            } else {
+                Ok(())
+            };
+        }
+
+        return std::io::stdout().write_all(formatted.as_bytes()).into_diagnostic();
+    }
 
     let files = match cli.files {
         Some(f) => f,

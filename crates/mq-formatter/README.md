@@ -56,6 +56,12 @@ mq-fmt --sort-imports --sort-functions file.mq
 
 # Wrap long `|`-chained pipelines at 80 columns
 mq-fmt --max-width 80 file.mq
+
+# Read from stdin and write the formatted result to stdout
+cat file.mq | mq-fmt -
+
+# Check formatting of stdin without writing anything (exits with non-zero if unformatted)
+cat file.mq | mq-fmt --check -
 ```
 
 ### Via mq
