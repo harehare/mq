@@ -50,6 +50,15 @@ mq-test --coverage --coverage-format json --coverage-output coverage.json
 
 # Write a Cobertura XML report (e.g. Jenkins, GitLab CI)
 mq-test --coverage --coverage-format cobertura --coverage-output cobertura.xml
+
+# Only run tests whose name contains "parse" (case-insensitive)
+mq-test --filter parse
+
+# Only run tests tagged "smoke" (see `# @tags(...)` below)
+mq-test --tag smoke
+
+# Run test files in parallel once more than 4 files are discovered
+mq-test --parallel-threshold 4
 ```
 
 ## Coverage
@@ -149,6 +158,52 @@ end
 
 This produces three test cases — `len[0]`, `len[1]`, `len[2]` — each called
 with the corresponding `[input, expected]` pair.
+
+### Tags
+
+Use `# @tags(a, b)` (or the singular `# @tag(a)`) immediately before a test
+function to tag it. Combine with `--tag <TAG>` to only run tests carrying at
+least one of the given tags:
+
+```mq
+include "test"
+|
+
+# @tags(smoke, fast)
+def test_add():
+  assert_eq(1 + 1, 2)
+end
+
+# @tags(slow)
+def test_large_input():
+  assert_eq(len(range(0, 100000)), 100000)
+end
+```
+
+```bash
+# Only runs test_add
+mq-test --tag smoke
+```
+
+Tags can be combined with `# @test`/`# @parametrize(...)` on the same
+function via a separate comment line placed right above it.
+
+### Filtering and Parallel Execution
+
+- `--filter <SUBSTRING>` / `-k <SUBSTRING>` only runs tests whose display
+  name (the test name with any `test_` prefix stripped) contains
+  `<SUBSTRING>`, case-insensitively.
+- `--tag <TAG>` only runs tests carrying `<TAG>` (see above). Repeat the flag
+  to match any of several tags.
+- `--parallel-threshold <N>` / `-P <N>` runs test files in parallel — each
+  file still gets its own hermetic engine and `Io` — once more than `N`
+  files are discovered. Defaults to never parallelizing. Coverage data is
+  merged safely across parallel files, and each file's report prints
+  atomically so concurrent files' output never interleaves.
+
+A failing test in one file no longer stops other files from running: every
+discovered file always runs to completion, and `mq-test` exits non-zero if
+any test in any file failed.
 
 ### Test Helpers
 

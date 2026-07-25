@@ -1,9 +1,12 @@
 use glob::glob;
 use miette::IntoDiagnostic;
-use mq_lang::{CstNodeKind, CstTrivia};
-use rustc_hash::FxHashMap;
+use mq_lang::{CstNodeKind, CstTrivia, RuntimeValue};
+use rayon::prelude::*;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::coverage::{self, CoverageData, CoverageFormat, CoverageHandler, FileCoverage};
 
@@ -12,17 +15,38 @@ use crate::coverage::{self, CoverageData, CoverageFormat, CoverageHandler, FileC
 enum TestAnnotation {
     Test,
     Parametrize { params_expr: String },
+    Tags(Vec<String>),
 }
 
 /// A test function discovered in a `.mq` file.
 #[derive(Debug, PartialEq)]
 enum DiscoveredTest {
-    Simple(String),
+    Simple {
+        name: String,
+        tags: Vec<String>,
+    },
     Parametrized {
         name: String,
         params_expr: String,
         arity: usize,
+        tags: Vec<String>,
     },
+}
+
+impl DiscoveredTest {
+    fn name(&self) -> &str {
+        match self {
+            DiscoveredTest::Simple { name, .. } => name,
+            DiscoveredTest::Parametrized { name, .. } => name,
+        }
+    }
+
+    fn tags(&self) -> &[String] {
+        match self {
+            DiscoveredTest::Simple { tags, .. } => tags,
+            DiscoveredTest::Parametrized { tags, .. } => tags,
+        }
+    }
 }
 
 /// Discovers and runs mq test functions from `.mq` files.
@@ -36,6 +60,9 @@ pub struct TestRunner {
     coverage_format: CoverageFormat,
     coverage_output: Option<PathBuf>,
     open: bool,
+    filter: Option<String>,
+    tags: Vec<String>,
+    parallel_threshold: usize,
 }
 
 impl TestRunner {
@@ -48,6 +75,9 @@ impl TestRunner {
             coverage_format: CoverageFormat::default(),
             coverage_output: None,
             open: false,
+            filter: None,
+            tags: Vec::new(),
+            parallel_threshold: usize::MAX,
         }
     }
 
@@ -77,8 +107,29 @@ impl TestRunner {
         self
     }
 
+    /// Only runs tests whose (display) name contains this substring, case-insensitively.
+    pub fn with_filter(mut self, filter: Option<String>) -> Self {
+        self.filter = filter;
+        self
+    }
+
+    /// Only runs tests tagged (via `# @tags(...)`) with at least one of the given tags.
+    /// An empty list runs tests regardless of tags.
+    pub fn with_tags(mut self, tags: Vec<String>) -> Self {
+        self.tags = tags;
+        self
+    }
+
+    /// Runs test files in parallel once more than this many files are discovered.
+    pub fn with_parallel_threshold(mut self, parallel_threshold: usize) -> Self {
+        self.parallel_threshold = parallel_threshold;
+        self
+    }
+
     /// Discovers and executes all test functions.
-    pub fn run(self) -> miette::Result<()> {
+    ///
+    /// Returns `Ok(true)` if every executed test passed.
+    pub fn run(self) -> miette::Result<bool> {
         let test_files: Vec<PathBuf> = if self.files.is_empty() {
             glob("./**/*.mq")
                 .into_diagnostic()?
@@ -90,13 +141,18 @@ impl TestRunner {
         // Merged across all test files, so a shared module gets combined coverage.
         let coverage_data = CoverageData::default();
         // Resolved module-name -> file path, filled in as each engine resolves imports.
-        let mut module_paths: FxHashMap<String, PathBuf> = FxHashMap::default();
+        // Behind a `Mutex` so files can be run in parallel.
+        let module_paths: Mutex<FxHashMap<String, PathBuf>> = Mutex::new(FxHashMap::default());
+        let any_failed = AtomicBool::new(false);
 
-        for file in &test_files {
+        let run_file = |file: &PathBuf| -> miette::Result<()> {
             let content = fs::read_to_string(file).into_diagnostic()?;
-            let tests = Self::discover_tests(&content);
+            let tests: Vec<DiscoveredTest> = Self::discover_tests(&content)
+                .into_iter()
+                .filter(|test| self.matches(test))
+                .collect();
             if tests.is_empty() {
-                continue;
+                return Ok(());
             }
 
             let query = Self::build_test_query(&content, &tests);
@@ -124,11 +180,27 @@ impl TestRunner {
                     .set_command(mq_lang::DebuggerCommand::StepInto);
             }
 
+            // Snapshot before eval, so only modules newly touched by *this* file's
+            // engine (the only one that can resolve their paths) get attributed to it.
+            let before_modules: FxHashSet<String> = if self.coverage {
+                coverage_data.snapshot().keys().cloned().collect()
+            } else {
+                FxHashSet::default()
+            };
+
             let input = mq_lang::null_input();
-            engine.eval(&query, input.into_iter()).map_err(|e| *e)?;
+            let result = engine.eval(&query, input.into_iter()).map_err(|e| *e)?;
+            let passed = matches!(result.values().first(), Some(RuntimeValue::Boolean(true)));
+            if !passed {
+                any_failed.store(true, Ordering::Relaxed);
+            }
 
             if self.coverage {
+                let mut module_paths = module_paths.lock().unwrap();
                 for module_name in coverage_data.snapshot().keys() {
+                    if before_modules.contains(module_name) {
+                        continue;
+                    }
                     module_paths.entry(module_name.clone()).or_insert_with(|| {
                         engine
                             .get_module_path(module_name)
@@ -137,9 +209,18 @@ impl TestRunner {
                     });
                 }
             }
+
+            Ok(())
+        };
+
+        if test_files.len() > self.parallel_threshold {
+            test_files.par_iter().try_for_each(run_file)?;
+        } else {
+            test_files.iter().try_for_each(run_file)?;
         }
 
         if self.coverage {
+            let module_paths = module_paths.lock().unwrap();
             let mut file_coverages: Vec<FileCoverage> = coverage_data
                 .snapshot()
                 .into_iter()
@@ -174,7 +255,25 @@ impl TestRunner {
             }
         }
 
-        Ok(())
+        Ok(!any_failed.load(Ordering::Relaxed))
+    }
+
+    /// Returns `true` if `test` should run given `self.filter`/`self.tags`.
+    fn matches(&self, test: &DiscoveredTest) -> bool {
+        let name_matches = match &self.filter {
+            Some(filter) => Self::display_name(test.name())
+                .to_lowercase()
+                .contains(&filter.to_lowercase()),
+            None => true,
+        };
+        let tags_match = self.tags.is_empty() || test.tags().iter().any(|tag| self.tags.contains(tag));
+
+        name_matches && tags_match
+    }
+
+    /// Strips the `test_` prefix used for the reported display name.
+    fn display_name(name: &str) -> &str {
+        name.strip_prefix("test_").unwrap_or(name)
     }
 
     fn discover_tests(content: &str) -> Vec<DiscoveredTest> {
@@ -206,20 +305,27 @@ impl TestRunner {
 
             match Self::find_test_annotation(&node.leading_trivia) {
                 Some(TestAnnotation::Test) => {
-                    tests.push(DiscoveredTest::Simple(func_name));
+                    tests.push(DiscoveredTest::Simple {
+                        name: func_name.clone(),
+                        tags: Self::collect_tags(&node.leading_trivia),
+                    });
                 }
                 Some(TestAnnotation::Parametrize { params_expr }) => {
                     let arity = Self::get_arity(node);
                     tests.push(DiscoveredTest::Parametrized {
-                        name: func_name,
+                        name: func_name.clone(),
                         params_expr,
                         arity,
+                        tags: Self::collect_tags(&node.leading_trivia),
                     });
                 }
-                None if func_name.starts_with("test_") => {
-                    tests.push(DiscoveredTest::Simple(func_name));
+                _ if func_name.starts_with("test_") => {
+                    tests.push(DiscoveredTest::Simple {
+                        name: func_name.clone(),
+                        tags: Self::collect_tags(&node.leading_trivia),
+                    });
                 }
-                None => {}
+                _ => {}
             }
         }
 
@@ -228,7 +334,7 @@ impl TestRunner {
 
     /// Parses a comment into a `TestAnnotation`.
     ///
-    /// Supported forms: `@test`, `[test]`, `@parametrize(expr)`.
+    /// Supported forms: `@test`, `[test]`, `@parametrize(expr)`, `@tags(a, b)`.
     /// Unknown `@name(...)` annotations are silently ignored.
     fn parse_annotation(comment: &str) -> Option<TestAnnotation> {
         let s = comment.trim();
@@ -251,12 +357,36 @@ impl TestRunner {
 
         match name {
             "parametrize" => Some(TestAnnotation::Parametrize { params_expr: args }),
+            "tags" | "tag" => Some(TestAnnotation::Tags(
+                args.split(',')
+                    .map(|tag| tag.trim().to_string())
+                    .filter(|tag| !tag.is_empty())
+                    .collect(),
+            )),
             _ => None,
         }
     }
 
+    /// Finds the first `@test`/`[test]`/`@parametrize(...)` annotation among `trivia`,
+    /// ignoring `@tags(...)` comments (collected separately via `collect_tags`).
     fn find_test_annotation(trivia: &[CstTrivia]) -> Option<TestAnnotation> {
-        trivia.iter().find_map(|t| t.comment().and_then(Self::parse_annotation))
+        trivia
+            .iter()
+            .filter_map(|t| t.comment().and_then(Self::parse_annotation))
+            .find(|annotation| !matches!(annotation, TestAnnotation::Tags(_)))
+    }
+
+    /// Collects and flattens every `@tags(...)`/`@tag(...)` comment among `trivia`.
+    fn collect_tags(trivia: &[CstTrivia]) -> Vec<String> {
+        trivia
+            .iter()
+            .filter_map(|t| t.comment().and_then(Self::parse_annotation))
+            .filter_map(|annotation| match annotation {
+                TestAnnotation::Tags(tags) => Some(tags),
+                _ => None,
+            })
+            .flatten()
+            .collect()
     }
 
     /// Returns the number of positional parameters of a `def` node.
@@ -274,16 +404,17 @@ impl TestRunner {
         let cases = tests
             .iter()
             .map(|test| match test {
-                DiscoveredTest::Simple(name) => {
-                    let display = name.strip_prefix("test_").unwrap_or(name);
+                DiscoveredTest::Simple { name, .. } => {
+                    let display = Self::display_name(name);
                     format!("  [test_case(\"{display}\", {name})]")
                 }
                 DiscoveredTest::Parametrized {
                     name,
                     params_expr,
                     arity,
+                    ..
                 } => {
-                    let display = name.strip_prefix("test_").unwrap_or(name);
+                    let display = Self::display_name(name);
                     let arg_list = (0..*arity)
                         .map(|i| format!("__ic[1][{i}]"))
                         .collect::<Vec<_>>()
@@ -354,6 +485,16 @@ mod tests {
         "@parametrize([])",
         Some(TestAnnotation::Parametrize { params_expr: "[]".to_string() })
     )]
+    #[case(
+        "@tags(slow, integration)",
+        Some(TestAnnotation::Tags(vec!["slow".to_string(), "integration".to_string()]))
+    )]
+    #[case(
+        "  @tags(  slow ,  integration  )  ",
+        Some(TestAnnotation::Tags(vec!["slow".to_string(), "integration".to_string()]))
+    )]
+    #[case("@tag(slow)", Some(TestAnnotation::Tags(vec!["slow".to_string()])))]
+    #[case("@tags()", Some(TestAnnotation::Tags(vec![])))]
     #[case("@unknown(foo)", None)]
     #[case("@skip", None)]
     #[case("not an annotation", None)]
@@ -386,32 +527,43 @@ mod tests {
     #[case(
         "def test_foo():\n  None\nend\n\ndef helper():\n  None\nend\n\ndef test_bar():\n  None\nend\n",
         vec![
-            DiscoveredTest::Simple("test_foo".to_string()),
-            DiscoveredTest::Simple("test_bar".to_string()),
+            DiscoveredTest::Simple { name: "test_foo".to_string(), tags: vec![] },
+            DiscoveredTest::Simple { name: "test_bar".to_string(), tags: vec![] },
         ]
     )]
     #[case(
         "# @test\ndef my_check():\n  None\nend\n\ndef not_a_test():\n  None\nend\n",
-        vec![DiscoveredTest::Simple("my_check".to_string())]
+        vec![DiscoveredTest::Simple { name: "my_check".to_string(), tags: vec![] }]
     )]
     #[case(
         "# [test]\ndef another_check():\n  None\nend\n",
-        vec![DiscoveredTest::Simple("another_check".to_string())]
+        vec![DiscoveredTest::Simple { name: "another_check".to_string(), tags: vec![] }]
     )]
     #[case(
         "def test_first():\n  None\nend\n\n# @test\ndef annotated():\n  None\nend\n",
         vec![
-            DiscoveredTest::Simple("test_first".to_string()),
-            DiscoveredTest::Simple("annotated".to_string()),
+            DiscoveredTest::Simple { name: "test_first".to_string(), tags: vec![] },
+            DiscoveredTest::Simple { name: "annotated".to_string(), tags: vec![] },
         ]
     )]
     #[case("def helper():\n  None\nend\n", vec![])]
     #[case(
         "module a:\n  def test_first():\n  None\nend\n\n# @test\ndef annotated():\n  None\nend\nend\n",
         vec![
-            DiscoveredTest::Simple("test_first".to_string()),
-            DiscoveredTest::Simple("annotated".to_string()),
+            DiscoveredTest::Simple { name: "test_first".to_string(), tags: vec![] },
+            DiscoveredTest::Simple { name: "annotated".to_string(), tags: vec![] },
         ]
+    )]
+    #[case(
+        "# @tags(slow, integration)\n# @test\ndef my_check():\n  None\nend\n",
+        vec![DiscoveredTest::Simple {
+            name: "my_check".to_string(),
+            tags: vec!["slow".to_string(), "integration".to_string()],
+        }]
+    )]
+    #[case(
+        "# @tags(slow)\ndef test_first():\n  None\nend\n",
+        vec![DiscoveredTest::Simple { name: "test_first".to_string(), tags: vec!["slow".to_string()] }]
     )]
     fn test_discover_tests_simple(#[case] content: &str, #[case] expected: Vec<DiscoveredTest>) {
         assert_eq!(TestRunner::discover_tests(content), expected);
@@ -455,6 +607,7 @@ mod tests {
                 name,
                 params_expr,
                 arity,
+                ..
             } => {
                 assert_eq!(name, expected_name);
                 assert_eq!(params_expr, expected_params_expr);
@@ -487,8 +640,8 @@ mod tests {
         );
         let tests = TestRunner::discover_tests(content);
         assert_eq!(tests.len(), 3);
-        assert!(matches!(&tests[0], DiscoveredTest::Simple(n) if n == "test_simple"));
-        assert!(matches!(&tests[1], DiscoveredTest::Simple(n) if n == "annotated"));
+        assert!(matches!(&tests[0], DiscoveredTest::Simple { name, .. } if name == "test_simple"));
+        assert!(matches!(&tests[1], DiscoveredTest::Simple { name, .. } if name == "annotated"));
         assert!(matches!(&tests[2], DiscoveredTest::Parametrized { name, .. } if name == "test_param"));
     }
 
@@ -515,9 +668,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case(vec![DiscoveredTest::Simple("test_foo".to_string())], "[test_case(\"foo\", test_foo)]")]
-    #[case(vec![DiscoveredTest::Simple("test_is_array".to_string())], "[test_case(\"is_array\", test_is_array)]")]
-    #[case(vec![DiscoveredTest::Simple("my_check".to_string())], "[test_case(\"my_check\", my_check)]")]
+    #[case(vec![DiscoveredTest::Simple { name: "test_foo".to_string(), tags: vec![] }], "[test_case(\"foo\", test_foo)]")]
+    #[case(vec![DiscoveredTest::Simple { name: "test_is_array".to_string(), tags: vec![] }], "[test_case(\"is_array\", test_is_array)]")]
+    #[case(vec![DiscoveredTest::Simple { name: "my_check".to_string(), tags: vec![] }], "[test_case(\"my_check\", my_check)]")]
     fn test_build_test_query_simple_cases(#[case] tests: Vec<DiscoveredTest>, #[case] expected: &str) {
         let query = TestRunner::build_test_query("content", &tests);
         assert!(query.starts_with("content\n"), "query must start with original content");
@@ -527,27 +680,27 @@ mod tests {
 
     #[rstest]
     #[case(
-        DiscoveredTest::Parametrized { name: "test_no_args".to_string(), params_expr: "[[]]".to_string(), arity: 0 },
+        DiscoveredTest::Parametrized { name: "test_no_args".to_string(), params_expr: "[[]]".to_string(), arity: 0, tags: vec![] },
         "test_no_args()",
         "\"no_args[\""
     )]
     #[case(
-        DiscoveredTest::Parametrized { name: "test_double".to_string(), params_expr: "[[1], [2]]".to_string(), arity: 1 },
+        DiscoveredTest::Parametrized { name: "test_double".to_string(), params_expr: "[[1], [2]]".to_string(), arity: 1, tags: vec![] },
         "test_double(__ic[1][0])",
         "\"double[\""
     )]
     #[case(
-        DiscoveredTest::Parametrized { name: "test_len".to_string(), params_expr: "[[\"a\", 1]]".to_string(), arity: 2 },
+        DiscoveredTest::Parametrized { name: "test_len".to_string(), params_expr: "[[\"a\", 1]]".to_string(), arity: 2, tags: vec![] },
         "test_len(__ic[1][0], __ic[1][1])",
         "\"len[\""
     )]
     #[case(
-        DiscoveredTest::Parametrized { name: "test_concat".to_string(), params_expr: "[[\"a\", \"b\", \"ab\"]]".to_string(), arity: 3 },
+        DiscoveredTest::Parametrized { name: "test_concat".to_string(), params_expr: "[[\"a\", \"b\", \"ab\"]]".to_string(), arity: 3, tags: vec![] },
         "test_concat(__ic[1][0], __ic[1][1], __ic[1][2])",
         "\"concat[\""
     )]
     #[case(
-        DiscoveredTest::Parametrized { name: "check_len".to_string(), params_expr: "[[1]]".to_string(), arity: 1 },
+        DiscoveredTest::Parametrized { name: "check_len".to_string(), params_expr: "[[1]]".to_string(), arity: 1, tags: vec![] },
         "check_len(__ic[1][0])",
         "\"check_len[\""
     )]
@@ -573,8 +726,14 @@ mod tests {
     #[test]
     fn test_build_test_query_multiple_simple() {
         let tests = vec![
-            DiscoveredTest::Simple("test_foo".to_string()),
-            DiscoveredTest::Simple("test_bar".to_string()),
+            DiscoveredTest::Simple {
+                name: "test_foo".to_string(),
+                tags: vec![],
+            },
+            DiscoveredTest::Simple {
+                name: "test_bar".to_string(),
+                tags: vec![],
+            },
         ];
         let query = TestRunner::build_test_query("content", &tests);
         assert!(query.contains("[test_case(\"foo\", test_foo)]"));
@@ -585,11 +744,15 @@ mod tests {
     #[test]
     fn test_build_test_query_mixed() {
         let tests = vec![
-            DiscoveredTest::Simple("test_foo".to_string()),
+            DiscoveredTest::Simple {
+                name: "test_foo".to_string(),
+                tags: vec![],
+            },
             DiscoveredTest::Parametrized {
                 name: "test_len".to_string(),
                 params_expr: "[[\"a\", 1]]".to_string(),
                 arity: 2,
+                tags: vec![],
             },
         ];
         let query = TestRunner::build_test_query("content", &tests);
@@ -602,7 +765,10 @@ mod tests {
     #[test]
     fn test_build_test_query_preserves_content() {
         let content = "include \"test\"\n|\ndef helper(): None end";
-        let tests = vec![DiscoveredTest::Simple("test_foo".to_string())];
+        let tests = vec![DiscoveredTest::Simple {
+            name: "test_foo".to_string(),
+            tags: vec![],
+        }];
         let query = TestRunner::build_test_query(content, &tests);
         assert!(query.starts_with(content));
     }
@@ -628,6 +794,33 @@ mod tests {
         assert_eq!(args, expected);
     }
 
+    #[rstest]
+    #[case(None, vec![], "test_foo", vec![], true)]
+    #[case(Some("foo"), vec![], "test_foo", vec![], true)]
+    #[case(Some("FOO"), vec![], "test_foo", vec![], true)]
+    #[case(Some("bar"), vec![], "test_foo", vec![], false)]
+    #[case(None, vec!["slow".to_string()], "test_foo", vec!["slow".to_string()], true)]
+    #[case(None, vec!["slow".to_string()], "test_foo", vec!["fast".to_string()], false)]
+    #[case(None, vec!["slow".to_string()], "test_foo", vec![], false)]
+    #[case(Some("foo"), vec!["slow".to_string()], "test_foo", vec!["slow".to_string()], true)]
+    #[case(Some("bar"), vec!["slow".to_string()], "test_foo", vec!["slow".to_string()], false)]
+    fn test_matches(
+        #[case] filter: Option<&str>,
+        #[case] tags: Vec<String>,
+        #[case] test_name: &str,
+        #[case] test_tags: Vec<String>,
+        #[case] expected: bool,
+    ) {
+        let runner = TestRunner::new(vec![])
+            .with_filter(filter.map(str::to_string))
+            .with_tags(tags);
+        let test = DiscoveredTest::Simple {
+            name: test_name.to_string(),
+            tags: test_tags,
+        };
+        assert_eq!(runner.matches(&test), expected);
+    }
+
     fn temp_project_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("mq_test_{name}_{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
@@ -650,12 +843,13 @@ mod tests {
         .unwrap();
         let output = dir.join("coverage.json");
 
-        TestRunner::new(vec![test_file])
+        let passed = TestRunner::new(vec![test_file])
             .with_coverage(true)
             .with_coverage_format(CoverageFormat::Json)
             .with_coverage_output(Some(output.clone()))
             .run()
             .unwrap();
+        assert!(passed);
 
         let report = fs::read_to_string(&output).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
@@ -691,7 +885,7 @@ mod tests {
         )
         .unwrap();
 
-        TestRunner::new(vec![test_file]).run().unwrap();
+        assert!(TestRunner::new(vec![test_file]).run().unwrap());
 
         assert!(
             !Path::new("/definitely/not/a/real/writable/path.txt").exists(),
@@ -720,7 +914,7 @@ mod tests {
         )
         .unwrap();
 
-        TestRunner::new(vec![test_file]).run().unwrap();
+        assert!(TestRunner::new(vec![test_file]).run().unwrap());
 
         fs::remove_dir_all(&dir).ok();
     }
@@ -747,12 +941,13 @@ mod tests {
         .unwrap();
         let output = dir.join("coverage.json");
 
-        TestRunner::new(vec![test_add, test_sub])
+        let passed = TestRunner::new(vec![test_add, test_sub])
             .with_coverage(true)
             .with_coverage_format(CoverageFormat::Json)
             .with_coverage_output(Some(output.clone()))
             .run()
             .unwrap();
+        assert!(passed);
 
         let report = fs::read_to_string(&output).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
@@ -761,6 +956,100 @@ mod tests {
         assert_eq!(files.len(), 1, "lib.mq must be reported once, merged: {files:?}");
         assert_eq!(files[0]["totalLines"], 2);
         assert_eq!(files[0]["coveredLines"], 2);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_run_reports_failure_without_aborting_other_files() {
+        let dir = temp_project_dir("failure_no_abort");
+        let failing = dir.join("failing.mq");
+        fs::write(
+            &failing,
+            "include \"test\"\n|\ndef test_fails():\n  assert_eq(1, 2)\nend\n",
+        )
+        .unwrap();
+        let passing = dir.join("passing.mq");
+        fs::write(
+            &passing,
+            "include \"test\"\n|\ndef test_passes():\n  assert_eq(1, 1)\nend\n",
+        )
+        .unwrap();
+
+        let passed = TestRunner::new(vec![failing, passing]).run().unwrap();
+        assert!(!passed, "run() must report failure when any test fails");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_filter_skips_non_matching_tests() {
+        let dir = temp_project_dir("filter_skips");
+        let test_file = dir.join("tests.mq");
+        fs::write(
+            &test_file,
+            concat!(
+                "include \"test\"\n",
+                "|\n",
+                "def test_add():\n  assert_eq(1 + 1, 2)\nend\n\n",
+                "def test_sub():\n  assert_eq(2, 3)\nend\n",
+            ),
+        )
+        .unwrap();
+
+        // Only "add" is selected; the failing "sub" test is filtered out.
+        let passed = TestRunner::new(vec![test_file])
+            .with_filter(Some("add".to_string()))
+            .run()
+            .unwrap();
+        assert!(passed);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_tag_filter_skips_untagged_tests() {
+        let dir = temp_project_dir("tag_filter_skips");
+        let test_file = dir.join("tests.mq");
+        fs::write(
+            &test_file,
+            concat!(
+                "include \"test\"\n",
+                "|\n",
+                "# @tags(smoke)\n",
+                "def test_add():\n  assert_eq(1 + 1, 2)\nend\n\n",
+                "def test_sub():\n  assert_eq(2, 3)\nend\n",
+            ),
+        )
+        .unwrap();
+
+        // Only the "smoke"-tagged test runs; the failing untagged test is filtered out.
+        let passed = TestRunner::new(vec![test_file])
+            .with_tags(vec!["smoke".to_string()])
+            .run()
+            .unwrap();
+        assert!(passed);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_parallel_execution_runs_all_files() {
+        let dir = temp_project_dir("parallel_execution");
+        let files: Vec<PathBuf> = (0..5)
+            .map(|i| {
+                let path = dir.join(format!("test_{i}.mq"));
+                fs::write(
+                    &path,
+                    format!("include \"test\"\n|\ndef test_case_{i}():\n  assert_eq({i}, {i})\nend\n"),
+                )
+                .unwrap();
+                path
+            })
+            .collect();
+
+        let passed = TestRunner::new(files).with_parallel_threshold(0).run().unwrap();
+        assert!(passed);
 
         fs::remove_dir_all(&dir).ok();
     }

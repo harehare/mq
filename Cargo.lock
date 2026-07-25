@@ -2753,6 +2753,7 @@ dependencies = [
  "glob",
  "miette",
  "mq-lang",
+ "rayon",
  "rstest",
  "rustc-hash",
  "serde_json",
