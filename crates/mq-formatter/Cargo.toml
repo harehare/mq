@@ -18,6 +18,7 @@ miette = {workspace = true, features = ["fancy"]}
 mq-lang = {workspace = true, features = ["cst"]}
 
 [dev-dependencies]
+assert_cmd = {workspace = true}
 divan = {workspace = true}
 rstest = {workspace = true}
 

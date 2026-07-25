@@ -11,7 +11,7 @@ curl -sSL https://mqlang.org/install_fmt.sh | bash
 ```
 
 The installer will:
-- Download the latest `mq-crawl` binary for your platform
+- Download the latest `mq-fmt` binary for your platform
 - Install it to `~/.local/bin/`
 - Verify the checksum of the downloaded binary
 - Update your shell profile to add `mq-fmt` to your PATH
@@ -56,6 +56,12 @@ mq-fmt --sort-imports --sort-functions file.mq
 
 # Wrap long `|`-chained pipelines at 80 columns
 mq-fmt --max-width 80 file.mq
+
+# Read from stdin and write the formatted result to stdout
+cat file.mq | mq-fmt -
+
+# Check formatting of stdin without writing anything (exits with non-zero if unformatted)
+cat file.mq | mq-fmt --check -
 ```
 
 ### Via mq
