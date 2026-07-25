@@ -108,10 +108,13 @@ steps:
 
 ## Packages
 
-mq is a Rust + TypeScript monorepo. The core Rust crates:
+mq is a Rust + TypeScript monorepo.
 
-| Name                                  | Description                                           | Crates.io                                                                                                             |
-| ------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+<details>
+<summary>Rust crates and npm packages (click to show)</summary>
+
+| Name                                  | Description                                           | Version                                                                                                                |
+| -------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
 | [`mq-run`](crates/mq-run)             | Command-line interface for mq                         | [![Crates.io](https://img.shields.io/crates/v/mq-run?style=flat-square)](https://crates.io/crates/mq-run)             |
 | [`mq-lang`](crates/mq-lang)           | Core language implementation                          | [![Crates.io](https://img.shields.io/crates/v/mq-lang?style=flat-square)](https://crates.io/crates/mq-lang)           |
 | [`mq-markdown`](crates/mq-markdown)   | Markdown parsing and manipulation utilities           | [![Crates.io](https://img.shields.io/crates/v/mq-markdown?style=flat-square)](https://crates.io/crates/mq-markdown)   |
@@ -128,20 +131,12 @@ mq is a Rust + TypeScript monorepo. The core Rust crates:
 | [`mq-test`](crates/mq-test)           | Test runner for mq                                    | [![Crates.io](https://img.shields.io/crates/v/mq-test?style=flat-square)](https://crates.io/crates/mq-test)           |
 | [`mq-ffi`](crates/mq-ffi)             | C API for integrating mq into C applications          | —                                                                                                                     |
 | [`mq-wasm`](crates/mq-wasm)           | WebAssembly bindings                                  | —                                                                                                                     |
+| [`mq-web`](packages/mq-web)           | Official WebAssembly build for the browser            | [![npm](https://img.shields.io/npm/v/mq-web?style=flat-square)](https://www.npmjs.com/package/mq-web)                 |
+| [`mq-nodejs`](packages/mq-nodejs)     | Node.js bindings                                      | [![npm](https://img.shields.io/npm/v/mq-nodejs?style=flat-square)](https://www.npmjs.com/package/mq-nodejs)           |
 
-And the following npm packages:
+</details>
 
-| Name                              | Description                                | npm                                                                                                         |
-| --------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| [`mq-web`](packages/mq-web)       | Official WebAssembly build for the browser | [![npm](https://img.shields.io/npm/v/mq-web?style=flat-square)](https://www.npmjs.com/package/mq-web)       |
-| [`mq-nodejs`](packages/mq-nodejs) | Node.js bindings                           | [![npm](https://img.shields.io/npm/v/mq-nodejs?style=flat-square)](https://www.npmjs.com/package/mq-nodejs) |
-
-mq is also available as a hosted REST API:
-
-| Resource         | Link                                                                    |
-| ---------------- | ------------------------------------------------------------------------ |
-| REST API docs    | [mqlang.org/book/start/web_api](https://mqlang.org/book/start/web_api) |
-| Playground       | [mqlang.org/playground](https://mqlang.org/playground)                 |
+mq is also available as a hosted REST API (see [`mq-web-api`](crates/mq-web-api) above). See the [REST API docs](https://mqlang.org/book/start/web_api) or try it in the [Playground](https://mqlang.org/playground).
 
 ```bash
 curl --data-binary @doc.md https://api.mqlang.org/.h1
