@@ -26,7 +26,13 @@ use std::{path::PathBuf, process::ExitCode};
     ## Write a Markdown coverage report:\n\
     mq-test --coverage --coverage-format markdown --coverage-output coverage.md\n\n\
     ## Write an HTML coverage report and open it in the browser:\n\
-    mq-test --coverage --coverage-format html --coverage-output coverage.html --open")]
+    mq-test --coverage --coverage-format html --coverage-output coverage.html --open\n\n\
+    ## Only run tests whose name contains \"parse\":\n\
+    mq-test --filter parse\n\n\
+    ## Only run tests tagged \"smoke\" (see `# @tags(...)` in test files):\n\
+    mq-test --tag smoke\n\n\
+    ## Run test files in parallel once more than 4 files are discovered:\n\
+    mq-test --parallel-threshold 4")]
 struct Cli {
     /// Path(s) to mq test files.
     /// Defaults to **/*.mq in the current directory when omitted.
@@ -50,21 +56,40 @@ struct Cli {
     /// Requires `--coverage-output`.
     #[arg(long, requires_all = ["coverage", "coverage_output"])]
     open: bool,
+
+    /// Only run tests whose name contains this substring (case-insensitive).
+    #[arg(short = 'k', long)]
+    filter: Option<String>,
+
+    /// Only run tests tagged (via `# @tags(...)`) with this tag. Repeatable;
+    /// a test runs if it has at least one of the given tags.
+    #[arg(long = "tag")]
+    tags: Vec<String>,
+
+    /// Number of test files to process before switching to parallel processing.
+    /// Omit to always run files sequentially.
+    #[arg(short = 'P', long)]
+    parallel_threshold: Option<usize>,
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    if let Err(e) = runner::TestRunner::new(cli.files)
+    match runner::TestRunner::new(cli.files)
         .with_coverage(cli.coverage)
         .with_coverage_format(cli.coverage_format)
         .with_coverage_output(cli.coverage_output)
         .with_open(cli.open)
+        .with_filter(cli.filter)
+        .with_tags(cli.tags)
+        .with_parallel_threshold(cli.parallel_threshold.unwrap_or(usize::MAX))
         .run()
     {
-        eprintln!("{e:?}");
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
+        Ok(true) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::FAILURE,
+        Err(e) => {
+            eprintln!("{e:?}");
+            ExitCode::FAILURE
+        }
     }
 }

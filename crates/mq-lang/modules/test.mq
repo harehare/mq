@@ -191,71 +191,67 @@ def _format_duration(duration_ms):
   | duration_str + "s"
 end
 
-# Executes multiple test functions
+# Executes multiple test functions.
+#
+# The whole report is built as a single string and printed with one `print`
+# call, so concurrently running test files (the Rust runner may evaluate
+# several files in parallel) can never interleave their output mid-line.
+# Returns `true` if every test passed, so the caller can aggregate pass/fail
+# across files itself instead of this function terminating the process.
 def run_tests(tests):
   let final_test_count = len(tests)
-
-  # Print starting message
   | let file_name = try: TEST_FILE catch: ""
-  | let _ = do
-      print("# " + file_name + "\n\nStarting " + to_string(final_test_count) + " tests...\n")
-      | print("| Status | Duration | Test Name |")
-      | print("| :--- | :--- | :--- |")
-    end
+  | let header = "# " + file_name + "\n\nStarting " + to_string(final_test_count) + " tests...\n\n" +
+      "| Status | Duration | Test Name |\n| :--- | :--- | :--- |"
 
-  # Run each test and print result immediately
+  # Run each test and build its report row
   | let test_results = foreach (test, tests):
       if (is_dict(test) && contains(test, "name") && contains(test, "func")):
         do
           let result = _run_test(get(test, "name"), get(test, "func"))
           | let duration_str = _format_duration(result["duration"])
           | let status_str = if (result["status"] == "passed"): "✅" else: "❌"
-          | let _ = print("| " + status_str + " | `" + duration_str + "` | " + result["name"] + " |")
-          | result
+          | let row = "| " + status_str + " | `" + duration_str + "` | " + result["name"] + " |"
+          | {"name": result["name"], "status": result["status"], "duration": result["duration"], "error": result["error"], "row": row}
         end
       else:
         error("Invalid test format: each test must be a dict with 'name' and 'func' keys")
     end
 
+  | let rows = join(map(test_results, fn(r): r["row"];), "\n")
   | let final_failed_count = len(filter(test_results, fn(r): r["status"] == "failed";))
   | let passed_count = final_test_count - final_failed_count
   | let total_duration = fold(map(test_results, fn(r): r["duration"];), 0, fn(acc, d): acc + d;)
 
-  # Print failures section if any
-  | if (final_failed_count > 0):
+  # Build the failures section, if any
+  | let failures_section = if (final_failed_count > 0):
       do
         let failures = filter(test_results, fn(r): r["status"] == "failed";)
-        | print("\n## Failures\n")
-        | foreach (failure, failures):
-            print("### " + failure["name"] + "\n")
-            | let error_parts = split(failure["error"], "\n\n")
-            | let header = "❌ " + error_parts[0]
-            | let _ = print(header + "\n")
+        | let failure_blocks = foreach (failure, failures):
+            let error_parts = split(failure["error"], "\n\n")
+            | let failure_header = "❌ " + error_parts[0]
             | let has_body = len(error_parts) > 1
-            | if (has_body):
-                do
-                  let body = join(skip(error_parts, 1), "\n")
-                  | print("```diff\n" + body + "\n```")
-                end
+            | let body = if (has_body):
+                "\n```diff\n" + join(skip(error_parts, 1), "\n") + "\n```"
               else:
-                None
+                ""
+            | "### " + failure["name"] + "\n" + failure_header + body
           end
+        | "\n## Failures\n\n" + join(failure_blocks, "\n\n") + "\n"
       end
+    else:
+      ""
 
-  # Print summary
+  # Build the summary section
   | let summary_duration = _format_duration(total_duration)
   | let passed_str = "✅ " + to_string(passed_count)
   | let failed_str = "❌ " + to_string(final_failed_count)
-  | let _ = do
-      print("\n## Summary\n")
-      | print("| Duration | Tests | Passed | Failed |")
-      | print("| :--- | :--- | :--- | :--- |")
-      | print("| `" + summary_duration + "` | " + to_string(final_test_count) + " | " + passed_str + " | " + failed_str + " |")
-      | print("\n---\n")
-    end
+  | let summary = "\n## Summary\n\n| Duration | Tests | Passed | Failed |\n| :--- | :--- | :--- | :--- |\n" +
+      "| `" + summary_duration + "` | " + to_string(final_test_count) + " | " + passed_str + " | " + failed_str + " |\n\n---\n"
 
-  # Exit with error code if tests failed
-  | if (final_failed_count > 0): halt(1)
+  | let _ = print(header + "\n" + rows + "\n" + failures_section + summary)
+
+  | final_failed_count == 0
 end
 
 # Helper function to create a test case
