@@ -11,7 +11,7 @@ curl -sSL https://mqlang.org/install_fmt.sh | bash
 ```
 
 The installer will:
-- Download the latest `mq-crawl` binary for your platform
+- Download the latest `mq-fmt` binary for your platform
 - Install it to `~/.local/bin/`
 - Verify the checksum of the downloaded binary
 - Update your shell profile to add `mq-fmt` to your PATH
