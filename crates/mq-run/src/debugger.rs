@@ -118,6 +118,7 @@ impl From<String> for Command {
 #[derive(Debug)]
 pub struct DebuggerHandler {
     engine: mq_lang::DefaultEngine,
+    stop_on_error: bool,
 }
 
 #[cfg(feature = "debugger")]
@@ -135,6 +136,16 @@ impl mq_lang::DebuggerHandler for DebuggerHandler {
     fn on_step(&self, context: &mq_lang::DebugContext) -> mq_lang::DebuggerAction {
         self.run_debug(context).unwrap_or(mq_lang::DebuggerAction::Continue)
     }
+
+    /// No-op unless `--stop-on-error` was passed.
+    fn on_error(&self, message: &str, context: &mq_lang::DebugContext) {
+        if !self.stop_on_error {
+            return;
+        }
+
+        eprintln!("{}", format!("Uncaught error: {}", message).red().bold());
+        let _ = self.run_debug(context);
+    }
 }
 
 pub fn config_dir() -> Option<std::path::PathBuf> {
@@ -144,8 +155,8 @@ pub fn config_dir() -> Option<std::path::PathBuf> {
 }
 
 impl DebuggerHandler {
-    pub fn new(engine: mq_lang::DefaultEngine) -> Self {
-        Self { engine }
+    pub fn new(engine: mq_lang::DefaultEngine, stop_on_error: bool) -> Self {
+        Self { engine, stop_on_error }
     }
 
     pub fn run_debug(&self, context: &mq_lang::DebugContext) -> miette::Result<mq_lang::DebuggerAction> {
@@ -646,7 +657,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let handler = DebuggerHandler::new(mq_lang::DefaultEngine::default());
+        let handler = DebuggerHandler::new(mq_lang::DefaultEngine::default(), false);
         let (start, snippet) = handler.get_source_code_with_context(&context, 4, 2);
         assert_eq!(start, 2);
         assert_eq!(
@@ -663,7 +674,7 @@ mod tests {
 
     #[test]
     fn test_get_source_code_with_context_edge_cases() {
-        let handler = DebuggerHandler::new(mq_lang::DefaultEngine::default());
+        let handler = DebuggerHandler::new(mq_lang::DefaultEngine::default(), false);
 
         // Empty source code
         let empty_context = DebugContext {
@@ -715,9 +726,18 @@ mod tests {
     #[test]
     fn test_debugger_handler_new() {
         let engine = mq_lang::DefaultEngine::default();
-        let handler = DebuggerHandler::new(engine);
+        let handler = DebuggerHandler::new(engine, false);
         // Just verify it constructs without panic
         assert!(std::mem::size_of_val(&handler) > 0);
+    }
+
+    #[test]
+    fn test_on_error_ignored_when_stop_on_error_disabled() {
+        let handler = DebuggerHandler::new(mq_lang::DefaultEngine::default(), false);
+        let context = DebugContext::default();
+
+        // Should return immediately without prompting, since stop_on_error is disabled.
+        mq_lang::DebuggerHandler::on_error(&handler, "boom", &context);
     }
 
     #[test]

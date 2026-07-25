@@ -119,3 +119,13 @@ def process_data(items) {
 When the debugger encounters a `breakpoint()` function call during execution, it will automatically pause and enter interactive debugging mode.
 
 **Note**: The `breakpoint()` function only has an effect when running under the debugger (`mq-dbg`). In normal execution (`mq`), it is ignored and has no impact on performance.
+
+## Stopping on Errors
+
+Pass `--stop-on-error` to drop into the debugger prompt whenever an error propagates uncaught (i.e. not caught by `try`/`catch`), instead of only stopping at breakpoints:
+
+```bash
+mq-dbg --stop-on-error -f your-script.mq input.md
+```
+
+The error is still reported and evaluation still stops afterward; `--stop-on-error` just gives you a chance to inspect the call stack and variables (via `backtrace`, `info`, etc.) before that happens.
