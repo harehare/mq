@@ -3252,13 +3252,8 @@ fn to_mdx_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
 }
 
 #[mq_macros::mq_fn(name = "_get_markdown_position", params = Fixed(1))]
-fn _get_markdown_position_impl(
-    ident: &Ident,
-    _: &RuntimeValue,
-    mut args: Args,
-    _: &SharedEnv,
-) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
+fn _get_markdown_position_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
         [RuntimeValue::Markdown(node, _)] => node
             .position()
             .map(|pos| {
@@ -3271,9 +3266,21 @@ fn _get_markdown_position_impl(
                 .into())
             })
             .unwrap_or(Ok(RuntimeValue::NONE)),
-        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!("_get_markdown_position should always receive exactly one argument"),
+        // Matches get_title/get_url/to_md_name: non-markdown input (including the None
+        // a filtered-out selector like `.h` produces) resolves to None instead of erroring.
+        _ => Ok(RuntimeValue::NONE),
     }
+}
+
+/// Public, documented entry point for `_get_markdown_position` (issue #1358).
+#[mq_macros::mq_fn(name = "get_location", params = Fixed(1))]
+fn get_location_impl(
+    ident: &Ident,
+    current_value: &RuntimeValue,
+    args: Args,
+    env: &SharedEnv,
+) -> Result<RuntimeValue, Error> {
+    _get_markdown_position_impl(ident, current_value, args, env)
 }
 
 #[mq_macros::mq_fn(name = "_csv_parse", params = Range(1, 3))]
@@ -4440,6 +4447,7 @@ mq_macros::builtin_dispatch! {
     TO_MD_FRAGMENT,
     GET_TITLE,
     GET_URL,
+    GET_LOCATION,
     SET_CHECK,
     SET_REF,
     SET_CODE_BLOCK_LANG,
@@ -5976,6 +5984,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         SmolStr::new("get_url"),
         BuiltinFunctionDoc {
             description: "Returns the url of a markdown node.",
+            params: &["node"],
+        },
+    );
+    map.insert(
+        SmolStr::new("get_location"),
+        BuiltinFunctionDoc {
+            description: "Returns the source position of a markdown node as a dict with start_line, start_column, end_line, and end_column, or None if the node has no position info.",
             params: &["node"],
         },
     );

@@ -2763,6 +2763,8 @@ fn engine() -> DefaultEngine {
 #[case::set_list_ordered_simple(r##"to_markdown("- item") | first() | set_list_ordered(true) | .list.ordered"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::diff_simple(r##"_diff("abc", "abd") | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::get_markdown_position_simple(r##"to_markdown("# title") | first() | _get_markdown_position() | get("start_line")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::get_location_simple(r##"to_markdown("# title") | first() | get_location() | get("start_line")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::get_location_non_markdown(r##"get_location("not a node")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::toon_parse_simple(r##"_toon_parse("a: 1")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(BTreeMap::from([
     (Ident::new("a"), RuntimeValue::Number(1.into())),
 ])))].into()))]
