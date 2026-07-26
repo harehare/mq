@@ -1,6 +1,7 @@
 use crate::arena::Arena;
 use crate::ast::node::{IdentWithToken, MatchArm, Pattern};
 use crate::error::syntax::SyntaxError;
+use crate::eval::builtin::io_context;
 use crate::lexer::Lexer;
 use crate::lexer::token::{Token, TokenKind};
 use crate::module::ModuleId;
@@ -780,7 +781,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         match &token.kind {
             TokenKind::Env(s) => Ok(Shared::new(Node {
                 token_id: self.token_arena.alloc(Shared::clone(token)),
-                expr: std::env::var(s)
+                expr: io_context::current()
+                    .env_var(s)
                     .map_err(|_| SyntaxError::EnvNotFound((**token).clone(), SmolStr::new(s)))
                     .map(|s| Shared::new(Expr::Literal(Literal::String(s.to_owned()))))?,
             })),

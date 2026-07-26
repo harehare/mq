@@ -19,6 +19,7 @@ use crate::{
     arena::Arena,
     error::{self},
     eval::Evaluator,
+    eval::builtin::io_context,
     optimizer::{OptimizationLevel, Optimizer},
     parse,
 };
@@ -280,6 +281,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             return Ok(vec![].into());
         }
 
+        // Scoped before `parse`, not just `evaluator.eval`, so bare `$VAR` resolution sees this engine's `Io`.
+        let _io_guard = io_context::scoped(Shared::clone(&self.evaluator.io) as Shared<dyn Io>);
         let program = parse(code, Shared::clone(&self.token_arena))?;
         let program = Optimizer::with_level(self.optimization_level).optimize(program);
 
@@ -302,6 +305,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 program: vec![],
             });
         }
+        let _io_guard = io_context::scoped(Shared::clone(&self.evaluator.io) as Shared<dyn Io>);
         let program = parse(code, Shared::clone(&self.token_arena))?;
         let program = Optimizer::with_level(self.optimization_level).optimize(program);
         Ok(CompiledProgram {

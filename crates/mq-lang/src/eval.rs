@@ -1170,7 +1170,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                         acc.push_str(&value.to_string());
                     }
                     ast::StringSegment::Env(env_var) => {
-                        acc.push_str(&std::env::var(env_var).map_err(|_| {
+                        acc.push_str(&io_context::current().env_var(env_var).map_err(|_| {
                             RuntimeError::EnvNotFound(
                                 (*get_token(Shared::clone(&self.token_arena), token_id)).clone(),
                                 env_var.clone(),
@@ -1315,7 +1315,8 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                             acc.push_str(&runtime_value.to_string());
                         } else if let Some(var) = expr_str.strip_prefix('$') {
                             acc.push_str(
-                                &std::env::var(var)
+                                &io_context::current()
+                                    .env_var(var)
                                     .map_err(|_| RuntimeError::EnvNotFound((**token).clone(), var.into()))?,
                             );
                         } else {
