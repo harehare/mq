@@ -602,12 +602,8 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
     ) -> EvalResult {
         let mut value = runtime_value;
         for expr in program {
-            match self.eval_expr(&value, expr, env) {
-                Ok(new_value) => {
-                    value = self.maybe_auto_call_pipeline_ident(new_value, &value, expr, env)?;
-                }
-                Err(e) => return Err(e),
-            }
+            let new_value = self.eval_expr(&value, expr, env)?;
+            value = self.maybe_auto_call_pipeline_ident(new_value, &value, expr, env)?;
         }
         Ok(value)
     }

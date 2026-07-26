@@ -381,14 +381,22 @@ struct InputArgs {
     allow_net: bool,
 
     /// Allow the `read_file`/`read_file_bytes`/`collection`/`file_exists`/`embed_images`
-    /// functions to read from the filesystem. Disabled by default.
-    #[arg(long = "allow-read", default_value_t = false)]
-    allow_read: bool,
+    /// functions to read from the filesystem. Disabled by default. Pass with no value to
+    /// allow reading anywhere, or `--allow-read=PATH` (files or directories; repeat the
+    /// flag, or comma-separate, to add more) to restrict reads to just those paths and
+    /// their descendants. The `=` is required so a bare path after the flag isn't
+    /// swallowed as a query/file positional instead.
+    #[arg(long = "allow-read", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "PATH")]
+    allow_read: Option<Vec<PathBuf>>,
 
     /// Allow the `write_file`/`extract_images` functions to write to the filesystem.
-    /// Disabled by default.
-    #[arg(long = "allow-write", default_value_t = false)]
-    allow_write: bool,
+    /// Disabled by default. Pass with no value to allow writing anywhere, or
+    /// `--allow-write=PATH` (files or directories; repeat the flag, or comma-separate, to
+    /// add more) to restrict writes to just those paths and their descendants. The `=` is
+    /// required so a bare path after the flag isn't swallowed as a query/file positional
+    /// instead.
+    #[arg(long = "allow-write", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "PATH")]
+    allow_write: Option<Vec<PathBuf>>,
 
     /// Allow the `system` function to execute external commands.
     /// Disabled by default. Commands run directly (never through a shell), so shell
@@ -826,8 +834,8 @@ impl Cli {
         let mut engine = mq_lang::DefaultEngine::default();
         engine.set_io(Shared::new(
             mq_lang::SandboxedIo::new(mq_lang::NativeIo::default())
-                .allow_read(self.input.allow_read)
-                .allow_write(self.input.allow_write)
+                .allow_read(self.input.allow_read.clone())
+                .allow_write(self.input.allow_write.clone())
                 .allow_net(self.input.allow_net)
                 .allow_run(self.input.allow_run),
         ));
@@ -1717,7 +1725,7 @@ mod tests {
         let allowed_cli = Cli {
             input: InputArgs {
                 input_format: Some(InputFormat::Null),
-                allow_read: true,
+                allow_read: Some(vec![]),
                 ..Default::default()
             },
             output: OutputArgs::default(),

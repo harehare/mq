@@ -88,7 +88,7 @@ pub use eval::runtime_value::{RuntimeValue, RuntimeValues};
 pub use ident::Ident;
 #[cfg(feature = "mock-io")]
 pub use io::MemIo;
-pub use io::{Io, IoError, NativeIo, SandboxedIo};
+pub use io::{Io, IoError, NativeIo, PathAccess, SandboxedIo};
 pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
 #[cfg(feature = "http-import")]
