@@ -632,9 +632,15 @@ impl RuntimeValue {
         match self {
             RuntimeValue::None => serde_json::Value::Null,
             RuntimeValue::Boolean(b) => serde_json::Value::Bool(b),
-            RuntimeValue::Number(n) => serde_json::Number::from_f64(n.value())
-                .map(serde_json::Value::Number)
-                .unwrap_or(serde_json::Value::Null),
+            RuntimeValue::Number(n) => {
+                if n.is_int() {
+                    serde_json::Value::Number(serde_json::Number::from(n.to_int()))
+                } else {
+                    serde_json::Number::from_f64(n.value())
+                        .map(serde_json::Value::Number)
+                        .unwrap_or(serde_json::Value::Null)
+                }
+            }
             RuntimeValue::String(s) => serde_json::Value::String(s),
             RuntimeValue::Symbol(i) => serde_json::Value::String(i.to_string()),
             RuntimeValue::Array(arr) => serde_json::Value::Array(
@@ -1243,6 +1249,12 @@ mod tests {
     #[case(RuntimeValue::String("hi".to_string()), serde_json::Value::String("hi".to_string()))]
     #[case(RuntimeValue::Symbol(Ident::new("sym")), serde_json::Value::String("sym".to_string()))]
     #[case(RuntimeValue::NativeFunction(Ident::new("f")), serde_json::Value::Null)]
+    #[case(
+        RuntimeValue::Number(Number::from(42.0)),
+        serde_json::Value::Number(serde_json::Number::from(42))
+    )]
+    #[case(RuntimeValue::Number(Number::from(-7.0)), serde_json::Value::Number(serde_json::Number::from(-7)))]
+    #[case(RuntimeValue::Number(Number::from(1.5)), serde_json::Value::Number(serde_json::Number::from_f64(1.5).unwrap()))]
     fn test_to_json_value_scalars(#[case] value: RuntimeValue, #[case] expected: serde_json::Value) {
         assert_eq!(value.to_json_value(), expected);
     }

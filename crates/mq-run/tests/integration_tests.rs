@@ -264,12 +264,12 @@ In {year}, the snowfall was above average.
 #[case::output_format_yaml(
     vec!["--unbuffered", "-I", "json", "-F", "yaml", "self"],
     r#"{"name": "Alice", "age": 30}"#,
-    Some("name: Alice\nage: 30.0\n")
+    Some("name: Alice\nage: 30\n")
 )]
 #[case::output_format_toml(
     vec!["--unbuffered", "-I", "json", "-F", "toml", "self"],
     r#"{"name": "Alice", "age": 30}"#,
-    Some("name = \"Alice\"\nage = 30.0\n")
+    Some("name = \"Alice\"\nage = 30\n")
 )]
 #[case::output_format_csv(
     vec!["--unbuffered", "-I", "json", "-F", "csv", "self"],
@@ -284,7 +284,7 @@ In {year}, the snowfall was above average.
 #[case::output_format_xml_generic(
     vec!["--unbuffered", "-I", "json", "-F", "xml", "self"],
     r#"{"name": "Alice", "age": 30}"#,
-    Some("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root>\n  <name>Alice</name>\n  <age>30.0</age>\n</root>\n")
+    Some("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root>\n  <name>Alice</name>\n  <age>30</age>\n</root>\n")
 )]
 #[case::select_skips_non_matching_wrapped_list_items(
     vec!["--unbuffered", r#"select(.code.lang == "bash") | to_text()"#],
