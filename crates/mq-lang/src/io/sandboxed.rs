@@ -1,10 +1,93 @@
 use super::{Io, IoError, NativeIo};
 use std::borrow::Cow;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+
+/// Filesystem access granted for one capability (read or write) of
+/// [`SandboxedIo`].
+///
+/// Built via `impl Into<PathAccess>` so existing call sites keep working
+/// unchanged: `bool` maps to fully denied/allowed, and `Option<Vec<PathBuf>>`
+/// maps directly to a CLI flag parsed as "absent = denied, present with no
+/// paths = fully allowed, present with paths = restricted to those paths"
+/// (e.g. `mq-run`'s `--allow-read`/`--allow-write`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum PathAccess {
+    /// No filesystem access at all (fail-safe default).
+    #[default]
+    Denied,
+    /// Unrestricted access, matching a bare `--allow-read`/`--allow-write`.
+    Allowed,
+    /// Access restricted to the given files/directories (and their
+    /// descendants).
+    AllowedPaths(Vec<PathBuf>),
+}
+
+impl From<bool> for PathAccess {
+    fn from(allow: bool) -> Self {
+        if allow { PathAccess::Allowed } else { PathAccess::Denied }
+    }
+}
+
+impl From<Vec<PathBuf>> for PathAccess {
+    fn from(paths: Vec<PathBuf>) -> Self {
+        if paths.is_empty() {
+            PathAccess::Allowed
+        } else {
+            PathAccess::AllowedPaths(paths)
+        }
+    }
+}
+
+impl From<Option<Vec<PathBuf>>> for PathAccess {
+    fn from(paths: Option<Vec<PathBuf>>) -> Self {
+        match paths {
+            None => PathAccess::Denied,
+            Some(paths) => paths.into(),
+        }
+    }
+}
+
+impl PathAccess {
+    fn permits(&self, path: &Path) -> bool {
+        match self {
+            PathAccess::Denied => false,
+            PathAccess::Allowed => true,
+            PathAccess::AllowedPaths(allowed) => {
+                let target = normalize(path);
+                allowed.iter().any(|root| target.starts_with(normalize(root)))
+            }
+        }
+    }
+
+    fn is_denied(&self) -> bool {
+        matches!(self, PathAccess::Denied)
+    }
+}
+
+fn normalize(path: &Path) -> PathBuf {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    };
+
+    let mut result = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::ParentDir => {
+                result.pop();
+            }
+            Component::CurDir => {}
+            other => result.push(other.as_os_str()),
+        }
+    }
+    result
+}
 
 /// Wraps an inner [`Io`] (typically [`NativeIo`]) with instance-owned
-/// read/write/net/run permission flags, enforced by every operation. All four
-/// flags default to `false` (fail safe).
+/// read/write/net/run permission grants, enforced by every operation. All
+/// four default to fully denied (fail safe); read/write may additionally be
+/// restricted to an allowlist of paths via [`PathAccess::AllowedPaths`].
 ///
 /// Every operation enforces its own permission independently of any external
 /// pre-check, so a caller cannot accidentally bypass sandboxing by forgetting
@@ -12,14 +95,14 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct SandboxedIo<Inner: Io = NativeIo> {
     inner: Inner,
-    allow_read: bool,
-    allow_write: bool,
+    allow_read: PathAccess,
+    allow_write: PathAccess,
     allow_net: bool,
     allow_run: bool,
 }
 
 impl<Inner: Io + Default> Default for SandboxedIo<Inner> {
-    /// All four permission flags default to `false` (fail safe), matching [`Inner::default()`](Default).
+    /// All permission grants default to fully denied (fail safe), matching [`Inner::default()`](Default).
     fn default() -> Self {
         Self::new(Inner::default())
     }
@@ -29,20 +112,25 @@ impl<Inner: Io> SandboxedIo<Inner> {
     pub fn new(inner: Inner) -> Self {
         Self {
             inner,
-            allow_read: false,
-            allow_write: false,
+            allow_read: PathAccess::Denied,
+            allow_write: PathAccess::Denied,
             allow_net: false,
             allow_run: false,
         }
     }
 
-    pub fn allow_read(mut self, allow: bool) -> Self {
-        self.allow_read = allow;
+    /// Grants read access. Accepts a `bool` (fully denied/allowed) or an
+    /// `Option<Vec<PathBuf>>`/`Vec<PathBuf>` (`None`/omitted = denied, empty
+    /// = fully allowed, non-empty = restricted to those paths), matching
+    /// `--allow-read`'s clap parse.
+    pub fn allow_read(mut self, allow: impl Into<PathAccess>) -> Self {
+        self.allow_read = allow.into();
         self
     }
 
-    pub fn allow_write(mut self, allow: bool) -> Self {
-        self.allow_write = allow;
+    /// Grants write access. See [`Self::allow_read`] for the accepted forms.
+    pub fn allow_write(mut self, allow: impl Into<PathAccess>) -> Self {
+        self.allow_write = allow.into();
         self
     }
 
@@ -58,12 +146,14 @@ impl<Inner: Io> SandboxedIo<Inner> {
         self
     }
 
+    /// Whether any read access is granted (fully or restricted to an allowlist).
     pub fn is_read_allowed(&self) -> bool {
-        self.allow_read
+        !self.allow_read.is_denied()
     }
 
+    /// Whether any write access is granted (fully or restricted to an allowlist).
     pub fn is_write_allowed(&self) -> bool {
-        self.allow_write
+        !self.allow_write.is_denied()
     }
 
     pub fn is_net_allowed(&self) -> bool {
@@ -79,44 +169,66 @@ fn denied(what: &'static str) -> IoError {
     IoError::PermissionDenied(Cow::Borrowed(what))
 }
 
+fn denied_path(action: &str, path: &Path) -> IoError {
+    IoError::PermissionDenied(Cow::Owned(format!(
+        "{action} of {} is not allowed (outside the allowed paths)",
+        path.display()
+    )))
+}
+
 impl<Inner: Io> Io for SandboxedIo<Inner> {
     fn read_to_string(&self, path: &Path) -> Result<String, IoError> {
-        if !self.allow_read {
+        if self.allow_read.is_denied() {
             return Err(denied("filesystem reads are disabled"));
+        }
+        if !self.allow_read.permits(path) {
+            return Err(denied_path("read", path));
         }
         self.inner.read_to_string(path)
     }
 
     fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, IoError> {
-        if !self.allow_read {
+        if self.allow_read.is_denied() {
             return Err(denied("filesystem reads are disabled"));
+        }
+        if !self.allow_read.permits(path) {
+            return Err(denied_path("read", path));
         }
         self.inner.read_bytes(path)
     }
 
     fn write(&self, path: &Path, content: &[u8]) -> Result<(), IoError> {
-        if !self.allow_write {
+        if self.allow_write.is_denied() {
             return Err(denied("filesystem writes are disabled"));
+        }
+        if !self.allow_write.permits(path) {
+            return Err(denied_path("write", path));
         }
         self.inner.write(path, content)
     }
 
     fn exists(&self, path: &Path) -> Result<bool, IoError> {
-        if !self.allow_read {
+        if self.allow_read.is_denied() {
             return Err(denied("filesystem reads are disabled"));
+        }
+        if !self.allow_read.permits(path) {
+            return Err(denied_path("read", path));
         }
         self.inner.exists(path)
     }
 
     fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError> {
-        if !self.allow_read {
+        if self.allow_read.is_denied() {
             return Err(denied("filesystem reads are disabled"));
+        }
+        if !self.allow_read.permits(path) {
+            return Err(denied_path("read", path));
         }
         self.inner.read_dir(path)
     }
 
     fn canonicalize(&self, path: &Path) -> PathBuf {
-        if self.allow_read {
+        if self.allow_read.permits(path) {
             self.inner.canonicalize(path)
         } else {
             path.to_path_buf()
@@ -174,37 +286,56 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
 mod tests {
     use super::*;
     use crate::io::MemIo;
+    use rstest::rstest;
 
     #[test]
-    fn test_read_denied_by_default() {
+    fn test_exists_denied_by_default_then_allowed() {
         let io = SandboxedIo::new(MemIo::default().with_file("/a.txt", "content"));
-        assert!(matches!(
-            io.read_to_string(Path::new("/a.txt")),
-            Err(IoError::PermissionDenied(_))
-        ));
         assert!(matches!(
             io.exists(Path::new("/a.txt")),
             Err(IoError::PermissionDenied(_))
         ));
-    }
 
-    #[test]
-    fn test_read_allowed_delegates_to_inner() {
-        let io = SandboxedIo::new(MemIo::default().with_file("/a.txt", "content")).allow_read(true);
-        assert_eq!(io.read_to_string(Path::new("/a.txt")).unwrap(), "content");
+        let io = io.allow_read(true);
         assert!(io.exists(Path::new("/a.txt")).unwrap());
     }
 
-    #[test]
-    fn test_write_denied_by_default_then_allowed() {
-        let mut io = SandboxedIo::new(MemIo::default());
-        assert!(matches!(
-            io.write(Path::new("/a.txt"), b"x"),
-            Err(IoError::PermissionDenied(_))
-        ));
+    /// `None` = `allow_read`/`allow_write` never called (fail-safe default); `Some(vec![])` =
+    /// the CLI flag passed with no value (fully allowed); `Some(paths)` = the flag restricted
+    /// to an allowlist. Mirrors clap's parse of `--allow-read`/`--allow-write`.
+    #[rstest]
+    #[case::denied_by_default(None, "/a.txt", false)]
+    #[case::bare_flag_allows_everywhere(Some(vec![]), "/a.txt", true)]
+    #[case::within_allowlisted_dir(Some(vec![PathBuf::from("/allowed")]), "/allowed/a.txt", true)]
+    #[case::outside_allowlisted_dir(Some(vec![PathBuf::from("/allowed")]), "/other/b.txt", false)]
+    #[case::exact_file_match(Some(vec![PathBuf::from("/allowed/a.txt")]), "/allowed/a.txt", true)]
+    #[case::dot_dot_escape_rejected(Some(vec![PathBuf::from("/allowed")]), "/allowed/../other/b.txt", false)]
+    fn test_read_allowlist(#[case] allow: Option<Vec<PathBuf>>, #[case] target: &str, #[case] expected_ok: bool) {
+        let mut io = SandboxedIo::new(
+            MemIo::default()
+                .with_file("/a.txt", "content")
+                .with_file("/allowed/a.txt", "yes")
+                .with_file("/other/b.txt", "no"),
+        );
+        if let Some(paths) = allow {
+            io = io.allow_read(Some(paths));
+        }
 
-        io = io.allow_write(true);
-        assert!(io.write(Path::new("/a.txt"), b"x").is_ok());
+        assert_eq!(io.read_to_string(Path::new(target)).is_ok(), expected_ok);
+    }
+
+    #[rstest]
+    #[case::denied_by_default(None, "/out.txt", false)]
+    #[case::bare_flag_allows_everywhere(Some(vec![]), "/out.txt", true)]
+    #[case::within_allowlisted_dir(Some(vec![PathBuf::from("/allowed")]), "/allowed/out.txt", true)]
+    #[case::outside_allowlisted_dir(Some(vec![PathBuf::from("/allowed")]), "/other/out.txt", false)]
+    fn test_write_allowlist(#[case] allow: Option<Vec<PathBuf>>, #[case] target: &str, #[case] expected_ok: bool) {
+        let mut io = SandboxedIo::new(MemIo::default());
+        if let Some(paths) = allow {
+            io = io.allow_write(Some(paths));
+        }
+
+        assert_eq!(io.write(Path::new(target), b"x").is_ok(), expected_ok);
     }
 
     #[test]
@@ -247,13 +378,40 @@ mod tests {
         );
     }
 
+    /// `is_read_allowed`/`is_write_allowed` report whether *any* access was granted,
+    /// including a restricted allowlist — they don't distinguish full vs. restricted access.
+    #[rstest]
+    #[case::nothing_granted(false, false, false, false, (false, false, false, false))]
+    #[case::read_and_net_granted(true, false, true, false, (true, false, true, false))]
+    #[case::all_granted(true, true, true, true, (true, true, true, true))]
+    fn test_is_allowed_queries_reflect_builder_state(
+        #[case] allow_read: bool,
+        #[case] allow_write: bool,
+        #[case] allow_net: bool,
+        #[case] allow_run: bool,
+        #[case] expected: (bool, bool, bool, bool),
+    ) {
+        let io = SandboxedIo::new(MemIo::default())
+            .allow_read(allow_read)
+            .allow_write(allow_write)
+            .allow_net(allow_net)
+            .allow_run(allow_run);
+
+        assert_eq!(
+            (
+                io.is_read_allowed(),
+                io.is_write_allowed(),
+                io.is_net_allowed(),
+                io.is_run_allowed()
+            ),
+            expected
+        );
+    }
+
     #[test]
-    fn test_is_allowed_queries_reflect_builder_state() {
-        let io = SandboxedIo::new(MemIo::default()).allow_read(true).allow_net(true);
+    fn test_is_read_allowed_true_for_restricted_allowlist() {
+        let io = SandboxedIo::new(MemIo::default()).allow_read(Some(vec![PathBuf::from("/allowed")]));
         assert!(io.is_read_allowed());
-        assert!(!io.is_write_allowed());
-        assert!(io.is_net_allowed());
-        assert!(!io.is_run_allowed());
     }
 
     #[test]

@@ -23,7 +23,7 @@ pub struct ErrorReporter {
 
 impl Display for ErrorReporter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", &self.errors.iter().join(", "))
+        write!(f, "{}", self.errors.iter().join(", "))
     }
 }
 

@@ -648,7 +648,7 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
 
     engine
         .eval(code, input.clone().into_iter())
-        .map_err(|e| JsValue::from_str(&format!("{}", &e)))
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))
         .map(|result_values| {
             let values = if matches!(options.input_format, Some(InputFormat::Markdown)) && is_update {
                 let values: mq_lang::RuntimeValues = input.into();
@@ -709,7 +709,7 @@ pub async fn to_ast(code: &str) -> Result<String, JsValue> {
 pub async fn format(code: &str) -> Result<String, JsValue> {
     mq_formatter::Formatter::default()
         .format(code)
-        .map_err(|e| JsValue::from_str(&format!("{:?}", &e)))
+        .map_err(|e| JsValue::from_str(&format!("{:?}", e)))
 }
 
 #[wasm_bindgen(js_name=htmlToMarkdown)]
