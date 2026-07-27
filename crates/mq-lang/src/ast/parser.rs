@@ -783,7 +783,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 token_id: self.token_arena.alloc(Shared::clone(token)),
                 expr: io_context::current()
                     .env_var(s)
-                    .map_err(|_| SyntaxError::EnvNotFound((**token).clone(), SmolStr::new(s)))
+                    .map_err(|e| match e {
+                        crate::io::IoError::PermissionDenied(_) => {
+                            SyntaxError::EnvNotAllowed((**token).clone(), SmolStr::new(s))
+                        }
+                        _ => SyntaxError::EnvNotFound((**token).clone(), SmolStr::new(s)),
+                    })
                     .map(|s| Shared::new(Expr::Literal(Literal::String(s.to_owned()))))?,
             })),
             TokenKind::Eof => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
@@ -8845,6 +8850,9 @@ mod tests {
     #[test]
     fn test_parse_env() {
         unsafe { std::env::set_var("MQ_TEST_VAR", "test_value") };
+        let _guard = io_context::scoped(Shared::new(
+            crate::io::SandboxedIo::new(crate::io::NativeIo::default()).allow_env(true),
+        ));
 
         let mut arena = Arena::new(10);
         let tokens = [
@@ -8877,6 +8885,10 @@ mod tests {
 
     #[test]
     fn test_parse_env_not_found() {
+        let _guard = io_context::scoped(Shared::new(
+            crate::io::SandboxedIo::new(crate::io::NativeIo::default()).allow_env(true),
+        ));
+
         let mut arena = Arena::new(10);
         let token = Shared::new(Token {
             range: Range::default(),
@@ -8904,6 +8916,9 @@ mod tests {
     #[test]
     fn test_parse_env_in_arguments() {
         unsafe { std::env::set_var("MQ_ARG_TEST", "env_arg_value") };
+        let _guard = io_context::scoped(Shared::new(
+            crate::io::SandboxedIo::new(crate::io::NativeIo::default()).allow_env(true),
+        ));
 
         let mut arena = Arena::new(10);
         let tokens = [

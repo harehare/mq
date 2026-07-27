@@ -8,6 +8,21 @@ Environment variables can be referenced using $XXX syntax, where XXX represents 
 
 This syntax is commonly used in shell scripts and configuration files to access system-level environment variables.
 
+## Sandboxing
+
+`$VAR`/`${$VAR}` references (and debugger logpoints that read an env var) are disabled by
+default, matching `--allow-read`/`--allow-write`/`--allow-net`/`--allow-run`. Pass
+`--allow-env` to allow reading any environment variable, or `--allow-env=NAME` (repeat the
+flag, or comma-separate, to add more) to restrict access to just those names:
+
+```sh
+# Allow any $VAR reference
+mq --allow-env '$HOME' README.md
+
+# Allow only $HOME
+mq --allow-env=HOME '$HOME' README.md
+```
+
 ## Color Configuration
 
 ### `NO_COLOR`
