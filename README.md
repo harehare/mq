@@ -210,10 +210,6 @@ Options:
           Allow the `read_file`/`read_file_bytes`/`collection`/`file_exists` functions to read from the filesystem. Disabled by default
       --allow-write
           Allow the `write_file` function to write to the filesystem. Disabled by default
-      --allow-run
-          Allow the `system` function to execute external commands. Disabled by default
-      --allow-env
-          Allow `$VAR`/`${$VAR}` interpolation and debugger logpoints to read environment variables. Disabled by default
   -F, --output-format <OUTPUT_FORMAT>
           Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, raw, csv, toml, xml, yaml, none]
   -U, --update
