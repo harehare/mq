@@ -5,16 +5,18 @@ use std::path::{Path, PathBuf};
 mod env_access;
 mod net_access;
 mod path_access;
+mod run_access;
 
 pub use env_access::EnvAccess;
 pub use net_access::NetAccess;
 pub use path_access::PathAccess;
+pub use run_access::RunAccess;
 
 /// Wraps an inner [`Io`] (typically [`NativeIo`]) with instance-owned
 /// read/write/net/run/env permission grants, enforced by every operation. All
-/// five default to fully denied (fail safe); read/write/net/env may additionally be
+/// five default to fully denied (fail safe), and may additionally be
 /// restricted to an allowlist via [`PathAccess::AllowedPaths`]/[`NetAccess::AllowedDomains`]/
-/// [`EnvAccess::AllowedNames`].
+/// [`RunAccess::AllowedCommands`]/[`EnvAccess::AllowedNames`].
 ///
 /// Every operation enforces its own permission independently of any external
 /// pre-check, so a caller cannot accidentally bypass sandboxing by forgetting
@@ -25,7 +27,7 @@ pub struct SandboxedIo<Inner: Io = NativeIo> {
     allow_read: PathAccess,
     allow_write: PathAccess,
     allow_net: NetAccess,
-    allow_run: bool,
+    allow_run: RunAccess,
     allow_env: EnvAccess,
 }
 
@@ -43,7 +45,7 @@ impl<Inner: Io> SandboxedIo<Inner> {
             allow_read: PathAccess::Denied,
             allow_write: PathAccess::Denied,
             allow_net: NetAccess::Denied,
-            allow_run: false,
+            allow_run: RunAccess::Denied,
             allow_env: EnvAccess::Denied,
         }
     }
@@ -72,9 +74,10 @@ impl<Inner: Io> SandboxedIo<Inner> {
     }
 
     /// Gates [`Io::execute`], the primitive backing the `system()` builtin — external process
-    /// execution, akin to Deno's `--allow-run`.
-    pub fn allow_run(mut self, allow: bool) -> Self {
-        self.allow_run = allow;
+    /// execution. See [`Self::allow_read`] for the accepted forms; `Vec<String>`/
+    /// `Option<Vec<String>>` restrict by command name.
+    pub fn allow_run(mut self, allow: impl Into<RunAccess>) -> Self {
+        self.allow_run = allow.into();
         self
     }
 
@@ -110,8 +113,9 @@ impl<Inner: Io> SandboxedIo<Inner> {
         !self.allow_net.is_denied()
     }
 
+    /// Whether any process-execution access is granted (fully or restricted to an allowlist).
     pub fn is_run_allowed(&self) -> bool {
-        self.allow_run
+        !self.allow_run.is_denied()
     }
 
     /// Whether any environment-variable access is granted (fully or restricted to an allowlist).
@@ -140,6 +144,12 @@ fn denied_env(name: &str) -> IoError {
 fn denied_domain(url: &str) -> IoError {
     IoError::PermissionDenied(Cow::Owned(format!(
         "network access to {url} is not allowed (outside the allowed domains)"
+    )))
+}
+
+fn denied_command(command: &str) -> IoError {
+    IoError::PermissionDenied(Cow::Owned(format!(
+        "execution of {command} is not allowed (outside the allowed commands)"
     )))
 }
 
@@ -256,8 +266,11 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
     }
 
     fn execute(&self, command: &str, args: &[String]) -> Result<String, IoError> {
-        if !self.allow_run {
+        if self.allow_run.is_denied() {
             return Err(denied("process execution is disabled"));
+        }
+        if !self.allow_run.permits(command) {
+            return Err(denied_command(command));
         }
         self.inner.execute(command, args)
     }
@@ -469,6 +482,33 @@ mod tests {
 
         let io = io.allow_run(true);
         assert_eq!(io.execute("echo", &["hi".to_string()]).unwrap(), "hi");
+    }
+
+    /// `None` = `allow_run` never called (fail-safe default); `Some(vec![])` = the CLI flag
+    /// passed with no value (fully allowed); `Some(commands)` = the flag restricted to an
+    /// allowlist. Mirrors clap's parse of `--allow-run`.
+    #[rstest]
+    #[case::denied_by_default(None, "echo", false)]
+    #[case::bare_flag_allows_everywhere(Some(vec![]), "echo", true)]
+    #[case::within_allowlist(Some(vec!["echo".to_string()]), "echo", true)]
+    #[case::outside_allowlist(Some(vec!["echo".to_string()]), "rm", false)]
+    fn test_execute_allowlist(#[case] allow: Option<Vec<String>>, #[case] command: &str, #[case] expected_ok: bool) {
+        let mut io = SandboxedIo::new(
+            MemIo::default()
+                .with_command_response("echo", &["hi".to_string()], "hi")
+                .with_command_response("rm", &["hi".to_string()], "hi"),
+        );
+        if let Some(commands) = allow {
+            io = io.allow_run(Some(commands));
+        }
+
+        assert_eq!(io.execute(command, &["hi".to_string()]).is_ok(), expected_ok);
+    }
+
+    #[test]
+    fn test_is_run_allowed_true_for_restricted_allowlist() {
+        let io = SandboxedIo::new(MemIo::default()).allow_run(Some(vec!["echo".to_string()]));
+        assert!(io.is_run_allowed());
     }
 
     #[test]
