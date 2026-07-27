@@ -380,7 +380,7 @@ struct InputArgs {
     /// requests to just those domains (and any path under them). The `=` is required so a
     /// bare domain after the flag isn't swallowed as a query/file positional instead.
     #[cfg(feature = "http-import")]
-    #[arg(long = "allow-net", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "DOMAIN")]
+    #[arg(short = 'N', long = "allow-net", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "DOMAIN")]
     allow_net: Option<Vec<String>>,
 
     /// Allow the `read_file`/`read_file_bytes`/`collection`/`file_exists`/`embed_images`
@@ -389,7 +389,7 @@ struct InputArgs {
     /// flag, or comma-separate, to add more) to restrict reads to just those paths and
     /// their descendants. The `=` is required so a bare path after the flag isn't
     /// swallowed as a query/file positional instead.
-    #[arg(long = "allow-read", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "PATH")]
+    #[arg(short = 'R', long = "allow-read", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "PATH")]
     allow_read: Option<Vec<PathBuf>>,
 
     /// Allow the `write_file`/`extract_images` functions to write to the filesystem.
@@ -398,7 +398,7 @@ struct InputArgs {
     /// add more) to restrict writes to just those paths and their descendants. The `=` is
     /// required so a bare path after the flag isn't swallowed as a query/file positional
     /// instead.
-    #[arg(long = "allow-write", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "PATH")]
+    #[arg(short = 'W', long = "allow-write", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "PATH")]
     allow_write: Option<Vec<PathBuf>>,
 
     /// Allow the `system` function to execute external commands.
@@ -412,7 +412,7 @@ struct InputArgs {
     /// `--allow-env=NAME` (repeat the flag, or comma-separate, to add more) to restrict
     /// access to just those names. The `=` is required so a bare name after the flag isn't
     /// swallowed as a query/file positional instead.
-    #[arg(long = "allow-env", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "NAME")]
+    #[arg(short = 'E', long = "allow-env", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "NAME")]
     allow_env: Option<Vec<String>>,
 
     /// Grant every sandboxed permission at once (read/write/net/run/env). Disabled by
