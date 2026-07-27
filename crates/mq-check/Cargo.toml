@@ -29,7 +29,7 @@ clap = {workspace = true, features = ["derive"], optional = true}
 colored = {workspace = true, optional = true}
 miette = {workspace = true, features = ["fancy"]}
 mq-hir = {workspace = true}
-mq-lang = {workspace = true, features = ["cst", "file-io"]}
+mq-lang = {workspace = true, features = ["cst", "file-io", "http"]}
 rustc-hash = {workspace = true}
 serde_json = {workspace = true, optional = true}
 slotmap = {workspace = true}
