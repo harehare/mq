@@ -411,6 +411,16 @@ struct InputArgs {
     /// swallowed as a query/file positional instead.
     #[arg(long = "allow-env", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "NAME")]
     allow_env: Option<Vec<String>>,
+
+    /// Grant every sandboxed permission at once (read/write/net/run/env). Disabled by
+    /// default. Cannot be combined with the individual --allow-* flags above.
+    #[arg(
+        short = 'a',
+        long = "allow-all",
+        default_value_t = false,
+        conflicts_with_all = ["allow_net", "allow_read", "allow_write", "allow_run", "allow_env"]
+    )]
+    allow_all: bool,
 }
 
 #[derive(Clone, Debug, clap::Args, Default)]
@@ -839,15 +849,19 @@ impl Cli {
         // full native access (unchanged from before this Io existed) — --allow-read/
         // write/net/run instead gate what a running query's read_file/write_file/http/
         // system builtins can do at runtime, via the ambient Io set below.
-        let mut engine = mq_lang::DefaultEngine::default();
-        engine.set_io(Shared::new(
-            mq_lang::SandboxedIo::new(mq_lang::NativeIo::default())
+        let sandboxed_io = mq_lang::SandboxedIo::new(mq_lang::NativeIo::default());
+        let sandboxed_io = if self.input.allow_all {
+            sandboxed_io.allow_all()
+        } else {
+            sandboxed_io
                 .allow_read(self.input.allow_read.clone())
                 .allow_write(self.input.allow_write.clone())
                 .allow_net(self.input.allow_net)
                 .allow_run(self.input.allow_run)
-                .allow_env(self.input.allow_env.clone()),
-        ));
+                .allow_env(self.input.allow_env.clone())
+        };
+        let mut engine = mq_lang::DefaultEngine::default();
+        engine.set_io(Shared::new(sandboxed_io));
         engine.load_builtin_module();
         engine.set_optimization_level(self.optimize_level.clone().into());
 
@@ -1833,6 +1847,59 @@ mod tests {
         assert!(
             restricted_cli.run().is_err(),
             "$VAR should be blocked when --allow-env only names other variables"
+        );
+    }
+
+    #[test]
+    fn test_allow_all_flag_grants_every_capability() {
+        // SAFETY: no other threads read/write this env var concurrently in this test.
+        unsafe { std::env::set_var("MQ_ALLOW_ALL_TEST_VAR", "test_value") };
+        defer! {
+            unsafe { std::env::remove_var("MQ_ALLOW_ALL_TEST_VAR") };
+        }
+
+        let base_cli = |query: &str, allow_all: bool| Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                allow_all,
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some(query.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(
+            base_cli("$MQ_ALLOW_ALL_TEST_VAR", false).run().is_err(),
+            "$VAR should be blocked without --allow-all"
+        );
+        assert!(
+            base_cli("$MQ_ALLOW_ALL_TEST_VAR", true).run().is_ok(),
+            "$VAR should succeed with --allow-all"
+        );
+
+        let system_query = "system(\"echo\", [\"hi\"])";
+        assert!(
+            base_cli(system_query, false).run().is_err(),
+            "system should be blocked without --allow-all"
+        );
+        assert!(
+            base_cli(system_query, true).run().is_ok(),
+            "system should succeed with --allow-all"
+        );
+    }
+
+    #[rstest]
+    #[case(&["mq", "--allow-all", "--allow-read=/tmp", "self"])]
+    #[case(&["mq", "--allow-all", "--allow-write=/tmp", "self"])]
+    #[case(&["mq", "--allow-all", "--allow-run", "self"])]
+    #[case(&["mq", "--allow-all", "--allow-env", "self"])]
+    fn test_allow_all_conflicts_with_individual_allow_flags(#[case] args: &[&str]) {
+        assert!(
+            Cli::try_parse_from(args).is_err(),
+            "--allow-all should conflict with individual --allow-* flags"
         );
     }
 

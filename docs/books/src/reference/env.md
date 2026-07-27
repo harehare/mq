@@ -23,6 +23,9 @@ mq --allow-env '$HOME' README.md
 mq --allow-env=HOME '$HOME' README.md
 ```
 
+`--allow-all` grants `--allow-read`/`--allow-write`/`--allow-net`/`--allow-run`/`--allow-env`
+all at once, including `$VAR` access.
+
 ## Color Configuration
 
 ### `NO_COLOR`

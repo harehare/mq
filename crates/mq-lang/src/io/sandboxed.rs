@@ -79,6 +79,16 @@ impl<Inner: Io> SandboxedIo<Inner> {
         self
     }
 
+    /// Grants every permission at once (read/write/net/run/env), fully and
+    /// unrestricted, matching `--allow-all`.
+    pub fn allow_all(self) -> Self {
+        self.allow_read(true)
+            .allow_write(true)
+            .allow_net(true)
+            .allow_run(true)
+            .allow_env(true)
+    }
+
     /// Whether any read access is granted (fully or restricted to an allowlist).
     pub fn is_read_allowed(&self) -> bool {
         !self.allow_read.is_denied()
@@ -404,5 +414,15 @@ mod tests {
 
         let io = io.allow_run(true);
         assert_eq!(io.execute("echo", &["hi".to_string()]).unwrap(), "hi");
+    }
+
+    #[test]
+    fn test_allow_all_grants_every_permission() {
+        let io = SandboxedIo::new(MemIo::default()).allow_all();
+        assert!(io.is_read_allowed());
+        assert!(io.is_write_allowed());
+        assert!(io.is_net_allowed());
+        assert!(io.is_run_allowed());
+        assert!(io.is_env_allowed());
     }
 }
