@@ -401,11 +401,14 @@ struct InputArgs {
     #[arg(short = 'W', long = "allow-write", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "PATH")]
     allow_write: Option<Vec<PathBuf>>,
 
-    /// Allow the `system` function to execute external commands.
-    /// Disabled by default. Commands run directly (never through a shell), so shell
-    /// metacharacters in arguments are never interpreted.
-    #[arg(long = "allow-run", default_value_t = false)]
-    allow_run: bool,
+    /// Allow the `system` function to execute external commands. Disabled by default.
+    /// Commands run directly (never through a shell), so shell metacharacters in arguments
+    /// are never interpreted. Pass with no value to allow any command, or
+    /// `--allow-run=COMMAND` (repeat the flag, or comma-separate, to add more) to restrict
+    /// execution to just those commands. The `=` is required so a bare command after the
+    /// flag isn't swallowed as a query/file positional instead.
+    #[arg(long = "allow-run", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "COMMAND")]
+    allow_run: Option<Vec<String>>,
 
     /// Allow `$VAR`/`${$VAR}` interpolation and debugger logpoints to read environment
     /// variables. Disabled by default. Pass with no value to allow reading any variable, or
@@ -860,7 +863,7 @@ impl Cli {
                 .allow_read(self.input.allow_read.clone())
                 .allow_write(self.input.allow_write.clone())
                 .allow_net(self.input.allow_net.clone())
-                .allow_run(self.input.allow_run)
+                .allow_run(self.input.allow_run.clone())
                 .allow_env(self.input.allow_env.clone())
         };
         let mut engine = mq_lang::DefaultEngine::default();
@@ -1786,7 +1789,7 @@ mod tests {
         let allowed_cli = Cli {
             input: InputArgs {
                 input_format: Some(InputFormat::Null),
-                allow_run: true,
+                allow_run: Some(vec![]),
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -1796,6 +1799,23 @@ mod tests {
             ..Cli::default()
         };
         assert!(allowed_cli.run().is_ok(), "system should succeed with --allow-run");
+
+        let restricted_cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                allow_run: Some(vec!["ls".to_string()]),
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some(query.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+        assert!(
+            restricted_cli.run().is_err(),
+            "system should be blocked when --allow-run only names other commands"
+        );
     }
 
     #[test]
