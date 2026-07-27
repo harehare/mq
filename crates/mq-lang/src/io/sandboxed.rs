@@ -3,15 +3,18 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 mod env_access;
+mod net_access;
 mod path_access;
 
 pub use env_access::EnvAccess;
+pub use net_access::NetAccess;
 pub use path_access::PathAccess;
 
 /// Wraps an inner [`Io`] (typically [`NativeIo`]) with instance-owned
 /// read/write/net/run/env permission grants, enforced by every operation. All
-/// five default to fully denied (fail safe); read/write/env may additionally be
-/// restricted to an allowlist via [`PathAccess::AllowedPaths`]/[`EnvAccess::AllowedNames`].
+/// five default to fully denied (fail safe); read/write/net/env may additionally be
+/// restricted to an allowlist via [`PathAccess::AllowedPaths`]/[`NetAccess::AllowedDomains`]/
+/// [`EnvAccess::AllowedNames`].
 ///
 /// Every operation enforces its own permission independently of any external
 /// pre-check, so a caller cannot accidentally bypass sandboxing by forgetting
@@ -21,7 +24,7 @@ pub struct SandboxedIo<Inner: Io = NativeIo> {
     inner: Inner,
     allow_read: PathAccess,
     allow_write: PathAccess,
-    allow_net: bool,
+    allow_net: NetAccess,
     allow_run: bool,
     allow_env: EnvAccess,
 }
@@ -39,7 +42,7 @@ impl<Inner: Io> SandboxedIo<Inner> {
             inner,
             allow_read: PathAccess::Denied,
             allow_write: PathAccess::Denied,
-            allow_net: false,
+            allow_net: NetAccess::Denied,
             allow_run: false,
             allow_env: EnvAccess::Denied,
         }
@@ -60,8 +63,11 @@ impl<Inner: Io> SandboxedIo<Inner> {
         self
     }
 
-    pub fn allow_net(mut self, allow: bool) -> Self {
-        self.allow_net = allow;
+    /// Grants network access, gating `fetch`/`http_request`. See [`Self::allow_read`] for
+    /// the accepted forms; `Vec<String>`/`Option<Vec<String>>` restrict by domain (and any
+    /// path under it) rather than by filesystem path.
+    pub fn allow_net(mut self, allow: impl Into<NetAccess>) -> Self {
+        self.allow_net = allow.into();
         self
     }
 
@@ -99,8 +105,9 @@ impl<Inner: Io> SandboxedIo<Inner> {
         !self.allow_write.is_denied()
     }
 
+    /// Whether any network access is granted (fully or restricted to an allowlist).
     pub fn is_net_allowed(&self) -> bool {
-        self.allow_net
+        !self.allow_net.is_denied()
     }
 
     pub fn is_run_allowed(&self) -> bool {
@@ -127,6 +134,12 @@ fn denied_path(action: &str, path: &Path) -> IoError {
 fn denied_env(name: &str) -> IoError {
     IoError::PermissionDenied(Cow::Owned(format!(
         "access to environment variable `{name}` is not allowed"
+    )))
+}
+
+fn denied_domain(url: &str) -> IoError {
+    IoError::PermissionDenied(Cow::Owned(format!(
+        "network access to {url} is not allowed (outside the allowed domains)"
     )))
 }
 
@@ -208,8 +221,11 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
     }
 
     fn fetch(&self, url: &str) -> Result<String, IoError> {
-        if !self.allow_net {
+        if self.allow_net.is_denied() {
             return Err(denied("network access is disabled"));
+        }
+        if !self.allow_net.permits(url) {
+            return Err(denied_domain(url));
         }
         self.inner.fetch(url)
     }
@@ -221,14 +237,19 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         body: Option<&str>,
         headers: &[(String, String)],
     ) -> Result<String, IoError> {
-        if !self.allow_net {
+        if self.allow_net.is_denied() {
             return Err(denied("network access is disabled"));
+        }
+        if !self.allow_net.permits(url) {
+            return Err(denied_domain(url));
         }
         self.inner.http_request(method, url, body, headers)
     }
 
+    // Not gated by the domain allowlist: this seeds mock data for the `mock_fetch` builtin
+    // rather than performing a real request, so there's no domain to restrict.
     fn set_fetch_response(&self, url: &str, body: &str) -> Result<(), IoError> {
-        if !self.allow_net {
+        if self.allow_net.is_denied() {
             return Err(denied("network access is disabled"));
         }
         self.inner.set_fetch_response(url, body)
@@ -308,6 +329,34 @@ mod tests {
 
         let io = io.allow_net(true);
         assert_eq!(io.fetch("https://example.com").unwrap(), "body");
+    }
+
+    /// `None` = `allow_net` never called (fail-safe default); `Some(vec![])` = the CLI flag
+    /// passed with no value (fully allowed); `Some(domains)` = the flag restricted to an
+    /// allowlist. Mirrors clap's parse of `--allow-net`.
+    #[rstest]
+    #[case::denied_by_default(None, "https://example.com", false)]
+    #[case::bare_flag_allows_everywhere(Some(vec![]), "https://example.com", true)]
+    #[case::within_allowlisted_domain(Some(vec!["example.com".to_string()]), "https://example.com/path", true)]
+    #[case::outside_allowlisted_domain(Some(vec!["example.com".to_string()]), "https://other.com", false)]
+    #[case::subdomain_prefix_escape_rejected(
+        Some(vec!["example.com".to_string()]),
+        "https://example.com.evil.com",
+        false
+    )]
+    fn test_fetch_allowlist(#[case] allow: Option<Vec<String>>, #[case] target: &str, #[case] expected_ok: bool) {
+        let mut io = SandboxedIo::new(
+            MemIo::default()
+                .with_fetch_response("https://example.com", "body")
+                .with_fetch_response("https://example.com/path", "body")
+                .with_fetch_response("https://other.com", "body")
+                .with_fetch_response("https://example.com.evil.com", "body"),
+        );
+        if let Some(domains) = allow {
+            io = io.allow_net(Some(domains));
+        }
+
+        assert_eq!(io.fetch(target).is_ok(), expected_ok);
     }
 
     #[test]
@@ -402,6 +451,12 @@ mod tests {
     fn test_is_env_allowed_true_for_restricted_allowlist() {
         let io = SandboxedIo::new(MemIo::default()).allow_env(Some(vec!["FOO".to_string()]));
         assert!(io.is_env_allowed());
+    }
+
+    #[test]
+    fn test_is_net_allowed_true_for_restricted_allowlist() {
+        let io = SandboxedIo::new(MemIo::default()).allow_net(Some(vec!["example.com".to_string()]));
+        assert!(io.is_net_allowed());
     }
 
     #[test]

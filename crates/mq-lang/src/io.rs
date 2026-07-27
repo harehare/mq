@@ -24,7 +24,7 @@ mod sandboxed;
 
 pub use error::IoError;
 pub use native::NativeIo;
-pub use sandboxed::{EnvAccess, PathAccess, SandboxedIo};
+pub use sandboxed::{EnvAccess, NetAccess, PathAccess, SandboxedIo};
 
 /// `pub` here (rather than gated by the `mock-io` feature) would still not leak `MemIo`
 /// externally, since the `io` module itself is private to the crate (see `mod io;` in
