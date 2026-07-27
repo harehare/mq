@@ -13,7 +13,7 @@
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "lz-string": "^1.5.0",
-    "monaco-editor": "^0.55.1",
+    "monaco-editor": "^0.56.0",
     "monaco-vim": "^0.4.4",
     "mq-web": "0.7.0",
     "react": "^19.2.7",
@@ -23,7 +23,7 @@
   "devDependencies": {
     "@babel/core": "^8.0.1",
     "@rolldown/plugin-babel": "^0.2.3",
-    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.2.17",
