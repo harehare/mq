@@ -373,12 +373,15 @@ struct InputArgs {
     #[arg(long = "lockfile", value_name = "PATH")]
     lockfile_path: Option<PathBuf>,
 
-    /// Allow the `http` function to make outbound HTTPS requests.
-    /// Disabled by default; requests are HTTPS-only and blocked from reaching
-    /// loopback/private/link-local addresses regardless of this flag.
+    /// Allow the `http` function to make outbound HTTPS requests. Disabled by default;
+    /// requests are HTTPS-only and blocked from reaching loopback/private/link-local
+    /// addresses regardless of this flag. Pass with no value to allow any domain, or
+    /// `--allow-net=DOMAIN` (repeat the flag, or comma-separate, to add more) to restrict
+    /// requests to just those domains (and any path under them). The `=` is required so a
+    /// bare domain after the flag isn't swallowed as a query/file positional instead.
     #[cfg(feature = "http-import")]
-    #[arg(long = "allow-net", default_value_t = false)]
-    allow_net: bool,
+    #[arg(long = "allow-net", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "DOMAIN")]
+    allow_net: Option<Vec<String>>,
 
     /// Allow the `read_file`/`read_file_bytes`/`collection`/`file_exists`/`embed_images`
     /// functions to read from the filesystem. Disabled by default. Pass with no value to
@@ -856,7 +859,7 @@ impl Cli {
             sandboxed_io
                 .allow_read(self.input.allow_read.clone())
                 .allow_write(self.input.allow_write.clone())
-                .allow_net(self.input.allow_net)
+                .allow_net(self.input.allow_net.clone())
                 .allow_run(self.input.allow_run)
                 .allow_env(self.input.allow_env.clone())
         };
@@ -1894,6 +1897,7 @@ mod tests {
     #[rstest]
     #[case(&["mq", "--allow-all", "--allow-read=/tmp", "self"])]
     #[case(&["mq", "--allow-all", "--allow-write=/tmp", "self"])]
+    #[case(&["mq", "--allow-all", "--allow-net=example.com", "self"])]
     #[case(&["mq", "--allow-all", "--allow-run", "self"])]
     #[case(&["mq", "--allow-all", "--allow-env", "self"])]
     fn test_allow_all_conflicts_with_individual_allow_flags(#[case] args: &[&str]) {

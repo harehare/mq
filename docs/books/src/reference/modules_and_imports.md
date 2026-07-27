@@ -321,6 +321,17 @@ mq --allow-net 'http_post("https://example.com", "{}", {"Content-Type": "applica
 mq --allow-write 'write_file("out.md", "# Hello")'
 ```
 
+`--allow-net` also accepts a domain allowlist, restricting `http`/`http_*` calls to just those
+domains (and any path under them) instead of granting unrestricted network access:
+
+```sh
+# Restrict to just example.com
+mq --allow-net=example.com 'http_get("https://example.com")'
+
+# Repeat the flag, or comma-separate, to allow more than one domain
+mq --allow-net=example.com,api.example.org 'http_get("https://api.example.org")'
+```
+
 ## Comparison
 
 | Feature  | `module`                          | `import`                          | `include`               |
