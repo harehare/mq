@@ -9,6 +9,9 @@ pub enum SyntaxError {
     /// An environment variable was not found.
     #[error("Undefined environment variable `{1}`")]
     EnvNotFound(Token, SmolStr),
+    /// An environment variable exists but isn't permitted by `--allow-env`.
+    #[error("Access to environment variable `{1}` is not allowed")]
+    EnvNotAllowed(Token, SmolStr),
     /// An unexpected token was encountered during parsing.
     #[error("Unexpected token `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
     UnexpectedToken(Token),
@@ -68,6 +71,7 @@ impl SyntaxError {
     pub fn token(&self) -> Option<&Token> {
         match self {
             SyntaxError::EnvNotFound(token, _) => Some(token),
+            SyntaxError::EnvNotAllowed(token, _) => Some(token),
             SyntaxError::UnexpectedToken(token) => Some(token),
             SyntaxError::UnexpectedEOFDetected(_) => None,
             SyntaxError::InsufficientTokens(token) => Some(token),
@@ -103,6 +107,7 @@ mod tests {
 
     #[rstest]
     #[case(SyntaxError::EnvNotFound(eof_token(), "VAR".into()), true)]
+    #[case(SyntaxError::EnvNotAllowed(eof_token(), "VAR".into()), true)]
     #[case(SyntaxError::UnexpectedToken(eof_token()), true)]
     #[case(SyntaxError::UnexpectedEOFDetected(ArenaId::new(0)), false)]
     #[case(SyntaxError::InsufficientTokens(eof_token()), true)]

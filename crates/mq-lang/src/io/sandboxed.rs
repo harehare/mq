@@ -1,93 +1,17 @@
 use super::{Io, IoError, NativeIo};
 use std::borrow::Cow;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
-/// Filesystem access granted for one capability (read or write) of
-/// [`SandboxedIo`].
-///
-/// Built via `impl Into<PathAccess>` so existing call sites keep working
-/// unchanged: `bool` maps to fully denied/allowed, and `Option<Vec<PathBuf>>`
-/// maps directly to a CLI flag parsed as "absent = denied, present with no
-/// paths = fully allowed, present with paths = restricted to those paths"
-/// (e.g. `mq-run`'s `--allow-read`/`--allow-write`).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub enum PathAccess {
-    /// No filesystem access at all (fail-safe default).
-    #[default]
-    Denied,
-    /// Unrestricted access, matching a bare `--allow-read`/`--allow-write`.
-    Allowed,
-    /// Access restricted to the given files/directories (and their
-    /// descendants).
-    AllowedPaths(Vec<PathBuf>),
-}
+mod env_access;
+mod path_access;
 
-impl From<bool> for PathAccess {
-    fn from(allow: bool) -> Self {
-        if allow { PathAccess::Allowed } else { PathAccess::Denied }
-    }
-}
-
-impl From<Vec<PathBuf>> for PathAccess {
-    fn from(paths: Vec<PathBuf>) -> Self {
-        if paths.is_empty() {
-            PathAccess::Allowed
-        } else {
-            PathAccess::AllowedPaths(paths)
-        }
-    }
-}
-
-impl From<Option<Vec<PathBuf>>> for PathAccess {
-    fn from(paths: Option<Vec<PathBuf>>) -> Self {
-        match paths {
-            None => PathAccess::Denied,
-            Some(paths) => paths.into(),
-        }
-    }
-}
-
-impl PathAccess {
-    fn permits(&self, path: &Path) -> bool {
-        match self {
-            PathAccess::Denied => false,
-            PathAccess::Allowed => true,
-            PathAccess::AllowedPaths(allowed) => {
-                let target = normalize(path);
-                allowed.iter().any(|root| target.starts_with(normalize(root)))
-            }
-        }
-    }
-
-    fn is_denied(&self) -> bool {
-        matches!(self, PathAccess::Denied)
-    }
-}
-
-fn normalize(path: &Path) -> PathBuf {
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir().unwrap_or_default().join(path)
-    };
-
-    let mut result = PathBuf::new();
-    for component in absolute.components() {
-        match component {
-            Component::ParentDir => {
-                result.pop();
-            }
-            Component::CurDir => {}
-            other => result.push(other.as_os_str()),
-        }
-    }
-    result
-}
+pub use env_access::EnvAccess;
+pub use path_access::PathAccess;
 
 /// Wraps an inner [`Io`] (typically [`NativeIo`]) with instance-owned
-/// read/write/net/run permission grants, enforced by every operation. All
-/// four default to fully denied (fail safe); read/write may additionally be
-/// restricted to an allowlist of paths via [`PathAccess::AllowedPaths`].
+/// read/write/net/run/env permission grants, enforced by every operation. All
+/// five default to fully denied (fail safe); read/write/env may additionally be
+/// restricted to an allowlist via [`PathAccess::AllowedPaths`]/[`EnvAccess::AllowedNames`].
 ///
 /// Every operation enforces its own permission independently of any external
 /// pre-check, so a caller cannot accidentally bypass sandboxing by forgetting
@@ -99,6 +23,7 @@ pub struct SandboxedIo<Inner: Io = NativeIo> {
     allow_write: PathAccess,
     allow_net: bool,
     allow_run: bool,
+    allow_env: EnvAccess,
 }
 
 impl<Inner: Io + Default> Default for SandboxedIo<Inner> {
@@ -116,6 +41,7 @@ impl<Inner: Io> SandboxedIo<Inner> {
             allow_write: PathAccess::Denied,
             allow_net: false,
             allow_run: false,
+            allow_env: EnvAccess::Denied,
         }
     }
 
@@ -146,6 +72,13 @@ impl<Inner: Io> SandboxedIo<Inner> {
         self
     }
 
+    /// Grants environment-variable access, gating `$VAR`/`${$VAR}` resolution and debugger
+    /// logpoint interpolation. See [`Self::allow_read`] for the accepted forms.
+    pub fn allow_env(mut self, allow: impl Into<EnvAccess>) -> Self {
+        self.allow_env = allow.into();
+        self
+    }
+
     /// Whether any read access is granted (fully or restricted to an allowlist).
     pub fn is_read_allowed(&self) -> bool {
         !self.allow_read.is_denied()
@@ -163,6 +96,11 @@ impl<Inner: Io> SandboxedIo<Inner> {
     pub fn is_run_allowed(&self) -> bool {
         self.allow_run
     }
+
+    /// Whether any environment-variable access is granted (fully or restricted to an allowlist).
+    pub fn is_env_allowed(&self) -> bool {
+        !self.allow_env.is_denied()
+    }
 }
 
 fn denied(what: &'static str) -> IoError {
@@ -173,6 +111,12 @@ fn denied_path(action: &str, path: &Path) -> IoError {
     IoError::PermissionDenied(Cow::Owned(format!(
         "{action} of {} is not allowed (outside the allowed paths)",
         path.display()
+    )))
+}
+
+fn denied_env(name: &str) -> IoError {
+    IoError::PermissionDenied(Cow::Owned(format!(
+        "access to environment variable `{name}` is not allowed"
     )))
 }
 
@@ -236,6 +180,12 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
     }
 
     fn env_var(&self, name: &str) -> Result<String, IoError> {
+        if self.allow_env.is_denied() {
+            return Err(denied("environment variable access is disabled"));
+        }
+        if !self.allow_env.permits(name) {
+            return Err(denied_env(name));
+        }
         self.inner.env_var(name)
     }
 
@@ -351,14 +301,34 @@ mod tests {
     }
 
     #[test]
-    fn test_env_var_and_home_current_dir_are_not_gated() {
-        let io = SandboxedIo::new(
-            MemIo::default()
-                .with_env("FOO", "bar")
-                .with_home("/home/x")
-                .with_cwd("/proj"),
-        );
+    fn test_env_var_denied_by_default_then_allowed() {
+        let io = SandboxedIo::new(MemIo::default().with_env("FOO", "bar"));
+        assert!(matches!(io.env_var("FOO"), Err(IoError::PermissionDenied(_))));
+
+        let io = io.allow_env(true);
         assert_eq!(io.env_var("FOO").unwrap(), "bar");
+    }
+
+    /// `None` = `allow_env` never called (fail-safe default); `Some(vec![])` = the CLI flag
+    /// passed with no value (fully allowed); `Some(names)` = the flag restricted to an
+    /// allowlist. Mirrors clap's parse of `--allow-env`.
+    #[rstest]
+    #[case::denied_by_default(None, "FOO", false)]
+    #[case::bare_flag_allows_everywhere(Some(vec![]), "FOO", true)]
+    #[case::within_allowlist(Some(vec!["FOO".to_string()]), "FOO", true)]
+    #[case::outside_allowlist(Some(vec!["FOO".to_string()]), "BAR", false)]
+    fn test_env_var_allowlist(#[case] allow: Option<Vec<String>>, #[case] target: &str, #[case] expected_ok: bool) {
+        let mut io = SandboxedIo::new(MemIo::default().with_env("FOO", "foo").with_env("BAR", "bar"));
+        if let Some(names) = allow {
+            io = io.allow_env(Some(names));
+        }
+
+        assert_eq!(io.env_var(target).is_ok(), expected_ok);
+    }
+
+    #[test]
+    fn test_home_and_current_dir_are_not_gated() {
+        let io = SandboxedIo::new(MemIo::default().with_home("/home/x").with_cwd("/proj"));
         assert_eq!(io.home_dir(), Some(PathBuf::from("/home/x")));
         assert_eq!(io.current_dir(), Some(PathBuf::from("/proj")));
     }
@@ -378,31 +348,35 @@ mod tests {
         );
     }
 
-    /// `is_read_allowed`/`is_write_allowed` report whether *any* access was granted,
-    /// including a restricted allowlist — they don't distinguish full vs. restricted access.
+    /// `is_read_allowed`/`is_write_allowed`/`is_env_allowed` report whether *any* access was
+    /// granted, including a restricted allowlist — they don't distinguish full vs. restricted
+    /// access.
     #[rstest]
-    #[case::nothing_granted(false, false, false, false, (false, false, false, false))]
-    #[case::read_and_net_granted(true, false, true, false, (true, false, true, false))]
-    #[case::all_granted(true, true, true, true, (true, true, true, true))]
+    #[case::nothing_granted(false, false, false, false, false, (false, false, false, false, false))]
+    #[case::read_and_net_granted(true, false, true, false, false, (true, false, true, false, false))]
+    #[case::all_granted(true, true, true, true, true, (true, true, true, true, true))]
     fn test_is_allowed_queries_reflect_builder_state(
         #[case] allow_read: bool,
         #[case] allow_write: bool,
         #[case] allow_net: bool,
         #[case] allow_run: bool,
-        #[case] expected: (bool, bool, bool, bool),
+        #[case] allow_env: bool,
+        #[case] expected: (bool, bool, bool, bool, bool),
     ) {
         let io = SandboxedIo::new(MemIo::default())
             .allow_read(allow_read)
             .allow_write(allow_write)
             .allow_net(allow_net)
-            .allow_run(allow_run);
+            .allow_run(allow_run)
+            .allow_env(allow_env);
 
         assert_eq!(
             (
                 io.is_read_allowed(),
                 io.is_write_allowed(),
                 io.is_net_allowed(),
-                io.is_run_allowed()
+                io.is_run_allowed(),
+                io.is_env_allowed(),
             ),
             expected
         );
@@ -412,6 +386,12 @@ mod tests {
     fn test_is_read_allowed_true_for_restricted_allowlist() {
         let io = SandboxedIo::new(MemIo::default()).allow_read(Some(vec![PathBuf::from("/allowed")]));
         assert!(io.is_read_allowed());
+    }
+
+    #[test]
+    fn test_is_env_allowed_true_for_restricted_allowlist() {
+        let io = SandboxedIo::new(MemIo::default()).allow_env(Some(vec!["FOO".to_string()]));
+        assert!(io.is_env_allowed());
     }
 
     #[test]

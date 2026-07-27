@@ -1170,11 +1170,14 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                         acc.push_str(&value.to_string());
                     }
                     ast::StringSegment::Env(env_var) => {
-                        acc.push_str(&io_context::current().env_var(env_var).map_err(|_| {
-                            RuntimeError::EnvNotFound(
-                                (*get_token(Shared::clone(&self.token_arena), token_id)).clone(),
-                                env_var.clone(),
-                            )
+                        acc.push_str(&io_context::current().env_var(env_var).map_err(|e| {
+                            let token = (*get_token(Shared::clone(&self.token_arena), token_id)).clone();
+                            match e {
+                                crate::io::IoError::PermissionDenied(msg) => {
+                                    RuntimeError::Runtime(token, msg.into_owned())
+                                }
+                                _ => RuntimeError::EnvNotFound(token, env_var.clone()),
+                            }
                         })?);
                     }
                     ast::StringSegment::Self_ => {
@@ -1314,11 +1317,12 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                         if expr_str == constants::identifiers::SELF {
                             acc.push_str(&runtime_value.to_string());
                         } else if let Some(var) = expr_str.strip_prefix('$') {
-                            acc.push_str(
-                                &io_context::current()
-                                    .env_var(var)
-                                    .map_err(|_| RuntimeError::EnvNotFound((**token).clone(), var.into()))?,
-                            );
+                            acc.push_str(&io_context::current().env_var(var).map_err(|e| match e {
+                                crate::io::IoError::PermissionDenied(msg) => {
+                                    RuntimeError::Runtime((**token).clone(), msg.into_owned())
+                                }
+                                _ => RuntimeError::EnvNotFound((**token).clone(), var.into()),
+                            })?);
                         } else {
                             let value = self.eval_debug_expr(expr_str, token, env)?;
                             acc.push_str(&value.to_string());
@@ -7930,10 +7934,9 @@ mod tests {
         #[case] program: Program,
         #[case] expected: Result<Vec<RuntimeValue>, InnerError>,
     ) {
-        assert_eq!(
-            Evaluator::new(DefaultModuleLoader::default(), token_arena).eval(&program, runtime_values.into_iter()),
-            expected
-        );
+        let mut evaluator = Evaluator::new(DefaultModuleLoader::default(), token_arena);
+        evaluator.set_io(Shared::new(SandboxedIo::new(NativeIo::default()).allow_env(true)));
+        assert_eq!(evaluator.eval(&program, runtime_values.into_iter()), expected);
     }
 
     #[test]
@@ -8550,6 +8553,7 @@ mod debugger_tests {
     #[test]
     fn test_logpoint_message_supports_literal_braces_and_env_vars() {
         let mut engine = crate::DefaultEngine::default();
+        engine.set_io(Shared::new(SandboxedIo::new(NativeIo::default()).allow_env(true)));
         let log_points = Shared::new(SharedCell::new(Vec::new()));
         engine.set_debugger_handler(Box::new(RecordingDebuggerHandler {
             breakpoint_hits: Shared::default(),

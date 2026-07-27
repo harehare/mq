@@ -211,6 +211,9 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::EnvNotFound(_, env)) => Some(Cow::Owned(format!(
                 "Environment variable '{env}' not found. Did you forget to set it?"
             ))),
+            InnerError::Syntax(SyntaxError::EnvNotAllowed(_, env)) => Some(Cow::Owned(format!(
+                "Environment variable '{env}' is not permitted. Pass --allow-env to permit it."
+            ))),
             InnerError::Syntax(SyntaxError::UnexpectedToken(token)) if token.kind == TokenKind::Eof => {
                 Some(Cow::Borrowed(
                     "The source could not be fully parsed from this position. Check for unsupported escape sequences (use \\u{XXXX} for Unicode), invalid characters, or unterminated string literals.",
@@ -350,6 +353,9 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::EnvNotFound(_, env))) => {
                 Some(Cow::Owned(format!("Environment variable '{env}' not found in module.")))
             }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::EnvNotAllowed(_, env))) => Some(Cow::Owned(
+                format!("Environment variable '{env}' is not permitted in module. Pass --allow-env to permit it."),
+            )),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedToken(token)))
                 if token.kind == TokenKind::Eof =>
             {
@@ -446,6 +452,7 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::InvalidAssignmentTarget(_)) => "invalid assignment target",
             InnerError::Syntax(SyntaxError::UnknownSelector(_)) => "unknown selector",
             InnerError::Syntax(SyntaxError::EnvNotFound(_, _)) => "environment variable not found",
+            InnerError::Syntax(SyntaxError::EnvNotAllowed(_, _)) => "environment variable not allowed",
             InnerError::Syntax(SyntaxError::ParameterWithoutDefaultAfterDefault(_)) => "parameter without default",
             InnerError::Syntax(SyntaxError::MacroParametersCannotHaveDefaults(_)) => "parameter with default value",
             InnerError::Syntax(SyntaxError::VariadicParameterMustBeLast(_)) => "misplaced variadic parameter",

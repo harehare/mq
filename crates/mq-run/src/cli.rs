@@ -403,6 +403,14 @@ struct InputArgs {
     /// metacharacters in arguments are never interpreted.
     #[arg(long = "allow-run", default_value_t = false)]
     allow_run: bool,
+
+    /// Allow `$VAR`/`${$VAR}` interpolation and debugger logpoints to read environment
+    /// variables. Disabled by default. Pass with no value to allow reading any variable, or
+    /// `--allow-env=NAME` (repeat the flag, or comma-separate, to add more) to restrict
+    /// access to just those names. The `=` is required so a bare name after the flag isn't
+    /// swallowed as a query/file positional instead.
+    #[arg(long = "allow-env", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "NAME")]
+    allow_env: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, clap::Args, Default)]
@@ -837,7 +845,8 @@ impl Cli {
                 .allow_read(self.input.allow_read.clone())
                 .allow_write(self.input.allow_write.clone())
                 .allow_net(self.input.allow_net)
-                .allow_run(self.input.allow_run),
+                .allow_run(self.input.allow_run)
+                .allow_env(self.input.allow_env.clone()),
         ));
         engine.load_builtin_module();
         engine.set_optimization_level(self.optimize_level.clone().into());
@@ -1770,6 +1779,61 @@ mod tests {
             ..Cli::default()
         };
         assert!(allowed_cli.run().is_ok(), "system should succeed with --allow-run");
+    }
+
+    #[test]
+    fn test_allow_env_flag_gates_var_interpolation() {
+        // SAFETY: no other threads read/write this env var concurrently in this test.
+        unsafe { std::env::set_var("MQ_ALLOW_ENV_TEST_VAR", "test_value") };
+        defer! {
+            unsafe { std::env::remove_var("MQ_ALLOW_ENV_TEST_VAR") };
+        }
+
+        let query = "$MQ_ALLOW_ENV_TEST_VAR";
+
+        let blocked_cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some(query.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+        assert!(blocked_cli.run().is_err(), "$VAR should be blocked without --allow-env");
+
+        let allowed_cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                allow_env: Some(vec![]),
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some(query.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+        assert!(allowed_cli.run().is_ok(), "$VAR should succeed with --allow-env");
+
+        let restricted_cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                allow_env: Some(vec!["MQ_OTHER_VAR".to_string()]),
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some(query.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+        assert!(
+            restricted_cli.run().is_err(),
+            "$VAR should be blocked when --allow-env only names other variables"
+        );
     }
 
     #[rstest]
