@@ -412,9 +412,14 @@ struct InputArgs {
     #[arg(long = "allow-env", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "NAME")]
     allow_env: Option<Vec<String>>,
 
-    /// Grant every sandboxed permission at once (read/write/net/run/env), overriding
-    /// any allowlist given to the individual --allow-* flags. Disabled by default.
-    #[arg(long = "allow-all", default_value_t = false)]
+    /// Grant every sandboxed permission at once (read/write/net/run/env). Disabled by
+    /// default. Cannot be combined with the individual --allow-* flags above.
+    #[arg(
+        short = 'a',
+        long = "allow-all",
+        default_value_t = false,
+        conflicts_with_all = ["allow_net", "allow_read", "allow_write", "allow_run", "allow_env"]
+    )]
     allow_all: bool,
 }
 
@@ -1883,6 +1888,18 @@ mod tests {
         assert!(
             base_cli(system_query, true).run().is_ok(),
             "system should succeed with --allow-all"
+        );
+    }
+
+    #[rstest]
+    #[case(&["mq", "--allow-all", "--allow-read=/tmp", "self"])]
+    #[case(&["mq", "--allow-all", "--allow-write=/tmp", "self"])]
+    #[case(&["mq", "--allow-all", "--allow-run", "self"])]
+    #[case(&["mq", "--allow-all", "--allow-env", "self"])]
+    fn test_allow_all_conflicts_with_individual_allow_flags(#[case] args: &[&str]) {
+        assert!(
+            Cli::try_parse_from(args).is_err(),
+            "--allow-all should conflict with individual --allow-* flags"
         );
     }
 
