@@ -320,6 +320,17 @@ def test_fill():
   | assert_eq(result3, [42, 42])
 end
 
+def test_sort_natural():
+  let result1 = sort_natural(["file10", "file2", "file1"])
+  | assert_eq(result1, ["file1", "file2", "file10"])
+
+  | let result2 = sort_natural(["chapter-2.md", "chapter-10.md", "chapter-1.md"])
+  | assert_eq(result2, ["chapter-1.md", "chapter-2.md", "chapter-10.md"])
+
+  | let result3 = sort_natural([])
+  | assert_eq(result3, [])
+end
+
 def test_skip():
   let result1 = skip([1, 2, 3, 4, 5], 2)
   | assert_eq(result1, [3, 4, 5])

@@ -455,7 +455,7 @@ fn register_string(ctx: &mut InferenceContext) {
 /// Array functions: flatten, reverse, sort, uniq, compact, len, slice, insert, range, repeat
 fn register_array(ctx: &mut InferenceContext) {
     // Polymorphic array -> array functions
-    for name in ["reverse", "sort", "uniq", "compact", "shuffle"] {
+    for name in ["reverse", "sort", "sort_natural", "uniq", "compact", "shuffle"] {
         let a = ctx.fresh_var();
         register_unary(ctx, name, Type::array(Type::Var(a)), Type::array(Type::Var(a)));
     }
@@ -578,7 +578,10 @@ fn register_array(ctx: &mut InferenceContext) {
     );
 
     // None propagation for array functions
-    register_none_propagation_unary(ctx, &["reverse", "sort", "uniq", "compact", "flatten", "len"]);
+    register_none_propagation_unary(
+        ctx,
+        &["reverse", "sort", "sort_natural", "uniq", "compact", "flatten", "len"],
+    );
     // slice: (none, number, number) -> none
     register_ternary(ctx, "slice", Type::None, Type::Number, Type::Number, Type::None);
     // slice: (none, number) -> none  (open-ended slice)
