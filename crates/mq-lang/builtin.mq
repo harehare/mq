@@ -270,6 +270,16 @@ end
 def sort_by(arr, f):
   let decorate_arr = foreach (x, arr): [f(x), x]; | _sort_by_impl(decorate_arr) | map(second);
 
+# Sorts an array in natural order (numeric-aware), so runs of digits embedded in a
+# string are compared as numbers rather than character-by-character, e.g. "file2" sorts
+# before "file10" (unlike a plain lexicographic `sort`).
+def sort_natural(arr):
+  sort_by(arr, fn(x):
+    scan(to_text(x), "[0-9]+|[^0-9]+")
+    | map(fn(seg): if (test(seg, "^[0-9]+$")): lpad(seg, 20, "0") else: seg;)
+    | join("");
+  );
+
 # Returns the count of elements in the array that satisfy the provided function.
 def count_by(arr, f):
   if (!is_array(arr) || is_empty(arr)):
