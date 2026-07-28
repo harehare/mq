@@ -159,17 +159,26 @@ In {year}, the snowfall was above average.
 #[case::table_auto_expand(
     vec!["--unbuffered", "-A", r#"import "table" | table::tables()"#],
     "| Name | Age |\n| ---- | --- |\n| Alice | 30 |\n| Bob | 25 |\n",
-    Some("|Name|Age|\n|---|---|\n|Alice|30|\n|Bob|25|\n")
+    Some("| Name  | Age |\n| ----- | --- |\n| Alice | 30  |\n| Bob   | 25  |\n")
 )]
 #[case::table_auto_expand_first(
     vec!["--unbuffered", "-A", r#"import "table" | table::tables() | first()"#],
     "| Name | Age |\n| ---- | --- |\n| Alice | 30 |\n| Bob | 25 |\n",
-    Some("|Name|Age|\n|---|---|\n|Alice|30|\n|Bob|25|\n")
+    Some("| Name  | Age |\n| ----- | --- |\n| Alice | 30  |\n| Bob   | 25  |\n")
 )]
 #[case::table_auto_expand_add_row(
     vec!["--unbuffered", "-A", r#"import "table" | table::tables() | first() | table::add_row(["Charlie", "35"])"#],
     "| Name | Age |\n| ---- | --- |\n| Alice | 30 |\n",
-    Some("|Name|Age|\n|---|---|\n|Alice|30|\n|Charlie|35|\n")
+    Some("| Name    | Age |\n| ------- | --- |\n| Alice   | 30  |\n| Charlie | 35  |\n")
+)]
+#[case::table_auto_expand_add_column(
+    vec![
+        "--unbuffered",
+        "-A",
+        r#"import "table" | table::tables() | first() | table::add_column(["City", "Tokyo", "Osaka"])"#,
+    ],
+    "| Name | Age |\n| ---- | --- |\n| Alice | 30 |\n| Bob | 25 |\n",
+    Some("| Name  | Age | City  |\n| ----- | --- | ----- |\n| Alice | 30  | Tokyo |\n| Bob   | 25  | Osaka |\n")
 )]
 #[case::capture_named_groups(
     vec!["--unbuffered", "-I", "text", r#"capture("(?P<year>\\d{4})-(?P<month>\\d{2})-(?P<day>\\d{2})")"#],

@@ -2,10 +2,11 @@
 use crate::html_to_markdown;
 #[cfg(feature = "html-to-markdown")]
 use crate::html_to_markdown::ConversionOptions;
-use crate::node::{ColorTheme, Node, Position, RenderOptions, TableAlign, TableCell, render_values};
+use crate::node::{ColorTheme, Node, Position, RenderOptions, TableAlign, TableAlignKind, TableCell, render_values};
 use markdown::{CompileOptions, Constructs, Options, ParseOptions};
 use miette::miette;
 use std::{fmt, str::FromStr};
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone)]
 pub struct Markdown {
@@ -56,18 +57,31 @@ impl Markdown {
         let mut is_first = true;
         let mut current_table_row: Option<usize> = None;
         let mut in_table = false;
+        let mut current_table: Option<TableLayout> = None;
 
         let mut buffer = String::with_capacity(self.nodes.len() * 50);
 
         for (i, node) in self.nodes.iter().enumerate() {
-            if let Node::TableCell(TableCell { row, values, .. }) = node {
+            if let Node::TableCell(TableCell {
+                row, column, values, ..
+            }) = node
+            {
+                if current_table.as_ref().is_none_or(|t| i >= t.end) {
+                    current_table = Some(TableLayout::compute(&self.nodes, &self.options, i));
+                }
+                let table = current_table.as_ref().unwrap();
+                let align = table.align_for(*column);
+                let width = table.width_for(*column);
+
                 let value = render_values(values, &self.options, theme);
+                let plain_width = table.plain_width_at(*row, *column);
+                let padded = pad_cell(&value, plain_width, width, &align);
 
                 let is_new_row = current_table_row != Some(*row);
 
                 if is_new_row {
                     if current_table_row.is_some() {
-                        buffer.push_str("|\n");
+                        buffer.push_str(" |\n");
                     } else if !in_table && let Some(pos) = node.position() {
                         // Insert newlines before the first row of a table
                         let new_line_count = pre_position
@@ -80,10 +94,12 @@ impl Markdown {
                         }
                     }
                     current_table_row = Some(*row);
+                    buffer.push_str("| ");
+                } else {
+                    buffer.push_str(" | ");
                 }
 
-                buffer.push('|');
-                buffer.push_str(&value);
+                buffer.push_str(&padded);
 
                 let next_node = self.nodes.get(i + 1);
                 let next_is_different_row = next_node.is_none_or(
@@ -91,7 +107,7 @@ impl Markdown {
                 );
 
                 if next_is_different_row {
-                    buffer.push_str("|\n");
+                    buffer.push_str(" |\n");
                     current_table_row = None;
                 }
 
@@ -101,11 +117,13 @@ impl Markdown {
                 continue;
             }
 
-            if let Node::TableAlign(TableAlign { align, .. }) = node {
-                use itertools::Itertools;
-                buffer.push('|');
-                buffer.push_str(&align.iter().map(|a| a.to_string()).join("|"));
-                buffer.push_str("|\n");
+            if let Node::TableAlign(TableAlign { .. }) = node {
+                if current_table.as_ref().is_none_or(|t| i >= t.end) {
+                    current_table = Some(TableLayout::compute(&self.nodes, &self.options, i));
+                }
+                let table = current_table.as_ref().unwrap();
+                buffer.push_str(&table.render_separator());
+                buffer.push('\n');
                 pre_position = node.position();
                 is_first = false;
                 in_table = true;
@@ -113,6 +131,7 @@ impl Markdown {
             }
 
             current_table_row = None;
+            current_table = None;
             in_table = false;
 
             let value = node.render_with_theme(&self.options, theme);
@@ -332,6 +351,137 @@ impl Markdown {
     }
 }
 
+/// Per-column widths and alignment of a single contiguous table, computed by
+/// scanning ahead over its `TableCell`/`TableAlign` nodes before the first
+/// row is emitted, so every row (including the header) pads to the same
+/// column widths.
+struct TableLayout {
+    widths: Vec<usize>,
+    align: Vec<TableAlignKind>,
+    /// Plain (color-free) display width of every cell, keyed by `(row, column)`,
+    /// computed once during the scan so the main render pass never has to
+    /// re-render a cell just to measure it.
+    cell_widths: rustc_hash::FxHashMap<(usize, usize), usize>,
+    /// Index (exclusive) of the node following this table's last node.
+    end: usize,
+}
+
+impl TableLayout {
+    fn compute(nodes: &[Node], options: &RenderOptions, start: usize) -> Self {
+        let mut widths: Vec<usize> = Vec::new();
+        let mut align: Vec<TableAlignKind> = Vec::new();
+        let mut cell_widths = rustc_hash::FxHashMap::default();
+        let mut i = start;
+
+        while let Some(node) = nodes.get(i) {
+            match node {
+                Node::TableCell(TableCell {
+                    row, column, values, ..
+                }) => {
+                    let width = cell_display_width(values, options);
+                    cell_widths.insert((*row, *column), width);
+                    if *column >= widths.len() {
+                        widths.resize(*column + 1, 0);
+                    }
+                    widths[*column] = widths[*column].max(width);
+                    i += 1;
+                }
+                Node::TableAlign(TableAlign { align: a, .. }) => {
+                    align = a.clone();
+                    i += 1;
+                }
+                _ => break,
+            }
+        }
+
+        if widths.len() < align.len() {
+            widths.resize(align.len(), 0);
+        }
+
+        for (idx, width) in widths.iter_mut().enumerate() {
+            let a = align.get(idx).unwrap_or(&TableAlignKind::None);
+            *width = (*width).max(column_min_width(a));
+        }
+
+        Self {
+            widths,
+            align,
+            cell_widths,
+            end: i,
+        }
+    }
+
+    fn align_for(&self, column: usize) -> TableAlignKind {
+        self.align.get(column).cloned().unwrap_or(TableAlignKind::None)
+    }
+
+    fn width_for(&self, column: usize) -> usize {
+        self.widths
+            .get(column)
+            .copied()
+            .unwrap_or(column_min_width(&self.align_for(column)))
+    }
+
+    /// Plain display width of the cell at `(row, column)`, precomputed during `compute`.
+    fn plain_width_at(&self, row: usize, column: usize) -> usize {
+        self.cell_widths.get(&(row, column)).copied().unwrap_or(0)
+    }
+
+    fn render_separator(&self) -> String {
+        let segments = self
+            .widths
+            .iter()
+            .enumerate()
+            .map(|(idx, &width)| {
+                let align = self.align_for(idx);
+                match align {
+                    TableAlignKind::None => "-".repeat(width),
+                    TableAlignKind::Left => format!(":{}", "-".repeat(width - 1)),
+                    TableAlignKind::Right => format!("{}:", "-".repeat(width - 1)),
+                    TableAlignKind::Center => format!(":{}:", "-".repeat(width - 2)),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" | ");
+
+        format!("| {} |", segments)
+    }
+}
+
+/// Minimum width a column must have to render a valid alignment marker
+/// (e.g. `:-:` needs at least 3 characters for the two colons and a dash).
+fn column_min_width(align: &TableAlignKind) -> usize {
+    match align {
+        TableAlignKind::None => 1,
+        TableAlignKind::Left | TableAlignKind::Right => 2,
+        TableAlignKind::Center => 3,
+    }
+}
+
+/// Display width (in terminal columns) of a table cell's plain-rendered
+/// content, ignoring any ANSI color codes so padding stays correct with
+/// `--color` output.
+fn cell_display_width(values: &[Node], options: &RenderOptions) -> usize {
+    UnicodeWidthStr::width(render_values(values, options, &ColorTheme::PLAIN).as_str())
+}
+
+/// Pads an already-rendered (possibly colored) cell value to `width`
+/// columns, using `plain_width` — the color-free display width — to compute
+/// how much padding is needed.
+fn pad_cell(content: &str, plain_width: usize, width: usize, align: &TableAlignKind) -> String {
+    let pad = width.saturating_sub(plain_width);
+
+    match align {
+        TableAlignKind::Right => format!("{}{}", " ".repeat(pad), content),
+        TableAlignKind::Center => {
+            let left = pad / 2;
+            let right = pad - left;
+            format!("{}{}{}", " ".repeat(left), content, " ".repeat(right))
+        }
+        TableAlignKind::Left | TableAlignKind::None => format!("{}{}", content, " ".repeat(pad)),
+    }
+}
+
 /// Returns the shared `Options` used for both `Markdown::to_html` and the
 /// standalone `to_html` helper.  The options mirror the constructs that are
 /// enabled during parsing (see `from_markdown_str`) so that every feature
@@ -435,18 +585,41 @@ mod tests {
     #[case::table(
         "| Column1 | Column2 | Column3 |\n|:--------|:--------:|---------:|\n| Left    | Center  | Right   |\n",
         7,
-        "|Column1|Column2|Column3|\n|:---|:---:|---:|\n|Left|Center|Right|\n"
+        "| Column1 | Column2 | Column3 |\n| :------ | :-----: | ------: |\n| Left    | Center  |   Right |\n"
     )]
     #[case::table_after_paragraph(
         "Paragraph\n\n| A | B |\n|---|---|\n| 1 | 2 |\n",
         6,
-        "Paragraph\n\n|A|B|\n|---|---|\n|1|2|\n"
+        "Paragraph\n\n| A | B |\n| - | - |\n| 1 | 2 |\n"
     )]
     #[case::table_after_heading(
         "# Title\n\n| A | B |\n|---|---|\n| 1 | 2 |\n",
         6,
-        "# Title\n\n|A|B|\n|---|---|\n|1|2|\n"
+        "# Title\n\n| A | B |\n| - | - |\n| 1 | 2 |\n"
     )]
+    #[case::table_column_padding(
+        "| Name | Age |\n|---|---|\n| Alexander | 5 |\n| Bo | 42 |\n",
+        7,
+        "| Name      | Age |\n| --------- | --- |\n| Alexander | 5   |\n| Bo        | 42  |\n"
+    )]
+    #[case::table_column_padding_wide_chars(
+        "| 名前 | 年齢 |\n|---|---|\n| 太郎 | 5 |\n",
+        5,
+        "| 名前 | 年齢 |\n| ---- | ---- |\n| 太郎 | 5    |\n"
+    )]
+    // Content width (1) is below the Left-align floor (2) — the floor, not
+    // the content, must decide the column width.
+    #[case::table_min_width_left("| A |\n|:--|\n| 1 |\n", 3, "| A  |\n| :- |\n| 1  |\n")]
+    // Same, for the Right-align floor (2).
+    #[case::table_min_width_right("| A |\n|--:|\n| 1 |\n", 3, "|  A |\n| -: |\n|  1 |\n")]
+    // Same, for the Center-align floor (3) — must not collapse to the
+    // invalid `::` marker.
+    #[case::table_min_width_center("| A |\n|:-:|\n| 1 |\n", 3, "|  A  |\n| :-: |\n|  1  |\n")]
+    // An empty cell must still pad out to its column's width.
+    #[case::table_empty_cell("| A | |\n|---|---|\n| 1 | 2 |\n", 5, "| A |   |\n| - | - |\n| 1 | 2 |\n")]
+    // A data row with fewer cells than the header must render only the
+    // cells present, without panicking or misaligning later rows.
+    #[case::table_ragged_row("| A | B |\n|---|---|\n| 1 |\n", 4, "| A | B |\n| - | - |\n| 1 |\n")]
     #[case::excessive_blank_lines("# Title\n\n\n\nParagraph", 2, "# Title\n\nParagraph\n")]
     #[case::three_blank_lines("Para 1\n\n\n\n\nPara 2", 2, "Para 1\n\nPara 2\n")]
     // GFM autolink literal: link text is the same URL — must not nest on round-trip
@@ -777,6 +950,20 @@ mod color_tests {
     }
 
     #[test]
+    fn test_colored_table_padding_ignores_ansi_codes_in_width() {
+        // The "**A**" cell is colored (ANSI-wrapped) but only 5 display columns wide,
+        // one short of the "Bolded" header — padding must be computed from the
+        // plain-text width, not the byte length of the ANSI-wrapped string.
+        let md = "| H | Bolded |\n|---|---|\n| x | **A** |\n"
+            .parse::<Markdown>()
+            .unwrap();
+        assert_eq!(
+            md.to_colored_string(),
+            "| H | Bolded |\n| - | ------ |\n| x | \x1b[1m**A**\x1b[0m  |\n"
+        );
+    }
+
+    #[test]
     fn test_colored_output_contains_ansi_codes() {
         let md = "# Hello\n\n**bold** and *italic*".parse::<Markdown>().unwrap();
         let colored = md.to_colored_string();
@@ -918,7 +1105,7 @@ mod json_tests {
     #[case("<blockquote>Quote</blockquote>", 1, "> Quote\n")]
     #[case("<code>inline</code>", 1, "`inline`\n")]
     #[case("<pre><code>block</code></pre>", 1, "```\nblock\n```\n")]
-    #[case("<table><tr><td>A</td><td>B</td></tr></table>", 3, "|A|B|\n|---|---|\n")]
+    #[case("<table><tr><td>A</td><td>B</td></tr></table>", 3, "| A | B |\n| - | - |\n")]
     #[cfg(feature = "html-to-markdown")]
     fn test_markdown_from_html(#[case] input: &str, #[case] expected_nodes: usize, #[case] expected_output: &str) {
         let md = Markdown::from_html_str(input).unwrap();

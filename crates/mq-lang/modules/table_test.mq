@@ -67,8 +67,19 @@ end
 def test_table_add_column():
   let t = first(table::tables(table_nodes))
   | let t = table::add_column(t, ["Country", "Japan", "Japan"])
-  | assert_eq(len(t[:header]), 3)
+  | let new_header_cell = t[:header][3]
+  | let row0_first_cell = t[:rows][0][0]
+  | let row0_new_cell = t[:rows][0][3]
+  | let row1_first_cell = t[:rows][1][0]
+  | let row1_new_cell = t[:rows][1][3]
+  | assert_eq(len(t[:header]), 4)
   | assert_eq(len(t[:rows][0]), 4)
+  | assert_eq(to_string(new_header_cell), "Country")
+  | assert_eq(new_header_cell.column, 3)
+  | assert_eq(to_string(row0_new_cell), "Japan")
+  | assert_eq(row0_new_cell.row, row0_first_cell.row)
+  | assert_eq(to_string(row1_new_cell), "Japan")
+  | assert_eq(row1_new_cell.row, row1_first_cell.row)
 end
 
 def test_table_remove_row():
