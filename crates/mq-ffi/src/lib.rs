@@ -128,6 +128,16 @@ fn panic_to_c_string(payload: Box<dyn std::any::Any + Send>) -> *mut c_char {
     to_c_string(format!("Internal error: {}", panic_message(&*payload)))
 }
 
+// Runs `f` at a panic boundary, discarding any panic it raises.
+fn guard(f: impl FnOnce() + std::panic::UnwindSafe) {
+    let _ = std::panic::catch_unwind(f);
+}
+
+// Runs `f` at a panic boundary, converting a panic into a C-string error message.
+fn guard_c_string(f: impl FnOnce() -> *mut c_char + std::panic::UnwindSafe) -> *mut c_char {
+    std::panic::catch_unwind(f).unwrap_or_else(panic_to_c_string)
+}
+
 // Helper function to convert C string to Rust string slice
 unsafe fn c_str_to_rust_str_slice<'a>(s: *const c_char) -> Result<&'a str, std::str::Utf8Error> {
     if s.is_null() {
@@ -170,7 +180,7 @@ pub extern "C" fn mq_create() -> *mut MqContext {
 /// Destroys an mq_lang engine.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_destroy(engine_ptr: *mut MqContext) {
-    let _ = std::panic::catch_unwind(move || {
+    guard(move || {
         if engine_ptr.is_null() {
             return;
         }
@@ -356,7 +366,7 @@ unsafe fn mq_eval_inner(
 /// - If `s` is null, the function safely returns without performing any operations
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_free_string(s: *mut c_char) {
-    let _ = std::panic::catch_unwind(move || {
+    guard(move || {
         if s.is_null() {
             return;
         }
@@ -370,7 +380,7 @@ pub unsafe extern "C" fn mq_free_string(s: *mut c_char) {
 /// Frees the MqResult structure including its contents.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_free_result(result: MqResult) {
-    let _ = std::panic::catch_unwind(move || {
+    guard(move || {
         if !result.error_msg.is_null() {
             unsafe {
                 mq_free_string(result.error_msg);
@@ -526,7 +536,7 @@ impl From<MqOptimizationLevel> for mq_lang::OptimizationLevel {
 /// Has no effect if `engine_ptr` is null.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_set_optimization_level(engine_ptr: *mut MqContext, level: MqOptimizationLevel) {
-    let _ = std::panic::catch_unwind(move || {
+    guard(move || {
         if engine_ptr.is_null() {
             return;
         }
@@ -539,7 +549,7 @@ pub extern "C" fn mq_set_optimization_level(engine_ptr: *mut MqContext, level: M
 /// runaway recursion in untrusted mq code. Has no effect if `engine_ptr` is null.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_set_max_call_stack_depth(engine_ptr: *mut MqContext, max_call_stack_depth: u32) {
-    let _ = std::panic::catch_unwind(move || {
+    guard(move || {
         if engine_ptr.is_null() {
             return;
         }
@@ -562,7 +572,7 @@ pub unsafe extern "C" fn mq_set_search_paths(
     paths: *const *const c_char,
     paths_len: usize,
 ) {
-    let _ = std::panic::catch_unwind(move || {
+    guard(move || {
         if engine_ptr.is_null() {
             return;
         }
@@ -592,7 +602,7 @@ pub unsafe extern "C" fn mq_define_string_value(
     name_c: *const c_char,
     value_c: *const c_char,
 ) {
-    let _ = std::panic::catch_unwind(move || {
+    guard(move || {
         if engine_ptr.is_null() {
             return;
         }
@@ -623,7 +633,7 @@ pub unsafe extern "C" fn mq_define_string_value(
 /// - The returned pointer, if non-null, must be freed with `mq_free_string`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_import_module(engine_ptr: *mut MqContext, module_name_c: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(move || {
+    guard_c_string(move || {
         if engine_ptr.is_null() {
             return to_c_string("Engine pointer is null".to_string());
         }
@@ -639,7 +649,6 @@ pub unsafe extern "C" fn mq_import_module(engine_ptr: *mut MqContext, module_nam
             Err(e) => to_c_string(format!("Error importing module: {}", e)),
         }
     })
-    .unwrap_or_else(panic_to_c_string)
 }
 
 /// Loads an external module by name, searched for in the paths configured via
@@ -654,7 +663,7 @@ pub unsafe extern "C" fn mq_import_module(engine_ptr: *mut MqContext, module_nam
 /// - The returned pointer, if non-null, must be freed with `mq_free_string`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_load_module(engine_ptr: *mut MqContext, module_name_c: *const c_char) -> *mut c_char {
-    std::panic::catch_unwind(move || {
+    guard_c_string(move || {
         if engine_ptr.is_null() {
             return to_c_string("Engine pointer is null".to_string());
         }
@@ -670,7 +679,6 @@ pub unsafe extern "C" fn mq_load_module(engine_ptr: *mut MqContext, module_name_
             Err(e) => to_c_string(format!("Error loading module: {}", e)),
         }
     })
-    .unwrap_or_else(panic_to_c_string)
 }
 
 /// Replaces the HTTP resolver's domain allowlist used when importing modules
@@ -689,7 +697,7 @@ pub unsafe extern "C" fn mq_set_http_allowed_domains(
     domains: *const *const c_char,
     domains_len: usize,
 ) {
-    let _ = std::panic::catch_unwind(move || {
+    guard(move || {
         #[cfg(feature = "http-import")]
         {
             if engine_ptr.is_null() {
@@ -710,7 +718,7 @@ pub unsafe extern "C" fn mq_set_http_allowed_domains(
 /// modules on the next import. Has no effect if `engine_ptr` is null.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_clear_http_cache(engine_ptr: *mut MqContext) -> *mut c_char {
-    std::panic::catch_unwind(move || {
+    guard_c_string(move || {
         #[cfg(feature = "http-import")]
         {
             if engine_ptr.is_null() {
@@ -728,14 +736,13 @@ pub extern "C" fn mq_clear_http_cache(engine_ptr: *mut MqContext) -> *mut c_char
             to_c_string("This library was built without the http-import feature".to_string())
         }
     })
-    .unwrap_or_else(panic_to_c_string)
 }
 
 /// Clears all HTTP module cache including versioned modules and lock files.
 /// Has no effect if `engine_ptr` is null.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_clear_http_cache_all(engine_ptr: *mut MqContext) -> *mut c_char {
-    std::panic::catch_unwind(move || {
+    guard_c_string(move || {
         #[cfg(feature = "http-import")]
         {
             if engine_ptr.is_null() {
@@ -753,7 +760,6 @@ pub extern "C" fn mq_clear_http_cache_all(engine_ptr: *mut MqContext) -> *mut c_
             to_c_string("This library was built without the http-import feature".to_string())
         }
     })
-    .unwrap_or_else(panic_to_c_string)
 }
 
 #[cfg(test)]
