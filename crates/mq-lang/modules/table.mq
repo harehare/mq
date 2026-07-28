@@ -81,13 +81,15 @@ def add_column(table, col):
   else: do
       let header_cell = to_md_table_cell(col[0], 0, len(table[:header]))
       | let new_header = table[:header] + [header_cell]
-      | var i = 0
+      | var i = 1
       | let new_rows = foreach (row, table[:rows]):
-              let cell = to_md_table_cell(col[i], i, len(row) - 1)
+              let first_cell = row[0]
+              | let cell = to_md_table_cell(col[i], first_cell.row, len(row))
               | i += 1
               | row + [cell]
             end
-      | set(table, :header, new_header) | set(table, :rows, new_rows)
+      | let table_with_header = set(table, :header, new_header)
+      | set(table_with_header, :rows, new_rows)
     end
 end
 
