@@ -194,6 +194,16 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         self.inner.exists(path)
     }
 
+    fn file_size(&self, path: &Path) -> Result<u64, IoError> {
+        if self.allow_read.is_denied() {
+            return Err(denied("filesystem reads are disabled"));
+        }
+        if !self.allow_read.permits(path) {
+            return Err(denied_path("read", path));
+        }
+        self.inner.file_size(path)
+    }
+
     fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError> {
         if self.allow_read.is_denied() {
             return Err(denied("filesystem reads are disabled"));

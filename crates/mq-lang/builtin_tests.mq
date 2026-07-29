@@ -1170,3 +1170,43 @@ def test_walk():
   | assert_eq(result24, "h2")
 end
 
+def test_human_bytes():
+  let result1 = human_bytes(0)
+  | assert_eq(result1, "0B")
+
+  | let result2 = human_bytes(500)
+  | assert_eq(result2, "500B")
+
+  | let result3 = human_bytes(1500)
+  | assert_eq(result3, "1.5KB")
+
+  | let result4 = human_bytes(1000000)
+  | assert_eq(result4, "1MB")
+
+  | let result5 = human_bytes(1500000000)
+  | assert_eq(result5, "1.5GB")
+
+  | let result6 = human_bytes(-1500)
+  | assert_eq(result6, "-1.5KB")
+end
+
+def test_human_size():
+  let result1 = human_size(0)
+  | assert_eq(result1, "0B")
+
+  | let result2 = human_size(500)
+  | assert_eq(result2, "500B")
+
+  | let result3 = human_size(1536)
+  | assert_eq(result3, "1.5K")
+
+  | let result4 = human_size(1048576)
+  | assert_eq(result4, "1M")
+
+  | let result5 = human_size(1610612736)
+  | assert_eq(result5, "1.5G")
+
+  | let result6 = human_size(-1536)
+  | assert_eq(result6, "-1.5K")
+end
+

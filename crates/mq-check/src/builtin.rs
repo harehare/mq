@@ -284,6 +284,10 @@ fn register_math(ctx: &mut InferenceContext) {
     register_nullary(ctx, "infinite", Type::Number);
     register_unary(ctx, "is_nan", Type::Number, Type::Bool);
 
+    // Human-readable byte size formatting: number -> string
+    register_unary(ctx, "human_bytes", Type::Number, Type::String);
+    register_unary(ctx, "human_size", Type::Number, Type::String);
+
     // Randomness
     register_nullary(ctx, "rand", Type::Number);
     register_binary(ctx, "rand_int", Type::Number, Type::Number, Type::Number);
@@ -1277,6 +1281,7 @@ fn register_file_io(ctx: &mut InferenceContext) {
     register_unary(ctx, "read_file", Type::String, Type::String);
     register_unary(ctx, "read_file_bytes", Type::String, Type::Bytes);
     register_unary(ctx, "file_exists", Type::String, Type::Bool);
+    register_unary(ctx, "file_size", Type::String, Type::Number);
 
     // collection: string (dir path) -> [{path, title, frontmatter, content}]
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
@@ -1859,6 +1864,7 @@ mod tests {
     #[case::read_file("read_file(\"a.md\")", true)]
     #[case::read_file_bytes("read_file_bytes(\"a.md\")", true)]
     #[case::file_exists("file_exists(\"a.md\")", true)]
+    #[case::file_size("file_size(\"a.md\")", true)]
     #[case::collection("collection(\"docs\")", true)]
     #[case::collection_len("len(collection(\"docs\"))", true)]
     #[case::basename("basename(\"a/b.md\")", true)]
@@ -1888,6 +1894,7 @@ mod tests {
     )]
     #[case::read_file_number("read_file(42)", false)] // Should fail: wrong type
     #[case::file_exists_number("file_exists(42)", false)] // Should fail: wrong type
+    #[case::file_size_number("file_size(42)", false)] // Should fail: wrong type
     #[case::collection_number("collection(42)", false)] // Should fail: wrong type
     #[case::basename_number("basename(42)", false)] // Should fail: wrong type
     #[case::path_join_number("path_join(42, \"b\")", false)] // Should fail: wrong type

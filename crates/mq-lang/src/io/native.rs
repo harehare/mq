@@ -55,6 +55,10 @@ impl Io for NativeIo {
         Ok(path.exists())
     }
 
+    fn file_size(&self, path: &Path) -> Result<u64, IoError> {
+        std::fs::metadata(path).map(|m| m.len()).map_err(|e| io_err(e, path))
+    }
+
     fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError> {
         std::fs::read_dir(path)
             .map_err(|e| io_err(e, path))?
