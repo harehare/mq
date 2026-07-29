@@ -391,6 +391,51 @@ Use the tool like this.
 
 **Output**: `["Introduction", "Usage"]`
 
+### Delete a Section by Heading
+
+Use `filter_sections()` with a negated predicate to drop sections whose title matches, then flatten back to Markdown with `collect()`:
+
+```bash
+$ mq -A 'section::filter_sections(fn(s): section::title(s) != "Deprecated";) | section::collect()' README.md
+```
+
+Or with `nodes`:
+
+```mq
+import "section"
+| nodes
+| section::filter_sections(fn(s): section::title(s) != "Deprecated";)
+| section::collect()
+```
+
+**Input example**:
+
+```markdown
+# Introduction
+
+Welcome to the project.
+
+## Installation
+
+Run the following command.
+
+## Deprecated
+
+Do not use this anymore.
+```
+
+**Output**:
+
+```markdown
+# Introduction
+
+Welcome to the project.
+
+## Installation
+
+Run the following command.
+```
+
 ## Table Operations
 
 The table module provides functions for extracting and transforming Markdown tables.

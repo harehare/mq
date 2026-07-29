@@ -102,6 +102,10 @@ mq -I html 'identity' page.html           # HTML → Markdown
 
 # Streaming large files
 mq --stream 'select(contains("ERROR"))' large.md
+
+# Section operations (needs -A or `nodes` — see EXAMPLES.md)
+mq -A 'section::section("Installation")' file.md                                                             # Extract section by heading
+mq -A 'section::filter_sections(fn(s): section::title(s) != "Deprecated";) | section::collect()' file.md    # Delete section by heading
 ```
 
 ## HTML Input: Always Use Markdown Selectors

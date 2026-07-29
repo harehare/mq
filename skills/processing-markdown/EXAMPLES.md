@@ -43,6 +43,20 @@ mq --csv 'include "csv" | csv_parse(true) | csv_to_markdown_table()' data.csv
 mq -I raw 'identity()' data.json                            # Disable auto-parse
 ```
 
+## Section Operations
+
+Split/filter a document into sections by heading, then flatten back to Markdown with `section::collect()`. Needs all document nodes: use `-A` or pipe through `nodes`.
+
+```bash
+mq -A 'section::section("Installation")' README.md                                  # Extract section by title
+mq -A 'section::section("Installation") | section::bodies() | first()' README.md    # Section body only (no header)
+mq -A 'section::sections() | section::by_level(2)' README.md                        # h2 sections only
+mq -A 'section::sections() | section::toc()' README.md                              # Table of contents
+mq -A 'section::filter_sections(fn(s): section::title(s) != "Deprecated";) | section::collect()' README.md  # Delete a section by heading
+```
+
+See [example.md](../../docs/books/src/start/example.md) for the full section reference (import/include forms, `-A` vs `nodes`, more filters).
+
 ## Multi-File & Aggregation
 
 ```bash

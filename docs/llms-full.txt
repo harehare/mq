@@ -707,6 +707,9 @@ mq -A 'section::sections() | section::by_level(2)' README.md
 
 # Generate table of contents
 mq -A 'section::sections() | section::toc()' README.md
+
+# Delete a section by heading
+mq -A 'section::filter_sections(fn(s): section::title(s) != "Deprecated";) | section::collect()' README.md
 ```
 
 ## Table Operations
