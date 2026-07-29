@@ -68,6 +68,9 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
     fn write(&self, path: &Path, content: &[u8]) -> Result<(), IoError>;
     fn exists(&self, path: &Path) -> Result<bool, IoError>;
 
+    /// Size of the file at `path`, in bytes.
+    fn file_size(&self, path: &Path) -> Result<u64, IoError>;
+
     /// `(path, is_dir)` pairs for the immediate entries of a directory.
     fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError>;
 

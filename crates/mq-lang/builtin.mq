@@ -1087,3 +1087,30 @@ def walk(v, f):
   end
 end
 
+# Formats a byte count as a human-readable decimal (SI, 1000-based) string,
+# e.g. `human_bytes(1500)` => "1.5KB". Negative numbers keep their sign.
+def human_bytes(n):
+  let base = 1000
+  | let units = ["B", "KB", "MB", "GB", "TB", "PB", "EB"]
+  | let sign = if (n < 0): "-" else: ""
+  | let abs_n = abs(n)
+  | let exponent = if (abs_n < base): 0 else: min(floor(log10(abs_n) / log10(base)), len(units) - 1)
+  | let value = abs_n / pow(base, exponent)
+  | let rounded = round(value * 10) / 10
+  | sign + to_string(rounded) + units[exponent]
+end
+
+# Formats a byte count as a human-readable binary (IEC, 1024-based) string
+# without the "i" suffix, matching `numfmt --to=iec`, e.g. `human_size(1536)`
+# => "1.5K". Negative numbers keep their sign.
+def human_size(n):
+  let base = 1024
+  | let units = ["B", "K", "M", "G", "T", "P", "E"]
+  | let sign = if (n < 0): "-" else: ""
+  | let abs_n = abs(n)
+  | let exponent = if (abs_n < base): 0 else: min(floor(log10(abs_n) / log10(base)), len(units) - 1)
+  | let value = abs_n / pow(base, exponent)
+  | let rounded = round(value * 10) / 10
+  | sign + to_string(rounded) + units[exponent]
+end
+

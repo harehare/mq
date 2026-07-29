@@ -4043,6 +4043,21 @@ fn file_exists_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+/// Returns the size, in bytes, of the file at `path`. Requires the ambient [`Io`]'s read
+/// permission (see [`io_context`]).
+#[cfg(feature = "file-io")]
+#[mq_macros::mq_fn(name = "file_size", params = Fixed(1))]
+fn file_size_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(path)] => io_context::current()
+            .file_size(std::path::Path::new(path.as_str()))
+            .map(|size| RuntimeValue::Number((size as usize).into()))
+            .map_err(|e| Error::Runtime(format!("Failed to get size of {}: {}", path, e))),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("file_size should always receive exactly one argument"),
+    }
+}
+
 /// Reads the contents of `path` as raw bytes. Requires the ambient [`Io`]'s read
 /// permission (see [`io_context`]).
 #[cfg(feature = "file-io")]
@@ -4685,6 +4700,8 @@ mq_macros::builtin_dispatch! {
     READ_FILE,
     #[cfg(feature = "file-io")]
     FILE_EXISTS,
+    #[cfg(feature = "file-io")]
+    FILE_SIZE,
     #[cfg(feature = "file-io")]
     READ_FILE_BYTES,
     #[cfg(feature = "file-io")]
@@ -6281,6 +6298,14 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         SmolStr::new("file_exists"),
         BuiltinFunctionDoc {
             description: "Checks if a file exists at the given path. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
+            params: &["path"],
+        },
+    );
+    #[cfg(feature = "file-io")]
+    map.insert(
+        SmolStr::new("file_size"),
+        BuiltinFunctionDoc {
+            description: "Returns the size, in bytes, of the file at the given path. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
             params: &["path"],
         },
     );
@@ -10471,6 +10496,10 @@ mod tests {
             call("file_exists", vec![RuntimeValue::String(text_path.clone())]).is_err(),
             "file_exists should be blocked when read access is not allowed"
         );
+        assert!(
+            call("file_size", vec![RuntimeValue::String(text_path.clone())]).is_err(),
+            "file_size should be blocked when read access is not allowed"
+        );
 
         let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
         assert_eq!(
@@ -10506,6 +10535,20 @@ mod tests {
             Ok(RuntimeValue::Boolean(false))
         );
         assert!(call("file_exists", vec![RuntimeValue::Number(42.into())]).is_err());
+
+        assert_eq!(
+            call("file_size", vec![RuntimeValue::String(text_path.clone())]),
+            Ok(RuntimeValue::Number(5.into()))
+        );
+        assert!(
+            call(
+                "file_size",
+                vec![RuntimeValue::String("/nonexistent/path/no_such_file.md".into())]
+            )
+            .is_err(),
+            "file_size should error for a nonexistent file"
+        );
+        assert!(call("file_size", vec![RuntimeValue::Number(42.into())]).is_err());
 
         // Basic collection: YAML/TOML frontmatter, title, content, sorted by path.
         {

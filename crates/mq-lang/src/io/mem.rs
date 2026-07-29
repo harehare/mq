@@ -94,6 +94,15 @@ impl Io for MemIo {
         Ok(self.files.lock().unwrap().contains_key(path))
     }
 
+    fn file_size(&self, path: &Path) -> Result<u64, IoError> {
+        self.files
+            .lock()
+            .unwrap()
+            .get(path)
+            .map(|bytes| bytes.len() as u64)
+            .ok_or_else(|| IoError::NotFound(Cow::Owned(path.display().to_string())))
+    }
+
     fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError> {
         let files = self.files.lock().unwrap();
         Ok(files
