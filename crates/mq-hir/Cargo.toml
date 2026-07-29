@@ -17,7 +17,6 @@ mq-lang = {workspace = true, features = ["cst", "file-io"]}
 rustc-hash = {workspace = true}
 slotmap = {workspace = true}
 smol_str = {workspace = true}
-strsim = {workspace = true}
 thiserror = {workspace = true}
 url = {workspace = true}
 

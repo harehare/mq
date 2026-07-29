@@ -1,11 +1,9 @@
 use tower_lsp_server::ls_types;
 use tower_lsp_server::ls_types::NumberOrString;
 
-pub type SyntaxError = (std::string::String, mq_lang::Range);
-
 #[derive(Debug, Clone)]
 pub enum LspError {
-    SyntaxError(SyntaxError),
+    SyntaxError(mq_lang::Diagnostic),
     TypeError(mq_check::TypeError),
     LintWarning(mq_lint::Diagnostic),
 }
@@ -35,8 +33,19 @@ fn lint_severity(severity: mq_lint::Severity) -> ls_types::DiagnosticSeverity {
 impl From<&LspError> for ls_types::Diagnostic {
     fn from(error: &LspError) -> Self {
         match error {
-            LspError::SyntaxError((message, range)) => {
-                ls_types::Diagnostic::new_simple(lsp_range(*range), message.to_string())
+            LspError::SyntaxError(diagnostic) => {
+                let range = diagnostic.range.map(lsp_range).unwrap_or_else(|| {
+                    ls_types::Range::new(
+                        ls_types::Position { line: 0, character: 0 },
+                        ls_types::Position { line: 0, character: 1 },
+                    )
+                });
+                let message = if diagnostic.hints.is_empty() {
+                    diagnostic.message.clone()
+                } else {
+                    format!("{} (help: {})", diagnostic.message, diagnostic.hints.join("; "))
+                };
+                ls_types::Diagnostic::new_simple(range, message)
             }
             LspError::TypeError(type_error) => match type_error.location() {
                 Some(range) => ls_types::Diagnostic::new_simple(lsp_range(range), type_error.to_string()),

@@ -43,6 +43,7 @@ mod arena;
 mod ast;
 #[cfg(feature = "cst")]
 mod cst;
+pub mod diagnostic;
 mod engine;
 mod error;
 mod eval;
@@ -55,7 +56,7 @@ mod number;
 mod optimizer;
 mod range;
 mod selector;
-mod suggest;
+pub mod suggest;
 
 use lexer::Lexer;
 #[cfg(not(feature = "sync"))]
@@ -78,6 +79,7 @@ pub use ast::node::Pattern as AstPattern;
 pub use ast::parser::Parser as AstParser;
 #[cfg(feature = "ast-json")]
 pub use ast::{ast_from_json, ast_to_json};
+pub use diagnostic::Diagnostic;
 pub use engine::CompiledProgram;
 pub use engine::Engine;
 pub use error::Error;

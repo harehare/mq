@@ -167,7 +167,11 @@ pub fn unify(
                     found: params2.len(),
                     span: range.as_ref().map(range_to_span),
                     location: range,
-                    context: None,
+                    context: Some(format!(
+                        "Expected a function with {} parameter(s), but found one with {}. Check the function signature.",
+                        params1.len(),
+                        params2.len()
+                    )),
                 });
                 return;
             }

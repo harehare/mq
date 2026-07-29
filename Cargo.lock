@@ -2574,7 +2574,6 @@ dependencies = [
  "rustc-hash",
  "slotmap",
  "smol_str",
- "strsim",
  "thiserror 2.0.19",
  "url",
 ]
