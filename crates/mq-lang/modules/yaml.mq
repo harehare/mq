@@ -32,6 +32,8 @@ def _yaml_stringify_value(value, indent_level):
 end
 
 # Parses a YAML string and returns the parsed data structure.
+# A single `---`-separated document is returned as-is; if the input contains
+# multiple `---`-separated documents, an array of the parsed documents is returned.
 def yaml_parse(input):
   _yaml_parse(to_string(input))
 end

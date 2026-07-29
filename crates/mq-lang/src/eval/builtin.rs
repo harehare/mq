@@ -3385,11 +3385,23 @@ fn _json_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
 fn _yaml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => {
-            let docs = yaml_rust2::YamlLoader::load_from_str(s)
-                .map_err(|e| Error::Runtime(format!("Failed to parse YAML: {}", e)))?;
-            match docs.into_iter().next() {
-                Some(doc) => Ok(doc.into()),
-                None => Ok(RuntimeValue::NONE),
+            let mut docs = yaml_rust2::YamlLoader::load_from_str(s)
+                .map_err(|e| Error::Runtime(format!("Failed to parse YAML: {}", e)))?
+                .into_iter();
+
+            match (docs.next(), docs.next()) {
+                (None, _) => Ok(RuntimeValue::NONE),
+                // A single `---`-separated document parses the same as before.
+                (Some(doc), None) => Ok(doc.into()),
+                // Multiple `---`-separated documents are returned as an array
+                // instead of silently discarding everything past the first one.
+                (Some(first), Some(second)) => Ok(RuntimeValue::Array(Shared::new(
+                    std::iter::once(first)
+                        .chain(std::iter::once(second))
+                        .chain(docs)
+                        .map(RuntimeValue::from)
+                        .collect(),
+                ))),
             }
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
@@ -8896,6 +8908,19 @@ mod tests {
             let mut map = BTreeMap::new();
             map.insert(Ident::new("ratio"), RuntimeValue::Number(1.5.into()));
             Ok(RuntimeValue::Dict(Shared::new(map)))
+        }
+    )]
+    #[case::multi_document(
+        "a: 1\n---\nb: 2\n",
+        {
+            let mut first = BTreeMap::new();
+            first.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
+            let mut second = BTreeMap::new();
+            second.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
+            Ok(RuntimeValue::Array(Shared::new(vec![
+                RuntimeValue::Dict(Shared::new(first)),
+                RuntimeValue::Dict(Shared::new(second)),
+            ])))
         }
     )]
     fn test_yaml_parse(#[case] yaml: &str, #[case] expected: Result<RuntimeValue, Error>) {
