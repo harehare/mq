@@ -3330,6 +3330,7 @@ fn _csv_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
     let mut reader = ReaderBuilder::new()
         .has_headers(has_header)
         .delimiter(delimiter)
+        .flexible(true)
         .from_reader(csv_str.as_bytes());
 
     if has_header {
@@ -3340,14 +3341,21 @@ fn _csv_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             .map(|s| s.to_string())
             .collect();
 
+        // Rows with fewer fields than the header are padded with empty strings;
+        // fields beyond the header count are dropped, since there is no key for them.
         let rows: Result<Vec<RuntimeValue>, Error> = reader
             .records()
             .map(|record| {
                 let record = record.map_err(|e| Error::Runtime(format!("Failed to parse CSV record: {e}")))?;
                 let map: BTreeMap<Ident, RuntimeValue> = headers
                     .iter()
-                    .zip(record.iter())
-                    .map(|(k, v)| (Ident::new(k), RuntimeValue::String(v.to_string())))
+                    .enumerate()
+                    .map(|(i, k)| {
+                        (
+                            Ident::new(k),
+                            RuntimeValue::String(record.get(i).unwrap_or("").to_string()),
+                        )
+                    })
                     .collect();
                 Ok(RuntimeValue::Dict(Shared::new(map)))
             })
@@ -8660,6 +8668,26 @@ mod tests {
         "",
         Ok(RuntimeValue::Array(Shared::new(vec![])))
     )]
+    #[case::ragged_rows_no_header(
+        "a,b,c\n1,2\n3,4,5,6",
+        Ok(RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Array(Shared::new(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("c".to_string()),
+            ])),
+            RuntimeValue::Array(Shared::new(vec![
+                RuntimeValue::String("1".to_string()),
+                RuntimeValue::String("2".to_string()),
+            ])),
+            RuntimeValue::Array(Shared::new(vec![
+                RuntimeValue::String("3".to_string()),
+                RuntimeValue::String("4".to_string()),
+                RuntimeValue::String("5".to_string()),
+                RuntimeValue::String("6".to_string()),
+            ])),
+        ])))
+    )]
     fn test_csv_parse_no_header(#[case] csv: &str, #[case] expected: Result<RuntimeValue, Error>) {
         let ident = Ident::new("_csv_parse");
         let result = eval_builtin(
@@ -8703,6 +8731,23 @@ mod tests {
             row.insert(Ident::new("name"), RuntimeValue::String("Doe, Jane".to_string()));
             row.insert(Ident::new("note"), RuntimeValue::String("says \"hi\"".to_string()));
             Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(row))])))
+        }
+    )]
+    #[case::ragged_rows_with_header(
+        "a,b,c\n1,2\n3,4,5,6",
+        {
+            let mut short_row = BTreeMap::new();
+            short_row.insert(Ident::new("a"), RuntimeValue::String("1".to_string()));
+            short_row.insert(Ident::new("b"), RuntimeValue::String("2".to_string()));
+            short_row.insert(Ident::new("c"), RuntimeValue::String("".to_string()));
+            let mut long_row = BTreeMap::new();
+            long_row.insert(Ident::new("a"), RuntimeValue::String("3".to_string()));
+            long_row.insert(Ident::new("b"), RuntimeValue::String("4".to_string()));
+            long_row.insert(Ident::new("c"), RuntimeValue::String("5".to_string()));
+            Ok(RuntimeValue::Array(Shared::new(vec![
+                RuntimeValue::Dict(Shared::new(short_row)),
+                RuntimeValue::Dict(Shared::new(long_row)),
+            ])))
         }
     )]
     fn test_csv_parse_with_header(#[case] csv: &str, #[case] expected: Result<RuntimeValue, Error>) {
