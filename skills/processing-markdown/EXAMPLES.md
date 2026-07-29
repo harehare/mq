@@ -55,8 +55,6 @@ mq -A 'section::sections() | section::toc()' README.md                          
 mq -A 'section::filter_sections(fn(s): section::title(s) != "Deprecated";) | section::collect()' README.md  # Delete a section by heading
 ```
 
-See [example.md](../../docs/books/src/start/example.md) for the full section reference (import/include forms, `-A` vs `nodes`, more filters).
-
 ## Multi-File & Aggregation
 
 ```bash
