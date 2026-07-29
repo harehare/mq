@@ -1002,7 +1002,12 @@ pub(super) fn generate_symbol_constraints(
                                             found: arg_tys.len(),
                                             span: range.as_ref().map(range_to_span),
                                             location: range,
-                                            context: None,
+                                            context: Some(format!(
+                                                "`{}` expects {} argument(s), but {} were provided. Check the call site or the function's parameter list.",
+                                                func_name,
+                                                param_tys.len(),
+                                                arg_tys.len()
+                                            )),
                                         });
                                     }
                                 } else {

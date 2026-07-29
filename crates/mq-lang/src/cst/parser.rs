@@ -93,6 +93,37 @@ impl ErrorReporter {
         !self.errors.is_empty()
     }
 
+    /// Like [`error_ranges`](Self::error_ranges), but keeps each error's hint text
+    /// (e.g. "did you mean" suggestions) instead of discarding it, so consumers
+    /// that render diagnostics to users (e.g. `mq-lsp`) can show the same guidance
+    /// as the CLI's AST-level errors.
+    pub fn diagnostics(&self, text: &str) -> Vec<crate::Diagnostic> {
+        self.to_vec()
+            .iter()
+            .map(|e| crate::Diagnostic {
+                message: e.to_string(),
+                range: Some(match e {
+                    ParseError::UnexpectedToken(token) => token.range,
+                    ParseError::InsufficientTokens(token) => token.range,
+                    ParseError::ExpectedClosingBracket(token) => token.range,
+                    ParseError::UnknownSelector(selector::UnknownSelector(token)) => token.range,
+                    ParseError::UnmatchedEnd(token) => token.range,
+                    ParseError::UnexpectedEOFDetected => Range {
+                        start: Position {
+                            line: text.lines().count() as u32,
+                            column: text.lines().last().map(|line| line.len()).unwrap_or(0),
+                        },
+                        end: Position {
+                            line: text.lines().count() as u32,
+                            column: text.lines().last().map(|line| line.len()).unwrap_or(0),
+                        },
+                    },
+                }),
+                hints: e.hint().into_iter().collect(),
+            })
+            .collect::<Vec<_>>()
+    }
+
     pub fn error_ranges(&self, text: &str) -> Vec<(String, Range)> {
         self.to_vec()
             .iter()
@@ -11405,6 +11436,54 @@ mod tests {
         assert_eq!(ranges[2].1.start.column, 6);
         assert_eq!(ranges[2].1.end.line, 2);
         assert_eq!(ranges[2].1.end.column, 6);
+    }
+
+    #[test]
+    fn test_error_reporter_diagnostics_carries_hints_and_ranges() {
+        let text = "def foo():\n bar()\n";
+
+        let mut reporter = ErrorReporter::new(100);
+
+        let unexpected_token = Shared::new(Token {
+            range: Range {
+                start: Position { line: 1, column: 4 },
+                end: Position { line: 1, column: 7 },
+            },
+            kind: TokenKind::Ident("foo".into()),
+            module_id: 1.into(),
+        });
+        reporter.report(ParseError::UnexpectedToken(Shared::clone(&unexpected_token)));
+        reporter.report(ParseError::UnexpectedEOFDetected);
+
+        let diagnostics = reporter.diagnostics(text);
+
+        assert_eq!(diagnostics.len(), 2);
+
+        assert_eq!(
+            diagnostics[0].message,
+            ParseError::UnexpectedToken(unexpected_token).to_string()
+        );
+        assert_eq!(diagnostics[0].range.unwrap().start.column, 4);
+        assert_eq!(diagnostics[0].hints.len(), 1);
+
+        assert_eq!(diagnostics[1].message, ParseError::UnexpectedEOFDetected.to_string());
+        assert_eq!(diagnostics[1].hints.len(), 1);
+    }
+
+    #[test]
+    fn test_error_reporter_diagnostics_unknown_selector_hint_matches_error_help() {
+        let mut reporter = ErrorReporter::new(100);
+        reporter.report(ParseError::UnknownSelector(selector::UnknownSelector::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Selector(smol_str::SmolStr::new(".hedaing")),
+            module_id: 1.into(),
+        })));
+
+        let diagnostics = reporter.diagnostics("");
+        assert_eq!(
+            diagnostics[0].hints[0],
+            "Unknown selector `.hedaing`. A selector with a similar name exists: `.heading`."
+        );
     }
 
     #[test]

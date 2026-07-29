@@ -43,7 +43,7 @@ fn is_word_like_selector(selector: &str) -> bool {
 /// Closest name to `name` among builtin functions and the given extra candidates (e.g.
 /// user-defined functions/variables visible in scope when the lookup failed).
 #[cold]
-pub(crate) fn suggest_name<'a>(name: &str, extra_candidates: impl IntoIterator<Item = &'a str>) -> Option<String> {
+pub fn suggest_name<'a>(name: &str, extra_candidates: impl IntoIterator<Item = &'a str>) -> Option<String> {
     closest_match(
         name,
         crate::BUILTIN_FUNCTION_DOC
@@ -56,7 +56,7 @@ pub(crate) fn suggest_name<'a>(name: &str, extra_candidates: impl IntoIterator<I
 
 /// Closest known selector (e.g. `.h1`, `.code`) to `name`, or `None` if nothing is close enough.
 #[cold]
-pub(crate) fn suggest_selector(name: &str) -> Option<&'static str> {
+pub fn suggest_selector(name: &str) -> Option<&'static str> {
     closest_match(
         name,
         crate::BUILTIN_SELECTOR_DOC

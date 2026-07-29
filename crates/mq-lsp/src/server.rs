@@ -449,9 +449,9 @@ impl Backend {
 
         let uri_string = uri.to_string();
         let mut errors = errors
-            .error_ranges(&text)
+            .diagnostics(&text)
             .into_iter()
-            .map(|(message, range)| LspError::SyntaxError((message, range)))
+            .map(LspError::SyntaxError)
             .collect::<Vec<_>>();
 
         if errors.is_empty() && self.config.enable_type_checking {
@@ -710,9 +710,9 @@ mod tests {
         backend.error_map.insert(
             uri.to_string(),
             errors
-                .error_ranges(text)
+                .diagnostics(text)
                 .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .map(LspError::SyntaxError)
                 .collect(),
         );
 
@@ -1621,9 +1621,9 @@ mod tests {
         backend.error_map.insert(
             uri.to_string(),
             errors
-                .error_ranges(text)
+                .diagnostics(text)
                 .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .map(LspError::SyntaxError)
                 .collect(),
         );
 
@@ -1739,9 +1739,9 @@ mod tests {
         backend.error_map.insert(
             uri.to_string(),
             errors
-                .error_ranges(text)
+                .diagnostics(text)
                 .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .map(LspError::SyntaxError)
                 .collect(),
         );
 
@@ -1772,9 +1772,9 @@ mod tests {
         backend.error_map.insert(
             uri.to_string(),
             errors
-                .error_ranges(text)
+                .diagnostics(text)
                 .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .map(LspError::SyntaxError)
                 .collect(),
         );
 
@@ -1796,6 +1796,63 @@ mod tests {
         };
 
         assert!(!report.full_document_diagnostic_report.items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_pull_diagnostics_syntax_error_includes_did_you_mean_hint() {
+        // Regression test: syntax errors reported over LSP now carry the same
+        // "did you mean" hint text as the CLI's miette-rendered errors, instead of
+        // being flattened to a bare message before hints could be attached.
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        let text = ".hedaing"; // Typo of the `.heading` selector
+        let (_, errors) = mq_lang::parse_recovery(text);
+        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend.error_map.insert(
+            uri.to_string(),
+            errors
+                .diagnostics(text)
+                .into_iter()
+                .map(LspError::SyntaxError)
+                .collect(),
+        );
+
+        let result = backend
+            .diagnostic(ls_types::DocumentDiagnosticParams {
+                text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                identifier: None,
+                previous_result_id: None,
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
+
+        let ls_types::DocumentDiagnosticReportResult::Report(ls_types::DocumentDiagnosticReport::Full(report)) =
+            result.unwrap()
+        else {
+            panic!("Expected a full document diagnostic report");
+        };
+
+        assert!(
+            report
+                .full_document_diagnostic_report
+                .items
+                .iter()
+                .any(|item| item.message.contains("help:") && item.message.contains(".heading")),
+            "Expected a diagnostic with a `.heading` suggestion, got: {:?}",
+            report.full_document_diagnostic_report.items
+        );
     }
 
     #[tokio::test]
@@ -1858,9 +1915,9 @@ mod tests {
         backend.error_map.insert(
             uri.to_string(),
             errors
-                .error_ranges(code)
+                .diagnostics(code)
                 .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .map(LspError::SyntaxError)
                 .collect(),
         );
 
@@ -1908,9 +1965,9 @@ mod tests {
         backend.error_map.insert(
             uri.to_string(),
             errors
-                .error_ranges(code)
+                .diagnostics(code)
                 .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .map(LspError::SyntaxError)
                 .collect(),
         );
 
@@ -1955,9 +2012,9 @@ mod tests {
         backend.error_map.insert(
             uri.to_string(),
             errors
-                .error_ranges(code)
+                .diagnostics(code)
                 .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .map(LspError::SyntaxError)
                 .collect(),
         );
 
@@ -1985,13 +2042,14 @@ mod tests {
         backend.text_map.insert(uri.to_string(), text.to_string().into());
         backend.error_map.insert(
             uri.to_string(),
-            vec![LspError::SyntaxError((
-                "Syntax error".to_string(),
-                mq_lang::Range {
+            vec![LspError::SyntaxError(mq_lang::Diagnostic {
+                message: "Syntax error".to_string(),
+                range: Some(mq_lang::Range {
                     start: mq_lang::Position { line: 1, column: 10 },
                     end: mq_lang::Position { line: 1, column: 11 },
-                },
-            ))],
+                }),
+                hints: Vec::new(),
+            })],
         );
 
         let result = backend
@@ -2034,9 +2092,9 @@ mod tests {
         backend.error_map.insert(
             uri.to_string(),
             errors
-                .error_ranges(code)
+                .diagnostics(code)
                 .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .map(LspError::SyntaxError)
                 .collect(),
         );
 
@@ -2156,13 +2214,14 @@ mod tests {
         backend.text_map.insert(uri.to_string(), text.to_string().into());
         backend.error_map.insert(
             uri.to_string(),
-            vec![LspError::SyntaxError((
-                "Syntax error".to_string(),
-                mq_lang::Range {
+            vec![LspError::SyntaxError(mq_lang::Diagnostic {
+                message: "Syntax error".to_string(),
+                range: Some(mq_lang::Range {
                     start: mq_lang::Position { line: 0, column: 0 },
                     end: mq_lang::Position { line: 0, column: 10 },
-                },
-            ))],
+                }),
+                hints: Vec::new(),
+            })],
         );
 
         let params = DocumentRangeFormattingParams {
@@ -2244,9 +2303,9 @@ mod tests {
         backend.error_map.insert(
             uri.to_string(),
             errors
-                .error_ranges(code)
+                .diagnostics(code)
                 .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .map(LspError::SyntaxError)
                 .collect(),
         );
 
@@ -2286,9 +2345,9 @@ mod tests {
         backend.error_map.insert(
             uri.to_string(),
             errors
-                .error_ranges(code)
+                .diagnostics(code)
                 .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .map(LspError::SyntaxError)
                 .collect(),
         );
 
@@ -2367,13 +2426,14 @@ mod tests {
         backend.text_map.insert(uri.to_string(), text.to_string().into());
         backend.error_map.insert(
             uri.to_string(),
-            vec![LspError::SyntaxError((
-                "Syntax error".to_string(),
-                mq_lang::Range {
+            vec![LspError::SyntaxError(mq_lang::Diagnostic {
+                message: "Syntax error".to_string(),
+                range: Some(mq_lang::Range {
                     start: mq_lang::Position { line: 1, column: 1 },
                     end: mq_lang::Position { line: 1, column: 5 },
-                },
-            ))],
+                }),
+                hints: Vec::new(),
+            })],
         );
 
         // Parse errors are present, so type checking should be skipped
@@ -2417,9 +2477,9 @@ mod tests {
         backend.error_map.insert(
             uri.to_string(),
             errors
-                .error_ranges(code)
+                .diagnostics(code)
                 .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .map(LspError::SyntaxError)
                 .collect(),
         );
 
@@ -2462,9 +2522,9 @@ mod tests {
         backend.error_map.insert(
             uri.to_string(),
             errors
-                .error_ranges(code)
+                .diagnostics(code)
                 .into_iter()
-                .map(|(message, range)| LspError::SyntaxError((message, range)))
+                .map(LspError::SyntaxError)
                 .collect(),
         );
 

@@ -168,7 +168,7 @@ fn not_defined_help(name: &str, candidates: &[String]) -> Cow<'static, str> {
 
 // help() text for an unknown selector, with a "did you mean" hint when available.
 #[cold]
-fn selector_help(sel: &selector::UnknownSelector) -> Cow<'static, str> {
+pub(crate) fn selector_help(sel: &selector::UnknownSelector) -> Cow<'static, str> {
     let raw = match &sel.0.kind {
         TokenKind::Selector(s) => s.as_str(),
         _ => "",
