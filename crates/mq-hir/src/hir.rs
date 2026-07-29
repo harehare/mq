@@ -23,16 +23,7 @@ pub struct Hir {
     pub(crate) source_scopes: FxHashMap<SourceId, ScopeId>,
     pub(crate) references: FxHashMap<SymbolId, SymbolId>,
     pub(crate) source_symbols: FxHashMap<SourceId, Vec<SymbolId>>,
-    /// Monotonically-increasing counter assigned to each symbol at insertion time.
-    /// Because `SlotMap` reuses freed slots (LIFO), the slot-based key order no longer
-    /// reflects insertion order after a source is reloaded (e.g. on repeated LSP saves).
-    /// Using an explicit counter guarantees that parent symbols always have a lower order
-    /// value than their children, which is required by the type-checker's constraint-
-    /// generation passes.
     pub(crate) symbol_insertion_counter: u32,
-    /// Reverse index from symbol name → list of SymbolIds that carry that name.
-    /// Populated by `insert_symbol` and pruned by `add_nodes` cleanup.
-    /// Allows name-based lookups in `resolve.rs` to skip an O(n) full-symbol scan.
     pub(crate) name_index: FxHashMap<SmolStr, Vec<SymbolId>>,
 }
 
@@ -108,10 +99,6 @@ impl Hir {
             return;
         }
 
-        // Mark as loaded before processing so that inline `import` expressions
-        // inside builtin.mq (e.g. `do import "yaml" | ...`) do not re-enter
-        // this function when add_expr → add_import_expr → add_code → add_nodes
-        // calls add_builtin() again.
         self.builtin.loaded = true;
 
         let (nodes, _) = mq_lang::parse_recovery(mq_lang::BUILTIN_MODULE_FILE);

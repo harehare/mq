@@ -111,6 +111,7 @@ pub use selector::{AttrKind, Selector};
 
 pub type DefaultEngine = Engine<DefaultModuleResolver>;
 pub type DefaultModuleLoader = ModuleLoader<DefaultModuleResolver>;
+pub use suggest::{suggest_name, suggest_selector};
 
 #[cfg(feature = "cst")]
 pub use cst::incremental::{IncrementalParser, TextEdit};

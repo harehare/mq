@@ -129,11 +129,6 @@ impl Hir {
             .collect::<Vec<_>>()
     }
 
-    // Delegates to `mq_lang::suggest::suggest_name` (Damerau-Levenshtein-based, with a
-    // length-scaled edit-distance tolerance) instead of a HIR-local jaro_winkler
-    // implementation, so a typo produces the same suggestion whether it's reported by
-    // the CLI (mq-lang's `RuntimeError::NotDefined`/`UndefinedReference`) or the LSP
-    // (this `HirError::UnresolvedSymbol`).
     fn find_similar_names(&self, target: &str) -> Option<SmolStr> {
         let candidates: Vec<&str> = self
             .symbols
@@ -149,7 +144,7 @@ impl Hir {
             })
             .collect();
 
-        mq_lang::suggest::suggest_name(target, candidates).map(SmolStr::from)
+        mq_lang::suggest_name(target, candidates).map(SmolStr::from)
     }
 }
 #[cfg(test)]
