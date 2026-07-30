@@ -66,60 +66,35 @@ fn is_bare_ident(s: &str) -> bool {
 mod tests {
     use super::*;
     use mq_lang::Shared;
+    use rstest::rstest;
     use std::collections::BTreeMap;
 
-    #[test]
-    fn test_join_key_bare_ident() {
-        assert_eq!(join_key("json", "foo"), "json.foo");
-        assert_eq!(join_key("json", "_foo1"), "json._foo1");
+    #[rstest]
+    #[case("json", "foo", "json.foo")]
+    #[case("json", "_foo1", "json._foo1")]
+    #[case("json", "foo bar", "json[\"foo bar\"]")]
+    #[case("json", "1foo", "json[\"1foo\"]")]
+    #[case("json", "", "json[\"\"]")]
+    fn test_join_key(#[case] path: &str, #[case] key: &str, #[case] expected: &str) {
+        assert_eq!(join_key(path, key), expected);
     }
 
-    #[test]
-    fn test_join_key_needs_brackets() {
-        assert_eq!(join_key("json", "foo bar"), "json[\"foo bar\"]");
-        assert_eq!(join_key("json", "1foo"), "json[\"1foo\"]");
-        assert_eq!(join_key("json", ""), "json[\"\"]");
-    }
-
-    #[test]
-    fn test_gron_scalar_root() {
-        let values = vec![mq_lang::RuntimeValue::String("hello".to_string())];
-        assert_eq!(runtime_values_to_gron(&values), "json = \"hello\";\n");
-    }
-
-    #[test]
-    fn test_gron_boolean_and_number() {
-        assert_eq!(
-            runtime_values_to_gron(&[mq_lang::RuntimeValue::Boolean(true)]),
-            "json = true;\n"
-        );
-        assert_eq!(
-            runtime_values_to_gron(&[mq_lang::RuntimeValue::Number(3i64.into())]),
-            "json = 3;\n"
-        );
-    }
-
-    #[test]
-    fn test_gron_none_is_null() {
-        assert_eq!(runtime_values_to_gron(&[mq_lang::RuntimeValue::None]), "json = null;\n");
-    }
-
-    #[test]
-    fn test_gron_flat_array() {
-        let values = vec![mq_lang::RuntimeValue::Array(Shared::new(vec![
+    #[rstest]
+    #[case(vec![mq_lang::RuntimeValue::String("hello".to_string())], "json = \"hello\";\n")]
+    #[case(vec![mq_lang::RuntimeValue::Boolean(true)], "json = true;\n")]
+    #[case(vec![mq_lang::RuntimeValue::Boolean(false)], "json = false;\n")]
+    #[case(vec![mq_lang::RuntimeValue::Number(3i64.into())], "json = 3;\n")]
+    #[case(vec![mq_lang::RuntimeValue::None], "json = null;\n")]
+    #[case(vec![mq_lang::RuntimeValue::Array(Shared::new(vec![]))], "json = [];\n")]
+    #[case(
+        vec![mq_lang::RuntimeValue::Array(Shared::new(vec![
             mq_lang::RuntimeValue::String("x".to_string()),
             mq_lang::RuntimeValue::String("y".to_string()),
-        ]))];
-        assert_eq!(
-            runtime_values_to_gron(&values),
-            "json = [];\njson[0] = \"x\";\njson[1] = \"y\";\n"
-        );
-    }
-
-    #[test]
-    fn test_gron_empty_array() {
-        let values = vec![mq_lang::RuntimeValue::Array(Shared::new(vec![]))];
-        assert_eq!(runtime_values_to_gron(&values), "json = [];\n");
+        ]))],
+        "json = [];\njson[0] = \"x\";\njson[1] = \"y\";\n"
+    )]
+    fn test_runtime_values_to_gron(#[case] values: Vec<mq_lang::RuntimeValue>, #[case] expected: &str) {
+        assert_eq!(runtime_values_to_gron(&values), expected);
     }
 
     #[test]
