@@ -356,6 +356,32 @@ fn strftime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
     }
 }
 
+/// Parses a date string using the given strptime format and returns a Unix timestamp (seconds, UTC).
+/// Formats without a time component (e.g. "%Y-%m-%d") default the time to midnight.
+#[mq_macros::mq_fn(name = "strptime", params = Fixed(2))]
+fn strptime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(date_str), RuntimeValue::String(fmt)] => {
+            let date_str = date_str.as_str();
+            let fmt = fmt.as_str();
+
+            chrono::NaiveDateTime::parse_from_str(date_str, fmt)
+                .or_else(|e| {
+                    chrono::NaiveDate::parse_from_str(date_str, fmt)
+                        .map(|d| d.and_time(chrono::NaiveTime::MIN))
+                        .map_err(|_| e)
+                })
+                .map(|dt| RuntimeValue::Number(dt.and_utc().timestamp().into()))
+                .map_err(|e| Error::Runtime(format!("strptime: {}", e)))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("strptime should always receive exactly two arguments"),
+    }
+}
+
 /// Adds n units to a broken-down time array and returns a new broken-down array (UTC).
 /// Input/output format: [year, month (0-11), day, hour, minute, second, weekday, day-of-year]
 /// Units: "seconds", "minutes", "hours", "days", "weeks", "months", "years"
@@ -4522,6 +4548,7 @@ mq_macros::builtin_dispatch! {
     LOCALTIME,
     MKTIME,
     STRFTIME,
+    STRPTIME,
     DATE_ADD,
     DATE_DIFF,
     BASE64,
@@ -5202,7 +5229,7 @@ pub struct BuiltinFunctionDoc {
 }
 
 pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>> = LazyLock::new(|| {
-    let mut map = FxHashMap::with_capacity_and_hasher(110, FxBuildHasher);
+    let mut map = FxHashMap::with_capacity_and_hasher(111, FxBuildHasher);
 
     map.insert(
         SmolStr::new("halt"),
@@ -5328,6 +5355,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Formats a Unix timestamp (seconds) as a date string using the given strftime format (e.g. \"%Y-%m-%d\").",
             params: &["timestamp", "format"],
+        },
+    );
+    map.insert(
+        SmolStr::new("strptime"),
+        BuiltinFunctionDoc {
+            description: "Parses a date string using the given strptime format (e.g. \"%Y-%m-%d\") and returns a Unix timestamp (seconds, UTC).",
+            params: &["date_str", "format"],
         },
     );
     map.insert(
@@ -7578,6 +7612,39 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result, RuntimeValue::String(expected.into()));
+    }
+
+    #[rstest]
+    #[case("2024-01-01", "%Y-%m-%d", 1704067200_i64)]
+    #[case("1970-01-01T00:00:00", "%Y-%m-%dT%H:%M:%S", 0_i64)]
+    #[case("01/02/2024", "%m/%d/%Y", 1704153600_i64)]
+    fn test_strptime(#[case] date_str: &str, #[case] fmt: &str, #[case] expected: i64) {
+        let ident = Ident::new("strptime");
+        let args = vec![RuntimeValue::String(date_str.into()), RuntimeValue::String(fmt.into())];
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            args,
+            &Shared::new(SharedCell::new(Env::default())),
+        )
+        .unwrap();
+        assert_eq!(result, RuntimeValue::Number(expected.into()));
+    }
+
+    #[test]
+    fn test_strptime_invalid_format() {
+        let ident = Ident::new("strptime");
+        let args = vec![
+            RuntimeValue::String("not-a-date".into()),
+            RuntimeValue::String("%Y-%m-%d".into()),
+        ];
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            args,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
     }
 
     fn gmtime_array(secs: i64) -> RuntimeValue {
