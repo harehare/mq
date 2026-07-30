@@ -213,6 +213,7 @@ mod tests {
 
     #[rstest]
     #[case("csv")]
+    #[case("gron")]
     #[case("json")]
     #[case("yaml")]
     #[case("toml")]

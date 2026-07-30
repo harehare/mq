@@ -4,6 +4,7 @@
 //! module names don't collide with the like-named `csv`/`toml` crates in the extern prelude.
 
 pub(crate) mod csv;
+pub(crate) mod gron;
 pub(crate) mod json;
 pub(crate) mod table;
 pub(crate) mod toml;

@@ -1,0 +1,7 @@
+# gron Implementation in mq
+
+# Parses gron-style `path = value;` assignment statements (as produced by `mq -F gron`)
+# and returns the corresponding data structure.
+def gron_parse(input):
+  _gron_parse(to_string(input))
+end

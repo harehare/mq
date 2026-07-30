@@ -3,6 +3,7 @@ pub(super) mod convert;
 #[cfg(feature = "css-selector")]
 mod css;
 pub(super) mod date;
+mod gron;
 #[cfg(feature = "http")]
 mod http;
 pub(crate) mod io_context;
@@ -3444,6 +3445,18 @@ fn _toml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+#[mq_macros::mq_fn(name = "_gron_parse", params = Fixed(1))]
+fn _gron_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => {
+            let value = self::gron::parse(s).map_err(|e| Error::Runtime(format!("Failed to parse gron: {}", e)))?;
+            Ok(value.into())
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("_gron_parse should always receive exactly one argument"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "_cbor_parse", params = Fixed(1))]
 fn _cbor_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -4676,6 +4689,7 @@ mq_macros::builtin_dispatch! {
     _GET_MARKDOWN_POSITION,
     _CSV_PARSE,
     _JSON_PARSE,
+    _GRON_PARSE,
     _YAML_PARSE,
     _TOON_PARSE,
     _TOML_PARSE,
@@ -5168,6 +5182,13 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a TOML string into a data structure.",
             params: &["toml_string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_gron_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses gron-style `path = value;` assignment statements into a data structure.",
+            params: &["gron_string"],
         },
     );
     map.insert(

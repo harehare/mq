@@ -38,6 +38,7 @@ use crate::reference;
     Use -I <format> to force a specific format:\n\n\
     .cbor / -I cbor  import \"cbor\" | cbor::cbor_parse()  (reads as bytes)\n\
     .csv  / -I csv   import \"csv\"  | csv::csv_parse(true)\n\
+    .gron / -I gron  import \"gron\" | gron::gron_parse()\n\
     .json / -I json  import \"json\" | json::json_parse()\n\
     .psv  / -I psv   import \"csv\"  | csv::psv_parse(true)\n\
     .toml / -I toml  import \"toml\" | toml::toml_parse()\n\
@@ -121,7 +122,7 @@ const UNIX_EXECUTABLE_BITS: u32 = 0o111;
 ///
 /// Module-backed formats (auto-import and parse, sorted alphabetically):
 /// - Cbor: Reads input as raw bytes and parses via the `cbor` module.
-/// - Csv/Json/Psv/Toml/Toon/Tsv/Xml/Yaml: Auto-import the matching module and parse.
+/// - Csv/Gron/Json/Psv/Toml/Toon/Tsv/Xml/Yaml: Auto-import the matching module and parse.
 #[derive(Clone, Debug, Default, clap::ValueEnum, PartialEq)]
 enum InputFormat {
     #[default]
@@ -134,6 +135,7 @@ enum InputFormat {
     Bytes,
     Cbor,
     Csv,
+    Gron,
     Json,
     Psv,
     Toml,
@@ -153,6 +155,7 @@ impl InputFormat {
             "jsonl" | "ndjson" => Self::Text,
             "cbor" => Self::Cbor,
             "csv" => Self::Csv,
+            "gron" => Self::Gron,
             "json" => Self::Json,
             "psv" => Self::Psv,
             "toml" => Self::Toml,
@@ -173,6 +176,7 @@ impl InputFormat {
             // Module-backed formats (alphabetical order)
             Self::Cbor => Some(r#"import "cbor" | cbor::cbor_parse()"#),
             Self::Csv => Some(r#"import "csv" | csv::csv_parse(true)"#),
+            Self::Gron => Some(r#"import "gron" | gron::gron_parse()"#),
             Self::Json => Some(r#"import "json" | json::json_parse()"#),
             Self::Psv => Some(r#"import "csv" | csv::psv_parse(true)"#),
             Self::Toml => Some(r#"import "toml" | toml::toml_parse()"#),
@@ -250,6 +254,7 @@ enum OutputFormat {
     Json,
     Table,
     Grep,
+    Gron,
     Raw,
     Csv,
     Toml,
@@ -1074,6 +1079,7 @@ impl Cli {
                 InputFormat::Cbor => mq_lang::bytes_input(content.as_bytes()),
                 // Module-backed text formats (alphabetical): pass raw string; the module handles parsing.
                 InputFormat::Csv
+                | InputFormat::Gron
                 | InputFormat::Json
                 | InputFormat::Psv
                 | InputFormat::Toml
@@ -1656,6 +1662,10 @@ impl Cli {
                 let markdown = self.build_markdown(runtime_values);
                 Self::write_ignore_pipe(&mut handle, markdown.to_string().as_bytes())?;
             }
+            OutputFormat::Gron => {
+                let gron_str = crate::output::gron::runtime_values_to_gron(runtime_values);
+                Self::write_ignore_pipe(&mut handle, gron_str.as_bytes())?;
+            }
             OutputFormat::Csv => {
                 let csv_str = crate::output::csv::runtime_values_to_csv(runtime_values)?;
                 Self::write_ignore_pipe(&mut handle, csv_str.as_bytes())?;
@@ -2026,6 +2036,7 @@ mod tests {
             OutputFormat::Text,
             OutputFormat::Table,
             OutputFormat::Grep,
+            OutputFormat::Gron,
             OutputFormat::Csv,
             OutputFormat::Xml,
             OutputFormat::Yaml,
@@ -2523,6 +2534,156 @@ mod tests {
             arr[0].get("type").is_none(),
             "Output should not contain Markdown AST fields"
         );
+    }
+
+    #[test]
+    fn test_output_format_gron() {
+        let (_, temp_file_path) = create_file("test_gron_output.md", "# Title\n");
+        let (_, output_file) = create_file("test_gron_output.gron", "");
+        let temp_file_path_clone = temp_file_path.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Gron,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(output_content.contains("json[0].type = \"Heading\";\n"));
+        assert!(output_content.contains("json[0].depth = 1;\n"));
+    }
+
+    #[test]
+    fn test_input_format_gron_reconstructs_data() {
+        let (_, temp_file_path) = create_file(
+            "test_gron_input.gron",
+            "json = {};\njson.a = {};\njson.a.b = \"deep\";\njson.arr = [];\njson.arr[0] = 1;\njson.arr[1] = 2;\n",
+        );
+        let (_, output_file) = create_file("test_gron_input_output.json", "");
+        let temp_file_path_clone = temp_file_path.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Json,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        let parsed: serde_json::Value = serde_json::from_str(&output_content).expect("Output should be valid JSON");
+        assert_eq!(parsed["a"]["b"], "deep");
+        assert_eq!(parsed["arr"][0], 1.0);
+        assert_eq!(parsed["arr"][1], 2.0);
+    }
+
+    #[test]
+    fn test_output_format_gron_then_input_format_gron_round_trip() {
+        let (_, md_file) = create_file("test_gron_roundtrip.md", "# Title\n\nSome *text* here.\n");
+        let (_, gron_file) = create_file("test_gron_roundtrip.gron", "");
+        let (_, json_file) = create_file("test_gron_roundtrip.json", "");
+        let md_file_clone = md_file.clone();
+        let gron_file_clone = gron_file.clone();
+        let json_file_clone = json_file.clone();
+
+        defer! {
+            if md_file_clone.exists() {
+                std::fs::remove_file(&md_file_clone).ok();
+            }
+            if gron_file_clone.exists() {
+                std::fs::remove_file(&gron_file_clone).ok();
+            }
+            if json_file_clone.exists() {
+                std::fs::remove_file(&json_file_clone).ok();
+            }
+        }
+
+        let to_gron = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Gron,
+                output_file: Some(gron_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![md_file.clone()]),
+            ..Cli::default()
+        };
+        assert!(to_gron.run().is_ok());
+
+        let from_gron = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Json,
+                output_file: Some(json_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![gron_file]),
+            ..Cli::default()
+        };
+        assert!(from_gron.run().is_ok());
+
+        let direct_json = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Json,
+                output_file: Some(json_file.with_extension("direct.json")),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![md_file]),
+            ..Cli::default()
+        };
+        assert!(direct_json.run().is_ok());
+
+        let roundtrip_content = fs::read_to_string(&json_file).expect("Failed to read roundtrip output");
+        let direct_content =
+            fs::read_to_string(json_file.with_extension("direct.json")).expect("Failed to read direct output");
+        fs::remove_file(json_file.with_extension("direct.json")).ok();
+
+        let roundtrip_value: serde_json::Value =
+            serde_json::from_str(&roundtrip_content).expect("Roundtrip output should be valid JSON");
+        let direct_value: serde_json::Value =
+            serde_json::from_str(&direct_content).expect("Direct output should be valid JSON");
+        assert_eq!(roundtrip_value, direct_value);
     }
 
     #[test]
@@ -3519,6 +3680,7 @@ mod tests {
     #[case("txt", InputFormat::Raw)]
     #[case("log", InputFormat::Raw)]
     #[case("csv", InputFormat::Csv)]
+    #[case("gron", InputFormat::Gron)]
     #[case("psv", InputFormat::Psv)]
     #[case("tsv", InputFormat::Tsv)]
     #[case("json", InputFormat::Json)]
@@ -3536,6 +3698,7 @@ mod tests {
 
     #[rstest]
     #[case("file.json", Some(r#"import "json" | json::json_parse()"#))]
+    #[case("file.gron", Some(r#"import "gron" | gron::gron_parse()"#))]
     #[case("file.yaml", Some(r#"import "yaml" | yaml::yaml_parse()"#))]
     #[case("file.yml", Some(r#"import "yaml" | yaml::yaml_parse()"#))]
     #[case("file.toml", Some(r#"import "toml" | toml::toml_parse()"#))]
@@ -3725,6 +3888,7 @@ mod tests {
     #[rstest]
     #[case(InputFormat::Bytes, None)]
     #[case(InputFormat::Cbor, Some(r#"import "cbor" | cbor::cbor_parse()"#))]
+    #[case(InputFormat::Gron, Some(r#"import "gron" | gron::gron_parse()"#))]
     #[case(InputFormat::Json, Some(r#"import "json" | json::json_parse()"#))]
     #[case(InputFormat::Markdown, None)]
     #[case(InputFormat::Raw, None)]
