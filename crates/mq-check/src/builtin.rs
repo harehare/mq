@@ -959,6 +959,9 @@ fn register_datetime(ctx: &mut InferenceContext) {
     // strftime: (number, string) -> string
     register_binary(ctx, "strftime", Type::Number, Type::String, Type::String);
 
+    // strptime: (string, string) -> number
+    register_binary(ctx, "strptime", Type::String, Type::String, Type::Number);
+
     // date_add: ([number], number, string) -> [number]
     register_ternary(
         ctx,
@@ -1822,6 +1825,7 @@ mod tests {
     #[case::localtime("localtime(0)", true)]
     #[case::mktime("mktime([2024, 0, 1, 0, 0, 0, 1, 0])", true)]
     #[case::strftime("strftime(0, \"%Y-%m-%d\")", true)]
+    #[case::strptime("strptime(\"2024-01-01\", \"%Y-%m-%d\")", true)]
     #[case::date_add("date_add([2024, 0, 1, 0, 0, 0, 1, 0], 1, \"days\")", true)]
     #[case::date_diff(
         "date_diff([2024, 0, 1, 0, 0, 0, 1, 0], [2024, 0, 2, 0, 0, 0, 2, 1], \"days\")",
@@ -1830,6 +1834,7 @@ mod tests {
     #[case::gmtime_string("gmtime(\"x\")", false)] // Should fail: wrong type
     #[case::mktime_string("mktime(\"x\")", false)] // Should fail: wrong type
     #[case::strftime_swapped("strftime(\"x\", 1)", false)] // Should fail: wrong type
+    #[case::strptime_swapped("strptime(1, \"%Y-%m-%d\")", false)] // Should fail: wrong type
     fn test_datetime_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(

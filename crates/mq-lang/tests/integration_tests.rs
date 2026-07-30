@@ -2970,6 +2970,11 @@ fn engine() -> DefaultEngine {
 #[case::strftime_date("strftime(1704067200, \"%Y-%m-%d\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("2024-01-01".to_string())].into()))]
 #[case::strftime_datetime("strftime(0, \"%Y-%m-%dT%H:%M:%S\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("1970-01-01T00:00:00".to_string())].into()))]
 #[case::strftime_year("strftime(1704067200, \"%Y\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("2024".to_string())].into()))]
+// strptime: parse date string with a given format (UTC)
+#[case::strptime_date("strptime(\"2024-01-01\", \"%Y-%m-%d\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1704067200_i64.into())].into()))]
+#[case::strptime_datetime("strptime(\"1970-01-01T00:00:00\", \"%Y-%m-%dT%H:%M:%S\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
+// strftime | strptime roundtrip
+#[case::strftime_strptime_roundtrip("strftime(1704067200, \"%Y-%m-%d\") | strptime(\"%Y-%m-%d\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1704067200_i64.into())].into()))]
 // now | gmtime / strftime pipeline
 #[case::now_gmtime_len("now | gmtime | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(8.into())].into()))]
 #[case::now_strftime_len("now | strftime(\"%Y-%m-%d\") | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(10.into())].into()))]
@@ -3680,6 +3685,10 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::mktime_wrong_length("mktime(array(1, 2))", vec![RuntimeValue::None],)]
 // strftime: first arg not a number → type error
 #[case::strftime_non_number(r#"strftime("string", "%Y")"#, vec![RuntimeValue::None],)]
+// strptime: first arg not a string → type error
+#[case::strptime_non_string(r#"strptime(1, "%Y-%m-%d")"#, vec![RuntimeValue::None],)]
+// strptime: date string doesn't match format → runtime error
+#[case::strptime_mismatched_format(r#"strptime("not-a-date", "%Y-%m-%d")"#, vec![RuntimeValue::None],)]
 // date_add: wrong types (number instead of array) → type error
 #[case::date_add_wrong_types(r#"date_add(42, 1, "days")"#, vec![RuntimeValue::None],)]
 // date_diff: wrong types → type error
