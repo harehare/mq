@@ -8,5 +8,6 @@ pub(crate) mod gron;
 pub(crate) mod json;
 pub(crate) mod table;
 pub(crate) mod toml;
+pub(crate) mod toon;
 pub(crate) mod xml;
 pub(crate) mod yaml;

@@ -43,6 +43,7 @@ rustyline = {workspace = true, optional = true, default-features = false, featur
 strum = {workspace = true, features = ["derive"], optional = true}
 tabled = {workspace = true}
 toml = {workspace = true}
+toon-format = { version = "0.5", default-features = false }
 which = "8.0.2"
 
 [dev-dependencies]

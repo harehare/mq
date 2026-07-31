@@ -258,6 +258,7 @@ enum OutputFormat {
     Raw,
     Csv,
     Toml,
+    Toon,
     Xml,
     Yaml,
     None,
@@ -1674,6 +1675,10 @@ impl Cli {
                 let toml_str = crate::output::toml::runtime_values_to_toml(runtime_values)?;
                 Self::write_ignore_pipe(&mut handle, toml_str.as_bytes())?;
             }
+            OutputFormat::Toon => {
+                let toon_str = crate::output::toon::runtime_values_to_toon(runtime_values)?;
+                Self::write_ignore_pipe(&mut handle, toon_str.as_bytes())?;
+            }
             OutputFormat::Xml => {
                 let xml_str = crate::output::xml::runtime_values_to_xml(runtime_values)?;
                 Self::write_ignore_pipe(&mut handle, xml_str.as_bytes())?;
@@ -2040,6 +2045,7 @@ mod tests {
             OutputFormat::Csv,
             OutputFormat::Xml,
             OutputFormat::Yaml,
+            OutputFormat::Toon,
         ] {
             let cli = Cli {
                 input: InputArgs::default(),
