@@ -431,6 +431,9 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::DestructuringFailed(_)) => Some(Cow::Borrowed(
                 "Destructuring pattern did not match the value. Check that the pattern structure matches the value.",
             )),
+            InnerError::Runtime(RuntimeError::HostFunctionError(_, name, _)) => Some(Cow::Owned(format!(
+                "The host function '{name}' returned an error, or panicked. Check the host application's implementation of this function."
+            ))),
             #[cfg(feature = "http-import")]
             InnerError::Module(ModuleError::HttpImportNotAllowed(_)) => Some(Cow::Borrowed(
                 "HTTP imports are only allowed at the top level. \

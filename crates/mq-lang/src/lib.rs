@@ -86,6 +86,7 @@ pub use error::Error;
 pub use eval::builtin::{
     BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinFunctionDoc, BuiltinSelectorDoc, INTERNAL_FUNCTION_DOC,
 };
+pub use eval::host::{HostFnResult, HostFunction, HostFunctionError, HostFunctions, IntoHostFunction, ValueAdapter};
 pub use eval::runtime_value::{RuntimeValue, RuntimeValues};
 pub use ident::Ident;
 #[cfg(feature = "mock-io")]
