@@ -46,9 +46,11 @@ pub mod builtin;
 #[cfg(feature = "debugger")]
 pub mod debugger;
 pub mod env;
+pub mod host;
 pub mod runtime_value;
 
 use env::Env;
+use host::HostFunctions;
 use runtime_value::RuntimeValue;
 
 /// Number of loop iterations / function calls between wall-clock deadline checks.
@@ -175,6 +177,10 @@ pub struct Evaluator<T: ModuleResolver = DefaultModuleResolver, IO: Io = Sandbox
     /// capability flags used to have. Statically dispatched: `IO` is fixed per `Evaluator`
     /// instantiation rather than a `dyn Io` trait object.
     pub(crate) io: Shared<IO>,
+    /// Host-registered native functions, consulted in [`Self::eval_fn`] when a called
+    /// identifier isn't a local binding, before falling back to the built-in table. Empty by
+    /// default: a host must opt in via [`crate::Engine::register_fn`].
+    pub(crate) host_functions: Shared<SharedCell<HostFunctions>>,
 
     #[cfg(feature = "debugger")]
     debugger: Shared<SharedCell<Debugger>>,
@@ -194,6 +200,7 @@ impl<T: ModuleResolver, IO: Io + Default> Default for Evaluator<T, IO> {
             module_loader: module::ModuleLoader::new(T::default()),
             macro_expander: Macro::new(),
             io: Shared::new(IO::default()),
+            host_functions: Shared::new(SharedCell::new(HostFunctions::default())),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
@@ -215,6 +222,7 @@ impl<T: ModuleResolver, IO: Io> Clone for Evaluator<T, IO> {
             module_loader: self.module_loader.clone(),
             macro_expander: self.macro_expander.clone(),
             io: Shared::clone(&self.io),
+            host_functions: Shared::clone(&self.host_functions),
             #[cfg(feature = "debugger")]
             debugger: Shared::clone(&self.debugger),
             #[cfg(feature = "debugger")]
@@ -268,6 +276,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
             module_loader,
             macro_expander: Macro::new(),
             io,
+            host_functions: Shared::new(SharedCell::new(HostFunctions::default())),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
@@ -280,6 +289,15 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
     /// duration of `eval()` calls on this evaluator.
     pub(crate) fn set_io(&mut self, io: Shared<IO>) {
         self.io = io;
+    }
+
+    /// Registers a native Rust function under `name`, callable from mq code as `name(...)`.
+    /// See [`crate::Engine::register_fn`].
+    pub(crate) fn register_fn(&self, name: impl Into<Ident>, f: Shared<dyn host::HostFunction>) {
+        #[cfg(not(feature = "sync"))]
+        self.host_functions.borrow_mut().insert_shared(name, f);
+        #[cfg(feature = "sync")]
+        self.host_functions.write().unwrap().insert_shared(name, f);
     }
 
     /// Helper method to temporarily take the macro_expander to avoid borrow conflicts.
@@ -2056,8 +2074,61 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
 
         match resolved {
             Ok(fn_value) => self.call_fn(&fn_value, node, ident, args, runtime_value, env),
-            Err(_) => self.eval_builtin(runtime_value, node, &ident, args, env),
+            // `Env::resolve` itself already falls back to the raw builtin table (see its use of
+            // `get_builtin_functions_by_str`), so reaching here means `ident` is neither a local
+            // binding, a builtin loaded into scope, *nor* a raw builtin — host functions can
+            // therefore only fill in names that don't collide with any builtin, not override one.
+            Err(_) => {
+                #[cfg(not(feature = "sync"))]
+                let host_fn = self.host_functions.borrow().get(&ident);
+                #[cfg(feature = "sync")]
+                let host_fn = self.host_functions.read().unwrap().get(&ident);
+
+                match host_fn {
+                    Some(host_fn) => self.eval_host_fn(host_fn, runtime_value, node, &ident, args, env),
+                    None => self.eval_builtin(runtime_value, node, &ident, args, env),
+                }
+            }
         }
+    }
+
+    /// Evaluates a call to a host-registered native function: marshals args, guards recursion
+    /// depth and the wall-clock timeout the same way a user-defined function call would (see
+    /// [`Self::enter_scope`]), and catches panics at the boundary so a misbehaving host closure
+    /// can't unwind through the evaluator.
+    fn eval_host_fn(
+        &mut self,
+        host_fn: Shared<dyn host::HostFunction>,
+        runtime_value: &RuntimeValue,
+        node: Shared<ast::Node>,
+        ident: &Ident,
+        args: &ast::Args,
+        env: &Shared<SharedCell<Env>>,
+    ) -> EvalResult {
+        self.enter_scope()?;
+        let evaluated = self.eval_call_args(runtime_value, &node, ident, args, env);
+        let result = match evaluated {
+            Ok(evaluated) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host_fn.call(&evaluated)))
+                .unwrap_or_else(|payload| {
+                    Err(host::HostFunctionError::new(format!(
+                        "panic: {}",
+                        host::panic_message(&*payload)
+                    )))
+                }),
+            Err(e) => {
+                self.exit_scope();
+                return Err(e);
+            }
+        };
+        self.exit_scope();
+
+        result.map_err(|e| {
+            EvalError::from(RuntimeError::HostFunctionError(
+                (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
+                ident.to_string().into_boxed_str(),
+                e.message().to_string().into_boxed_str(),
+            ))
+        })
     }
 
     #[inline(always)]

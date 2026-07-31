@@ -206,6 +206,58 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         self.evaluator.define_value(name, value);
     }
 
+    /// Registers a native Rust function under `name`, callable from mq code as `name(...)`.
+    ///
+    /// Accepts two forms:
+    ///
+    /// - A raw form taking the already-evaluated call arguments as a slice and returning a
+    ///   single [`RuntimeValue`]: `|args: &[RuntimeValue]| -> HostFnResult { .. }`.
+    /// - A typed form taking up to four plain Rust arguments (any combination of `i64`, `f64`,
+    ///   `String`, `bool`, `RuntimeValue`, `Vec<T>`, or `Option<T>` for a [`ValueAdapter`] `T`),
+    ///   returning `Result<R, HostFunctionError>` for an `R: ValueAdapter`. Argument and return
+    ///   values are converted to/from `RuntimeValue` automatically; a wrong argument count or
+    ///   type is reported as a [`HostFunctionError`] rather than panicking.
+    ///
+    /// Errors and panics raised by the function are caught at the call boundary and surfaced as
+    /// a normal mq runtime error rather than aborting evaluation or unwinding through the
+    /// evaluator; recursion depth and the configured timeout ([`Self::set_timeout`]) are
+    /// enforced around each call exactly as for a user-defined function call.
+    ///
+    /// A registered function only fills in a name that would otherwise be undefined: a `def` of
+    /// the same name always takes precedence, and so does *any* built-in function name, whether
+    /// or not [`Self::load_builtin_module`] was called — name resolution itself falls back to
+    /// the built-in table before host functions are ever consulted. Host functions therefore
+    /// extend the set of callable names rather than override existing ones; pick a name that
+    /// doesn't collide with a builtin.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use mq_lang::{DefaultEngine, HostFunctionError, RuntimeValue};
+    ///
+    /// let mut engine = DefaultEngine::default();
+    /// engine.load_builtin_module();
+    ///
+    /// // Raw form: works with any number of arguments, matched by hand.
+    /// engine.register_fn("shout", |args: &[RuntimeValue]| match args {
+    ///     [RuntimeValue::String(s)] => Ok(RuntimeValue::String(format!("{}!", s.to_uppercase()))),
+    ///     _ => Err(HostFunctionError::new("shout() expects one string argument")),
+    /// });
+    ///
+    /// // Typed form: argument and return conversions are handled for you.
+    /// engine.register_fn("double", |n: i64| Ok(n * 2));
+    ///
+    /// let input = mq_lang::parse_text_input("hello").unwrap();
+    /// let result = engine.eval(r#"shout("hi") + to_string(double(21))"#, input.into_iter());
+    /// assert_eq!(result.unwrap(), vec!["HI!42".to_string().into()].into());
+    /// ```
+    pub fn register_fn<F, Marker>(&self, name: impl Into<crate::Ident>, f: F)
+    where
+        F: crate::eval::host::IntoHostFunction<Marker>,
+    {
+        self.evaluator.register_fn(name, f.into_host_fn());
+    }
+
     /// Load the built-in function modules.
     ///
     /// This must be called to enable access to standard functions
@@ -856,5 +908,215 @@ mod tests {
         let result = engine.get_source_code_for_debug(module_id);
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_register_fn_basic() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.register_fn("greet", |args: &[RuntimeValue]| match args {
+            [RuntimeValue::String(name)] => Ok(RuntimeValue::String(format!("Hello, {name}!"))),
+            _ => Err(crate::HostFunctionError::new("greet() expects one string argument")),
+        });
+
+        let result = engine.eval(r#"greet("World")"#, crate::null_input().into_iter());
+        assert_eq!(result.unwrap(), vec!["Hello, World!".to_string().into()].into());
+    }
+
+    #[test]
+    fn test_register_fn_receives_evaluated_args() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.register_fn("identity", |args: &[RuntimeValue]| {
+            Ok(args.first().cloned().unwrap_or(RuntimeValue::NONE))
+        });
+
+        let result = engine.eval("identity(1 + 1)", crate::null_input().into_iter());
+        assert_eq!(result.unwrap(), vec![2.into()].into());
+    }
+
+    #[test]
+    fn test_register_fn_works_without_builtin_module_loaded() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.register_fn("triple", |args: &[RuntimeValue]| match args {
+            [RuntimeValue::Number(n)] => Ok(RuntimeValue::from(crate::number::Number::from(n.value() * 3.0))),
+            _ => Err(crate::HostFunctionError::new("triple() expects one number")),
+        });
+
+        let result = engine.eval("triple(2)", crate::null_input().into_iter());
+        assert_eq!(
+            result.unwrap(),
+            vec![RuntimeValue::from(crate::number::Number::from(6_i64))].into()
+        );
+    }
+
+    #[test]
+    fn test_register_fn_does_not_override_builtin_name() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.register_fn("len", |_args: &[RuntimeValue]| {
+            Ok(RuntimeValue::from(crate::number::Number::from(-1_i64)))
+        });
+
+        let result = engine.eval(r#"len("hello")"#, crate::null_input().into_iter());
+        assert_eq!(result.unwrap(), vec![5.into()].into());
+    }
+
+    #[test]
+    fn test_register_fn_shadowed_by_user_def() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.register_fn("answer", |_args: &[RuntimeValue]| {
+            Ok(RuntimeValue::from(crate::number::Number::from(1)))
+        });
+
+        let result = engine.eval("def answer(): 42; | answer()", crate::null_input().into_iter());
+        assert_eq!(result.unwrap(), vec![42.into()].into());
+    }
+
+    #[test]
+    fn test_register_fn_overwrite() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.register_fn("f", |_args: &[RuntimeValue]| Ok(RuntimeValue::Boolean(false)));
+        engine.register_fn("f", |_args: &[RuntimeValue]| Ok(RuntimeValue::Boolean(true)));
+
+        let result = engine.eval("f()", crate::null_input().into_iter());
+        assert_eq!(result.unwrap(), vec![true.into()].into());
+    }
+
+    #[test]
+    fn test_register_fn_error_propagates() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.register_fn("boom", |_args: &[RuntimeValue]| {
+            Err(crate::HostFunctionError::new("something went wrong"))
+        });
+
+        let err = engine.eval("boom()", crate::null_input().into_iter()).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("boom"), "{message}");
+        assert!(message.contains("something went wrong"), "{message}");
+        assert!(matches!(
+            err.cause,
+            crate::error::InnerError::Runtime(crate::error::runtime::RuntimeError::HostFunctionError(_, _, _))
+        ));
+    }
+
+    #[test]
+    fn test_register_fn_panic_is_caught() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.register_fn("crash", |_args: &[RuntimeValue]| -> crate::HostFnResult {
+            panic!("host function bug");
+        });
+
+        let err = engine.eval("crash()", crate::null_input().into_iter()).unwrap_err();
+        assert!(err.to_string().contains("panic"), "{}", err.to_string());
+    }
+
+    #[test]
+    fn test_register_fn_respects_timeout() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.register_fn("noop", |_args: &[RuntimeValue]| Ok(RuntimeValue::NONE));
+        // A zero timeout guarantees the deadline has already passed by the first
+        // periodic check inside the host function call, regardless of machine speed.
+        engine.set_timeout(std::time::Duration::ZERO);
+
+        let err = engine
+            .eval("while(true): noop(); ", crate::null_input().into_iter())
+            .unwrap_err();
+        assert!(matches!(
+            err.cause,
+            crate::error::InnerError::Runtime(crate::error::runtime::RuntimeError::Timeout(_))
+        ));
+    }
+
+    #[test]
+    fn test_register_fn_typed_zero_args() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.register_fn("answer", || Ok(42_i64));
+
+        let result = engine.eval("answer()", crate::null_input().into_iter());
+        assert_eq!(
+            result.unwrap(),
+            vec![crate::RuntimeValue::from(crate::number::Number::from(42_i64))].into()
+        );
+    }
+
+    #[test]
+    fn test_register_fn_typed_one_arg() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.register_fn("double", |n: i64| Ok(n * 2));
+
+        let result = engine.eval("double(21)", crate::null_input().into_iter());
+        assert_eq!(
+            result.unwrap(),
+            vec![crate::RuntimeValue::from(crate::number::Number::from(42_i64))].into()
+        );
+    }
+
+    #[test]
+    fn test_register_fn_typed_multiple_args_and_types() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.register_fn("repeat", |s: String, n: i64| Ok(s.repeat(n as usize)));
+
+        let result = engine.eval(r#"repeat("ab", 3)"#, crate::null_input().into_iter());
+        assert_eq!(result.unwrap(), vec!["ababab".to_string().into()].into());
+    }
+
+    #[test]
+    fn test_register_fn_typed_wrong_type_reports_error() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.register_fn("double", |n: i64| Ok(n * 2));
+
+        let err = engine
+            .eval(r#"double("not a number")"#, crate::null_input().into_iter())
+            .unwrap_err();
+        assert!(err.to_string().contains("double"), "{}", err.to_string());
+    }
+
+    #[test]
+    fn test_register_fn_typed_vec_and_option() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.register_fn("sum", |xs: Vec<i64>| Ok(xs.into_iter().sum::<i64>()));
+        engine.register_fn("first_or", |xs: Vec<i64>, default: Option<i64>| {
+            Ok(xs.into_iter().next().or(default))
+        });
+
+        let result = engine.eval("sum([1, 2, 3])", crate::null_input().into_iter());
+        assert_eq!(
+            result.unwrap(),
+            vec![crate::RuntimeValue::from(crate::number::Number::from(6_i64))].into()
+        );
+
+        let result = engine.eval("first_or([], 9)", crate::null_input().into_iter());
+        assert_eq!(
+            result.unwrap(),
+            vec![crate::RuntimeValue::from(crate::number::Number::from(9_i64))].into()
+        );
     }
 }

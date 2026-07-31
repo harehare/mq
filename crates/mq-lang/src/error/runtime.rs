@@ -92,6 +92,11 @@ pub enum RuntimeError {
     InvalidConvert(Token, String),
     #[error("Destructuring pattern did not match value")]
     DestructuringFailed(Token),
+    // Both extra fields are boxed (rather than `String`) to keep this rarely-populated variant
+    // from growing every `RuntimeError` beyond clippy's `result_large_err` threshold; see the
+    // `NotDefined` comment above for the same tradeoff.
+    #[error("Error in host function \"{1}\": {2}")]
+    HostFunctionError(ErrorToken, Box<str>, Box<str>),
 }
 
 impl RuntimeError {
@@ -128,6 +133,7 @@ impl RuntimeError {
             RuntimeError::InvalidMacroResult(token) => Some(token),
             RuntimeError::InvalidConvert(token, _) => Some(token),
             RuntimeError::DestructuringFailed(token) => Some(token),
+            RuntimeError::HostFunctionError(token, _, _) => Some(token),
         }
     }
 }
@@ -176,6 +182,7 @@ mod tests {
     #[case(RuntimeError::InvalidMacroResult(eof_token()), true)]
     #[case(RuntimeError::InvalidConvert(eof_token(), "msg".to_string()), true)]
     #[case(RuntimeError::DestructuringFailed(eof_token()), true)]
+    #[case(RuntimeError::HostFunctionError(eof_token(), "f".into(), "boom".into()), true)]
     fn test_token_presence(#[case] err: RuntimeError, #[case] has_token: bool) {
         assert_eq!(err.token().is_some(), has_token);
     }
@@ -189,6 +196,10 @@ mod tests {
     #[case(RuntimeError::RecursionLimit, "Maximum macro recursion depth exceeded")]
     #[case(RuntimeError::UndefinedMacro(Ident::new("foo")), "Undefined macro: foo")]
     #[case(RuntimeError::ArityMismatch { macro_name: Ident::new("bar"), expected: 2, got: 1 }, "Macro bar expects 2 arguments, got 1")]
+    #[case(
+        RuntimeError::HostFunctionError(eof_token(), "f".into(), "boom".into()),
+        "Error in host function \"f\": boom"
+    )]
     fn test_error_display(#[case] err: RuntimeError, #[case] expected: &str) {
         assert_eq!(err.to_string(), expected);
     }
