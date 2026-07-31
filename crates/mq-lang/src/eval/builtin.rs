@@ -3458,6 +3458,19 @@ fn _toon_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+#[mq_macros::mq_fn(name = "_toon_stringify", params = Fixed(1))]
+fn _toon_stringify_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [value] => {
+            let json_value = std::mem::take(value).to_json_value();
+            let toon_str = toon_format::encode_default(&json_value)
+                .map_err(|e| Error::Runtime(format!("Failed to encode TOON: {}", e)))?;
+            Ok(RuntimeValue::String(toon_str))
+        }
+        _ => unreachable!("_toon_stringify should always receive exactly one argument"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "_toml_parse", params = Fixed(1))]
 fn _toml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -4719,6 +4732,7 @@ mq_macros::builtin_dispatch! {
     _GRON_PARSE,
     _YAML_PARSE,
     _TOON_PARSE,
+    _TOON_STRINGIFY,
     _TOML_PARSE,
     _CBOR_PARSE,
     _CBOR_STRINGIFY,
@@ -5202,6 +5216,13 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a TOON string into a data structure.",
             params: &["toon_string"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_toon_stringify"),
+        BuiltinFunctionDoc {
+            description: "Converts a data structure into a TOON string.",
+            params: &["data"],
         },
     );
     map.insert(
@@ -9186,6 +9207,95 @@ mod tests {
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
+    }
+
+    // Each case is a lone `RuntimeValue`: multi-key dicts are exercised separately in
+    // `test_toon_stringify_round_trip` instead of here, since `RuntimeValue::Dict` (a
+    // `BTreeMap<Ident, _>`) orders keys by interned symbol id, which isn't stable across
+    // a test binary run and would make an exact-string assertion on more than one key flaky.
+    #[rstest]
+    #[case::string(RuntimeValue::String("hello".to_string()), "hello")]
+    #[case::number(RuntimeValue::Number(42.into()), "42")]
+    #[case::bool_true(RuntimeValue::TRUE, "true")]
+    #[case::bool_false(RuntimeValue::FALSE, "false")]
+    #[case::none(RuntimeValue::NONE, "null")]
+    #[case::single_key_dict(
+        {
+            let mut map = BTreeMap::new();
+            map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+            RuntimeValue::Dict(Shared::new(map))
+        },
+        "name: Alice"
+    )]
+    #[case::array_of_primitives(
+        RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())])),
+        "[2]: 1,2"
+    )]
+    #[case::empty_array(RuntimeValue::Array(Shared::new(vec![])), "[0]:")]
+    #[case::empty_dict(RuntimeValue::Dict(Shared::new(BTreeMap::new())), "")]
+    #[case::empty_string_needs_quoting(RuntimeValue::String("".to_string()), "\"\"")]
+    #[case::numeric_like_string_needs_quoting(RuntimeValue::String("123".to_string()), "\"123\"")]
+    #[case::keyword_like_string_needs_quoting(RuntimeValue::String("true".to_string()), "\"true\"")]
+    #[case::string_with_colon_needs_quoting(RuntimeValue::String("a:b".to_string()), "\"a:b\"")]
+    #[case::string_with_delimiter_needs_quoting(RuntimeValue::String("a,b".to_string()), "\"a,b\"")]
+    #[case::string_starting_with_dash_needs_quoting(RuntimeValue::String("-x".to_string()), "\"-x\"")]
+    fn test_toon_stringify(#[case] input: RuntimeValue, #[case] expected: &str) {
+        let ident = Ident::new("_toon_stringify");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![input],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, Ok(RuntimeValue::String(expected.to_string())));
+    }
+
+    fn toon_tabular_row(id: i64, name: &str) -> RuntimeValue {
+        let mut map = BTreeMap::new();
+        map.insert(Ident::new("id"), RuntimeValue::Number(id.into()));
+        map.insert(Ident::new("name"), RuntimeValue::String(name.to_string()));
+        RuntimeValue::Dict(Shared::new(map))
+    }
+
+    // Structural round trip (stringify then re-parse) rather than an exact string:
+    // `RuntimeValue`'s `Dict` equality ignores key order, so this stays robust regardless
+    // of how the global symbol interner happens to order a multi-key dict's fields.
+    #[rstest]
+    #[case::tabular_array(RuntimeValue::Array(Shared::new(vec![
+        toon_tabular_row(1, "Blue Lake"),
+        toon_tabular_row(2, "Ridge Trail"),
+    ])))]
+    #[case::nested_dict({
+        let mut inner = BTreeMap::new();
+        inner.insert(Ident::new("inner"), RuntimeValue::Number(1.into()));
+        let mut outer = BTreeMap::new();
+        outer.insert(Ident::new("outer"), RuntimeValue::Dict(Shared::new(inner)));
+        RuntimeValue::Dict(Shared::new(outer))
+    })]
+    #[case::non_uniform_array(RuntimeValue::Array(Shared::new(vec![
+        RuntimeValue::Number(1.into()),
+        toon_tabular_row(2, "Ridge Trail"),
+        RuntimeValue::String("text".to_string()),
+    ])))]
+    fn test_toon_stringify_round_trip(#[case] original: RuntimeValue) {
+        let env = Shared::new(SharedCell::new(Env::default()));
+
+        let ident_stringify = Ident::new("_toon_stringify");
+        let stringified = eval_builtin(&RuntimeValue::None, &ident_stringify, vec![original.clone()], &env).unwrap();
+        let RuntimeValue::String(toon_str) = stringified else {
+            panic!("expected a string result");
+        };
+
+        let ident_parse = Ident::new("_toon_parse");
+        let round_tripped = eval_builtin(
+            &RuntimeValue::None,
+            &ident_parse,
+            vec![RuntimeValue::String(toon_str)],
+            &env,
+        )
+        .unwrap();
+
+        assert_eq!(round_tripped, original);
     }
 
     #[rstest]
