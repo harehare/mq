@@ -167,6 +167,10 @@ impl_into_host_fn!(1; A);
 impl_into_host_fn!(2; A, B);
 impl_into_host_fn!(3; A, B, C);
 impl_into_host_fn!(4; A, B, C, D);
+impl_into_host_fn!(5; A, B, C, D, E);
+impl_into_host_fn!(6; A, B, C, D, E, F);
+impl_into_host_fn!(7; A, B, C, D, E, F, G);
+impl_into_host_fn!(8; A, B, C, D, E, F, G, H);
 
 #[cfg(test)]
 mod tests {
@@ -237,6 +241,16 @@ mod tests {
             ])
             .unwrap();
         assert_eq!(result, RuntimeValue::from(Number::from(3_i64)));
+    }
+
+    #[test]
+    fn test_register_typed_eight_arity() {
+        let f = (|a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64| Ok(a + b + c + d + e + f + g + h))
+            .into_host_fn();
+        let result = f
+            .call(&(1..=8).map(|n| RuntimeValue::from(Number::from(n))).collect::<Vec<_>>())
+            .unwrap();
+        assert_eq!(result, RuntimeValue::from(Number::from(36_i64)));
     }
 
     #[test]

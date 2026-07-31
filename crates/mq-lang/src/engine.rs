@@ -212,7 +212,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     ///
     /// - A raw form taking the already-evaluated call arguments as a slice and returning a
     ///   single [`RuntimeValue`]: `|args: &[RuntimeValue]| -> HostFnResult { .. }`.
-    /// - A typed form taking up to four plain Rust arguments (any combination of `i64`, `f64`,
+    /// - A typed form taking up to eight plain Rust arguments (any combination of `i64`, `f64`,
     ///   `String`, `bool`, `RuntimeValue`, `Vec<T>`, or `Option<T>` for a [`ValueAdapter`] `T`),
     ///   returning `Result<R, HostFunctionError>` for an `R: ValueAdapter`. Argument and return
     ///   values are converted to/from `RuntimeValue` automatically; a wrong argument count or
