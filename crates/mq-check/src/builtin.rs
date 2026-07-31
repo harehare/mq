@@ -474,6 +474,15 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::array(Type::Var(a)),
     );
 
+    // token_compress: ([markdown], number) -> [markdown]
+    register_binary(
+        ctx,
+        "token_compress",
+        Type::array(Type::Markdown),
+        Type::Number,
+        Type::array(Type::Markdown),
+    );
+
     // flatten: [[a]] -> [a]
     let a = ctx.fresh_var();
     register_unary(
@@ -1575,6 +1584,8 @@ mod tests {
     #[case::token_count("token_count(\"hello world\", \"gpt-4\")", true)]
     #[case::token_count_no_model("token_count(\"hello world\")", true)]
     #[case::token_count_number("token_count(42, \"gpt-4\")", false)] // Should fail: wrong type
+    #[case::token_compress("to_markdown(\"# Title\\n\\nBody\") | token_compress(100)", true)]
+    #[case::token_compress_string("token_compress(\"not an array\", 100)", false)] // Should fail: wrong type
     #[case::capture("capture(\"hello 42\", \"(?P<word>\\\\w+)\")", true)]
     #[case::is_regex_match("is_regex_match(\"hello123\", \"[0-9]+\")", true)]
     #[case::is_not_regex_match("is_not_regex_match(\"hello123\", \"[0-9]+\")", true)]

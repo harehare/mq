@@ -2746,6 +2746,8 @@ fn engine() -> DefaultEngine {
 #[case::token_count_no_model_simple(r#"token_count("Hello, world!")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
 #[case::token_count_no_model_markdown(r#"to_md_text("Hello, world!") | token_count()"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
 #[case::token_count_no_model_none(r#"token_count(None)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
+#[case::token_compress_under_budget(r##"to_markdown("# Title") | token_compress(1000)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["Title".to_string().into()], position: None}))]))].into()))]
+#[case::token_compress_none(r#"token_compress(None, 100)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![]))].into()))]
 #[case::explode_simple(r##"explode("abc")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(97.into()), RuntimeValue::Number(98.into()), RuntimeValue::Number(99.into())]))].into()))]
 #[case::implode_simple(r##"implode([97, 98, 99])"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abc".to_string())].into()))]
 #[case::intern_simple(r##"intern("foo")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("foo".to_string())].into()))]
@@ -3742,6 +3744,8 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 // token_count: non-string/non-markdown text → type error
 #[case::token_count_non_string(r#"token_count(42, "gpt-4")"#, vec![RuntimeValue::None],)]
 #[case::token_count_no_model_non_string(r#"token_count(42)"#, vec![RuntimeValue::None],)]
+// token_compress: non-array first arg → type error
+#[case::token_compress_non_array(r#"token_compress("not an array", 100)"#, vec![RuntimeValue::None],)]
 // range: multi-char string with step → error
 #[case::range_multichar_with_step(r#"range("aa", "zz", 2)"#, vec![RuntimeValue::None],)]
 // range: invalid type → error
