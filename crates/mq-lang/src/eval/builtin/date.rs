@@ -139,6 +139,76 @@ fn nearest_weekday(base: DateTime<Utc>, target: Weekday, forward: bool) -> DateT
     }
 }
 
+/// A relative-date expression, parsed out of its source string ahead of evaluation.
+///
+/// Splitting parsing (`&str` -> `RelativeExpr`) from evaluation (`RelativeExpr` -> `DateTime<Utc>`)
+/// means the two can't drift apart: every supported form is named once here, and `eval` is an
+/// exhaustive match the compiler checks, rather than a second ad-hoc string match that has to be
+/// kept in sync with the parser by hand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RelativeExpr {
+    Now,
+    Yesterday,
+    Tomorrow,
+    Ago { amount: i64, unit: DateUnit },
+    In { amount: i64, unit: DateUnit },
+    NextWeekday(Weekday),
+    LastWeekday(Weekday),
+}
+
+impl RelativeExpr {
+    /// Supported forms: "now", "today", "yesterday", "tomorrow", "<n> <unit> ago",
+    /// "in <n> <unit>", "next <weekday>", "last <weekday>". Units accept singular or plural
+    /// ("day"/"days", ...); weekdays use their full English name ("monday", ...).
+    fn parse(s: &str) -> Result<Self, Error> {
+        let unrecognized = || Error::Runtime(format!("date_relative: unrecognized relative date expression {:?}", s));
+        let lower = s.trim().to_lowercase();
+
+        match lower.as_str() {
+            "now" | "today" => return Ok(Self::Now),
+            "yesterday" => return Ok(Self::Yesterday),
+            "tomorrow" => return Ok(Self::Tomorrow),
+            _ => {}
+        }
+
+        match lower.split_whitespace().collect::<Vec<_>>().as_slice() {
+            [amount, unit_word, "ago"] => {
+                let amount: i64 = amount.parse().map_err(|_| unrecognized())?;
+                let unit = parse_relative_unit(unit_word).ok_or_else(unrecognized)?;
+                Ok(Self::Ago { amount, unit })
+            }
+            ["in", amount, unit_word] => {
+                let amount: i64 = amount.parse().map_err(|_| unrecognized())?;
+                let unit = parse_relative_unit(unit_word).ok_or_else(unrecognized)?;
+                Ok(Self::In { amount, unit })
+            }
+            ["next", weekday_word] => {
+                let weekday = parse_weekday(weekday_word).ok_or_else(unrecognized)?;
+                Ok(Self::NextWeekday(weekday))
+            }
+            ["last", weekday_word] => {
+                let weekday = parse_weekday(weekday_word).ok_or_else(unrecognized)?;
+                Ok(Self::LastWeekday(weekday))
+            }
+            _ => Err(unrecognized()),
+        }
+    }
+
+    fn eval(self, base: DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
+        let overflow = || Error::Runtime("date_relative: arithmetic overflow or invalid date".to_string());
+
+        match self {
+            Self::Now => Ok(base),
+            Self::Yesterday => Ok(base - Duration::days(1)),
+            Self::Tomorrow => Ok(base + Duration::days(1)),
+            Self::Ago { amount, unit } => unit.apply_add(base, -amount).ok_or_else(overflow),
+            Self::In { amount, unit } => unit.apply_add(base, amount).ok_or_else(overflow),
+            Self::NextWeekday(weekday) => Ok(nearest_weekday(base, weekday, true)),
+            Self::LastWeekday(weekday) => Ok(nearest_weekday(base, weekday, false)),
+        }
+    }
+}
+
 /// Parses a natural-language relative date expression relative to `base` and returns the
 /// resulting UTC datetime.
 ///
@@ -146,37 +216,7 @@ fn nearest_weekday(base: DateTime<Utc>, target: Weekday, forward: bool) -> DateT
 /// "in <n> <unit>", "next <weekday>", "last <weekday>". Units accept singular or plural
 /// ("day"/"days", ...); weekdays use their full English name ("monday", ...).
 pub(super) fn parse_relative(s: &str, base: DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
-    let unrecognized = || Error::Runtime(format!("date_relative: unrecognized relative date expression {:?}", s));
-    let lower = s.trim().to_lowercase();
-
-    match lower.as_str() {
-        "now" | "today" => return Ok(base),
-        "yesterday" => return Ok(base - Duration::days(1)),
-        "tomorrow" => return Ok(base + Duration::days(1)),
-        _ => {}
-    }
-
-    match lower.split_whitespace().collect::<Vec<_>>().as_slice() {
-        [amount, unit_word, "ago"] => {
-            let amount: i64 = amount.parse().map_err(|_| unrecognized())?;
-            let unit = parse_relative_unit(unit_word).ok_or_else(unrecognized)?;
-            unit.apply_add(base, -amount).ok_or_else(unrecognized)
-        }
-        ["in", amount, unit_word] => {
-            let amount: i64 = amount.parse().map_err(|_| unrecognized())?;
-            let unit = parse_relative_unit(unit_word).ok_or_else(unrecognized)?;
-            unit.apply_add(base, amount).ok_or_else(unrecognized)
-        }
-        ["next", weekday_word] => {
-            let weekday = parse_weekday(weekday_word).ok_or_else(unrecognized)?;
-            Ok(nearest_weekday(base, weekday, true))
-        }
-        ["last", weekday_word] => {
-            let weekday = parse_weekday(weekday_word).ok_or_else(unrecognized)?;
-            Ok(nearest_weekday(base, weekday, false))
-        }
-        _ => Err(unrecognized()),
-    }
+    RelativeExpr::parse(s)?.eval(base)
 }
 
 #[cfg(test)]
@@ -188,8 +228,6 @@ mod tests {
     fn utc(year: i32, month: u32, day: u32) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(year, month, day, 0, 0, 0).unwrap()
     }
-
-    // --- TryFrom<&str> ---
 
     #[rstest]
     #[case("seconds", DateUnit::Seconds)]
@@ -222,8 +260,6 @@ mod tests {
         assert!(msg.contains("seconds"), "error should list supported units");
     }
 
-    // --- apply_add ---
-
     #[rstest]
     #[case(DateUnit::Seconds, utc(2024, 1, 1), 86400, utc(2024, 1, 2))]
     #[case(DateUnit::Minutes, utc(2024, 1, 1), 1440, utc(2024, 1, 2))]
@@ -249,8 +285,6 @@ mod tests {
         assert_eq!(DateUnit::Days.apply_add(dt, -1).unwrap(), utc(2024, 2, 29));
     }
 
-    // --- apply_diff ---
-
     #[rstest]
     #[case(DateUnit::Seconds, 120, 120)]
     #[case(DateUnit::Minutes, 120, 2)]
@@ -269,8 +303,6 @@ mod tests {
         let d = Duration::days(30);
         assert!(unit.apply_diff(d).is_err());
     }
-
-    // --- add / diff wrappers ---
 
     #[test]
     fn test_add_wrapper() {
@@ -296,7 +328,6 @@ mod tests {
         assert!(diff(d, "months").is_err());
     }
 
-    // --- parse_relative ---
     // Base is 2024-01-15, a Monday.
 
     #[rstest]
