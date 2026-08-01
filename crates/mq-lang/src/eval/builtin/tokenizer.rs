@@ -84,10 +84,33 @@ pub(super) fn token_count(text: &str, model: &str) -> Result<usize, Error> {
     }
 }
 
+pub(super) type Counter = Box<dyn Fn(&str) -> usize>;
+
+/// Like [`token_count`], but resolves the BPE encoder once instead of on every call — for
+/// `token_compress`, which counts tokens in a loop/binary search.
+pub(super) fn counter(model: Option<&str>) -> Result<Counter, Error> {
+    match model {
+        Some(model) => resolve_model_counter(model),
+        None => Ok(Box::new(token_count_estimate)),
+    }
+}
+
+fn resolve_model_counter(model: &str) -> Result<Counter, Error> {
+    #[cfg(feature = "tiktoken")]
+    {
+        let bpe = tiktoken_rs::bpe_for_model(model).map_err(|e| Error::Runtime(format!("token_compress: {e}")))?;
+        Ok(Box::new(move |text: &str| bpe.encode_ordinary(text).len()))
+    }
+    #[cfg(not(feature = "tiktoken"))]
+    {
+        let _ = model;
+        Ok(Box::new(token_count_estimate))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::heuristic::{is_cjk, is_latin, token_count as heuristic_token_count};
-    #[cfg(feature = "tiktoken")]
     use super::*;
     use rstest::rstest;
 
@@ -144,5 +167,31 @@ mod tests {
     #[test]
     fn test_exact_token_count_ignores_special_tokens_in_text() {
         assert!(exact_token_count("<|endoftext|>", "gpt-4").unwrap() > 0);
+    }
+
+    #[test]
+    fn test_counter_no_model_uses_heuristic() {
+        let count = counter(None).unwrap();
+        assert_eq!(count("Hello, world!"), heuristic_token_count("Hello, world!"));
+    }
+
+    #[cfg(feature = "tiktoken")]
+    #[test]
+    fn test_counter_with_model_uses_exact_count() {
+        let count = counter(Some("gpt-4")).unwrap();
+        assert_eq!(count("Hello, world!"), 4);
+    }
+
+    #[cfg(feature = "tiktoken")]
+    #[test]
+    fn test_counter_unknown_model_errors() {
+        assert!(counter(Some("not-a-real-model")).is_err());
+    }
+
+    #[cfg(not(feature = "tiktoken"))]
+    #[test]
+    fn test_counter_with_model_falls_back_to_heuristic_without_feature() {
+        let count = counter(Some("gpt-4")).unwrap();
+        assert_eq!(count("Hello, world!"), heuristic_token_count("Hello, world!"));
     }
 }

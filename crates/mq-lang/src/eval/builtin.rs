@@ -1678,33 +1678,53 @@ fn token_count_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
-/// Reduces an array of Markdown nodes to fit within `budget` estimated LLM tokens. See
-/// [`compress`] for the staged algorithm.
-#[mq_macros::mq_fn(name = "token_compress", params = Fixed(2))]
+/// Reduces an array of Markdown nodes to fit within `budget` tokens. See
+/// [`compress::token_compress`] for the staged algorithm; `model` is optional and behaves like
+/// in `token_count`.
+#[mq_macros::mq_fn(name = "token_compress", params = Range(2, 3))]
 fn token_compress_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
-        [RuntimeValue::Array(nodes), RuntimeValue::Number(budget)] => {
-            let vec = std::mem::take(nodes);
-            let markdown_nodes: Vec<mq_markdown::Node> = Shared::unwrap_or_clone(vec)
-                .into_iter()
-                .filter_map(|v| v.markdown_node())
-                .collect();
-            let budget = budget.value().max(0.0) as usize;
-            let compressed = compress::compress(markdown_nodes, budget);
+    fn compress_nodes(
+        nodes: &mut Shared<Vec<RuntimeValue>>,
+        budget: &number::Number,
+        model: Option<&str>,
+    ) -> Result<RuntimeValue, Error> {
+        let vec = std::mem::take(nodes);
+        let markdown_nodes: Vec<mq_markdown::Node> = Shared::unwrap_or_clone(vec)
+            .into_iter()
+            .filter_map(|v| v.markdown_node())
+            .collect();
+        let budget = budget.value().max(0.0) as usize;
+        let counter = tokenizer::counter(model)?;
+        let compressed = compress::token_compress(markdown_nodes, budget, counter.as_ref());
 
-            Ok(RuntimeValue::Array(Shared::new(
-                compressed
-                    .into_iter()
-                    .map(|node| RuntimeValue::Markdown(Box::new(node), None))
-                    .collect(),
-            )))
-        }
+        Ok(RuntimeValue::Array(Shared::new(
+            compressed
+                .into_iter()
+                .map(|node| RuntimeValue::Markdown(Box::new(node), None))
+                .collect(),
+        )))
+    }
+
+    match args.as_mut_slice() {
+        [RuntimeValue::Array(nodes), RuntimeValue::Number(budget)] => compress_nodes(nodes, budget, None),
+        [
+            RuntimeValue::Array(nodes),
+            RuntimeValue::Number(budget),
+            RuntimeValue::String(model),
+        ] => compress_nodes(nodes, budget, Some(model)),
         [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::Array(Shared::new(Vec::new()))),
+        [RuntimeValue::None, RuntimeValue::Number(_), RuntimeValue::String(_)] => {
+            Ok(RuntimeValue::Array(Shared::new(Vec::new())))
+        }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!("token_compress should always receive exactly two arguments"),
+        [a, b, c] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+        )),
+        _ => unreachable!("token_compress should always receive two or three arguments"),
     }
 }
 
@@ -5931,8 +5951,8 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("token_compress"),
         BuiltinFunctionDoc {
-            description: "Reduces an array of Markdown nodes to fit within `budget` estimated LLM tokens, preserving structure as much as possible: paragraphs are cut to their first sentence, then lists/tables/code blocks are collapsed to a summary, and only as a last resort is the remaining text hard-truncated.",
-            params: &["nodes", "budget"],
+            description: "Reduces an array of Markdown nodes to fit within `budget` LLM tokens, preserving structure as much as possible: paragraphs are cut to their first sentence, then lists/tables/code blocks are collapsed to a summary, and only as a last resort is the remaining text hard-truncated. Uses a lightweight chars-per-token heuristic by default; built with the `tiktoken` Cargo feature, counts exactly via tiktoken-rs instead when `model` (e.g. \"gpt-5\") is given. `model` is optional; without it, the heuristic estimate is always used.",
+            params: &["nodes", "budget", "model?"],
         },
     );
     map.insert(
@@ -7331,6 +7351,20 @@ mod tests {
     #[case(
         "token_compress",
         vec![RuntimeValue::None, RuntimeValue::Number(100.into())],
+        Ok(RuntimeValue::Array(Shared::new(vec![])))
+    )]
+    #[case(
+        "token_compress",
+        vec![
+            RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Box::new(Node::from("hi".to_string())), None)])),
+            RuntimeValue::Number(1000.into()),
+            RuntimeValue::String("gpt-4".into()),
+        ],
+        Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Box::new(Node::from("hi".to_string())), None)])))
+    )]
+    #[case(
+        "token_compress",
+        vec![RuntimeValue::None, RuntimeValue::Number(100.into()), RuntimeValue::String("gpt-4".into())],
         Ok(RuntimeValue::Array(Shared::new(vec![])))
     )]
     #[case("abs", vec![RuntimeValue::Number((-10).into())], Ok(RuntimeValue::Number(10.into())))]
