@@ -1,5 +1,5 @@
 use super::Error;
-use chrono::{DateTime, Duration, Months, Utc};
+use chrono::{DateTime, Datelike, Duration, Months, NaiveDateTime, Utc, Weekday};
 
 /// Date/time units used by `date_add` and `date_diff`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,6 +90,93 @@ pub(super) fn add(dt: DateTime<Utc>, amount: i64, unit: &str) -> Result<DateTime
 pub(super) fn diff(diff: Duration, unit: &str) -> Result<i64, Error> {
     let unit = DateUnit::try_from(unit)?;
     unit.apply_diff(diff)
+}
+
+/// Like `DateUnit::try_from`, but also accepts singular unit words (e.g. "day"), since
+/// relative-date phrases such as "1 day ago" use the singular form.
+fn parse_relative_unit(word: &str) -> Option<DateUnit> {
+    match word {
+        "second" | "seconds" => Some(DateUnit::Seconds),
+        "minute" | "minutes" => Some(DateUnit::Minutes),
+        "hour" | "hours" => Some(DateUnit::Hours),
+        "day" | "days" => Some(DateUnit::Days),
+        "week" | "weeks" => Some(DateUnit::Weeks),
+        "month" | "months" => Some(DateUnit::Months),
+        "year" | "years" => Some(DateUnit::Years),
+        _ => None,
+    }
+}
+
+fn parse_weekday(word: &str) -> Option<Weekday> {
+    match word {
+        "sunday" => Some(Weekday::Sun),
+        "monday" => Some(Weekday::Mon),
+        "tuesday" => Some(Weekday::Tue),
+        "wednesday" => Some(Weekday::Wed),
+        "thursday" => Some(Weekday::Thu),
+        "friday" => Some(Weekday::Fri),
+        "saturday" => Some(Weekday::Sat),
+        _ => None,
+    }
+}
+
+/// Walks forward (or backward) from `base` a day at a time until `target` weekday is
+/// reached, preserving `base`'s time-of-day. `base`'s own weekday never matches, so this
+/// always lands on the next/previous occurrence, never today.
+fn nearest_weekday(base: DateTime<Utc>, target: Weekday, forward: bool) -> DateTime<Utc> {
+    let time = base.time();
+    let mut date = base.date_naive();
+
+    loop {
+        date = if forward {
+            date.succ_opt().expect("date arithmetic within a week cannot overflow")
+        } else {
+            date.pred_opt().expect("date arithmetic within a week cannot overflow")
+        };
+        if date.weekday() == target {
+            return NaiveDateTime::new(date, time).and_utc();
+        }
+    }
+}
+
+/// Parses a natural-language relative date expression relative to `base` and returns the
+/// resulting UTC datetime.
+///
+/// Supported forms: "now", "today", "yesterday", "tomorrow", "<n> <unit> ago",
+/// "in <n> <unit>", "next <weekday>", "last <weekday>". Units accept singular or plural
+/// ("day"/"days", ...); weekdays use their full English name ("monday", ...).
+pub(super) fn parse_relative(s: &str, base: DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
+    let unrecognized = || Error::Runtime(format!("date_relative: unrecognized relative date expression {:?}", s));
+    let lower = s.trim().to_lowercase();
+
+    match lower.as_str() {
+        "now" | "today" => return Ok(base),
+        "yesterday" => return Ok(base - Duration::days(1)),
+        "tomorrow" => return Ok(base + Duration::days(1)),
+        _ => {}
+    }
+
+    match lower.split_whitespace().collect::<Vec<_>>().as_slice() {
+        [amount, unit_word, "ago"] => {
+            let amount: i64 = amount.parse().map_err(|_| unrecognized())?;
+            let unit = parse_relative_unit(unit_word).ok_or_else(unrecognized)?;
+            unit.apply_add(base, -amount).ok_or_else(unrecognized)
+        }
+        ["in", amount, unit_word] => {
+            let amount: i64 = amount.parse().map_err(|_| unrecognized())?;
+            let unit = parse_relative_unit(unit_word).ok_or_else(unrecognized)?;
+            unit.apply_add(base, amount).ok_or_else(unrecognized)
+        }
+        ["next", weekday_word] => {
+            let weekday = parse_weekday(weekday_word).ok_or_else(unrecognized)?;
+            Ok(nearest_weekday(base, weekday, true))
+        }
+        ["last", weekday_word] => {
+            let weekday = parse_weekday(weekday_word).ok_or_else(unrecognized)?;
+            Ok(nearest_weekday(base, weekday, false))
+        }
+        _ => Err(unrecognized()),
+    }
 }
 
 #[cfg(test)]
@@ -207,5 +294,53 @@ mod tests {
     fn test_diff_wrapper_invalid_unit() {
         let d = Duration::days(30);
         assert!(diff(d, "months").is_err());
+    }
+
+    // --- parse_relative ---
+    // Base is 2024-01-15, a Monday.
+
+    #[rstest]
+    #[case("now", utc(2024, 1, 15))]
+    #[case("today", utc(2024, 1, 15))]
+    #[case("yesterday", utc(2024, 1, 14))]
+    #[case("tomorrow", utc(2024, 1, 16))]
+    #[case("Tomorrow", utc(2024, 1, 16))]
+    #[case("  tomorrow  ", utc(2024, 1, 16))]
+    #[case("1 day ago", utc(2024, 1, 14))]
+    #[case("3 days ago", utc(2024, 1, 12))]
+    #[case("2 weeks ago", utc(2024, 1, 1))]
+    #[case("1 month ago", utc(2023, 12, 15))]
+    #[case("1 year ago", utc(2023, 1, 15))]
+    #[case("in 3 days", utc(2024, 1, 18))]
+    #[case("in 2 weeks", utc(2024, 1, 29))]
+    #[case("in 1 month", utc(2024, 2, 15))]
+    #[case("In 1 Month", utc(2024, 2, 15))]
+    #[case("next monday", utc(2024, 1, 22))]
+    #[case("next friday", utc(2024, 1, 19))]
+    #[case("last monday", utc(2024, 1, 8))]
+    #[case("last friday", utc(2024, 1, 12))]
+    fn test_parse_relative_valid(#[case] input: &str, #[case] expected: DateTime<Utc>) {
+        let base = utc(2024, 1, 15);
+        assert_eq!(parse_relative(input, base).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("someday")]
+    #[case("3 decades ago")]
+    #[case("in three days")]
+    #[case("next someday")]
+    #[case("last")]
+    #[case("ago 3 days")]
+    fn test_parse_relative_invalid(#[case] input: &str) {
+        let base = utc(2024, 1, 15);
+        assert!(parse_relative(input, base).is_err());
+    }
+
+    #[test]
+    fn test_parse_relative_preserves_time_of_day() {
+        let base = Utc.with_ymd_and_hms(2024, 1, 15, 9, 30, 0).unwrap();
+        let expected = Utc.with_ymd_and_hms(2024, 1, 22, 9, 30, 0).unwrap();
+        assert_eq!(parse_relative("next monday", base).unwrap(), expected);
     }
 }
