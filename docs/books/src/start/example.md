@@ -518,6 +518,66 @@ $ mq -A 'import "table" | table::tables() | first | table::to_csv' README.md
 
 **Output**: Returns the table as a CSV string.
 
+### Reshape a Table: Wide to Long (`pivot_longer`)
+
+Unpivot a set of columns into `name`/`value` row pairs, keeping the remaining columns as identifiers. `value_columns` is an array of column indices; `names_to` and `values_to` (both optional) name the two new columns.
+
+```bash
+$ mq -A 'import "table" | let t = first(table::tables()) | table::pivot_longer(t, [1, 2, 3], "quarter", "score")' README.md
+```
+
+**Input example**:
+
+```markdown
+| Name  | Q1 | Q2 | Q3 |
+| ----- | -- | -- | -- |
+| Alice | 10 | 20 | 30 |
+| Bob   | 5  | 15 | 25 |
+```
+
+**Output**:
+
+```markdown
+| Name  | quarter | score |
+| ----- | ------- | ----- |
+| Alice | Q1      | 10    |
+| Alice | Q2      | 20    |
+| Alice | Q3      | 30    |
+| Bob   | Q1      | 5     |
+| Bob   | Q2      | 15    |
+| Bob   | Q3      | 25    |
+```
+
+### Reshape a Table: Long to Wide (`pivot_wider`)
+
+The inverse of `pivot_longer`: spread a key/value column pair back out into one column per distinct key, grouping rows by the remaining identifier columns. `names_from` is the column index whose distinct values become new headers; `values_from` is the column index supplying the values. Combinations missing from the input become empty cells.
+
+```bash
+$ mq -A 'import "table" | table::tables() | first | table::pivot_wider(1, 2)' README.md
+```
+
+**Input example**:
+
+```markdown
+| Name  | quarter | score |
+| ----- | ------- | ----- |
+| Alice | Q1      | 10    |
+| Alice | Q2      | 20    |
+| Alice | Q3      | 30    |
+| Bob   | Q1      | 5     |
+| Bob   | Q2      | 15    |
+| Bob   | Q3      | 25    |
+```
+
+**Output**:
+
+```markdown
+| Name  | Q1 | Q2 | Q3 |
+| ----- | -- | -- | -- |
+| Alice | 10 | 20 | 30 |
+| Bob   | 5  | 15 | 25 |
+```
+
 ## Custom Functions and Programming
 
 ### Define Custom Function

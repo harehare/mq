@@ -142,3 +142,87 @@ def to_csv(table, delimiter = ",")
   | csv::csv_stringify([header] + rows, delimiter)
 end
 
+# Reshape a table from wide format to long format (a.k.a. melt/unpivot).
+# `value_columns` is an array of column indices to unpivot; each one becomes
+# a row holding its header name (in the `names_to` column) and its cell
+# value (in the `values_to` column). Columns not listed in `value_columns`
+# are treated as identifier columns and repeated for every unpivoted value.
+def pivot_longer(table, value_columns, names_to = "name", values_to = "value"):
+  let header = table[:header]
+  | let id_columns = filter(range(0, len(header) - 1), fn(i): !in(value_columns, i);)
+  | var col = 0
+  | let id_header_cells = foreach (i, id_columns):
+        let cell = to_md_table_cell(to_string(header[i]), 0, col)
+        | col += 1
+        | cell
+      end
+  | let new_header = id_header_cells + [to_md_table_cell(names_to, 0, col), to_md_table_cell(values_to, 0, col + 1)]
+  | let new_align = to_md_table_align(map(range(0, len(new_header) - 1), fn(_): "none";))
+  | let new_rows = fold(table[:rows], [], fn(acc, row):
+        let base_row = len(acc) + 1
+        | var k = 0
+        | let expanded = foreach (vc, value_columns):
+              let row_num = base_row + k
+              | var c = 0
+              | let id_cells = foreach (i, id_columns):
+                    let cell = to_md_table_cell(to_string(row[i]), row_num, c)
+                    | c += 1
+                    | cell
+                  end
+              | let name_cell = to_md_table_cell(to_string(header[vc]), row_num, c)
+              | let value_cell = to_md_table_cell(to_string(row[vc]), row_num, c + 1)
+              | k += 1
+              | id_cells + [name_cell, value_cell]
+            end
+        | acc + expanded;
+      )
+  | set(set(set(table, :header, new_header), :rows, new_rows), :align, new_align)
+end
+
+# Reshape a table from long format to wide format (a.k.a. pivot/cast).
+# `names_from` is the column index whose distinct values become the headers
+# of new columns; `values_from` is the column index supplying the values
+# for those new columns. Columns other than `names_from` and `values_from`
+# are treated as identifier columns and used to group rows together.
+def pivot_wider(table, names_from, values_from):
+  let header = table[:header]
+  | let id_columns = filter(range(0, len(header) - 1), fn(i): i != names_from && i != values_from;)
+  | let key_of = fn(row): join(map(id_columns, fn(i): to_string(row[i]);), " ");
+  | let groups = group_by(table[:rows], key_of)
+  | let names = unique_by(map(table[:rows], fn(row): to_string(row[names_from]);), identity)
+  | let group_keys = unique_by(map(table[:rows], key_of), identity)
+  | var col = 0
+  | let id_header_cells = foreach (i, id_columns):
+        let cell = to_md_table_cell(to_string(header[i]), 0, col)
+        | col += 1
+        | cell
+      end
+  | let name_header_cells = foreach (name, names):
+        let cell = to_md_table_cell(name, 0, col)
+        | col += 1
+        | cell
+      end
+  | let new_header = id_header_cells + name_header_cells
+  | let new_align = to_md_table_align(map(range(0, len(new_header) - 1), fn(_): "none";))
+  | let new_rows = fold(group_keys, [], fn(acc, key):
+        let rows_for_key = get(groups, key)
+        | let first_row = first(rows_for_key)
+        | let row_num = len(acc) + 1
+        | var c = 0
+        | let id_cells = foreach (i, id_columns):
+              let cell = to_md_table_cell(to_string(first_row[i]), row_num, c)
+              | c += 1
+              | cell
+            end
+        | let value_map = fold(rows_for_key, dict(), fn(m, r): set(m, to_string(r[names_from]), to_string(r[values_from])); )
+        | let name_cells = foreach (name, names):
+              let v = get_or(value_map, name, "")
+              | let cell = to_md_table_cell(v, row_num, c)
+              | c += 1
+              | cell
+            end
+        | acc + [id_cells + name_cells];
+      )
+  | set(set(set(table, :header, new_header), :rows, new_rows), :align, new_align)
+end
+

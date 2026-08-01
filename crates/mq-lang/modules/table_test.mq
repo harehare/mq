@@ -128,3 +128,55 @@ def test_table_sort_rows():
   | let md_result = table::sort_rows(t)
   | assert_eq(to_string(md_result[:rows][0][0]), "Alice")
 end
+
+def test_table_pivot_longer():
+  let t = first(table::tables(table_nodes))
+  | let result = table::pivot_longer(t, [1, 2])
+  | assert_eq(len(result[:header]), 3)
+  | assert_eq(to_string(result[:header][1]), "name")
+  | assert_eq(to_string(result[:header][2]), "value")
+  | assert_eq(len(result[:rows]), 4)
+  | assert_eq(to_string(result[:rows][0][0]), "Alice")
+  | assert_eq(to_string(result[:rows][0][1]), "Age")
+  | assert_eq(to_string(result[:rows][0][2]), "30")
+  | assert_eq(to_string(result[:rows][1][1]), "City")
+  | assert_eq(to_string(result[:rows][1][2]), "Tokyo")
+  | assert_eq(to_string(result[:rows][3][0]), "Bob")
+  | assert_eq(to_string(result[:rows][3][1]), "City")
+  | assert_eq(to_string(result[:rows][3][2]), "Osaka")
+end
+
+def test_table_pivot_longer_custom_names():
+  let t = first(table::tables(table_nodes))
+  | let result = table::pivot_longer(t, [1, 2], "attr", "val")
+  | assert_eq(to_string(result[:header][1]), "attr")
+  | assert_eq(to_string(result[:header][2]), "val")
+end
+
+def test_table_pivot_wider():
+  let t = first(table::tables(table_nodes))
+  | let long = table::pivot_longer(t, [1, 2])
+  | let result = table::pivot_wider(long, 1, 2)
+  | assert_eq(len(result[:header]), 3)
+  | assert_eq(to_string(result[:header][0]), "Name")
+  | assert_eq(to_string(result[:header][1]), "Age")
+  | assert_eq(to_string(result[:header][2]), "City")
+  | assert_eq(len(result[:rows]), 2)
+  | assert_eq(to_string(result[:rows][0][0]), "Alice")
+  | assert_eq(to_string(result[:rows][0][1]), "30")
+  | assert_eq(to_string(result[:rows][0][2]), "Tokyo")
+  | assert_eq(to_string(result[:rows][1][0]), "Bob")
+  | assert_eq(to_string(result[:rows][1][1]), "25")
+  | assert_eq(to_string(result[:rows][1][2]), "Osaka")
+end
+
+def test_table_pivot_wider_missing_combination():
+  let header_row = "| Name | Attr | Val |\n| --- | --- | --- |\n| Alice | Age | 30 |\n| Alice | City | Tokyo |\n| Bob | Age | 25 |\n"
+  | let md_nodes = to_markdown(header_row)
+  | let t = first(table::tables(md_nodes))
+  | let result = table::pivot_wider(t, 1, 2)
+  | assert_eq(len(result[:rows]), 2)
+  | assert_eq(to_string(result[:rows][1][0]), "Bob")
+  | assert_eq(to_string(result[:rows][1][1]), "25")
+  | assert_eq(to_string(result[:rows][1][2]), "")
+end
