@@ -48,30 +48,30 @@ import "yaml" | if (.yaml): yaml::yaml_parse() | get(:title)
 
 # Sort by property
 [{"name": "Bob", "age": 30}, {"name": "Alice", "age": 25}]
-| sort_by(self, fn(x): get(x, "age");)
+| sort_by(fn(x): get(x, "age");)
 
 # Group by predicate
 [1, 2, 3, 4, 5, 6, 7, 8]
-| group_by(self, fn(x): if (x % 2 == 0): "even" else: "odd";)
+| group_by(fn(x): if (x % 2 == 0): "even" else: "odd";)
 
 # Sum with fold
 fold([1, 2, 3, 4, 5], 0, fn(acc, x): acc + x;)
 
 # Pick specific dict fields
 {"name": "mq", "version": "0.7.0", "internal_id": 42}
-| pick(self, ["name", "version"])
+| pick(["name", "version"])
 
 # Parse relative dates
-date_relative(now(), "3 days ago") | strftime(self, "%Y-%m-%d")
+date_relative(now(), "3 days ago") | strftime("%Y-%m-%d")
 
 # Compare semantic versions
 include "semver" | semver_gt(semver_parse("2.1.0"), semver_parse("2.0.5"))
 
 # Stringify to TOML
-include "toml" | {"title": "mq", "version": "0.7.0"} | toml_stringify(self)
+include "toml" | {"title": "mq", "version": "0.7.0"} | toml_stringify()
 
 # Uppercase all headings (run with the -U/--update flag to apply in place)
-.h | upcase(self)
+.h | upcase()
 `;
 
 let client: lc.LanguageClient | null = null;
