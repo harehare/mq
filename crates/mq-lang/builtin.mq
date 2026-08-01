@@ -370,7 +370,7 @@ def group_by(arr, f):
             | i += 1
             | let key = to_string(f(v))
             | let existing = get(groups, key)
-            | let new_group = if (is_none(existing)): [v] else: existing + v
+            | let new_group = if (is_none(existing)): [v] else: existing + [v]
             | groups = set(groups, key, new_group)
             | groups
           end
