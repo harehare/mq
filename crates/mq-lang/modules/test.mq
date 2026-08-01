@@ -148,6 +148,38 @@ def assert_not_empty(array):
     {"error": true, "message": "Assertion failed: Expected non-empty array but got empty array"}
 end
 
+# Verifies that a value has the given type.
+#
+# For markdown nodes this checks the node kind (e.g. "h1", "code", "list"),
+# matching `to_md_name`. For every other value it checks the runtime type
+# returned by `type`. On failure the source range of `value` is included
+# so callers (e.g. content-lint rules) can point at the offending node.
+def assert_type(value, expected_type):
+  let actual_type = if (is_markdown(value)): to_md_name(value) else: type(value)
+  | if (actual_type == expected_type):
+      value
+    else:
+      {"error": true, "range": get_location(value), "message": "Assertion failed: expected type \"" + expected_type + "\" but got \"" + actual_type + "\""}
+end
+
+# Verifies that a dict has the given field.
+def assert_field(value, field):
+  if (is_dict(value) && contains(value, field)):
+    value
+  elif (not(is_dict(value))):
+    {"error": true, "range": get_location(value), "message": "Assertion failed: expected a dict but got \"" + type(value) + "\""}
+  else:
+    {"error": true, "range": get_location(value), "message": "Assertion failed: expected field \"" + field + "\" to exist"}
+end
+
+# Verifies that a value's string representation matches the given regular expression pattern.
+def assert_matches(value, pattern):
+  if (test(to_string(value), pattern)):
+    value
+  else:
+    {"error": true, "range": get_location(value), "message": "Assertion failed: expected \"" + to_string(value) + "\" to match pattern \"" + pattern + "\""}
+end
+
 # Test execution helper functions
 
 # Runs a single test function and captures the result
