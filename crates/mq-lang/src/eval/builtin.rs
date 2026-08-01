@@ -431,6 +431,30 @@ fn date_diff_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
     }
 }
 
+/// Parses a natural-language relative date expression relative to a base Unix timestamp
+/// (seconds) and returns the resulting Unix timestamp (seconds, UTC).
+/// Supported forms: "now", "today", "yesterday", "tomorrow", "<n> <unit> ago",
+/// "in <n> <unit>", "next <weekday>", "last <weekday>".
+/// Units accept singular or plural: "second(s)", "minute(s)", "hour(s)", "day(s)", "week(s)", "month(s)", "year(s)".
+/// The base timestamp comes first (like `to_date`/`strftime`) so it can flow through a pipe:
+/// `now() | date_relative("3 days ago")`.
+#[mq_macros::mq_fn(name = "date_relative", params = Fixed(2))]
+fn date_relative_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(base), RuntimeValue::String(s)] => {
+            let base_secs = base.value() as i64;
+            let base_dt = DateTime::from_timestamp(base_secs, 0)
+                .ok_or_else(|| Error::Runtime(format!("date_relative: invalid base timestamp: {}", base_secs)))?;
+            date::parse_relative(s.as_str(), base_dt).map(|dt| RuntimeValue::Number(dt.timestamp().into()))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("date_relative should always receive exactly two arguments"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "base64", params = Fixed(1))]
 fn base64_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -4577,6 +4601,7 @@ mq_macros::builtin_dispatch! {
     STRPTIME,
     DATE_ADD,
     DATE_DIFF,
+    DATE_RELATIVE,
     BASE64,
     BASE64D,
     BASE64URL,
@@ -5418,6 +5443,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the difference (array2 - array1) in the given unit. Units: \"seconds\", \"minutes\", \"hours\", \"days\", \"weeks\".",
             params: &["array1", "array2", "unit"],
+        },
+    );
+    map.insert(
+        SmolStr::new("date_relative"),
+        BuiltinFunctionDoc {
+            description: "Parses a natural-language relative date expression (e.g. \"3 days ago\", \"yesterday\", \"tomorrow\", \"next monday\", \"in 2 weeks\") relative to a base Unix timestamp and returns the resulting Unix timestamp (seconds, UTC).",
+            params: &["base_timestamp", "date_str"],
         },
     );
     map.insert(
@@ -7878,6 +7910,64 @@ mod tests {
             Err(Error::Runtime(msg)) => assert!(msg.starts_with("date_diff:"), "expected date_diff prefix, got: {msg}"),
             other => panic!("expected Runtime error, got: {other:?}"),
         }
+    }
+
+    // date_relative: base is 2024-01-15T00:00:00Z (Monday), 1705276800
+    #[rstest]
+    #[case("now", 1705276800_i64)]
+    #[case("today", 1705276800_i64)]
+    #[case("yesterday", 1705190400_i64)]
+    #[case("tomorrow", 1705363200_i64)]
+    #[case("3 days ago", 1705017600_i64)]
+    #[case("in 2 weeks", 1706486400_i64)]
+    #[case("next monday", 1705881600_i64)]
+    #[case("last friday", 1705017600_i64)]
+    fn test_date_relative(#[case] input: &str, #[case] expected_secs: i64) {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("date_relative"),
+            vec![
+                RuntimeValue::Number(1705276800_i64.into()),
+                RuntimeValue::String(input.into()),
+            ],
+            &env,
+        )
+        .unwrap();
+        assert_eq!(result, RuntimeValue::Number(expected_secs.into()));
+    }
+
+    #[test]
+    fn test_date_relative_invalid_expression() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("date_relative"),
+            vec![
+                RuntimeValue::Number(1705276800_i64.into()),
+                RuntimeValue::String("not a relative date".into()),
+            ],
+            &env,
+        );
+        match result {
+            Err(Error::Runtime(msg)) => assert!(
+                msg.starts_with("date_relative:"),
+                "expected date_relative prefix, got: {msg}"
+            ),
+            other => panic!("expected Runtime error, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_date_relative_invalid_types() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("date_relative"),
+            vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())],
+            &env,
+        );
+        assert!(matches!(result, Err(Error::InvalidTypes(_, _))));
     }
 
     #[test]
