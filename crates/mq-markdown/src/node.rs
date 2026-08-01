@@ -309,6 +309,7 @@ pub struct List {
     pub level: Level,
     pub ordered: bool,
     pub checked: Option<bool>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -322,6 +323,7 @@ pub struct TableCell {
     pub values: Vec<Node>,
     pub column: usize,
     pub row: usize,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -333,6 +335,7 @@ pub struct TableCell {
 )]
 pub struct TableRow {
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -344,6 +347,7 @@ pub struct TableRow {
 )]
 pub struct TableAlign {
     pub align: Vec<TableAlignKind>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -366,6 +370,7 @@ pub struct Fragment {
 pub struct Code {
     pub value: String,
     pub lang: Option<String>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
     pub meta: Option<String>,
     pub fence: bool,
@@ -381,6 +386,7 @@ pub struct Image {
     pub alt: String,
     pub url: String,
     pub title: Option<String>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -394,6 +400,7 @@ pub struct ImageRef {
     pub alt: String,
     pub ident: String,
     pub label: Option<String>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -406,6 +413,7 @@ pub struct Link {
     pub url: Url,
     pub title: Option<Title>,
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -424,6 +432,7 @@ pub struct Callout {
     pub title: Option<String>,
     /// Body content nodes (the lines after the header).
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -440,6 +449,7 @@ pub struct Embed {
     pub target: String,
     /// Optional display hint after `|` (size for images, heading for notes).
     pub display: Option<String>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -456,6 +466,7 @@ pub struct WikiLink {
     pub target: String,
     /// Optional display text (the part after `|`).
     pub text: Option<String>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -468,6 +479,7 @@ pub struct WikiLink {
 pub struct FootnoteRef {
     pub ident: String,
     pub label: Option<String>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -480,6 +492,7 @@ pub struct FootnoteRef {
 pub struct Footnote {
     pub ident: String,
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -493,6 +506,7 @@ pub struct LinkRef {
     pub ident: String,
     pub label: Option<String>,
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -505,6 +519,7 @@ pub struct LinkRef {
 pub struct Heading {
     pub depth: u8,
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -515,6 +530,7 @@ pub struct Heading {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Definition {
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
     pub url: Url,
     pub title: Option<Title>,
@@ -529,6 +545,7 @@ pub struct Definition {
 )]
 pub struct Text {
     pub value: String,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -540,6 +557,7 @@ pub struct Text {
 )]
 pub struct Html {
     pub value: String,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -551,6 +569,7 @@ pub struct Html {
 )]
 pub struct Toml {
     pub value: String,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -562,6 +581,7 @@ pub struct Toml {
 )]
 pub struct Yaml {
     pub value: String,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -573,6 +593,7 @@ pub struct Yaml {
 )]
 pub struct CodeInline {
     pub value: SmolStr,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -584,6 +605,7 @@ pub struct CodeInline {
 )]
 pub struct MathInline {
     pub value: SmolStr,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -595,6 +617,7 @@ pub struct MathInline {
 )]
 pub struct Math {
     pub value: String,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -606,6 +629,7 @@ pub struct Math {
 )]
 pub struct MdxFlowExpression {
     pub value: SmolStr,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -617,6 +641,7 @@ pub struct MdxFlowExpression {
 )]
 pub struct MdxJsxFlowElement {
     pub children: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
     pub name: Option<String>,
     pub attributes: Vec<MdxAttributeContent>,
@@ -663,6 +688,7 @@ pub enum MdxAttributeValue {
 )]
 pub struct MdxJsxTextElement {
     pub children: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
     pub name: Option<SmolStr>,
     pub attributes: Vec<MdxAttributeContent>,
@@ -676,6 +702,7 @@ pub struct MdxJsxTextElement {
 )]
 pub struct MdxTextExpression {
     pub value: SmolStr,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -687,6 +714,7 @@ pub struct MdxTextExpression {
 )]
 pub struct MdxJsEsm {
     pub value: SmolStr,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -698,6 +726,7 @@ pub struct MdxJsEsm {
 )]
 pub struct Blockquote {
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -709,6 +738,7 @@ pub struct Blockquote {
 )]
 pub struct Delete {
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -720,6 +750,7 @@ pub struct Delete {
 )]
 pub struct Emphasis {
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -731,6 +762,7 @@ pub struct Emphasis {
 )]
 pub struct Strong {
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -741,6 +773,7 @@ pub struct Strong {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Break {
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -751,6 +784,7 @@ pub struct Break {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct HorizontalRule {
+    #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
@@ -1562,6 +1596,20 @@ impl Node {
                 }
             }
             Self::Empty => None,
+        }
+    }
+
+    /// Recursively clears position information from this node and all of its children.
+    /// Useful for shrinking structured output (JSON, YAML, etc.) when source spans
+    /// aren't needed, since `Position` accounts for most of a serialized node's size.
+    pub fn strip_positions(&mut self) {
+        self.set_position(None);
+        let mut children = self.children();
+        if !children.is_empty() {
+            for child in children.iter_mut() {
+                child.strip_positions();
+            }
+            self.set_children(children);
         }
     }
 
@@ -5007,6 +5055,44 @@ mod tests {
     fn test_set_position(#[case] mut node: Node, #[case] position: Position, #[case] expected: Node) {
         node.set_position(Some(position));
         assert_eq!(node, expected);
+    }
+
+    fn some_position() -> Option<Position> {
+        Some(Position {
+            start: Point { line: 1, column: 1 },
+            end: Point { line: 1, column: 5 },
+        })
+    }
+
+    #[test]
+    fn test_strip_positions_top_level() {
+        let mut node = Node::Text(Text {
+            value: "test".to_string(),
+            position: some_position(),
+        });
+        node.strip_positions();
+        assert_eq!(node.position(), None);
+    }
+
+    #[test]
+    fn test_strip_positions_recurses_into_children() {
+        let mut node = Node::Blockquote(Blockquote {
+            values: vec![Node::Strong(Strong {
+                values: vec![Node::Text(Text {
+                    value: "test".to_string(),
+                    position: some_position(),
+                })],
+                position: some_position(),
+            })],
+            position: some_position(),
+        });
+
+        node.strip_positions();
+
+        assert_eq!(node.position(), None);
+        let strong = &node.children()[0];
+        assert_eq!(strong.position(), None);
+        assert_eq!(strong.children()[0].position(), None);
     }
 
     #[rstest]

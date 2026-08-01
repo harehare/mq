@@ -502,6 +502,12 @@ struct OutputArgs {
     /// Limit output to at most N results.
     #[arg(long, value_name = "N", conflicts_with = "update")]
     limit: Option<usize>,
+
+    /// Omit Markdown node position information from structured output
+    /// (json, table, gron, csv, toml, toon, xml, yaml). Reduces output size
+    /// when source line/column spans aren't needed.
+    #[arg(long, default_value_t = false)]
+    no_position: bool,
 }
 
 impl OutputArgs {
@@ -1584,6 +1590,18 @@ impl Cli {
         }
     }
 
+    /// Clears position information from a Markdown value's node (recursively);
+    /// other value kinds are passed through unchanged. Used by `--no-position`.
+    fn strip_markdown_position(value: mq_lang::RuntimeValue) -> mq_lang::RuntimeValue {
+        match value {
+            mq_lang::RuntimeValue::Markdown(mut node, meta) => {
+                node.strip_positions();
+                mq_lang::RuntimeValue::Markdown(node, meta)
+            }
+            other => other,
+        }
+    }
+
     fn build_markdown(&self, runtime_values: &[mq_lang::RuntimeValue]) -> mq_markdown::Markdown {
         let mut markdown =
             mq_markdown::Markdown::new(runtime_values.iter().flat_map(Self::runtime_value_to_nodes).collect());
@@ -1616,7 +1634,15 @@ impl Cli {
         } else {
             Box::new(BufWriter::new(stdout.lock()))
         };
-        let runtime_values = runtime_values.values();
+        let stripped_values: Option<Vec<mq_lang::RuntimeValue>> = self.output.no_position.then(|| {
+            runtime_values
+                .values()
+                .iter()
+                .cloned()
+                .map(Self::strip_markdown_position)
+                .collect()
+        });
+        let runtime_values: &[mq_lang::RuntimeValue] = stripped_values.as_deref().unwrap_or(runtime_values.values());
 
         // Track truthy output for --exit-status.
         if self.output.exit_status && runtime_values.iter().any(|v| !Self::is_falsy(v)) {
@@ -2451,6 +2477,57 @@ mod tests {
         let nodes = parsed.as_array().unwrap();
         assert_eq!(nodes.len(), 1);
         assert_eq!(nodes[0]["type"], "Heading", "Markdown heading should have type=Heading");
+        assert!(
+            nodes[0].get("position").is_some(),
+            "position should be present by default"
+        );
+    }
+
+    #[test]
+    fn test_output_format_json_markdown_input_no_position() {
+        let (_, temp_file_path) = create_file("test_json_md_input_no_position.md", "# Test");
+        let (_, output_file) = create_file("test_json_md_output_no_position.json", "");
+        let temp_file_path_clone = temp_file_path.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: OutputFormat::Json,
+                output_file: Some(output_file.clone()),
+                no_position: true,
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        let parsed: serde_json::Value = serde_json::from_str(&output_content).expect("Output should be valid JSON");
+        let nodes = parsed.as_array().unwrap();
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0]["type"], "Heading");
+        assert!(
+            nodes[0].get("position").is_none(),
+            "--no-position should omit position from the top-level node"
+        );
+        let children = nodes[0]["values"].as_array().expect("heading should have values");
+        assert!(
+            children.iter().all(|c| c.get("position").is_none()),
+            "--no-position should omit position from child nodes too"
+        );
     }
 
     #[test]
