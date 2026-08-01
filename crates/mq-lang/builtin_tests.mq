@@ -1210,3 +1210,51 @@ def test_human_size():
   | assert_eq(result6, "-1.5K")
 end
 
+def test_assert_type():
+  let node = do "# Title" | to_markdown() | first();
+  | let result1 = assert_type(node, "h1")
+  | assert_eq(result1, node)
+
+  | let result2 = assert_type(node, "h2")
+  | assert_eq(is_dict(result2), true)
+  | assert_eq(result2["error"], true)
+  | assert_eq(result2["range"]["start_line"], 1)
+
+  | let result3 = assert_type("hello", "string")
+  | assert_eq(result3, "hello")
+
+  | let result4 = assert_type(42, "string")
+  | assert_eq(result4["error"], true)
+  | assert_eq(is_none(result4["range"]), true)
+end
+
+def test_assert_field():
+  let record = {"name": "mq", "kind": "cli"}
+  | let result1 = assert_field(record, "name")
+  | assert_eq(result1, record)
+
+  | let result2 = assert_field(record, "missing")
+  | assert_eq(result2["error"], true)
+  | assert_eq(contains(result2["message"], "missing"), true)
+
+  | let result3 = assert_field("not a dict", "name")
+  | assert_eq(result3["error"], true)
+  | assert_eq(contains(result3["message"], "string"), true)
+end
+
+def test_assert_matches():
+  let node = do "let x = 1;" | to_markdown() | first();
+  | let result1 = assert_matches(node, "^let ")
+  | assert_eq(result1, node)
+
+  | let result2 = assert_matches(node, "^fn ")
+  | assert_eq(result2["error"], true)
+  | assert_eq(result2["range"]["start_line"], 1)
+
+  | let result3 = assert_matches("hello world", "^hello")
+  | assert_eq(result3, "hello world")
+
+  | let result4 = assert_matches("hello world", "^bye")
+  | assert_eq(result4["error"], true)
+end
+
