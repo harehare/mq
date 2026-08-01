@@ -65,7 +65,7 @@ def test_fuzzy_filter():
   | assert_eq(len(result1), 1)
 
   | let result2 = fuzzy::fuzzy_filter(["lawn", "claw"], "lawn", 0.7)
-  | assert_eq(len(result2), 1)
+  | assert_eq(len(result2), 2)
 
   | let result3 = fuzzy::fuzzy_filter(["lawn", "claw"], "flaw", 0.6)
   | assert_eq(len(result3), 2)

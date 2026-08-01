@@ -3518,6 +3518,16 @@ fn engine() -> DefaultEngine {
 #[case::csv_parse_delimiter(r#"_csv_parse("a;b;c", ";") | first | first"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("a".to_string())].into()))]
 // _csv_parse: with header row
 #[case::csv_parse_header(r#"_csv_parse("name,age\nAlice,30", ",", true) | first | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("dict".to_string())].into()))]
+// _levenshtein_distance: edit distance between two strings
+#[case::levenshtein_distance(r#"_levenshtein_distance("flaw", "lawn")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
+// _levenshtein_distance: identical strings
+#[case::levenshtein_distance_identical(r#"_levenshtein_distance("abc", "abc")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
+// _jaro_distance: identical strings
+#[case::jaro_distance_identical(r#"_jaro_distance("abc", "abc")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+// _jaro_distance: empty strings
+#[case::jaro_distance_empty(r#"_jaro_distance("", "")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+// _jaro_winkler_distance: identical strings
+#[case::jaro_winkler_distance_identical(r#"_jaro_winkler_distance("abc", "abc")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 // _xml_parse: basic element with text
 #[case::xml_parse_basic(r#"_xml_parse("<root>hello</root>") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("dict".to_string())].into()))]
 // _xml_parse: self-closing element
@@ -3788,6 +3798,12 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::csv_parse_non_string_delim(r#"_csv_parse("a,b", 42)"#, vec![RuntimeValue::None],)]
 // _xml_parse: non-string arg → type error
 #[case::xml_parse_non_string("_xml_parse(42)", vec![RuntimeValue::None],)]
+// _levenshtein_distance: non-string arg → type error
+#[case::levenshtein_distance_non_string(r#"_levenshtein_distance(42, "a")"#, vec![RuntimeValue::None],)]
+// _jaro_distance: non-string arg → type error
+#[case::jaro_distance_non_string(r#"_jaro_distance("a", 42)"#, vec![RuntimeValue::None],)]
+// _jaro_winkler_distance: non-string arg → type error
+#[case::jaro_winkler_distance_non_string(r#"_jaro_winkler_distance(42, 42)"#, vec![RuntimeValue::None],)]
 // get: Markdown + non-number key → type error
 #[case::get_markdown_non_number(r#"get(to_h("hi", 1), "key")"#, vec![RuntimeValue::None],)]
 // mul: negative float * string → type error

@@ -3478,6 +3478,56 @@ fn _csv_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
     }
 }
 
+#[mq_macros::mq_fn(name = "_levenshtein_distance", params = Fixed(2))]
+fn _levenshtein_distance_impl(
+    ident: &Ident,
+    _: &RuntimeValue,
+    mut args: Args,
+    _: &SharedEnv,
+) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
+            Ok(RuntimeValue::Number((strsim::levenshtein(s1, s2) as i64).into()))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("_levenshtein_distance should always receive exactly two arguments"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "_jaro_distance", params = Fixed(2))]
+fn _jaro_distance_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(RuntimeValue::Number(strsim::jaro(s1, s2).into())),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("_jaro_distance should always receive exactly two arguments"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "_jaro_winkler_distance", params = Fixed(2))]
+fn _jaro_winkler_distance_impl(
+    ident: &Ident,
+    _: &RuntimeValue,
+    mut args: Args,
+    _: &SharedEnv,
+) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
+            Ok(RuntimeValue::Number(strsim::jaro_winkler(s1, s2).into()))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("_jaro_winkler_distance should always receive exactly two arguments"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "_json_parse", params = Fixed(1))]
 fn _json_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -4805,6 +4855,9 @@ mq_macros::builtin_dispatch! {
     TO_MDX,
     _GET_MARKDOWN_POSITION,
     _CSV_PARSE,
+    _LEVENSHTEIN_DISTANCE,
+    _JARO_DISTANCE,
+    _JARO_WINKLER_DISTANCE,
     _JSON_PARSE,
     _GRON_PARSE,
     _YAML_PARSE,
@@ -5265,6 +5318,27 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a CSV string into an array of arrays, using the specified delimiter and header options.",
             params: &["csv_string", "delimiter", "has_header"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_levenshtein_distance"),
+        BuiltinFunctionDoc {
+            description: "Calculates the Levenshtein edit distance between two strings.",
+            params: &["s1", "s2"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_jaro_distance"),
+        BuiltinFunctionDoc {
+            description: "Calculates the Jaro distance between two strings (0.0 to 1.0, where 1.0 is an exact match).",
+            params: &["s1", "s2"],
+        },
+    );
+    map.insert(
+        SmolStr::new("_jaro_winkler_distance"),
+        BuiltinFunctionDoc {
+            description: "Calculates the Jaro-Winkler distance between two strings, boosting scores for matching prefixes.",
+            params: &["s1", "s2"],
         },
     );
     map.insert(
