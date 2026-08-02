@@ -9,7 +9,7 @@ Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 Commands:
   repl        Start a REPL session for interactive query execution
   completion  Generate a shell completion script and print it to stdout
-  help        Show documentation for a builtin function, selector, or standard-module function
+  help        Print this message or the help of the given subcommand(s)
 
 Arguments:
   [QUERY OR FILE]  
@@ -88,6 +88,8 @@ Options:
           Limit output to at most N results
       --list
           List all available subcommands (built-in and external)
+      --doc
+          Use the built-in reference document as input instead of a file
   -P <PARALLEL_THRESHOLD>
           Number of files to process before switching to parallel processing [default: 10]
       --argv [<ARGV>...]

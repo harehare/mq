@@ -2752,7 +2752,6 @@ dependencies = [
  "rstest",
  "rustyline",
  "scopeguard",
- "serde",
  "serde_json",
  "serde_yaml",
  "strum",
