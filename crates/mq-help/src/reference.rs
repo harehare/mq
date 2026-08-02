@@ -101,84 +101,88 @@ fn def_info(node: &Shared<CstNode>, skip_native: bool) -> Option<MqFnDoc> {
     })
 }
 
+/// One line of a doc comment outside any fenced code block, classified by its role in the
+/// Markdown-ish convention documented on [`extract_functions_from_cst`]. Adding a new
+/// recognized line kind (e.g. a future `Capability:` line) means adding one variant here and
+/// one match arm in [`parse_doc_comment`] — the fence-toggling logic never has to change.
+enum DocLine<'a> {
+    /// A blank line, or the literal `Example:` label — pure formatting, carries no data.
+    Skip,
+    /// `Returns: TYPE`
+    Returns(&'a str),
+    /// Anything else, folded into the free-text description.
+    Description(&'a str),
+}
+
+impl<'a> DocLine<'a> {
+    fn classify(line: &'a str) -> Self {
+        if line.is_empty() || line == "Example:" {
+            Self::Skip
+        } else if let Some(rest) = line.strip_prefix("Returns:") {
+            Self::Returns(rest.trim())
+        } else {
+            Self::Description(line)
+        }
+    }
+}
+
 /// Parses the Markdown-ish doc-comment convention documented on
 /// [`extract_functions_from_cst`] out of a def's leading comment lines.
 fn parse_doc_comment(lines: impl IntoIterator<Item = String>) -> (String, Option<String>, Vec<MqExample>) {
     let mut description_parts = Vec::new();
     let mut returns = None;
     let mut examples = Vec::new();
-    let mut in_fence = false;
-    let mut fence_lines: Vec<String> = Vec::new();
+    // `Some(lines)` while inside a ` ``` ` fence, accumulating its (de-indented) lines.
+    let mut fence: Option<Vec<String>> = None;
 
     for raw in lines {
         let line = raw.trim();
 
         if line == "```" {
-            if in_fence {
-                examples.extend(parse_fence_examples(&fence_lines));
-                fence_lines.clear();
+            match fence.take() {
+                Some(fence_lines) => examples.extend(parse_fence_example(&fence_lines)),
+                None => fence = Some(Vec::new()),
             }
-            in_fence = !in_fence;
             continue;
         }
 
-        if in_fence {
+        if let Some(fence_lines) = &mut fence {
             fence_lines.push(line.to_string());
             continue;
         }
 
-        if line.is_empty() || line == "Example:" {
-            continue;
+        match DocLine::classify(line) {
+            DocLine::Skip => {}
+            DocLine::Returns(ty) => returns = Some(ty.to_string()),
+            DocLine::Description(text) => description_parts.push(text.to_string()),
         }
-        if let Some(rest) = line.strip_prefix("Returns:") {
-            returns = Some(rest.trim().to_string());
-            continue;
-        }
-        description_parts.push(line.to_string());
     }
 
     (description_parts.join(" "), returns, examples)
 }
 
-/// Parses the (already de-indented) lines inside one ` ``` ` fence into examples.
+/// Parses the (already de-indented) lines inside one ` ``` ` fence into a single example.
 ///
-/// A fence with exactly one `#=>` line supports a multi-line expected value: every line
-/// after `#=>` (up to the fence close) is joined with `\n`, so examples whose output is
-/// naturally multi-line (a CSV/table/frontmatter render, ...) don't need to be contorted
-/// into a single line. A fence with more than one `#=>` line instead pairs each with the
-/// single code line immediately preceding it (see `test_extract_functions_multiple_examples_in_one_fence`).
-fn parse_fence_examples(fence_lines: &[String]) -> Vec<MqExample> {
-    let arrow_count = fence_lines.iter().filter(|l| l.starts_with("#=>")).count();
-
-    if arrow_count == 1 {
-        let arrow_index = fence_lines.iter().position(|l| l.starts_with("#=>")).unwrap();
-        let code = fence_lines[..arrow_index].join("\n");
-        if code.is_empty() {
-            return Vec::new();
-        }
-        let mut expected_lines = vec![fence_lines[arrow_index].trim_start_matches("#=>").trim().to_string()];
-        expected_lines.extend(fence_lines[arrow_index + 1..].iter().cloned());
-        return vec![MqExample {
-            code,
-            expected: expected_lines.join("\n"),
-        }];
+/// Everything before the first `#=>` line is the code; the arrow's own text plus every line
+/// after it (up to the fence close) is the expected value, joined with `\n` — so output that's
+/// naturally multi-line (a CSV/table/frontmatter render, ...) doesn't need to be contorted onto
+/// one line. A fence with no `#=>` line, or no code before it, yields no example. A function
+/// with multiple examples uses multiple fences (see `test_extract_functions_multiple_examples`),
+/// so this never has to disambiguate more than one `#=>` per fence.
+fn parse_fence_example(fence_lines: &[String]) -> Option<MqExample> {
+    let arrow_index = fence_lines.iter().position(|l| l.starts_with("#=>"))?;
+    let code = fence_lines[..arrow_index].join("\n");
+    if code.is_empty() {
+        return None;
     }
 
-    let mut examples = Vec::new();
-    let mut pending_code: Option<String> = None;
-    for line in fence_lines {
-        if let Some(expected) = line.strip_prefix("#=>") {
-            if let Some(code) = pending_code.take() {
-                examples.push(MqExample {
-                    code,
-                    expected: expected.trim().to_string(),
-                });
-            }
-        } else if !line.is_empty() {
-            pending_code = Some(line.clone());
-        }
-    }
-    examples
+    let mut expected_lines = vec![fence_lines[arrow_index].trim_start_matches("#=>").trim().to_string()];
+    expected_lines.extend(fence_lines[arrow_index + 1..].iter().cloned());
+
+    Some(MqExample {
+        code,
+        expected: expected_lines.join("\n"),
+    })
 }
 
 fn ident_text(node: &Shared<CstNode>) -> Option<String> {
@@ -238,11 +242,19 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_functions_multiple_examples_in_one_fence() {
-        let src = "# Adds one.\n#\n# Example:\n# ```\n# add1(1)\n# #=> 2\n# add1(-1)\n# #=> 0\n# ```\ndef add1(x): add(x, 1);";
+    fn test_extract_functions_multiple_examples() {
+        let src = "# Adds one.\n#\n# Example:\n# ```\n# add1(1)\n# #=> 2\n# ```\n# Example:\n# ```\n# add1(-1)\n# #=> 0\n# ```\ndef add1(x): add(x, 1);";
         let fns = extract_functions_from_cst(src, false);
         assert_eq!(fns[0].examples.len(), 2);
         assert_eq!(fns[0].examples[0].expected, "2");
         assert_eq!(fns[0].examples[1].expected, "0");
+    }
+
+    #[test]
+    fn test_extract_functions_multiline_expected() {
+        let src = "# Joins with newlines.\n#\n# Example:\n# ```\n# join_lines([\"a\", \"b\"])\n# #=> a\n# b\n# ```\ndef join_lines(arr): arr;";
+        let fns = extract_functions_from_cst(src, false);
+        assert_eq!(fns[0].examples.len(), 1);
+        assert_eq!(fns[0].examples[0].expected, "a\nb");
     }
 }
