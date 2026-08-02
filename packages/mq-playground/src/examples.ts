@@ -661,6 +661,310 @@ Keyboard, Accessories, $80, 35
       },
     ],
   },
+  {
+    name: "String Functions",
+    examples: [
+      {
+        name: "Trim and normalize case",
+        code: `trim() | upcase()`,
+        markdown: `  hello, mq!  `,
+        isUpdate: false,
+        format: "raw",
+      },
+      {
+        name: "Split and join",
+        code: `split(",") | join(" | ")`,
+        markdown: `apple,banana,cherry`,
+        isUpdate: false,
+        format: "raw",
+      },
+      {
+        name: "Pad numbers",
+        code: `["7", "42", "123"] | map(fn(x): lpad(x, 5, "0");)`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Slugify text",
+        code: `slugify()`,
+        markdown: `Hello, World! This is mq`,
+        isUpdate: false,
+        format: "raw",
+      },
+    ],
+  },
+  {
+    name: "Array and Collection Functions",
+    examples: [
+      {
+        name: "Sort by property",
+        code: `[{"name": "Bob", "age": 30}, {"name": "Alice", "age": 25}, {"name": "Carol", "age": 35}]
+| sort_by(fn(x): get(x, "age");)`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Group by predicate",
+        code: `[1, 2, 3, 4, 5, 6, 7, 8]
+| group_by(fn(x): if (x % 2 == 0): "even" else: "odd";)`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Chunk into groups",
+        code: `[1, 2, 3, 4, 5, 6, 7] | chunks(3)`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Zip two arrays",
+        code: `zip(["a", "b", "c"], [1, 2, 3])`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Partition by predicate",
+        code: `[1, 2, 3, 4, 5, 6] | partition(fn(x): x % 2 == 0;)`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+    ],
+  },
+  {
+    name: "Functional Programming",
+    examples: [
+      {
+        name: "Sum with fold",
+        code: `[1, 2, 3, 4, 5] | fold(0, fn(acc, x): acc + x;)`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Any and all conditions",
+        code: `[1, 2, 3, 4, 5]
+| {"any_gt_4": any(fn(x): x > 4;), "all_positive": all(fn(x): x > 0;)}`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Filter and convert with compact_map",
+        code: `["1", "abc", "3", "xyz", "5"]
+| compact_map(fn(x): if (is_regex_match(x, "^[0-9]+$")): to_number(x);)`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+    ],
+  },
+  {
+    name: "Date and Time",
+    examples: [
+      {
+        name: "Parse relative dates",
+        code: `date_relative(1705276800, "3 days ago") | strftime("%Y-%m-%d")`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Format dates with strftime",
+        code: `from_date("2024-01-15T00:00:00Z") | strftime("%A, %B %d, %Y")`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Add to a date",
+        code: `gmtime(from_date("2024-01-15T00:00:00Z"))
+| date_add(2, "months")
+| mktime()
+| strftime("%Y-%m-%d")`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Days between two dates",
+        code: `date_diff(gmtime(from_date("2024-01-01T00:00:00Z")), gmtime(from_date("2024-03-15T00:00:00Z")), "days")`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+    ],
+  },
+  {
+    name: "Data Format Conversion",
+    examples: [
+      {
+        name: "Parse TOML",
+        code: `include "toml" | toml_parse()`,
+        markdown: `title = "mq"
+version = "0.7.0"
+
+[author]
+name = "harehare"
+`,
+        isUpdate: false,
+        format: "raw",
+      },
+      {
+        name: "Parse XML to markdown table",
+        code: `include "xml" | xml_parse() | xml_to_markdown_table()`,
+        markdown: `<book><title>mq Guide</title><price>20</price></book>`,
+        isUpdate: false,
+        format: "raw",
+      },
+      {
+        name: "Parse gron output",
+        code: `include "gron" | gron_parse()`,
+        markdown: `json = {};
+json.name = "mq";
+json.tags = [];
+json.tags[0] = "markdown";
+json.tags[1] = "cli";
+`,
+        isUpdate: false,
+        format: "raw",
+      },
+      {
+        name: "Stringify to TOON",
+        code: `include "toon"
+| {"name": "mq", "version": "0.7.0", "tags": ["cli", "markdown"]}
+| toon_stringify()`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+    ],
+  },
+  {
+    name: "Semantic Versioning",
+    examples: [
+      {
+        name: "Compare versions",
+        code: `include "semver" | semver_gt(semver_parse("2.1.0"), semver_parse("2.0.5"))`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Sort version list",
+        code: `include "semver"
+| ["1.2.0", "1.10.0", "1.2.10"]
+| map(semver_parse)
+| semver_sort()
+| map(semver_to_string)`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+    ],
+  },
+  {
+    name: "Markdown Builders",
+    examples: [
+      {
+        name: "Build heading and list",
+        code: `include "md"
+| doc(h("Getting Started", 2), to_md_list(text("Install mq"), 1), to_md_list(text("Run your first query"), 1))`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Build a callout",
+        code: `include "md" | doc(callout(text("Breaking change in 0.7.0"), "warning", "Heads up"))`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Build a link",
+        code: `include "md" | doc(strong(text("Note:")), to_link("https://mqlang.org", "mq documentation", ""))`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+    ],
+  },
+  {
+    name: "In-place Document Updates",
+    examples: [
+      {
+        name: "Uppercase all headings",
+        code: `.h | upcase()`,
+        markdown: `# Introduction
+
+Welcome to the project.
+
+## Installation
+
+Run npm install.
+
+## Usage
+
+Use the tool like this.
+`,
+        isUpdate: true,
+        format: "markdown",
+      },
+      {
+        name: "Promote heading levels",
+        code: `.h | increase_header_depth()`,
+        markdown: `# Introduction
+
+Welcome to the project.
+
+## Installation
+
+Run npm install.
+
+## Usage
+
+Use the tool like this.
+`,
+        isUpdate: true,
+        format: "markdown",
+      },
+    ],
+  },
+  {
+    name: "Dictionary and Path Utilities",
+    examples: [
+      {
+        name: "Pick specific fields",
+        code: `{"name": "mq", "version": "0.7.0", "license": "MIT", "internal_id": 42}
+| pick(["name", "version"])`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Get and set nested values",
+        code: `{"author": {"name": "harehare", "location": {"country": "Japan"}}}
+| set_path(["author", "location", "city"], "Tokyo")
+| get_path(["author", "location"])`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Transform dict values",
+        code: `{"a": 1, "b": 2} | with_entries(fn(e): [e[0], e[1] * 10];)`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+    ],
+  },
 ];
 
 // Flatten examples for backward compatibility
