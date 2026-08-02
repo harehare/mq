@@ -6,6 +6,7 @@ use mq_lang::DefaultEngine;
 use mq_lang::Shared;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::io::BufRead;
 use std::io::IsTerminal;
 use std::io::{self, BufWriter, Read, Write};
@@ -774,18 +775,21 @@ impl Cli {
     }
 
     /// Shows documentation for a single function/selector/module, or lists everything known
-    /// when `name` is `None`.
+    /// when `name` is `None`. Writes the whole output in one call, not one `println!` per
+    /// line — hundreds of lines otherwise means hundreds of flushed syscalls.
     fn run_help(name: Option<&str>, json: bool) -> miette::Result<()> {
+        let stdout = io::stdout();
+        let mut handle = BufWriter::new(stdout.lock());
+
         let Some(name) = name else {
-            if json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&help::all_names()).into_diagnostic()?
-                );
+            let out = if json {
+                serde_json::to_string_pretty(&help::all_names()).into_diagnostic()?
             } else {
-                Self::print_help_index();
-            }
-            return Ok(());
+                Self::help_index_text()
+            };
+            Self::write_ignore_pipe(&mut handle, out.as_bytes())?;
+            Self::write_ignore_pipe(&mut handle, b"\n")?;
+            return handle.flush().into_diagnostic();
         };
 
         // A bare name that's both a module and a same-named function within it (e.g.
@@ -793,12 +797,14 @@ impl Cli {
         if !name.contains("::")
             && let Some(module) = help::lookup_module(name)
         {
-            if json {
-                println!("{}", serde_json::to_string_pretty(&module).into_diagnostic()?);
+            let out = if json {
+                serde_json::to_string_pretty(&module).into_diagnostic()?
             } else {
-                println!("{}", help::render_module_human(&module));
-            }
-            return Ok(());
+                help::render_module_human(&module)
+            };
+            Self::write_ignore_pipe(&mut handle, out.as_bytes())?;
+            Self::write_ignore_pipe(&mut handle, b"\n")?;
+            return handle.flush().into_diagnostic();
         }
 
         let entries = help::lookup(name);
@@ -811,20 +817,19 @@ impl Cli {
             });
         }
 
-        if json {
-            println!("{}", serde_json::to_string_pretty(&entries).into_diagnostic()?);
+        let out = if json {
+            serde_json::to_string_pretty(&entries).into_diagnostic()?
         } else {
-            for entry in &entries {
-                println!("{}", help::render_human(entry));
-            }
-        }
-
-        Ok(())
+            entries.iter().map(help::render_human).collect::<Vec<_>>().join("\n")
+        };
+        Self::write_ignore_pipe(&mut handle, out.as_bytes())?;
+        Self::write_ignore_pipe(&mut handle, b"\n")?;
+        handle.flush().into_diagnostic()
     }
 
-    /// Prints the grouped `mq help` index: selectors, top-level functions, and modules (each
-    /// with a one-line summary), for a name-less human-readable lookup.
-    fn print_help_index() {
+    /// Builds the grouped `mq help` index text: selectors, top-level functions, and modules
+    /// (each with a one-line summary), for a name-less human-readable lookup.
+    fn help_index_text() -> String {
         // Cheap: never parses standard-module sources, unlike `all_entries`.
         let entries = help::top_level_entries();
 
@@ -844,24 +849,31 @@ impl Cli {
         functions.sort_unstable();
         functions.dedup();
 
-        println!("{}", "Selectors:".bold().cyan());
+        let mut out = String::new();
+
+        let _ = writeln!(out, "{}", "Selectors:".bold().cyan());
         for s in selectors {
-            println!("  {s}");
+            let _ = writeln!(out, "  {s}");
         }
 
-        println!("\n{}", "Functions:".bold().cyan());
+        let _ = writeln!(out, "\n{}", "Functions:".bold().cyan());
         for f in functions {
-            println!("  {f}");
+            let _ = writeln!(out, "  {f}");
         }
 
-        println!("\n{}", "Modules:".bold().cyan());
+        let _ = writeln!(out, "\n{}", "Modules:".bold().cyan());
         for module in help::all_modules() {
             let summary = module.description.split(". ").next().unwrap_or_default();
             let padded_name = format!("{:<10}", module.name);
-            println!("  {} {}", padded_name.green(), summary);
+            let _ = writeln!(out, "  {} {}", padded_name.green(), summary);
         }
 
-        println!("\nRun `mq help <name>` for a function or selector, `mq help <module>` for a module overview.");
+        let _ = write!(
+            out,
+            "\nRun `mq help <name>` for a function or selector, `mq help <module>` for a module overview."
+        );
+
+        out
     }
 
     pub fn run(&self) -> miette::Result<()> {

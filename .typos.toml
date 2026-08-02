@@ -2,18 +2,18 @@
 # HashiCorp is a proper noun
 Hashi = "Hashi"
 # CLI help abbreviation syntax: b[reakpoint], l[ist]
-reakpoint = "reakpoint"
 ist = "ist"
 juxt = "juxt"
+reakpoint = "reakpoint"
+sction = "sction"
 
 [default.extend-identifiers]
 # bimap is a crate name (bijective map)
-bimap = "bimap"
 BiMap = "BiMap"
+bimap = "bimap"
 # Variable/test data: short strings used as test inputs or local variable names
-ue = "ue"
-caf = "caf"
 abd = "abd"
-hel = "hel"
+caf = "caf"
 fo = "fo"
-
+hel = "hel"
+ue = "ue"
