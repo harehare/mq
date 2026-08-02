@@ -2,6 +2,7 @@
 members = [
   "fuzz",
   "crates/mq-ffi",
+  "crates/mq-help",
   "crates/mq-macros",
   "crates/mq-run",
   "crates/mq-lang",
@@ -26,6 +27,7 @@ resolver = "3"
 mq-check = {path = "crates/mq-check", version = "0.7.0"}
 mq-dap = {path = "crates/mq-dap", version = "0.7.0"}
 mq-formatter = {path = "crates/mq-formatter", version = "0.7.0"}
+mq-help = {path = "crates/mq-help", version = "0.7.0"}
 mq-hir = {path = "crates/mq-hir", version = "0.7.0"}
 mq-lang = {path = "crates/mq-lang", version = "0.7.0"}
 mq-lint = {path = "crates/mq-lint", version = "0.7.0"}

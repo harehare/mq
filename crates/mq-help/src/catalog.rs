@@ -21,7 +21,7 @@ pub struct HelpExample {
 
 /// Full documentation for one function or selector, unifying native builtins, selectors,
 /// `builtin.mq` functions, and standard-module functions behind a single shape — the same
-/// shape is served by `mq help --json` and by `mq-web-api`'s `/functions/{name}` and
+/// shape can be served by `mq help --json` and by `mq-web-api`'s `/functions/{name}` and
 /// `/selectors/{name}` endpoints, so CLI and Web API can't drift apart.
 #[derive(Debug, Clone, Serialize)]
 pub struct HelpEntry {
@@ -51,8 +51,7 @@ pub fn lookup(name: &str) -> Vec<HelpEntry> {
 }
 
 /// Every documented function and selector: native builtins, selectors, `builtin.mq`
-/// functions, and every standard module's functions. The single source `mq help`, its
-/// `--json` output, and (via `mq-web-api`) `/functions` and `/selectors` all draw from.
+/// functions, and every standard module's functions.
 pub fn all_entries() -> Vec<HelpEntry> {
     let mut results = Vec::new();
 

@@ -2571,6 +2571,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-help"
+version = "0.7.0"
+dependencies = [
+ "colored 3.1.1",
+ "mq-lang",
+ "serde",
+]
+
+[[package]]
 name = "mq-hir"
 version = "0.7.0"
 dependencies = [
@@ -2733,6 +2742,7 @@ dependencies = [
  "miette",
  "mimalloc",
  "mq-dap",
+ "mq-help",
  "mq-lang",
  "mq-markdown",
  "mq-repl",

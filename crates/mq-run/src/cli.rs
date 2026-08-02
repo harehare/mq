@@ -23,7 +23,7 @@ use which::which;
 static HAD_TRUTHY_OUTPUT: AtomicBool = AtomicBool::new(false);
 
 use crate::grep;
-use crate::help;
+use mq_help as help;
 
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
