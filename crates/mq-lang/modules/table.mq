@@ -1,8 +1,29 @@
-# This module is under development. APIs and behavior may change without notice.
+# The table module extracts and transforms Markdown tables. This module is
+# under development; APIs and behavior may change without notice.
+#
+# Call it via `import "table"` then `table::fn()` — from an inline query, a
+# script, or `mq -A 'import "table" | table::fn()'` on the command line.
+# Unlike `section`, `import` must always be written explicitly (no `include`
+# shortcut). Table functions need every document node at once: pass `-A` on
+# the CLI, or pipe through `nodes` inline.
+#
+# Example:
+# ```
+# import "table" | len(table::tables(to_markdown("| a | b |\n| - | - |\n| 1 | 2 |")))
+# #=> 1
+# ```
 
 import "csv" |
 
 # Extract table structures from a list of markdown nodes.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | len(self)
+# #=> 1
+# ```
+#
+# Returns: array
 def tables(md_nodes):
   if (is_empty(md_nodes)):
     []
@@ -56,11 +77,32 @@ def tables(md_nodes):
 end
 
 # Set the alignment for a table.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::set_align(self, ["left", "right"]) | table::to_csv(self)
+# #=> a,b
+# 1,2
+# 3,4
+# ```
+#
+# Returns: dict
 def set_align(table, align):
   set(table, :align, set_attr(table[:align], "align", join(map(align, to_string), ",")))
 end
 
 # Add a new row to a table.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::add_row(self, ["5", "6"]) | table::to_csv(self)
+# #=> a,b
+# 1,2
+# 3,4
+# 5,6
+# ```
+#
+# Returns: dict
 def add_row(table, row):
   if (len(row) != len(table[:header])):
     error("Row length does not match table header length.")
@@ -75,6 +117,16 @@ def add_row(table, row):
 end
 
 # Add a new column to a table.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::add_column(self, ["c", "9", "10"]) | table::to_csv(self)
+# #=> a,b,c
+# 1,2,9
+# 3,4,10
+# ```
+#
+# Returns: dict
 def add_column(table, col):
   if (len(col) != len(table[:rows]) + 1):
     error("Column length does not match table row count.")
@@ -94,11 +146,28 @@ def add_column(table, col):
 end
 
 # Remove a row from a table at the specified index.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::remove_row(self, 0) | table::to_csv(self)
+# #=> a,b
+# 3,4
+# ```
+#
+# Returns: dict
 def remove_row(table, row_index):
   set(table, :rows, del(table[:rows], row_index))
 end
 
 # Remove a column from a table at the specified index.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::remove_column(self, 0) | len(self[:rows][0])
+# #=> 1
+# ```
+#
+# Returns: dict
 def remove_column(table, col_index):
   let rows = foreach (row, table[:rows]):
       del(row, col_index)
@@ -107,21 +176,59 @@ def remove_column(table, col_index):
 end
 
 # Map a function over each row in the table.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::map_rows(self, fn(row): row;) | table::to_csv(self)
+# #=> a,b
+# 1,2
+# 3,4
+# ```
+#
+# Returns: dict
 def map_rows(table, f):
   set(table, :rows, map(table[:rows], f))
 end
 
 # Filter tables from markdown nodes based on a predicate function.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | table::filter_tables(self, fn(h, r): true;) | len(self)
+# #=> 1
+# ```
+#
+# Returns: array
 def filter_tables(tables, f):
   filter(tables, fn(table): f(table[:header], table[:rows]);)
 end
 
 # Filter rows in the table based on a predicate function.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::filter_rows(self, fn(row): true;) | table::to_csv(self)
+# #=> a,b
+# 1,2
+# 3,4
+# ```
+#
+# Returns: dict
 def filter_rows(table, f):
   set(table, :rows, filter(table[:rows], f))
 end
 
 # Sort rows in the table by a specified column index or default sorting.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::sort_rows(self) | table::to_csv(self)
+# #=> a,b
+# 1,2
+# 3,4
+# ```
+#
+# Returns: dict
 def sort_rows(table, column_index = None):
   let new_rows = if (column_index == None):
     sort(table[:rows])
@@ -131,11 +238,29 @@ def sort_rows(table, column_index = None):
 end
 
 # Convert a table structure back into a list of markdown nodes.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::to_markdown(self) | len(self)
+# #=> 7
+# ```
+#
+# Returns: array
 def to_markdown(table)
   table[:header] + table[:align] + flatten(table[:rows])
 end
 
 # Convert a table structure into a CSV string with the specified delimiter.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::to_csv(self)
+# #=> a,b
+# 1,2
+# 3,4
+# ```
+#
+# Returns: string
 def to_csv(table, delimiter = ",")
   let header = table[:header]
   | let rows = table[:rows]
@@ -147,6 +272,16 @@ end
 # a row holding its header name (in the `names_to` column) and its cell
 # value (in the `values_to` column). Columns not listed in `value_columns`
 # are treated as identifier columns and repeated for every unpivoted value.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::pivot_longer(self, [1]) | table::to_csv(self)
+# #=> a,name,value
+# 1,b,2
+# 3,b,4
+# ```
+#
+# Returns: dict
 def pivot_longer(table, value_columns, names_to = "name", values_to = "value"):
   let header = table[:header]
   | let id_columns = filter(range(0, len(header) - 1), fn(i): !in(value_columns, i);)
@@ -184,6 +319,15 @@ end
 # of new columns; `values_from` is the column index supplying the values
 # for those new columns. Columns other than `names_from` and `values_from`
 # are treated as identifier columns and used to group rows together.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| id | name | value |\n| --- | --- | --- |\n| 1 | x | 10 |\n| 1 | y | 20 |")) | first(self) | table::pivot_wider(self, 1, 2) | table::to_csv(self)
+# #=> id,x,y
+# 1,10,20
+# ```
+#
+# Returns: dict
 def pivot_wider(table, names_from, values_from):
   let header = table[:header]
   | let id_columns = filter(range(0, len(header) - 1), fn(i): i != names_from && i != values_from;)

@@ -1,31 +1,105 @@
 # Halts execution with error code 5
+#
+# Returns: dynamic
 def halt_error(): halt(5);
 
 # Checks if input is an array
+#
+# Example:
+# ```
+# is_array([1, 2])
+# #=> true
+# ```
+#
+# Returns: bool
 def is_array(a): type(a) == "array";
 
 # Checks if input is markdown
+#
+# Example:
+# ```
+# is_markdown(to_h("t", 1))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_markdown(m): type(m) == "markdown";
 
 # Checks if input is a boolean
+#
+# Example:
+# ```
+# is_bool(true)
+# #=> true
+# ```
+#
+# Returns: bool
 def is_bool(b): type(b) == "bool";
 
 # Checks if input is a number
+#
+# Example:
+# ```
+# is_number(1)
+# #=> true
+# ```
+#
+# Returns: bool
 def is_number(n): type(n) == "number";
 
 # Checks if input is a string
+#
+# Example:
+# ```
+# is_string("hi")
+# #=> true
+# ```
+#
+# Returns: bool
 def is_string(s): type(s) == "string";
 
 # Checks if input is None
+#
+# Example:
+# ```
+# is_none(None)
+# #=> true
+# ```
+#
+# Returns: bool
 def is_none(n): type(n) == "None";
 
 # Checks if input is a dictionary
+#
+# Example:
+# ```
+# is_dict({"a": 1})
+# #=> true
+# ```
+#
+# Returns: bool
 def is_dict(d): type(d) == "dict";
 
 # Checks if input is bytes
+#
+# Example:
+# ```
+# is_bytes(to_bytes("hi"))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_bytes(b): type(b) == "bytes";
 
 # Checks if string contains a substring
+#
+# Example:
+# ```
+# contains("hello world", "world")
+# #=> true
+# ```
+#
+# Returns: bool
 def contains(haystack, needle):
   if (is_dict(haystack)):
     !is_none(haystack[needle])
@@ -34,6 +108,14 @@ def contains(haystack, needle):
 end
 
 # Removes prefix string from input if it exists
+#
+# Example:
+# ```
+# ltrimstr("prefix_value", "prefix_")
+# #=> value
+# ```
+#
+# Returns: string
 def ltrimstr(s, left):
   if (starts_with(s, left)):
     slice(s, index(s, left) + len(left), len(s))
@@ -42,6 +124,14 @@ def ltrimstr(s, left):
 end
 
 # Removes suffix string from input if it exists
+#
+# Example:
+# ```
+# rtrimstr("value_suffix", "_suffix")
+# #=> value
+# ```
+#
+# Returns: string
 def rtrimstr(s, right):
   if (ends_with(s, right)):
     slice(s, 0, sub(len(s), len(right)))
@@ -50,6 +140,14 @@ def rtrimstr(s, right):
 end
 
 # Checks if string, array or dict is empty
+#
+# Example:
+# ```
+# is_empty([])
+# #=> true
+# ```
+#
+# Returns: bool
 def is_empty(s):
   if (is_string(s) || is_array(s) || is_dict(s) || is_bytes(s)):
     len(s) == 0
@@ -60,45 +158,157 @@ def is_empty(s):
 end
 
 # Tests if string matches a pattern
+#
+# Example:
+# ```
+# test("abc", "a.c")
+# #=> true
+# ```
+#
+# Returns: bool
 def test(s, pattern): is_regex_match(s, pattern);
 
 # Returns value if condition is true, None otherwise
+#
+# Example:
+# ```
+# select(5, true)
+# #=> 5
+# ```
+#
+# Returns: dynamic
 def select(v, f): if (f): v;
 
 # Returns array if input is array, None otherwise
+#
+# Example:
+# ```
+# arrays([1, 2])
+# #=> [1, 2]
+# ```
+#
+# Returns: dynamic
 def arrays(a): select(a, is_array(a));
 
 # Returns markdown if input is markdown, None otherwise
+#
+# Example:
+# ```
+# markdowns(to_h("t", 1))
+# #=> # t
+# ```
+#
+# Returns: dynamic
 def markdowns(m): select(m, is_markdown(m));
 
 # Returns boolean if input is boolean, None otherwise
+#
+# Example:
+# ```
+# booleans(true)
+# #=> true
+# ```
+#
+# Returns: dynamic
 def booleans(b): select(b, is_bool(b));
 
 # Returns number if input is number, None otherwise
+#
+# Example:
+# ```
+# numbers(1)
+# #=> 1
+# ```
+#
+# Returns: dynamic
 def numbers(n): select(n, is_number(n));
 
 # Returns string if input is string, None otherwise
+#
+# Example:
+# ```
+# strings("hi")
+# #=> hi
+# ```
+#
+# Returns: dynamic
 def strings(s): select(s, is_string(s));
 
 # Returns dict if input is dict, None otherwise
+#
+# Example:
+# ```
+# dicts({"a": 1})
+# #=> {"a": 1}
+# ```
+#
+# Returns: dynamic
 def dicts(d): select(d, is_dict(d));
 
 # Returns the value if it is None, None otherwise
+#
+# Example:
+# ```
+# nones(None)
+# #=> 
+# ```
+#
+# Returns: dynamic
 def nones(n): select(n, is_none(n));
 
 # Returns bytes if input is bytes, None otherwise
+#
+# Example:
+# ```
+# bytes(to_bytes("hi"))
+# #=> 6869
+# ```
+#
+# Returns: dynamic
 def bytes(b): select(b, is_bytes(b));
 
 # Returns the value if it is an array or dict (i.e. a container that can be iterated over), None otherwise
+#
+# Example:
+# ```
+# iterables([1, 2])
+# #=> [1, 2]
+# ```
+#
+# Returns: dynamic
 def iterables(v): select(v, is_array(v) || is_dict(v));
 
 # Returns the value if it is not an array or dict (i.e. a leaf/scalar value), None otherwise
+#
+# Example:
+# ```
+# scalars(1)
+# #=> 1
+# ```
+#
+# Returns: dynamic
 def scalars(v): select(v, !(is_array(v) || is_dict(v)));
 
 # Formats a date to ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)
+#
+# Example:
+# ```
+# to_date_iso8601(0)
+# #=> 1970-01-01T00:00:00Z
+# ```
+#
+# Returns: string
 def to_date_iso8601(d): to_date(d, "%Y-%m-%dT%H:%M:%SZ");
 
 # Applies a given function to each element of the provided array and returns a new array with the results.
+#
+# Example:
+# ```
+# map([1, 2, 3], fn(x): mul(x, 2);)
+# #=> [2, 4, 6]
+# ```
+#
+# Returns: array
 def map(v, f):
   if (is_dict(v)):
     do
@@ -112,6 +322,14 @@ def map(v, f):
 end
 
 # Applies a function to each element and flattens the result into a single array
+#
+# Example:
+# ```
+# flat_map([1, 2], fn(x): [x, x];)
+# #=> [1, 1, 2, 2]
+# ```
+#
+# Returns: array
 def flat_map(v, f):
   if (is_none(v)):
     None
@@ -120,6 +338,14 @@ def flat_map(v, f):
 end
 
 # Filters the elements of an array based on a provided callback function.
+#
+# Example:
+# ```
+# filter([1, 2, 3, 4], fn(x): x > 2;)
+# #=> [3, 4]
+# ```
+#
+# Returns: array
 def filter(v, f):
   if (is_dict(v)):
     do
@@ -136,6 +362,8 @@ def filter(v, f):
 end
 
 # Executes a provided function once for each element in an array or each key-value pair in a dictionary.
+#
+# Returns: dynamic
 def each(v, f):
   let target = if (is_dict(v)): entries(v) else: v
   | var i = 0
@@ -149,36 +377,124 @@ def each(v, f):
 end
 
 # Returns the first element of an array
+#
+# Example:
+# ```
+# first([1, 2, 3])
+# #=> 1
+# ```
+#
+# Returns: dynamic
 def first(arr): arr[0];
 
 # Returns the last element of an array
+#
+# Example:
+# ```
+# last([1, 2, 3])
+# #=> 3
+# ```
+#
+# Returns: dynamic
 def last(arr): arr[len(arr) - 1];
 
 # Returns the second element of an array
+#
+# Example:
+# ```
+# second([1, 2, 3])
+# #=> 2
+# ```
+#
+# Returns: dynamic
 def second(arr): if (len(arr) > 1): arr[1];
 
 # Checks if markdown is h1 heading
+#
+# Example:
+# ```
+# is_h1(to_h("t", 1))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_h1(md): to_md_name(md) == "h1";
 
 # Checks if markdown is h2 heading
+#
+# Example:
+# ```
+# is_h2(to_h("t", 2))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_h2(md): to_md_name(md) == "h2";
 
 # Checks if markdown is h3 heading
+#
+# Example:
+# ```
+# is_h3(to_h("t", 3))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_h3(md): to_md_name(md) == "h3";
 
 # Checks if markdown is h4 heading
+#
+# Example:
+# ```
+# is_h4(to_h("t", 4))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_h4(md): to_md_name(md) == "h4";
 
 # Checks if markdown is h5 heading
+#
+# Example:
+# ```
+# is_h5(to_h("t", 5))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_h5(md): to_md_name(md) == "h5";
 
 # Checks if markdown is h6 heading
+#
+# Example:
+# ```
+# is_h6(to_h("t", 6))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_h6(md): to_md_name(md) == "h6";
 
 # Checks if markdown is heading
+#
+# Example:
+# ```
+# is_h(to_h("t", 2))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_h(md): or(is_h1(md), is_h2(md), is_h3(md), is_h4(md), is_h5(md), is_h6(md));
 
 # Checks if markdown is a heading of the specified level (1-6)
+#
+# Example:
+# ```
+# is_h_level(to_h("t", 2), 2)
+# #=> true
+# ```
+#
+# Returns: bool
 def is_h_level(md, level):
   if (level == 1):
     is_h1(md)
@@ -197,52 +513,126 @@ def is_h_level(md, level):
 end
 
 # Checks if markdown is table align
+#
+# Example:
+# ```
+# is_table_align(to_md_table_align(["left"]))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_table_align(md): to_md_name(md) == "table_align";
 
 # Checks if markdown is table cell
+#
+# Example:
+# ```
+# is_table_cell(to_md_table_cell("A1", 0, 0))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_table_cell(md): to_md_name(md) == "table_cell";
 
 # Checks if markdown is emphasis
+#
+# Example:
+# ```
+# is_em(to_em("hi"))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_em(md): to_md_name(md) == "emphasis";
 
 # Checks if markdown is html
+#
+# Returns: bool
 def is_html(md): to_md_name(md) == "html";
 
 # Checks if markdown is yaml
+#
+# Returns: bool
 def is_yaml(md): to_md_name(md) == "yaml";
 
 # Checks if markdown is toml
+#
+# Returns: bool
 def is_toml(md): to_md_name(md) == "toml";
 
 # Checks if markdown is code block
+#
+# Example:
+# ```
+# is_code(to_code("x", "python"))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_code(md): to_md_name(md) == "code";
 
 # Checks if markdown is text
+#
+# Example:
+# ```
+# is_text(to_md_text("hi"))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_text(text): to_md_name(text) == "text";
 
 # Checks if markdown is list
+#
+# Example:
+# ```
+# is_list(to_md_list("Item", 0))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_list(list): to_md_name(list) == "list";
 
 # Checks if markdown node's URL matches a specified URL
 # deprecated: use select(.link.url == url) instead
+#
+# Example:
+# ```
+# matches_url(to_link("https://example.com", "x", ""), "https://example.com")
+# #=> true
+# ```
+#
+# Returns: bool
 def matches_url(node, url): get_url(node) == url;
 
 # Checks if markdown is MDX Flow Expression
+#
+# Returns: bool
 def is_mdx_flow_expression(mdx): to_md_name(mdx) == "mdx_flow_expression";
 
 # Checks if markdown is MDX Jsx Flow Element
+#
+# Returns: bool
 def is_mdx_jsx_flow_element(mdx): to_md_name(mdx) == "mdx_jsx_flow_element";
 
 # Checks if markdown is MDX Jsx Text Element
+#
+# Returns: bool
 def is_mdx_jsx_text_element(mdx): to_md_name(mdx) == "mdx_jsx_text_element";
 
 # Checks if markdown is MDX Text Expression
+#
+# Returns: bool
 def is_mdx_text_expression(mdx): to_md_name(mdx) == "mdx_text_expression";
 
 # Checks if markdown is MDX Js Esm
+#
+# Returns: bool
 def is_mdx_js_esm(mdx): to_md_name(mdx) == "mdx_js_esm";
 
 # Checks if markdown is MDX
+#
+# Returns: bool
 def is_mdx(mdx):
   is_mdx_flow_expression(mdx) ||
     is_mdx_jsx_flow_element(mdx) ||
@@ -252,11 +642,27 @@ def is_mdx(mdx):
 end
 
 # Checks if markdown is a callout block
+#
+# Example:
+# ```
+# is_callout(to_callout("Note", "note", ""))
+# #=> true
+# ```
+#
+# Returns: bool
 def is_callout(md):
   to_md_name(md) == "callout"
 end
 
 # Returns an array of length n filled with the given value.
+#
+# Example:
+# ```
+# fill("x", 3)
+# #=> ["x", "x", "x"]
+# ```
+#
+# Returns: array
 def fill(value, n):
   if (n < 0):
     error("n must be non-negative")
@@ -267,12 +673,28 @@ def fill(value, n):
 end
 
 # Sorts an array using a key function that extracts a comparable value for each element.
+#
+# Example:
+# ```
+# sort_by([3, 1, 2], identity)
+# #=> [1, 2, 3]
+# ```
+#
+# Returns: array
 def sort_by(arr, f):
   let decorate_arr = foreach (x, arr): [f(x), x]; | _sort_by_impl(decorate_arr) | map(second);
 
 # Sorts an array in natural order (numeric-aware), so runs of digits embedded in a
 # string are compared as numbers rather than character-by-character, e.g. "file2" sorts
 # before "file10" (unlike a plain lexicographic `sort`).
+#
+# Example:
+# ```
+# sort_natural(["file10", "file2"])
+# #=> ["file2", "file10"]
+# ```
+#
+# Returns: array
 def sort_natural(arr):
   sort_by(arr, fn(x):
     scan(to_text(x), "[0-9]+|[^0-9]+")
@@ -281,6 +703,14 @@ def sort_natural(arr):
   );
 
 # Returns the count of elements in the array that satisfy the provided function.
+#
+# Example:
+# ```
+# count_by([1, 2, 3, 4], fn(x): x > 2;)
+# #=> 2
+# ```
+#
+# Returns: number
 def count_by(arr, f):
   if (!is_array(arr) || is_empty(arr)):
     0
@@ -289,6 +719,14 @@ def count_by(arr, f):
 end
 
 # Skips the first n elements of an array and returns the rest
+#
+# Example:
+# ```
+# skip([1, 2, 3, 4], 2)
+# #=> [3, 4]
+# ```
+#
+# Returns: array
 def skip(arr, n):
   if (n < 0):
     error("n must be non-negative")
@@ -298,6 +736,14 @@ def skip(arr, n):
 end
 
 # Takes the first n elements of an array
+#
+# Example:
+# ```
+# take([1, 2, 3, 4], 2)
+# #=> [1, 2]
+# ```
+#
+# Returns: array
 def take(arr, n):
   if (n < 0):
     error("n must be non-negative")
@@ -308,6 +754,14 @@ def take(arr, n):
 end
 
 # Returns the index of the first element in an array that satisfies the provided function.
+#
+# Example:
+# ```
+# find_index([1, 2, 3], fn(x): x == 2;)
+# #=> 1
+# ```
+#
+# Returns: number
 def find_index(arr, f):
   let _find_index_impl = fn(arr, f, idx):
       if (idx == len(arr)):
@@ -324,6 +778,14 @@ def find_index(arr, f):
 end
 
 # Skips elements from the beginning of an array while the provided function returns true
+#
+# Example:
+# ```
+# skip_while([1, 2, 3, 4], fn(x): x < 3;)
+# #=> [3, 4]
+# ```
+#
+# Returns: array
 def skip_while(arr, f):
   if (!is_array(arr)):
     error("first argument must be an array")
@@ -340,6 +802,14 @@ def skip_while(arr, f):
 end
 
 # Takes elements from the beginning of an array while the provided function returns true
+#
+# Example:
+# ```
+# take_while([1, 2, 3, 4], fn(x): x < 3;)
+# #=> [1, 2]
+# ```
+#
+# Returns: array
 def take_while(arr, f):
   if (not(is_array(arr))):
     error("first argument must be an array")
@@ -356,6 +826,14 @@ def take_while(arr, f):
 end
 
 # Groups elements of an array by the result of applying a function to each element
+#
+# Example:
+# ```
+# group_by([1, 2, 3, 4], fn(x): mod(x, 2);)
+# #=> {"1": [1, 3], "0": [2, 4]}
+# ```
+#
+# Returns: dict
 def group_by(arr, f):
   var groups = dict()
   | if (not(is_array(arr))):
@@ -379,6 +857,14 @@ end
 
 # Counts occurrences of each key extracted from the elements of an array,
 # returning a dict of `{key: count}`.
+#
+# Example:
+# ```
+# frequencies_by(["a", "b", "a"], identity)
+# #=> {"a": 2, "b": 1}
+# ```
+#
+# Returns: dict
 def frequencies_by(arr, f):
   if (not(is_array(arr))):
     error("first argument must be an array")
@@ -392,15 +878,47 @@ def frequencies_by(arr, f):
 end
 
 # Counts occurrences of each element in an array, returning a dict of `{value: count}`.
+#
+# Example:
+# ```
+# tally(["a", "b", "a"])
+# #=> {"a": 2, "b": 1}
+# ```
+#
+# Returns: dict
 def tally(arr): frequencies_by(arr, identity);
 
 # Returns true if any element in the array satisfies the provided function.
+#
+# Example:
+# ```
+# any([1, 2, 3], fn(x): x > 2;)
+# #=> true
+# ```
+#
+# Returns: bool
 def any(v, f): if (is_empty(v)): false else: len(filter(v, f)) != 0;
 
 # Returns true if all element in the array satisfies the provided function.
+#
+# Example:
+# ```
+# all([1, 2, 3], fn(x): x > 0;)
+# #=> true
+# ```
+#
+# Returns: bool
 def all(v, f): if (is_empty(v)): true else: len(filter(v, f)) == len(v);
 
 # Returns true if the element is in the array.
+#
+# Example:
+# ```
+# in([1, 2, 3], 2)
+# #=> true
+# ```
+#
+# Returns: bool
 def in(v, elem):
   if (is_array(v)):
     if (is_array(elem)):
@@ -412,6 +930,14 @@ def in(v, elem):
 end
 
 # Reduces an array to a single value by applying a function, starting from an initial value.
+#
+# Example:
+# ```
+# fold([1, 2, 3], 0, fn(acc, x): acc + x;)
+# #=> 6
+# ```
+#
+# Returns: dynamic
 def fold(arr, init, f):
   if (not(is_array(arr))):
     error("first argument must be an array")
@@ -430,6 +956,14 @@ def fold(arr, init, f):
 end
 
 # Returns a new array with duplicate elements removed, comparing by the result of the provided function.
+#
+# Example:
+# ```
+# unique_by([1, 2, 1, 3], identity)
+# #=> [1, 2, 3]
+# ```
+#
+# Returns: array
 def unique_by(arr, f):
   if (not(is_array(arr))):
     error("first argument must be an array")
@@ -452,9 +986,25 @@ def unique_by(arr, f):
 end
 
 # Returns the input value unchanged.
+#
+# Example:
+# ```
+# identity(1)
+# #=> 1
+# ```
+#
+# Returns: dynamic
 def identity(x): x;
 
 # Transposes a 2D array (matrix), swapping rows and columns.
+#
+# Example:
+# ```
+# transpose([[1, 2], [3, 4]])
+# #=> [[1, 3], [2, 4]]
+# ```
+#
+# Returns: array
 def transpose(matrix):
   if (!is_array(matrix)):
     error("transpose: input must be an array of arrays")
@@ -473,6 +1023,14 @@ def transpose(matrix):
 end
 
 # Applies a function to a value and returns the value (useful for debugging or side effects).
+#
+# Example:
+# ```
+# tap(1, 2)
+# #=> 1
+# ```
+#
+# Returns: dynamic
 macro tap(tap_value, tap_expr) do
   quote do
     tap_expr | tap_value
@@ -480,6 +1038,14 @@ macro tap(tap_value, tap_expr) do
 end
 
 # Executes the expression only if the condition is false.
+#
+# Example:
+# ```
+# unless(false, 1)
+# #=> 1
+# ```
+#
+# Returns: dynamic
 macro unless(unless_cond, unless_expr) do
   quote do
     if (unquote(!unless_cond)): unquote(unless_expr)
@@ -487,6 +1053,8 @@ macro unless(unless_cond, unless_expr) do
 end
 
 # Executes the expression repeatedly until the condition is true.
+#
+# Returns: dynamic
 macro until(until_cond, until_expr) do
   quote do
     loop:
@@ -497,6 +1065,8 @@ macro until(until_cond, until_expr) do
 end
 
 # Extracts values from an array of objects based on a specified selector.
+#
+# Returns: dynamic
 macro pluck(pluck_obj, selector) do
   quote do
     match (unquote(pluck_obj)):
@@ -519,21 +1089,61 @@ macro pluck(pluck_obj, selector) do
 end
 
 # Maps over an array and removes None values from the result.
+#
+# Example:
+# ```
+# compact_map([1, 2, 3], fn(x): if (x > 1): x;)
+# #=> [2, 3]
+# ```
+#
+# Returns: array
 def compact_map(arr, f): map(arr, f) | compact();
 
 # Filters out elements that match the condition (opposite of filter).
+#
+# Example:
+# ```
+# reject([1, 2, 3, 4], fn(x): x > 2;)
+# #=> [1, 2]
+# ```
+#
+# Returns: array
 def reject(arr, f): filter(arr, fn(x): !f(x););
 
 # Splits an array into two arrays: [matching, not_matching] based on a condition.
+#
+# Example:
+# ```
+# partition([1, 2, 3, 4], fn(x): x > 2;)
+# #=> [[3, 4], [1, 2]]
+# ```
+#
+# Returns: array
 def partition(arr, f): [filter(arr, f), filter(arr, fn(x): !f(x);)];
 
 # Safely gets a value from a dict with a default if the key doesn't exist.
+#
+# Example:
+# ```
+# get_or({"a": 1}, "b", 0)
+# #=> 0
+# ```
+#
+# Returns: dynamic
 def get_or(dict, key, default):
   let val = get(dict, key)
   | if (is_none(val)): default else: val
 end
 
 # Executes an expression n times and returns an array of results.
+#
+# Example:
+# ```
+# times(3, 1)
+# #=> [1, 1, 1]
+# ```
+#
+# Returns: array
 macro times(t_n, t_expr) do
   quote do
     if (unquote(t_n) == 0):
@@ -544,12 +1154,36 @@ macro times(t_n, t_expr) do
 end
 
 # Checks if a value is between min and max (inclusive).
+#
+# Example:
+# ```
+# between(5, 1, 10)
+# #=> true
+# ```
+#
+# Returns: bool
 def between(value, min, max): value >= min && value <= max;
 
 # Sums elements of an array after applying a transformation function.
+#
+# Example:
+# ```
+# sum_by([1, 2, 3], fn(x): mul(x, 2);)
+# #=> 12
+# ```
+#
+# Returns: number
 def sum_by(arr, f): fold(arr, 0, fn(acc, x): acc + f(x););
 
 # Creates a dictionary indexed by a key extracted from each element.
+#
+# Example:
+# ```
+# index_by([1, 2, 3], to_string)
+# #=> {"1": 1, "2": 2, "3": 3}
+# ```
+#
+# Returns: dict
 def index_by(arr, f):
   fold(arr, dict(), fn(acc, item):
     let key = to_string(f(item))
@@ -560,12 +1194,22 @@ def index_by(arr, f):
 end
 
 # Inspects a value by printing its string representation and returning the value.
+#
+# Returns: dynamic
 def inspect(value) do
   print(to_string(value))
   | value
 end
 
 # Left-pads a string to a specified length using a given padding string.
+#
+# Example:
+# ```
+# lpad("7", 3, "0")
+# #=> 007
+# ```
+#
+# Returns: string
 def lpad(s, length, pad_str = " "):
   let pad_needed = length - len(s)
   | if (pad_needed <= 0):
@@ -580,6 +1224,14 @@ def lpad(s, length, pad_str = " "):
 end
 
 # Right-pads a string to a specified length using a given padding string.
+#
+# Example:
+# ```
+# rpad("7", 3, "0")
+# #=> 700
+# ```
+#
+# Returns: string
 def rpad(s, length, pad_str = " "):
   let pad_needed = length - len(s)
   | if (pad_needed <= 0):
@@ -594,56 +1246,82 @@ def rpad(s, length, pad_str = " "):
 end
 
 # Loads a markdown file from the specified path
+#
+# Returns: array
 def load_markdown(path): read_file(path) | to_markdown();
 
 # Performs an HTTPS GET request, optionally with the given headers (a dict of string to
 # string), and returns the response body as a string
+#
+# Returns: string
 def http_get(url, headers = {}): http(:get, url, headers);
 
 # Performs an HTTPS POST request with the given body, optionally with the given headers
 # (a dict of string to string), and returns the response body as a string
+#
+# Returns: string
 def http_post(url, body, headers = {}): http(:post, url, body, headers);
 
 # Performs an HTTPS PUT request with the given body, optionally with the given headers
 # (a dict of string to string), and returns the response body as a string
+#
+# Returns: string
 def http_put(url, body, headers = {}): http(:put, url, body, headers);
 
 # Performs an HTTPS PATCH request with the given body, optionally with the given headers
 # (a dict of string to string), and returns the response body as a string
+#
+# Returns: string
 def http_patch(url, body, headers = {}): http(:patch, url, body, headers);
 
 # Performs an HTTPS DELETE request, optionally with the given headers (a dict of string to
 # string), and returns the response body as a string
+#
+# Returns: string
 def http_delete(url, headers = {}): http(:delete, url, headers);
 
 # Performs an HTTPS HEAD request, optionally with the given headers (a dict of string to
 # string), and returns the response body as a string
+#
+# Returns: string
 def http_head(url, headers = {}): http(:head, url, headers);
 
 # Performs an HTTPS GET request, optionally with the given headers (a dict of string to
 # string), and parses the response body as JSON, returning the resulting data structure
+#
+# Returns: dynamic
 def http_get_json(url, headers = {}): _json_parse(http(:get, url, headers));
 
 # Performs an HTTPS POST request with the given body, optionally with the given headers
 # (a dict of string to string), and parses the response body as JSON, returning the
 # resulting data structure
+#
+# Returns: dynamic
 def http_post_json(url, body, headers = {}): _json_parse(http(:post, url, body, headers));
 
 # Performs an HTTPS PUT request with the given body, optionally with the given headers
 # (a dict of string to string), and parses the response body as JSON, returning the
 # resulting data structure
+#
+# Returns: dynamic
 def http_put_json(url, body, headers = {}): _json_parse(http(:put, url, body, headers));
 
 # Performs an HTTPS PATCH request with the given body, optionally with the given headers
 # (a dict of string to string), and parses the response body as JSON, returning the
 # resulting data structure
+#
+# Returns: dynamic
 def http_patch_json(url, body, headers = {}): _json_parse(http(:patch, url, body, headers));
 
 # Performs an HTTPS DELETE request, optionally with the given headers (a dict of string to
 # string), and parses the response body as JSON, returning the resulting data structure
+#
+# Returns: dynamic
 def http_delete_json(url, headers = {}): _json_parse(http(:delete, url, headers));
 
 # Prints the debug information of the given value(s).
+#
+# Returns: dynamic
 def debug(*args):
   if (len(args) == 1):
     stderr(s"DEBUG: ${args[0]}")
@@ -653,41 +1331,97 @@ end
 
 # Increases the depth (numeric level) of a markdown heading node by one,
 # effectively demoting the heading (e.g. h1 -> h2), up to a maximum of 6.
+#
+# Example:
+# ```
+# increase_header_depth(to_h("t", 1))
+# #=> ## t
+# ```
+#
+# Returns: markdown
 def increase_header_depth(node):
   shift_right(node, 1)
 end
 
 # Decreases the depth (numeric level) of a markdown heading node by one,
 # effectively promoting the heading (e.g. h2 -> h1), down to a minimum of 1.
+#
+# Example:
+# ```
+# decrease_header_depth(to_h("t", 2))
+# #=> # t
+# ```
+#
+# Returns: markdown
 def decrease_header_depth(node):
   shift_left(node, 1)
 end
 
 # Demotes a markdown heading by increasing its depth (numeric level) by one.
 # This is an alias for `increase_header_depth`.
+#
+# Example:
+# ```
+# demote_heading(to_h("t", 1))
+# #=> ## t
+# ```
+#
+# Returns: markdown
 def demote_heading(node):
   increase_header_depth(node)
 end
 
 # Promotes a markdown heading by decreasing its depth (numeric level) by one.
 # This is an alias for `decrease_header_depth`.
+#
+# Example:
+# ```
+# promote_heading(to_h("t", 2))
+# #=> # t
+# ```
+#
+# Returns: markdown
 def promote_heading(node):
   decrease_header_depth(node)
 end
 
 # Deprecated: use `increase_header_depth` or `demote_heading` instead.
 # Kept for backward compatibility; behavior unchanged.
+#
+# Example:
+# ```
+# increase_header_level(to_h("t", 1))
+# #=> ## t
+# ```
+#
+# Returns: markdown
 def increase_header_level(node):
   increase_header_depth(node)
 end
 
 # Deprecated: use `decrease_header_depth` or `promote_heading` instead.
 # Kept for backward compatibility; behavior unchanged.
+#
+# Example:
+# ```
+# decrease_header_level(to_h("t", 2))
+# #=> # t
+# ```
+#
+# Returns: markdown
 def decrease_header_level(node):
   decrease_header_depth(node)
 end
 
 # Performs a binary search on a sorted array to find the index of the target value.
+#
+# Example:
+# ```
+# bsearch([1, 3, 5, 7, 9], 5)
+# #=> 2
+# ```
+#
+# Returns: number
 def bsearch(arr, target):
   if (not(is_array(arr))):
     error("first argument must be an array")
@@ -711,6 +1445,14 @@ def bsearch(arr, target):
 end
 
 # Converts a string into a URL-friendly slug by lowercasing, replacing non-alphanumeric characters with hyphens, and trimming hyphens from the ends.
+#
+# Example:
+# ```
+# slugify("Hello, World!")
+# #=> hello-world
+# ```
+#
+# Returns: string
 def slugify(s, separator = "-"):
   s
   | downcase()
@@ -719,6 +1461,14 @@ def slugify(s, separator = "-"):
 end
 
 # Calculates the p-th percentile of an array of numbers using linear interpolation between closest ranks.
+#
+# Example:
+# ```
+# percentile([1, 2, 3, 4, 5], 0.5)
+# #=> 3
+# ```
+#
+# Returns: number
 def percentile(arr, p):
   if (not(is_array(arr))):
     error("first argument must be an array")
@@ -741,6 +1491,14 @@ def percentile(arr, p):
 end
 
 # Splits an array into chunks of a specified size, returning an array of arrays.
+#
+# Example:
+# ```
+# chunks([1, 2, 3, 4, 5], 2)
+# #=> [[1, 2], [3, 4], [5]]
+# ```
+#
+# Returns: array
 def chunks(v, size):
   match (v):
     | :array if (size <= 0): error("size must be a positive integer")
@@ -770,6 +1528,14 @@ def chunks(v, size):
 end
 
 # Splits an array into chunks based on the result of applying a function to each element, grouping consecutive elements with the same key together.
+#
+# Example:
+# ```
+# chunk_by([1, 1, 2, 2, 3], identity)
+# #=> [[1, 1], [2, 2], [3]]
+# ```
+#
+# Returns: array
 def chunk_by(v, f):
   match (v):
     | :array:
@@ -817,23 +1583,71 @@ def chunk_by(v, f):
 end
 
 # Returns a new function that takes the same arguments as the original function but with the first two arguments flipped.
+#
+# Example:
+# ```
+# flip(sub, 2, 10)
+# #=> 8
+# ```
+#
+# Returns: dynamic
 def flip(f, a, b): f(b, a);
 
 # Returns a new predicate function that negates the result of the given function.
+#
+# Example:
+# ```
+# let f = complement(is_none) | f(1)
+# #=> true
+# ```
+#
+# Returns: bool
 def complement(f): fn(x): !f(x);;
 
 # Composes functions into one function, applying them right-to-left.
 # `comp(f, g, h)(x)` is equivalent to `f(g(h(x)))`.
+#
+# Example:
+# ```
+# let f = comp(fn(x): x + 1;, fn(x): x * 2;) | f(3)
+# #=> 7
+# ```
+#
+# Returns: dynamic
 def comp(*fns): fn(x): fold(reverse(fns), x, fn(acc, f): f(acc););;
 
 # Returns a function that applies each given function to its argument and collects the results into an array.
 # `juxt(f, g, h)(x)` is equivalent to `[f(x), g(x), h(x)]`.
+#
+# Example:
+# ```
+# let f = juxt(first, last) | f([1, 2, 3])
+# #=> [1, 3]
+# ```
+#
+# Returns: array
 def juxt(*fns): fn(x): map(fns, fn(f): f(x););;
 
 # Returns the sum of the elements in an array after applying a transformation function to each element.
+#
+# Example:
+# ```
+# sum([1, 2, 3])
+# #=> 6
+# ```
+#
+# Returns: number
 def sum(arr): sum_by(arr, identity);
 
 # Returns the average (mean) of an array of numbers, or None if the array is empty.
+#
+# Example:
+# ```
+# mean([1, 2, 3])
+# #=> 2
+# ```
+#
+# Returns: number
 def mean(arr):
   if (is_empty(arr)):
     None
@@ -842,6 +1656,14 @@ def mean(arr):
 end
 
 # Returns the median of an array of numbers, or None if the array is empty.
+#
+# Example:
+# ```
+# geomean([1, 4])
+# #=> 2
+# ```
+#
+# Returns: number
 def geomean(arr):
   if (is_empty(arr)):
     None
@@ -854,6 +1676,14 @@ end
 
 # Returns the n-grams of an array or string, which are overlapping contiguous
 # subarrays (or substrings) of length n, sliding one element at a time.
+#
+# Example:
+# ```
+# ngram("abcd", 2)
+# #=> ["ab", "bc", "cd"]
+# ```
+#
+# Returns: array
 def ngram(s, n):
   if (n <= 0):
     error("n must be a positive integer")
@@ -886,6 +1716,14 @@ def ngram(s, n):
 end
 
 # Combines two arrays into an array of pairs, where each pair contains elements from the same index in both arrays.
+#
+# Example:
+# ```
+# zip([1, 2], ["a", "b"])
+# #=> [[1, "a"], [2, "b"]]
+# ```
+#
+# Returns: array
 def zip(arr1, arr2):
   if (not(is_array(arr1)) || not(is_array(arr2))):
     error("arguments must be arrays")
@@ -902,6 +1740,14 @@ def zip(arr1, arr2):
 end
 
 # Returns the minimum element in an array based on a provided function that extracts a comparable value from each element.
+#
+# Example:
+# ```
+# min_by([3, 1, 2], identity)
+# #=> 1
+# ```
+#
+# Returns: dynamic
 def min_by(arr, f):
   if (is_empty(arr)):
     None
@@ -924,6 +1770,14 @@ def min_by(arr, f):
 end
 
 # Returns the maximum element in an array based on a provided function that extracts a comparable value from each element.
+#
+# Example:
+# ```
+# max_by([3, 1, 2], identity)
+# #=> 3
+# ```
+#
+# Returns: dynamic
 def max_by(arr, f):
   if (is_empty(arr)):
     None
@@ -946,12 +1800,36 @@ def max_by(arr, f):
 end
 
 # Returns the lines of a string as an array by splitting on newline characters.
+#
+# Example:
+# ```
+# lines("a\nb\nc")
+# #=> ["a", "b", "c"]
+# ```
+#
+# Returns: array
 def lines(s): if (is_none(s)): None else: split(s, "\n");
 
 # Joins an array of strings into a single string with newline characters between them.
+#
+# Example:
+# ```
+# unlines(["a", "b", "c"]) == "a\nb\nc"
+# #=> true
+# ```
+#
+# Returns: string
 def unlines(arr): if (is_none(arr)): None else: join(arr, "\n");
 
 # Returns a new dictionary containing only the specified keys from the original dictionary, if they exist.
+#
+# Example:
+# ```
+# pick({"a": 1, "b": 2}, ["a"])
+# #=> {"a": 1}
+# ```
+#
+# Returns: dict
 def pick(d, keys):
   if (!is_dict(d)):
     error("first argument must be a dict")
@@ -973,6 +1851,14 @@ def pick(d, keys):
 end
 
 # Returns a new dictionary excluding the specified keys from the original dictionary.
+#
+# Example:
+# ```
+# omit({"a": 1, "b": 2}, ["a"])
+# #=> {"b": 2}
+# ```
+#
+# Returns: dict
 def omit(d, keys):
   if (!is_dict(d)):
     error("first argument must be a dict")
@@ -992,6 +1878,14 @@ def omit(d, keys):
 end
 
 # Checks if a dict has the given key, or an array has an element at the given index.
+#
+# Example:
+# ```
+# has({"a": 1}, "a")
+# #=> true
+# ```
+#
+# Returns: bool
 def has(v, key):
   if (is_dict(v)):
     in(keys(v), key)
@@ -1003,6 +1897,14 @@ end
 
 # Retrieves a nested value by following an array of keys/indices, e.g. `get_path(d, ["a", "b", 0])`.
 # Returns None as soon as any intermediate step is missing.
+#
+# Example:
+# ```
+# get_path({"a": {"b": 1}}, ["a", "b"])
+# #=> 1
+# ```
+#
+# Returns: dynamic
 def get_path(value, path):
   do
     var result = value
@@ -1018,6 +1920,14 @@ end
 # Sets a nested value by following an array of keys/indices, e.g. `set_path(d, ["a", "b", 0], 1)`.
 # Missing intermediate dicts/arrays are created automatically, choosing an array when the
 # corresponding path element is a number and a dict otherwise.
+#
+# Example:
+# ```
+# set_path({"a": {"b": 1}}, ["a", "b"], 2)
+# #=> {"a": {"b": 2}}
+# ```
+#
+# Returns: dynamic
 def set_path(value, path, new_value):
   if (is_empty(path)):
     new_value
@@ -1034,6 +1944,14 @@ end
 # Returns an array of leaf-path arrays for a value, e.g. `paths({"a": {"b": 1}})` returns `[["a", "b"]]`.
 # Each returned path can be passed to `get_path`/`set_path`. Containers with no leaves (e.g. `{}`, `[]`)
 # contribute no paths.
+#
+# Example:
+# ```
+# paths({"a": {"b": 1}})
+# #=> [["a", "b"]]
+# ```
+#
+# Returns: array
 def paths(value):
   if (is_dict(value)):
     fold(entries(value), [], fn(acc, entry): acc + map(paths(entry[1]), fn(p): [entry[0]] + p;);)
@@ -1053,14 +1971,32 @@ end
 
 # Builds a dict from an array of [key, value] pairs, as produced by `entries`.
 # If the same key appears more than once, the last occurrence wins.
+#
+# Example:
+# ```
+# from_entries([["a", 1], ["b", 2]])
+# #=> {"a": 1, "b": 2}
+# ```
+#
+# Returns: dict
 def from_entries(arr):
   fold(arr, dict(), fn(acc, pair): set(acc, to_string(pair[0]), pair[1]););
 
 # Transforms each [key, value] pair of a dict by applying the given function,
 # then rebuilds a dict from the resulting pairs.
+#
+# Example:
+# ```
+# with_entries({"a": 1}, fn(e): [e[0], e[1] + 1];)
+# #=> {"a": 2}
+# ```
+#
+# Returns: dict
 def with_entries(d, f): from_entries(map(entries(d), f));
 
 # Parses frontmatter from a markdown node, supporting both YAML and TOML formats.
+#
+# Returns: dynamic
 def frontmatter(v):
   if (is_yaml(v)):
     do import "yaml" | v | .value | yaml::yaml_parse;
@@ -1070,6 +2006,14 @@ def frontmatter(v):
 end
 
 # Walks through a value (which can be a markdown node, array, or dict) and applies a function to each element, returning a new structure with the results.
+#
+# Example:
+# ```
+# walk([1, [2, 3]], fn(x): if (is_number(x)): x * 2 else: x;)
+# #=> [2, [4, 6]]
+# ```
+#
+# Returns: dynamic
 def walk(v, f):
   match (v):
     | :markdown:
@@ -1089,6 +2033,14 @@ end
 
 # Formats a byte count as a human-readable decimal (SI, 1000-based) string,
 # e.g. `human_bytes(1500)` => "1.5KB". Negative numbers keep their sign.
+#
+# Example:
+# ```
+# human_bytes(1500)
+# #=> 1.5KB
+# ```
+#
+# Returns: string
 def human_bytes(n):
   let base = 1000
   | let units = ["B", "KB", "MB", "GB", "TB", "PB", "EB"]
@@ -1103,6 +2055,14 @@ end
 # Formats a byte count as a human-readable binary (IEC, 1024-based) string
 # without the "i" suffix, matching `numfmt --to=iec`, e.g. `human_size(1536)`
 # => "1.5K". Negative numbers keep their sign.
+#
+# Example:
+# ```
+# human_size(1536)
+# #=> 1.5K
+# ```
+#
+# Returns: string
 def human_size(n):
   let base = 1024
   | let units = ["B", "K", "M", "G", "T", "P", "E"]

@@ -14,8 +14,9 @@ use utoipa::{OpenApi, ToSchema};
 use crate::{
     api::{
         ApiRequest, BatchApiRequest, BatchApiResponse, BatchItemResult, CheckApiRequest, CheckApiResponse, CheckError,
-        FormatApiRequest, FormatApiResponse, FunctionDoc, FunctionsApiResponse, InputFormat, LintApiRequest,
-        LintApiResponse, LintDiagnostic, OutputFormat, QueryApiResponse, SelectorDoc, SelectorsApiResponse,
+        ExampleDoc, FormatApiRequest, FormatApiResponse, FunctionDoc, FunctionsApiResponse, InputFormat,
+        LintApiRequest, LintApiResponse, LintDiagnostic, OutputFormat, QueryApiResponse, SelectorDoc,
+        SelectorsApiResponse,
     },
     problem::ProblemDetails,
     query_cache::{self, QueryCache},
@@ -118,7 +119,9 @@ pub async fn health_check() -> Json<HealthResponse> {
         post_check_api,
         post_format_api,
         get_functions_api,
+        get_function_api,
         get_selectors_api,
+        get_selector_api,
         post_lint_api,
         openapi_json
     ),
@@ -135,6 +138,7 @@ pub async fn health_check() -> Json<HealthResponse> {
         schemas(CheckError),
         schemas(FormatApiRequest),
         schemas(FormatApiResponse),
+        schemas(ExampleDoc),
         schemas(FunctionDoc),
         schemas(FunctionsApiResponse),
         schemas(SelectorDoc),
@@ -472,6 +476,48 @@ pub async fn get_functions_api(State(_state): State<AppState>) -> Json<Functions
 pub async fn get_selectors_api(State(_state): State<AppState>) -> Json<SelectorsApiResponse> {
     debug!("GET /selectors called");
     Json(crate::api::list_selectors())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/functions/{name}",
+    params(("name" = String, Path, description = "Function name, e.g. `map`")),
+    responses(
+        (status = 200, description = "Documentation for a single builtin function", body = FunctionDoc),
+        (status = 404, description = "No function with that name"),
+    )
+)]
+pub async fn get_function_api(
+    State(_state): State<AppState>,
+    Path(name): Path<String>,
+) -> Result<Json<FunctionDoc>, ProblemDetails> {
+    debug!("GET /functions/{} called", name);
+    crate::api::get_function(&name).map(Json).ok_or_else(|| {
+        ProblemDetails::new(StatusCode::NOT_FOUND)
+            .with_title("Function not found")
+            .with_detail("name", &name)
+    })
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/selectors/{name}",
+    params(("name" = String, Path, description = "Selector name, with or without a leading `.`, e.g. `h1` or `.h1`")),
+    responses(
+        (status = 200, description = "Documentation for a single builtin selector", body = SelectorDoc),
+        (status = 404, description = "No selector with that name"),
+    )
+)]
+pub async fn get_selector_api(
+    State(_state): State<AppState>,
+    Path(name): Path<String>,
+) -> Result<Json<SelectorDoc>, ProblemDetails> {
+    debug!("GET /selectors/{} called", name);
+    crate::api::get_selector(&name).map(Json).ok_or_else(|| {
+        ProblemDetails::new(StatusCode::NOT_FOUND)
+            .with_title("Selector not found")
+            .with_detail("name", &name)
+    })
 }
 
 #[utoipa::path(

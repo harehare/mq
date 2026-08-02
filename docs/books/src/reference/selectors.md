@@ -376,5 +376,7 @@ The `set_attr()` function is an alternative that takes the attribute name as a s
 
 ## See Also
 
+- `mq help <selector>` - Signature, matched/produced type, description, and examples for any
+  selector, e.g. `mq help .h1` (the leading `.` is optional: `mq help h1` also works).
 - [Builtin selectors and functions](../builtins.html) - Complete list of available selectors and functions
 - [Nodes](nodes.md) - Details about markdown node types

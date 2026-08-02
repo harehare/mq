@@ -1,9 +1,25 @@
 # TOON implementation in mq
 
 # To convert a data structure into a TOON string
+#
+# Example:
+# ```
+# import "toon" | toon::toon_stringify({"a": 1})
+# #=> a: 1
+# ```
+#
+# Returns: string
 def toon_stringify(data): _toon_stringify(data);
 
 # To parse a TOON string into a data structure
+#
+# Example:
+# ```
+# import "toon" | toon::toon_parse(toon::toon_stringify({"a": 1}))
+# #=> {"a": 1}
+# ```
+#
+# Returns: dynamic
 def toon_parse(input):
   _toon_parse(to_string(input))
 end

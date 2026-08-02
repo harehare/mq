@@ -4911,10 +4911,27 @@ mq_macros::builtin_dispatch! {
     CSS_ATTR,
 }
 
+/// A single runnable, verified example shown by `mq help`.
+///
+/// `expected` is checked against the real evaluation result of `code` by a test
+/// (see `doc_examples` tests), so examples cannot silently rot.
+#[derive(Clone, Debug)]
+pub struct BuiltinExample {
+    pub code: &'static str,
+    pub expected: &'static str,
+}
+
 #[derive(Clone, Debug)]
 pub struct BuiltinSelectorDoc {
     pub description: &'static str,
     pub params: &'static [&'static str],
+    /// Parallel to `params`; a type name (e.g. "string", "number") or "dynamic" per param.
+    pub param_types: &'static [&'static str],
+    /// Type name of the value this selector matches/produces (e.g. "markdown", "bool").
+    pub returns: &'static str,
+    pub examples: &'static [BuiltinExample],
+    /// Cargo feature flag required to use this selector, if any (e.g. "css-selector").
+    pub capability: Option<&'static str>,
 }
 
 pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>> = LazyLock::new(|| {
@@ -4925,6 +4942,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a heading node with the specified depth.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_h("Title", 3) | .h"#,
+                expected: r#"### Title"#,
+            }],
+            capability: None,
         },
     );
 
@@ -4933,6 +4957,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a text node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_md_text("Hello") | .text"#,
+                expected: r#"Hello"#,
+            }],
+            capability: None,
         },
     );
 
@@ -4941,6 +4972,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a heading node with the 1 depth.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_h("Title", 1) | .h1"#,
+                expected: r#"# Title"#,
+            }],
+            capability: None,
         },
     );
 
@@ -4949,6 +4987,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a heading node with the 2 depth.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_h("Title", 2) | .h2"#,
+                expected: r#"## Title"#,
+            }],
+            capability: None,
         },
     );
 
@@ -4957,6 +5002,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a heading node with the 3 depth.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_h("Title", 3) | .h3"#,
+                expected: r#"### Title"#,
+            }],
+            capability: None,
         },
     );
 
@@ -4965,6 +5017,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a heading node with the 4 depth.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_h("Title", 4) | .h4"#,
+                expected: r#"#### Title"#,
+            }],
+            capability: None,
         },
     );
 
@@ -4973,6 +5032,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a heading node with the 5 depth.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_h("Title", 5) | .h5"#,
+                expected: r#"##### Title"#,
+            }],
+            capability: None,
         },
     );
 
@@ -4981,6 +5047,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a heading node with the 6 depth.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_h("Title", 6) | .h6"#,
+                expected: r#"###### Title"#,
+            }],
+            capability: None,
         },
     );
 
@@ -4989,6 +5062,15 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a code block node with the specified language.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_code("x = 1", "python") | .code"#,
+                expected: r#"```python
+x = 1
+```"#,
+            }],
+            capability: None,
         },
     );
 
@@ -4997,6 +5079,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects an inline code node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_code_inline("x") | .code_inline"#,
+                expected: r#"`x`"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5005,6 +5094,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects an inline math node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_math_inline("x^2") | .inline_math"#,
+                expected: r#"$x^2$"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5013,6 +5109,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a strong (bold) node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_strong("Bold") | .strong"#,
+                expected: r#"**Bold**"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5021,6 +5124,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects an emphasis (italic) node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_em("Italic") | .emphasis"#,
+                expected: r#"*Italic*"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5029,6 +5139,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a delete (strikethrough) node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_delete("Old") | .delete"#,
+                expected: r#"~~Old~~"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5037,6 +5154,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a link node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_link("https://example.com", "Example", "") | .link"#,
+                expected: r#"[Example](https://example.com)"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5045,6 +5169,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a link reference node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("[text][ref]\n\n[ref]: https://example.com")[0] | .link_ref"#,
+                expected: r#"[text][ref]"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5053,6 +5184,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects an image node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_image("https://example.com/a.png", "Alt", "") | .image"#,
+                expected: r#"![Alt](https://example.com/a.png "")"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5061,6 +5199,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a heading node with the specified depth.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_h("Title", 2) | .heading"#,
+                expected: r#"## Title"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5069,6 +5214,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a horizontal rule node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_hr() | .horizontal_rule"#,
+                expected: r#"---"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5077,6 +5229,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a blockquote node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_blockquote("Quote") | .blockquote"#,
+                expected: r#"> Quote"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5085,6 +5244,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a table cell node with the specified row and column.",
             params: &["row", "column"],
+            param_types: &["number", "number"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_md_table_cell("A1", 0, 0) | .[][]"#,
+                expected: r#"A1"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5093,6 +5259,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a table cell node with the specified row and column.",
             params: &["row", "column"],
+            param_types: &["number", "number"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_md_table_cell("A1", 0, 0) | .table"#,
+                expected: r#"A1"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5101,6 +5274,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a table align node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_md_table_align(["left", "right"]) | .table_align"#,
+                expected: r#"|:---|---:|"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5109,6 +5289,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects an HTML node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("<div>hi</div>")[0] | .html"#,
+                expected: r#"<div>hi</div>"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5117,6 +5304,10 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects an HTML node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[],
+            capability: None,
         },
     );
 
@@ -5125,6 +5316,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a footnote node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("Text[^1]\n\n[^1]: Note")[2] | .footnote"#,
+                expected: r#"[^1]: Note"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5133,6 +5331,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects an MDX JSX flow element node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_mdx("<Foo />")[0] | .mdx_jsx_flow_element"#,
+                expected: r#"<Foo />"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5141,6 +5346,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a list node with the specified index and checked state.",
             params: &["indent", "checked"],
+            param_types: &["number", "bool"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_md_list("Item", 0) | .list"#,
+                expected: r#"- Item"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5149,6 +5361,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a list node with the specified index and checked state.",
             params: &["indent", "checked"],
+            param_types: &["number", "bool"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_md_list("Item", 0) | .[]"#,
+                expected: r#"- Item"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5157,6 +5376,10 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects an MDX JS ESM node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[],
+            capability: None,
         },
     );
 
@@ -5165,6 +5388,15 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a TOML node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("+++\nkey = 1\n+++\n\nBody")[0] | .toml"#,
+                expected: r#"+++
+key = 1
++++"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5173,6 +5405,15 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a YAML node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("---\nkey: 1\n---\n\nBody")[0] | .yaml"#,
+                expected: r#"---
+key: 1
+---"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5181,6 +5422,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a break node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("Line1  \nLine2")[1] | .break"#,
+                expected: r#"\"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5189,6 +5437,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects an MDX text expression node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_mdx("Value is {1 + 1}.")[1] | .mdx_text_expression"#,
+                expected: r#"{1 + 1}"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5197,6 +5452,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a footnote reference node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("Text[^1]\n\n[^1]: Note")[1] | .footnote_ref"#,
+                expected: r#"[^1]"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5205,6 +5467,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects an image reference node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("![alt][ref]\n\n[ref]: https://example.com/a.png")[0] | .image_ref"#,
+                expected: r#"![alt][ref]"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5213,6 +5482,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects an MDX JSX text element node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_mdx("Hello <b>world</b>.")[1] | .mdx_jsx_text_element"#,
+                expected: r#"<b>world</b>"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5221,6 +5497,15 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a math node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_math("x^2") | .math"#,
+                expected: r#"$$
+x^2
+$$"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5229,6 +5514,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a math inline node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_math_inline("x^2") | .math_inline"#,
+                expected: r#"$x^2$"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5237,6 +5529,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects an MDX flow expression node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_mdx("{1 + 1}")[0] | .mdx_flow_expression"#,
+                expected: r#"{1 + 1}"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5245,6 +5544,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a definition node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("[ref]: https://example.com")[0] | .definition"#,
+                expected: r#"[ref]: https://example.com"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5253,6 +5559,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a task list node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("- [ ] Todo\n- [x] Done")[0] | .task"#,
+                expected: r#"- [ ] Todo"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5261,6 +5574,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a todo item in the task list node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("- [ ] Todo\n- [x] Done")[0] | .todo"#,
+                expected: r#"- [ ] Todo"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5269,6 +5589,13 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         BuiltinSelectorDoc {
             description: "Selects a done item in the task list node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("- [ ] Todo\n- [x] Done")[1] | .done"#,
+                expected: r#"- [x] Done"#,
+            }],
+            capability: None,
         },
     );
 
@@ -5283,6 +5610,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
             BuiltinFunctionDoc{
                 description: "Internal implementation of sort_by functionality that sorts arrays of arrays using the first element as the key.",
                 params: &[],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
             },
         );
     map.insert(
@@ -5290,6 +5621,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
             BuiltinFunctionDoc {
             description: "Internal function to get the position information of a markdown node, returning row and column data if available.",
             params: &["markdown_node"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
             },
         );
     map.insert(
@@ -5297,6 +5632,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Checks if the runtime is currently in debug mode, returning true if a debugger is attached.",
             params: &[],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5304,6 +5643,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Internal function to extract arguments from an AST call expression, returning an array of arguments to their AST nodes.",
             params: &["ast_node"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5311,6 +5654,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Internal function to convert an AST node back to its source code representation as a string.",
             params: &["ast_node"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5318,6 +5665,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a CSV string into an array of arrays, using the specified delimiter and header options.",
             params: &["csv_string", "delimiter", "has_header"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5325,6 +5676,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Calculates the Levenshtein edit distance between two strings.",
             params: &["s1", "s2"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5332,6 +5687,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Calculates the Jaro distance between two strings (0.0 to 1.0, where 1.0 is an exact match).",
             params: &["s1", "s2"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5339,6 +5698,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Calculates the Jaro-Winkler distance between two strings, boosting scores for matching prefixes.",
             params: &["s1", "s2"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5346,6 +5709,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses an XML string and returns the corresponding data structure.",
             params: &["xml_string"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5353,6 +5720,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a JSON string into a data structure.",
             params: &["json_string"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5360,6 +5731,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a YAML string into a data structure.",
             params: &["yaml_string"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5367,6 +5742,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a TOON string into a data structure.",
             params: &["toon_string"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5374,6 +5753,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Converts a data structure into a TOON string.",
             params: &["data"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5381,6 +5764,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a TOML string into a data structure.",
             params: &["toml_string"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5388,6 +5775,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses gron-style `path = value;` assignment statements into a data structure.",
             params: &["gron_string"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5395,6 +5786,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Parses a base64-encoded CBOR string or raw bytes into a data structure.",
             params: &["input"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5402,6 +5797,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Serializes a value to CBOR bytes.",
             params: &["value"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5409,6 +5808,10 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Internal function to compute the difference between two values, returning an array of changes.",
             params: &["value1", "value2"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
 
@@ -5419,6 +5822,13 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
 pub struct BuiltinFunctionDoc {
     pub description: &'static str,
     pub params: &'static [&'static str],
+    /// Parallel to `params`; a type name (e.g. "string", "number") or "dynamic" per param.
+    pub param_types: &'static [&'static str],
+    /// Type name of the returned value (e.g. "array", "bool", "dynamic").
+    pub returns: &'static str,
+    pub examples: &'static [BuiltinExample],
+    /// Cargo feature flag required to use this function, if any (e.g. "file-io").
+    pub capability: Option<&'static str>,
 }
 
 pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>> = LazyLock::new(|| {
@@ -5429,6 +5839,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Terminates the program with the given exit code.",
             params: &["exit_code"],
+            param_types: &["number"],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5436,6 +5850,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Raises a user-defined error with the specified message.",
             params: &["message"],
+            param_types: &["string"],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5443,13 +5861,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the exponential (e^x) of the given number.",
             params: &["number"],
-        },
-    );
-    map.insert(
-        SmolStr::new("assert"),
-        BuiltinFunctionDoc {
-            description: "Asserts that two values are equal, returns the value if true, otherwise raises an error.",
-            params: &["value1", "value2"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"exp(0)"#,
+                expected: r#"1"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5457,6 +5875,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Prints a message to standard output and returns the current value.",
             params: &["message"],
+            param_types: &["string"],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5464,6 +5886,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Prints a message to standard error and returns the current value.",
             params: &["message"],
+            param_types: &["string"],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5471,6 +5897,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the type of the given value.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"type(1)"#,
+                expected: r#"number"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5478,6 +5911,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the natural logarithm (base e) of the given number.",
             params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"ln(1)"#,
+                expected: r#"0"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5485,6 +5925,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the base-10 logarithm of the given number.",
             params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"log10(100)"#,
+                expected: r#"2"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5492,6 +5939,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates an array from the given values.",
             params: &["values"],
+            param_types: &["dynamic"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"array(1, 2, 3)"#,
+                expected: r#"[1, 2, 3]"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5499,6 +5953,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Flattens a nested array into a single level array.",
             params: &["array"],
+            param_types: &["array"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"flatten([[1, 2], [3]])"#,
+                expected: r#"[1, 2, 3]"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5506,6 +5967,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts a date string to a timestamp.",
             params: &["date_str"],
+            param_types: &["string"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"from_date("1970-01-01T00:00:00Z")"#,
+                expected: r#"0"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5513,6 +5981,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts a timestamp to a date string with the given format.",
             params: &["timestamp", "format"],
+            param_types: &["number", "string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"to_date(0, "%Y-%m-%d")"#,
+                expected: r#"1970-01-01"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5520,6 +5995,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the current timestamp.",
             params: &[],
+            param_types: &[],
+            returns: "number",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5527,6 +6006,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts Unix timestamp (seconds since epoch) to broken-down UTC time array [year, mon (0-11), mday, hour, min, sec, wday (0=Sun), yday (0-365)].",
             params: &["timestamp"],
+            param_types: &["number"],
+            returns: "array",
+            examples: &[BuiltinExample { code: r#"gmtime(0)"#, expected: r#"[1970, 0, 1, 0, 0, 0, 4, 0]"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -5534,6 +6017,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts Unix timestamp (seconds since epoch) to broken-down local time array [year, mon (0-11), mday, hour, min, sec, wday (0=Sun), yday (0-365)].",
             params: &["timestamp"],
+            param_types: &["number"],
+            returns: "array",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5541,6 +6028,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts broken-down UTC time array [year, mon (0-11), mday, hour, min, sec, wday, yday] to Unix timestamp (seconds since epoch).",
             params: &["time_array"],
+            param_types: &["array"],
+            returns: "number",
+            examples: &[BuiltinExample { code: r#"mktime(gmtime(0))"#, expected: r#"0"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -5548,6 +6039,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Formats a Unix timestamp (seconds) as a date string using the given strftime format (e.g. \"%Y-%m-%d\").",
             params: &["timestamp", "format"],
+            param_types: &["number", "string"],
+            returns: "string",
+            examples: &[BuiltinExample { code: r#"strftime(0, "%Y-%m-%d")"#, expected: r#"1970-01-01"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -5555,6 +6050,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Parses a date string using the given strptime format (e.g. \"%Y-%m-%d\") and returns a Unix timestamp (seconds, UTC).",
             params: &["date_str", "format"],
+            param_types: &["string", "string"],
+            returns: "number",
+            examples: &[BuiltinExample { code: r#"strptime("1970-01-01", "%Y-%m-%d")"#, expected: r#"0"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -5562,6 +6061,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Adds n units to a broken-down time array and returns a new array. Units: \"seconds\", \"minutes\", \"hours\", \"days\", \"weeks\", \"months\", \"years\". Month/year arithmetic is calendar-aware.",
             params: &["array", "n", "unit"],
+            param_types: &["array", "number", "string"],
+            returns: "array",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5569,6 +6072,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the difference (array2 - array1) in the given unit. Units: \"seconds\", \"minutes\", \"hours\", \"days\", \"weeks\".",
             params: &["array1", "array2", "unit"],
+            param_types: &["array", "array", "string"],
+            returns: "number",
+            examples: &[BuiltinExample { code: r#"date_diff(gmtime(0), gmtime(86400), "days")"#, expected: r#"1"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -5576,6 +6083,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Parses a natural-language relative date expression (e.g. \"3 days ago\", \"yesterday\", \"tomorrow\", \"next monday\", \"in 2 weeks\") relative to a base Unix timestamp and returns the resulting Unix timestamp (seconds, UTC).",
             params: &["base_timestamp", "date_str"],
+            param_types: &["number", "string"],
+            returns: "number",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5583,6 +6094,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Encodes the given string to base64.",
             params: &["input"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"base64("hi")"#,
+                expected: r#"aGk="#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5590,6 +6108,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Decodes the given base64 string.",
             params: &["input"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"base64d("aGk=")"#,
+                expected: r#"hi"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5597,6 +6122,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Encodes the given string to URL-safe base64.",
             params: &["input"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"base64url("hi")"#,
+                expected: r#"aGk"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5604,6 +6136,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Decodes the given URL-safe base64 string.",
             params: &["input"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"base64urld(base64url("hi"))"#,
+                expected: r#"hi"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5611,6 +6150,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the minimum of two values.",
             params: &["value1", "value2"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "dynamic",
+            examples: &[BuiltinExample {
+                code: r#"min(1, 2)"#,
+                expected: r#"1"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5618,6 +6164,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the maximum of two values.",
             params: &["value1", "value2"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "dynamic",
+            examples: &[BuiltinExample {
+                code: r#"max(1, 2)"#,
+                expected: r#"2"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5625,6 +6178,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts the given HTML string to Markdown.",
             params: &["html"],
+            param_types: &["string"],
+            returns: "array",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5632,6 +6189,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts the given markdown string to HTML.",
             params: &["markdown"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5639,6 +6200,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Escapes `&`, `<`, `>`, `\"`, and `'` in the given string as HTML entities.",
             params: &["string"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"html_escape("<a>")"#,
+                expected: r#"&lt;a&gt;"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5646,6 +6214,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Decodes named and numeric HTML entities in the given string into their corresponding characters.",
             params: &["string"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample { code: r#"html_unescape("&lt;a&gt;")"#, expected: r#"<a>"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -5653,6 +6225,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Removes HTML tags from the given string, keeping the surrounding text content.",
             params: &["string"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"strip_tags("<b>hi</b>")"#,
+                expected: r#"hi"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5660,6 +6239,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Sanitizes the given HTML string using an allowlist of safe tags and attributes, removing scripts and other XSS vectors.",
             params: &["html"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5667,6 +6250,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts the given value to a string.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"to_string(1)"#,
+                expected: r#"1"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5674,6 +6264,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts the given value(s) to a markdown string representation.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "string",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5681,6 +6275,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts the given value to a number.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"to_number("42")"#,
+                expected: r#"42"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5688,6 +6289,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts the given value to a boolean. Booleans are returned unchanged, the strings \"true\" and \"false\" are converted to their boolean equivalent, and all other input results in an error.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "bool",
+            examples: &[BuiltinExample { code: r#"to_boolean("true")"#, expected: r#"true"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -5695,6 +6300,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts the given value to an array.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"to_array(1)"#,
+                expected: r#"[1]"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5702,6 +6314,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Computes the MD5 hash of a string or bytes and returns a lowercase hex string.",
             params: &["input"],
+            param_types: &["dynamic"],
+            returns: "string",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5709,6 +6325,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Computes the SHA-256 hash of a string or bytes and returns a lowercase hex string.",
             params: &["input"],
+            param_types: &["dynamic"],
+            returns: "string",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5716,6 +6336,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Computes the SHA-512 hash of a string or bytes and returns a lowercase hex string.",
             params: &["input"],
+            param_types: &["dynamic"],
+            returns: "string",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5723,6 +6347,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts a string (UTF-8), array of numbers, or bytes to raw bytes.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "bytes",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5730,6 +6358,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Parses a hex string into raw bytes.",
             params: &["hex_string"],
+            param_types: &["string"],
+            returns: "bytes",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5737,6 +6369,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Encodes raw bytes as a lowercase hex string.",
             params: &["bytes"],
+            param_types: &["bytes"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"to_hex(from_hex("6869"))"#,
+                expected: r#"6869"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5744,6 +6383,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Decodes bytes as a UTF-8 string, returning an error if the bytes are not valid UTF-8.",
             params: &["bytes"],
+            param_types: &["bytes"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"utf8(to_bytes("hi"))"#,
+                expected: r#"hi"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5751,6 +6397,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Computes the bitwise XOR of two byte arrays of equal length.",
             params: &["bytes1", "bytes2"],
+            param_types: &["bytes", "bytes"],
+            returns: "bytes",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5758,6 +6408,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Computes the bitwise AND of two byte arrays of equal length.",
             params: &["bytes1", "bytes2"],
+            param_types: &["bytes", "bytes"],
+            returns: "bytes",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5765,6 +6419,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Computes the bitwise OR of two byte arrays of equal length.",
             params: &["bytes1", "bytes2"],
+            param_types: &["bytes", "bytes"],
+            returns: "bytes",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5772,6 +6430,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Computes the bitwise NOT (complement) of a byte array.",
             params: &["bytes"],
+            param_types: &["bytes"],
+            returns: "bytes",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5779,6 +6441,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Packs a number into bytes using the given format. Supported formats: u8, i8, u16be/le, i16be/le, u32be/le, i32be/le, u64be/le, i64be/le, f32be/le, f64be/le.",
             params: &["format", "value"],
+            param_types: &["string", "number"],
+            returns: "bytes",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5786,6 +6452,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Unpacks a number from bytes using the given format. Supported formats: u8, i8, u16be/le, i16be/le, u32be/le, i32be/le, u64be/le, i64be/le, f32be/le, f64be/le.",
             params: &["format", "bytes"],
+            param_types: &["string", "bytes"],
+            returns: "number",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5793,6 +6463,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "URL-encodes the given string.",
             params: &["input"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"url_encode("a b")"#,
+                expected: r#"a%20b"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5800,6 +6477,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "URL-decodes the given string.",
             params: &["input"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"url_decode("a%20b")"#,
+                expected: r#"a b"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5807,6 +6491,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Generates a random (version 4, RFC 4122) UUID string.",
             params: &[],
+            param_types: &[],
+            returns: "string",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5814,6 +6502,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Generates a random (version 4, RFC 4122) UUID string. Alias of `uuid`.",
             params: &[],
+            param_types: &[],
+            returns: "string",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5821,6 +6513,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Generates a time-ordered (version 7, RFC 9562) UUID string: a millisecond Unix timestamp followed by random bits, so values sort by creation time. The timestamp is plaintext, so prefer uuid/uuid_v4 for unguessable IDs.",
             params: &[],
+            param_types: &[],
+            returns: "string",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5828,6 +6524,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Generates a pseudo-random number in the range [0, 1). Not cryptographically secure.",
             params: &[],
+            param_types: &[],
+            returns: "number",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5835,6 +6535,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Generates a pseudo-random integer uniformly distributed in [min, max] (inclusive). Not cryptographically secure.",
             params: &["min", "max"],
+            param_types: &["number", "number"],
+            returns: "number",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5842,6 +6546,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Generates a random string of `len` characters, each independently chosen (with replacement) from `charset`. Not cryptographically secure.",
             params: &["len", "charset"],
+            param_types: &["number", "string"],
+            returns: "string",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5849,6 +6557,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns a new array containing the same elements as the input, in a uniformly random order.",
             params: &["array"],
+            param_types: &["array"],
+            returns: "array",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5856,6 +6568,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns n elements sampled from the array without replacement, in random order. Errors if n exceeds the array length.",
             params: &["array", "n"],
+            param_types: &["array", "number"],
+            returns: "array",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -5863,6 +6579,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts the given markdown node to plain text.",
             params: &["markdown"],
+            param_types: &["markdown"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"to_text(to_strong("hi"))"#,
+                expected: r#"hi"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5870,6 +6593,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Checks if the given string or byte array ends with the specified suffix.",
             params: &["value", "suffix"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"ends_with("hello", "lo")"#,
+                expected: r#"true"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5877,6 +6607,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Checks if the given string or byte array starts with the specified prefix.",
             params: &["value", "prefix"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"starts_with("hello", "he")"#,
+                expected: r#"true"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5884,6 +6621,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Finds all matches of the given pattern in the string.",
             params: &["string", "pattern"],
+            param_types: &["string", "string"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"regex_match("abc123", "[0-9]+")"#,
+                expected: r#"["123"]"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5891,6 +6635,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Checks if the given pattern matches the string.",
             params: &["string", "pattern"],
+            param_types: &["string", "string"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"is_regex_match("abc", "a.c")"#,
+                expected: r#"true"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5898,6 +6649,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Checks if the given pattern does not match the string.",
             params: &["string", "pattern"],
+            param_types: &["string", "string"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"is_not_regex_match("abc", "x")"#,
+                expected: r#"true"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5905,6 +6663,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Finds all matches of a regular expression pattern in the string. For each match, returns the captured groups as an array if the pattern has capture groups, otherwise returns the whole match as a string.",
             params: &["string", "pattern"],
+            param_types: &["string", "string"],
+            returns: "array",
+            examples: &[BuiltinExample { code: r#"scan("a1b2", "[0-9]")"#, expected: r#"["1", "2"]"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -5912,6 +6674,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts the given string to lowercase.",
             params: &["input"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"downcase("ABC")"#,
+                expected: r#"abc"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5919,6 +6688,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts ASCII uppercase letters (A-Z) in the given string to lowercase, leaving all other characters unchanged.",
             params: &["input"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample { code: r#"ascii_downcase("ABC")"#, expected: r#"abc"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -5926,6 +6699,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Replaces all occurrences matching a regular expression pattern with the replacement string.",
             params: &["from", "pattern", "to"],
+            param_types: &["string", "string", "string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r##"gsub("a1b2", "[0-9]", "#")"##,
+                expected: r#"a#b#"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5933,6 +6713,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Replaces all occurrences of a substring with another substring.",
             params: &["from", "pattern", "to"],
+            param_types: &["string", "string", "string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"replace("aXbXc", "X", "-")"#,
+                expected: r#"a-b-c"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5940,6 +6727,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Repeats the given string a specified number of times.",
             params: &["string", "count"],
+            param_types: &["string", "number"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"repeat("ab", 3)"#,
+                expected: r#"ababab"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5947,6 +6741,11 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Wraps the given string into lines no wider than the specified display width, breaking on word boundaries (CJK and other wide characters count as two columns).",
             params: &["string", "width"],
+            param_types: &["string", "number"],
+            returns: "string",
+            examples: &[BuiltinExample { code: r#"word_wrap("hello world", 5)"#, expected: r#"hello
+world"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -5954,6 +6753,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Truncates the given string to the specified display width, appending the ellipsis string when truncated (CJK and other wide characters count as two columns).",
             params: &["string", "width", "ellipsis"],
+            param_types: &["string", "number", "string"],
+            returns: "string",
+            examples: &[BuiltinExample { code: r#"truncate("hello world", 5, "...")"#, expected: r#"he..."# }],
+            capability: None,
         },
     );
     map.insert(
@@ -5961,6 +6764,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Splits the given string into an array of characters.",
             params: &["string"],
+            param_types: &["string"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"explode("ab")"#,
+                expected: r#"[97, 98]"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5968,6 +6778,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Joins an array of characters into a string.",
             params: &["array"],
+            param_types: &["array"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"implode(explode("ab"))"#,
+                expected: r#"ab"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5975,6 +6792,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Trims whitespace from both ends of the given string.",
             params: &["input"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"trim("  hi  ")"#,
+                expected: r#"hi"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5982,6 +6806,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Trims whitespace from the left end of the given string.",
             params: &["input"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"ltrim("  hi  ")"#,
+                expected: r#"hi  "#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5989,6 +6820,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Trims whitespace from the right end of the given string.",
             params: &["input"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"rtrim("  hi  ")"#,
+                expected: r#"  hi"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -5996,6 +6834,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts the given string to uppercase.",
             params: &["input"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"upcase("abc")"#,
+                expected: r#"ABC"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6003,6 +6848,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts ASCII lowercase letters (a-z) in the given string to uppercase, leaving all other characters unchanged.",
             params: &["input"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample { code: r#"ascii_upcase("abc")"#, expected: r#"ABC"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -6010,6 +6859,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Extracts a substring from the given string.",
             params: &["string", "start", "end"],
+            param_types: &["string", "number", "number"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"slice("hello", 1, 3)"#,
+                expected: r#"el"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6017,6 +6873,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Update the value with specified value.",
             params: &["target_value", "source_value"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6024,6 +6884,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Raises the base to the power of the exponent.",
             params: &["base", "exponent"],
+            param_types: &["number", "number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"pow(2, 10)"#,
+                expected: r#"1024"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6031,6 +6898,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Finds the first occurrence of a substring or byte subsequence. Returns -1 if not found.",
             params: &["value", "needle"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"index("hello", "ll")"#,
+                expected: r#"2"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6038,6 +6912,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the length of the given string or array.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"len("hello")"#,
+                expected: r#"5"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6045,6 +6926,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Finds the last occurrence of a substring or byte subsequence. Returns -1 if not found.",
             params: &["value", "needle"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"rindex("hello", "l")"#,
+                expected: r#"3"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6052,6 +6940,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Estimates how many LLM tokens the given text would consume, for context-window budgeting. Uses a lightweight chars-per-token heuristic by default; built with the `tiktoken` Cargo feature, counts exactly via tiktoken-rs instead when `model` (e.g. \"gpt-5\") is given. `model` is optional; without it, the heuristic estimate is always used.",
             params: &["text", "model?"],
+            param_types: &["string", "string"],
+            returns: "number",
+            examples: &[BuiltinExample { code: r#"token_count("Hello, world!")"#, expected: r#"4"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -6059,6 +6951,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Reduces an array of Markdown nodes to fit within `budget` LLM tokens, preserving structure as much as possible: paragraphs are cut to their first sentence, then lists/tables/code blocks are collapsed to a summary, and only as a last resort is the remaining text hard-truncated. Uses a lightweight chars-per-token heuristic by default; built with the `tiktoken` Cargo feature, counts exactly via tiktoken-rs instead when `model` (e.g. \"gpt-5\") is given. `model` is optional; without it, the heuristic estimate is always used.",
             params: &["nodes", "budget", "model?"],
+            param_types: &["array", "number", "string"],
+            returns: "array",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6066,6 +6962,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Joins the elements of an array into a string with the given separator.",
             params: &["array", "separator"],
+            param_types: &["array", "string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"join([1, 2, 3], ",")"#,
+                expected: r#"1,2,3"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6073,6 +6976,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Reverses the given string or array.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "dynamic",
+            examples: &[BuiltinExample {
+                code: r#"reverse("abc")"#,
+                expected: r#"cba"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6080,6 +6990,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Sorts the elements of the given array.",
             params: &["array"],
+            param_types: &["array"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"sort([3, 1, 2])"#,
+                expected: r#"[1, 2, 3]"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6087,6 +7004,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Removes None values from the given array.",
             params: &["array"],
+            param_types: &["array"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"compact([1, None, 2])"#,
+                expected: r#"[1, 2]"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6094,6 +7018,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Converts the input value to the specified format. Supported formats: base64, html, text, uri, heading (#, ##, etc.), blockquote (>), list item (-), or link (URL).",
             params: &["input", "format"],
+            param_types: &["dynamic", "string"],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6101,6 +7029,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Splits the given string by the specified separator.",
             params: &["string", "separator"],
+            param_types: &["string", "string"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"split("a,b,c", ",")"#,
+                expected: r#"["a", "b", "c"]"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6108,6 +7043,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the square root of the given number.",
             params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"sqrt(9)"#,
+                expected: r#"3"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6115,6 +7057,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Removes duplicate elements from the given array.",
             params: &["array"],
+            param_types: &["array"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"uniq([1, 1, 2])"#,
+                expected: r#"[1, 2]"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6122,6 +7071,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Checks if two values are equal.",
             params: &["value1", "value2"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"eq(1, 1)"#,
+                expected: r#"true"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6129,6 +7085,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Checks if two values are not equal.",
             params: &["value1", "value2"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"ne(1, 2)"#,
+                expected: r#"true"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6136,6 +7099,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Checks if the first value is greater than the second value.",
             params: &["value1", "value2"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"gt(2, 1)"#,
+                expected: r#"true"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6143,6 +7113,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Checks if the first value is greater than or equal to the second value.",
             params: &["value1", "value2"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"gte(1, 1)"#,
+                expected: r#"true"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6150,6 +7127,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Checks if the first value is less than the second value.",
             params: &["value1", "value2"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"lt(1, 2)"#,
+                expected: r#"true"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6157,6 +7141,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Checks if the first value is less than or equal to the second value.",
             params: &["value1", "value2"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"lte(1, 1)"#,
+                expected: r#"true"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6164,6 +7155,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Adds two values.",
             params: &["value1", "value2"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "dynamic",
+            examples: &[BuiltinExample {
+                code: r#"add(1, 2)"#,
+                expected: r#"3"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6171,6 +7169,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Subtracts the second value from the first value.",
             params: &["value1", "value2"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "dynamic",
+            examples: &[BuiltinExample {
+                code: r#"sub(5, 2)"#,
+                expected: r#"3"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6178,6 +7183,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Divides the first value by the second value.",
             params: &["value1", "value2"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "dynamic",
+            examples: &[BuiltinExample {
+                code: r#"div(6, 2)"#,
+                expected: r#"3"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6185,6 +7197,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Multiplies two values.",
             params: &["value1", "value2"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "dynamic",
+            examples: &[BuiltinExample {
+                code: r#"mul(2, 3)"#,
+                expected: r#"6"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6192,6 +7211,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Calculates the remainder of the division of the first value by the second value.",
             params: &["value1", "value2"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "dynamic",
+            examples: &[BuiltinExample {
+                code: r#"mod(7, 3)"#,
+                expected: r#"1"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6199,6 +7225,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Performs a logical AND operation on two boolean values.",
             params: &["value1", "value2"],
+            param_types: &["bool", "bool"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"and(true, false)"#,
+                expected: r#"false"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6206,6 +7239,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Performs a logical OR operation on two boolean values.",
             params: &["value1", "value2"],
+            param_types: &["bool", "bool"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"or(true, false)"#,
+                expected: r#"true"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6213,6 +7253,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Performs a logical NOT operation on a boolean value.",
             params: &["value"],
+            param_types: &["bool"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"not(true)"#,
+                expected: r#"false"#,
+            }],
+            capability: None,
         },
     );
 
@@ -6221,6 +7268,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Rounds the given number to the nearest integer.",
             params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"round(3.5)"#,
+                expected: r#"4"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6228,6 +7282,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Truncates the given number to an integer by removing the fractional part.",
             params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"trunc(3.9)"#,
+                expected: r#"3"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6235,6 +7296,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Rounds the given number up to the nearest integer.",
             params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"ceil(3.2)"#,
+                expected: r#"4"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6242,6 +7310,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Rounds the given number down to the nearest integer.",
             params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"floor(3.8)"#,
+                expected: r#"3"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6249,6 +7324,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Deletes the element at the specified index in the array or string.",
             params: &["array_or_string", "index"],
+            param_types: &["dynamic", "number"],
+            returns: "dynamic",
+            examples: &[BuiltinExample {
+                code: r#"del([1, 2, 3], 1)"#,
+                expected: r#"[1, 3]"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6256,6 +7338,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the absolute value of the given number.",
             params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"abs(-10)"#,
+                expected: r#"10"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6263,6 +7352,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Retrieves the value of the specified attribute from a markdown node.",
             params: &["markdown", "attribute"],
+            param_types: &["markdown", "string"],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6270,6 +7363,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Sets the value of the specified attribute on a markdown node.",
             params: &["markdown", "attribute", "value"],
+            param_types: &["markdown", "string", "dynamic"],
+            returns: "markdown",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6277,6 +7374,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Sets the children nodes of a markdown node. Nodes without children (e.g. text, code) are left unchanged.",
             params: &["markdown", "children"],
+            param_types: &["markdown", "array"],
+            returns: "markdown",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6284,6 +7385,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the name of the given markdown node.",
             params: &["markdown"],
+            param_types: &["markdown"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"to_md_name(to_h("t", 1))"#,
+                expected: r#"h1"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6291,6 +7399,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Sets the ordered property of a markdown list node.",
             params: &["list", "ordered"],
+            param_types: &["markdown", "bool"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"set_list_ordered(to_md_list("Item", 0), true)"#,
+                expected: r#"1. Item"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6298,6 +7413,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown text node with the given value.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_md_text("hi")"#,
+                expected: r#"hi"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6305,6 +7427,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown image node with the given URL, alt text, and title.",
             params: &["url", "alt", "title"],
+            param_types: &["string", "string", "string"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_image("https://example.com/a.png", "Alt", "")"#,
+                expected: r#"![Alt](https://example.com/a.png "")"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6312,6 +7441,15 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown code block with the given value and language.",
             params: &["value", "language"],
+            param_types: &["dynamic", "string"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_code("x = 1", "python")"#,
+                expected: r#"```python
+x = 1
+```"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6319,6 +7457,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates an inline markdown code node with the given value.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_code_inline("x")"#,
+                expected: r#"`x`"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6326,6 +7471,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown heading node with the given value and depth.",
             params: &["value", "depth"],
+            param_types: &["dynamic", "number"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_h("Title", 1)"#,
+                expected: r#"# Title"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6333,6 +7485,15 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown math block with the given value.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_math("x^2")"#,
+                expected: r#"$$
+x^2
+$$"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6340,6 +7501,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates an inline markdown math node with the given value.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_math_inline("x^2")"#,
+                expected: r#"$x^2$"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6347,6 +7515,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown strong (bold) node with the given value.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_strong("Bold")"#,
+                expected: r#"**Bold**"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6354,6 +7529,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown emphasis (italic) node with the given value.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_em("Italic")"#,
+                expected: r#"*Italic*"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6361,6 +7543,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown blockquote node with the given value.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_blockquote("Quote")"#,
+                expected: r#"> Quote"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6368,6 +7557,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown delete (strikethrough) node with the given value.",
             params: &["value"],
+            param_types: &["dynamic"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_delete("Old")"#,
+                expected: r#"~~Old~~"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6375,6 +7571,14 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown callout node with the given value, kind, and title.",
             params: &["value", "kind", "title"],
+            param_types: &["dynamic", "string", "string"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_callout("Note text", "note", "")"#,
+                expected: r#"> [!NOTE]
+> Note text"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6382,6 +7586,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown fragment node that groups an array of markdown nodes into a single value.",
             params: &["values"],
+            param_types: &["array"],
+            returns: "markdown",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6389,6 +7597,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown horizontal rule node.",
             params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_hr()"#,
+                expected: r#"---"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6396,6 +7611,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown link node  with the given  url and title.",
             params: &["url", "value", "title"],
+            param_types: &["string", "dynamic", "string"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_link("https://example.com", "Example", "")"#,
+                expected: r#"[Example](https://example.com)"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6403,6 +7625,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown list node with the given value and indent level.",
             params: &["value", "indent"],
+            param_types: &["dynamic", "number"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_md_list("Item", 0)"#,
+                expected: r#"- Item"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6410,6 +7639,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown table row node with the given values.",
             params: &["cells"],
+            param_types: &["array"],
+            returns: "markdown",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6417,6 +7650,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown table cell node with the given value at the specified row and column.",
             params: &["value", "row", "column"],
+            param_types: &["dynamic", "number", "number"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_md_table_cell("A1", 0, 0)"#,
+                expected: r#"A1"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6424,6 +7664,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown table alignment row node from an array of alignments (\"left\", \"right\", \"center\", \"none\").",
             params: &["aligns"],
+            param_types: &["array"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_md_table_align(["left", "right"])"#,
+                expected: r#"|:---|---:|"#,
+            }],
+            capability: None,
         },
     );
 
@@ -6432,6 +7679,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the title of a markdown node.",
             params: &["node"],
+            param_types: &["markdown"],
+            returns: "string",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6439,6 +7690,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the url of a markdown node.",
             params: &["node"],
+            param_types: &["markdown"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"get_url(to_link("https://example.com", "Example", ""))"#,
+                expected: r#"https://example.com"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6446,6 +7704,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the source position of a markdown node as a dict with start_line, start_column, end_line, and end_column, or None if the node has no position info.",
             params: &["node"],
+            param_types: &["markdown"],
+            returns: "dict",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6453,6 +7715,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a markdown list node with the given checked state.",
             params: &["list", "checked"],
+            param_types: &["markdown", "bool"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"set_check(to_md_list("Item", 0), true)"#,
+                expected: r#"- [x] Item"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6460,6 +7729,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             BuiltinFunctionDoc {
             description: "Sets the reference identifier for markdown nodes that support references (e.g., Definition, LinkRef, ImageRef, Footnote, FootnoteRef).",
             params: &["node", "reference_id"],
+            param_types: &["markdown", "string"],
+            returns: "markdown",
+            examples: &[],
+            capability: None,
             },
         );
     map.insert(
@@ -6467,6 +7740,15 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Sets the language of a markdown code block node.",
             params: &["code_block", "language"],
+            param_types: &["markdown", "string"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"set_code_block_lang(to_code("x", "python"), "rust")"#,
+                expected: r#"```rust
+x
+```"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6474,6 +7756,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a new, empty dict.",
             params: &[],
+            param_types: &[],
+            returns: "dict",
+            examples: &[BuiltinExample {
+                code: r#"dict()"#,
+                expected: r#"{}"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6481,6 +7770,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Retrieves a value from a dict by its key. Returns None if the key is not found.",
             params: &["obj", "key"],
+            param_types: &["dict", "dynamic"],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6488,6 +7781,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             BuiltinFunctionDoc {
                 description: "Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map.",
                 params: &["obj", "key", "value"],
+            param_types: &["dict", "dynamic", "dynamic"],
+            returns: "dict",
+            examples: &[],
+            capability: None,
             },
         );
     map.insert(
@@ -6495,6 +7792,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns an array of keys from the dict.",
             params: &["dict"],
+            param_types: &["dict"],
+            returns: "array",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6502,6 +7803,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns an array of values from the dict.",
             params: &["dict"],
+            param_types: &["dict"],
+            returns: "array",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6509,6 +7814,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns an array of key-value pairs from the dict as arrays.",
             params: &["dict"],
+            param_types: &["dict"],
+            returns: "array",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6516,6 +7825,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates an array from start to end with an optional step.",
             params: &["start", "end", "step"],
+            param_types: &["number", "number", "number"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"range(0, 5, 1)"#,
+                expected: r#"[0, 1, 2, 3, 4, 5]"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6523,6 +7839,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             BuiltinFunctionDoc {
             description: "Inserts a value into an array or string at the specified index, or into a dict with the specified key.",
             params: &["target", "index_or_key", "value"],
+            param_types: &["dynamic", "dynamic", "dynamic"],
+            returns: "dynamic",
+            examples: &[BuiltinExample { code: r#"insert([1, 2, 3], 1, "x")"#, expected: r#"[1, "x", 2, 3]"# }],
+            capability: None,
             },
         );
 
@@ -6532,6 +7852,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Reads the contents of a file at the given path and returns it as a string. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
             params: &["path"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[],
+            capability: Some("file-io"),
         },
     );
     #[cfg(feature = "file-io")]
@@ -6540,6 +7864,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Checks if a file exists at the given path. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
             params: &["path"],
+            param_types: &["string"],
+            returns: "bool",
+            examples: &[],
+            capability: Some("file-io"),
         },
     );
     #[cfg(feature = "file-io")]
@@ -6548,6 +7876,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the size, in bytes, of the file at the given path. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
             params: &["path"],
+            param_types: &["string"],
+            returns: "number",
+            examples: &[],
+            capability: Some("file-io"),
         },
     );
     #[cfg(feature = "file-io")]
@@ -6556,6 +7888,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Reads the contents of a file at the given path and returns it as raw bytes. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
             params: &["path"],
+            param_types: &["string"],
+            returns: "bytes",
+            examples: &[],
+            capability: Some("file-io"),
         },
     );
     #[cfg(feature = "file-io")]
@@ -6564,6 +7900,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Recursively reads every Markdown file in the given directory (including subdirectories and symlinked files/directories) and returns an array of `{path, title, frontmatter, content}` dicts, sorted by path, so they can be filtered, sorted, or aggregated as a single dataset. `content` holds the file's Markdown nodes with frontmatter stripped. Symlink cycles are detected and only visited once. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
             params: &["dir"],
+            param_types: &["string"],
+            returns: "array",
+            examples: &[],
+            capability: Some("file-io"),
         },
     );
     #[cfg(feature = "file-io")]
@@ -6572,6 +7912,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Writes content (string or bytes) to the file at the given path, creating or truncating it. Requires the --allow-write CLI flag; otherwise returns a runtime error.",
             params: &["path", "content"],
+            param_types: &["string", "dynamic"],
+            returns: "dynamic",
+            examples: &[],
+            capability: Some("file-io"),
         },
     );
     #[cfg(feature = "file-io")]
@@ -6580,6 +7924,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Inlines an `.image` node's local file into its `url` as a base64 `data:` URI, resolving the path relative to the given base directory (default \".\") and inferring the MIME type from the file extension. URLs that are already `data:` URIs or contain a `://` scheme (e.g. `https://`), and non-image nodes, are left unchanged. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
             params: &["base_dir"],
+            param_types: &["string"],
+            returns: "markdown",
+            examples: &[],
+            capability: Some("file-io"),
         },
     );
     #[cfg(feature = "file-io")]
@@ -6588,6 +7936,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Decodes an `.image` node's base64 `data:` URI and writes the bytes to a file under the given directory, named by the content's MD5 hash with an extension inferred from the MIME type, then replaces `url` with that file's path. Nodes whose `url` is not a base64 `data:` URI, including non-image nodes, are left unchanged. Requires the --allow-write CLI flag; otherwise returns a runtime error.",
             params: &["dir"],
+            param_types: &["string"],
+            returns: "markdown",
+            examples: &[],
+            capability: Some("file-io"),
         },
     );
     #[cfg(feature = "http")]
@@ -6596,6 +7948,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Performs an HTTPS request with the given method (a string or symbol, e.g. \"post\" or :post — get, post, put, delete, patch, head, ... are all supported) and returns the response body as a string. An optional body argument (string) sends a request body regardless of method, and an optional headers argument (a dict of string to string, e.g. {\"Content-Type\": \"application/json\"}) is applied to the request. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
             params: &["method", "url", "body", "headers"],
+            param_types: &["string", "string", "string", "dict"],
+            returns: "string",
+            examples: &[],
+            capability: Some("http"),
         },
     );
     #[cfg(all(feature = "http", feature = "mock-io"))]
@@ -6604,6 +7960,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Seeds the response body a subsequent http() call for the given url returns, instead of making a real request. Only meaningful against a mock Io (e.g. mq-test's engine); other Io implementations return a runtime error.",
             params: &["url", "body"],
+            param_types: &["string", "string"],
+            returns: "dynamic",
+            examples: &[],
+            capability: Some("http"),
         },
     );
     #[cfg(feature = "process-io")]
@@ -6612,6 +7972,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Runs command as a child process, optionally passing an array of string args, and returns its captured stdout as a string. The command is never run through a shell, so shell metacharacters in args are never interpreted. A non-zero exit status is a runtime error that includes the process's stderr. Requires the --allow-run CLI flag; otherwise returns a runtime error.",
             params: &["command", "args"],
+            param_types: &["string", "array"],
+            returns: "string",
+            examples: &[],
+            capability: Some("process-io"),
         },
     );
     #[cfg(feature = "css-selector")]
@@ -6620,6 +7984,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the outer HTML of every element in the html string matching the CSS selector, as an array of strings. Queries the raw HTML directly instead of going through the -I html Markdown conversion, so tags, classes, ids, and data-* attributes that conversion discards are still available.",
             params: &["html", "selector"],
+            param_types: &["string", "string"],
+            returns: "array",
+            examples: &[BuiltinExample { code: r#"css("<div class=\"a\"><p>hi</p></div>", "p")"#, expected: r#"["<p>hi</p>"]"# }],
+            capability: Some("css-selector"),
         },
     );
     #[cfg(feature = "css-selector")]
@@ -6628,6 +7996,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the text content of every element in the html string matching the CSS selector, as an array of strings.",
             params: &["html", "selector"],
+            param_types: &["string", "string"],
+            returns: "array",
+            examples: &[BuiltinExample { code: r#"css_text("<div><p>hi</p></div>", "p")"#, expected: r#"["hi"]"# }],
+            capability: Some("css-selector"),
         },
     );
     #[cfg(feature = "css-selector")]
@@ -6636,6 +8008,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the value of the named attribute for every element in the html string matching the CSS selector, as an array; elements without that attribute produce None.",
             params: &["html", "selector", "name"],
+            param_types: &["string", "string", "string"],
+            returns: "array",
+            examples: &[BuiltinExample { code: r#"css_attr("<a href=\"https://example.com\">x</a>", "a", "href")"#, expected: r#"["https://example.com"]"# }],
+            capability: Some("css-selector"),
         },
     );
 
@@ -6644,6 +8020,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the final component of a path string (e.g. \"file.txt\" from \"/a/b/file.txt\").",
             params: &["path"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"basename("/a/b/file.txt")"#,
+                expected: r#"file.txt"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6651,6 +8034,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the parent directory of a path string (e.g. \"/a/b\" from \"/a/b/file.txt\"). Returns \".\" if the path has no parent.",
             params: &["path"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample { code: r#"dirname("/a/b/file.txt")"#, expected: r#"/a/b"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -6658,6 +8045,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the extension of a file path including the leading dot (e.g. \".txt\" from \"file.txt\"). Returns an empty string if there is no extension.",
             params: &["path"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample { code: r#"extname("file.txt")"#, expected: r#".txt"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -6665,6 +8056,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the file name without the extension (e.g. \"file\" from \"/a/b/file.txt\").",
             params: &["path"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"stem("/a/b/file.txt")"#,
+                expected: r#"file"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6672,6 +8070,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Joins a base path with a component path and returns the resulting path string (e.g. path_join(\"/a/b\", \"c.txt\") → \"/a/b/c.txt\").",
             params: &["base", "component"],
+            param_types: &["string", "string"],
+            returns: "string",
+            examples: &[BuiltinExample { code: r#"path_join("/a/b", "c.txt")"#, expected: r#"/a/b/c.txt"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -6679,6 +8081,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Checks whether the given path matches the glob pattern (e.g. \"*.md\", \"docs/**/*.rs\"), commonly used to filter file lists.",
             params: &["pattern", "path"],
+            param_types: &["string", "string"],
+            returns: "bool",
+            examples: &[BuiltinExample { code: r#"glob_match("*.md", "readme.md")"#, expected: r#"true"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -6686,6 +8092,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the negation of the given number.",
             params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"negate(5)"#,
+                expected: r#"-5"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6693,6 +8106,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Interns the given string, returning a canonical reference for efficient comparison.",
             params: &["string"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"intern("hi")"#,
+                expected: r#"hi"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6700,6 +8120,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns a Not-a-Number (NaN) value.",
             params: &[],
+            param_types: &[],
+            returns: "number",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6707,6 +8131,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns an infinite number value.",
             params: &[],
+            param_types: &[],
+            returns: "number",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6714,6 +8142,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns the first non-None value from the two provided arguments.",
             params: &["value1", "value2"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "dynamic",
+            examples: &[BuiltinExample {
+                code: r#"coalesce(None, 5)"#,
+                expected: r#"5"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6721,6 +8156,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Reads a line from standard input and returns it as a string.",
             params: &[],
+            param_types: &[],
+            returns: "string",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6728,6 +8167,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Returns an array of all interned symbols.",
             params: &[],
+            param_types: &[],
+            returns: "array",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6735,6 +8178,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Parses a markdown string and returns an array of markdown nodes.",
             params: &["markdown_string"],
+            param_types: &["string"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r##"to_markdown("# Hi")"##,
+                expected: r#"[# Hi]"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6742,6 +8192,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Parses an MDX string and returns an array of MDX nodes.",
             params: &["mdx_string"],
+            param_types: &["string"],
+            returns: "array",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6749,6 +8203,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Sets a symbol or variable in the current environment with the given value.",
             params: &["symbol_or_string", "value"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6756,6 +8214,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Retrieves the value of a symbol or variable from the current environment.",
             params: &["symbol_or_string"],
+            param_types: &["dynamic"],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
         },
     );
     map.insert(
@@ -6763,6 +8225,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.",
             params: &[],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
             },
     );
     map.insert(
@@ -6770,6 +8236,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Captures named groups from the given string based on the specified regular expression pattern and returns them as a dictionary keyed by group names.",
             params: &["string", "pattern"],
+            param_types: &["string", "string"],
+            returns: "dict",
+            examples: &[BuiltinExample {
+                code: r#"capture("v1.2.3", "(?P<major>[0-9]+)")"#,
+                expected: r#"{"major": "1"}"#,
+            }],
+            capability: None,
         },
     );
     map.insert(
@@ -6777,6 +8250,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Performs a left shift operation on the given value: for numbers, this is a bitwise left shift by the specified number of positions; for strings, this removes characters from the start; for Markdown headings, this increases the heading level accordingly.",
             params: &["value", "shift_amount"],
+            param_types: &["dynamic", "number"],
+            returns: "dynamic",
+            examples: &[BuiltinExample { code: r#"shift_left(1, 2)"#, expected: r#"4"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -6784,6 +8261,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Performs a bitwise right shift on numbers, slices characters from the end of strings, and adjusts Markdown heading levels when applied to headings, using the given shift amount.",
             params: &["value", "shift_amount"],
+            param_types: &["dynamic", "number"],
+            returns: "dynamic",
+            examples: &[BuiltinExample { code: r#"shift_right(8, 2)"#, expected: r#"2"# }],
+            capability: None,
         },
     );
     map.insert(
@@ -6791,6 +8272,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         BuiltinFunctionDoc {
             description: "Creates a new function by partially applying the given arguments to the specified function.",
             params: &["function", "arg1", "arg2", "..."],
+            param_types: &["function", "dynamic"],
+            returns: "function",
+            examples: &[],
+            capability: None,
         },
     );
 

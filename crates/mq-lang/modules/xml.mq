@@ -1,6 +1,14 @@
 # XML Implementation in mq
 
 # Parses an XML string and returns the corresponding data structure.
+#
+# Example:
+# ```
+# import "xml" | xml::xml_parse("<a>hi</a>")["tag"]
+# #=> a
+# ```
+#
+# Returns: dynamic
 def xml_parse(input):
   _xml_parse(to_string(input))
 end
@@ -45,6 +53,16 @@ def _xml_stringify(data):
 end
 
 # Serializes a value to an XML string.
+#
+# Example:
+# ```
+# import "xml" | xml::xml_stringify({"tag": "a", "attributes": {}, "children": [], "text": "hi"})
+# #=> <?xml version="1.0" encoding="UTF-8"?>
+# <a>hi</a>
+#
+# ```
+#
+# Returns: string
 def xml_stringify(data):
   "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + _xml_stringify(data) + "\n"
 end
@@ -111,6 +129,16 @@ def _xml_to_markdown_table(data, depth):
 end
 
 # Converts an XML data structure to a Markdown table.
+#
+# Example:
+# ```
+# import "xml" | xml::xml_to_markdown_table({"tag": "a", "attributes": {}, "children": [], "text": "hi"})
+# #=> | Tag | Attributes | Text | Children |
+# | --- | --- | --- | --- |
+# | a |  | hi | 0 |
+# ```
+#
+# Returns: string
 def xml_to_markdown_table(data):
   _xml_to_markdown_table(data, 1)
 end

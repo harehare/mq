@@ -9,15 +9,47 @@ def _fuzzy_match_with_algorithm(query, candidates, algorithm):
 end
 
 # Calculates the Levenshtein distance between two strings.
+#
+# Example:
+# ```
+# import "fuzzy" | fuzzy::levenshtein("kitten", "sitting")
+# #=> 3
+# ```
+#
+# Returns: number
 def levenshtein(s1, s2): _levenshtein_distance(s1, s2);
 
 # Calculates the Jaro distance between two strings (0.0 to 1.0, where 1.0 is exact match).
+#
+# Example:
+# ```
+# import "fuzzy" | fuzzy::jaro("martha", "marhta")
+# #=> 0.944444
+# ```
+#
+# Returns: number
 def jaro(s1, s2): _jaro_distance(s1, s2);
 
 # Calculates the Jaro-Winkler distance between two strings.
+#
+# Example:
+# ```
+# import "fuzzy" | fuzzy::jaro_winkler("martha", "marhta")
+# #=> 0.961111
+# ```
+#
+# Returns: number
 def jaro_winkler(s1, s2): _jaro_winkler_distance(s1, s2);
 
 # Performs fuzzy matching on an array of strings using Jaro-Winkler distance.
+#
+# Example:
+# ```
+# import "fuzzy" | fuzzy::fuzzy_match(["apple", "aple", "banana"], "aple")
+# #=> [{"text": "aple", "score": 1}, {"text": "apple", "score": 0.946667}, {"text": "banana", "score": 0.472222}]
+# ```
+#
+# Returns: array
 def fuzzy_match(candidates, query):
   let candidates = if (is_array(candidates)):
     candidates
@@ -28,6 +60,14 @@ def fuzzy_match(candidates, query):
 end
 
 # Performs fuzzy matching using Levenshtein distance.
+#
+# Example:
+# ```
+# import "fuzzy" | fuzzy::fuzzy_match_levenshtein(["apple", "aple", "banana"], "aple")
+# #=> [{"text": "aple", "score": 0}, {"text": "apple", "score": 1}, {"text": "banana", "score": 5}]
+# ```
+#
+# Returns: array
 def fuzzy_match_levenshtein(candidates, query):
   let candidates = if (is_array(candidates)):
     candidates
@@ -38,18 +78,42 @@ def fuzzy_match_levenshtein(candidates, query):
 end
 
 # Performs fuzzy matching using Jaro distance.
+#
+# Example:
+# ```
+# import "fuzzy" | fuzzy::fuzzy_match_jaro(["apple", "aple", "banana"], "aple")
+# #=> [{"text": "aple", "score": 1}, {"text": "apple", "score": 0.933333}, {"text": "banana", "score": 0.472222}]
+# ```
+#
+# Returns: array
 def fuzzy_match_jaro(candidates, query):
   _fuzzy_match_with_algorithm(query, candidates, jaro)
   | sort_by(fn(item): 1 - item["score"];)
 end
 
 # Filters candidates by minimum fuzzy match score using Jaro-Winkler.
+#
+# Example:
+# ```
+# import "fuzzy" | fuzzy::fuzzy_filter(["apple", "aple", "banana"], "aple", 0.8)
+# #=> [{"text": "aple", "score": 1}, {"text": "apple", "score": 0.946667}]
+# ```
+#
+# Returns: array
 def fuzzy_filter(candidates, query, threshold):
   let matches = fuzzy_match(candidates, query)
   | filter(matches, fn(m): m["score"] >= threshold;)
 end
 
 # Finds the best fuzzy match from candidates.
+#
+# Example:
+# ```
+# import "fuzzy" | fuzzy::fuzzy_best_match(["apple", "aple", "banana"], "aple")
+# #=> {"text": "aple", "score": 1}
+# ```
+#
+# Returns: dict
 def fuzzy_best_match(candidates, query):
   let matches = fuzzy_match(candidates, query)
   | if (is_empty(matches)):

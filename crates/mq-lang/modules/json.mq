@@ -1,11 +1,27 @@
 # JSON Implementation in mq
 
 # Parses a JSON string and returns the corresponding data structure.
+#
+# Example:
+# ```
+# import "json" | json::json_parse("{\"a\": 1}")
+# #=> {"a": 1}
+# ```
+#
+# Returns: dynamic
 def json_parse(input):
   _json_parse(to_string(input))
 end
 
 # Serializes a value to a JSON string.
+#
+# Example:
+# ```
+# import "json" | json::json_stringify({"a": 1})
+# #=> {"a": 1}
+# ```
+#
+# Returns: string
 def json_stringify(data):
   def _format_json_stringify(data):
     "\"" + data + "\""
@@ -38,6 +54,16 @@ def json_stringify(data):
 end
 
 # Converts a JSON data structure to a Markdown table.
+#
+# Example:
+# ```
+# import "json" | json::json_to_markdown_table([{"a": 1, "b": 2}])
+# #=> | a | b |
+# | --- | --- |
+# | 1 | 2 |
+# ```
+#
+# Returns: string
 def json_to_markdown_table(data):
   def _create_array_markdown_table(data):
     let headers = keys(first(data))

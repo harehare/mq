@@ -1,0 +1,17 @@
+[package]
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+categories = ["command-line-utilities", "text-processing"]
+description = "Documentation catalog for mq: extracts and unifies docs for native builtins, selectors, and mq-defined functions"
+edition = "2024"
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query", "documentation"]
+license = "MIT"
+name = "mq-help"
+readme = "README.md"
+repository = "https://github.com/harehare/mq"
+version = "0.7.0"
+
+[dependencies]
+colored = {workspace = true}
+mq-lang = {workspace = true, features = ["cst", "http"]}
+serde = {workspace = true, features = ["derive"]}

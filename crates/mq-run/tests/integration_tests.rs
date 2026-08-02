@@ -28,6 +28,71 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[test]
+fn test_help_markdown_renders_fenced_mq_example() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("help").arg("map").arg("--markdown").assert();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+
+    assert!(output.starts_with("## `map` (function)"));
+    assert!(output.contains("```mq\n"));
+
+    Ok(())
+}
+
+#[test]
+fn test_help_json_and_markdown_conflict() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.arg("help")
+        .arg("map")
+        .arg("--json")
+        .arg("--markdown")
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_help_examples_topic_human() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("help").arg("examples").assert();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+
+    assert!(output.contains("Basic usage:"));
+    assert!(output.contains("ARGS"));
+
+    Ok(())
+}
+
+#[test]
+fn test_help_examples_topic_markdown() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("help").arg("examples").arg("--markdown").assert();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+
+    assert!(output.starts_with("# mq help examples"));
+    assert!(output.contains("```sh\n"));
+
+    Ok(())
+}
+
+#[test]
+fn test_help_examples_topic_json() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("help").arg("examples").arg("--json").assert();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+    let value: serde_json::Value = serde_json::from_str(&output)?;
+
+    assert_eq!(value["topic"], "examples");
+    assert!(value["content"].as_str().unwrap().contains("Basic usage"));
+
+    Ok(())
+}
+
 #[rstest]
 #[case("-i")]
 #[case("--in-place")]

@@ -45,7 +45,6 @@
 pub mod cli;
 pub(crate) mod grep;
 pub(crate) mod output;
-pub(crate) mod reference;
 
 #[cfg(feature = "debugger")]
 pub mod debugger;
