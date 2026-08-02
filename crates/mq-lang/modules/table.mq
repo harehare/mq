@@ -1,4 +1,17 @@
-# This module is under development. APIs and behavior may change without notice.
+# The table module extracts and transforms Markdown tables. This module is
+# under development; APIs and behavior may change without notice.
+#
+# Call it via `import "table"` then `table::fn()` — from an inline query, a
+# script, or `mq -A 'import "table" | table::fn()'` on the command line.
+# Unlike `section`, `import` must always be written explicitly (no `include`
+# shortcut). Table functions need every document node at once: pass `-A` on
+# the CLI, or pipe through `nodes` inline.
+#
+# Example:
+# ```
+# import "table" | len(table::tables(to_markdown("| a | b |\n| - | - |\n| 1 | 2 |")))
+# #=> 1
+# ```
 
 import "csv" |
 

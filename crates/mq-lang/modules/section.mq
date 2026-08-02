@@ -1,3 +1,17 @@
+# The section module splits and filters Markdown documents by heading section.
+#
+# Call it via `import "section"` then `section::fn()` (recommended, namespaced),
+# `include "section"` then `fn()` (no namespace prefix), or `mq -A 'section::fn()'`
+# on the command line. Section functions need every document node at once — pass
+# `-A` on the CLI, or pipe through `nodes` in an inline query/script; a single
+# node instead prints a stderr warning and is treated as a one-element array.
+#
+# Example:
+# ```
+# import "section" | len(section::section(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"), "A"))
+# #=> 2
+# ```
+
 def _is_section(section): is_dict(section) && section[:type] == :section;
 
 # Normalizes input into an array of Markdown nodes.

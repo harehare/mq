@@ -18,6 +18,14 @@ pub struct MqFnDoc {
     pub examples: Vec<MqExample>,
 }
 
+/// Module-level documentation, extracted from the header comment at the very top of a
+/// standard-module source file (see [`extract_module_doc`]).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ModuleDoc {
+    pub description: String,
+    pub examples: Vec<MqExample>,
+}
+
 /// Extracts documentation for every public `def` in `source`.
 ///
 /// `skip_native` excludes functions whose name is already documented as a native builtin
@@ -45,28 +53,96 @@ pub struct MqFnDoc {
 /// pairs. A `Returns: TYPE` line sets the return type. Everything else is free-text
 /// description.
 pub fn extract_functions_from_cst(source: &str, skip_native: bool) -> Vec<MqFnDoc> {
-    let (nodes, _) = mq_lang::parse_recovery(source);
-    let mut result = Vec::new();
+    extract_module(source, skip_native).1
+}
 
-    for node in &nodes {
+/// Extracts the header comment at the very top of a standard-module source file (a `#`
+/// paragraph followed by a true blank line), if one is present.
+pub fn extract_module_doc(source: &str) -> Option<ModuleDoc> {
+    extract_module(source, false).0
+}
+
+/// Extracts a module's header doc and function docs in a single CST parse. `extract_module_doc`
+/// and `extract_functions_from_cst` each call this and discard half the result — fine for one-
+/// off lookups, but callers needing both (e.g. `mq help`'s catalog build, over every standard
+/// module) should call this directly to parse each module's source only once.
+pub fn extract_module(source: &str, skip_native: bool) -> (Option<ModuleDoc>, Vec<MqFnDoc>) {
+    let (nodes, _) = mq_lang::parse_recovery(source);
+    // A module header shares node 0's leading trivia with that node's own doc comment, so
+    // strip the header's lines off the front to avoid leaking it into the first def's
+    // description.
+    let header = module_header_paragraph(source, &nodes);
+    let header_lines = header.as_ref().map(Vec::len).unwrap_or(0);
+    let module_doc = header.and_then(|lines| {
+        let (description, _returns, examples) = parse_doc_comment(lines);
+        (!description.is_empty() || !examples.is_empty()).then_some(ModuleDoc { description, examples })
+    });
+
+    let mut functions = Vec::new();
+    for (i, node) in nodes.iter().enumerate() {
         // `macro` definitions share `def`'s child layout (name, params, colon, body) and are
         // just as much a part of the public surface (e.g. `tap`, `unless`, `pluck` in
         // builtin.mq), so they're documented the same way.
         if !node.is_def() && !matches!(node.kind, CstNodeKind::Macro) {
             continue;
         }
-        if let Some(info) = def_info(node, skip_native) {
-            result.push(info);
+        let skip = if i == 0 { header_lines } else { 0 };
+        if let Some(info) = def_info(node, skip_native, skip) {
+            functions.push(info);
         }
     }
 
-    result
+    (module_doc, functions)
 }
 
-fn def_info(node: &Shared<CstNode>, skip_native: bool) -> Option<MqFnDoc> {
-    // Function name: first child with NodeKind::Ident
-    let name_node = node.children.iter().find(|c| matches!(c.kind, CstNodeKind::Ident))?;
-    let name = ident_text(name_node)?;
+// If node 0 is a documented def, its first paragraph is only a module header when a second
+// paragraph is left over for its own doc — otherwise it's just that def's doc comment.
+fn module_header_paragraph(source: &str, nodes: &[Shared<CstNode>]) -> Option<Vec<String>> {
+    let mut paragraphs = leading_comment_paragraphs(source);
+    if paragraphs.is_empty() {
+        return None;
+    }
+
+    let first_is_documented_def = nodes.first().is_some_and(|n| {
+        (n.is_def() || matches!(n.kind, CstNodeKind::Macro)) && def_name(n).is_some_and(|name| !name.starts_with('_'))
+    });
+
+    if first_is_documented_def {
+        (paragraphs.len() >= 2).then(|| paragraphs.remove(0))
+    } else {
+        Some(paragraphs.into_iter().flatten().collect())
+    }
+}
+
+/// Splits the leading `#`/blank lines of `source` into paragraphs, split on a truly blank
+/// line (an empty `#` line is a soft break, kept as an empty entry within the paragraph).
+/// Stops at the first line that's neither blank nor `#`-prefixed.
+fn leading_comment_paragraphs(source: &str) -> Vec<Vec<String>> {
+    let mut paragraphs = Vec::new();
+    let mut current = Vec::new();
+
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if !current.is_empty() {
+                paragraphs.push(std::mem::take(&mut current));
+            }
+            continue;
+        }
+        match trimmed.strip_prefix('#') {
+            Some(rest) => current.push(rest.trim().to_string()),
+            None => break,
+        }
+    }
+    if !current.is_empty() {
+        paragraphs.push(current);
+    }
+
+    paragraphs
+}
+
+fn def_info(node: &Shared<CstNode>, skip_native: bool, skip_comment_lines: usize) -> Option<MqFnDoc> {
+    let name = def_name(node)?;
 
     if name.starts_with('_') {
         return None;
@@ -90,7 +166,8 @@ fn def_info(node: &Shared<CstNode>, skip_native: bool) -> Option<MqFnDoc> {
         .filter_map(ident_text)
         .collect();
 
-    let (description, returns, examples) = parse_doc_comment(node.comments().into_iter().map(|(_, s)| s));
+    let comments = node.comments().into_iter().map(|(_, s)| s).skip(skip_comment_lines);
+    let (description, returns, examples) = parse_doc_comment(comments);
 
     Some(MqFnDoc {
         name,
@@ -99,6 +176,12 @@ fn def_info(node: &Shared<CstNode>, skip_native: bool) -> Option<MqFnDoc> {
         returns,
         examples,
     })
+}
+
+/// Function name: first child with `CstNodeKind::Ident`.
+fn def_name(node: &Shared<CstNode>) -> Option<String> {
+    let name_node = node.children.iter().find(|c| matches!(c.kind, CstNodeKind::Ident))?;
+    ident_text(name_node)
 }
 
 /// One line of a doc comment outside any fenced code block, classified by its role in the
@@ -256,5 +339,50 @@ mod tests {
         let fns = extract_functions_from_cst(src, false);
         assert_eq!(fns[0].examples.len(), 1);
         assert_eq!(fns[0].examples[0].expected, "a\nb");
+    }
+
+    #[test]
+    fn test_module_doc_absent_without_leading_comment() {
+        assert_eq!(extract_module_doc("def foo(x): x;"), None);
+    }
+
+    #[test]
+    fn test_module_doc_absent_when_only_first_fn_doc() {
+        // A single paragraph directly above the first (public) def is that def's own doc,
+        // not a module header — even though it happens to precede a blank-separated Example.
+        let src = "# Checks if input is an array.\n#\n# Example:\n# ```\n# is_array([1, 2])\n# #=> true\n# ```\ndef is_array(a): a;";
+        assert_eq!(extract_module_doc(src), None);
+        let fns = extract_functions_from_cst(src, false);
+        assert_eq!(fns[0].description, "Checks if input is an array.");
+    }
+
+    #[test]
+    fn test_module_doc_split_from_first_public_def() {
+        // A header paragraph, blank line, then the first def's own doc: the header becomes
+        // the module doc and is stripped out of the def's description (regression test for
+        // the header-leaking-into-the-first-function bug).
+        let src = "# CSV/TSV Implementation in mq.\n\n# Checks a field.\ndef csv_needs_quote(field): field;";
+        let doc = extract_module_doc(src).unwrap();
+        assert_eq!(doc.description, "CSV/TSV Implementation in mq.");
+        let fns = extract_functions_from_cst(src, false);
+        assert_eq!(fns[0].description, "Checks a field.");
+    }
+
+    #[test]
+    fn test_module_doc_present_when_first_def_is_private() {
+        // The header isn't followed by a second paragraph, but the first def is private
+        // (filtered out entirely), so the single paragraph is free to be the module doc.
+        let src = "# Semantic Versioning Implementation in mq\n\ndef _compare(a, b): a;";
+        let doc = extract_module_doc(src).unwrap();
+        assert_eq!(doc.description, "Semantic Versioning Implementation in mq");
+    }
+
+    #[test]
+    fn test_module_doc_present_when_first_node_is_not_a_def() {
+        // e.g. table.mq: an `import` precedes the first def, so the header can't be confused
+        // with any function's own doc regardless of paragraph count.
+        let src = "# This module is under development.\n\nimport \"csv\" |\n\n# Extracts tables.\ndef tables(x): x;";
+        let doc = extract_module_doc(src).unwrap();
+        assert_eq!(doc.description, "This module is under development.");
     }
 }

@@ -544,14 +544,17 @@ enum Commands {
         #[arg(value_enum)]
         shell: CompletionShell,
     },
-    /// Show documentation for a builtin function, selector, or standard-module function.
+    /// Show documentation for a builtin function, selector, standard module, or
+    /// standard-module function.
     ///
     /// Looks up NAME among native builtin functions, selectors (with or without a leading
-    /// `.`), `builtin.mq` functions, and every standard module's functions, and prints its
-    /// signature, parameter/return types, description, examples, required capability (Cargo
-    /// feature), and the module it belongs to (if any). Run with no NAME to list everything.
+    /// `.`), `builtin.mq` functions, standard module names (e.g. `section`, `table`), and
+    /// every standard module's functions, and prints its signature, parameter/return types,
+    /// description, examples, required capability (Cargo feature), and the module it belongs
+    /// to (if any). Use `module::function` (e.g. `section::section`) to disambiguate a
+    /// function whose name collides with its own module. Run with no NAME to list everything.
     Help {
-        /// Name of a function or selector, e.g. `map`, `.h1`, `csv_parse`
+        /// Name of a function, selector, or module, e.g. `map`, `.h1`, `csv_parse`, `section`
         name: Option<String>,
         /// Print machine-readable JSON instead of formatted text
         #[arg(long)]
@@ -770,8 +773,8 @@ impl Cli {
         Ok(())
     }
 
-    /// Shows documentation for a single function/selector, or lists every known name when
-    /// `name` is `None`.
+    /// Shows documentation for a single function/selector/module, or lists everything known
+    /// when `name` is `None`.
     fn run_help(name: Option<&str>, json: bool) -> miette::Result<()> {
         let Some(name) = name else {
             if json {
@@ -780,18 +783,31 @@ impl Cli {
                     serde_json::to_string_pretty(&help::all_names()).into_diagnostic()?
                 );
             } else {
-                for n in help::all_names() {
-                    println!("{n}");
-                }
+                Self::print_help_index();
             }
             return Ok(());
         };
 
+        // A bare name that's both a module and a same-named function within it (e.g.
+        // `section`) resolves to the module overview; `module::function` disambiguates.
+        if !name.contains("::")
+            && let Some(module) = help::lookup_module(name)
+        {
+            if json {
+                println!("{}", serde_json::to_string_pretty(&module).into_diagnostic()?);
+            } else {
+                println!("{}", help::render_module_human(&module));
+            }
+            return Ok(());
+        }
+
         let entries = help::lookup(name);
         if entries.is_empty() {
             return Err(match help::suggest(name) {
-                Some(suggestion) => miette!("no function or selector named `{name}` — did you mean `{suggestion}`?"),
-                None => miette!("no function or selector named `{name}`"),
+                Some(suggestion) => {
+                    miette!("no function, selector, or module named `{name}` — did you mean `{suggestion}`?")
+                }
+                None => miette!("no function, selector, or module named `{name}`"),
             });
         }
 
@@ -804,6 +820,48 @@ impl Cli {
         }
 
         Ok(())
+    }
+
+    /// Prints the grouped `mq help` index: selectors, top-level functions, and modules (each
+    /// with a one-line summary), for a name-less human-readable lookup.
+    fn print_help_index() {
+        // Cheap: never parses standard-module sources, unlike `all_entries`.
+        let entries = help::top_level_entries();
+
+        let mut selectors: Vec<&str> = entries
+            .iter()
+            .filter(|e| e.kind == "selector")
+            .map(|e| e.name.as_str())
+            .collect();
+        selectors.sort_unstable();
+        selectors.dedup();
+
+        let mut functions: Vec<&str> = entries
+            .iter()
+            .filter(|e| e.kind == "function")
+            .map(|e| e.name.as_str())
+            .collect();
+        functions.sort_unstable();
+        functions.dedup();
+
+        println!("{}", "Selectors:".bold().cyan());
+        for s in selectors {
+            println!("  {s}");
+        }
+
+        println!("\n{}", "Functions:".bold().cyan());
+        for f in functions {
+            println!("  {f}");
+        }
+
+        println!("\n{}", "Modules:".bold().cyan());
+        for module in help::all_modules() {
+            let summary = module.description.split(". ").next().unwrap_or_default();
+            let padded_name = format!("{:<10}", module.name);
+            println!("  {} {}", padded_name.green(), summary);
+        }
+
+        println!("\nRun `mq help <name>` for a function or selector, `mq help <module>` for a module overview.");
     }
 
     pub fn run(&self) -> miette::Result<()> {

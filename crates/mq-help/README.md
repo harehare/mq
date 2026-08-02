@@ -5,15 +5,20 @@ Documentation catalog for the mq language: builds the single, unified catalog of
 ## Usage
 
 ```rust
-use mq_help::{all_entries, lookup, suggest, render_human};
+use mq_help::{all_entries, lookup, lookup_module, suggest, render_human, render_module_human};
 
 // Every documented function/selector.
 let entries = all_entries();
 
-// Look up one name (with or without a leading `.` for selectors).
+// Look up one name (with or without a leading `.` for selectors), or `module::name` to
+// disambiguate a function whose name collides with its own module (e.g. `section::section`).
 let matches = lookup("map");
 
-// "Did you mean" suggestion for a typo.
+// A standard module's header doc plus its function list.
+let section = lookup_module("section").unwrap();
+println!("{}", render_module_human(&section));
+
+// "Did you mean" suggestion for a typo (also matches module names).
 let suggestion = suggest("mpa"); // Some("map")
 
 for entry in &matches {

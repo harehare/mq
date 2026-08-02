@@ -36,8 +36,17 @@ pub struct HelpEntry {
 }
 
 /// Looks up every entry matching `name` — usually one, but a name may be defined in more
-/// than one standard module, in which case every match is returned.
+/// than one standard module, in which case every match is returned. `name` may be qualified
+/// as `module::function` to disambiguate a function whose name collides with its own module
+/// (e.g. `section::section`, distinct from the `section` module itself).
 pub fn lookup(name: &str) -> Vec<HelpEntry> {
+    if let Some((module, function)) = name.split_once("::") {
+        return all_entries()
+            .into_iter()
+            .filter(|e| e.name == function && e.related_module.as_deref() == Some(module))
+            .collect();
+    }
+
     let selector_name = if name.starts_with('.') {
         name.to_string()
     } else {
@@ -53,6 +62,17 @@ pub fn lookup(name: &str) -> Vec<HelpEntry> {
 /// Every documented function and selector: native builtins, selectors, `builtin.mq`
 /// functions, and every standard module's functions.
 pub fn all_entries() -> Vec<HelpEntry> {
+    let mut results = top_level_entries();
+    for module in all_modules() {
+        results.extend(module.functions);
+    }
+    results
+}
+
+/// Native builtin functions, selectors, and `builtin.mq` functions — everything in
+/// [`all_entries`] except standard-module functions. Cheap: unlike `all_entries`/`all_modules`,
+/// it never parses a standard module's source.
+pub fn top_level_entries() -> Vec<HelpEntry> {
     let mut results = Vec::new();
 
     let mut fn_names: Vec<_> = BUILTIN_FUNCTION_DOC.keys().collect();
@@ -105,14 +125,6 @@ pub fn all_entries() -> Vec<HelpEntry> {
         results.push(from_mq_fn_doc(fdoc, None));
     }
 
-    let mut modules: Vec<_> = STANDARD_MODULES.iter().collect();
-    modules.sort_by_key(|(k, _)| *k);
-    for (module_name, get_source) in modules {
-        for fdoc in reference::extract_functions_from_cst(get_source(), false) {
-            results.push(from_mq_fn_doc(fdoc, Some(module_name.to_string())));
-        }
-    }
-
     results
 }
 
@@ -125,13 +137,62 @@ pub fn all_names() -> Vec<String> {
     names
 }
 
+/// A standard module's header doc (if any) plus the functions it defines.
+#[derive(Debug, Clone, Serialize)]
+pub struct HelpModule {
+    pub name: String,
+    pub description: String,
+    pub examples: Vec<HelpExample>,
+    pub functions: Vec<HelpEntry>,
+}
+
+/// Every standard module, with its header doc (if any) and function list.
+pub fn all_modules() -> Vec<HelpModule> {
+    let mut modules: Vec<_> = STANDARD_MODULES.iter().collect();
+    modules.sort_by_key(|(k, _)| *k);
+
+    modules
+        .into_iter()
+        .map(|(module_name, get_source)| {
+            let (doc, fdocs) = reference::extract_module(get_source(), false);
+            let functions = fdocs
+                .into_iter()
+                .map(|fdoc| from_mq_fn_doc(fdoc, Some(module_name.to_string())))
+                .collect();
+
+            HelpModule {
+                name: module_name.to_string(),
+                description: doc.as_ref().map(|d| d.description.clone()).unwrap_or_default(),
+                examples: doc
+                    .map(|d| {
+                        d.examples
+                            .into_iter()
+                            .map(|e| HelpExample {
+                                code: e.code,
+                                expected: e.expected,
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                functions,
+            }
+        })
+        .collect()
+}
+
+/// Looks up a single standard module by name (e.g. `section`, `table`).
+pub fn lookup_module(name: &str) -> Option<HelpModule> {
+    all_modules().into_iter().find(|m| m.name == name)
+}
+
 /// A "did you mean" suggestion for a name that wasn't found, or `None` if nothing is close.
 pub fn suggest(name: &str) -> Option<String> {
     if name.starts_with('.') {
         return mq_lang::suggest_selector(name).map(str::to_string);
     }
-    let extra = all_names();
-    mq_lang::suggest_name(name, extra.iter().map(String::as_str))
+    let mut candidates = all_names();
+    candidates.extend(STANDARD_MODULES.keys().map(|k| k.to_string()));
+    mq_lang::suggest_name(name, candidates.iter().map(String::as_str))
 }
 
 fn from_mq_fn_doc(fdoc: reference::MqFnDoc, related_module: Option<String>) -> HelpEntry {
@@ -228,6 +289,67 @@ pub fn render_human(entry: &HelpEntry) -> String {
     out
 }
 
+/// Renders a module overview as colored, human-readable text: its header doc, examples, and
+/// the list of functions it defines.
+pub fn render_module_human(module: &HelpModule) -> String {
+    let mut out = String::new();
+
+    out.push_str(&format!("{} {}\n", module.name.bold().cyan(), "(module)".dimmed()));
+
+    if !module.description.is_empty() {
+        out.push_str(&format!("\n  {}\n", module.description));
+    }
+
+    out.push_str(&format!(
+        "\n  {} import \"{}\" | {}::<function>(...)\n",
+        "Usage:".bold(),
+        module.name,
+        module.name
+    ));
+
+    if !module.examples.is_empty() {
+        out.push_str(&format!("\n  {}\n", "Examples:".bold()));
+        for example in &module.examples {
+            out.push_str(&format!(
+                "    {}\n    {} {}\n",
+                example.code.green(),
+                "#=>".dimmed(),
+                example.expected
+            ));
+        }
+    }
+
+    if !module.functions.is_empty() {
+        out.push_str(&format!("\n  {}\n", "Functions:".bold()));
+        for f in &module.functions {
+            let params = f
+                .params
+                .iter()
+                .map(|p| format!("{}: {}", p.name, p.type_name))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let summary = f.description.split(". ").next().unwrap_or_default();
+            out.push_str(&format!(
+                "    {}({}): {}{}\n",
+                f.name.green(),
+                params,
+                f.returns,
+                if summary.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — {summary}")
+                }
+            ));
+        }
+        out.push_str(&format!(
+            "\n  Run `mq help {}::<function>` for a function's params, examples, and full description.\n",
+            module.name
+        ));
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,6 +370,38 @@ mod tests {
     fn test_lookup_selector_with_dot() {
         let entries = lookup(".h1");
         assert!(entries.iter().any(|e| e.kind == "selector" && e.name == ".h1"));
+    }
+
+    #[test]
+    fn test_lookup_qualified_disambiguates_module_and_function() {
+        // `section` names both the module and a function defined inside it.
+        let qualified = lookup("section::section");
+        assert!(
+            qualified
+                .iter()
+                .any(|e| e.name == "section" && e.related_module.as_deref() == Some("section"))
+        );
+    }
+
+    #[test]
+    fn test_lookup_module_finds_section_and_table() {
+        let section = lookup_module("section").expect("section module should be documented");
+        assert!(!section.description.is_empty());
+        assert!(section.functions.iter().any(|f| f.name == "section"));
+
+        let table = lookup_module("table").expect("table module should be documented");
+        assert!(!table.description.is_empty());
+        assert!(table.functions.iter().any(|f| f.name == "tables"));
+    }
+
+    #[test]
+    fn test_lookup_module_unknown_returns_none() {
+        assert!(lookup_module("definitely_not_a_real_module").is_none());
+    }
+
+    #[test]
+    fn test_suggest_typo_includes_module_names() {
+        assert_eq!(suggest("sction"), Some("section".to_string()));
     }
 
     #[test]
@@ -297,6 +451,36 @@ mod tests {
                     }
                     Err(e) => {
                         failures.push(format!("{} `{}`: eval error: {}", entry.name, example.code, e));
+                    }
+                }
+            }
+        }
+
+        assert!(failures.is_empty(), "\n{}", failures.join("\n"));
+    }
+
+    /// Same guarantee as `test_doc_examples_are_correct`, for module-level header examples.
+    #[test]
+    fn test_module_doc_examples_are_correct() {
+        let mut failures = Vec::new();
+
+        for module in all_modules() {
+            for example in &module.examples {
+                let mut engine = mq_lang::DefaultEngine::default();
+                engine.load_builtin_module();
+                let input = vec![mq_lang::RuntimeValue::NONE].into_iter();
+                match engine.eval(&example.code, input) {
+                    Ok(values) => {
+                        let rendered = values.into_iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ");
+                        if rendered != example.expected {
+                            failures.push(format!(
+                                "{} `{}`: expected `{}`, got `{}`",
+                                module.name, example.code, example.expected, rendered
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        failures.push(format!("{} `{}`: eval error: {}", module.name, example.code, e));
                     }
                 }
             }
