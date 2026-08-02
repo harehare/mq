@@ -170,6 +170,31 @@ def test_table_pivot_wider():
   | assert_eq(to_string(result[:rows][1][2]), "Osaka")
 end
 
+def test_table_to_array():
+  let t = first(table::tables(table_nodes))
+  | let result = table::to_array(t)
+  | assert_eq(len(result), 2)
+  | assert_eq(result[0], {"Name": "Alice", "Age": "30", "City": "Tokyo"})
+  | assert_eq(result[1], {"Name": "Bob", "Age": "25", "City": "Osaka"})
+end
+
+def test_table_to_array_empty():
+  let empty_md = "| Name | Age |\n| --- | --- |\n"
+  | let md_nodes = to_markdown(empty_md)
+  | let t = first(table::tables(md_nodes))
+  | let result = table::to_array(t)
+  | assert_eq(result, [])
+end
+
+def test_table_to_array_composes_with_join_by():
+  let t = first(table::tables(table_nodes))
+  | let left = table::to_array(t)
+  | let right = [{"Name": "Alice", "Country": "Japan"}, {"Name": "Carol", "Country": "USA"}]
+  | let result = join_by(left, right, "Name", "Name")
+  | assert_eq(len(result), 1)
+  | assert_eq(result[0], {"Name": "Alice", "Age": "30", "City": "Tokyo", "Country": "Japan"})
+end
+
 def test_table_pivot_wider_missing_combination():
   let header_row = "| Name | Attr | Val |\n| --- | --- | --- |\n| Alice | Age | 30 |\n| Alice | City | Tokyo |\n| Bob | Age | 25 |\n"
   | let md_nodes = to_markdown(header_row)

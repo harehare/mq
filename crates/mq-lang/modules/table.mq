@@ -267,6 +267,16 @@ def to_csv(table, delimiter = ",")
   | csv::csv_stringify([header] + rows, delimiter)
 end
 
+# Convert a table structure into an array of dict records keyed by header text.
+# The resulting shape matches `csv::csv_parse`'s output, so it composes with
+# `join_by` and other record-array builtins.
+def to_array(table)
+  let headers = map(table[:header], to_string)
+  | map(table[:rows], fn(row):
+        fold(range(0, len(headers) - 1), dict(), fn(acc, i): set(acc, headers[i], to_string(row[i])););
+      )
+end
+
 # Reshape a table from wide format to long format (a.k.a. melt/unpivot).
 # `value_columns` is an array of column indices to unpivot; each one becomes
 # a row holding its header name (in the `names_to` column) and its cell
