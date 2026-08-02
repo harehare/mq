@@ -53,6 +53,46 @@ fn test_help_json_and_markdown_conflict() {
         .failure();
 }
 
+#[test]
+fn test_help_examples_topic_human() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("help").arg("examples").assert();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+
+    assert!(output.contains("Basic usage:"));
+    assert!(output.contains("ARGS"));
+
+    Ok(())
+}
+
+#[test]
+fn test_help_examples_topic_markdown() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("help").arg("examples").arg("--markdown").assert();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+
+    assert!(output.starts_with("# mq help examples"));
+    assert!(output.contains("```sh\n"));
+
+    Ok(())
+}
+
+#[test]
+fn test_help_examples_topic_json() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("help").arg("examples").arg("--json").assert();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+    let value: serde_json::Value = serde_json::from_str(&output)?;
+
+    assert_eq!(value["topic"], "examples");
+    assert!(value["content"].as_str().unwrap().contains("Basic usage"));
+
+    Ok(())
+}
+
 #[rstest]
 #[case("-i")]
 #[case("--in-place")]

@@ -31,33 +31,9 @@ use mq_help as help;
 #[command(author = env!("CARGO_PKG_AUTHORS"))]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(after_help = "# Examples\n\n\
-    mq 'query' file.md\n\
-    mq -f 'file' file.md        # read query from file\n\
-    mq repl                     # start a REPL session\n\n\
-    # Auto-parsing by file extension or -I flag\n\n\
-    mq automatically imports the matching module based on the file extension.\n\
-    Use -I <format> to force a specific format:\n\n\
-    .cbor / -I cbor  import \"cbor\" | cbor::cbor_parse()  (reads as bytes)\n\
-    .csv  / -I csv   import \"csv\"  | csv::csv_parse(true)\n\
-    .gron / -I gron  import \"gron\" | gron::gron_parse()\n\
-    .json / -I json  import \"json\" | json::json_parse()\n\
-    .psv  / -I psv   import \"csv\"  | csv::psv_parse(true)\n\
-    .toml / -I toml  import \"toml\" | toml::toml_parse()\n\
-    .toon / -I toon  import \"toon\" | toon::toon_parse()\n\
-    .tsv  / -I tsv   import \"csv\"  | csv::tsv_parse(true)\n\
-    .xml  / -I xml   import \"xml\"  | xml::xml_parse()\n\
-    .yaml / -I yaml  import \"yaml\" | yaml::yaml_parse()\n\n\
-    Use -I raw   to disable auto-parsing and receive the raw string.\n\
-    Use -I bytes to read input as raw bytes without parsing.\n\n\
-    # Passing arguments to queries (ARGS)\n\n\
-    When --args or --argv is given, ARGS = {\"positional\": [...], \"named\": {...}}\n\n\
-    mq -I null 'name' --args name Alice\n\
-    mq -I null 'ARGS | .\"named\"' --args name Alice\n\
-    # => {\"name\": \"Alice\"}\n\n\
-    mq -I null 'ARGS | .\"positional\"' --argv x y z  # must come after query and files\n\
-    # => [\"x\", \"y\", \"z\"]\n\n\
-    mq -I null 'ARGS' file.md --args name Alice --argv x y z\n\
-    # => {\"positional\": [\"x\",\"y\",\"z\"], \"named\": {\"name\": \"Alice\"}}\n")]
+    mq 'query' file.md\n\n\
+    Run `mq help examples` for more usage examples, or `mq help <name>` for\n\
+    function/selector/module docs.\n")]
 #[command(
     about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
     long_about = None,
@@ -545,17 +521,20 @@ enum Commands {
         #[arg(value_enum)]
         shell: CompletionShell,
     },
-    /// Show documentation for a builtin function, selector, standard module, or
-    /// standard-module function.
+    /// Show documentation for a builtin function, selector, standard module, standard-module
+    /// function, or the `examples` topic.
     ///
     /// Looks up NAME among native builtin functions, selectors (with or without a leading
     /// `.`), `builtin.mq` functions, standard module names (e.g. `section`, `table`), and
     /// every standard module's functions, and prints its signature, parameter/return types,
     /// description, examples, required capability (Cargo feature), and the module it belongs
     /// to (if any). Use `module::function` (e.g. `section::section`) to disambiguate a
-    /// function whose name collides with its own module. Run with no NAME to list everything.
+    /// function whose name collides with its own module. Run `mq help examples` for CLI usage
+    /// examples (basic queries, ARGS passing, auto-parsing by file extension). Run with no NAME
+    /// to list everything.
     Help {
-        /// Name of a function, selector, or module, e.g. `map`, `.h1`, `csv_parse`, `section`
+        /// Name of a function, selector, module, or `examples`, e.g. `map`, `.h1`, `csv_parse`,
+        /// `section`, `examples`
         name: Option<String>,
         /// Print machine-readable JSON instead of formatted text
         #[arg(long, conflicts_with = "markdown")]
@@ -588,6 +567,10 @@ enum HelpFormat {
 }
 
 impl Cli {
+    /// Reserved `mq help` topic name for general CLI usage examples (not a function,
+    /// selector, or module).
+    const EXAMPLES_TOPIC: &'static str = "examples";
+
     /// Get the path to the external commands directory (~/.local/bin)
     fn get_external_commands_dir() -> Option<PathBuf> {
         let home_dir = dirs::home_dir()?;
@@ -812,6 +795,23 @@ impl Cli {
             return handle.flush().into_diagnostic();
         };
 
+        // `examples` is a reserved topic name (not a function/selector/module): general CLI
+        // usage that clap's own `--help`/`after_help` intentionally keeps short.
+        if name == Self::EXAMPLES_TOPIC {
+            let out = match format {
+                HelpFormat::Json => serde_json::to_string_pretty(&serde_json::json!({
+                    "topic": Self::EXAMPLES_TOPIC,
+                    "content": Self::examples_topic_markdown(),
+                }))
+                .into_diagnostic()?,
+                HelpFormat::Markdown => Self::examples_topic_markdown(),
+                HelpFormat::Human => Self::examples_topic_text(),
+            };
+            Self::write_ignore_pipe(&mut handle, out.as_bytes())?;
+            Self::write_ignore_pipe(&mut handle, b"\n")?;
+            return handle.flush().into_diagnostic();
+        }
+
         // A bare name that's both a module and a same-named function within it (e.g.
         // `section`) resolves to the module overview; `module::function` disambiguates.
         if !name.contains("::")
@@ -896,7 +896,8 @@ impl Cli {
 
         let _ = write!(
             out,
-            "\nRun `mq help <name>` for a function or selector, `mq help <module>` for a module overview."
+            "\nRun `mq help <name>` for a function or selector, `mq help <module>` for a module \
+            overview, `mq help examples` for CLI usage examples."
         );
 
         out
@@ -931,7 +932,233 @@ impl Cli {
 
         let _ = write!(
             out,
-            "\nRun `mq help <name>` for a function or selector, `mq help <module>` for a module overview."
+            "\nRun `mq help <name>` for a function or selector, `mq help <module>` for a module \
+            overview, `mq help examples` for CLI usage examples."
+        );
+
+        out
+    }
+
+    /// Text for the `mq help examples` topic — kept out of clap's own `after_help` so
+    /// `--help` stays short; this is the fuller reference it points to.
+    fn examples_topic_text() -> String {
+        let mut out = String::new();
+
+        let _ = writeln!(out, "{}", "Basic usage:".bold().cyan());
+        let _ = writeln!(out, "  mq 'query' file.md");
+        let _ = writeln!(out, "  mq -f 'file' file.md        # read query from file");
+        let _ = writeln!(out, "  mq repl                     # start a REPL session");
+
+        let _ = writeln!(out, "\n{}", "Auto-parsing by file extension or -I flag:".bold().cyan());
+        let _ = writeln!(
+            out,
+            "  mq automatically imports the matching module based on the file extension."
+        );
+        let _ = writeln!(out, "  Use -I <format> to force a specific format:\n");
+        let _ = writeln!(
+            out,
+            "  .cbor / -I cbor  import \"cbor\" | cbor::cbor_parse()  (reads as bytes)"
+        );
+        let _ = writeln!(out, "  .csv  / -I csv   import \"csv\"  | csv::csv_parse(true)");
+        let _ = writeln!(out, "  .gron / -I gron  import \"gron\" | gron::gron_parse()");
+        let _ = writeln!(out, "  .json / -I json  import \"json\" | json::json_parse()");
+        let _ = writeln!(out, "  .psv  / -I psv   import \"csv\"  | csv::psv_parse(true)");
+        let _ = writeln!(out, "  .toml / -I toml  import \"toml\" | toml::toml_parse()");
+        let _ = writeln!(out, "  .toon / -I toon  import \"toon\" | toon::toon_parse()");
+        let _ = writeln!(out, "  .tsv  / -I tsv   import \"csv\"  | csv::tsv_parse(true)");
+        let _ = writeln!(out, "  .xml  / -I xml   import \"xml\"  | xml::xml_parse()");
+        let _ = writeln!(out, "  .yaml / -I yaml  import \"yaml\" | yaml::yaml_parse()\n");
+        let _ = writeln!(
+            out,
+            "  Use -I raw   to disable auto-parsing and receive the raw string."
+        );
+        let _ = writeln!(out, "  Use -I bytes to read input as raw bytes without parsing.");
+
+        let _ = writeln!(out, "\n{}", "Output formats (-F):".bold().cyan());
+        let _ = writeln!(out, "  mq -F json '.h' file.md          # headings as JSON nodes");
+        let _ = writeln!(
+            out,
+            "  mq -F csv 'to_text()' file.md    # every node's text, one per CSV row"
+        );
+
+        let _ = writeln!(out, "\n{}", "Updating markdown in place (-U):".bold().cyan());
+        let _ = writeln!(
+            out,
+            "  mq -U '.h1 | update(\"New title\")' file.md  # rewrite the h1, leave everything else untouched"
+        );
+
+        let _ = writeln!(out, "\n{}", "Filtering with context (-F grep):".bold().cyan());
+        let _ = writeln!(
+            out,
+            "  mq -F grep --context 1 '.h' file.md  # matches with 1 node of context on each side"
+        );
+        let _ = writeln!(out, "  (also: -B/--before-context, --after-context)");
+
+        let _ = writeln!(out, "\n{}", "Passing arguments to queries (ARGS):".bold().cyan());
+        let _ = writeln!(
+            out,
+            "  When --args or --argv is given, ARGS = {{\"positional\": [...], \"named\": {{...}}}}\n"
+        );
+        let _ = writeln!(out, "  mq -I null 'name' --args name Alice");
+        let _ = writeln!(out, "  mq -I null 'ARGS | .\"named\"' --args name Alice");
+        let _ = writeln!(out, "  # => {{\"name\": \"Alice\"}}\n");
+        let _ = writeln!(
+            out,
+            "  mq -I null 'ARGS | .\"positional\"' --argv x y z  # must come after query and files"
+        );
+        let _ = writeln!(out, "  # => [\"x\", \"y\", \"z\"]\n");
+        let _ = writeln!(out, "  mq -I null 'ARGS' file.md --args name Alice --argv x y z");
+        let _ = writeln!(
+            out,
+            "  # => {{\"positional\": [\"x\",\"y\",\"z\"], \"named\": {{\"name\": \"Alice\"}}}}"
+        );
+
+        let _ = writeln!(
+            out,
+            "\n{}",
+            "Sandboxed capabilities (--allow-read/write/net/run/env):".bold().cyan()
+        );
+        let _ = writeln!(
+            out,
+            "  Disabled by default; each takes an optional allowlist (comma-separated)."
+        );
+        let _ = writeln!(out, "  mq --allow-read=. -I null 'read_file(\"notes.md\")'");
+        let _ = writeln!(out, "  mq --allow-run=echo -I null 'system(\"echo\", [\"hello\"])'");
+        let _ = writeln!(out, "  mq --allow-env=MY_VAR -I null '$MY_VAR'");
+        let _ = writeln!(
+            out,
+            "  mq --allow-net=api.example.com 'http(\"get\", \"https://api.example.com/data\")' file.md"
+        );
+
+        let _ = writeln!(out, "\n{}", "Working with multiple files:".bold().cyan());
+        let _ = writeln!(
+            out,
+            "  mq --eval-all '.h1' a.md b.md          # one query over all files combined"
+        );
+        let _ = writeln!(
+            out,
+            "  mq -S '\"---\"' '.h1' a.md b.md          # insert a separator between files"
+        );
+
+        let _ = writeln!(out, "\n{}", "Streaming large files (--stream):".bold().cyan());
+        let _ = write!(out, "  mq --stream -I text 'select(contains(\"ERROR\"))' huge.log");
+
+        out
+    }
+
+    /// Same content as [`Self::examples_topic_text`], as Markdown — queryable with mq itself
+    /// via `mq help examples --markdown | mq '...'`.
+    fn examples_topic_markdown() -> String {
+        let mut out = String::new();
+
+        let _ = writeln!(out, "# mq help examples");
+
+        let _ = writeln!(out, "\n## Basic usage\n");
+        let _ = writeln!(
+            out,
+            "```sh\nmq 'query' file.md\nmq -f 'file' file.md        # read query from file\nmq repl                     # start a REPL session\n```"
+        );
+
+        let _ = writeln!(out, "\n## Auto-parsing by file extension or -I flag\n");
+        let _ = writeln!(
+            out,
+            "mq automatically imports the matching module based on the file extension. \
+            Use `-I <format>` to force a specific format:\n"
+        );
+        let _ = writeln!(out, "| Extension / `-I` | Query prefix |");
+        let _ = writeln!(out, "|---|---|");
+        let _ = writeln!(
+            out,
+            "| `.cbor` / `-I cbor` | `import \"cbor\" \\| cbor::cbor_parse()` (reads as bytes) |"
+        );
+        let _ = writeln!(out, "| `.csv` / `-I csv` | `import \"csv\" \\| csv::csv_parse(true)` |");
+        let _ = writeln!(
+            out,
+            "| `.gron` / `-I gron` | `import \"gron\" \\| gron::gron_parse()` |"
+        );
+        let _ = writeln!(
+            out,
+            "| `.json` / `-I json` | `import \"json\" \\| json::json_parse()` |"
+        );
+        let _ = writeln!(out, "| `.psv` / `-I psv` | `import \"csv\" \\| csv::psv_parse(true)` |");
+        let _ = writeln!(
+            out,
+            "| `.toml` / `-I toml` | `import \"toml\" \\| toml::toml_parse()` |"
+        );
+        let _ = writeln!(
+            out,
+            "| `.toon` / `-I toon` | `import \"toon\" \\| toon::toon_parse()` |"
+        );
+        let _ = writeln!(out, "| `.tsv` / `-I tsv` | `import \"csv\" \\| csv::tsv_parse(true)` |");
+        let _ = writeln!(out, "| `.xml` / `-I xml` | `import \"xml\" \\| xml::xml_parse()` |");
+        let _ = writeln!(
+            out,
+            "| `.yaml` / `-I yaml` | `import \"yaml\" \\| yaml::yaml_parse()` |"
+        );
+        let _ = writeln!(
+            out,
+            "\nUse `-I raw` to disable auto-parsing and receive the raw string. Use `-I bytes` to \
+            read input as raw bytes without parsing."
+        );
+
+        let _ = writeln!(out, "\n## Output formats (-F)\n");
+        let _ = writeln!(
+            out,
+            "```sh\nmq -F json '.h' file.md          # headings as JSON nodes\nmq -F csv 'to_text()' file.md    # every node's text, one per CSV row\n```"
+        );
+
+        let _ = writeln!(out, "\n## Updating markdown in place (-U)\n");
+        let _ = writeln!(
+            out,
+            "```sh\nmq -U '.h1 | update(\"New title\")' file.md  # rewrite the h1, leave everything else untouched\n```"
+        );
+
+        let _ = writeln!(out, "\n## Filtering with context (-F grep)\n");
+        let _ = writeln!(
+            out,
+            "```sh\nmq -F grep --context 1 '.h' file.md  # matches with 1 node of context on each side\n```\n\n\
+            (also: `-B`/`--before-context`, `--after-context`)"
+        );
+
+        let _ = writeln!(out, "\n## Passing arguments to queries (ARGS)\n");
+        let _ = writeln!(
+            out,
+            "When `--args` or `--argv` is given, `ARGS = {{\"positional\": [...], \"named\": {{...}}}}`\n"
+        );
+        let _ = writeln!(
+            out,
+            "```sh\nmq -I null 'name' --args name Alice\nmq -I null 'ARGS | .\"named\"' --args name Alice\n\
+            # => {{\"name\": \"Alice\"}}\n\n\
+            mq -I null 'ARGS | .\"positional\"' --argv x y z  # must come after query and files\n\
+            # => [\"x\", \"y\", \"z\"]\n\n\
+            mq -I null 'ARGS' file.md --args name Alice --argv x y z\n\
+            # => {{\"positional\": [\"x\",\"y\",\"z\"], \"named\": {{\"name\": \"Alice\"}}}}\n```"
+        );
+
+        let _ = writeln!(out, "\n## Sandboxed capabilities (--allow-read/write/net/run/env)\n");
+        let _ = writeln!(
+            out,
+            "Disabled by default; each takes an optional allowlist (comma-separated).\n"
+        );
+        let _ = writeln!(
+            out,
+            "```sh\nmq --allow-read=. -I null 'read_file(\"notes.md\")'\n\
+            mq --allow-run=echo -I null 'system(\"echo\", [\"hello\"])'\n\
+            mq --allow-env=MY_VAR -I null '$MY_VAR'\n\
+            mq --allow-net=api.example.com 'http(\"get\", \"https://api.example.com/data\")' file.md\n```"
+        );
+
+        let _ = writeln!(out, "\n## Working with multiple files\n");
+        let _ = writeln!(
+            out,
+            "```sh\nmq --eval-all '.h1' a.md b.md          # one query over all files combined\n\
+            mq -S '\"---\"' '.h1' a.md b.md          # insert a separator between files\n```"
+        );
+
+        let _ = writeln!(out, "\n## Streaming large files (--stream)\n");
+        let _ = write!(
+            out,
+            "```sh\nmq --stream -I text 'select(contains(\"ERROR\"))' huge.log\n```"
         );
 
         out
