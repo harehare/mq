@@ -1193,6 +1193,58 @@ def index_by(arr, f):
   )
 end
 
+# Joins two arrays of dict records on `left_key`/`right_key`, similar to a SQL join.
+# Matching records are merged with `+` (right's fields win on collision). `kind` is one
+# of "inner" (default), "left", "right", or "full"; unmatched records in outer joins are
+# filled with `None` for the other side's fields (inferred from that side's full key set).
+# Records with a missing or `None` join key never match, and duplicate keys on either
+# side expand as a cross product.
+def join_by(left, right, left_key, right_key, kind = "inner"):
+  if (!is_array(left)):
+    error("join_by: left must be an array")
+  elif (!is_array(right)):
+    error("join_by: right must be an array")
+  elif (!in(["inner", "left", "right", "full"], kind)):
+    error("join_by: invalid kind, expected one of \"inner\", \"left\", \"right\", \"full\"")
+  else:
+    do
+      let schema_of = fn(records): unique_by(flat_map(records, keys), identity);
+      | let fill_missing = fn(record, schema):
+          fold(schema, record, fn(acc, k): if (in(keys(acc), k)): acc else: set(acc, k, None););
+      | let right_matchable = filter(right, fn(r): !is_none(get(r, right_key));)
+      | let right_unmatchable = filter(right, fn(r): is_none(get(r, right_key));)
+      | let right_by_key = group_by(right_matchable, fn(r): get(r, right_key);)
+      | let right_schema = if (kind == "left" || kind == "full"): schema_of(right) else: []
+      | let left_schema = if (kind == "right" || kind == "full"): schema_of(left) else: []
+      | let left_keys_str = map(left, fn(l):
+            let k = get(l, left_key)
+            | if (is_none(k)): None else: to_string(k);
+          )
+      | let matched_group_keys = unique_by(
+          filter(left_keys_str, fn(k): !is_none(k) && !is_none(get(right_by_key, k));),
+          identity
+        )
+      | let left_side = flat_map(left, fn(l):
+            let k = get(l, left_key)
+            | let group = if (is_none(k)): None else: get(right_by_key, to_string(k))
+            | if (is_none(group)):
+                if (kind == "left" || kind == "full"): [fill_missing(l, right_schema)] else: []
+              else:
+                map(group, fn(r): l + r;)
+            ;
+          )
+      | let right_unmatched_grouped = flat_map(
+          filter(entries(right_by_key), fn(e): !in(matched_group_keys, e[0]);),
+          fn(e): e[1];
+        )
+      | let right_side = if (kind == "right" || kind == "full"):
+            map(right_unmatched_grouped + right_unmatchable, fn(r): fill_missing(r, left_schema);)
+          else:
+            []
+      | left_side + right_side
+    end
+end
+
 # Inspects a value by printing its string representation and returning the value.
 #
 # Returns: dynamic
