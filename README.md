@@ -48,6 +48,7 @@ Since LLM inputs are primarily in Markdown format, mq provides efficient tools f
 - **Command-line Interface**: Simple and intuitive CLI for quick operations.
 - **Extensibility**: Easily extendable with custom functions.
 - **Built-in support**: Filter and transform content with many built-in functions and selectors.
+- **Discoverable**: `mq help <function-or-selector>` shows signature, types, examples, and required capability for any builtin or standard-module function — `--json` for scripts/LLM tooling.
 - **REPL Support**: Interactive command-line REPL for testing and experimenting.
 - **IDE Support**: VSCode Extension and Language Server **Protocol** (LSP) support for custom function development.
 - **Debugger**: Includes an experimental debugger (`mq-dbg`) for inspecting and stepping through mq queries interactively.
@@ -163,7 +164,7 @@ Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 Commands:
   repl        Start a REPL session for interactive query execution
   completion  Generate a shell completion script and print it to stdout
-  help        Print this message or the help of the given subcommand(s)
+  help        Show documentation for a builtin function, selector, or standard-module function
 
 Arguments:
   [QUERY OR FILE]
@@ -244,8 +245,6 @@ Options:
           Limit output to at most N results
       --list
           List all available subcommands (built-in and external)
-      --doc
-          Use the built-in reference document as input instead of a file
   -P <PARALLEL_THRESHOLD>
           Number of files to process before switching to parallel processing [default: 10]
       --argv [<ARGV>...]

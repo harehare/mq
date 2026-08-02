@@ -2,6 +2,14 @@
 # A simple testing framework to execute test functions and output results
 
 # Verifies that a condition is true and raises an error if it's false.
+#
+# Example:
+# ```
+# true | include "test" | assert(true)
+# #=> true
+# ```
+#
+# Returns: dynamic
 def assert(cond):
   if (cond):
     self
@@ -36,6 +44,14 @@ def _render_inline_insert(inline):
 end
 
 # Verifies that two values are equal
+#
+# Example:
+# ```
+# 1 | include "test" | assert_eq(1, 1)
+# #=> 1
+# ```
+#
+# Returns: dynamic
 def assert_eq(actual, expected):
   if (actual == expected):
     self
@@ -76,6 +92,14 @@ def assert_eq(actual, expected):
 end
 
 # Verifies that two values are not equal
+#
+# Example:
+# ```
+# 1 | include "test" | assert_ne(1, 2)
+# #=> 1
+# ```
+#
+# Returns: dynamic
 def assert_ne(actual, expected):
   if (actual != expected):
     self
@@ -84,6 +108,14 @@ def assert_ne(actual, expected):
 end
 
 # Verifies that a value is true
+#
+# Example:
+# ```
+# true | include "test" | assert_true(true)
+# #=> true
+# ```
+#
+# Returns: dynamic
 def assert_true(value):
   if (value == true):
     self
@@ -92,6 +124,14 @@ def assert_true(value):
 end
 
 # Verifies that a value is false
+#
+# Example:
+# ```
+# false | include "test" | assert_false(false)
+# #=> false
+# ```
+#
+# Returns: dynamic
 def assert_false(value):
   if (value == false):
     self
@@ -100,6 +140,14 @@ def assert_false(value):
 end
 
 # Verifies that a value is None
+#
+# Example:
+# ```
+# None | include "test" | assert_none(None)
+# #=> 
+# ```
+#
+# Returns: dynamic
 def assert_none(value):
   if (is_none(value)):
     self
@@ -108,6 +156,14 @@ def assert_none(value):
 end
 
 # Verifies that a value is not None
+#
+# Example:
+# ```
+# 1 | include "test" | assert_not_none(1)
+# #=> 1
+# ```
+#
+# Returns: dynamic
 def assert_not_none(value):
   if (not(is_none(value))):
     self
@@ -116,6 +172,14 @@ def assert_not_none(value):
 end
 
 # Verifies that an array contains a specific value
+#
+# Example:
+# ```
+# [1, 2] | include "test" | assert_contains([1, 2], 1)
+# #=> [1, 2]
+# ```
+#
+# Returns: dynamic
 def assert_contains(array, value):
   if (in(array, value)):
     self
@@ -124,6 +188,14 @@ def assert_contains(array, value):
 end
 
 # Verifies that an array has a specific length
+#
+# Example:
+# ```
+# [1, 2] | include "test" | assert_len([1, 2], 2)
+# #=> [1, 2]
+# ```
+#
+# Returns: dynamic
 def assert_len(array, expected_length):
   let actual_length = len(array)
   | if (actual_length == expected_length):
@@ -133,6 +205,14 @@ def assert_len(array, expected_length):
 end
 
 # Verifies that an array is empty
+#
+# Example:
+# ```
+# [] | include "test" | assert_empty([])
+# #=> []
+# ```
+#
+# Returns: dynamic
 def assert_empty(array):
   if (is_empty(array)):
     self
@@ -141,6 +221,14 @@ def assert_empty(array):
 end
 
 # Verifies that an array is not empty
+#
+# Example:
+# ```
+# [1] | include "test" | assert_not_empty([1])
+# #=> [1]
+# ```
+#
+# Returns: dynamic
 def assert_not_empty(array):
   if (not(is_empty(array))):
     self
@@ -154,6 +242,14 @@ end
 # matching `to_md_name`. For every other value it checks the runtime type
 # returned by `type`. On failure the source range of `value` is included
 # so callers (e.g. content-lint rules) can point at the offending node.
+#
+# Example:
+# ```
+# 1 | include "test" | assert_type(1, "number")
+# #=> 1
+# ```
+#
+# Returns: dynamic
 def assert_type(value, expected_type):
   let actual_type = if (is_markdown(value)): to_md_name(value) else: type(value)
   | if (actual_type == expected_type):
@@ -163,6 +259,14 @@ def assert_type(value, expected_type):
 end
 
 # Verifies that a dict has the given field.
+#
+# Example:
+# ```
+# {"a": 1} | include "test" | assert_field({"a": 1}, "a")
+# #=> {"a": 1}
+# ```
+#
+# Returns: dynamic
 def assert_field(value, field):
   if (is_dict(value) && contains(value, field)):
     value
@@ -173,6 +277,14 @@ def assert_field(value, field):
 end
 
 # Verifies that a value's string representation matches the given regular expression pattern.
+#
+# Example:
+# ```
+# "abc" | include "test" | assert_matches("abc", "a.c")
+# #=> abc
+# ```
+#
+# Returns: dynamic
 def assert_matches(value, pattern):
   if (test(to_string(value), pattern)):
     value
@@ -230,6 +342,8 @@ end
 # several files in parallel) can never interleave their output mid-line.
 # Returns `true` if every test passed, so the caller can aggregate pass/fail
 # across files itself instead of this function terminating the process.
+#
+# Returns: bool
 def run_tests(tests):
   let final_test_count = len(tests)
   | let file_name = try: TEST_FILE catch: ""
@@ -287,6 +401,14 @@ def run_tests(tests):
 end
 
 # Helper function to create a test case
+#
+# Example:
+# ```
+# include "test" | test_case("my test", fn(): true;)["name"]
+# #=> my test
+# ```
+#
+# Returns: dict
 def test_case(name, func):
   {
     "name": name,

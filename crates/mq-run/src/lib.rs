@@ -44,6 +44,7 @@
 
 pub mod cli;
 pub(crate) mod grep;
+pub(crate) mod help;
 pub(crate) mod output;
 pub(crate) mod reference;
 

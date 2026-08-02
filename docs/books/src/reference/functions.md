@@ -235,3 +235,10 @@ def double(x): x * 2;
 map(["a", "b"], upcase)   # upcase is NOT auto-called here; it's passed as a callback
 # Output: ["A", "B"]
 ```
+
+## See Also
+
+- `mq help <name>` - Signature, parameter/return types, description, examples, and required
+  capability for any builtin function or standard-module function, e.g. `mq help map`. Pass
+  `--json` for machine-readable output.
+- [Builtin selectors and functions](../builtins.html) - Complete list of available selectors and functions

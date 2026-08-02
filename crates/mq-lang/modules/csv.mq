@@ -1,24 +1,76 @@
-# CSV/TSV Implementation in mq
-# Based on RFC 4180 for CSV format
+# CSV/TSV Implementation in mq.
+# Based on RFC 4180 for CSV format.
 
+# Checks whether a field's string form needs quoting for the given delimiter (RFC 4180):
+# it contains a quote, newline, carriage return, the delimiter itself, or leading/trailing
+# whitespace.
+#
+# Example:
+# ```
+# import "csv" | csv::csv_needs_quote("a,b", ",")
+# #=> true
+# ```
+#
+# Returns: bool
 def csv_needs_quote(field, delimiter):
   let s = to_string(field)
   | contains(s, "\"") || contains(s, "\n") || contains(s, "\r") || contains(s, delimiter) || starts_with(s, " ") || ends_with(s, " ")
 end
 
 # Parses CSV content with a specified delimiter and optional header row.
+#
+# Example:
+# ```
+# import "csv" | csv::csv_parse_with_delimiter("a;b\n1;2", ";", true)
+# #=> [{"a": "1", "b": "2"}]
+# ```
+#
+# Returns: array
 def csv_parse_with_delimiter(input, delimiter, has_header): _csv_parse(input, delimiter, has_header);
 
 # Parses CSV content using a comma as the delimiter.
+#
+# Example:
+# ```
+# import "csv" | csv::csv_parse("name,age\nAlice,30", true)
+# #=> [{"name": "Alice", "age": "30"}]
+# ```
+#
+# Returns: array
 def csv_parse(input, has_header): _csv_parse(input, ",", has_header);
 
 # Parses TSV (Tab-Separated Values) content.
+#
+# Example:
+# ```
+# import "csv" | csv::tsv_parse("name\tage\nAlice\t30", true)
+# #=> [{"name": "Alice", "age": "30"}]
+# ```
+#
+# Returns: array
 def tsv_parse(input, has_header): _csv_parse(input, "\t", has_header);
 
 # Parses PSV (Pipe-Separated Values) content.
+#
+# Example:
+# ```
+# import "csv" | csv::psv_parse("name|age\nAlice|30", true)
+# #=> [{"name": "Alice", "age": "30"}]
+# ```
+#
+# Returns: array
 def psv_parse(input, has_header): _csv_parse(input, "|", has_header);
 
 # Converts data to a CSV string with a specified delimiter.
+#
+# Example:
+# ```
+# import "csv" | csv::csv_stringify([{"name": "Alice", "age": 30}], ",")
+# #=> name,age
+# Alice,30
+# ```
+#
+# Returns: string
 def csv_stringify(data, delimiter):
   let headers = if (is_array(data) && len(data) > 0 && is_dict(first(data))):
     keys(first(data))
@@ -52,6 +104,16 @@ def csv_stringify(data, delimiter):
 end
 
 # Converts CSV data to a Markdown table format.
+#
+# Example:
+# ```
+# import "csv" | csv::csv_to_markdown_table([{"name": "Alice", "age": 30}])
+# #=> | name | age |
+# | --- | --- |
+# | Alice | 30 |
+# ```
+#
+# Returns: string
 def csv_to_markdown_table(data):
   let headers = if (is_array(data) && len(data) > 0 && is_dict(first(data))):
     keys(first(data))
@@ -70,6 +132,14 @@ def csv_to_markdown_table(data):
 end
 
 # Converts CSV data to a JSON string.
+#
+# Example:
+# ```
+# import "csv" | csv::csv_to_json([{"name": "Alice", "age": 30}])
+# #=> [{"name":"Alice","age":30}]
+# ```
+#
+# Returns: string
 def csv_to_json(data):
   def _to_json(value):
     if (is_dict(value)):

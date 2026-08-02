@@ -1,9 +1,13 @@
 # Gets the arguments of an AST node
+#
+# Returns: dynamic
 def get_args(node) do
   _ast_get_args(node)
 end
 
 # Converts an AST node back to code
+#
+# Returns: string
 def to_code(node) do
   _ast_to_code(node)
 end

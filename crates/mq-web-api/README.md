@@ -14,7 +14,9 @@ HTTP/REST server that exposes the [mq](https://mqlang.org/) markdown query langu
 | `POST` | `/api/v1/check` | Type-check a query |
 | `POST` | `/api/v1/format` | Format a query |
 | `GET` | `/api/v1/functions` | List builtin mq functions |
+| `GET` | `/api/v1/functions/{name}` | Docs for a single builtin function |
 | `GET` | `/api/v1/selectors` | List builtin mq selectors |
+| `GET` | `/api/v1/selectors/{name}` | Docs for a single builtin selector (with or without a leading `.`) |
 | `POST` | `/api/v1/lint` | Lint a query |
 | `GET` | `/api/v1/openapi.json` | OpenAPI specification |
 | `GET` | `/docs` | Swagger UI |
@@ -133,11 +135,25 @@ Returns an array of errors (empty means no issues). Always returns HTTP 200.
 
 ### `GET /api/v1/functions`
 
-Returns all builtin mq functions with their descriptions and parameters.
+Returns all builtin mq functions with their description, params, param types, return type,
+runnable examples, and required capability (a Cargo feature name, e.g. `file-io`; functions
+requiring a capability this deployment wasn't built with are simply absent). Sourced from the
+same catalog as `mq help`, so the two can't drift apart.
+
+### `GET /api/v1/functions/{name}`
+
+Docs for a single builtin function, same shape as one entry from `/api/v1/functions`. 404 if
+`name` isn't a builtin function.
 
 ### `GET /api/v1/selectors`
 
-Returns all builtin mq selectors with their descriptions and parameters.
+Returns all builtin mq selectors with their description, params, param types, matched/produced
+type, examples, and required capability.
+
+### `GET /api/v1/selectors/{name}`
+
+Docs for a single builtin selector, with or without a leading `.` (`h1` and `.h1` both work).
+404 if `name` isn't a builtin selector.
 
 ### `POST /api/v1/lint`
 
@@ -322,10 +338,22 @@ curl -X POST http://localhost:8080/api/v1/format \
 curl http://localhost:8080/api/v1/functions
 ```
 
+### Look up a single function
+
+```bash
+curl http://localhost:8080/api/v1/functions/map
+```
+
 ### List builtin selectors
 
 ```bash
 curl http://localhost:8080/api/v1/selectors
+```
+
+### Look up a single selector
+
+```bash
+curl http://localhost:8080/api/v1/selectors/h1
 ```
 
 ### Lint a query

@@ -184,12 +184,27 @@ pub struct FormatApiResponse {
     pub formatted: String,
 }
 
+/// A runnable example paired with its verified expected output.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ExampleDoc {
+    pub code: String,
+    pub expected: String,
+}
+
 /// Documentation for a single builtin function.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct FunctionDoc {
     pub name: String,
     pub description: String,
     pub params: Vec<String>,
+    /// Parallel to `params`; a type name (e.g. "string", "number") or "dynamic" per param.
+    pub param_types: Vec<String>,
+    /// Type name of the returned value.
+    pub returns: String,
+    pub examples: Vec<ExampleDoc>,
+    /// Cargo feature flag required to use this function, if any (e.g. "file-io"). Functions
+    /// requiring a capability not enabled on this deployment are omitted from listings.
+    pub capability: Option<String>,
 }
 
 /// Response body for `GET /api/functions`.
@@ -204,6 +219,10 @@ pub struct SelectorDoc {
     pub name: String,
     pub description: String,
     pub params: Vec<String>,
+    pub param_types: Vec<String>,
+    pub returns: String,
+    pub examples: Vec<ExampleDoc>,
+    pub capability: Option<String>,
 }
 
 /// Response body for `GET /api/selectors`.
@@ -343,15 +362,49 @@ pub fn format_query(request: FormatApiRequest) -> miette::Result<FormatApiRespon
     Ok(FormatApiResponse { formatted })
 }
 
+fn function_doc(name: &str, doc: &mq_lang::BuiltinFunctionDoc) -> FunctionDoc {
+    FunctionDoc {
+        name: name.to_string(),
+        description: doc.description.to_string(),
+        params: doc.params.iter().map(|p| p.to_string()).collect(),
+        param_types: doc.param_types.iter().map(|p| p.to_string()).collect(),
+        returns: doc.returns.to_string(),
+        examples: doc
+            .examples
+            .iter()
+            .map(|e| ExampleDoc {
+                code: e.code.to_string(),
+                expected: e.expected.to_string(),
+            })
+            .collect(),
+        capability: doc.capability.map(str::to_string),
+    }
+}
+
+fn selector_doc(name: &str, doc: &mq_lang::BuiltinSelectorDoc) -> SelectorDoc {
+    SelectorDoc {
+        name: name.to_string(),
+        description: doc.description.to_string(),
+        params: doc.params.iter().map(|p| p.to_string()).collect(),
+        param_types: doc.param_types.iter().map(|p| p.to_string()).collect(),
+        returns: doc.returns.to_string(),
+        examples: doc
+            .examples
+            .iter()
+            .map(|e| ExampleDoc {
+                code: e.code.to_string(),
+                expected: e.expected.to_string(),
+            })
+            .collect(),
+        capability: doc.capability.map(str::to_string),
+    }
+}
+
 /// Lists all builtin mq functions with their documentation.
 pub fn list_functions() -> FunctionsApiResponse {
     let mut functions: Vec<FunctionDoc> = mq_lang::BUILTIN_FUNCTION_DOC
         .iter()
-        .map(|(name, doc)| FunctionDoc {
-            name: name.to_string(),
-            description: doc.description.to_string(),
-            params: doc.params.iter().map(|p| p.to_string()).collect(),
-        })
+        .map(|(name, doc)| function_doc(name, doc))
         .collect();
     functions.sort_by(|a, b| a.name.cmp(&b.name));
     FunctionsApiResponse { functions }
@@ -361,14 +414,29 @@ pub fn list_functions() -> FunctionsApiResponse {
 pub fn list_selectors() -> SelectorsApiResponse {
     let mut selectors: Vec<SelectorDoc> = mq_lang::BUILTIN_SELECTOR_DOC
         .iter()
-        .map(|(name, doc)| SelectorDoc {
-            name: name.to_string(),
-            description: doc.description.to_string(),
-            params: doc.params.iter().map(|p| p.to_string()).collect(),
-        })
+        .map(|(name, doc)| selector_doc(name, doc))
         .collect();
     selectors.sort_by(|a, b| a.name.cmp(&b.name));
     SelectorsApiResponse { selectors }
+}
+
+/// Looks up a single builtin function's documentation by name.
+pub fn get_function(name: &str) -> Option<FunctionDoc> {
+    mq_lang::BUILTIN_FUNCTION_DOC
+        .get(name)
+        .map(|doc| function_doc(name, doc))
+}
+
+/// Looks up a single builtin selector's documentation by name (with or without a leading `.`).
+pub fn get_selector(name: &str) -> Option<SelectorDoc> {
+    let name = if name.starts_with('.') {
+        name.to_string()
+    } else {
+        format!(".{name}")
+    };
+    mq_lang::BUILTIN_SELECTOR_DOC
+        .get(name.as_str())
+        .map(|doc| selector_doc(&name, doc))
 }
 
 /// Lints the given query and returns any diagnostics found.
@@ -588,6 +656,78 @@ fn runtime_value_to_nodes(runtime_value: &mq_lang::RuntimeValue) -> Vec<mq_markd
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    // `list_functions`/`list_selectors` are sourced directly from `mq_lang::BUILTIN_FUNCTION_DOC`/
+    // `BUILTIN_SELECTOR_DOC`, so these guard the *mapping* code in this file (field-for-field
+    // parity), not the underlying doc data — the single source of truth stays in mq-lang.
+    #[test]
+    fn test_list_functions_matches_mq_lang_doc_map() {
+        let response = list_functions();
+        assert_eq!(response.functions.len(), mq_lang::BUILTIN_FUNCTION_DOC.len());
+
+        for doc in &response.functions {
+            let source = mq_lang::BUILTIN_FUNCTION_DOC
+                .get(doc.name.as_str())
+                .unwrap_or_else(|| panic!("{} present in API response but not in BUILTIN_FUNCTION_DOC", doc.name));
+            assert_eq!(doc.description, source.description);
+            assert_eq!(doc.params, source.params);
+            assert_eq!(doc.param_types, source.param_types);
+            assert_eq!(doc.returns, source.returns);
+            assert_eq!(doc.capability.as_deref(), source.capability);
+            assert_eq!(doc.examples.len(), source.examples.len());
+        }
+    }
+
+    #[test]
+    fn test_list_selectors_matches_mq_lang_doc_map() {
+        let response = list_selectors();
+        assert_eq!(response.selectors.len(), mq_lang::BUILTIN_SELECTOR_DOC.len());
+
+        for doc in &response.selectors {
+            let source = mq_lang::BUILTIN_SELECTOR_DOC
+                .get(doc.name.as_str())
+                .unwrap_or_else(|| panic!("{} present in API response but not in BUILTIN_SELECTOR_DOC", doc.name));
+            assert_eq!(doc.description, source.description);
+            assert_eq!(doc.params, source.params);
+            assert_eq!(doc.param_types, source.param_types);
+            assert_eq!(doc.returns, source.returns);
+            assert_eq!(doc.capability.as_deref(), source.capability);
+            assert_eq!(doc.examples.len(), source.examples.len());
+        }
+    }
+
+    #[test]
+    fn test_get_function_matches_list_entry() {
+        let name = mq_lang::BUILTIN_FUNCTION_DOC
+            .keys()
+            .next()
+            .expect("at least one function")
+            .to_string();
+        let single = get_function(&name).expect("function should be found");
+        let from_list = list_functions()
+            .functions
+            .into_iter()
+            .find(|f| f.name == name)
+            .expect("function should be in list");
+        assert_eq!(single.description, from_list.description);
+    }
+
+    #[test]
+    fn test_get_selector_accepts_name_without_leading_dot() {
+        let dotted = mq_lang::BUILTIN_SELECTOR_DOC
+            .keys()
+            .next()
+            .expect("at least one selector")
+            .to_string();
+        let bare = dotted.trim_start_matches('.');
+        assert!(get_selector(bare).is_some());
+        assert!(get_selector(&dotted).is_some());
+    }
+
+    #[test]
+    fn test_get_function_unknown_returns_none() {
+        assert!(get_function("definitely_not_a_real_function").is_none());
+    }
 
     #[rstest]
     #[case(InputFormat::Csv, "name,age\nAlice,30\nBob,25")]

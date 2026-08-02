@@ -36,11 +36,27 @@ def _toml_stringify_value(value):
 end
 
 # Parses a TOML string and returns the parsed data structure.
+#
+# Example:
+# ```
+# import "toml" | toml::toml_parse("key = 1")
+# #=> {"key": 1}
+# ```
+#
+# Returns: dynamic
 def toml_parse(input):
   _toml_parse(to_string(input))
 end
 
 # Converts a data structure to a TOML string representation.
+#
+# Example:
+# ```
+# import "toml" | toml::toml_stringify({"key": 1})
+# #=> key = 1
+# ```
+#
+# Returns: string
 def toml_stringify(data):
   let lines = []
   | let result = keys(data)
@@ -56,6 +72,14 @@ def toml_stringify(data):
 end
 
 # Converts a data structure to a JSON string representation.
+#
+# Example:
+# ```
+# import "toml" | toml::toml_to_json({"key": 1})
+# #=> {"key":1}
+# ```
+#
+# Returns: string
 def toml_to_json(data):
   if (is_dict(data)):
     "{" + join(map(keys(data), fn(k): "\"" + k + "\":" + toml_to_json(data[k]);), ",") + "}"
@@ -100,6 +124,16 @@ def _create_simple_markdown_table(data):
 end
 
 # Converts a TOML data structure to a Markdown table.
+#
+# Example:
+# ```
+# import "toml" | toml::toml_to_markdown_table([{"a": 1}])
+# #=> | a |
+# | --- |
+# | 1 |
+# ```
+#
+# Returns: string
 def toml_to_markdown_table(data):
   if (is_array(data)):
     _create_array_markdown_table(data)

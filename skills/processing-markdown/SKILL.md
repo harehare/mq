@@ -138,13 +138,13 @@ A small, stable cheat sheet — not exhaustive. See below for everything else.
 | `mq repl`               | Interactive REPL session       |
 
 For the full CLI option list (all flags, possible format values, auto-parsing by file extension, `ARGS` handling), run `mq --help`.
-For the full built-in function reference (300+ functions with descriptions), run `mq --doc`.
+For docs on a specific function or selector (signature, types, examples, required capability), run `mq help <name>` (e.g. `mq help map`, `mq help .h1`); pass `--json` for machine-readable output. Run `mq help` with no name to list every known function/selector.
 
 Note: `--args` also accepts the hidden aliases `--arg` and `--define` (not shown in `mq --help`).
 
 ## Node Attribute Reference
 
-These attributes are Markdown-selector-specific and are not covered by `mq --doc` / `mq --help`.
+These attributes are Markdown-selector-specific and are not covered by `mq help` / `mq --help`.
 
 | Node                                       | Attributes                                                       |
 | ------------------------------------------ | ------------------------------------------------------------------ |

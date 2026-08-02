@@ -27,6 +27,14 @@ end
 
 # Returns sections whose title contains the specified pattern.
 # If depth is true, each section spans until the next header at the same or higher level.
+#
+# Example:
+# ```
+# import "section" | len(section::section(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"), "A"))
+# #=> 2
+# ```
+#
+# Returns: array
 def section(md_nodes, pattern, depth = false):
   let agg_nodes = _ensure_aggregated(md_nodes)
   | if (depth):
@@ -56,6 +64,14 @@ def section(md_nodes, pattern, depth = false):
 end
 
 # Splits markdown nodes into sections based on headers.
+#
+# Example:
+# ```
+# import "section" | len(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")))
+# #=> 3
+# ```
+#
+# Returns: array
 def sections(md_nodes):
   let agg_nodes = _ensure_aggregated(md_nodes)
   | if (is_empty(agg_nodes)):
@@ -79,16 +95,40 @@ def sections(md_nodes):
 end
 
 # Filters sections based on a given predicate function.
+#
+# Example:
+# ```
+# import "section" | len(section::filter_sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"), fn(s): true;))
+# #=> 3
+# ```
+#
+# Returns: array
 def filter_sections(md_nodes, predicate):
   sections(md_nodes) | filter(fn(section): predicate(section);)
 end
 
 # Maps sections using a given mapper function.
+#
+# Example:
+# ```
+# import "section" | section::map_sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"), fn(header, children): to_text(header);)
+# #=> ["A", "A1", "B"]
+# ```
+#
+# Returns: array
 def map_sections(md_nodes, mapper):
   sections(md_nodes) | map(fn(section): mapper(section[:header], section[:children]);)
 end
 
 # Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.
+#
+# Example:
+# ```
+# import "section" | len(section::split(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"), 1))
+# #=> 2
+# ```
+#
+# Returns: array
 def split(md_nodes, level):
   let agg_nodes = _ensure_aggregated(md_nodes)
   | if (is_empty(agg_nodes)):
@@ -112,6 +152,14 @@ def split(md_nodes, level):
 end
 
 # Filters the given list of sections, returning only those whose title contains the specified text.
+#
+# Example:
+# ```
+# import "section" | len(section::title_contains(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")), "A"))
+# #=> 2
+# ```
+#
+# Returns: array
 def title_contains(sections, text):
   if (is_empty(sections)):
     []
@@ -130,6 +178,14 @@ def title_contains(sections, text):
 end
 
 # Filters sections by a pattern match in the title text.
+#
+# Example:
+# ```
+# import "section" | len(section::title_match(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")), "^A"))
+# #=> 2
+# ```
+#
+# Returns: array
 def title_match(sections, pattern):
   if (is_empty(sections)):
     []
@@ -148,6 +204,14 @@ def title_match(sections, pattern):
 end
 
 # Returns the title text of a section (header text without the # symbols).
+#
+# Example:
+# ```
+# import "section" | section::title(first(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"))))
+# #=> A
+# ```
+#
+# Returns: string
 def title(section):
   if (_is_section(section)):
     do section[:header] | to_text();
@@ -157,11 +221,27 @@ end
 
 # Returns the content of a section (all nodes except the header).
 # Deprecated: Use body() instead, as content()
+#
+# Example:
+# ```
+# import "section" | len(section::content(first(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")))))
+# #=> 1
+# ```
+#
+# Returns: array
 def content(section):
   body(section)
 end
 
 # Returns the body of a section (all nodes except the header).
+#
+# Example:
+# ```
+# import "section" | len(section::body(first(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")))))
+# #=> 1
+# ```
+#
+# Returns: array
 def body(section):
   if (_is_section(section)):
     section[:children]
@@ -170,6 +250,14 @@ def body(section):
 end
 
 # Returns all nodes of a section, including both the header and content.
+#
+# Example:
+# ```
+# import "section" | len(section::all_nodes(first(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")))))
+# #=> 2
+# ```
+#
+# Returns: array
 def all_nodes(section):
   if (_is_section(section)):
     do
@@ -180,6 +268,14 @@ def all_nodes(section):
 end
 
 # Filters sections by heading level. l can be a number (exact level) or a range array (e.g. 1..2).
+#
+# Example:
+# ```
+# import "section" | len(section::by_level(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")), 1))
+# #=> 2
+# ```
+#
+# Returns: array
 def by_level(sections, l):
   if (is_empty(sections)):
     []
@@ -199,6 +295,14 @@ def by_level(sections, l):
 end
 
 # Returns the header level (1-6) of a section.
+#
+# Example:
+# ```
+# import "section" | section::level(first(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"))))
+# #=> 1
+# ```
+#
+# Returns: number
 def level(section):
   if (_is_section(section)):
     do
@@ -216,6 +320,14 @@ def level(section):
 end
 
 # Returns the nth section from an array of sections (0-indexed).
+#
+# Example:
+# ```
+# import "section" | section::title(section::nth(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")), 0))
+# #=> A
+# ```
+#
+# Returns: dynamic
 def nth(sections, n):
   if (is_empty(sections) || n < 0 || n >= len(sections)):
     None
@@ -224,6 +336,14 @@ def nth(sections, n):
 end
 
 # Extracts titles from all sections.
+#
+# Example:
+# ```
+# import "section" | section::titles(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")))
+# #=> ["A", "A1", "B"]
+# ```
+#
+# Returns: array
 def titles(sections):
   if (is_empty(sections)):
     []
@@ -232,6 +352,14 @@ def titles(sections):
 end
 
 # Extracts body from all sections.
+#
+# Example:
+# ```
+# import "section" | len(section::bodies(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"))))
+# #=> 3
+# ```
+#
+# Returns: array
 def bodies(sections):
   if (is_empty(sections)):
     []
@@ -240,6 +368,14 @@ def bodies(sections):
 end
 
 # Generates a table of contents from sections.
+#
+# Example:
+# ```
+# import "section" | section::toc(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")))
+# #=> ["  - A", "    - A1", "  - B"]
+# ```
+#
+# Returns: array
 def toc(sections):
   if (is_empty(sections)):
     []
@@ -261,6 +397,14 @@ def toc(sections):
 end
 
 # Checks if a section has any content beyond the header.
+#
+# Example:
+# ```
+# import "section" | section::has_content(first(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"))))
+# #=> true
+# ```
+#
+# Returns: bool
 def has_content(section):
   if (!is_dict(section)):
     error("Expected a dictionary, but got a different type.")
@@ -272,6 +416,14 @@ end
 
 # Flattens sections back to markdown nodes for output.
 # This converts section objects back to their original markdown node arrays.
+#
+# Example:
+# ```
+# import "section" | len(section::collect(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"))))
+# #=> 6
+# ```
+#
+# Returns: array
 def collect(sections):
   if (is_empty(sections)):
     []

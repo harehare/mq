@@ -18,8 +18,9 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::{
     config::Config,
     handlers::{
-        ApiDoc, AppState, get_functions_api, get_query_api, get_selectors_api, health_check, post_batch_api,
-        post_check_api, post_format_api, post_lint_api, post_query_api, post_shorthand_query_api,
+        ApiDoc, AppState, get_function_api, get_functions_api, get_query_api, get_selector_api, get_selectors_api,
+        health_check, post_batch_api, post_check_api, post_format_api, post_lint_api, post_query_api,
+        post_shorthand_query_api,
     },
     middleware::rate_limit_middleware,
     query_cache::QueryCache,
@@ -61,7 +62,9 @@ pub fn create_router(config: &Config, rate_limiter: Arc<RateLimiter>) -> Router 
         .route("/check", post(post_check_api))
         .route("/format", post(post_format_api))
         .route("/functions", get(get_functions_api))
+        .route("/functions/{name}", get(get_function_api))
         .route("/selectors", get(get_selectors_api))
+        .route("/selectors/{name}", get(get_selector_api))
         .route("/lint", post(post_lint_api));
 
     Router::new()

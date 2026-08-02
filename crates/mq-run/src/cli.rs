@@ -23,7 +23,7 @@ use which::which;
 static HAD_TRUTHY_OUTPUT: AtomicBool = AtomicBool::new(false);
 
 use crate::grep;
-use crate::reference;
+use crate::help;
 
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
@@ -59,7 +59,8 @@ use crate::reference;
     # => {\"positional\": [\"x\",\"y\",\"z\"], \"named\": {\"name\": \"Alice\"}}\n")]
 #[command(
     about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
-    long_about = None
+    long_about = None,
+    disable_help_subcommand = true
 )]
 pub struct Cli {
     #[clap(flatten)]
@@ -74,10 +75,6 @@ pub struct Cli {
     /// List all available subcommands (built-in and external)
     #[arg(long)]
     list: bool,
-
-    /// Use the built-in reference document as input instead of a file.
-    #[arg(long, default_value_t = false)]
-    doc: bool,
 
     /// Number of files to process before switching to parallel processing
     #[arg(short = 'P', default_value_t = 10)]
@@ -290,7 +287,7 @@ pub enum LinkUrlStyle {
 #[derive(Clone, Debug, clap::Args, Default)]
 struct InputArgs {
     /// Aggregate all input files/content into a single array
-    #[arg(short = 'A', long, default_value_t = false, default_value_if("doc", "true", "true"))]
+    #[arg(short = 'A', long, default_value_t = false)]
     aggregate: bool,
 
     /// load filter from the file
@@ -547,6 +544,19 @@ enum Commands {
         #[arg(value_enum)]
         shell: CompletionShell,
     },
+    /// Show documentation for a builtin function, selector, or standard-module function.
+    ///
+    /// Looks up NAME among native builtin functions, selectors (with or without a leading
+    /// `.`), `builtin.mq` functions, and every standard module's functions, and prints its
+    /// signature, parameter/return types, description, examples, required capability (Cargo
+    /// feature), and the module it belongs to (if any). Run with no NAME to list everything.
+    Help {
+        /// Name of a function or selector, e.g. `map`, `.h1`, `csv_parse`
+        name: Option<String>,
+        /// Print machine-readable JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Shell targets supported by the `completion` subcommand.
@@ -760,24 +770,45 @@ impl Cli {
         Ok(())
     }
 
-    /// Runs a query against the generated reference Markdown document.
-    fn run_doc(&self) -> miette::Result<()> {
-        let markdown = reference::generate();
-        let input = mq_lang::parse_markdown_input(&markdown)?;
+    /// Shows documentation for a single function/selector, or lists every known name when
+    /// `name` is `None`.
+    fn run_help(name: Option<&str>, json: bool) -> miette::Result<()> {
+        let Some(name) = name else {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&help::all_names()).into_diagnostic()?
+                );
+            } else {
+                for n in help::all_names() {
+                    println!("{n}");
+                }
+            }
+            return Ok(());
+        };
 
-        let query = self.get_query().unwrap_or_else(|_| "self".to_string());
-        let mut engine = self.create_engine()?;
-        let runtime_values = engine.eval(&query, input.into_iter()).map_err(|e| *e)?;
-        self.print(runtime_values)
+        let entries = help::lookup(name);
+        if entries.is_empty() {
+            return Err(match help::suggest(name) {
+                Some(suggestion) => miette!("no function or selector named `{name}` — did you mean `{suggestion}`?"),
+                None => miette!("no function or selector named `{name}`"),
+            });
+        }
+
+        if json {
+            println!("{}", serde_json::to_string_pretty(&entries).into_diagnostic()?);
+        } else {
+            for entry in &entries {
+                println!("{}", help::render_human(entry));
+            }
+        }
+
+        Ok(())
     }
 
     pub fn run(&self) -> miette::Result<()> {
         if self.list {
             return self.list_commands();
-        }
-
-        if self.doc {
-            return self.run_doc();
         }
 
         if (self.output.before_context.is_some()
@@ -838,6 +869,7 @@ impl Cli {
             #[cfg(feature = "debugger")]
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
             Some(Commands::Completion { shell }) => Self::generate_completion(shell),
+            Some(Commands::Help { name, json }) => Self::run_help(name.as_deref(), *json),
             None => {
                 let result = if self.input.stream {
                     self.process_streaming()
