@@ -1,3 +1,5 @@
+# AST (Abstract Syntax Tree) utilities in mq.
+
 # Gets the arguments of an AST node
 #
 # Returns: dynamic
