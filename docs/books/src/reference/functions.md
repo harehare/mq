@@ -240,7 +240,9 @@ map(["a", "b"], upcase)   # upcase is NOT auto-called here; it's passed as a cal
 
 - `mq help <name>` - Signature, parameter/return types, description, examples, and required
   capability for any builtin function or standard-module function, e.g. `mq help map`. Pass
-  `--json` for machine-readable output.
+  `--json` for machine-readable output, or `--markdown` for Markdown — queryable with mq
+  itself, e.g. `mq help section --markdown | mq 'select(.code.lang == "mq")'` to pull out
+  every example query in a module's docs.
 - `mq help <module>` - Overview and function list for a standard module, e.g. `mq help section`
   or `mq help table`. Use `module::function` (e.g. `mq help section::section`) for a function
   whose name collides with its own module.

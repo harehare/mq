@@ -16,6 +16,6 @@ pub mod reference;
 
 pub use catalog::{
     HelpEntry, HelpExample, HelpModule, HelpParam, all_entries, all_modules, all_names, lookup, lookup_module,
-    render_human, render_module_human, suggest, top_level_entries,
+    render_human, render_markdown, render_module_human, render_module_markdown, suggest, top_level_entries,
 };
 pub use reference::{ModuleDoc, MqExample, MqFnDoc, extract_functions_from_cst, extract_module, extract_module_doc};

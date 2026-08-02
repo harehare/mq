@@ -28,6 +28,31 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[test]
+fn test_help_markdown_renders_fenced_mq_example() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("help").arg("map").arg("--markdown").assert();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+
+    assert!(output.starts_with("## `map` (function)"));
+    assert!(output.contains("```mq\n"));
+
+    Ok(())
+}
+
+#[test]
+fn test_help_json_and_markdown_conflict() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.arg("help")
+        .arg("map")
+        .arg("--json")
+        .arg("--markdown")
+        .assert()
+        .failure();
+}
+
 #[rstest]
 #[case("-i")]
 #[case("--in-place")]

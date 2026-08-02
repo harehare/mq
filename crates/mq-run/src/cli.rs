@@ -558,8 +558,12 @@ enum Commands {
         /// Name of a function, selector, or module, e.g. `map`, `.h1`, `csv_parse`, `section`
         name: Option<String>,
         /// Print machine-readable JSON instead of formatted text
-        #[arg(long)]
+        #[arg(long, conflicts_with = "markdown")]
         json: bool,
+        /// Print Markdown instead of formatted text — e.g. queryable with mq itself:
+        /// `mq help section --markdown | mq 'select(.code.lang == "mq")'`
+        #[arg(long)]
+        markdown: bool,
     },
 }
 
@@ -573,6 +577,14 @@ enum CompletionShell {
     #[value(name = "powershell")]
     PowerShell,
     Zsh,
+}
+
+/// Output mode for the `help` subcommand.
+#[derive(Clone, Copy)]
+enum HelpFormat {
+    Human,
+    Json,
+    Markdown,
 }
 
 impl Cli {
@@ -777,15 +789,23 @@ impl Cli {
     /// Shows documentation for a single function/selector/module, or lists everything known
     /// when `name` is `None`. Writes the whole output in one call, not one `println!` per
     /// line — hundreds of lines otherwise means hundreds of flushed syscalls.
-    fn run_help(name: Option<&str>, json: bool) -> miette::Result<()> {
+    fn run_help(name: Option<&str>, json: bool, markdown: bool) -> miette::Result<()> {
+        let format = if json {
+            HelpFormat::Json
+        } else if markdown {
+            HelpFormat::Markdown
+        } else {
+            HelpFormat::Human
+        };
+
         let stdout = io::stdout();
         let mut handle = BufWriter::new(stdout.lock());
 
         let Some(name) = name else {
-            let out = if json {
-                serde_json::to_string_pretty(&help::all_names()).into_diagnostic()?
-            } else {
-                Self::help_index_text()
+            let out = match format {
+                HelpFormat::Json => serde_json::to_string_pretty(&help::all_names()).into_diagnostic()?,
+                HelpFormat::Markdown => Self::help_index_markdown(),
+                HelpFormat::Human => Self::help_index_text(),
             };
             Self::write_ignore_pipe(&mut handle, out.as_bytes())?;
             Self::write_ignore_pipe(&mut handle, b"\n")?;
@@ -797,10 +817,10 @@ impl Cli {
         if !name.contains("::")
             && let Some(module) = help::lookup_module(name)
         {
-            let out = if json {
-                serde_json::to_string_pretty(&module).into_diagnostic()?
-            } else {
-                help::render_module_human(&module)
+            let out = match format {
+                HelpFormat::Json => serde_json::to_string_pretty(&module).into_diagnostic()?,
+                HelpFormat::Markdown => help::render_module_markdown(&module),
+                HelpFormat::Human => help::render_module_human(&module),
             };
             Self::write_ignore_pipe(&mut handle, out.as_bytes())?;
             Self::write_ignore_pipe(&mut handle, b"\n")?;
@@ -817,38 +837,44 @@ impl Cli {
             });
         }
 
-        let out = if json {
-            serde_json::to_string_pretty(&entries).into_diagnostic()?
-        } else {
-            entries.iter().map(help::render_human).collect::<Vec<_>>().join("\n")
+        let out = match format {
+            HelpFormat::Json => serde_json::to_string_pretty(&entries).into_diagnostic()?,
+            HelpFormat::Markdown => entries.iter().map(help::render_markdown).collect::<Vec<_>>().join("\n"),
+            HelpFormat::Human => entries.iter().map(help::render_human).collect::<Vec<_>>().join("\n"),
         };
         Self::write_ignore_pipe(&mut handle, out.as_bytes())?;
         Self::write_ignore_pipe(&mut handle, b"\n")?;
         handle.flush().into_diagnostic()
     }
 
-    /// Builds the grouped `mq help` index text: selectors, top-level functions, and modules
-    /// (each with a one-line summary), for a name-less human-readable lookup.
-    fn help_index_text() -> String {
-        // Cheap: never parses standard-module sources, unlike `all_entries`.
+    /// Sorted, deduped selector and top-level function names for the `mq help` index.
+    /// Cheap: uses `top_level_entries`, which never parses standard-module sources.
+    fn help_index_names() -> (Vec<String>, Vec<String>) {
         let entries = help::top_level_entries();
 
-        let mut selectors: Vec<&str> = entries
+        let mut selectors: Vec<String> = entries
             .iter()
             .filter(|e| e.kind == "selector")
-            .map(|e| e.name.as_str())
+            .map(|e| e.name.clone())
             .collect();
         selectors.sort_unstable();
         selectors.dedup();
 
-        let mut functions: Vec<&str> = entries
+        let mut functions: Vec<String> = entries
             .iter()
             .filter(|e| e.kind == "function")
-            .map(|e| e.name.as_str())
+            .map(|e| e.name.clone())
             .collect();
         functions.sort_unstable();
         functions.dedup();
 
+        (selectors, functions)
+    }
+
+    /// Builds the grouped `mq help` index text: selectors, top-level functions, and modules
+    /// (each with a one-line summary), for a name-less human-readable lookup.
+    fn help_index_text() -> String {
+        let (selectors, functions) = Self::help_index_names();
         let mut out = String::new();
 
         let _ = writeln!(out, "{}", "Selectors:".bold().cyan());
@@ -866,6 +892,41 @@ impl Cli {
             let summary = module.description.split(". ").next().unwrap_or_default();
             let padded_name = format!("{:<10}", module.name);
             let _ = writeln!(out, "  {} {}", padded_name.green(), summary);
+        }
+
+        let _ = write!(
+            out,
+            "\nRun `mq help <name>` for a function or selector, `mq help <module>` for a module overview."
+        );
+
+        out
+    }
+
+    /// Same content as [`Self::help_index_text`], as Markdown — queryable with mq itself.
+    fn help_index_markdown() -> String {
+        let (selectors, functions) = Self::help_index_names();
+        let mut out = String::new();
+
+        let _ = writeln!(out, "# mq help");
+
+        let _ = writeln!(out, "\n## Selectors\n");
+        for s in selectors {
+            let _ = writeln!(out, "- `{s}`");
+        }
+
+        let _ = writeln!(out, "\n## Functions\n");
+        for f in functions {
+            let _ = writeln!(out, "- `{f}`");
+        }
+
+        let _ = writeln!(out, "\n## Modules\n");
+        for module in help::all_modules() {
+            let summary = module.description.split(". ").next().unwrap_or_default();
+            if summary.is_empty() {
+                let _ = writeln!(out, "- `{}`", module.name);
+            } else {
+                let _ = writeln!(out, "- `{}` — {}", module.name, summary);
+            }
         }
 
         let _ = write!(
@@ -939,7 +1000,7 @@ impl Cli {
             #[cfg(feature = "debugger")]
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
             Some(Commands::Completion { shell }) => Self::generate_completion(shell),
-            Some(Commands::Help { name, json }) => Self::run_help(name.as_deref(), *json),
+            Some(Commands::Help { name, json, markdown }) => Self::run_help(name.as_deref(), *json, *markdown),
             None => {
                 let result = if self.input.stream {
                     self.process_streaming()

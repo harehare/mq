@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use colored::Colorize;
 use mq_lang::{BUILTIN_FUNCTION_DOC, BUILTIN_MODULE_FILE, BUILTIN_SELECTOR_DOC, STANDARD_MODULES};
 use serde::Serialize;
@@ -350,6 +352,100 @@ pub fn render_module_human(module: &HelpModule) -> String {
     out
 }
 
+/// Renders a single entry as Markdown, headed at `level` (e.g. `2` for `##`) so it can be
+/// nested — [`render_module_markdown`] renders each of its functions one level deeper.
+fn entry_markdown(entry: &HelpEntry, level: usize) -> String {
+    let h = "#".repeat(level);
+    let sub_h = "#".repeat(level + 1);
+    let mut out = String::new();
+
+    let params = entry
+        .params
+        .iter()
+        .map(|p| format!("{}: {}", p.name, p.type_name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let _ = writeln!(out, "{h} `{}` ({})", entry.name, entry.kind);
+    let _ = writeln!(out, "\n`{}({}): {}`", entry.name, params, entry.returns);
+
+    if !entry.description.is_empty() {
+        let _ = writeln!(out, "\n{}", entry.description);
+    }
+
+    if let Some(module) = &entry.related_module {
+        let _ = writeln!(
+            out,
+            "\n**Module:** `import \"{module}\" | {module}::{}(...)`",
+            entry.name
+        );
+    }
+
+    if let Some(capability) = &entry.capability {
+        let _ = writeln!(
+            out,
+            "\n**Capability:** requires the `{capability}` feature (not available via the hosted Web API/playground)"
+        );
+    }
+
+    if !entry.examples.is_empty() {
+        let _ = writeln!(out, "\n{sub_h} Examples");
+        for example in &entry.examples {
+            let _ = writeln!(
+                out,
+                "\n```mq\n{}\n```\n\nOutput:\n\n```\n{}\n```",
+                example.code, example.expected
+            );
+        }
+    }
+
+    out
+}
+
+/// Renders a single entry as Markdown — e.g. queryable with mq itself via
+/// `mq help <name> --markdown | mq 'select(.code.lang == "mq")'`.
+pub fn render_markdown(entry: &HelpEntry) -> String {
+    entry_markdown(entry, 2)
+}
+
+/// Renders a module overview as Markdown: its header doc, examples, and the full doc for
+/// each function it defines (one heading level deeper, so `mq`'s own `section` module can
+/// pull out any single function's docs by title).
+pub fn render_module_markdown(module: &HelpModule) -> String {
+    let mut out = String::new();
+
+    let _ = writeln!(out, "# `{}` (module)", module.name);
+
+    if !module.description.is_empty() {
+        let _ = writeln!(out, "\n{}", module.description);
+    }
+
+    let _ = writeln!(
+        out,
+        "\n**Usage:** `import \"{}\" | {}::<function>(...)`",
+        module.name, module.name
+    );
+
+    if !module.examples.is_empty() {
+        let _ = writeln!(out, "\n## Examples");
+        for example in &module.examples {
+            let _ = writeln!(
+                out,
+                "\n```mq\n{}\n```\n\nOutput:\n\n```\n{}\n```",
+                example.code, example.expected
+            );
+        }
+    }
+
+    if !module.functions.is_empty() {
+        let _ = writeln!(out, "\n## Functions");
+        for f in &module.functions {
+            let _ = writeln!(out, "\n{}", entry_markdown(f, 3));
+        }
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,6 +493,26 @@ mod tests {
     #[test]
     fn test_lookup_module_unknown_returns_none() {
         assert!(lookup_module("definitely_not_a_real_module").is_none());
+    }
+
+    #[test]
+    fn test_render_markdown_headed_at_h2_with_mq_fenced_examples() {
+        let entry = lookup("map").into_iter().find(|e| e.kind == "function").unwrap();
+        let md = render_markdown(&entry);
+        assert!(md.starts_with("## `map` (function)"));
+        assert!(md.contains("```mq\n"));
+        assert!(md.contains("Output:\n\n```\n"));
+    }
+
+    #[test]
+    fn test_render_module_markdown_nests_functions_one_level_deeper() {
+        let module = lookup_module("section").unwrap();
+        let md = render_module_markdown(&module);
+        assert!(md.starts_with("# `section` (module)"));
+        assert!(md.contains("## Functions"));
+        // Each function is nested one level deeper than the module's own `#`/`##` headings.
+        assert!(md.contains("### `section` (function)"));
+        assert!(md.contains("#### Examples"));
     }
 
     #[test]

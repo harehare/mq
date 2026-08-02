@@ -23,6 +23,8 @@ let suggestion = suggest("mpa"); // Some("map")
 
 for entry in &matches {
     println!("{}", render_human(entry));
+    // Or `render_markdown`/`render_module_markdown` — Markdown output that mq can query
+    // right back, e.g. `mq help section --markdown | mq 'select(.code.lang == "mq")'`.
 }
 ```
 
