@@ -304,6 +304,19 @@ body regardless of method. The optional `headers` argument is a dict of string t
 around `http(:get, url, headers)`, `http(:post, url, body, headers)`, and so on, for the most
 common cases — `headers` defaults to `{}` and can be omitted.
 
+`http_all([...requests])` issues a batch of HTTP requests and returns an array of response
+bodies in the same order. Each request is a dict with a required `url` and optional `method`
+(defaults to `get`), `body`, and `headers` keys, e.g.:
+
+```sh
+mq --allow-net 'http_all([{"url": "https://example.com/a"}, {"url": "https://example.com/b", "method": "post", "body": "{}", "headers": {"Content-Type": "application/json"}}])'
+```
+
+Requests in the batch run concurrently when the runtime supports it, so fanning out to
+multiple endpoints is faster than calling `http()` in a loop. The same URL/domain policy
+applies as for `http()`: HTTPS only, and `--allow-net` (with or without a domain allowlist)
+is required.
+
 > **Security note:** `http` only accepts `https://` URLs and is routed through the same
 > SSRF-hardened client used for HTTP imports — no automatic redirects, and DNS results are
 > filtered to publicly routable addresses, so a loopback/private/link-local address can't be

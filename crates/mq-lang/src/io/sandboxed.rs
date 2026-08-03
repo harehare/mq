@@ -1,4 +1,4 @@
-use super::{Io, IoError, NativeIo};
+use super::{HttpRequestSpec, Io, IoError, NativeIo};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
@@ -264,6 +264,18 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
             return Err(denied_domain(url));
         }
         self.inner.http_request(method, url, body, headers)
+    }
+
+    fn http_request_all(&self, requests: &[HttpRequestSpec]) -> Result<Vec<String>, IoError> {
+        if self.allow_net.is_denied() {
+            return Err(denied("network access is disabled"));
+        }
+        for spec in requests {
+            if !self.allow_net.permits(&spec.url) {
+                return Err(denied_domain(&spec.url));
+            }
+        }
+        self.inner.http_request_all(requests)
     }
 
     // Not gated by the domain allowlist: this seeds mock data for the `mock_fetch` builtin

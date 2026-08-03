@@ -1,3 +1,5 @@
+#[cfg(feature = "http")]
+use super::HttpRequestSpec;
 use super::{Io, IoError};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
@@ -195,6 +197,33 @@ impl Io for NativeIo {
         Err(IoError::Other(Cow::Borrowed(
             "network access is not compiled into this build",
         )))
+    }
+
+    #[cfg(feature = "http")]
+    fn http_request_all(&self, requests: &[HttpRequestSpec]) -> Result<Vec<String>, IoError> {
+        // Each request runs on its own thread; NativeIo is a thin handle
+        // (a timeout Duration) around the shared SSRF-hardened agent, so
+        // concurrent fan-out is safe and bounded by the caller's batch size.
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = requests
+                .iter()
+                .map(|spec| {
+                    let method = spec.method.clone();
+                    let url = spec.url.clone();
+                    let body = spec.body.clone();
+                    let headers = spec.headers.clone();
+                    scope.spawn(move || self.http_request(&method, &url, body.as_deref(), &headers))
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| {
+                    handle
+                        .join()
+                        .unwrap_or(Err(IoError::Other(Cow::Borrowed("http_all worker thread panicked"))))
+                })
+                .collect()
+        })
     }
 
     #[cfg(feature = "process-io")]
