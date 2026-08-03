@@ -1128,6 +1128,49 @@ def test_with_entries():
   | assert_eq(result2, dict())
 end
 
+def test_merge_with():
+  # Nested dicts are merged recursively; non-overlapping keys are kept from both sides
+  let result1 = merge_with({"a": 1, "b": {"x": 1}}, {"b": {"y": 2}, "c": 3}, "replace")
+  | assert_eq(result1, {"a": 1, "b": {"x": 1, "y": 2}, "c": 3})
+
+  # "replace" policy: the second value wins on leaf/array conflicts
+  | let result2 = merge_with({"a": [1, 2], "b": 1}, {"a": [3], "b": 2}, "replace")
+  | assert_eq(result2, {"a": [3], "b": 2})
+
+  # "append" policy: arrays are concatenated, scalar conflicts become [a, b]
+  | let result3 = merge_with({"a": [1, 2], "b": 1}, {"a": [3], "b": 2}, "append")
+  | assert_eq(result3, {"a": [1, 2, 3], "b": [1, 2]})
+
+  # "error" policy: raises on conflicting leaf values
+  | let result4 = try: merge_with({"a": 1}, {"a": 2}, "error") catch: "error"
+  | assert_eq(result4, "error")
+
+  # Null on either side is not an error; "replace" lets the null win, "append" keeps the non-null value
+  | let result5 = merge_with({"a": 1}, {"a": None}, "replace")
+  | assert_eq(result5, {"a": None})
+
+  | let result6 = merge_with({"a": 1}, {"a": None}, "append")
+  | assert_eq(result6, {"a": 1})
+
+  # An invalid policy is rejected
+  | let result7 = try: merge_with({}, {}, "invalid") catch: "error"
+  | assert_eq(result7, "error")
+end
+
+def test_merge_defaults():
+  # Values from `d` win, missing keys fall back to `defaults`, recursively
+  let result1 = merge_defaults({"a": {"x": 1}}, {"a": {"x": 0, "y": 2}, "b": 3})
+  | assert_eq(result1, {"a": {"x": 1, "y": 2}, "b": 3})
+
+  # `d`'s arrays replace `defaults`'s arrays entirely
+  | let result2 = merge_defaults({"a": [1]}, {"a": [2, 3]})
+  | assert_eq(result2, {"a": [1]})
+
+  # An empty override falls back entirely to defaults
+  | let result3 = merge_defaults({}, {"a": 1, "b": 2})
+  | assert_eq(result3, {"a": 1, "b": 2})
+end
+
 def test_frontmatter():
   # YAML frontmatter is parsed into a dict
   let result1 = do "---\ntitle: Hello\nauthor: World\n---\n\n# Heading" | to_markdown() | first() | frontmatter();

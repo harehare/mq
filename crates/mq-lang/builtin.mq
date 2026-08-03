@@ -2054,6 +2054,71 @@ def from_entries(arr):
 # Returns: dict
 def with_entries(d, f): from_entries(map(entries(d), f));
 
+# Deep merges two values, recursing into dicts key by key. Neither input is mutated.
+# When both sides provide a leaf/array value for the same key, the conflict is resolved
+# according to `policy`, one of:
+# - `"replace"`: the second value (`b`) wins.
+# - `"append"`: arrays are concatenated; other conflicting values are collected into `[a, b]`.
+# - `"error"`: raises an error describing the conflict.
+#
+# Example:
+# ```
+# merge_with({"a": 1, "b": {"x": 1}}, {"b": {"y": 2}, "c": 3}, "replace")
+# #=> {"a": 1, "b": {"x": 1, "y": 2}, "c": 3}
+# ```
+#
+# Returns: dynamic
+def merge_with(a, b, policy):
+  if (!in(["replace", "append", "error"], policy)):
+    error("policy must be one of \"replace\", \"append\", or \"error\"")
+  elif (is_dict(a) && is_dict(b)):
+    fold(uniq(keys(a) + keys(b)), dict(), fn(acc, key):
+      if (has(a, key) && has(b, key)):
+        set(acc, key, merge_with(a[key], b[key], policy))
+      elif (has(b, key)):
+        set(acc, key, b[key])
+      else:
+        set(acc, key, a[key])
+    ;)
+  elif (is_array(a) && is_array(b)):
+    if (policy == "append"):
+      a + b
+    elif (policy == "replace"):
+      b
+    else:
+      error("merge conflict on arrays: use \"replace\" or \"append\" instead of \"error\"")
+  elif (is_none(a) && is_none(b)):
+    None
+  elif (is_none(a) || is_none(b)):
+    if (policy == "replace"):
+      b
+    elif (policy == "append"):
+      if (is_none(b)): a else: b
+    else:
+      error("merge conflict on null: use \"replace\" or \"append\" instead of \"error\"")
+  else:
+    if (policy == "replace"):
+      b
+    elif (policy == "append"):
+      [a, b]
+    else:
+      error("merge conflict: cannot merge " + type(a) + " with " + type(b))
+end
+
+# Deep merges `d` over `defaults`, similar to Jsonnet's object inheritance: values present
+# in `d` win (recursively for nested dicts), while keys missing from `d` fall back to the
+# corresponding value in `defaults`. Arrays and scalar conflicts are resolved by letting
+# `d` replace `defaults`. Neither input is mutated.
+#
+# Example:
+# ```
+# merge_defaults({"a": {"x": 1}}, {"a": {"x": 0, "y": 2}, "b": 3})
+# #=> {"a": {"x": 1, "y": 2}, "b": 3}
+# ```
+#
+# Returns: dynamic
+def merge_defaults(d, defaults): merge_with(defaults, d, "replace");
+
 # Parses frontmatter from a markdown node, supporting both YAML and TOML formats.
 #
 # Returns: dynamic
