@@ -662,6 +662,85 @@ def test_index_by():
   | assert_eq(result2, dict())
 end
 
+def test_join_by_inner():
+  let left = [{"id": 1, "name": "alice"}, {"id": 2, "name": "bob"}]
+  | let right = [{"uid": 2, "age": 30}, {"uid": 3, "age": 40}]
+  | let result = join_by(left, right, "id", "uid")
+  | assert_eq(result, [{"id": 2, "name": "bob", "uid": 2, "age": 30}])
+end
+
+def test_join_by_left_fills_missing_with_none():
+  let left = [{"id": 1, "name": "alice"}, {"id": 2, "name": "bob"}]
+  | let right = [{"uid": 2, "age": 30}]
+  | let result = join_by(left, right, "id", "uid", "left")
+  | assert_eq(len(result), 2)
+  | assert_eq(result[0], {"id": 1, "name": "alice", "uid": None, "age": None})
+  | assert_eq(result[1], {"id": 2, "name": "bob", "uid": 2, "age": 30})
+end
+
+def test_join_by_right_fills_missing_with_none():
+  let left = [{"id": 2, "name": "bob"}]
+  | let right = [{"uid": 2, "age": 30}, {"uid": 3, "age": 40}]
+  | let result = join_by(left, right, "id", "uid", "right")
+  | assert_eq(len(result), 2)
+  | assert_eq(result[0], {"id": 2, "name": "bob", "uid": 2, "age": 30})
+  | assert_eq(result[1], {"id": None, "name": None, "uid": 3, "age": 40})
+end
+
+def test_join_by_full_fills_both_sides():
+  let left = [{"id": 1, "name": "alice"}, {"id": 2, "name": "bob"}]
+  | let right = [{"uid": 2, "age": 30}, {"uid": 3, "age": 40}]
+  | let result = join_by(left, right, "id", "uid", "full")
+  | assert_eq(len(result), 3)
+  | assert_eq(result[0], {"id": 1, "name": "alice", "uid": None, "age": None})
+  | assert_eq(result[1], {"id": 2, "name": "bob", "uid": 2, "age": 30})
+  | assert_eq(result[2], {"id": None, "name": None, "uid": 3, "age": 40})
+end
+
+def test_join_by_many_to_many_cross_product():
+  let left = [{"id": 1, "l": "l1"}, {"id": 1, "l": "l2"}]
+  | let right = [{"id": 1, "r": "r1"}, {"id": 1, "r": "r2"}]
+  | let result = join_by(left, right, "id", "id")
+  | assert_eq(len(result), 4)
+  | assert_eq(result[0], {"id": 1, "l": "l1", "r": "r1"})
+  | assert_eq(result[1], {"id": 1, "l": "l1", "r": "r2"})
+  | assert_eq(result[2], {"id": 1, "l": "l2", "r": "r1"})
+  | assert_eq(result[3], {"id": 1, "l": "l2", "r": "r2"})
+end
+
+def test_join_by_field_collision_right_wins():
+  let left = [{"id": 1, "value": "from_left"}]
+  | let right = [{"id": 1, "value": "from_right"}]
+  | let result = join_by(left, right, "id", "id")
+  | assert_eq(result, [{"id": 1, "value": "from_right"}])
+end
+
+def test_join_by_none_keys_never_match():
+  let left = [{"id": None, "name": "alice"}]
+  | let right = [{"uid": None, "age": 30}]
+  | let result = join_by(left, right, "id", "uid")
+  | assert_eq(result, [])
+end
+
+def test_join_by_missing_keys_never_match():
+  let left = [{"name": "alice"}]
+  | let right = [{"age": 30}]
+  | let result = join_by(left, right, "id", "uid", "full")
+  | assert_eq(len(result), 2)
+  | assert_eq(result[0], {"name": "alice", "age": None})
+  | assert_eq(result[1], {"name": None, "age": 30})
+end
+
+def test_join_by_invalid_kind():
+  let result = try: join_by([], [], "id", "uid", "outer") catch(e): e["message"]
+  | assert(contains(result, "invalid kind"))
+end
+
+def test_join_by_non_array_left_errors():
+  let result = try: join_by("nope", [], "id", "uid") catch(e): e["message"]
+  | assert(contains(result, "left must be an array"))
+end
+
 def test_percentile():
   # median of odd-length array
   let result1 = percentile([1, 2, 3, 4, 5], 0.5)
