@@ -52,6 +52,15 @@ pub trait IoSyncBound {}
 #[cfg(not(feature = "sync"))]
 impl<T> IoSyncBound for T {}
 
+/// One batched HTTP request specification for [`Io::http_request_all`].
+#[derive(Debug, Clone)]
+pub struct HttpRequestSpec {
+    pub method: String,
+    pub url: String,
+    pub body: Option<String>,
+    pub headers: Vec<(String, String)>,
+}
+
 /// Abstracts file, environment-variable, and network access for the mq
 /// engine. All methods are synchronous, matching the existing sync contract
 /// of [`ModuleResolver::resolve`](crate::module::resolver::ModuleResolver::resolve)
@@ -94,6 +103,18 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
         body: Option<&str>,
         headers: &[(String, String)],
     ) -> Result<String, IoError>;
+
+    /// Batched HTTP requests, backing the `http_all()` builtin. The default
+    /// implementation issues each request sequentially through
+    /// [`Io::http_request`]; implementations that can safely fan out (e.g.
+    /// `NativeIo`) override this with concurrent execution. Callers are
+    /// responsible for the same URL/domain policy as `http_request`.
+    fn http_request_all(&self, requests: &[HttpRequestSpec]) -> Result<Vec<String>, IoError> {
+        requests
+            .iter()
+            .map(|spec| self.http_request(&spec.method, &spec.url, spec.body.as_deref(), &spec.headers))
+            .collect()
+    }
 
     fn home_dir(&self) -> Option<PathBuf>;
     fn current_dir(&self) -> Option<PathBuf>;

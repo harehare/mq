@@ -20,6 +20,8 @@ use crate::error::runtime::RuntimeError;
 use crate::eval::builtin::convert::Convert;
 use crate::eval::env::{self, Env};
 use crate::ident::all_symbols;
+#[cfg(feature = "http")]
+use crate::io::HttpRequestSpec;
 #[cfg(feature = "file-io")]
 use crate::io::Io;
 use crate::number::{self};
@@ -4448,6 +4450,89 @@ fn http_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
     }
 }
 
+#[cfg(feature = "http")]
+#[mq_macros::mq_fn(name = "http_all", params = Fixed(1))]
+fn http_all_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Array(requests)] => {
+            let specs = requests.iter().map(parse_http_request).collect::<Result<Vec<_>, _>>()?;
+            let io = io_context::current();
+            let bodies = io
+                .http_request_all(&specs)
+                .map_err(|e| Error::Runtime(format!("http_all: {e}")))?;
+            Ok(RuntimeValue::Array(Shared::new(
+                bodies.into_iter().map(RuntimeValue::String).collect(),
+            )))
+        }
+        args => Err(Error::InvalidTypes(
+            ident.to_string(),
+            args.iter_mut().map(std::mem::take).collect(),
+        )),
+    }
+}
+
+#[cfg(feature = "http")]
+fn parse_http_request(value: &RuntimeValue) -> Result<HttpRequestSpec, Error> {
+    let RuntimeValue::Dict(fields) = value else {
+        return Err(Error::Runtime(
+            "http_all: each request must be a dict with `url` (and optional `method`, `body`, `headers`)".to_string(),
+        ));
+    };
+    let url = fields
+        .get(&Ident::from("url"))
+        .ok_or_else(|| Error::Runtime("http_all: each request dict needs a `url` string".to_string()))
+        .and_then(|value| match value {
+            RuntimeValue::String(url) => Ok(url.clone()),
+            other => Err(Error::Runtime(format!("http_all: `url` must be a string, got {other}"))),
+        })?;
+    let method = match fields.get(&Ident::from("method")) {
+        Some(RuntimeValue::Symbol(method)) => method.as_str().to_string(),
+        Some(RuntimeValue::String(method)) => method.clone(),
+        Some(other) => {
+            return Err(Error::Runtime(format!(
+                "http_all: `method` must be a string or symbol, got {other}"
+            )));
+        }
+        None => "GET".to_string(),
+    };
+    let method = method
+        .parse::<ureq::http::Method>()
+        .map_err(|_| Error::Runtime(format!("http_all: invalid HTTP method {method:?}")))?
+        .to_string();
+    let body = match fields.get(&Ident::from("body")) {
+        Some(RuntimeValue::String(body)) => Some(body.clone()),
+        Some(other) => {
+            return Err(Error::Runtime(format!(
+                "http_all: `body` must be a string, got {other}"
+            )));
+        }
+        None => None,
+    };
+    let headers = match fields.get(&Ident::from("headers")) {
+        Some(RuntimeValue::Dict(headers)) => headers
+            .iter()
+            .map(|(name, value)| match value {
+                RuntimeValue::String(value) => Ok((name.as_str().to_string(), value.clone())),
+                other => Err(Error::Runtime(format!(
+                    "http_all: header {name:?} must be a string, got {other}"
+                ))),
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        Some(other) => {
+            return Err(Error::Runtime(format!(
+                "http_all: `headers` must be a dict, got {other}"
+            )));
+        }
+        None => Vec::new(),
+    };
+    Ok(HttpRequestSpec {
+        method,
+        url,
+        body,
+        headers,
+    })
+}
+
 #[cfg(all(feature = "http", feature = "mock-io"))]
 #[mq_macros::mq_fn(name = "mock_fetch", params = Fixed(2))]
 fn mock_fetch_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
@@ -4972,6 +5057,8 @@ mq_macros::builtin_dispatch! {
     EXTRACT_IMAGES,
     #[cfg(feature = "http")]
     HTTP,
+    #[cfg(feature = "http")]
+    HTTP_ALL,
     #[cfg(all(feature = "http", feature = "mock-io"))]
     MOCK_FETCH,
     #[cfg(feature = "process-io")]
@@ -13148,6 +13235,75 @@ mod tests {
             ),
             Ok(RuntimeValue::String("body".into()))
         );
+    }
+
+    #[cfg(all(feature = "http", feature = "mock-io"))]
+    #[test]
+    fn test_http_all_fetches_each_request_in_batch_order() {
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(MemIo::default()).allow_net(true)));
+        for (url, body) in [
+            ("https://example.invalid/a", "body-a"),
+            ("https://example.invalid/b", "body-b"),
+            ("https://example.invalid/c", "body-c"),
+        ] {
+            call(
+                "mock_fetch",
+                vec![RuntimeValue::String(url.into()), RuntimeValue::String(body.into())],
+            )
+            .unwrap();
+        }
+
+        let requests = RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Dict(Shared::new(std::collections::BTreeMap::from([(
+                Ident::new("url"),
+                RuntimeValue::String("https://example.invalid/a".into()),
+            )]))),
+            RuntimeValue::Dict(Shared::new(std::collections::BTreeMap::from([(
+                Ident::new("url"),
+                RuntimeValue::String("https://example.invalid/b".into()),
+            )]))),
+            RuntimeValue::Dict(Shared::new(std::collections::BTreeMap::from([
+                (Ident::new("method"), RuntimeValue::Symbol(Ident::new("post"))),
+                (
+                    Ident::new("url"),
+                    RuntimeValue::String("https://example.invalid/c".into()),
+                ),
+                (Ident::new("body"), RuntimeValue::String("payload".into())),
+            ]))),
+        ]));
+
+        assert_eq!(
+            call("http_all", vec![requests]),
+            Ok(RuntimeValue::Array(Shared::new(vec![
+                RuntimeValue::String("body-a".into()),
+                RuntimeValue::String("body-b".into()),
+                RuntimeValue::String("body-c".into()),
+            ])))
+        );
+    }
+
+    #[cfg(all(feature = "http", feature = "mock-io"))]
+    #[test]
+    fn test_http_all_rejects_non_dict_request() {
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(MemIo::default()).allow_net(true)));
+
+        let requests = RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(
+            "https://example.invalid".into(),
+        )]));
+
+        assert!(call("http_all", vec![requests]).is_err());
+    }
+
+    #[cfg(all(feature = "http", feature = "mock-io"))]
+    #[test]
+    fn test_http_all_rejects_request_without_url() {
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(MemIo::default()).allow_net(true)));
+
+        let requests = RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(
+            std::collections::BTreeMap::from([(Ident::new("method"), RuntimeValue::Symbol(Ident::new("get")))]),
+        ))]));
+
+        assert!(call("http_all", vec![requests]).is_err());
     }
 
     #[cfg(all(feature = "http", feature = "mock-io"))]
