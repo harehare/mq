@@ -48,6 +48,8 @@ import "github.com/harehare/<module-name>"
 | [jsonpath.mq](https://github.com/harehare/jsonpath.mq) | [JSONPath](https://en.wikipedia.org/wiki/JSONPath) ([RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)-style) query engine for mq's parsed JSON values |
 | [jsonschema.mq](https://github.com/harehare/jsonschema.mq) | [JSON Schema](https://json-schema.org) validator |
 | [xpath.mq](https://github.com/harehare/xpath.mq) | Abbreviated [XPath](https://www.w3.org/TR/1999/REC-xpath-19991116/) query engine for `xml.mq`'s parsed value tree |
+| [codeowners.mq](https://github.com/harehare/codeowners.mq) | GitHub [CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners) parser and matcher |
+| [feed.mq](https://github.com/harehare/feed.mq) | RSS 2.0 / Atom feed parser |
 
 
 ## Diagram & Graph
@@ -84,6 +86,7 @@ import "github.com/harehare/<module-name>"
 |---|---|
 | [qrcode.mq](https://github.com/harehare/qrcode.mq) | [QR Code](https://www.qrcode.com/en/about/standards.html) (ISO/IEC 18004) encoder — ASCII-art and SVG rendering |
 | [badge.mq](https://github.com/harehare/badge.mq) | [shields.io](https://shields.io) badge generator |
+| [sparkline.mq](https://github.com/harehare/sparkline.mq) | A pure Unicode sparkline renderer |
 
 ## Interpreters & Examples
 
@@ -100,5 +103,4 @@ import "github.com/harehare/<module-name>"
 | [parser_combinator.mq](https://github.com/harehare/parser_combinator.mq) | A small parser-combinator toolkit, in the spirit of Rust's [nom](https://github.com/rust-bakery/nom) |
 | [diff.mq](https://github.com/harehare/diff.mq) | Text and array diffing utilities, built on mq's native Myers-diff engine |
 | [template.mq](https://github.com/harehare/template.mq) | A lightweight Mustache/Handlebars-style templating engine |
-
-
+| [returns.mq](https://github.com/harehare/returns.mq) | Result and Maybe types for railway-oriented error handling, inspired by [dry-python/returns](https://github.com/dry-python/returns) |
