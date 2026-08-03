@@ -23,18 +23,9 @@ ${line}"
 end
 
 def crates_version(line):
-  line
-  | replace(s"path = \"crates/mq-lang\", version = \"${prev_version}\"", s"path = \"crates/mq-lang\", version = \"${version}\"")
-  | replace(s"path = \"crates/mq-hir\", version = \"${prev_version}\"", s"path = \"crates/mq-hir\", version = \"${version}\"")
-  | replace(s"path = \"crates/mq-formatter\", version = \"${prev_version}\"", s"path = \"crates/mq-formatter\", version = \"${version}\"")
-  | replace(s"path = \"crates/mq-markdown\", version = \"${prev_version}\"", s"path = \"crates/mq-markdown\", version = \"${version}\"")
-  | replace(s"path = \"crates/mq-lsp\", version = \"${prev_version}\"", s"path = \"crates/mq-lsp\", version = \"${version}\"")
-  | replace(s"path = \"crates/mq-repl\", version = \"${prev_version}\"", s"path = \"crates/mq-repl\", version = \"${version}\"")
-  | replace(s"path = \"crates/mq-dap\", version = \"${prev_version}\"", s"path = \"crates/mq-dap\", version = \"${version}\"")
-  | replace(s"path = \"crates/mq-check\", version = \"${prev_version}\"", s"path = \"crates/mq-check\", version = \"${version}\"")
-  | replace(s"path = \"crates/mq-test\", version = \"${prev_version}\"", s"path = \"crates/mq-test\", version = \"${version}\"")
-  | replace(s"path = \"crates/mq-macros\", version = \"${prev_version}\"", s"path = \"crates/mq-macros\", version = \"${version}\"")
-  | replace(s"path = \"crates/mq-lint\", version = \"${prev_version}\"", s"path = \"crates/mq-lint\", version = \"${version}\"")
+  if (contains(line, "path = \"crates/")):
+    gsub(line, "version = \"[0-9]+.[0-9]+.[0-9]+\"", s"version = \"${version}\"")
+  else: line
 end
 
 def code_block_version(line, version):
