@@ -14,7 +14,7 @@ default-run = "mq"
 
 [features]
 css-selector = ["mq-lang/css-selector"]
-debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite", "mq-dap"]
+debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex", "mq-dap"]
 default = ["std", "use_mimalloc", "http-import", "css-selector"]
 http-import = ["mq-lang/http-import-ureq"]
 std = []
@@ -39,7 +39,7 @@ quick-xml = {workspace = true}
 rayon = {workspace = true}
 serde_json = {workspace = true}
 serde_yaml = {workspace = true}
-regex-lite = {workspace = true, optional = true}
+regex = {workspace = true, optional = true}
 rustyline = {workspace = true, optional = true, default-features = false, features = ["custom-bindings", "with-file-history"]}
 strum = {workspace = true, features = ["derive"], optional = true}
 tabled = {workspace = true}

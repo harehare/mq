@@ -1,7 +1,7 @@
 use crate::Ident;
 use crate::Shared;
 use crate::eval::runtime_value::RuntimeValue;
-use regex_lite::{Regex, RegexBuilder};
+use regex::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::collections::BTreeMap;
 use std::sync::{LazyLock, RwLock};

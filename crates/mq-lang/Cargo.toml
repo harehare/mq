@@ -22,6 +22,7 @@ sha2 = {workspace = true}
 chrono = {workspace = true}
 dirs = {workspace = true}
 glob = {workspace = true}
+ignore = {workspace = true, optional = true}
 itertools = {workspace = true}
 miette = {workspace = true}
 mq-markdown = {workspace = true, features = ["html-to-markdown", "json", "obsidian"]}
@@ -29,7 +30,7 @@ nom = {workspace = true}
 nom_locate = {workspace = true}
 percent-encoding = {workspace = true}
 rand = {workspace = true}
-regex-lite = {workspace = true}
+regex = {workspace = true}
 ropey = {workspace = true, optional = true}
 rustc-hash = {workspace = true}
 scraper = {workspace = true, optional = true}
@@ -64,7 +65,7 @@ cst = ["dep:ropey"]
 css-selector = ["dep:scraper"]
 debugger = ["sync"]
 default = ["std"]
-file-io = []
+file-io = ["dep:ignore"]
 process-io = []
 std = []
 sync = []

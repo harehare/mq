@@ -1313,6 +1313,16 @@ fn register_file_io(ctx: &mut InferenceContext) {
         Type::array(Type::dict(Type::Var(k), Type::Var(v))),
     );
 
+    // collection: (string, bool) (dir path, respect_gitignore) -> [{path, title, frontmatter, content}]
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "collection",
+        Type::String,
+        Type::Bool,
+        Type::array(Type::dict(Type::Var(k), Type::Var(v))),
+    );
+
     // Path manipulation: string -> string
     register_many(
         ctx,
@@ -1892,6 +1902,7 @@ mod tests {
     #[case::file_exists("file_exists(\"a.md\")", true)]
     #[case::file_size("file_size(\"a.md\")", true)]
     #[case::collection("collection(\"docs\")", true)]
+    #[case::collection_respect_gitignore("collection(\"docs\", true)", true)]
     #[case::collection_len("len(collection(\"docs\"))", true)]
     #[case::basename("basename(\"a/b.md\")", true)]
     #[case::dirname("dirname(\"a/b.md\")", true)]
@@ -1922,6 +1933,7 @@ mod tests {
     #[case::file_exists_number("file_exists(42)", false)] // Should fail: wrong type
     #[case::file_size_number("file_size(42)", false)] // Should fail: wrong type
     #[case::collection_number("collection(42)", false)] // Should fail: wrong type
+    #[case::collection_respect_gitignore_number("collection(\"docs\", 42)", false)] // Should fail: wrong type
     #[case::basename_number("basename(42)", false)] // Should fail: wrong type
     #[case::path_join_number("path_join(42, \"b\")", false)] // Should fail: wrong type
     #[case::glob_match_number("glob_match(42, \"a.md\")", false)] // Should fail: wrong type

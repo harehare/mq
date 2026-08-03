@@ -23,26 +23,26 @@ fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
     let mut matches: Vec<(usize, usize, u8, String)> = Vec::new();
 
     let commands_pattern = r"^(/clear|/copy|/edit|/env|/help|/history|/quit|/load|/reset|/vars|/version)\b";
-    if let Ok(re) = regex_lite::Regex::new(commands_pattern) {
+    if let Ok(re) = regex::Regex::new(commands_pattern) {
         for m in re.find_iter(line) {
             matches.push((m.start(), m.end(), 0, m.as_str().bright_green().to_string()));
         }
     }
 
-    if let Ok(re) = regex_lite::Regex::new(r#""([^"\\]|\\.)*""#) {
+    if let Ok(re) = regex::Regex::new(r#""([^"\\]|\\.)*""#) {
         for m in re.find_iter(line) {
             matches.push((m.start(), m.end(), 1, m.as_str().bright_green().to_string()));
         }
     }
 
     let keywords_pattern = r"\b(def|let|if|elif|else|end|while|foreach|self|nodes|fn|break|continue|include|true|false|None|match|import|module|do|var|macro|quote|unquote)\b";
-    if let Ok(re) = regex_lite::Regex::new(keywords_pattern) {
+    if let Ok(re) = regex::Regex::new(keywords_pattern) {
         for m in re.find_iter(line) {
             matches.push((m.start(), m.end(), 2, m.as_str().bright_blue().to_string()));
         }
     }
 
-    if let Ok(re) = regex_lite::Regex::new(r"\b\d+\b") {
+    if let Ok(re) = regex::Regex::new(r"\b\d+\b") {
         for m in re.find_iter(line) {
             matches.push((m.start(), m.end(), 3, m.as_str().bright_magenta().to_string()));
         }
@@ -50,7 +50,7 @@ fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
 
     let operators_pattern =
         r"(\/\/=|<<|>>|\|\||\?\?|<=|>=|==|!=|=~|&&|\+=|-=|\*=|\/=|\|=|=|\||:|;|\?|!|\+|-|\*|\/|%|<|>|@)";
-    if let Ok(re) = regex_lite::Regex::new(operators_pattern) {
+    if let Ok(re) = regex::Regex::new(operators_pattern) {
         for m in re.find_iter(line) {
             matches.push((m.start(), m.end(), 4, m.as_str().bright_yellow().to_string()));
         }
