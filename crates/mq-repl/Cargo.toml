@@ -18,7 +18,7 @@ miette = {workspace = true}
 mq-hir = {workspace = true}
 mq-lang = {workspace = true, features = ["http"]}
 mq-markdown = {workspace = true}
-regex-lite = {workspace = true}
+regex = {workspace = true}
 rustyline = {workspace = true, default-features = false, features = ["custom-bindings", "with-file-history"]}
 strum = {workspace = true, features = ["derive"]}
 tempfile = {workspace = true}

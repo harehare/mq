@@ -364,7 +364,7 @@ fn collect_spans(
     line: &str,
     color_fn: impl Fn(&str) -> String,
 ) {
-    if let Ok(re) = regex_lite::Regex::new(pattern) {
+    if let Ok(re) = regex::Regex::new(pattern) {
         for m in re.find_iter(line) {
             let (start, end) = (m.start(), m.end());
             let overlaps = spans.iter().any(|(s, e, _)| start < *e && end > *s);

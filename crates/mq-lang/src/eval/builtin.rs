@@ -4600,16 +4600,49 @@ fn collection_record(path: String, raw: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::Dict(Shared::new(record)))
 }
 
+/// Checks matchers closest-directory-first, so a deeper `.gitignore` overrides a shallower one.
+#[cfg(feature = "file-io")]
+fn is_gitignored(stack: &[ignore::gitignore::Gitignore], path: &std::path::Path, is_dir: bool) -> bool {
+    for gi in stack.iter().rev() {
+        match gi.matched(path, is_dir) {
+            ignore::Match::Ignore(_) => return true,
+            ignore::Match::Whitelist(_) => return false,
+            ignore::Match::None => continue,
+        }
+    }
+    false
+}
+
+/// Reads `dir`'s `.gitignore` (if any) through the ambient [`Io`] rather than the real
+/// filesystem, so it stays subject to the same sandboxed read permission as the rest of the walk.
+#[cfg(feature = "file-io")]
+fn load_gitignore(io: &dyn Io, dir: &std::path::Path) -> Option<ignore::gitignore::Gitignore> {
+    let gitignore_path = dir.join(".gitignore");
+    if !io.exists(&gitignore_path).unwrap_or(false) {
+        return None;
+    }
+    let contents = io.read_to_string(&gitignore_path).ok()?;
+    let mut builder = ignore::gitignore::GitignoreBuilder::new(dir);
+    for line in contents.lines() {
+        let _ = builder.add_line(None, line);
+    }
+    builder.build().ok()
+}
+
 #[cfg(feature = "file-io")]
 fn collect_markdown_files(
     io: &dyn Io,
     dir: &std::path::Path,
     ancestors: &mut std::collections::HashSet<std::path::PathBuf>,
+    gitignore_stack: &mut Vec<ignore::gitignore::Gitignore>,
+    respect_gitignore: bool,
 ) -> Result<Vec<std::path::PathBuf>, Error> {
     let canonical = io.canonicalize(dir);
     if !ancestors.insert(canonical.clone()) {
         return Ok(Vec::new());
     }
+
+    let pushed_gitignore = respect_gitignore && load_gitignore(io, dir).map(|gi| gitignore_stack.push(gi)).is_some();
 
     let entries = io
         .read_dir(dir)
@@ -4618,8 +4651,24 @@ fn collect_markdown_files(
     let mut paths = Vec::new();
 
     for (path, is_dir) in entries {
+        if respect_gitignore {
+            let is_hidden = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with('.'));
+            if is_hidden || is_gitignored(gitignore_stack, &path, is_dir) {
+                continue;
+            }
+        }
+
         if is_dir {
-            paths.extend(collect_markdown_files(io, &path, ancestors)?);
+            paths.extend(collect_markdown_files(
+                io,
+                &path,
+                ancestors,
+                gitignore_stack,
+                respect_gitignore,
+            )?);
         } else if io.exists(&path).unwrap_or(false)
             && path
                 .extension()
@@ -4630,36 +4679,60 @@ fn collect_markdown_files(
         }
     }
 
+    if pushed_gitignore {
+        gitignore_stack.pop();
+    }
     ancestors.remove(&canonical);
     Ok(paths)
 }
 
+#[cfg(feature = "file-io")]
+fn collection_impl_inner(dir: &str, respect_gitignore: bool) -> Result<RuntimeValue, Error> {
+    let io = io_context::current();
+    let mut ancestors = std::collections::HashSet::new();
+    let mut gitignore_stack = Vec::new();
+    let mut paths = collect_markdown_files(
+        io.as_ref(),
+        std::path::Path::new(dir),
+        &mut ancestors,
+        &mut gitignore_stack,
+        respect_gitignore,
+    )?;
+    paths.sort();
+
+    let records = paths
+        .into_iter()
+        .map(|path| {
+            let raw = io
+                .read_to_string(&path)
+                .map_err(|e| Error::Runtime(format!("Failed to read file {}: {}", path.display(), e)))?;
+            collection_record(path.to_string_lossy().into_owned(), &raw)
+        })
+        .collect::<Result<Vec<RuntimeValue>, Error>>()?;
+
+    Ok(RuntimeValue::Array(Shared::new(records)))
+}
+
 /// Recursively reads every Markdown file under `dir`. Requires the ambient [`Io`]'s read
 /// permission (see [`io_context`]).
+///
+/// `respect_gitignore` (default `false`, keeping prior behavior) skips dotfiles/dot-directories
+/// and any path matched by a `.gitignore` found in `dir` or one of its subdirectories, with
+/// closer `.gitignore` files taking precedence over farther ones, same as `git`.
 #[cfg(feature = "file-io")]
-#[mq_macros::mq_fn(name = "collection", params = Fixed(1))]
+#[mq_macros::mq_fn(name = "collection", params = Range(1, 2))]
 fn collection_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(dir)] => {
-            let io = io_context::current();
-            let mut ancestors = std::collections::HashSet::new();
-            let mut paths = collect_markdown_files(io.as_ref(), std::path::Path::new(dir.as_str()), &mut ancestors)?;
-            paths.sort();
-
-            let records = paths
-                .into_iter()
-                .map(|path| {
-                    let raw = io
-                        .read_to_string(&path)
-                        .map_err(|e| Error::Runtime(format!("Failed to read file {}: {}", path.display(), e)))?;
-                    collection_record(path.to_string_lossy().into_owned(), &raw)
-                })
-                .collect::<Result<Vec<RuntimeValue>, Error>>()?;
-
-            Ok(RuntimeValue::Array(Shared::new(records)))
+        [RuntimeValue::String(dir)] => collection_impl_inner(dir.as_str(), false),
+        [RuntimeValue::String(dir), RuntimeValue::Boolean(respect_gitignore)] => {
+            collection_impl_inner(dir.as_str(), *respect_gitignore)
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!("collection should always receive exactly one argument"),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("collection should always receive one or two arguments"),
     }
 }
 
@@ -7898,9 +7971,9 @@ x
     map.insert(
         SmolStr::new("collection"),
         BuiltinFunctionDoc {
-            description: "Recursively reads every Markdown file in the given directory (including subdirectories and symlinked files/directories) and returns an array of `{path, title, frontmatter, content}` dicts, sorted by path, so they can be filtered, sorted, or aggregated as a single dataset. `content` holds the file's Markdown nodes with frontmatter stripped. Symlink cycles are detected and only visited once. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
-            params: &["dir"],
-            param_types: &["string"],
+            description: "Recursively reads every Markdown file in the given directory (including subdirectories and symlinked files/directories) and returns an array of `{path, title, frontmatter, content}` dicts, sorted by path, so they can be filtered, sorted, or aggregated as a single dataset. `content` holds the file's Markdown nodes with frontmatter stripped. Symlink cycles are detected and only visited once. `respect_gitignore` is optional (default `false`); when `true`, dotfiles/dot-directories and any path matched by a `.gitignore` in `dir` or a subdirectory are skipped, with closer `.gitignore` files taking precedence, same as `git`. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
+            params: &["dir", "respect_gitignore?"],
+            param_types: &["string", "boolean"],
             returns: "array",
             examples: &[],
             capability: Some("file-io"),
@@ -12700,6 +12773,87 @@ mod tests {
 
         // Errors for an invalid argument type.
         assert!(call("collection", vec![RuntimeValue::Number(42.into())]).is_err());
+
+        // respect_gitignore defaults to false: prior behavior is unchanged.
+        {
+            let dir = tempfile::tempdir().expect("failed to create temp dir");
+            std::fs::write(dir.path().join(".gitignore"), "ignored.md\n").expect("failed to write");
+            std::fs::write(dir.path().join("ignored.md"), "# Ignored\n").expect("failed to write");
+            std::fs::write(dir.path().join("kept.md"), "# Kept\n").expect("failed to write");
+
+            let hidden_dir = dir.path().join(".hidden");
+            std::fs::create_dir(&hidden_dir).expect("failed to create hidden dir");
+            std::fs::write(hidden_dir.join("secret.md"), "# Secret\n").expect("failed to write");
+
+            let entries = as_entries(
+                call(
+                    "collection",
+                    vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+                )
+                .expect("collection should succeed"),
+            );
+            assert_eq!(
+                entries.len(),
+                3,
+                "ignored.md and .hidden/secret.md should still be collected"
+            );
+        }
+
+        // respect_gitignore = true: skips dotfiles and .gitignore matches; nested .gitignore wins.
+        {
+            let dir = tempfile::tempdir().expect("failed to create temp dir");
+            std::fs::write(dir.path().join(".gitignore"), "*.log.md\nbuild/\n").expect("failed to write");
+            std::fs::write(dir.path().join("kept.md"), "# Kept\n").expect("failed to write");
+            std::fs::write(dir.path().join("debug.log.md"), "# Debug\n").expect("failed to write");
+
+            let hidden_dir = dir.path().join(".hidden");
+            std::fs::create_dir(&hidden_dir).expect("failed to create hidden dir");
+            std::fs::write(hidden_dir.join("secret.md"), "# Secret\n").expect("failed to write");
+
+            let build_dir = dir.path().join("build");
+            std::fs::create_dir(&build_dir).expect("failed to create build dir");
+            std::fs::write(build_dir.join("out.md"), "# Out\n").expect("failed to write");
+
+            // A subdirectory's .gitignore re-allows a file the parent's .gitignore ignores.
+            let sub = dir.path().join("sub");
+            std::fs::create_dir(&sub).expect("failed to create subdir");
+            std::fs::write(sub.join(".gitignore"), "!debug.log.md\n").expect("failed to write");
+            std::fs::write(sub.join("debug.log.md"), "# Sub debug\n").expect("failed to write");
+
+            let entries = as_entries(
+                call(
+                    "collection",
+                    vec![
+                        RuntimeValue::String(dir.path().to_string_lossy().into_owned()),
+                        RuntimeValue::Boolean(true),
+                    ],
+                )
+                .expect("collection should succeed"),
+            );
+            let titles: Vec<_> = entries
+                .iter()
+                .map(|entry| match get(entry, "title") {
+                    RuntimeValue::String(s) => s,
+                    other => panic!("expected String, got {other:?}"),
+                })
+                .collect();
+
+            assert_eq!(entries.len(), 2, "titles: {titles:?}");
+            assert!(titles.contains(&"Kept".to_string()));
+            assert!(titles.contains(&"Sub debug".to_string()));
+        }
+
+        // Errors for an invalid respect_gitignore argument type.
+        assert!(
+            call(
+                "collection",
+                vec![
+                    RuntimeValue::String("/nonexistent/path".into()),
+                    RuntimeValue::Number(1.into())
+                ],
+            )
+            .is_err()
+        );
     }
 
     #[cfg(feature = "file-io")]
