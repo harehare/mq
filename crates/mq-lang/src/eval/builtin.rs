@@ -4633,7 +4633,7 @@ fn load_gitignore(io: &dyn Io, dir: &std::path::Path) -> Option<ignore::gitignor
 fn collect_markdown_files(
     io: &dyn Io,
     dir: &std::path::Path,
-    ancestors: &mut std::collections::HashSet<std::path::PathBuf>,
+    ancestors: &mut FxHashSet<std::path::PathBuf>,
     gitignore_stack: &mut Vec<ignore::gitignore::Gitignore>,
     respect_gitignore: bool,
 ) -> Result<Vec<std::path::PathBuf>, Error> {
@@ -4689,7 +4689,7 @@ fn collect_markdown_files(
 #[cfg(feature = "file-io")]
 fn collection_impl_inner(dir: &str, respect_gitignore: bool) -> Result<RuntimeValue, Error> {
     let io = io_context::current();
-    let mut ancestors = std::collections::HashSet::new();
+    let mut ancestors = FxHashSet::default();
     let mut gitignore_stack = Vec::new();
     let mut paths = collect_markdown_files(
         io.as_ref(),
