@@ -406,6 +406,72 @@ function updateCodeLensProvider(context: vscode.ExtensionContext) {
   }
 }
 
+async function promptUpdateAndStartFromStorage(
+  context: vscode.ExtensionContext,
+  storageLspPath: string,
+) {
+  const prevVersion = context.globalState.get<string>(MQ_VERSION_KEY);
+  const currentVersion = context.extension.packageJSON.version;
+
+  if (!prevVersion || currentVersion === prevVersion) {
+    await startLspServer(storageLspPath);
+    return;
+  }
+
+  const selected = await vscode.window.showInformationMessage(
+    "mq has been updated. Would you like to download the latest version?",
+    "Yes",
+    "No",
+  );
+
+  if (selected === "Yes") {
+    const newPath = await downloadFromRelease(context, true);
+    await startLspServer(newPath ?? storageLspPath);
+  } else {
+    await context.globalState.update(MQ_VERSION_KEY, currentVersion);
+    await startLspServer(storageLspPath);
+  }
+}
+
+async function promptUpdateAndStartFromPath(context: vscode.ExtensionContext) {
+  const prevVersion = context.globalState.get<string>(MQ_VERSION_KEY);
+  const currentVersion = context.extension.packageJSON.version;
+
+  if (prevVersion && currentVersion === prevVersion) {
+    await startLspServer();
+    return;
+  }
+
+  const selected = await vscode.window.showInformationMessage(
+    "mq has been updated. Would you like to install the latest version?",
+    "Yes",
+    "No",
+  );
+
+  if (selected === "Yes") {
+    await installServers(context, false);
+  } else {
+    await context.globalState.update(MQ_VERSION_KEY, currentVersion);
+  }
+
+  await startLspServer();
+}
+
+async function promptInstallAndStart(context: vscode.ExtensionContext) {
+  const selected = await vscode.window.showInformationMessage(
+    "Install mq?",
+    "Yes",
+    "No",
+  );
+
+  if (selected === "Yes") {
+    const installedPath = await installServers(context, false);
+    await startLspServer(installedPath ?? undefined);
+  } else {
+    vscode.window.showErrorMessage("mq not found in PATH");
+  }
+}
+
 async function initializeLspServer(context: vscode.ExtensionContext) {
   if (process.env._MQ_DEBUG_BIN) {
     await startLspServer();
@@ -428,65 +494,18 @@ async function initializeLspServer(context: vscode.ExtensionContext) {
   );
 
   if (fs.existsSync(storageLspPath)) {
-    const prevVersion = context.globalState.get<string>(MQ_VERSION_KEY);
-    const currentVersion = context.extension.packageJSON.version;
-
-    if (prevVersion && currentVersion !== prevVersion) {
-      const selected = await vscode.window.showInformationMessage(
-        "mq has been updated. Would you like to download the latest version?",
-        "Yes",
-        "No",
-      );
-
-      if (selected === "Yes") {
-        const newPath = await downloadFromRelease(context, true);
-        await startLspServer(newPath ?? storageLspPath);
-      } else {
-        await context.globalState.update(MQ_VERSION_KEY, currentVersion);
-        await startLspServer(storageLspPath);
-      }
-    } else {
-      await startLspServer(storageLspPath);
-    }
+    await promptUpdateAndStartFromStorage(context, storageLspPath);
     return;
   }
 
   const lspInPath = await which("mq-lsp", { nothrow: true });
 
   if (lspInPath !== null) {
-    const prevVersion = context.globalState.get<string>(MQ_VERSION_KEY);
-    const currentVersion = context.extension.packageJSON.version;
-
-    if (!prevVersion || currentVersion !== prevVersion) {
-      const selected = await vscode.window.showInformationMessage(
-        "mq has been updated. Would you like to install the latest version?",
-        "Yes",
-        "No",
-      );
-
-      if (selected === "Yes") {
-        await installServers(context, false);
-      } else {
-        await context.globalState.update(MQ_VERSION_KEY, currentVersion);
-      }
-    }
-
-    await startLspServer();
+    await promptUpdateAndStartFromPath(context);
     return;
   }
 
-  const selected = await vscode.window.showInformationMessage(
-    "Install mq?",
-    "Yes",
-    "No",
-  );
-
-  if (selected === "Yes") {
-    const installedPath = await installServers(context, false);
-    await startLspServer(installedPath ?? undefined);
-  } else {
-    vscode.window.showErrorMessage("mq not found in PATH");
-  }
+  await promptInstallAndStart(context);
 }
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -589,47 +608,38 @@ const executeCommand = async (
   }
 };
 
-const startLspServer = async (providedLspPath?: string) => {
-  if (client !== null) {
-    if (client.state === lc.State.Running || client.state === lc.State.Starting) {
-      return;
-    }
-    // client exists but in a non-running state (e.g. startFailed), reset it
-    client = null;
-  }
-
-  let lspPath: string | null;
-  const config = vscode.workspace.getConfiguration("mq");
-
+async function resolveLspPath(
+  providedLspPath: string | undefined,
+  config: vscode.WorkspaceConfiguration,
+): Promise<string | null> {
   if (process.env._MQ_DEBUG_BIN) {
-    lspPath = process.env._MQ_DEBUG_BIN;
-  } else if (providedLspPath) {
-    lspPath = providedLspPath;
-  } else {
-    const configLspPath = config.get<string>("lspPath");
-
-    if (configLspPath) {
-      lspPath = configLspPath;
-    } else {
-      const ext = process.platform === "win32" ? ".exe" : "";
-      const storageLspPath = globalStorageBinPath
-        ? path.join(globalStorageBinPath, `mq-lsp${ext}`)
-        : null;
-
-      if (storageLspPath && fs.existsSync(storageLspPath)) {
-        lspPath = storageLspPath;
-      } else {
-        lspPath = await which("mq-lsp", { nothrow: true });
-      }
-    }
-
-    if (lspPath === null) {
-      vscode.window.showErrorMessage("mq not found in PATH");
-      statusBarManager?.updateStatusBar(lc.State.Stopped);
-      return;
-    }
+    return process.env._MQ_DEBUG_BIN;
+  }
+  if (providedLspPath) {
+    return providedLspPath;
   }
 
+  const configLspPath = config.get<string>("lspPath");
+  if (configLspPath) {
+    return configLspPath;
+  }
+
+  const ext = process.platform === "win32" ? ".exe" : "";
+  const storageLspPath = globalStorageBinPath
+    ? path.join(globalStorageBinPath, `mq-lsp${ext}`)
+    : null;
+
+  if (storageLspPath && fs.existsSync(storageLspPath)) {
+    return storageLspPath;
+  }
+
+  return await which("mq-lsp", { nothrow: true });
+}
+
+function buildLspExecutable(
+  lspPath: string,
+  config: vscode.WorkspaceConfiguration,
+): lc.Executable {
   const enableTypeCheck = config.get<boolean>("typeCheck.enableTypeCheck");
   const strictArray = config.get<boolean>("typeCheck.strictArray");
   const enableLint = config.get<boolean>("lint.enableLint");
@@ -648,7 +658,7 @@ const startLspServer = async (providedLspPath?: string) => {
       ]
     : [];
 
-  const run: lc.Executable = {
+  return {
     command: lspPath,
     args: [
       ...multiWorkspaceArgs,
@@ -660,6 +670,27 @@ const startLspServer = async (providedLspPath?: string) => {
     ],
     options: {},
   };
+}
+
+const startLspServer = async (providedLspPath?: string) => {
+  if (client !== null) {
+    if (client.state === lc.State.Running || client.state === lc.State.Starting) {
+      return;
+    }
+    // client exists but in a non-running state (e.g. startFailed), reset it
+    client = null;
+  }
+
+  const config = vscode.workspace.getConfiguration("mq");
+  const lspPath = await resolveLspPath(providedLspPath, config);
+
+  if (lspPath === null) {
+    vscode.window.showErrorMessage("mq not found in PATH");
+    statusBarManager?.updateStatusBar(lc.State.Stopped);
+    return;
+  }
+
+  const run = buildLspExecutable(lspPath, config);
 
   const serverOptions: lc.ServerOptions = {
     run,

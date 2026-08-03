@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CLI_HELP=`mq -h | tail -n +3`
+CLI_HELP=$(mq -h | tail -n +3)
 # Update the documentation with the latest CLI help and builtin functions
 mq -U -o docs/books/src/reference/cli.md --args mq_run_help "$CLI_HELP" 'select(.code.lang == "sh") | update(mq_run_help)' docs/books/src/reference/cli.md
 mq -U -o README.md --args mq_run_help "$CLI_HELP" 'select(.code.lang == "sh") | select(contains("Usage: mq")) | update(mq_run_help)' README.md
