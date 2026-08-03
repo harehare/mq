@@ -1199,6 +1199,14 @@ end
 # filled with `None` for the other side's fields (inferred from that side's full key set).
 # Records with a missing or `None` join key never match, and duplicate keys on either
 # side expand as a cross product.
+#
+# Example:
+# ```
+# join_by([{"id": 2, "name": "bob"}], [{"uid": 2, "age": 30}], "id", "uid")
+# #=> [{"id": 2, "name": "bob", "uid": 2, "age": 30}]
+# ```
+#
+# Returns: array
 def join_by(left, right, left_key, right_key, kind = "inner"):
   if (!is_array(left)):
     error("join_by: left must be an array")
