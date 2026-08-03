@@ -112,9 +112,9 @@ deps:
 docs:
   ./scripts/update_doc.sh
 
-# Bump version for all crates
-bump-version:
-    cd scripts && ./bump_version.sh
+# Bump version for all crates (bump: major|minor|patch|X.Y.Z, default: patch)
+bump-version bump="patch":
+    cd scripts && ./bump_version.sh {{bump}}
 
 # Publish crates
 publish:
