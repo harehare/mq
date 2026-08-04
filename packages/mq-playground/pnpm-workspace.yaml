@@ -7,4 +7,5 @@ minimumReleaseAgeExclude:
 overrides:
   dompurify: ">=3.4.11"
   "@babel/core": "^7.29.7"
+  postcss: ">=8.5.23"
 
