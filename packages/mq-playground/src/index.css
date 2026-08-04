@@ -262,7 +262,7 @@ body {
   justify-content: space-between;
   align-items: center;
   height: 32px;
-  background-color: light-dark(#edf2f7, var(--secondary-color));
+  background-color: var(--surface-color);
   color: light-dark(var(--text-color), var(--light-color));
   padding: 4px;
   gap: 8px;
@@ -350,8 +350,8 @@ body {
 .loading-message,
 .empty-message {
   padding: 16px;
-  background-color: light-dark(#f7fafc, var(--secondary-color));
-  color: light-dark(#718096, #a0aec0);
+  background-color: var(--secondary-color);
+  color: var(--muted-text-color);
   height: 100%;
 }
 
@@ -360,6 +360,8 @@ body {
 
   /* Common values that don't change between modes */
   --accent-blue: light-dark(#4299e1, #5dade2);
+  --surface-color: light-dark(#edf2f7, var(--secondary-color));
+  --muted-text-color: light-dark(#718096, #a0aec0);
 
   /* Light/dark mode values */
   --primary-color: light-dark(#3182ce, #3a8ec5);
