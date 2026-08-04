@@ -1,0 +1,188 @@
+{
+    "name": "mq",
+    "scopeName": "source.mq",
+    "fileTypes": [
+        "mq"
+    ],
+    "patterns": [
+        {
+            "include": "#comments"
+        },
+        {
+            "include": "#keywords"
+        },
+        {
+            "include": "#symbols"
+        },
+        {
+            "include": "#strings.bytes"
+        },
+        {
+            "include": "#strings"
+        },
+        {
+            "include": "#numbers"
+        },
+        {
+            "include": "#functions"
+        },
+        {
+            "include": "#variables"
+        },
+        {
+            "include": "#selectors"
+        },
+        {
+            "include": "#strings.interpolate"
+        }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.double-slash.mq",
+                    "match": "#[^\n]*"
+                }
+            ]
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.mq",
+                    "match": "\\b(def|do|let|if|elif|else|end|while|foreach|self|nodes|fn|break|continue|include|match|module|import|var|macro|quote|unquote|loop|try|catch|as)\\b"
+                },
+                {
+                    "name": "keyword.operator.mq",
+                    "match": "(=~|!~|\\/\\/=|::|\\.\\.|<=|>=|==|!=|&&|\\|\\||\\?\\?|\\+=|\\-=|\\*=|\\/=|%=|\\|=|<<|>>|->|=|\\||:|;|\\?|!|\\+|\\-|\\*|\\/|%|<|>|@)"
+                },
+                {
+                    "name": "constant.language.boolean.mq",
+                    "match": "\\b(true|false)\\b"
+                },
+                {
+                    "name": "constant.language.none.mq",
+                    "match": "\\b(None)\\b"
+                }
+            ]
+        },
+        "functions": {
+            "patterns": [
+                {
+                    "name": "entity.name.function.mq",
+                    "match": "\\b(def)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\("
+                },
+                {
+                    "name": "entity.name.function.call.mq",
+                    "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\("
+                }
+            ]
+        },
+        "symbols": {
+            "patterns": [
+                {
+                    "name": "constant.other.symbol.mq",
+                    "match": ":[a-zA-Z_][a-zA-Z0-9_]*"
+                }
+            ]
+        },
+        "selectors": {
+            "patterns": [
+                {
+                    "name": "entity.name.function.selector.mq",
+                    "match": "\\.([a-zA-Z_\\[\\]][a-zA-Z0-9_\\[\\]]*)"
+                }
+            ]
+        },
+        "variables": {
+            "patterns": [
+                {
+                    "name": "variable.declaration.mq",
+                    "match": "\\b(let)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*="
+                }
+            ]
+        },
+        "strings": {
+            "name": "string.quoted.double.mq",
+            "begin": "\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.mq",
+                    "match": "\\\\."
+                }
+            ]
+        },
+        "strings.bytes": {
+            "name": "string.quoted.double.bytes.mq",
+            "begin": "b\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.mq",
+                    "match": "\\\\x[0-9a-fA-F]{2}|\\\\."
+                }
+            ]
+        },
+        "strings.interpolate": {
+            "name": "string.quoted.double.interpolated.mq",
+            "begin": "s\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "include": "#interpolation"
+                },
+                {
+                    "name": "constant.character.escape.mq",
+                    "match": "\\\\."
+                }
+            ]
+        },
+        "interpolation": {
+            "name": "variable.interpolated.mq",
+            "begin": "\\$\\{",
+            "end": "\\}",
+            "patterns": [
+                {
+                    "name": "variable.other.interpolated.mq",
+                    "match": "[a-zA-Z_][a-zA-Z0-9_]*"
+                }
+            ]
+        },
+        "expressions": {
+            "patterns": [
+                {
+                    "include": "#strings"
+                },
+                {
+                    "include": "#numbers"
+                },
+                {
+                    "include": "#functions"
+                },
+                {
+                    "include": "#keywords"
+                }
+            ]
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.hex.mq",
+                    "match": "\\b0x[0-9a-fA-F]+\\b"
+                },
+                {
+                    "name": "constant.numeric.binary.mq",
+                    "match": "\\b0b[01]+\\b"
+                },
+                {
+                    "name": "constant.numeric.float.mq",
+                    "match": "\\b[0-9]+\\.[0-9]+\\b"
+                },
+                {
+                    "name": "constant.numeric.integer.mq",
+                    "match": "\\b[0-9]+\\b"
+                }
+            ]
+        }
+    }
+}
