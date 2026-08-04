@@ -11,6 +11,11 @@ run *args:
 playground:
     pnpm run dev
 
+# Start the Chrome extension development server
+[working-directory: 'packages/mq-chrome-extension']
+chrome-extension:
+    pnpm run dev
+
 # Run benchmarks using codspeed
 [working-directory: 'crates/mq-lang']
 bench: build-bench
@@ -54,6 +59,11 @@ build-wasm:
 # Build mq-web package
 [working-directory: 'packages/mq-web']
 build-web: build-wasm
+    pnpm run build
+
+# Build the Chrome extension (loadable unpacked from .output/chrome-mv3)
+[working-directory: 'packages/mq-chrome-extension']
+build-chrome-extension:
     pnpm run build
 
 # Build @mqlang/node package

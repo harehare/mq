@@ -136,6 +136,24 @@ Restart Nushell (or run `source ~/.config/nushell/config.nu`) to enable completi
 
 You can install the VSCode extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq).
 
+### Chrome Extension
+
+The mq Chrome extension converts the page you're viewing to Markdown, runs
+mq queries against it, and can preview the filtered result directly on the
+page. It isn't on the Chrome Web Store yet, so install it unpacked:
+
+```sh
+git clone https://github.com/harehare/mq.git
+cd mq/packages/mq-chrome-extension
+pnpm install
+pnpm build
+```
+
+Then in Chrome, open `chrome://extensions`, enable **Developer mode**,
+click **Load unpacked**, and select `packages/mq-chrome-extension/.output/chrome-mv3`.
+See the [package README](https://github.com/harehare/mq/blob/main/packages/mq-chrome-extension/README.md)
+for details and known limitations.
+
 ### Neovim
 
 You can install the Neovim plugin by following the instructions in the [mq.nvim README](https://github.com/harehare/mq/blob/main/editors/neovim/README.md).
