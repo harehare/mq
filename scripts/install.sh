@@ -372,7 +372,7 @@ verify_installation() {
         fi
     fi
 
-    if [[ "$mq_installed" == "true" ]] && ([[ "$INSTALL_DEBUG" != "true" ]] || [[ "$mq_dbg_installed" == "true" ]]); then
+    if [[ "$mq_installed" == "true" ]] && { [[ "$INSTALL_DEBUG" != "true" ]] || [[ "$mq_dbg_installed" == "true" ]]; }; then
         log "Installation verification successful!"
         return 0
     else

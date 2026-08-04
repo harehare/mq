@@ -15,12 +15,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background-color: var(--secondary-color);
+  background-color: light-dark(var(--dark-color), var(--secondary-color));
   color: white;
   padding: 2px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  display: flex;
-  align-items: center;
 }
 
 .playground-header h1 {
@@ -218,8 +216,11 @@ body {
 }
 
 .right-panel {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
+  height: 100%;
 }
 
 .editor-container {
@@ -256,19 +257,13 @@ body {
   height: 100%;
 }
 
-.right-panel {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
 .editor-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   height: 32px;
-  background-color: var(--secondary-color);
-  color: var(--light-color);
+  background-color: var(--surface-color);
+  color: light-dark(var(--text-color), var(--light-color));
   padding: 4px;
   gap: 8px;
 }
@@ -356,6 +351,7 @@ body {
 .empty-message {
   padding: 16px;
   background-color: var(--secondary-color);
+  color: var(--muted-text-color);
   height: 100%;
 }
 
@@ -364,6 +360,8 @@ body {
 
   /* Common values that don't change between modes */
   --accent-blue: light-dark(#4299e1, #5dade2);
+  --surface-color: light-dark(#edf2f7, var(--secondary-color));
+  --muted-text-color: light-dark(#718096, #a0aec0);
 
   /* Light/dark mode values */
   --primary-color: light-dark(#3182ce, #3a8ec5);
@@ -404,22 +402,6 @@ body {
   /* Context menu colors */
   --context-menu-bg: light-dark(#ffffff, #2d2d30);
   --context-menu-item-hover-bg: light-dark(#edf2f7, #37373d);
-}
-
-.playground-header {
-  background-color: light-dark(var(--dark-color), var(--secondary-color));
-  color: white;
-}
-
-.editor-header {
-  background-color: light-dark(#edf2f7, var(--secondary-color));
-  color: light-dark(var(--text-color), var(--light-color));
-}
-
-.loading-message,
-.empty-message {
-  color: light-dark(#718096, #a0aec0);
-  background-color: light-dark(#f7fafc, var(--secondary-color));
 }
 
 .logo-icon {

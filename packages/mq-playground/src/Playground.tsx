@@ -346,8 +346,102 @@ export const Playground = () => {
     }
     hasInitialized.current = true;
 
+    // Returns true if an all-files share was found and restored.
+    const restoreAllFilesShare = async (): Promise<boolean> => {
+      if (!window.location.hash) {
+        return false;
+      }
+
+      try {
+        const compressed = window.location.hash.substring(1);
+        const decompressed =
+          LZString.decompressFromEncodedURIComponent(compressed);
+        if (!decompressed) {
+          return false;
+        }
+
+        const parsedData = JSON.parse(decompressed);
+        if (
+          parsedData.type !== "all-files" ||
+          !Array.isArray(parsedData.files)
+        ) {
+          return false;
+        }
+
+        for (const file of parsedData.files as {
+          path: string;
+          content: string;
+        }[]) {
+          await fileSystem.writeFile(file.path, file.content);
+        }
+        await loadFiles();
+        const options = parsedData.options || {};
+        setIsUpdate(!!options.isUpdate);
+        setInputFormat(options.inputFormat || null);
+        setListStyle(options.listStyle || null);
+        setLinkUrlStyle(options.linkUrlStyle || null);
+        setLinkTitleStyle(options.linkTitleStyle || null);
+        const activeFilePath =
+          parsedData.activeFile || parsedData.files[0]?.path;
+        if (activeFilePath) {
+          const content = await fileSystem.readFile(activeFilePath);
+          openOrSwitchToTab(activeFilePath, content);
+          setSelectedFile(activeFilePath);
+        }
+        return true;
+      } catch (e) {
+        console.error("Failed to restore all-files share:", e);
+        return false;
+      }
+    };
+
+    const restoreTabsFromStorage = async () => {
+      const savedTabs = localStorage.getItem(TABS_KEY);
+      const initialTabs = savedTabs ? JSON.parse(savedTabs) : [];
+      const savedActiveTabId = localStorage.getItem(ACTIVE_TAB_ID_KEY);
+
+      if (savedActiveTabId && initialTabs.length > 0) {
+        const activeTab = initialTabs.find(
+          (tab: Tab) => tab.id === savedActiveTabId,
+        );
+        if (!activeTab) {
+          return;
+        }
+        try {
+          // Verify the file still exists and load its current content
+          const content = await fileSystem.readFile(activeTab.filePath);
+          setEditorContent(activeTab.filePath, content);
+          setSelectedFile(activeTab.filePath);
+        } catch (error) {
+          console.error("Failed to restore active tab:", error);
+          // If active tab file doesn't exist, clear it
+          setTabs((prev) => prev.filter((tab) => tab.id !== savedActiveTabId));
+          setActiveTabId(null);
+        }
+        return;
+      }
+
+      if (initialTabs.length > 0) {
+        return;
+      }
+
+      // Only open a new tab if no tabs were restored
+      const savedFilePath = localStorage.getItem(CURRENT_FILE_PATH_KEY);
+      if (!savedFilePath) {
+        return;
+      }
+      try {
+        const content = await fileSystem.readFile(savedFilePath);
+        openOrSwitchToTab(savedFilePath, content);
+        setSelectedFile(savedFilePath);
+      } catch (error) {
+        console.error("Failed to restore last file:", error);
+        localStorage.removeItem(CURRENT_FILE_PATH_KEY);
+        localStorage.removeItem(SELECTED_FILE_KEY);
+      }
+    };
+
     const initFileSystem = async () => {
-      // Check if OPFS is supported
       const supported = OPFSFileSystem.isSupported();
       setIsOPFSSupported(supported);
 
@@ -362,89 +456,14 @@ export const Playground = () => {
         await fileSystem.initialize();
         await loadFiles();
 
-        // Handle all-files share restoration from URL hash
-        if (window.location.hash) {
-          try {
-            const compressed = window.location.hash.substring(1);
-            const decompressed =
-              LZString.decompressFromEncodedURIComponent(compressed);
-            if (decompressed) {
-              const parsedData = JSON.parse(decompressed);
-              if (
-                parsedData.type === "all-files" &&
-                Array.isArray(parsedData.files)
-              ) {
-                for (const file of parsedData.files as {
-                  path: string;
-                  content: string;
-                }[]) {
-                  await fileSystem.writeFile(file.path, file.content);
-                }
-                await loadFiles();
-                const options = parsedData.options || {};
-                setIsUpdate(!!options.isUpdate);
-                setInputFormat(options.inputFormat || null);
-                setListStyle(options.listStyle || null);
-                setLinkUrlStyle(options.linkUrlStyle || null);
-                setLinkTitleStyle(options.linkTitleStyle || null);
-                const activeFilePath =
-                  parsedData.activeFile || parsedData.files[0]?.path;
-                if (activeFilePath) {
-                  const content = await fileSystem.readFile(activeFilePath);
-                  openOrSwitchToTab(activeFilePath, content);
-                  setSelectedFile(activeFilePath);
-                }
-                return;
-              }
-            }
-          } catch (e) {
-            console.error("Failed to restore all-files share:", e);
-          }
+        const restoredAllFiles = await restoreAllFilesShare();
+        if (restoredAllFiles) {
+          return;
         }
 
-        // Get initial tabs and activeTabId from localStorage
-        const savedTabs = localStorage.getItem(TABS_KEY);
-        const initialTabs = savedTabs ? JSON.parse(savedTabs) : [];
-        const savedActiveTabId = localStorage.getItem(ACTIVE_TAB_ID_KEY);
-
-        // Restore active tab content if tabs were restored from localStorage
-        if (
-          !window.location.hash &&
-          savedActiveTabId &&
-          initialTabs.length > 0
-        ) {
-          const activeTab = initialTabs.find(
-            (tab: Tab) => tab.id === savedActiveTabId,
-          );
-          if (activeTab) {
-            try {
-              // Verify the file still exists and load its current content
-              const content = await fileSystem.readFile(activeTab.filePath);
-              setEditorContent(activeTab.filePath, content);
-              setSelectedFile(activeTab.filePath);
-            } catch (error) {
-              console.error("Failed to restore active tab:", error);
-              // If active tab file doesn't exist, clear it
-              setTabs((prev) =>
-                prev.filter((tab) => tab.id !== savedActiveTabId),
-              );
-              setActiveTabId(null);
-            }
-          }
-        } else if (!window.location.hash && initialTabs.length === 0) {
-          // Only open a new tab if no tabs were restored
-          const savedFilePath = localStorage.getItem(CURRENT_FILE_PATH_KEY);
-          if (savedFilePath) {
-            try {
-              const content = await fileSystem.readFile(savedFilePath);
-              openOrSwitchToTab(savedFilePath, content);
-              setSelectedFile(savedFilePath);
-            } catch (error) {
-              console.error("Failed to restore last file:", error);
-              localStorage.removeItem(CURRENT_FILE_PATH_KEY);
-              localStorage.removeItem(SELECTED_FILE_KEY);
-            }
-          }
+        // Tab/file restoration below is only relevant when there's no share hash
+        if (!window.location.hash) {
+          await restoreTabsFromStorage();
         }
       } catch (error) {
         console.error("Failed to initialize file system:", error);
@@ -452,75 +471,85 @@ export const Playground = () => {
       }
     };
 
-    initFileSystem();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-
-    if (window.location.hash) {
+    // all-files shares are restored inside initFileSystem after OPFS init.
+    const restoreSingleShareFromHash = () => {
+      if (!window.location.hash) {
+        return;
+      }
       try {
         const compressed = window.location.hash.substring(1);
         const decompressed =
           LZString.decompressFromEncodedURIComponent(compressed);
-        if (decompressed) {
-          const parsedData = JSON.parse(decompressed);
-          // all-files shares are restored inside initFileSystem after OPFS init
-          if (parsedData.type !== "all-files") {
-            const options = parsedData.options || {};
-            const data: SharedData = {
-              code: typeof parsedData.code === "string" ? parsedData.code : "",
-              markdown:
-                typeof parsedData.markdown === "string"
-                  ? parsedData.markdown
-                  : "",
-              options: {
-                isUpdate: !!options.isUpdate,
-                inputFormat: options.inputFormat || null,
-                listStyle: options.listStyle,
-                linkUrlStyle: options.linkUrlStyle || null,
-                linkTitleStyle: options.linkTitleStyle || null,
-              },
-            };
-            setCode(data.code);
-            setMarkdown(data.markdown);
-            setIsUpdate(data.options.isUpdate === true);
-            setInputFormat(data.options.inputFormat);
-            setListStyle(data.options.listStyle);
-            setLinkUrlStyle(data.options.linkUrlStyle);
-            setLinkTitleStyle(data.options.linkTitleStyle);
-          }
+        if (!decompressed) {
+          return;
         }
+        const parsedData = JSON.parse(decompressed);
+        if (parsedData.type === "all-files") {
+          return;
+        }
+        const options = parsedData.options || {};
+        const data: SharedData = {
+          code: typeof parsedData.code === "string" ? parsedData.code : "",
+          markdown:
+            typeof parsedData.markdown === "string"
+              ? parsedData.markdown
+              : "",
+          options: {
+            isUpdate: !!options.isUpdate,
+            inputFormat: options.inputFormat || null,
+            listStyle: options.listStyle,
+            linkUrlStyle: options.linkUrlStyle || null,
+            linkTitleStyle: options.linkTitleStyle || null,
+          },
+        };
+        setCode(data.code);
+        setMarkdown(data.markdown);
+        setIsUpdate(data.options.isUpdate === true);
+        setInputFormat(data.options.inputFormat);
+        setListStyle(data.options.listStyle);
+        setLinkUrlStyle(data.options.linkUrlStyle);
+        setLinkTitleStyle(data.options.linkTitleStyle);
       } catch {
         showToast("Failed to load shared playground", "error");
       }
-    }
+    };
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const embedParam = urlParams.get("embed");
-    setIsEmbed(embedParam === "true");
+    const applyUrlParams = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const embedParam = urlParams.get("embed");
+      setIsEmbed(embedParam === "true");
 
-    const themeParam = urlParams.get("theme");
-    if (themeParam) {
-      const isDark = themeParam === "dark" || themeParam === "mq";
-      document.documentElement.style.colorScheme = isDark ? "dark" : "light";
-      if (themeParam === "mq") {
-        document.documentElement.setAttribute("data-theme", "mq");
-      } else {
-        document.documentElement.removeAttribute("data-theme");
+      const themeParam = urlParams.get("theme");
+      if (themeParam) {
+        const isDark = themeParam === "dark" || themeParam === "mq";
+        document.documentElement.style.colorScheme = isDark
+          ? "dark"
+          : "light";
+        if (themeParam === "mq") {
+          document.documentElement.setAttribute("data-theme", "mq");
+        } else {
+          document.documentElement.removeAttribute("data-theme");
+        }
+        document.documentElement.style.setProperty(
+          "--lightningcss-light",
+          isDark ? " " : "initial",
+        );
+        document.documentElement.style.setProperty(
+          "--lightningcss-dark",
+          isDark ? "initial" : " ",
+        );
       }
-      document.documentElement.style.setProperty(
-        "--lightningcss-light",
-        isDark ? " " : "initial",
-      );
-      document.documentElement.style.setProperty(
-        "--lightningcss-dark",
-        isDark ? "initial" : " ",
-      );
-    }
 
-    // Update sidebar visibility from URL parameter if present
-    const sidebarParam = urlParams.get("sidebar");
-    if (sidebarParam !== null) {
-      setIsSidebarVisible(sidebarParam === "true");
-    }
+      const sidebarParam = urlParams.get("sidebar");
+      if (sidebarParam !== null) {
+        setIsSidebarVisible(sidebarParam === "true");
+      }
+    };
+
+    initFileSystem();
+    restoreSingleShareFromHash();
+    applyUrlParams();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadFiles]);
 
   const [isFirstRun, setIsFirstRun] = useState(true);
