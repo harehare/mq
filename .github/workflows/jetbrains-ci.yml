@@ -1,0 +1,35 @@
+name: JetBrains Plugin CI
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "editors/jetbrains/**"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "editors/jetbrains/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Java
+        uses: actions/setup-java@d7793b545071e98d581d3bf084a51c3213318a07 # v4.9.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Build plugin
+        working-directory: editors/jetbrains
+        run: ./gradlew buildPlugin --stacktrace
