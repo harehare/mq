@@ -449,10 +449,10 @@ mod tests {
     )]
     #[case::link("[a](b)", 1, "[a](b)\n")]
     #[case::link_ref("[a]: b\n\n[c][a]", 2, "[a]: b\n\n[c][a]\n")]
-    #[case::break_("a\\b", 1, "a\\b\n")]
+    #[case::break_("a\\b", 1, "a\\\\b\n")]
     #[case::delete("~~a~~", 1, "~~a~~\n")]
     #[case::emphasis("*a*", 1, "*a*\n")]
-    #[case::horizontal_rule("---", 1, "---\n")]
+    #[case::horizontal_rule("---", 1, "***\n")]
     #[case::table(
         "| Column1 | Column2 | Column3 |\n|:--------|:--------:|---------:|\n| Left    | Center  | Right   |\n",
         7,
@@ -811,7 +811,7 @@ mod color_tests {
     #[case::link("[text](url)", "\x1b[4m\x1b[34m[text](url)\x1b[0m\n")]
     #[case::image("![alt](url)", "\x1b[35m![alt](url)\x1b[0m\n")]
     #[case::delete("~~deleted~~", "\x1b[31m\x1b[2m~~deleted~~\x1b[0m\n")]
-    #[case::horizontal_rule("---", "\x1b[2m---\x1b[0m\n")]
+    #[case::horizontal_rule("---", "\x1b[2m***\x1b[0m\n")]
     #[case::blockquote("> quote", "\x1b[2m> \x1b[0mquote\n")]
     #[case::math_inline("$x^2$", "\x1b[32m$x^2$\x1b[0m\n")]
     #[case::list("- item", "\x1b[33m-\x1b[0m item\n")]

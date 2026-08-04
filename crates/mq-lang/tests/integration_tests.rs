@@ -260,7 +260,7 @@ fn engine() -> DefaultEngine {
       | _: \"other\"
     end
     ",
-      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List {
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { start: None,
           values: vec![],
           index: 0,
           level: 1,
@@ -279,7 +279,7 @@ fn engine() -> DefaultEngine {
       | _: \"other\"
     end
     ",
-      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List {
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { start: None,
           values: vec![],
           index: 0,
           level: 1,
@@ -336,7 +336,7 @@ fn engine() -> DefaultEngine {
       | _: \"other\"
     end
     ",
-      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List {
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { start: None,
           values: vec![],
           index: 0,
           level: 1,
@@ -1446,7 +1446,7 @@ fn engine() -> DefaultEngine {
             position: None,
           }))].into()))]
 #[case::is_list_true("is_list()",
-            vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List {
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { start: None,
               values: vec![],
               position: None,
               ordered: false,
@@ -2491,7 +2491,7 @@ fn engine() -> DefaultEngine {
     }))].into()))]
 #[case::convert_string_to_list_item_operator("\"Hello\" @ \"-\"",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { start: None,
         values: vec!["Hello".to_string().into()],
         index: 0,
         ordered: false,
@@ -2782,7 +2782,7 @@ fn engine() -> DefaultEngine {
 #[case::to_link_simple(r##"to_link("url", "text", "title")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{url: mq_markdown::Url::new("url".to_string()), title: Some(mq_markdown::Title::new("title".to_string())), values: vec!["text".to_string().into()], position: None}))].into()))]
 #[case::to_math_simple(r##"to_math("E=mc^2")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Math(mq_markdown::Math{value: "E=mc^2".to_string(), position: None}))].into()))]
 #[case::to_math_inline_simple(r##"to_math_inline("E=mc^2")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::MathInline(mq_markdown::MathInline{value: "E=mc^2".to_string().into(), position: None}))].into()))]
-#[case::to_md_list_simple(r##"to_md_list("item", 1)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["item".to_string().into()], index: 0, ordered: false, level: 1, checked: None, position: None}))].into()))]
+#[case::to_md_list_simple(r##"to_md_list("item", 1)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{ start: None,values: vec!["item".to_string().into()], index: 0, ordered: false, level: 1, checked: None, position: None}))].into()))]
 #[case::to_md_table_row_simple(r##"to_md_table_row("a", "b")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{values: vec![
     mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 0, column: 0, values: vec!["a".to_string().into()], position: None}),
     mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 0, column: 1, values: vec!["b".to_string().into()], position: None}),

@@ -4357,7 +4357,7 @@ mod tests {
                        ]),
         ],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(
-            mq_markdown::List{values: vec!["list".to_string().into()], ordered: false, index: 0, level: 1_u8, checked: None, position: None}))]))]
+            mq_markdown::List{start: None, values: vec!["list".to_string().into()], ordered: false, index: 0, level: 1_u8, checked: None, position: None}))]))]
     #[case::to_md_list(vec![RuntimeValue::String("list".to_string())],
         vec![
               ast_call("to_md_list",
@@ -4366,7 +4366,7 @@ mod tests {
                        ]),
         ],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(
-            mq_markdown::List{values: vec!["list".to_string().into()], ordered: false, index: 0, level: 1_u8, checked: None, position: None}))]))]
+            mq_markdown::List{start: None, values: vec!["list".to_string().into()], ordered: false, index: 0, level: 1_u8, checked: None, position: None}))]))]
     #[case::to_md_fragment(vec![RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "first".to_string(), position: None})),
             RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "second".to_string(), position: None})),
@@ -4413,20 +4413,20 @@ mod tests {
             ],
             position: None,
         }))]))]
-    #[case::set_check(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: None, position: None}))],
+    #[case::set_check(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{start: None, values: vec!["Checked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: None, position: None}))],
         vec![
               ast_call("set_check", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
               ]),
         ],
-        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: Some(true), position: None}))]))]
-    #[case::set_check(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Unchecked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: None, position: None}))],
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{start: None, values: vec!["Checked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: Some(true), position: None}))]))]
+    #[case::set_check(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{start: None, values: vec!["Unchecked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: None, position: None}))],
         vec![
               ast_call("set_check", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
               ]),
         ],
-        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Unchecked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: Some(false), position: None}))]))]
+        Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{start: None, values: vec!["Unchecked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: Some(false), position: None}))]))]
     #[case::compact(vec![RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::String("test1".to_string()),
             RuntimeValue::NONE,
@@ -5545,6 +5545,7 @@ mod tests {
             level: 1,
             index: 0,
             checked: None,
+            start: None,
             position: None,
         }))],
         vec![
@@ -5558,6 +5559,7 @@ mod tests {
             level: 1,
             index: 0,
             checked: None,
+            start: None,
             position: None,
         }))]))]
     #[case::set_list_ordered_false(
@@ -5567,6 +5569,7 @@ mod tests {
             level: 1,
             index: 0,
             checked: None,
+            start: None,
             position: None,
         }))],
         vec![
@@ -5580,6 +5583,7 @@ mod tests {
             level: 1,
             index: 0,
             checked: None,
+            start: None,
             position: None,
         }))]))]
     #[case::set_list_ordered_non_list(
