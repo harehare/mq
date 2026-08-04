@@ -35,11 +35,12 @@ async function executeInActiveTab<Args extends unknown[], R>(
       return { ok: false, message: "The page returned no result." };
     }
     return { ok: true, value: injection.result as R };
-  } catch {
+  } catch (error) {
     // activeTab's grant is scoped to the tab active when the toolbar icon
     // (or another qualifying gesture) was last clicked, and isn't renewed
     // just by switching tabs while the side panel stays open.
-    return { ok: false, message: PERMISSION_MESSAGE };
+    const detail = error instanceof Error ? error.message : String(error);
+    return { ok: false, message: `${PERMISSION_MESSAGE} (${detail})` };
   }
 }
 

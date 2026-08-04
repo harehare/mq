@@ -2,7 +2,7 @@ import { useState } from "react";
 import { htmlToMarkdown, run, toHtml } from "./lib/mq";
 import { extractActivePageHtml, toggleActivePagePreview } from "./lib/activeTab";
 import { buildSrcDoc } from "./lib/buildSrcDoc";
-import { MarkdownPane } from "./components/MarkdownPane";
+import { SourcePane, type SourceMode } from "./components/SourcePane";
 import { QueryEditor } from "./components/QueryEditor";
 import { ResultPane } from "./components/ResultPane";
 import { OptionsPanel, type RunOptions } from "./components/OptionsPanel";
@@ -15,6 +15,8 @@ const DEFAULT_OPTIONS: RunOptions = {
 
 export function App() {
   const [markdown, setMarkdown] = useState("");
+  const [html, setHtml] = useState("");
+  const [sourceMode, setSourceMode] = useState<SourceMode>("markdown");
   const [query, setQuery] = useState("");
   const [result, setResult] = useState("");
   const [options, setOptions] = useState<RunOptions>(DEFAULT_OPTIONS);
@@ -22,6 +24,8 @@ export function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [previewActive, setPreviewActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const source = sourceMode === "html" ? html : markdown;
 
   const handleExtract = async () => {
     setError(null);
@@ -32,6 +36,7 @@ export function App() {
         setError(extracted.message);
         return;
       }
+      setHtml(extracted.value);
       const md = await htmlToMarkdown(extracted.value);
       setMarkdown(md);
       setResult("");
@@ -46,7 +51,10 @@ export function App() {
     setError(null);
     setIsRunning(true);
     try {
-      const filtered = await run(query, markdown, options);
+      const filtered = await run(query, source, {
+        ...options,
+        inputFormat: sourceMode === "html" ? "html" : "markdown",
+      });
       setResult(filtered);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -74,10 +82,11 @@ export function App() {
         return;
       }
 
-      const source = result || markdown;
-      if (!source) return;
-      const html = await toHtml(source);
-      const srcdoc = buildSrcDoc(html);
+      const previewSource =
+        result || markdown || (html ? await htmlToMarkdown(html) : "");
+      if (!previewSource) return;
+      const previewHtml = await toHtml(previewSource);
+      const srcdoc = buildSrcDoc(previewHtml);
       const toggled = await toggleActivePagePreview(srcdoc);
       if (!toggled.ok) {
         setError(toggled.message);
@@ -93,35 +102,41 @@ export function App() {
     <div className="app">
       <header className="app-header">
         <h1>mq</h1>
-        <p>Convert this page to Markdown, filter it, and preview the result.</p>
+        <p>Query this page's Markdown or raw HTML, then preview the result.</p>
       </header>
 
-      {error && <div className="error-banner">{error}</div>}
+      <div className="app-body">
+        {error && <div className="error-banner">{error}</div>}
 
-      <MarkdownPane
-        markdown={markdown}
-        isExtracting={isExtracting}
-        onChange={setMarkdown}
-        onExtract={handleExtract}
-      />
+        <SourcePane
+          mode={sourceMode}
+          markdown={markdown}
+          html={html}
+          isExtracting={isExtracting}
+          onModeChange={setSourceMode}
+          onMarkdownChange={setMarkdown}
+          onHtmlChange={setHtml}
+          onExtract={handleExtract}
+        />
 
-      <QueryEditor
-        query={query}
-        isRunning={isRunning}
-        disabled={!markdown}
-        onChange={setQuery}
-        onRun={handleRun}
-      />
+        <QueryEditor
+          query={query}
+          isRunning={isRunning}
+          disabled={!source}
+          onChange={setQuery}
+          onRun={handleRun}
+        />
 
-      <OptionsPanel options={options} onChange={setOptions} />
+        <OptionsPanel options={options} onChange={setOptions} />
 
-      <ResultPane
-        result={result}
-        previewActive={previewActive}
-        previewDisabled={!result && !markdown}
-        onCopy={handleCopy}
-        onTogglePreview={handleTogglePreview}
-      />
+        <ResultPane
+          result={result}
+          previewActive={previewActive}
+          previewDisabled={!result && !markdown && !html}
+          onCopy={handleCopy}
+          onTogglePreview={handleTogglePreview}
+        />
+      </div>
     </div>
   );
 }
