@@ -9,7 +9,7 @@ Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 Commands:
   repl        Start a REPL session for interactive query execution
   completion  Generate a shell completion script and print it to stdout
-  help        Print this message or the help of the given subcommand(s)
+  help        Show documentation for a builtin function, selector, standard module, standard-module function, or the `examples` topic
 
 Arguments:
   [QUERY OR FILE]  
@@ -21,7 +21,7 @@ Options:
   -f, --from-file
           load filter from the file
   -I, --input-format <INPUT_FORMAT>
-          Set input format [possible values: markdown, mdx, html, text, null, raw, bytes, cbor, csv, json, psv, toml, toon, tsv, xml, yaml]
+          Set input format [possible values: markdown, mdx, html, text, null, raw, bytes, cbor, csv, gron, json, psv, toml, toon, tsv, xml, yaml]
   -L, --directory <MODULE_DIRECTORIES>
           Search modules from the directory
   -M, --module-names <MODULE_NAMES>
@@ -38,6 +38,8 @@ Options:
           Sets a named argument from a JSON file. NAME is bound to an array of every JSON value found in FILE (jq --slurpfile compatible), so a file containing a single JSON value becomes a one-element array
       --stream
           Enable streaming mode for processing large files line by line
+      --eval-all
+          Evaluate the query once against all input files combined (like yq's `eval-all`), instead of once per file. Enables cross-file aggregation in a single query
       --allowed-domain <ALLOWED_DOMAINS>
           Allow HTTP imports from additional domain(s) beyond the default. By default only `raw.githubusercontent.com/harehare` is permitted. Use `github.com/{user}/{repo}` to allow a specific repository (expanded automatically), or a plain domain like `example.com` to allow any path under that host. Repeat to allow multiple extra domains
       --refresh-modules
@@ -48,14 +50,20 @@ Options:
           Disable the mq.lock integrity check for HTTP imports. By default a fetched URL's content is checked against mq.lock, and a mismatch is rejected unless --refresh-modules is also passed
       --lockfile <PATH>
           Path to the mq.lock file used for HTTP import integrity checks. Defaults to ./mq.lock (relative to the current directory)
-      --allow-net
-          Allow the `http` function to make outbound HTTPS requests. Disabled by default; requests are HTTPS-only and blocked from reaching loopback/private/link-local addresses regardless of this flag
-      --allow-read
-          Allow the `read_file`/`read_file_bytes`/`collection`/`file_exists` functions to read from the filesystem. Disabled by default
-      --allow-write
-          Allow the `write_file` function to write to the filesystem. Disabled by default
+  -N, --allow-net[=<DOMAIN>...]
+          Allow the `http` function to make outbound HTTPS requests. Disabled by default; requests are HTTPS-only and blocked from reaching loopback/private/link-local addresses regardless of this flag. Pass with no value to allow any domain, or `--allow-net=DOMAIN` (repeat the flag, or comma-separate, to add more) to restrict requests to just those domains (and any path under them). The `=` is required so a bare domain after the flag isn't swallowed as a query/file positional instead
+  -R, --allow-read[=<PATH>...]
+          Allow the `read_file`/`read_file_bytes`/`collection`/`file_exists`/`embed_images` functions to read from the filesystem. Disabled by default. Pass with no value to allow reading anywhere, or `--allow-read=PATH` (files or directories; repeat the flag, or comma-separate, to add more) to restrict reads to just those paths and their descendants. The `=` is required so a bare path after the flag isn't swallowed as a query/file positional instead
+  -W, --allow-write[=<PATH>...]
+          Allow the `write_file`/`extract_images` functions to write to the filesystem. Disabled by default. Pass with no value to allow writing anywhere, or `--allow-write=PATH` (files or directories; repeat the flag, or comma-separate, to add more) to restrict writes to just those paths and their descendants. The `=` is required so a bare path after the flag isn't swallowed as a query/file positional instead
+      --allow-run[=<COMMAND>...]
+          Allow the `system` function to execute external commands. Disabled by default. Commands run directly (never through a shell), so shell metacharacters in arguments are never interpreted. Pass with no value to allow any command, or `--allow-run=COMMAND` (repeat the flag, or comma-separate, to add more) to restrict execution to just those commands. The `=` is required so a bare command after the flag isn't swallowed as a query/file positional instead
+  -E, --allow-env[=<NAME>...]
+          Allow `$VAR`/`${$VAR}` interpolation and debugger logpoints to read environment variables. Disabled by default. Pass with no value to allow reading any variable, or `--allow-env=NAME` (repeat the flag, or comma-separate, to add more) to restrict access to just those names. The `=` is required so a bare name after the flag isn't swallowed as a query/file positional instead
+  -a, --allow-all
+          Grant every sandboxed permission at once (read/write/net/run/env). Disabled by default. Cannot be combined with the individual --allow-* flags above
   -F, --output-format <OUTPUT_FORMAT>
-          Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, raw, csv, toml, xml, yaml, none]
+          Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, gron, raw, csv, toml, toon, xml, yaml, none]
   -U, --update
           Update matching Markdown nodes and write the result to stdout
       --unbuffered
@@ -86,10 +94,10 @@ Options:
           Skip the first N matching results before outputting
       --limit <N>
           Limit output to at most N results
+      --no-position
+          Omit Markdown node position information from structured output (json, table, gron, csv, toml, toon, xml, yaml). Reduces output size when source line/column spans aren't needed
       --list
           List all available subcommands (built-in and external)
-      --doc
-          Use the built-in reference document as input instead of a file
   -P <PARALLEL_THRESHOLD>
           Number of files to process before switching to parallel processing [default: 10]
       --argv [<ARGV>...]
@@ -106,38 +114,7 @@ Options:
 # Examples
 
 mq 'query' file.md
-mq -f 'file' file.md        # read query from file
-mq repl                     # start a REPL session
 
-# Auto-parsing by file extension or -I flag
-
-mq automatically imports the matching module based on the file extension.
-Use -I <format> to force a specific format:
-
-.cbor / -I cbor  import "cbor" | cbor::cbor_parse()  (reads as bytes)
-.csv  / -I csv   import "csv"  | csv::csv_parse(true)
-.json / -I json  import "json" | json::json_parse()
-.psv  / -I psv   import "csv"  | csv::psv_parse(true)
-.toml / -I toml  import "toml" | toml::toml_parse()
-.toon / -I toon  import "toon" | toon::toon_parse()
-.tsv  / -I tsv   import "csv"  | csv::tsv_parse(true)
-.xml  / -I xml   import "xml"  | xml::xml_parse()
-.yaml / -I yaml  import "yaml" | yaml::yaml_parse()
-
-Use -I raw   to disable auto-parsing and receive the raw string.
-Use -I bytes to read input as raw bytes without parsing.
-
-# Passing arguments to queries (ARGS)
-
-When --args or --argv is given, ARGS = {"positional": [...], "named": {...}}
-
-mq -I null 'name' --args name Alice
-mq -I null 'ARGS | ."named"' --args name Alice
-# => {"name": "Alice"}
-
-mq -I null 'ARGS | ."positional"' --argv x y z  # must come after query and files
-# => ["x", "y", "z"]
-
-mq -I null 'ARGS' file.md --args name Alice --argv x y z
-# => {"positional": ["x","y","z"], "named": {"name": "Alice"}}
+Run `mq help examples` for more usage examples, or `mq help <name>` for
+function/selector/module docs.
 ```
