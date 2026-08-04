@@ -197,6 +197,7 @@ impl Convert {
                     ordered: false,
                     level: 1,
                     checked: None,
+                    start: None,
                     position: None,
                 })),
                 None,

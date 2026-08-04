@@ -101,7 +101,7 @@ def callout(value, kind, title = ""): to_callout(value, kind, title);
 # Example:
 # ```
 # import "md" | md::hr()
-# #=> ---
+# #=> ***
 # ```
 #
 # Returns: markdown

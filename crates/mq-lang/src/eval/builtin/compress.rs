@@ -386,6 +386,7 @@ mod tests {
             level: 0,
             ordered: false,
             checked: None,
+            start: None,
             position: None,
         })
     }

@@ -2768,6 +2768,7 @@ fn to_md_list_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Re
                 ordered: false,
                 level: level.value() as u8,
                 checked: None,
+                start: None,
                 position: None,
             })
             .into())
@@ -2778,6 +2779,7 @@ fn to_md_list_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Re
             ordered: false,
             level: level.value() as u8,
             checked: None,
+            start: None,
             position: None,
         })
         .into()),
@@ -5378,7 +5380,7 @@ x = 1
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_hr() | .horizontal_rule"#,
-                expected: r#"---"#,
+                expected: r#"***"#,
             }],
             capability: None,
         },
@@ -5586,7 +5588,7 @@ key: 1
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_markdown("Line1  \nLine2")[1] | .break"#,
-                expected: r#"\"#,
+                expected: "\\\n",
             }],
             capability: None,
         },
@@ -7761,7 +7763,7 @@ $$"#,
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_hr()"#,
-                expected: r#"---"#,
+                expected: r#"***"#,
             }],
             capability: None,
         },
@@ -9867,62 +9869,62 @@ mod tests {
         false
     )]
     #[case::list_with_matching_index_checked(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { start: None, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         Selector::List(Some(1), Some(true)),
         true
     )]
     #[case::list_with_wrong_index(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { start: None, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         Selector::List(Some(2), Some(true)),
         false
     )]
     #[case::list_without_index(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { start: None, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         Selector::List(None, None),
         true
     )]
     #[case::task_list(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { start: None, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         Selector::Task,
         true
     )]
     #[case::task_list(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
+        Node::List(mq_markdown::List { start: None, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
         Selector::Task,
         true
     )]
     #[case::task_list(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
+        Node::List(mq_markdown::List { start: None, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
         Selector::Task,
         false
     )]
     #[case::todo_list(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
+        Node::List(mq_markdown::List { start: None, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
         Selector::Todo,
         true
     )]
     #[case::todo_list(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { start: None, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         Selector::Todo,
         false
     )]
     #[case::todo_list(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
+        Node::List(mq_markdown::List { start: None, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
         Selector::Todo,
         false
     )]
     #[case::done_list(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { start: None, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         Selector::Done,
         true
     )]
     #[case::done_list(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
+        Node::List(mq_markdown::List { start: None, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
         Selector::Done,
         false
     )]
     #[case::done_list(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
+        Node::List(mq_markdown::List { start: None, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
         Selector::Done,
         false
     )]
@@ -12084,25 +12086,25 @@ mod tests {
         false
     )]
     #[case::list_index_match(
-        Node::List(mq_markdown::List { index: 2, level: 0, checked: None, ordered: false, values: vec![], position: None }),
+        Node::List(mq_markdown::List { index: 2, level: 0, checked: None, ordered: false, start: None, values: vec![], position: None }),
         Selector::List(None, None),
         vec![RuntimeValue::Number(2.into())],
         true
     )]
     #[case::list_index_no_match(
-        Node::List(mq_markdown::List { index: 0, level: 0, checked: None, ordered: false, values: vec![], position: None }),
+        Node::List(mq_markdown::List { index: 0, level: 0, checked: None, ordered: false, start: None, values: vec![], position: None }),
         Selector::List(None, None),
         vec![RuntimeValue::Number(1.into())],
         false
     )]
     #[case::list_multi_index_match(
-        Node::List(mq_markdown::List { index: 3, level: 0, checked: None, ordered: false, values: vec![], position: None }),
+        Node::List(mq_markdown::List { index: 3, level: 0, checked: None, ordered: false, start: None, values: vec![], position: None }),
         Selector::List(None, None),
         vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into())],
         true
     )]
     #[case::list_no_args_fallback(
-        Node::List(mq_markdown::List { index: 0, level: 0, checked: None, ordered: false, values: vec![], position: None }),
+        Node::List(mq_markdown::List { index: 0, level: 0, checked: None, ordered: false, start: None, values: vec![], position: None }),
         Selector::List(None, None),
         vec![],
         true

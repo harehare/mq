@@ -55,7 +55,7 @@ end
 
 def test_md_hr():
   let result = to_string(md::hr())
-  | assert_eq(result, "---")
+  | assert_eq(result, "***")
 end
 
 def test_md_math():
