@@ -1054,6 +1054,14 @@ impl Node {
                 } else {
                     options.list_style.to_string()
                 };
+                let checkbox = checked.map(|it| if it { "[x] " } else { "[ ] " }).unwrap_or_else(|| "");
+                let prefix_width = level as usize * 2 + marker.chars().count() + 1 + checkbox.chars().count();
+                // Marker width is normalized, shifting continuation lines' source columns.
+                let original_first_column = values.first().and_then(|v| v.position()).map(|p| p.start.column);
+                let delta = original_first_column
+                    .map(|c| prefix_width as isize - (c as isize - 1))
+                    .unwrap_or(0);
+                let content = reindent_continuation(&render_values(&values, options, theme), delta);
                 let (ms, me) = &theme.list_marker;
                 format!(
                     "{}{}{}{} {}{}",
@@ -1061,8 +1069,8 @@ impl Node {
                     ms,
                     marker,
                     me,
-                    checked.map(|it| if it { "[x] " } else { "[ ] " }).unwrap_or_else(|| ""),
-                    render_values(&values, options, theme)
+                    checkbox,
+                    content
                 )
             }
             Self::TableRow(TableRow { values, .. }) => {
@@ -1126,10 +1134,7 @@ impl Node {
                 if lang.is_some() || fence {
                     let meta = meta.as_deref().map(|meta| format!(" {}", meta)).unwrap_or_default();
                     let info = format!("{}{}", lang.as_deref().unwrap_or(""), meta);
-                    // A closing fence only needs to match, not repeat, the opening length,
-                    // so a fence at least one longer than any run in the content can't be
-                    // shadowed by a line inside it; an empty body skips the content line
-                    // entirely so an empty block doesn't gain a spurious blank one.
+                    // Empty body skips the content line so it doesn't gain a blank one.
                     let fence_str = code_fence(&value, &info);
                     if value.is_empty() {
                         format!("{}{}{}\n{}{}", cs, fence_str, info, fence_str, ce)
@@ -1165,7 +1170,21 @@ impl Node {
             }
             Self::Emphasis(Emphasis { values, .. }) => {
                 let (es, ee) = &theme.emphasis;
-                format!("{}*{}*{}", es, render_values(&values, options, theme), ee)
+                // A lone nested Emphasis child needs the other delimiter, or adjacent
+                // `*` `*` pairs fuse into `**` and reparse as Strong instead.
+                let delim = if matches!(values.as_slice(), [Self::Emphasis(_)]) {
+                    "_"
+                } else {
+                    "*"
+                };
+                format!(
+                    "{}{}{}{}{}",
+                    es,
+                    delim,
+                    render_values(&values, options, theme),
+                    delim,
+                    ee
+                )
             }
             Self::Footnote(Footnote { values, ident, .. }) => {
                 format!(
@@ -1180,9 +1199,7 @@ impl Node {
             Self::Heading(Heading { depth, values, .. }) => {
                 let (hs, he) = &theme.heading;
                 let text = render_values(&values, options, theme);
-                // ATX headings are one physical line, so multi-line content (from a
-                // setext source) must stay setext for depths 1-2; deeper levels have
-                // no setext form, so the newline is joined into a space instead.
+                // Multi-line content must stay setext for depths 1-2; ATX has no setext form.
                 if text.contains('\n') && matches!(depth, 1 | 2) {
                     let underline = if depth == 1 { "===" } else { "---" };
                     format!("{}{}\n{}{}", hs, text, underline, he)
@@ -1234,7 +1251,18 @@ impl Node {
             }
             Self::CodeInline(CodeInline { value, .. }) => {
                 let (cs, ce) = &theme.code_inline;
-                format!("{}`{}`{}", cs, value, ce)
+                let fence = code_span_fence(&value);
+                // Padding avoids fusing with an edge backtick and protects a genuine
+                // leading+trailing space from the parser's own space-stripping rule.
+                let all_spaces = value.chars().all(|c| c == ' ');
+                if value.starts_with('`')
+                    || value.ends_with('`')
+                    || (!all_spaces && value.starts_with(' ') && value.ends_with(' '))
+                {
+                    format!("{}{} {} {}{}", cs, fence, value, fence, ce)
+                } else {
+                    format!("{}{}{}{}{}", cs, fence, value, fence, ce)
+                }
             }
             Self::MathInline(MathInline { value, .. }) => {
                 let (ms, me) = &theme.math;
@@ -3630,6 +3658,28 @@ fn needs_broad_escaping(s: &str) -> bool {
     })
 }
 
+/// Shifts every line after the first by `delta` spaces of leading indentation
+/// (never below zero), leaving each line's own content untouched.
+fn reindent_continuation(content: &str, delta: isize) -> String {
+    if delta == 0 || !content.contains('\n') {
+        return content.to_string();
+    }
+    content
+        .split('\n')
+        .enumerate()
+        .map(|(i, line)| {
+            if i == 0 || line.is_empty() {
+                line.to_string()
+            } else {
+                let leading = line.bytes().take_while(|&b| b == b' ').count();
+                let new_leading = (leading as isize + delta).max(0) as usize;
+                format!("{}{}", " ".repeat(new_leading), &line[leading..])
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Picks a backtick fence long enough that no line in `value` (or the info string)
 /// can be mistaken for the closing fence: one longer than the longest backtick run
 /// in either, minimum 3.
@@ -3642,6 +3692,22 @@ fn code_fence(value: &str, info: &str) -> String {
     };
     let len = (longest_run(value).max(longest_run(info)) + 1).max(3);
     "`".repeat(len)
+}
+
+/// Picks an inline code span delimiter one backtick longer than the longest
+/// backtick run in `value`, so no run inside it can be mistaken for the closing.
+fn code_span_fence(value: &str) -> String {
+    let mut max_run = 0;
+    let mut cur = 0;
+    for c in value.chars() {
+        if c == '`' {
+            cur += 1;
+            max_run = max_run.max(cur);
+        } else {
+            cur = 0;
+        }
+    }
+    "`".repeat(max_run + 1)
 }
 
 fn escape_label(s: &str) -> String {
@@ -4491,6 +4557,7 @@ mod tests {
     #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("".to_string()), title: None, label: Some(attr_keys::LABEL.to_string()), position: None}), RenderOptions::default(), "[label]: <>")]
     #[case::delete(Node::Delete(Delete{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "~~test~~")]
     #[case::emphasis(Node::Emphasis(Emphasis{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "*test*")]
+    #[case::emphasis_nested_in_emphasis_alternates_delimiter(Node::Emphasis(Emphasis{values: vec![Node::Emphasis(Emphasis{values: vec!["foo".to_string().into()], position: None})], position: None}), RenderOptions::default(), "_*foo*_")]
     #[case::footnote(Node::Footnote(Footnote{ident: "id".to_string(), values: vec![attr_keys::LABEL.to_string().into()], position: None}), RenderOptions::default(), "[^id]: label")]
     #[case::footnote_ref(Node::FootnoteRef(FootnoteRef{ident: attr_keys::LABEL.to_string(), label: Some(attr_keys::LABEL.to_string()), position: None}), RenderOptions::default(), "[^label]")]
     #[case::heading(Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "# test")]
@@ -4507,6 +4574,11 @@ mod tests {
     #[case::image_ref(Node::ImageRef(ImageRef{alt: attr_keys::ALT.to_string(), ident: "id".to_string(), label: Some("id".to_string()), position: None}), RenderOptions::default(), "![alt][id]")]
     #[case::image_ref(Node::ImageRef(ImageRef{alt: "id".to_string(), ident: "id".to_string(), label: Some("id".to_string()), position: None}), RenderOptions::default(), "![id]")]
     #[case::code_inline(Node::CodeInline(CodeInline{value: "code".into(), position: None}), RenderOptions::default(), "`code`")]
+    #[case::code_inline_trailing_backtick_needs_padding(Node::CodeInline(CodeInline{value: "\\[\\`".into(), position: None}), RenderOptions::default(), "`` \\[\\` ``")]
+    #[case::code_inline_internal_backtick_escalates_fence(Node::CodeInline(CodeInline{value: "foo ` bar".into(), position: None}), RenderOptions::default(), "``foo ` bar``")]
+    #[case::code_inline_both_ends_backtick_needs_longer_padded_fence(Node::CodeInline(CodeInline{value: "``".into(), position: None}), RenderOptions::default(), "``` `` ```")]
+    #[case::code_inline_leading_trailing_space_needs_extra_padding(Node::CodeInline(CodeInline{value: " `` ".into(), position: None}), RenderOptions::default(), "```  ``  ```")]
+    #[case::code_inline_all_spaces_untouched(Node::CodeInline(CodeInline{value: "   ".into(), position: None}), RenderOptions::default(), "`   `")]
     #[case::math_inline(Node::MathInline(MathInline{value: "x^2".into(), position: None}), RenderOptions::default(), "$x^2$")]
     #[case::link(Node::Link(Link{url: Url::new(attr_keys::URL.to_string()), title: Some(Title::new(attr_keys::TITLE.to_string())), values: vec![attr_keys::VALUE.to_string().into()], position: None}), RenderOptions::default(), "[value](url \"title\")")]
     #[case::link(Node::Link(Link{url: Url::new("".to_string()), title: None, values: vec![attr_keys::VALUE.to_string().into()], position: None}), RenderOptions::default(), "[value](<>)")]
@@ -6553,6 +6625,33 @@ mod tests {
         assert_eq!(node.to_string_with(&RenderOptions::default()), "[foo\\*bar][foo*bar]");
     }
 
+    #[rstest]
+    #[case::no_newline_unchanged("abc", 5, "abc")]
+    #[case::zero_delta_unchanged("a\n  b", 0, "a\n  b")]
+    #[case::positive_delta_adds_spaces("a\n  b", 2, "a\n    b")]
+    #[case::negative_delta_removes_spaces_clamped_at_zero("a\n  b", -5, "a\nb")]
+    #[case::first_line_never_shifted("  a\nb", 3, "  a\n   b")]
+    #[case::empty_lines_untouched("a\n\nb", 2, "a\n\n  b")]
+    fn test_reindent_continuation(#[case] content: &str, #[case] delta: isize, #[case] expected: &str) {
+        assert_eq!(reindent_continuation(content, delta), expected);
+    }
+
+    #[rstest]
+    #[case::no_backticks("", 1)]
+    #[case::single_run("foo`bar", 2)]
+    #[case::longer_run("foo``bar", 3)]
+    fn test_code_span_fence(#[case] value: &str, #[case] expected_len: usize) {
+        assert_eq!(code_span_fence(value), "`".repeat(expected_len));
+    }
+
+    #[rstest]
+    #[case::no_backticks_minimum_three("plain", "", 3)]
+    #[case::body_run_escalates("aaa\n```", "", 4)]
+    #[case::info_run_escalates("plain", "a``b", 3)]
+    fn test_code_fence(#[case] value: &str, #[case] info: &str, #[case] expected_len: usize) {
+        assert_eq!(code_fence(value, info), "`".repeat(expected_len));
+    }
+
     proptest! {
         // Every backslash escape_text inserts precedes exactly the character it
         // protects, and pre-existing backslashes are doubled, so blindly dropping
@@ -6592,6 +6691,19 @@ mod tests {
                 _ => None,
             });
             prop_assert_eq!(link, Some(url));
+        }
+
+        // Shifting continuation lines out by `delta` and back by the same amount must
+        // restore the original when the lines start with no indentation of their own,
+        // since the second shift can never be clamped away.
+        #[test]
+        fn reindent_continuation_add_then_remove_round_trips(
+            body in "[a-zA-Z]{0,5}(\n[a-zA-Z]{0,5}){0,4}",
+            delta in 0isize..20,
+        ) {
+            let shifted = reindent_continuation(&body, delta);
+            let restored = reindent_continuation(&shifted, -delta);
+            prop_assert_eq!(restored, body);
         }
     }
 
