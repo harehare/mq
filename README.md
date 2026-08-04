@@ -77,13 +77,13 @@ Downloads the latest mq binary for your platform, installs it to `~/.local/bin/`
 
 ```sh
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.7.0
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.8.0
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 # Install using binstall
-cargo binstall mq-run@0.7.0
+cargo binstall mq-run@0.8.0
 ```
 
 Pre-built binaries for macOS, Linux, and Windows are also available on the [GitHub releases page](https://github.com/harehare/mq/releases).
@@ -113,8 +113,8 @@ mq is a Rust + TypeScript monorepo.
 <details>
 <summary>Rust crates and npm packages (click to show)</summary>
 
-| Name                                  | Description                                           | Version                                                                                                                |
-| -------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| Name                                  | Description                                           | Version                                                                                                               |
+| ------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | [`mq-run`](crates/mq-run)             | Command-line interface for mq                         | [![Crates.io](https://img.shields.io/crates/v/mq-run?style=flat-square)](https://crates.io/crates/mq-run)             |
 | [`mq-lang`](crates/mq-lang)           | Core language implementation                          | [![Crates.io](https://img.shields.io/crates/v/mq-lang?style=flat-square)](https://crates.io/crates/mq-lang)           |
 | [`mq-markdown`](crates/mq-markdown)   | Markdown parsing and manipulation utilities           | [![Crates.io](https://img.shields.io/crates/v/mq-markdown?style=flat-square)](https://crates.io/crates/mq-markdown)   |

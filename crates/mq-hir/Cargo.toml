@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-hir"
 readme = "../../README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.7.0"
+version = "0.8.0"
 
 [dependencies]
 itertools = {workspace = true}
