@@ -37,6 +37,12 @@ updates:
     groups:
       dependencies:
         patterns: ["*"]
+    ignore:
+      # typescript@7's native compiler drops the classic JS API that
+      # tsup's bundled rollup-plugin-dts depends on, breaking `dts: true`
+      # builds. Stay on 6.x until tsup/rollup-plugin-dts support it.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 10
 
   - package-ecosystem: "npm"
