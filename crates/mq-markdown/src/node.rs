@@ -3003,7 +3003,7 @@ impl Node {
     }
 
     pub(crate) fn from_mdast_node(node: mdast::Node) -> Vec<Node> {
-        match node.clone() {
+        match node {
             mdast::Node::Root(root) => root
                 .children
                 .into_iter()
@@ -3031,7 +3031,7 @@ impl Node {
                                         vec![Self::TableCell(TableCell {
                                             row,
                                             column,
-                                            values: Self::mdast_children_to_node(node.clone()),
+                                            values: Self::mdast_children_to_node(node),
                                             position: node.position().map(|p| p.clone().into()),
                                         })]
                                     } else {
@@ -3094,9 +3094,9 @@ impl Node {
                     })]
                 }
             },
-            mdast::Node::Blockquote(mdast::Blockquote { position, .. }) => {
-                let values = Self::mdast_children_to_node(node);
-                let pos = position.map(|p| p.clone().into());
+            mdast::Node::Blockquote(mdast::Blockquote { ref position, .. }) => {
+                let pos = position.clone().map(|p| p.into());
+                let values = Self::mdast_children_to_node(&node);
                 #[cfg(feature = "callout")]
                 {
                     vec![Self::try_parse_callout(values, pos)]
@@ -3122,34 +3122,40 @@ impl Node {
                     position: position.map(|p| p.clone().into()),
                 })]
             }
-            mdast::Node::Heading(mdast::Heading { depth, position, .. }) => {
+            mdast::Node::Heading(mdast::Heading {
+                depth, ref position, ..
+            }) => {
+                let position = position.clone().map(|p| p.into());
                 vec![Self::Heading(Heading {
-                    values: Self::mdast_children_to_node(node),
+                    values: Self::mdast_children_to_node(&node),
                     depth,
-                    position: position.map(|p| p.clone().into()),
+                    position,
                 })]
             }
             mdast::Node::Break(mdast::Break { position }) => {
                 vec![Self::Break(Break {
-                    position: position.map(|p| p.clone().into()),
+                    position: position.map(|p| p.into()),
                 })]
             }
-            mdast::Node::Delete(mdast::Delete { position, .. }) => {
+            mdast::Node::Delete(mdast::Delete { ref position, .. }) => {
+                let position = position.clone().map(|p| p.into());
                 vec![Self::Delete(Delete {
-                    values: Self::mdast_children_to_node(node),
-                    position: position.map(|p| p.clone().into()),
+                    values: Self::mdast_children_to_node(&node),
+                    position,
                 })]
             }
-            mdast::Node::Emphasis(mdast::Emphasis { position, .. }) => {
+            mdast::Node::Emphasis(mdast::Emphasis { ref position, .. }) => {
+                let position = position.clone().map(|p| p.into());
                 vec![Self::Emphasis(Emphasis {
-                    values: Self::mdast_children_to_node(node),
-                    position: position.map(|p| p.clone().into()),
+                    values: Self::mdast_children_to_node(&node),
+                    position,
                 })]
             }
-            mdast::Node::Strong(mdast::Strong { position, .. }) => {
+            mdast::Node::Strong(mdast::Strong { ref position, .. }) => {
+                let position = position.clone().map(|p| p.into());
                 vec![Self::Strong(Strong {
-                    values: Self::mdast_children_to_node(node),
-                    position: position.map(|p| p.clone().into()),
+                    values: Self::mdast_children_to_node(&node),
+                    position,
                 })]
             }
             mdast::Node::ThematicBreak(mdast::ThematicBreak { position, .. }) => {
@@ -3388,7 +3394,7 @@ impl Node {
         }
     }
 
-    fn mdast_children_to_node(node: mdast::Node) -> Vec<Node> {
+    fn mdast_children_to_node(node: &mdast::Node) -> Vec<Node> {
         node.children()
             .map(|children| {
                 children
