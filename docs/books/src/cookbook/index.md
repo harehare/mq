@@ -19,6 +19,10 @@ Every recipe follows the same four parts:
 - [Get the Nth item from every list](extract-nth-list-item.md)
 - [Extract MDX components](extract-mdx-components.md)
 - [Extract all URLs from links](extract-link-urls.md)
+- [Find images missing alt text](find-images-missing-alt-text.md)
+- [Extract blockquotes as pull quotes](extract-blockquotes-as-pull-quotes.md)
+- [Extract footnote definitions](extract-footnote-definitions.md)
+- [Find raw HTML blocks](find-raw-html-blocks.md)
 
 ## Working with sections
 

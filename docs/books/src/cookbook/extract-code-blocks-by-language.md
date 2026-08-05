@@ -36,5 +36,6 @@ Returns only the two JavaScript code blocks (`const x = 1;` and `const y = 2;`),
 
 ## Notes
 
+- Shorthand: `.code("js")` selects the same nodes as `select(.code.lang == "js")` — the language selector doubles as a filter when called with an argument.
 - To see which languages appear in a document at all, use `.code.lang` on its own — it returns a list like `["js", "python", "rust", "bash"]`.
 - To strip code blocks out and keep only prose, invert the condition: `select(!.code)`.

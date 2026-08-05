@@ -97,6 +97,22 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/cookbook/find-images-missing-alt-text</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/extract-blockquotes-as-pull-quotes</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/extract-footnote-definitions</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/find-raw-html-blocks</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/cookbook/extract-section-by-heading</loc>
     <priority>1.0</priority>
   </url>
