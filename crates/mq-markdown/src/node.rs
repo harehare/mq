@@ -1062,6 +1062,7 @@ impl Node {
                     .map(|c| prefix_width as isize - (c as isize - 1))
                     .unwrap_or(0);
                 let content = reindent_continuation(&render_values(&values, options, theme), delta);
+                let content = reindent_first_leaf_block(content, values.first(), options, theme, prefix_width);
                 let (ms, me) = &theme.list_marker;
                 format!(
                     "{}{}{}{} {}{}",
@@ -3675,6 +3676,31 @@ pub(crate) fn reindent_all_lines(content: &str, delta: isize) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Indents a `Code`/`Math`/`Yaml`/`Toml` first child's own continuation lines,
+/// which `render_values` leaves flush-left since it only indents non-first children.
+fn reindent_first_leaf_block(
+    content: String,
+    first: Option<&Node>,
+    options: &RenderOptions,
+    theme: &ColorTheme<'_>,
+    target_indent: usize,
+) -> String {
+    let Some(first) = first else { return content };
+    if !matches!(first, Node::Code(_) | Node::Math(_) | Node::Yaml(_) | Node::Toml(_)) {
+        return content;
+    }
+    let first_rendered = first.render_with_theme(options, theme);
+    if !first_rendered.contains('\n') {
+        return content;
+    }
+    let reindented_first = reindent_continuation(&first_rendered, target_indent as isize);
+    let mut lines: Vec<&str> = content.split('\n').collect();
+    for (line, replacement) in lines.iter_mut().zip(reindented_first.split('\n')) {
+        *line = replacement;
+    }
+    lines.join("\n")
 }
 
 /// Like [`reindent_all_lines`] but leaves the first line untouched, for shifting a
@@ -6668,6 +6694,44 @@ mod tests {
     }
 
     #[rstest]
+    #[case::code_first_child_indented(
+        Some(Node::Code(Code { value: "foo".to_string(), lang: None, fence: true, meta: None, position: None })),
+        "```\nfoo\n```".to_string(),
+        3,
+        "```\n   foo\n   ```"
+    )]
+    #[case::empty_code_first_child_closing_fence_indented(
+        Some(Node::Code(Code { value: "".to_string(), lang: None, fence: true, meta: None, position: None })),
+        "```\n```".to_string(),
+        3,
+        "```\n   ```"
+    )]
+    #[case::non_leaf_first_child_untouched(
+        Some(Node::Text(Text { value: "foo".to_string(), position: None })),
+        "foo".to_string(),
+        3,
+        "foo"
+    )]
+    #[case::no_first_child_untouched(None, "".to_string(), 3, "")]
+    fn test_reindent_first_leaf_block(
+        #[case] first: Option<Node>,
+        #[case] content: String,
+        #[case] target_indent: usize,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            reindent_first_leaf_block(
+                content,
+                first.as_ref(),
+                &RenderOptions::default(),
+                &ColorTheme::PLAIN,
+                target_indent
+            ),
+            expected
+        );
+    }
+
+    #[rstest]
     #[case::unordered_bullet(false, 0, None, None, 2)]
     #[case::unordered_checked(false, 0, None, Some(true), 6)]
     #[case::ordered_single_digit(true, 0, None, None, 3)]
@@ -6724,6 +6788,24 @@ mod tests {
             let value = format!("{}{}", body, "#".repeat(hashes));
             let node = Node::Heading(Heading { depth, values: vec![value.into()], position: None });
             let _ = node.to_string_with(&RenderOptions::default());
+        }
+
+        // A list item whose first child is a code block with arbitrary Unicode
+        // content must render without panicking, regardless of target indent.
+        #[test]
+        fn list_with_code_first_child_never_panics_on_unicode_text(
+            code_value in prop::collection::vec(any::<char>(), 0..30).prop_map(|cs| cs.into_iter().collect::<String>()),
+            target_indent in 0usize..10,
+        ) {
+            let code = Node::Code(Code { value: code_value, lang: None, fence: true, meta: None, position: None });
+            let rendered = code.render_with_theme(&RenderOptions::default(), &ColorTheme::PLAIN);
+            let _ = reindent_first_leaf_block(
+                rendered,
+                Some(&code),
+                &RenderOptions::default(),
+                &ColorTheme::PLAIN,
+                target_indent,
+            );
         }
 
         #[test]
