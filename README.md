@@ -153,7 +153,7 @@ Language bindings are available for Elixir, Python, Ruby, Java, and Go. See the 
 
 For more detailed usage and examples, refer to the [documentation](https://mqlang.org/book/).
 
-For a comprehensive collection of practical examples, see the [Example Guide](https://mqlang.org/book/start/example/).
+Looking for a solution to a specific problem? See the [Cookbook](https://mqlang.org/book/cookbook/) for task-first recipes, or the [Example Guide](https://mqlang.org/book/start/example/) for a full tour of mq's selectors and built-in functions.
 
 ### Basic usage
 
