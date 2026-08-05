@@ -2,7 +2,10 @@
 use crate::html_to_markdown;
 #[cfg(feature = "html-to-markdown")]
 use crate::html_to_markdown::ConversionOptions;
-use crate::node::{ColorTheme, Node, Position, RenderOptions, TableAlign, TableCell, render_values};
+use crate::node::{
+    ColorTheme, Node, Position, RenderOptions, TableAlign, TableCell, list_own_prefix_width, reindent_all_lines,
+    render_values,
+};
 use markdown::{CompileOptions, Constructs, Options, ParseOptions};
 use miette::miette;
 use std::{fmt, str::FromStr};
@@ -60,6 +63,9 @@ impl Markdown {
         let mut current_table_row: Option<usize> = None;
         let mut in_table = false;
         let mut current_table: Option<TableLayout> = None;
+        // Sibling list items only carry a `level`, not a parent link; reconstructs
+        // nested-list indentation from the nearest open ancestor at each level.
+        let mut list_indent_stack: Vec<usize> = Vec::new();
 
         let mut buffer = String::with_capacity(self.nodes.len() * 50);
 
@@ -136,7 +142,19 @@ impl Markdown {
             current_table = None;
             in_table = false;
 
-            let value = node.render_with_theme(&self.options, theme);
+            let value = if let Node::List(list) = node {
+                while list_indent_stack.len() > list.level as usize {
+                    list_indent_stack.pop();
+                }
+                let own_indent = list_indent_stack.last().copied().unwrap_or(0);
+                let delta = own_indent as isize - list.level as isize * 2;
+                let own_width = own_indent + list_own_prefix_width(list.ordered, list.index, list.start, list.checked);
+                list_indent_stack.push(own_width);
+                reindent_all_lines(&node.render_with_theme(&self.options, theme), delta)
+            } else {
+                list_indent_stack.clear();
+                node.render_with_theme(&self.options, theme)
+            };
 
             if value.is_empty() || value == "\n" {
                 pre_position = None;
@@ -428,6 +446,12 @@ mod tests {
     #[case::header("# Title\nParagraph", 2, "# Title\nParagraph\n")]
     #[case::header("# Title\n\nParagraph", 2, "# Title\n\nParagraph\n")]
     #[case::list("- Item 1\n- Item 2", 2, "- Item 1\n- Item 2\n")]
+    #[case::list_nested_sublist_after_blank_line_stays_nested("1.  foo\n\n    - bar", 2, "1. foo\n\n   - bar\n")]
+    #[case::list_ordered_nested_in_ordered_uses_own_marker_width(
+        "10.  foo\n\n     1. bar",
+        2,
+        "10. foo\n\n    1. bar\n"
+    )]
     #[case::quote("> Quote\n>Second line", 1, "> Quote\n> Second line\n")]
     #[case::code("```rust\nlet x = 1;\n```", 1, "```rust\nlet x = 1;\n```\n")]
     #[case::toml("+++\n[test]\ntest = 1\n+++", 1, "+++\n[test]\ntest = 1\n+++\n")]
