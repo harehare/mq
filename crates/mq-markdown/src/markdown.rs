@@ -452,6 +452,16 @@ mod tests {
         2,
         "10. foo\n\n    1. bar\n"
     )]
+    #[case::list_code_block_as_first_child_is_indented(
+        "1. ```\n   foo\n   ```\n\n   bar",
+        1,
+        "1. ```\n   foo\n   ```\n\n   bar\n"
+    )]
+    #[case::list_code_block_first_child_multibyte_content(
+        "1. ```\n   あいう\n   ```",
+        1,
+        "1. ```\n   あいう\n   ```\n"
+    )]
     #[case::quote("> Quote\n>Second line", 1, "> Quote\n> Second line\n")]
     #[case::code("```rust\nlet x = 1;\n```", 1, "```rust\nlet x = 1;\n```\n")]
     #[case::toml("+++\n[test]\ntest = 1\n+++", 1, "+++\n[test]\ntest = 1\n+++\n")]
