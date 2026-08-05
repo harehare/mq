@@ -78,13 +78,13 @@ Downloads the latest mq binary for your platform, installs it to `~/.local/bin/`
 
 ```sh
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.8.0
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.8.1
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 # Install using binstall
-cargo binstall mq-run@0.8.0
+cargo binstall mq-run@0.8.1
 ```
 
 Pre-built binaries for macOS, Linux, and Windows are also available on the [GitHub releases page](https://github.com/harehare/mq/releases).
