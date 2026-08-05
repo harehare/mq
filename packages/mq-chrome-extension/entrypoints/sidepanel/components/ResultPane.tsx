@@ -1,3 +1,5 @@
+import { CodeEditor } from "./CodeEditor";
+
 type ResultPaneProps = {
   result: string;
   previewActive: boolean;
@@ -14,7 +16,7 @@ export function ResultPane({
   onTogglePreview,
 }: ResultPaneProps) {
   return (
-    <section className="pane">
+    <section className="pane pane-result">
       <div className="pane-header">
         <h2>Result</h2>
         <div className="button-group">
@@ -31,12 +33,12 @@ export function ResultPane({
           </button>
         </div>
       </div>
-      <textarea
+      <CodeEditor
         className="pane-textarea"
+        language="markdown"
         readOnly
         value={result}
         placeholder="Run a query to see the filtered Markdown here."
-        spellCheck={false}
       />
     </section>
   );

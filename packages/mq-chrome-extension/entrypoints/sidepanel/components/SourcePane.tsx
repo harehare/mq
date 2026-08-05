@@ -1,3 +1,5 @@
+import { CodeEditor } from "./CodeEditor";
+
 export type SourceMode = "markdown" | "html";
 
 type SourcePaneProps = {
@@ -22,10 +24,15 @@ export function SourcePane({
   onExtract,
 }: SourcePaneProps) {
   return (
-    <section className="pane">
+    <section className="pane pane-source">
       <div className="pane-header">
         <h2>Source</h2>
-        <button type="button" onClick={onExtract} disabled={isExtracting}>
+        <button
+          type="button"
+          className="primary"
+          onClick={onExtract}
+          disabled={isExtracting}
+        >
           {isExtracting ? "Extracting…" : "Extract page"}
         </button>
       </div>
@@ -50,20 +57,20 @@ export function SourcePane({
         </button>
       </div>
       {mode === "markdown" ? (
-        <textarea
+        <CodeEditor
           className="pane-textarea"
+          language="markdown"
           placeholder="Click “Extract page” to convert the current page to Markdown, or paste your own."
           value={markdown}
-          onChange={(event) => onMarkdownChange(event.target.value)}
-          spellCheck={false}
+          onChange={onMarkdownChange}
         />
       ) : (
-        <textarea
+        <CodeEditor
           className="pane-textarea"
+          language="html"
           placeholder="Click “Extract page” to grab the current page's raw HTML, or paste your own. Queries run directly against it."
           value={html}
-          onChange={(event) => onHtmlChange(event.target.value)}
-          spellCheck={false}
+          onChange={onHtmlChange}
         />
       )}
     </section>

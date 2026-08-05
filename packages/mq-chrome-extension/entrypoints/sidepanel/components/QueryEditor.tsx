@@ -1,4 +1,5 @@
 import { EXAMPLE_QUERIES } from "../lib/examples";
+import { CodeEditor } from "./CodeEditor";
 
 type QueryEditorProps = {
   query: string;
@@ -16,7 +17,7 @@ export function QueryEditor({
   onRun,
 }: QueryEditorProps) {
   return (
-    <section className="pane">
+    <section className="pane pane-query">
       <div className="pane-header">
         <h2>mq Query</h2>
         <select
@@ -34,12 +35,12 @@ export function QueryEditor({
           ))}
         </select>
       </div>
-      <textarea
+      <CodeEditor
         className="pane-textarea query-textarea"
+        language="mq"
         placeholder=".h"
         value={query}
-        onChange={(event) => onChange(event.target.value)}
-        spellCheck={false}
+        onChange={onChange}
       />
       <button
         type="button"
