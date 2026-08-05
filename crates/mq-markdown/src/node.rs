@@ -1055,7 +1055,7 @@ impl Node {
                     options.list_style.to_string()
                 };
                 let checkbox = checked.map(|it| if it { "[x] " } else { "[ ] " }).unwrap_or_else(|| "");
-                let prefix_width = level as usize * 2 + marker.chars().count() + 1 + checkbox.chars().count();
+                let prefix_width = level as usize * 2 + list_own_prefix_width(ordered, index, start, checked);
                 // Marker width is normalized, shifting continuation lines' source columns.
                 let original_first_column = values.first().and_then(|v| v.position()).map(|p| p.start.column);
                 let delta = original_first_column
@@ -1208,7 +1208,14 @@ impl Node {
                     // stripped as syntax rather than kept as heading text.
                     let text = text.replace('\n', " ");
                     let text = match text.rfind(|c: char| c != '#') {
-                        Some(i) if i + 1 < text.len() => format!("{}\\{}", &text[..=i], &text[i + 1..]),
+                        Some(i) => {
+                            let hash_start = i + text[i..].chars().next().map_or(1, char::len_utf8);
+                            if hash_start < text.len() {
+                                format!("{}\\{}", &text[..hash_start], &text[hash_start..])
+                            } else {
+                                text
+                            }
+                        }
                         None if !text.is_empty() => format!("\\{text}"),
                         _ => text,
                     };
@@ -3469,26 +3476,17 @@ impl Node {
                     Vec::new()
                 }
             })
-            .enumerate()
-            .filter_map(|(i, node)| match node {
-                Self::List(List {
-                    level,
-                    index: _,
-                    ordered,
-                    checked,
-                    start,
-                    values,
-                    position,
-                }) => Some(Self::List(List {
-                    level,
-                    index: i,
-                    ordered,
-                    checked,
-                    start,
-                    values,
-                    position,
-                })),
-                _ => None,
+            .scan(0usize, |next_index, node| {
+                // Only renumber this call's own level; deeper items flattened in from a
+                // recursive call already have their own, independently-numbered index.
+                Some(match node {
+                    Self::List(mut l) if l.level == level => {
+                        l.index = *next_index;
+                        *next_index += 1;
+                        Self::List(l)
+                    }
+                    other => other,
+                })
             })
             .collect()
     }
@@ -3658,17 +3656,16 @@ fn needs_broad_escaping(s: &str) -> bool {
     })
 }
 
-/// Shifts every line after the first by `delta` spaces of leading indentation
-/// (never below zero), leaving each line's own content untouched.
-fn reindent_continuation(content: &str, delta: isize) -> String {
-    if delta == 0 || !content.contains('\n') {
+/// Shifts every line's leading indentation by `delta` spaces (never below zero),
+/// leaving each line's own content untouched.
+pub(crate) fn reindent_all_lines(content: &str, delta: isize) -> String {
+    if delta == 0 {
         return content.to_string();
     }
     content
         .split('\n')
-        .enumerate()
-        .map(|(i, line)| {
-            if i == 0 || line.is_empty() {
+        .map(|line| {
+            if line.is_empty() {
                 line.to_string()
             } else {
                 let leading = line.bytes().take_while(|&b| b == b' ').count();
@@ -3678,6 +3675,30 @@ fn reindent_continuation(content: &str, delta: isize) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Like [`reindent_all_lines`] but leaves the first line untouched, for shifting a
+/// value's own continuation lines without disturbing its already-placed first line.
+fn reindent_continuation(content: &str, delta: isize) -> String {
+    if delta == 0 || !content.contains('\n') {
+        return content.to_string();
+    }
+    let mut lines = content.splitn(2, '\n');
+    let first = lines.next().unwrap_or_default();
+    let rest = lines.next().unwrap_or_default();
+    format!("{}\n{}", first, reindent_all_lines(rest, delta))
+}
+
+/// The width of a list item's own marker + trailing space + checkbox (not
+/// including ancestor indentation), e.g. 3 for `"1. "`, 4 for `"10. "` or `"- [x] "`.
+pub(crate) fn list_own_prefix_width(ordered: bool, index: usize, start: Option<u32>, checked: Option<bool>) -> usize {
+    let marker_len = if ordered {
+        (start.unwrap_or(1) as usize + index).to_string().chars().count() + 1
+    } else {
+        1
+    };
+    let checkbox_len = if checked.is_some() { 4 } else { 0 };
+    marker_len + 1 + checkbox_len
 }
 
 /// Picks a backtick fence long enough that no line in `value` (or the info string)
@@ -4567,6 +4588,7 @@ mod tests {
     #[case::heading_multiline_h3_joins_with_space(Node::Heading(Heading{depth: 3, values: vec!["Foo\nBar".to_string().into()], position: None}), RenderOptions::default(), "### Foo Bar")]
     #[case::heading_trailing_hash_escaped(Node::Heading(Heading{depth: 1, values: vec!["foo #".to_string().into()], position: None}), RenderOptions::default(), "# foo \\#")]
     #[case::heading_trailing_hash_run_escaped(Node::Heading(Heading{depth: 3, values: vec!["foo ###".to_string().into()], position: None}), RenderOptions::default(), "### foo \\###")]
+    #[case::heading_trailing_hash_after_multibyte_char(Node::Heading(Heading{depth: 1, values: vec!["foo あ#".to_string().into()], position: None}), RenderOptions::default(), "# foo あ\\#")]
     #[case::heading_no_trailing_hash_unaffected(Node::Heading(Heading{depth: 1, values: vec!["foo bar".to_string().into()], position: None}), RenderOptions::default(), "# foo bar")]
     #[case::html(Node::Html(Html{value: "<div>test</div>".to_string(), position: None}), RenderOptions::default(), "<div>test</div>")]
     #[case::image(Node::Image(Image{alt: attr_keys::ALT.to_string(), url: attr_keys::URL.to_string(), title: None, position: None}), RenderOptions::default(), "![alt](url)")]
@@ -6637,6 +6659,31 @@ mod tests {
     }
 
     #[rstest]
+    #[case::no_newline_still_shifted("abc", 3, "   abc")]
+    #[case::zero_delta_unchanged("a\n  b", 0, "a\n  b")]
+    #[case::first_line_also_shifted("a\nb", 2, "  a\n  b")]
+    #[case::negative_delta_clamped_at_zero("  a\n  b", -5, "a\nb")]
+    fn test_reindent_all_lines(#[case] content: &str, #[case] delta: isize, #[case] expected: &str) {
+        assert_eq!(reindent_all_lines(content, delta), expected);
+    }
+
+    #[rstest]
+    #[case::unordered_bullet(false, 0, None, None, 2)]
+    #[case::unordered_checked(false, 0, None, Some(true), 6)]
+    #[case::ordered_single_digit(true, 0, None, None, 3)]
+    #[case::ordered_double_digit(true, 9, None, None, 4)]
+    #[case::ordered_with_start(true, 0, Some(10), None, 4)]
+    fn test_list_own_prefix_width(
+        #[case] ordered: bool,
+        #[case] index: usize,
+        #[case] start: Option<u32>,
+        #[case] checked: Option<bool>,
+        #[case] expected: usize,
+    ) {
+        assert_eq!(list_own_prefix_width(ordered, index, start, checked), expected);
+    }
+
+    #[rstest]
     #[case::no_backticks("", 1)]
     #[case::single_run("foo`bar", 2)]
     #[case::longer_run("foo``bar", 3)]
@@ -6663,6 +6710,20 @@ mod tests {
         ) {
             let escaped = escape_text(s.clone());
             prop_assert_eq!(naive_unescape(&escaped), s);
+        }
+
+        // Rendering must never panic, whatever the heading text (arbitrary Unicode,
+        // possibly ending in a run of `#`) — this is a UTF-8 char-boundary regression
+        // guard for the trailing-`#` escape logic.
+        #[test]
+        fn heading_render_never_panics_on_unicode_text(
+            body in prop::collection::vec(any::<char>(), 0..20).prop_map(|cs| cs.into_iter().collect::<String>()),
+            hashes in 0usize..5,
+            depth in 1u8..=6,
+        ) {
+            let value = format!("{}{}", body, "#".repeat(hashes));
+            let node = Node::Heading(Heading { depth, values: vec![value.into()], position: None });
+            let _ = node.to_string_with(&RenderOptions::default());
         }
 
         #[test]
