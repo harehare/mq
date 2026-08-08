@@ -23,6 +23,9 @@ use which::which;
 // processing can fan out across rayon worker threads.
 static HAD_TRUTHY_OUTPUT: AtomicBool = AtomicBool::new(false);
 
+// Tracks whether --diff found any changed input, for the exit-code-1 CI check below.
+static HAD_DIFF: AtomicBool = AtomicBool::new(false);
+
 use crate::grep;
 use mq_help as help;
 
@@ -418,6 +421,12 @@ struct OutputArgs {
     /// Update matching Markdown nodes and write the result to stdout
     #[arg(short = 'U', long = "update", default_value_t = false)]
     update: bool,
+
+    /// With --update, print a unified diff instead of the transformed content;
+    /// nothing is written. Multiple files are diffed one at a time with their path
+    /// in the headers; stdin is labeled `<stdin>`. Exits 1 if anything would change.
+    #[arg(long = "diff", default_value_t = false, requires = "update")]
+    diff: bool,
 
     /// Unbuffered output
     #[clap(long, default_value_t = false)]
@@ -1215,6 +1224,10 @@ impl Cli {
             return Err(miette!("The output format is not supported for the update option"));
         }
 
+        if self.output.diff && matches!(self.output.output_format, OutputFormat::Grep) {
+            return Err(miette!("--diff is not supported with -F grep"));
+        }
+
         match &self.commands {
             Some(Commands::Repl) => {
                 let engine = self.create_engine()?;
@@ -1244,6 +1257,12 @@ impl Cli {
                         result?;
                         std::process::exit(1);
                     }
+                }
+
+                // --diff: exit 1 if anything would change, for CI gating.
+                if self.output.diff && HAD_DIFF.load(Ordering::Relaxed) {
+                    result?;
+                    std::process::exit(1);
                 }
 
                 result
@@ -1579,6 +1598,10 @@ impl Cli {
             engine.eval(query, input.into_iter()).map_err(|e| *e)?
         };
 
+        if self.output.update && self.output.diff {
+            return self.emit_diff(&runtime_values, file, content);
+        }
+
         if let Some(separator) = &self.output.separator {
             let separator = engine
                 .eval(
@@ -1695,6 +1718,10 @@ impl Cli {
         } else {
             engine.eval_compiled(program, input.into_iter()).map_err(|e| *e)?
         };
+
+        if self.output.update && self.output.diff {
+            return self.emit_diff(&runtime_values, file, content);
+        }
 
         self.emit_results(runtime_values, grep_input, file)
     }
@@ -2014,6 +2041,82 @@ impl Cli {
         markdown
     }
 
+    /// Renders `runtime_values` to a byte buffer without writing anywhere.
+    /// `emit_diff` always passes `colorize: false` — it needs plain text to diff
+    /// against the uncolored original, and colors the diff lines itself.
+    fn render(&self, runtime_values: &[mq_lang::RuntimeValue], colorize: bool) -> miette::Result<Vec<u8>> {
+        let mut buf = Vec::new();
+
+        match self.output.output_format {
+            OutputFormat::Raw => {
+                for value in runtime_values {
+                    match value {
+                        mq_lang::RuntimeValue::Bytes(b) => buf.extend_from_slice(b),
+                        _ => buf.extend_from_slice(value.to_string().as_bytes()),
+                    }
+                }
+            }
+            OutputFormat::Json => {
+                let theme = colorize.then(mq_markdown::ColorTheme::from_env);
+                let json_str = crate::output::json::runtime_values_to_json(runtime_values, theme.as_ref())?;
+                buf.extend_from_slice(json_str.as_bytes());
+            }
+            OutputFormat::Html => {
+                let markdown = self.build_markdown(runtime_values);
+                buf.extend_from_slice(markdown.to_html().as_bytes());
+            }
+            OutputFormat::Text => {
+                let markdown = self.build_markdown(runtime_values);
+                buf.extend_from_slice(markdown.to_text().as_bytes());
+            }
+            OutputFormat::Markdown if colorize => {
+                let markdown = self.build_markdown(runtime_values);
+                let theme = mq_markdown::ColorTheme::from_env();
+                buf.extend_from_slice(markdown.to_colored_string_with_theme(&theme).as_bytes());
+            }
+            OutputFormat::Markdown => {
+                let markdown = self.build_markdown(runtime_values);
+                buf.extend_from_slice(markdown.to_string().as_bytes());
+            }
+            OutputFormat::Table => {
+                let theme = colorize.then(mq_markdown::ColorTheme::from_env);
+                let table = crate::output::table::runtime_values_to_table(runtime_values, theme.as_ref());
+                buf.extend_from_slice(format!("{}\n", table).as_bytes());
+            }
+            OutputFormat::Grep => {
+                let markdown = self.build_markdown(runtime_values);
+                buf.extend_from_slice(markdown.to_string().as_bytes());
+            }
+            OutputFormat::Gron => {
+                let gron_str = crate::output::gron::runtime_values_to_gron(runtime_values);
+                buf.extend_from_slice(gron_str.as_bytes());
+            }
+            OutputFormat::Csv => {
+                let csv_str = crate::output::csv::runtime_values_to_csv(runtime_values)?;
+                buf.extend_from_slice(csv_str.as_bytes());
+            }
+            OutputFormat::Toml => {
+                let toml_str = crate::output::toml::runtime_values_to_toml(runtime_values)?;
+                buf.extend_from_slice(toml_str.as_bytes());
+            }
+            OutputFormat::Toon => {
+                let toon_str = crate::output::toon::runtime_values_to_toon(runtime_values)?;
+                buf.extend_from_slice(toon_str.as_bytes());
+            }
+            OutputFormat::Xml => {
+                let xml_str = crate::output::xml::runtime_values_to_xml(runtime_values)?;
+                buf.extend_from_slice(xml_str.as_bytes());
+            }
+            OutputFormat::Yaml => {
+                let yaml_str = crate::output::yaml::runtime_values_to_yaml(runtime_values)?;
+                buf.extend_from_slice(yaml_str.as_bytes());
+            }
+            OutputFormat::None => {}
+        }
+
+        Ok(buf)
+    }
+
     fn print(&self, runtime_values: mq_lang::RuntimeValues) -> miette::Result<()> {
         let stdout = io::stdout();
         let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
@@ -2039,72 +2142,86 @@ impl Cli {
             HAD_TRUTHY_OUTPUT.store(true, Ordering::Relaxed);
         }
 
-        match self.output.output_format {
-            OutputFormat::Raw => {
-                for value in runtime_values {
-                    match value {
-                        mq_lang::RuntimeValue::Bytes(b) => Self::write_ignore_pipe(&mut handle, b)?,
-                        _ => Self::write_ignore_pipe(&mut handle, value.to_string().as_bytes())?,
-                    }
-                }
-            }
-            OutputFormat::Json => {
-                let theme = (self.output.color_output && !Self::is_no_color()).then(mq_markdown::ColorTheme::from_env);
-                let json_str = crate::output::json::runtime_values_to_json(runtime_values, theme.as_ref())?;
-                Self::write_ignore_pipe(&mut handle, json_str.as_bytes())?;
-            }
-            OutputFormat::Html => {
-                let markdown = self.build_markdown(runtime_values);
-                Self::write_ignore_pipe(&mut handle, markdown.to_html().as_bytes())?;
-            }
-            OutputFormat::Text => {
-                let markdown = self.build_markdown(runtime_values);
-                Self::write_ignore_pipe(&mut handle, markdown.to_text().as_bytes())?;
-            }
-            OutputFormat::Markdown if self.output.color_output && !Self::is_no_color() => {
-                let markdown = self.build_markdown(runtime_values);
-                let theme = mq_markdown::ColorTheme::from_env();
-                Self::write_ignore_pipe(&mut handle, markdown.to_colored_string_with_theme(&theme).as_bytes())?;
-            }
-            OutputFormat::Markdown => {
-                let markdown = self.build_markdown(runtime_values);
-                Self::write_ignore_pipe(&mut handle, markdown.to_string().as_bytes())?;
-            }
-            OutputFormat::Table => {
-                let theme = (self.output.color_output && !Self::is_no_color()).then(mq_markdown::ColorTheme::from_env);
-                let table = crate::output::table::runtime_values_to_table(runtime_values, theme.as_ref());
-                Self::write_ignore_pipe(&mut handle, format!("{}\n", table).as_bytes())?;
-            }
-            OutputFormat::Grep => {
-                let markdown = self.build_markdown(runtime_values);
-                Self::write_ignore_pipe(&mut handle, markdown.to_string().as_bytes())?;
-            }
-            OutputFormat::Gron => {
-                let gron_str = crate::output::gron::runtime_values_to_gron(runtime_values);
-                Self::write_ignore_pipe(&mut handle, gron_str.as_bytes())?;
-            }
-            OutputFormat::Csv => {
-                let csv_str = crate::output::csv::runtime_values_to_csv(runtime_values)?;
-                Self::write_ignore_pipe(&mut handle, csv_str.as_bytes())?;
-            }
-            OutputFormat::Toml => {
-                let toml_str = crate::output::toml::runtime_values_to_toml(runtime_values)?;
-                Self::write_ignore_pipe(&mut handle, toml_str.as_bytes())?;
-            }
-            OutputFormat::Toon => {
-                let toon_str = crate::output::toon::runtime_values_to_toon(runtime_values)?;
-                Self::write_ignore_pipe(&mut handle, toon_str.as_bytes())?;
-            }
-            OutputFormat::Xml => {
-                let xml_str = crate::output::xml::runtime_values_to_xml(runtime_values)?;
-                Self::write_ignore_pipe(&mut handle, xml_str.as_bytes())?;
-            }
-            OutputFormat::Yaml => {
-                let yaml_str = crate::output::yaml::runtime_values_to_yaml(runtime_values)?;
-                Self::write_ignore_pipe(&mut handle, yaml_str.as_bytes())?;
-            }
-            OutputFormat::None => {}
+        let colorize = self.output.color_output && !Self::is_no_color();
+        let buf = self.render(runtime_values, colorize)?;
+        Self::write_ignore_pipe(&mut handle, &buf)?;
+
+        if !self.output.unbuffered
+            && let Err(e) = handle.flush()
+            && e.kind() != std::io::ErrorKind::BrokenPipe
+        {
+            return Err(miette!(e));
         }
+
+        Ok(())
+    }
+
+    /// Renders what `--update` would print and diffs it against the original input.
+    fn emit_diff(
+        &self,
+        runtime_values: &mq_lang::RuntimeValues,
+        file: &Option<PathBuf>,
+        content: &ContentData,
+    ) -> miette::Result<()> {
+        let original = content.as_str().unwrap_or("");
+        let rendered = self.render(runtime_values.values(), false)?;
+        let rendered = String::from_utf8_lossy(&rendered);
+
+        if original != rendered {
+            HAD_DIFF.store(true, Ordering::Relaxed);
+            self.print_unified_diff(original, &rendered, file)?;
+        }
+
+        Ok(())
+    }
+
+    /// Prints a unified diff of `original` vs `rendered` to stdout (or `-o`), headed
+    /// by the file path (or `<stdin>` when there is none). Colorizes `+`/`-`/`@@`
+    /// lines when `-C`/`--color-output` is set and `NO_COLOR` isn't.
+    fn print_unified_diff(&self, original: &str, rendered: &str, file: &Option<PathBuf>) -> miette::Result<()> {
+        let stdout = io::stdout();
+        let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
+            let file = fs::File::create(output_file).into_diagnostic()?;
+            Box::new(BufWriter::new(file))
+        } else if self.output.unbuffered {
+            Box::new(stdout.lock())
+        } else {
+            Box::new(BufWriter::new(stdout.lock()))
+        };
+
+        let label = file
+            .as_ref()
+            .map(|f| f.display().to_string())
+            .unwrap_or_else(|| "<stdin>".to_string());
+
+        let diff_text = similar::TextDiff::from_lines(original, rendered)
+            .unified_diff()
+            .header(&label, &label)
+            .to_string();
+
+        // Raw ANSI, not `colored::Colorize` — it auto-disables on non-tty stdout, but -C should force color.
+        let colorize = self.output.color_output && !Self::is_no_color();
+        let mut out = String::with_capacity(diff_text.len());
+        for line in diff_text.lines() {
+            if colorize && line.starts_with('+') && !line.starts_with("+++") {
+                out.push_str("\x1b[32m");
+                out.push_str(line);
+                out.push_str("\x1b[0m");
+            } else if colorize && line.starts_with('-') && !line.starts_with("---") {
+                out.push_str("\x1b[31m");
+                out.push_str(line);
+                out.push_str("\x1b[0m");
+            } else if colorize && line.starts_with("@@") {
+                out.push_str("\x1b[36m");
+                out.push_str(line);
+                out.push_str("\x1b[0m");
+            } else {
+                out.push_str(line);
+            }
+            out.push('\n');
+        }
+
+        Self::write_ignore_pipe(&mut handle, out.as_bytes())?;
 
         if !self.output.unbuffered
             && let Err(e) = handle.flush()
