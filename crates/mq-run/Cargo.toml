@@ -38,6 +38,7 @@ mq-repl = {workspace = true}
 quick-xml = {workspace = true}
 rayon = {workspace = true}
 serde_json = {workspace = true}
+similar = {workspace = true}
 serde_yaml = {workspace = true}
 regex = {workspace = true, optional = true}
 rustyline = {workspace = true, optional = true, default-features = false, features = ["custom-bindings", "with-file-history"]}

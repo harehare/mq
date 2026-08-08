@@ -47,7 +47,7 @@ url = {workspace = true}
 toon-format = {workspace = true}
 quick-xml = {workspace = true}
 unicode-width = {workspace = true}
-similar = "3.0.0"
+similar = {workspace = true}
 tiktoken-rs = { version = "0.12", optional = true }
 ureq = { workspace = true, optional = true }
 uuid = {workspace = true, features = ["v4", "v7"]}

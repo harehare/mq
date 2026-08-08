@@ -1293,6 +1293,193 @@ fn test_eval_all_conflicts_with_update() -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
+#[test]
+fn test_diff_requires_update() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--diff")
+        .arg("self")
+        .write_stdin("# title\n")
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_diff_conflicts_with_grep_format() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--update")
+        .arg("--diff")
+        .arg("-F")
+        .arg("grep")
+        .arg(".h")
+        .write_stdin("# title\n")
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_diff_no_changes_prints_nothing_and_exits_zero() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--unbuffered")
+        .arg("--update")
+        .arg("--diff")
+        .arg("self")
+        .write_stdin("# title\n")
+        .assert()
+        .success()
+        .code(0)
+        .stdout("");
+    Ok(())
+}
+
+#[test]
+fn test_diff_shows_changes_with_stdin_label() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("--update")
+        .arg("--diff")
+        .arg(r#".h | select(contains("title")) | ltrimstr("titl")"#)
+        .write_stdin("# title\n")
+        .assert();
+    let output = assert.failure().code(1).get_output().stdout.clone();
+    let output = String::from_utf8(output)?;
+
+    assert!(output.contains("--- <stdin>"), "missing old header: {output}");
+    assert!(output.contains("+++ <stdin>"), "missing new header: {output}");
+    assert!(output.contains("-# title"), "missing removed line: {output}");
+    assert!(output.contains("+# e"), "missing added line: {output}");
+
+    Ok(())
+}
+
+#[test]
+fn test_diff_multiple_files_includes_path_headers() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, file1) = create_file("test_diff_multi1.md", "# title\n");
+    let (_, file2) = create_file("test_diff_multi2.md", "# other\n");
+    let (file1_clone, file2_clone) = (file1.clone(), file2.clone());
+
+    defer! {
+        std::fs::remove_file(&file1_clone).ok();
+        std::fs::remove_file(&file2_clone).ok();
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("--update")
+        .arg("--diff")
+        .arg(r#".h | select(contains("title")) | ltrimstr("titl")"#)
+        .arg(&file1)
+        .arg(&file2)
+        .assert();
+    let output = assert.failure().code(1).get_output().stdout.clone();
+    let output = String::from_utf8(output)?;
+
+    assert!(
+        output.contains(&format!("--- {}", file1.display())),
+        "missing file1 header: {output}"
+    );
+    assert!(
+        !output.contains(&format!("--- {}", file2.display())),
+        "unchanged file2 should not appear: {output}"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_diff_original_file_unchanged_on_query_error() -> Result<(), Box<dyn std::error::Error>> {
+    let original_content = "# title\n";
+    let (_, file) = create_file("test_diff_error_unchanged.md", original_content);
+    let file_clone = file.clone();
+
+    defer! {
+        std::fs::remove_file(&file_clone).ok();
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--update")
+        .arg("--diff")
+        .arg("this_function_does_not_exist()")
+        .arg(&file)
+        .assert()
+        .failure();
+
+    assert_eq!(std::fs::read_to_string(&file)?, original_content);
+
+    Ok(())
+}
+
+#[test]
+fn test_diff_trailing_newline_only() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("--update")
+        .arg("--diff")
+        .arg("self")
+        .write_stdin("# title")
+        .assert();
+    let output = assert.failure().code(1).get_output().stdout.clone();
+    let output = String::from_utf8(output)?;
+
+    assert!(
+        output.contains("\\ No newline at end of file"),
+        "expected a trailing-newline-only diff: {output}"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_diff_no_color_env_disables_ansi_codes() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("--update")
+        .arg("--diff")
+        .arg("-C")
+        .arg(r#".h | select(contains("title")) | ltrimstr("titl")"#)
+        .env("NO_COLOR", "1")
+        .write_stdin("# title\n")
+        .assert();
+    let output = assert.failure().code(1).get_output().stdout.clone();
+    let output = String::from_utf8(output)?;
+
+    assert!(!output.contains('\u{1b}'), "expected no ANSI escapes: {output:?}");
+
+    Ok(())
+}
+
+#[test]
+fn test_diff_color_output_adds_ansi_codes() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("--update")
+        .arg("--diff")
+        .arg("-C")
+        .arg(r#".h | select(contains("title")) | ltrimstr("titl")"#)
+        .env_remove("NO_COLOR")
+        .write_stdin("# title\n\nBody text.\n")
+        .assert();
+    let output = assert.failure().code(1).get_output().stdout.clone();
+    let output = String::from_utf8(output)?;
+
+    assert!(output.contains('\u{1b}'), "expected ANSI escapes: {output:?}");
+    // Regression: -C must not bake ANSI into the text being diffed, or the unchanged line would spuriously differ too.
+    assert!(
+        output.contains("\n Body text.\n"),
+        "expected the unchanged line to remain a plain context line: {output:?}"
+    );
+    assert!(
+        !output.contains("-Body text.") && !output.contains("+Body text."),
+        "unchanged line must not appear as a diff line: {output:?}"
+    );
+
+    Ok(())
+}
+
 #[rstest]
 #[case::bash("bash", "_mq()")]
 #[case::elvish("elvish", "edit:completion:arg-completer[mq]")]
