@@ -1,0 +1,327 @@
+:root {
+  color-scheme: light dark;
+
+  --bg: light-dark(#f0f4f8, #1e1e1e);
+  --panel-bg: light-dark(#ffffff, #252526);
+  --fg: light-dark(#2d3748, #e2e8f0);
+  --muted: light-dark(#718096, #a0aec0);
+  --border: light-dark(#e2e8f0, #3e3e42);
+  --surface: light-dark(#edf2f7, #2d2d30);
+  --header-bg: light-dark(#2c5282, #1a4c6b);
+  --header-fg: #ffffff;
+  --header-title-color: light-dark(#67b8e3, #5dade2);
+  --accent: light-dark(#3182ce, #63b3ed);
+  --accent-strong: light-dark(#2c5282, #88acd2);
+  --accent-fg: #ffffff;
+  --success-color: light-dark(#48bb78, #68d391);
+  --error-bg: light-dark(rgba(229, 62, 62, 0.1), rgba(252, 129, 129, 0.12));
+  --error-fg: light-dark(#c53030, #fc8181);
+  --error-border: light-dark(rgba(229, 62, 62, 0.35), rgba(252, 129, 129, 0.3));
+  --scrollbar-thumb: light-dark(#cbd5e0, #424242);
+  --scrollbar-thumb-hover: light-dark(#a0aec0, #4e4e4e);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family:
+    "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Oxygen,
+    Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  font-size: 13px;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--header-bg);
+  color: var(--header-fg);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  flex-shrink: 0;
+}
+
+.app-logo-link {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.app-logo {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.app-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--header-title-color);
+}
+
+.app-header p {
+  margin: 0;
+  color: var(--header-fg);
+  opacity: 0.75;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.error-banner {
+  background: var(--error-bg);
+  color: var(--error-fg);
+  border: 1px solid var(--error-border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.pane-source,
+.pane-result {
+  flex: 3 1 220px;
+  min-height: 180px;
+}
+
+.pane-query {
+  flex: 1 1 auto;
+  min-height: 130px;
+}
+
+.pane-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 8px;
+  padding: 6px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.pane-header h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-left: 3px solid var(--header-title-color);
+  padding-left: 7px;
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 10px 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--fg);
+}
+
+.tab.active {
+  background: var(--panel-bg);
+  border-color: var(--border);
+  color: var(--header-title-color);
+}
+
+.pane-textarea {
+  display: flex;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.pane-textarea .cm-editor.cm-focused {
+  box-shadow: inset 0 0 0 2px var(--header-title-color);
+}
+
+.query-textarea {
+  min-height: 0;
+}
+
+.pane-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+button {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--header-title-color);
+  color: var(--header-title-color);
+  background: color-mix(in srgb, var(--header-title-color) 12%, transparent);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.primary,
+button.run-button {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+button.primary:hover:not(:disabled),
+button.run-button:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: var(--accent-fg);
+}
+
+button.active {
+  background: var(--accent-strong);
+  color: var(--accent-fg);
+  border-color: var(--accent-strong);
+}
+
+.button-group {
+  display: flex;
+  gap: 6px;
+}
+
+select {
+  background: var(--panel-bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.options-panel {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  padding: 0;
+  overflow: hidden;
+}
+
+.options-panel summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-left: 3px solid var(--header-title-color);
+}
+
+.options-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+.options-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
