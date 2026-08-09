@@ -4,6 +4,7 @@ type ResultPaneProps = {
   result: string;
   previewActive: boolean;
   previewDisabled: boolean;
+  copied: boolean;
   onCopy: () => void;
   onTogglePreview: () => void;
 };
@@ -12,6 +13,7 @@ export function ResultPane({
   result,
   previewActive,
   previewDisabled,
+  copied,
   onCopy,
   onTogglePreview,
 }: ResultPaneProps) {
@@ -20,8 +22,13 @@ export function ResultPane({
       <div className="pane-header">
         <h2>Result</h2>
         <div className="button-group">
-          <button type="button" onClick={onCopy} disabled={!result}>
-            Copy
+          <button
+            type="button"
+            className={copied ? "copied" : ""}
+            onClick={onCopy}
+            disabled={!result}
+          >
+            {copied ? "Copied!" : "Copy"}
           </button>
           <button
             type="button"

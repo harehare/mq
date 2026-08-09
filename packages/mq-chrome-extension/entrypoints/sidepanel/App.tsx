@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { htmlToMarkdown, run, toHtml } from "./lib/mq";
 import { extractActivePageHtml, toggleActivePagePreview } from "./lib/activeTab";
 import { buildSrcDoc } from "./lib/buildSrcDoc";
@@ -23,7 +23,9 @@ export function App() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [previewActive, setPreviewActive] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const source = sourceMode === "html" ? html : markdown;
 
@@ -69,10 +71,23 @@ export function App() {
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(result).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : String(err));
-    });
+    navigator.clipboard
+      .writeText(result)
+      .then(() => {
+        setCopied(true);
+        if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
+        copiedTimeoutRef.current = setTimeout(() => setCopied(false), 1500);
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err));
+      });
   };
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
+    };
+  }, []);
 
   const handleTogglePreview = async () => {
     setError(null);
@@ -133,6 +148,7 @@ export function App() {
           result={result}
           previewActive={previewActive}
           previewDisabled={!result && !markdown && !html}
+          copied={copied}
           onCopy={handleCopy}
           onTogglePreview={handleTogglePreview}
         />

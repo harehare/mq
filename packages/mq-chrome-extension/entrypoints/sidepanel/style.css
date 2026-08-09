@@ -227,6 +227,12 @@ button.active {
   border-color: var(--accent-strong);
 }
 
+button.copied {
+  background: var(--success-color);
+  color: var(--accent-fg);
+  border-color: var(--success-color);
+}
+
 .button-group {
   display: flex;
   gap: 6px;
