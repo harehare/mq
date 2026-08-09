@@ -940,6 +940,55 @@ def test_geomean():
   | assert_eq(result3, 4)
 end
 
+def test_variance():
+  let result1 = variance([2, 4, 4, 4, 5, 5, 7, 9])
+  | assert_eq(result1, 4)
+
+  | let result2 = variance([])
+  | assert_eq(result2, None)
+
+  | let result3 = variance([5])
+  | assert_eq(result3, 0)
+end
+
+def test_stddev():
+  let result1 = stddev([2, 4, 4, 4, 5, 5, 7, 9])
+  | assert_eq(result1, 2)
+
+  | let result2 = stddev([])
+  | assert_eq(result2, None)
+
+  | let result3 = stddev([5])
+  | assert_eq(result3, 0)
+end
+
+def test_mode():
+  let result1 = mode([1, 2, 2, 3])
+  | assert_eq(result1, [2])
+
+  | let result2 = mode([1, 1, 2, 2, 3])
+  | assert_eq(result2, [1, 2])
+
+  | let result3 = mode([])
+  | assert_eq(result3, None)
+
+  | let result4 = mode([1, 2, 3])
+  | assert_eq(result4, [1, 2, 3])
+end
+
+def test_describe():
+  let result1 = describe([1, 2, 3, 4, 5])
+  | assert_eq(get(result1, "min"), 1)
+  | assert_eq(get(result1, "max"), 5)
+  | assert_eq(get(result1, "mean"), 3)
+  | assert_eq(get(result1, "median"), 3)
+  | assert_eq(get(result1, "variance"), 2)
+  | assert_eq(get(result1, "count"), 5)
+
+  | let result2 = describe([])
+  | assert_eq(result2, None)
+end
+
 def test_ngram():
   let result1 = ngram("hello", 2)
   | assert_eq(result1, ["he", "el", "ll", "lo"])
