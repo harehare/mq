@@ -35,9 +35,10 @@ struct Cli {
     #[arg(long)]
     fix: bool,
 
-    /// Diagnostic output format: `text` (human-readable), `sarif` (SARIF 2.1.0 JSON, for
-    /// GitHub code scanning and other SARIF consumers), or `github` (GitHub Actions
-    /// `::error`/`::warning`/`::notice` workflow-command annotations)
+    /// Diagnostic output format: `text` (human-readable), `json` (a single JSON array of
+    /// diagnostics), `markdown` (a Markdown table, for PR descriptions or comments), `sarif`
+    /// (SARIF 2.1.0 JSON, for GitHub code scanning and other SARIF consumers), or `github`
+    /// (GitHub Actions `::error`/`::warning`/`::notice` workflow-command annotations)
     #[arg(long, value_enum, default_value_t)]
     format: OutputFormat,
 }
@@ -105,11 +106,11 @@ fn run() -> io::Result<bool> {
 
         let diagnostics = collect_diagnostics(&code, &linter, &config, min_severity);
         let had_diagnostics = !diagnostics.is_empty();
-        format::write_report(&mut w, cli.format, &[("<stdin>".to_string(), diagnostics)])?;
+        format::write_report(&mut w, cli.format, &[("<stdin>".to_string(), code, diagnostics)])?;
         return Ok(had_diagnostics);
     }
 
-    let mut results: Vec<(String, Vec<Diagnostic>)> = Vec::with_capacity(cli.files.len());
+    let mut results: Vec<(String, String, Vec<Diagnostic>)> = Vec::with_capacity(cli.files.len());
 
     for path in &cli.files {
         let code = std::fs::read_to_string(path)
@@ -137,10 +138,11 @@ fn run() -> io::Result<bool> {
             code
         };
 
-        results.push((label, collect_diagnostics(&code, &linter, &config, min_severity)));
+        let diagnostics = collect_diagnostics(&code, &linter, &config, min_severity);
+        results.push((label, code, diagnostics));
     }
 
-    let had_diagnostics = results.iter().any(|(_, diagnostics)| !diagnostics.is_empty());
+    let had_diagnostics = results.iter().any(|(_, _code, diagnostics)| !diagnostics.is_empty());
     format::write_report(&mut w, cli.format, &results)?;
 
     Ok(had_diagnostics)
@@ -247,6 +249,8 @@ mod tests {
     #[rstest]
     #[case(vec!["mq-lint"], OutputFormat::Text)]
     #[case(vec!["mq-lint", "--format", "text"], OutputFormat::Text)]
+    #[case(vec!["mq-lint", "--format", "json"], OutputFormat::Json)]
+    #[case(vec!["mq-lint", "--format", "markdown"], OutputFormat::Markdown)]
     #[case(vec!["mq-lint", "--format", "sarif"], OutputFormat::Sarif)]
     #[case(vec!["mq-lint", "--format", "github"], OutputFormat::Github)]
     fn test_cli_format(#[case] args: Vec<&str>, #[case] expected: OutputFormat) {

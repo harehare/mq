@@ -35,8 +35,8 @@ struct Cli {
     no_exhaustive_patterns: bool,
 
     /// Diagnostic output format: `text` (human-readable), `json` (a single JSON array of
-    /// diagnostics), or `sarif` (SARIF 2.1.0 JSON, for GitHub code scanning and other SARIF
-    /// consumers)
+    /// diagnostics), `markdown` (a Markdown table, for PR descriptions or comments), or
+    /// `sarif` (SARIF 2.1.0 JSON, for GitHub code scanning and other SARIF consumers)
     #[arg(long, value_enum, default_value_t)]
     format: OutputFormat,
 }
@@ -538,6 +538,7 @@ mod tests {
     #[case(vec!["mq-check"], OutputFormat::Text)]
     #[case(vec!["mq-check", "--format", "text"], OutputFormat::Text)]
     #[case(vec!["mq-check", "--format", "json"], OutputFormat::Json)]
+    #[case(vec!["mq-check", "--format", "markdown"], OutputFormat::Markdown)]
     #[case(vec!["mq-check", "--format", "sarif"], OutputFormat::Sarif)]
     fn test_cli_format(#[case] args: Vec<&str>, #[case] expected: OutputFormat) {
         let cli = Cli::try_parse_from(args).unwrap();

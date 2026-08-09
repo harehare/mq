@@ -64,6 +64,8 @@ mq-lint --min-severity warn script.mq # only show warn/error diagnostics
 mq-lint --list-rules                  # print all rule IDs and their severity
 mq-lint --fix script.mq               # rewrite the file, applying every fixable diagnostic
 echo "let x = .h1" | mq-lint --fix     # write the fixed code to stdout
+mq-lint --format json script.mq       # a single JSON array of diagnostics
+mq-lint --format markdown script.mq   # a Markdown table, for PR descriptions or comments
 mq-lint --format sarif script.mq      # SARIF 2.1.0 JSON, e.g. for github/codeql-action/upload-sarif
 mq-lint --format github script.mq     # GitHub Actions ::error/::warning/::notice annotations
 ```
@@ -77,6 +79,9 @@ reports any remaining diagnostics as usual.
 `--format` controls how diagnostics are rendered, independent of the rules and severities selected above:
 
 - `text` (default) — human-readable Credo-style report.
+- `json` — a single JSON array of diagnostics across every linted file, each with `file`, `severity`, `rule`,
+  `message`, `help`, and an optional `range`.
+- `markdown` — a Markdown table of diagnostics, suitable for pasting into a PR description or comment.
 - `sarif` — a single SARIF 2.1.0 log covering every linted file, suitable for
   [`github/codeql-action/upload-sarif`](https://github.com/github/codeql-action/tree/main/upload-sarif) or any other
   SARIF-consuming tool.

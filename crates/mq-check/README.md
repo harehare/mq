@@ -110,7 +110,7 @@ When used as a command-line tool (`mq-typecheck`), the following options are ava
 | `--show-types`   | Display inferred types for all user-defined symbols                |
 | `--no-builtins`  | Disable automatic builtin preloading                               |
 | `--strict-array` | Reject heterogeneous arrays (e.g., `[1, "hello"]` is a type error) |
-| `--format`       | Diagnostic output format: `text` (default), `json`, or `sarif`      |
+| `--format`       | Diagnostic output format: `text` (default), `json`, `markdown`, or `sarif` |
 
 ### `--strict-array`
 
@@ -129,12 +129,14 @@ echo '[1, "hello"]' | mq-check --strict-array
 - `json` — a single JSON array of diagnostics (syntax errors/warnings and type errors) across every
   checked file, each with `file`, `severity` (`error`/`warning`), `code`, `message`, and an optional
   `range`.
+- `markdown` — a Markdown table of diagnostics, suitable for pasting into a PR description or comment.
 - `sarif` — a single SARIF 2.1.0 log covering every checked file, suitable for
   [`github/codeql-action/upload-sarif`](https://github.com/github/codeql-action/tree/main/upload-sarif) or any
   other SARIF-consuming tool.
 
 ```bash
 mq-check --format json script.mq
+mq-check --format markdown script.mq
 mq-check --format sarif $(git ls-files '*.mq') > mq-check.sarif
 ```
 
