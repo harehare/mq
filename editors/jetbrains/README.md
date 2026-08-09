@@ -62,6 +62,12 @@ and launches an `mq-dbg` Debug Adapter Protocol session (breakpoints, step, vari
 standard IntelliJ debugger UI. This creates a reusable **Debug Adapter Protocol** run configuration (server `mq`)
 that you can also create and edit manually via **Run > Edit Configurations**.
 
+## Building
+
+`gradle/wrapper/gradle-wrapper.jar` is intentionally not checked in. Build with a system-installed Gradle
+matching `.tool-versions` (e.g. `gradle buildPlugin`), or run `gradle wrapper` once to generate the jar locally
+before using `./gradlew`.
+
 ## Known differences from the VS Code extension
 
 - No CodeLens-equivalent inline "▶︎ Run Query" gutter icons yet — use the **Execute Query** / **Run Selected Text** actions instead.

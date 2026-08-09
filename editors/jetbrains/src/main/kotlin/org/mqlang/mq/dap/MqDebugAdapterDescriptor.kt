@@ -33,7 +33,7 @@ class MqDebugAdapterDescriptor(
 
     override fun getDapParameters(): Map<String, Any> {
         val opts = options as? DAPRunConfigurationOptions ?: return emptyMap()
-        val context = mapOf("\${file}" to (opts.file.orEmpty()))
+        val context = mapOf("\${file}" to opts.file.orEmpty())
         return LaunchUtils.getDapParameters(opts.launchConfiguration, context)
     }
 
