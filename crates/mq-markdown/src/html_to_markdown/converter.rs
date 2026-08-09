@@ -1,5 +1,6 @@
 use itertools::Itertools;
 use miette::miette;
+use rustc_hash::FxHashMap;
 
 use super::iframe::detect_embed;
 use super::node::HtmlElement;
@@ -73,8 +74,190 @@ fn get_cell_alignment(element: &HtmlElement) -> Alignment {
     Alignment::Default
 }
 
+/// Converts newlines to a literal `<br>` since a raw newline would split the table row.
 fn escape_table_cell_content(content: &str) -> String {
-    content.replace("|", "\\|")
+    content
+        .replace("  \n", "<br>")
+        .replace('\n', "<br>")
+        .replace("|", "\\|")
+}
+
+/// Wraps `raw` in a code span, choosing a backtick fence longer than any backtick run inside it.
+fn wrap_code_span(raw: &str) -> String {
+    if raw.is_empty() {
+        return "``".to_string();
+    }
+    let max_backtick_run = raw.split(|c: char| c != '`').map(str::len).max().unwrap_or(0);
+    let fence = "`".repeat(max_backtick_run + 1);
+    if raw.starts_with('`') || raw.ends_with('`') {
+        format!("{fence} {raw} {fence}")
+    } else {
+        format!("{fence}{raw}{fence}")
+    }
+}
+
+/// Wraps `content` in `delimiter`, moving leading/trailing whitespace outside it since
+/// CommonMark emphasis can't be adjacent to whitespace.
+fn wrap_with_delimiter(content: &str, delimiter: &str) -> String {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let leading_ws = &content[..content.len() - content.trim_start().len()];
+    let trailing_ws = &content[content.trim_end().len()..];
+    format!("{leading_ws}{delimiter}{trimmed}{delimiter}{trailing_ws}")
+}
+
+/// Backslash-escapes markdown inline-syntax characters so literal HTML text isn't
+/// reinterpreted as markdown when re-parsed.
+fn escape_markdown_inline(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    for c in text.chars() {
+        if matches!(c, '\\' | '`' | '*' | '_' | '[' | ']' | '<' | '~') {
+            result.push('\\');
+        }
+        result.push(c);
+    }
+    result
+}
+
+/// Escapes leading block markers (`#`, list markers, `>`, thematic breaks) so literal
+/// text like "1. Not a list" isn't reinterpreted as block structure when re-parsed.
+fn escape_leading_block_markers(text: &str) -> String {
+    text.lines()
+        .map(escape_line_leading_marker)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn escape_line_leading_marker(line: &str) -> String {
+    let trimmed_start = line.trim_start_matches(' ');
+    let indent_len = line.len() - trimmed_start.len();
+    if indent_len > 3 || trimmed_start.is_empty() {
+        return line.to_string();
+    }
+    let indent = &line[..indent_len];
+
+    let hashes = trimmed_start.chars().take_while(|&c| c == '#').count();
+    if (1..=6).contains(&hashes) {
+        let rest = &trimmed_start[hashes..];
+        if rest.is_empty() || rest.starts_with(' ') {
+            return format!("{}\\{}", indent, trimmed_start);
+        }
+    }
+
+    let mut chars = trimmed_start.chars();
+    if let Some(first) = chars.next()
+        && matches!(first, '-' | '*' | '+')
+        && chars.next() == Some(' ')
+    {
+        return format!("{}\\{}", indent, trimmed_start);
+    }
+
+    let digit_count = trimmed_start.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digit_count > 0 {
+        let after_digits = &trimmed_start[digit_count..];
+        let mut rest_chars = after_digits.chars();
+        if let Some(marker_char) = rest_chars.next()
+            && matches!(marker_char, '.' | ')')
+            && rest_chars.next().is_none_or(|c| c == ' ')
+        {
+            return format!(
+                "{}{}\\{}{}",
+                indent,
+                &trimmed_start[..digit_count],
+                marker_char,
+                &after_digits[1..]
+            );
+        }
+    }
+
+    if trimmed_start.starts_with('>') {
+        return format!("{}\\{}", indent, trimmed_start);
+    }
+
+    for marker in ['-', '_', '*'] {
+        let stripped: String = trimmed_start.chars().filter(|&c| c != ' ').collect();
+        if stripped.len() >= 3 && stripped.chars().all(|c| c == marker) {
+            return format!("{}\\{}", indent, trimmed_start);
+        }
+    }
+
+    line.to_string()
+}
+
+/// Parses `colspan`/`rowspan`, defaulting to 1 and clamping to 64 to guard against pathological values.
+fn get_span_attr(element: &HtmlElement, attr: &str) -> usize {
+    element
+        .attributes
+        .get(attr)
+        .and_then(|opt| opt.as_ref())
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(1)
+        .min(64)
+}
+
+/// Extracts a header row's cells, repeating content/alignment across `colspan` so header
+/// and body column counts match.
+fn expand_header_row_cells(tr_element: &HtmlElement) -> miette::Result<(Vec<String>, Vec<Alignment>)> {
+    let mut cells = Vec::new();
+    let mut alignments = Vec::new();
+    for cell_node in &tr_element.children {
+        if let HtmlNode::Element(cell_element) = cell_node
+            && (cell_element.tag_name == "th" || cell_element.tag_name == "td")
+        {
+            let cell_content = convert_children_to_string(&cell_element.children)?;
+            let content = escape_table_cell_content(cell_content.trim());
+            let alignment = get_cell_alignment(cell_element);
+            let colspan = get_span_attr(cell_element, "colspan");
+            for _ in 0..colspan {
+                cells.push(content.clone());
+                alignments.push(alignment);
+            }
+        }
+    }
+    Ok((cells, alignments))
+}
+
+/// Extracts one `<tr>`'s cells, repeating content across `colspan` and carrying `rowspan`
+/// content into `rowspan_carry` for subsequent rows.
+fn expand_data_row_cells(
+    tr_element: &HtmlElement,
+    rowspan_carry: &mut FxHashMap<usize, (String, usize)>,
+) -> miette::Result<Vec<String>> {
+    let mut current_row_cells: Vec<String> = Vec::new();
+    let mut real_cells = tr_element.children.iter().filter_map(|n| match n {
+        HtmlNode::Element(el) if el.tag_name == "td" || el.tag_name == "th" => Some(el),
+        _ => None,
+    });
+    let mut col = 0usize;
+    loop {
+        if let Some((content, rows_left)) = rowspan_carry.get_mut(&col) {
+            current_row_cells.push(content.clone());
+            *rows_left -= 1;
+            if *rows_left == 0 {
+                rowspan_carry.remove(&col);
+            }
+            col += 1;
+            continue;
+        }
+        let Some(cell_element) = real_cells.next() else {
+            break;
+        };
+        let cell_content = convert_children_to_string(&cell_element.children)?;
+        let content = escape_table_cell_content(cell_content.trim());
+        let colspan = get_span_attr(cell_element, "colspan");
+        let rowspan = get_span_attr(cell_element, "rowspan");
+        for i in 0..colspan {
+            current_row_cells.push(content.clone());
+            if rowspan > 1 {
+                rowspan_carry.insert(col + i, (content.clone(), rowspan - 1));
+            }
+        }
+        col += colspan;
+    }
+    Ok(current_row_cells)
 }
 
 fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result<String> {
@@ -105,15 +288,9 @@ fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result
                 .iter()
                 .find(|n| matches!(n, HtmlNode::Element(el) if el.tag_name == "tr"))
         {
-            for cell_node in &tr_element.children {
-                if let HtmlNode::Element(cell_element) = cell_node
-                    && (cell_element.tag_name == "th" || cell_element.tag_name == "td")
-                {
-                    let cell_content = convert_children_to_string(&cell_element.children)?;
-                    header_cells.push(escape_table_cell_content(cell_content.trim()));
-                    header_alignments.push(get_cell_alignment(cell_element));
-                }
-            }
+            let (cells, alignments) = expand_header_row_cells(tr_element)?;
+            header_cells = cells;
+            header_alignments = alignments;
 
             break;
         }
@@ -128,15 +305,9 @@ fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result
                         .iter()
                         .find(|n| matches!(n, HtmlNode::Element(el) if el.tag_name == "tr"))
                 {
-                    for cell_node in &tr_element.children {
-                        if let HtmlNode::Element(cell_element) = cell_node
-                            && (cell_element.tag_name == "td" || cell_element.tag_name == "th")
-                        {
-                            let cell_content = convert_children_to_string(&cell_element.children)?;
-                            header_cells.push(escape_table_cell_content(cell_content.trim()));
-                            header_alignments.push(get_cell_alignment(cell_element));
-                        }
-                    }
+                    let (cells, alignments) = expand_header_row_cells(tr_element)?;
+                    header_cells = cells;
+                    header_alignments = alignments;
                     if !header_cells.is_empty() {
                         first_tbody_first_row_used_as_header = true;
                     }
@@ -151,6 +322,8 @@ fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result
     }
     let column_count = header_cells.len();
 
+    // Cells carried down from a `rowspan` in an earlier row: column index -> (content, rows left).
+    let mut rowspan_carry: FxHashMap<usize, (String, usize)> = FxHashMap::default();
     let mut first_tbody_processed_for_data = false;
     for node in &table_element.children {
         if let HtmlNode::Element(tbody_element) = node
@@ -165,16 +338,22 @@ fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result
                 if let HtmlNode::Element(tr_element) = tr_node
                     && tr_element.tag_name == "tr"
                 {
-                    let mut current_row_cells: Vec<String> = Vec::new();
-                    for td_node in &tr_element.children {
-                        if let HtmlNode::Element(td_element) = td_node
-                            && (td_element.tag_name == "td" || td_element.tag_name == "th")
-                        {
-                            let cell_content = convert_children_to_string(&td_element.children)?;
-                            current_row_cells.push(escape_table_cell_content(cell_content.trim()));
-                        }
-                    }
-                    body_rows.push(current_row_cells);
+                    body_rows.push(expand_data_row_cells(tr_element, &mut rowspan_carry)?);
+                }
+            }
+        }
+    }
+
+    // tfoot rows aren't representable separately in markdown tables; append as trailing body rows.
+    for node in &table_element.children {
+        if let HtmlNode::Element(tfoot_element) = node
+            && tfoot_element.tag_name == "tfoot"
+        {
+            for tr_node in &tfoot_element.children {
+                if let HtmlNode::Element(tr_element) = tr_node
+                    && tr_element.tag_name == "tr"
+                {
+                    body_rows.push(expand_data_row_cells(tr_element, &mut rowspan_carry)?);
                 }
             }
         }
@@ -238,18 +417,19 @@ fn handle_heading_element(element: &HtmlElement) -> miette::Result<String> {
 }
 
 fn handle_paragraph_element(element: &HtmlElement) -> miette::Result<String> {
-    convert_children_to_string(&element.children)
+    let content = convert_children_to_string(&element.children)?;
+    Ok(escape_leading_block_markers(&content))
 }
 
 fn handle_hr_element() -> miette::Result<String> {
     Ok("---".to_string())
 }
 
-fn handle_list_element(element: &HtmlElement, options: ConversionOptions) -> miette::Result<String> {
+fn handle_list_element(element: &HtmlElement, options: &ConversionOptions) -> miette::Result<String> {
     convert_html_list_to_markdown(element, 0, options)
 }
 
-fn handle_blockquote_element(element: &HtmlElement, options: ConversionOptions) -> miette::Result<String> {
+fn handle_blockquote_element(element: &HtmlElement, options: &ConversionOptions) -> miette::Result<String> {
     let inner_markdown = convert_nodes_to_markdown(&element.children, options)?;
     if !inner_markdown.is_empty() {
         let quoted_lines: Vec<String> = inner_markdown.lines().map(|line| format!("> {}", line)).collect();
@@ -283,7 +463,7 @@ fn dedent(text: &str) -> String {
         .join("\n")
 }
 
-fn handle_pre_element(element: &HtmlElement, _options: ConversionOptions) -> miette::Result<String> {
+fn handle_pre_element(element: &HtmlElement, _options: &ConversionOptions) -> miette::Result<String> {
     let mut lang_specifier = String::new();
     // Find <code> among children, skipping leading whitespace-only text nodes.
     let code_child = element.children.iter().find_map(|n| {
@@ -327,11 +507,65 @@ fn handle_pre_element(element: &HtmlElement, _options: ConversionOptions) -> mie
     Ok(format!("```{}\n{}\n```", lang_specifier, text_content))
 }
 
-fn handle_table_element(element: &HtmlElement, _options: ConversionOptions) -> miette::Result<String> {
+/// Returns true if `element` contains a nested `<table>`, which GFM tables can't represent.
+fn contains_nested_table(element: &HtmlElement) -> bool {
+    element.children.iter().any(|child| match child {
+        HtmlNode::Element(el) => el.tag_name == "table" || contains_nested_table(el),
+        _ => false,
+    })
+}
+
+const VOID_HTML_ELEMENTS: &[&str] = &[
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
+];
+
+fn escape_html_text(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+fn escape_html_attr_value(s: &str) -> String {
+    escape_html_text(s).replace('"', "&quot;")
+}
+
+/// Serializes back to HTML; used as a fallback for constructs markdown can't represent (e.g. nested tables).
+fn html_element_to_html(element: &HtmlElement) -> String {
+    let mut attr_keys: Vec<&String> = element.attributes.keys().collect();
+    attr_keys.sort();
+    let attrs_str = attr_keys
+        .into_iter()
+        .map(|key| match &element.attributes[key] {
+            Some(value) => format!(" {}=\"{}\"", key, escape_html_attr_value(value)),
+            None => format!(" {}", key),
+        })
+        .collect::<String>();
+
+    if VOID_HTML_ELEMENTS.contains(&element.tag_name.as_str()) {
+        return format!("<{}{}>", element.tag_name, attrs_str);
+    }
+
+    let inner = html_nodes_to_html(&element.children);
+    format!("<{}{}>{}</{}>", element.tag_name, attrs_str, inner, element.tag_name)
+}
+
+fn html_nodes_to_html(nodes: &[HtmlNode]) -> String {
+    nodes
+        .iter()
+        .map(|node| match node {
+            HtmlNode::Text(text) => escape_html_text(text),
+            HtmlNode::Element(el) => html_element_to_html(el),
+            HtmlNode::Comment(text) => format!("<!--{}-->", text),
+        })
+        .collect::<String>()
+}
+
+fn handle_table_element(element: &HtmlElement, _options: &ConversionOptions) -> miette::Result<String> {
+    if contains_nested_table(element) {
+        return Ok(html_element_to_html(element));
+    }
     convert_html_table_to_markdown(element)
 }
 
-fn handle_dl_element(element: &HtmlElement, options: ConversionOptions) -> miette::Result<String> {
+fn handle_dl_element(element: &HtmlElement, options: &ConversionOptions) -> miette::Result<String> {
     let mut dl_content_parts = Vec::new();
     for child_node in &element.children {
         match child_node {
@@ -371,7 +605,7 @@ fn handle_dl_element(element: &HtmlElement, options: ConversionOptions) -> miett
     }
 }
 
-fn handle_script_element(element: &HtmlElement, options: ConversionOptions) -> miette::Result<Option<String>> {
+fn handle_script_element(element: &HtmlElement, options: &ConversionOptions) -> miette::Result<Option<String>> {
     if options.extract_scripts_as_code_blocks {
         if element.attributes.get("src").and_then(|opt| opt.as_ref()).is_none() {
             let type_attr = element
@@ -491,7 +725,7 @@ fn handle_svg_element(element: &HtmlElement) -> miette::Result<String> {
 fn convert_html_list_to_markdown(
     list_element: &HtmlElement,
     indent_level: usize,
-    options: ConversionOptions,
+    options: &ConversionOptions,
 ) -> miette::Result<String> {
     let mut markdown_items = Vec::new();
     let base_indent = "    ".repeat(indent_level);
@@ -545,10 +779,23 @@ fn convert_html_list_to_markdown(
 }
 
 pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> {
+    convert_children_to_string_impl(nodes, true)
+}
+
+/// Converts inline HTML nodes to markdown; `escape_text` is off inside `<code>`, whose
+/// content is already verbatim.
+fn convert_children_to_string_impl(nodes: &[HtmlNode], escape_text: bool) -> miette::Result<String> {
     let mut parts = Vec::new();
     for node in nodes {
         match node {
             HtmlNode::Text(text) => {
+                let escaped_owned;
+                let text: &str = if escape_text {
+                    escaped_owned = escape_markdown_inline(text);
+                    &escaped_owned
+                } else {
+                    text
+                };
                 let normalized = normalize_unicode_whitespace(text);
                 let trimmed = normalized.trim_start_matches('\n').trim_end_matches('\n');
                 // Collapse internal newline+whitespace sequences (HTML whitespace collapsing).
@@ -582,16 +829,18 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                 parts.push(collapsed);
             }
             HtmlNode::Element(element) => {
-                let link_text = convert_children_to_string(&element.children)?;
+                let link_text = convert_children_to_string_impl(&element.children, escape_text)?;
                 match element.tag_name.as_str() {
                     "strong" => {
-                        if !link_text.is_empty() {
-                            parts.push(format!("**{}**", link_text));
+                        let wrapped = wrap_with_delimiter(&link_text, "**");
+                        if !wrapped.is_empty() {
+                            parts.push(wrapped);
                         }
                     }
                     "em" => {
-                        if !link_text.is_empty() {
-                            parts.push(format!("*{}*", link_text));
+                        let wrapped = wrap_with_delimiter(&link_text, "*");
+                        if !wrapped.is_empty() {
+                            parts.push(wrapped);
                         }
                     }
                     "a" => {
@@ -615,11 +864,8 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                         }
                     }
                     "code" => {
-                        if !link_text.is_empty() {
-                            parts.push(format!("`{}`", link_text));
-                        } else {
-                            parts.push("``".to_string());
-                        }
+                        let raw_text = convert_children_to_string_impl(&element.children, false)?;
+                        parts.push(wrap_code_span(&raw_text));
                     }
                     "br" => parts.push("  \n".to_string()),
                     "img" => {
@@ -630,8 +876,8 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                                 .attributes
                                 .get("alt")
                                 .and_then(|opt_alt| opt_alt.as_ref())
-                                .map(|s| s.as_str())
-                                .unwrap_or("");
+                                .map(|s| escape_markdown_inline(s))
+                                .unwrap_or_default();
                             let title_part = element
                                 .attributes
                                 .get("title")
@@ -668,8 +914,9 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                         }
                     }
                     "s" | "strike" | "del" => {
-                        if !link_text.is_empty() {
-                            parts.push(format!("~~{}~~", link_text));
+                        let wrapped = wrap_with_delimiter(&link_text, "~~");
+                        if !wrapped.is_empty() {
+                            parts.push(wrapped);
                         }
                     }
                     "kbd" => parts.push(format!("<kbd>{}</kbd>", link_text)),
@@ -684,8 +931,9 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                         }
                     }
                     "cite" => {
-                        if !link_text.is_empty() {
-                            parts.push(format!("*{}*", link_text));
+                        let wrapped = wrap_with_delimiter(&link_text, "*");
+                        if !wrapped.is_empty() {
+                            parts.push(wrapped);
                         }
                     }
                     "ins" => {
@@ -695,8 +943,9 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                     }
                     "mark" => parts.push(format!("<mark>{}</mark>", link_text)),
                     "summary" => {
-                        if !link_text.is_empty() {
-                            parts.push(format!("**{}**", link_text));
+                        let wrapped = wrap_with_delimiter(&link_text, "**");
+                        if !wrapped.is_empty() {
+                            parts.push(wrapped);
                         }
                     }
                     "abbr" => {
@@ -716,13 +965,17 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                         let mut annotation = String::new();
                         for child in &element.children {
                             match child {
-                                HtmlNode::Text(t) => base.push_str(t),
+                                HtmlNode::Text(t) => base.push_str(&if escape_text {
+                                    escape_markdown_inline(t)
+                                } else {
+                                    t.clone()
+                                }),
                                 HtmlNode::Element(el) if el.tag_name == "rt" => {
-                                    annotation.push_str(&convert_children_to_string(&el.children)?);
+                                    annotation.push_str(&convert_children_to_string_impl(&el.children, escape_text)?);
                                 }
                                 HtmlNode::Element(el) if el.tag_name == "rp" => {}
                                 HtmlNode::Element(el) => {
-                                    base.push_str(&convert_children_to_string(&el.children)?);
+                                    base.push_str(&convert_children_to_string_impl(&el.children, escape_text)?);
                                 }
                                 HtmlNode::Comment(_) => {}
                             }
@@ -736,8 +989,9 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                         }
                     }
                     "dfn" => {
-                        if !link_text.is_empty() {
-                            parts.push(format!("*{}*", link_text));
+                        let wrapped = wrap_with_delimiter(&link_text, "*");
+                        if !wrapped.is_empty() {
+                            parts.push(wrapped);
                         }
                     }
                     "time" | "small" | "bdi" => {
@@ -753,7 +1007,34 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
             HtmlNode::Comment(_) => {}
         }
     }
-    Ok(parts.join("").to_string())
+    Ok(collapse_redundant_spaces(&parts.join("")))
+}
+
+/// Collapses runs of 2+ spaces to one (HTML whitespace collapsing), except before a
+/// newline where they form a meaningful CommonMark hard line break.
+fn collapse_redundant_spaces(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut result = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == ' ' {
+            let mut j = i;
+            while j < chars.len() && chars[j] == ' ' {
+                j += 1;
+            }
+            let run_len = j - i;
+            if run_len >= 2 && chars.get(j) == Some(&'\n') {
+                result.extend(std::iter::repeat_n(' ', run_len));
+            } else {
+                result.push(' ');
+            }
+            i = j;
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    result
 }
 
 /// Returns true if the element is a CSS-only UI widget (dropdown or tab switcher).
@@ -817,13 +1098,14 @@ fn is_heading_with_aux_siblings(element: &HtmlElement) -> bool {
     })
 }
 
-pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions) -> miette::Result<String> {
+pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: &ConversionOptions) -> miette::Result<String> {
     let mut markdown_blocks: Vec<MarkdownBlock> = Vec::new();
     for node in nodes {
         match node {
             HtmlNode::Text(text) => {
                 if !text.trim().is_empty() {
-                    markdown_blocks.push((text.to_string(), true));
+                    let escaped = escape_leading_block_markers(&escape_markdown_inline(text));
+                    markdown_blocks.push((escaped, true));
                 }
             }
             HtmlNode::Element(element) => {
@@ -1083,7 +1365,7 @@ mod tests {
         "![alt text](img.png)"
     )]
     fn test_convert_nodes_to_markdown_param(#[case] nodes: Vec<HtmlNode>, #[case] expected: &str) {
-        let md = convert_nodes_to_markdown(&nodes, ConversionOptions::default()).unwrap();
+        let md = convert_nodes_to_markdown(&nodes, &ConversionOptions::default()).unwrap();
         let md_trimmed = md.trim();
         assert_eq!(md_trimmed, expected);
     }
@@ -1102,7 +1384,7 @@ mod tests {
         ""
     )]
     fn test_noisy_elements_are_skipped(#[case] nodes: Vec<HtmlNode>, #[case] expected: &str) {
-        let md = convert_nodes_to_markdown(&nodes, ConversionOptions::default()).unwrap();
+        let md = convert_nodes_to_markdown(&nodes, &ConversionOptions::default()).unwrap();
         assert_eq!(md.trim(), expected);
     }
 }

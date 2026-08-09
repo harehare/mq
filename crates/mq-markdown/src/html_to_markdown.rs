@@ -17,6 +17,36 @@ fn find_element<'a>(html: &'a Html, selector_str: &str) -> Option<scraper::Eleme
         .and_then(|sel| html.select(&sel).next())
 }
 
+/// Resolves the base URL: `options.base_url` takes priority over a `<base href>` in `<head>`.
+fn resolve_base_url(html: &Html, options_base: Option<&str>) -> Option<url::Url> {
+    if let Some(explicit) = options_base {
+        return url::Url::parse(explicit).ok();
+    }
+    let base_href = find_element(html, "base").and_then(|el| el.value().attr("href"))?;
+    url::Url::parse(base_href).ok()
+}
+
+/// Rewrites relative `href`/`src` on link/image/embed elements into absolute URLs against `base`.
+fn resolve_relative_urls(nodes: &mut [node::HtmlNode], base: &url::Url) {
+    for n in nodes.iter_mut() {
+        if let node::HtmlNode::Element(el) = n {
+            let attr_name = match el.tag_name.as_str() {
+                "a" => Some("href"),
+                "img" | "source" | "iframe" | "embed" | "video" | "audio" | "object" => Some("src"),
+                _ => None,
+            };
+            if let Some(attr_name) = attr_name
+                && let Some(Some(value)) = el.attributes.get(attr_name)
+                && !value.is_empty()
+                && let Ok(resolved) = base.join(value)
+            {
+                el.attributes.insert(attr_name.to_string(), Some(resolved.to_string()));
+            }
+            resolve_relative_urls(&mut el.children, base);
+        }
+    }
+}
+
 fn extract_title_text(html: &Html) -> Option<String> {
     let head = find_element(html, "head")?;
     let title_sel = Selector::parse("title").ok()?;
@@ -125,8 +155,11 @@ pub fn convert_html_to_markdown(html_input: &str, options: ConversionOptions) ->
         .find_map(|sel| find_element(&html, sel).map(|el| el.children().collect::<Vec<_>>()))
         .unwrap_or_else(|| html.root_element().children().collect());
 
-    let nodes_for_markdown_conversion = parser::map_nodes_to_html_nodes(doc_children)?;
-    let body_markdown = converter::convert_nodes_to_markdown(&nodes_for_markdown_conversion, options)?;
+    let mut nodes_for_markdown_conversion = parser::map_nodes_to_html_nodes(doc_children)?;
+    if let Some(base) = resolve_base_url(&html, options.base_url.as_deref()) {
+        resolve_relative_urls(&mut nodes_for_markdown_conversion, &base);
+    }
+    let body_markdown = converter::convert_nodes_to_markdown(&nodes_for_markdown_conversion, &options)?;
 
     // Extract <title> from <head> separately so it is available even when smart extraction
     // selected only the children of <main>/<article> (which do not include <head>).

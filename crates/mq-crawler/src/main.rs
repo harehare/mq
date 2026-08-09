@@ -385,6 +385,7 @@ async fn main() {
             extract_scripts_as_code_blocks: args.conversion.extract_scripts_as_code_blocks,
             generate_front_matter: args.conversion.generate_front_matter,
             use_title_as_h1: args.conversion.use_title_as_h1,
+            base_url: None,
         },
         args.depth,
         effective_allowed,

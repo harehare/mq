@@ -39,6 +39,10 @@ typedef struct MqConversionOptions {
    * Use HTML title tag as H1 heading
    */
   bool use_title_as_h1;
+  /**
+   * Base URL for resolving relative `href`/`src` values; null falls back to `<base href>`.
+   */
+  const char *base_url;
 } MqConversionOptions;
 
 /**
