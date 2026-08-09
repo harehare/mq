@@ -6,8 +6,8 @@ use mq_lint::{Diagnostic, Severity};
 /// (`::error`/`::warning`/`::notice`) per diagnostic.
 ///
 /// See <https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#setting-an-error-message>.
-pub(super) fn write_github_report(w: &mut impl Write, results: &[(String, Vec<Diagnostic>)]) -> io::Result<()> {
-    for (file_label, diagnostics) in results {
+pub(super) fn write_github_report(w: &mut impl Write, results: &[(String, String, Vec<Diagnostic>)]) -> io::Result<()> {
+    for (file_label, _code, diagnostics) in results {
         for diagnostic in diagnostics {
             let level = match diagnostic.severity {
                 Severity::Error => "error",
@@ -55,7 +55,7 @@ mod tests {
     #[test]
     fn test_write_github_report_emits_workflow_command_annotations() {
         let diagnostics = sample_diagnostics();
-        let results = vec![("test.mq".to_string(), diagnostics)];
+        let results = vec![("test.mq".to_string(), String::new(), diagnostics)];
 
         let mut buf = Vec::new();
         write_github_report(&mut buf, &results).unwrap();
@@ -75,7 +75,7 @@ mod tests {
             bool_val: "true".to_string(),
         };
         let diagnostic = Diagnostic::new(kind, severity);
-        let results = vec![("test.mq".to_string(), vec![diagnostic])];
+        let results = vec![("test.mq".to_string(), String::new(), vec![diagnostic])];
 
         let mut buf = Vec::new();
         write_github_report(&mut buf, &results).unwrap();

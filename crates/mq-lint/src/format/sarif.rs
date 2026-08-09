@@ -5,10 +5,10 @@ use mq_lint::{Diagnostic, Severity};
 /// Writes a single SARIF 2.1.0 log document covering every linted file.
 ///
 /// See <https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/sarif-v2.1.0-os.html>.
-pub(super) fn write_sarif_report(w: &mut impl Write, results: &[(String, Vec<Diagnostic>)]) -> io::Result<()> {
+pub(super) fn write_sarif_report(w: &mut impl Write, results: &[(String, String, Vec<Diagnostic>)]) -> io::Result<()> {
     let sarif_results: Vec<serde_json::Value> = results
         .iter()
-        .flat_map(|(file_label, diagnostics)| {
+        .flat_map(|(file_label, _code, diagnostics)| {
             diagnostics.iter().map(move |diagnostic| {
                 let mut physical_location = serde_json::json!({
                     "artifactLocation": {"uri": file_label},
@@ -74,7 +74,7 @@ mod tests {
     fn test_write_sarif_report_produces_valid_sarif_shape() {
         let diagnostics = sample_diagnostics();
         assert!(!diagnostics.is_empty());
-        let results = vec![("test.mq".to_string(), diagnostics)];
+        let results = vec![("test.mq".to_string(), String::new(), diagnostics)];
 
         let mut buf = Vec::new();
         write_sarif_report(&mut buf, &results).unwrap();
@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_write_sarif_report_empty_diagnostics() {
-        let results = vec![("test.mq".to_string(), Vec::new())];
+        let results = vec![("test.mq".to_string(), String::new(), Vec::new())];
         let mut buf = Vec::new();
         write_sarif_report(&mut buf, &results).unwrap();
         let json: serde_json::Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();

@@ -1,6 +1,7 @@
 //! Machine-readable diagnostic output formats for the `mq-check` CLI.
 
 mod json;
+mod markdown;
 mod sarif;
 
 use std::io::{self, Write};
@@ -42,6 +43,8 @@ pub(crate) enum OutputFormat {
     Text,
     /// A single JSON array of diagnostics across every checked file
     Json,
+    /// GitHub-flavored Markdown table, suitable for a PR description or comment
+    Markdown,
     /// SARIF 2.1.0 JSON, for GitHub code scanning and other SARIF consumers
     Sarif,
 }
@@ -139,6 +142,7 @@ pub(crate) fn write_report(
     match format {
         OutputFormat::Text => unreachable!("text output is handled separately"),
         OutputFormat::Json => json::write_json_report(w, results),
+        OutputFormat::Markdown => markdown::write_markdown_report(w, results),
         OutputFormat::Sarif => sarif::write_sarif_report(w, results),
     }
 }
