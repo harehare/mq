@@ -56,6 +56,7 @@ const editorTheme = EditorView.theme({
   },
   ".cm-placeholder": {
     color: "var(--muted)",
+    opacity: "0.6",
   },
   ".cm-selectionBackground": {
     backgroundColor: "color-mix(in srgb, var(--header-title-color) 25%, transparent) !important",
