@@ -40,6 +40,7 @@ export function QueryEditor({
         language="mq"
         placeholder=".h"
         value={query}
+        highlightActiveLine={false}
         onChange={onChange}
       />
       <button

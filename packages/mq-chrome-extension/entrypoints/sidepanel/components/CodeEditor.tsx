@@ -12,6 +12,7 @@ type CodeEditorProps = {
   language: EditorLanguage;
   placeholder?: string;
   readOnly?: boolean;
+  highlightActiveLine?: boolean;
   className?: string;
   onChange?: (value: string) => void;
 };
@@ -69,6 +70,7 @@ export function CodeEditor({
   language,
   placeholder,
   readOnly,
+  highlightActiveLine = !readOnly,
   className,
   onChange,
 }: CodeEditorProps) {
@@ -82,7 +84,7 @@ export function CodeEditor({
       basicSetup={{
         lineNumbers: false,
         foldGutter: false,
-        highlightActiveLine: !readOnly,
+        highlightActiveLine,
         highlightActiveLineGutter: false,
       }}
       theme={editorTheme}
