@@ -1715,7 +1715,7 @@ def mean(arr):
     sum(arr) / len(arr)
 end
 
-# Returns the median of an array of numbers, or None if the array is empty.
+# Returns the geometric mean of an array of numbers, or None if the array is empty.
 #
 # Example:
 # ```
@@ -1731,6 +1731,99 @@ def geomean(arr):
     do
       let product = fold(arr, 1, ->(acc, x): acc * x;)
       | pow(product, 1 / len(arr))
+    end
+end
+
+# Returns the population variance of an array of numbers, or None if the array is empty.
+#
+# Example:
+# ```
+# variance([2, 4, 4, 4, 5, 5, 7, 9])
+# #=> 4
+# ```
+#
+# Returns: number
+def variance(arr):
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)):
+    None
+  else:
+    do
+      let m = mean(arr)
+      | mean(map(arr, fn(x): pow(x - m, 2);))
+    end
+end
+
+# Returns the population standard deviation of an array of numbers, or None if the array is empty.
+#
+# Example:
+# ```
+# stddev([2, 4, 4, 4, 5, 5, 7, 9])
+# #=> 2
+# ```
+#
+# Returns: number
+def stddev(arr):
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)):
+    None
+  else:
+    sqrt(variance(arr))
+end
+
+# Returns the mode(s) of an array, i.e. the most frequently occurring value(s).
+# Multiple values are returned if there is a tie for the highest frequency.
+# Returns None if the array is empty.
+#
+# Example:
+# ```
+# mode([1, 2, 2, 3])
+# #=> [2]
+# ```
+#
+# Returns: array
+def mode(arr):
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)):
+    None
+  else:
+    do
+      let groups = chunk_by(sort(arr), identity)
+      | let max_count = fold(groups, 0, fn(acc, g): if (len(g) > acc): len(g) else: acc;)
+      | map(filter(groups, fn(g): len(g) == max_count;), first)
+    end
+end
+
+# Returns a dict of summary statistics for an array of numbers:
+# `{min, max, mean, median, stddev, variance, count}`. Returns None if the array is empty.
+#
+# Example:
+# ```
+# describe([1, 2, 3, 4, 5])
+# #=> {"count": 5, "min": 1, "max": 5, "mean": 3, "variance": 2, "stddev": 1.414214, "median": 3}
+# ```
+#
+# Returns: dict
+def describe(arr):
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)):
+    None
+  else:
+    do
+      let sorted = sort(arr)
+      | {
+        min: first(sorted),
+        max: last(sorted),
+        mean: mean(arr),
+        median: percentile(arr, 0.5),
+        stddev: stddev(arr),
+        variance: variance(arr),
+        count: len(arr),
+      }
     end
 end
 
