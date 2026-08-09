@@ -1803,7 +1803,7 @@ end
 # Example:
 # ```
 # describe([1, 2, 3, 4, 5])
-# #=> {"min": 1, "max": 5, "mean": 3, "median": 3, "stddev": 1.4142135623730951, "variance": 2, "count": 5}
+# #=> {"count": 5, "min": 1, "max": 5, "mean": 3, "variance": 2, "stddev": 1.414214, "median": 3}
 # ```
 #
 # Returns: dict
