@@ -30,6 +30,7 @@ const languageExtension = (language: EditorLanguage) => {
 const editorTheme = EditorView.theme({
   "&": {
     height: "100%",
+    width: "100%",
     backgroundColor: "var(--panel-bg)",
     color: "var(--fg)",
     fontSize: "12px",

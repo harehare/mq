@@ -115,10 +115,7 @@ export function App() {
         >
           <img src="/logo.svg" className="app-logo" alt="mq" />
         </a>
-        <div className="app-header-text">
-          <h1>mq</h1>
-          <p>Query this page's Markdown or raw HTML, then preview the result.</p>
-        </div>
+        <h1>mq</h1>
       </header>
 
       <div className="app-body">

@@ -67,8 +67,8 @@ body {
 .app-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 8px;
+  padding: 6px 12px;
   background: var(--header-bg);
   color: var(--header-fg);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
@@ -82,34 +82,17 @@ body {
 }
 
 .app-logo {
-  width: 26px;
-  height: 26px;
+  width: 18px;
+  height: 18px;
   display: block;
-}
-
-.app-header-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
 }
 
 .app-header h1 {
   margin: 0;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--header-title-color);
-}
-
-.app-header p {
-  margin: 0;
-  color: var(--header-fg);
-  opacity: 0.75;
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .app-body {
