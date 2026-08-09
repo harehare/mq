@@ -17,8 +17,7 @@ fn find_element<'a>(html: &'a Html, selector_str: &str) -> Option<scraper::Eleme
         .and_then(|sel| html.select(&sel).next())
 }
 
-/// Resolves the document's effective base URL: the explicit `options.base_url` takes
-/// priority, falling back to a `<base href>` element in `<head>` if present.
+/// Resolves the base URL: `options.base_url` takes priority over a `<base href>` in `<head>`.
 fn resolve_base_url(html: &Html, options_base: Option<&str>) -> Option<url::Url> {
     if let Some(explicit) = options_base {
         return url::Url::parse(explicit).ok();
@@ -27,9 +26,7 @@ fn resolve_base_url(html: &Html, options_base: Option<&str>) -> Option<url::Url>
     url::Url::parse(base_href).ok()
 }
 
-/// Rewrites `href`/`src` attributes on link-, image-, and embed-bearing elements into
-/// absolute URLs, resolved against `base`. Leaves already-absolute URLs and empty
-/// values untouched.
+/// Rewrites relative `href`/`src` on link/image/embed elements into absolute URLs against `base`.
 fn resolve_relative_urls(nodes: &mut [node::HtmlNode], base: &url::Url) {
     for n in nodes.iter_mut() {
         if let node::HtmlNode::Element(el) = n {

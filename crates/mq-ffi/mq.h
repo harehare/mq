@@ -40,9 +40,7 @@ typedef struct MqConversionOptions {
    */
   bool use_title_as_h1;
   /**
-   * Base URL used to resolve relative `href`/`src` values into absolute URLs.
-   * A null pointer means no explicit base URL (falls back to a `<base href>`
-   * found in the document, if any).
+   * Base URL for resolving relative `href`/`src` values; null falls back to `<base href>`.
    */
   const char *base_url;
 } MqConversionOptions;

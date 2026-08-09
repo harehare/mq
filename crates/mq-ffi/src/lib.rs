@@ -95,9 +95,7 @@ pub struct MqConversionOptions {
     pub generate_front_matter: bool,
     /// Use HTML title tag as H1 heading
     pub use_title_as_h1: bool,
-    /// Base URL used to resolve relative `href`/`src` values into absolute URLs.
-    /// A null pointer means no explicit base URL (falls back to a `<base href>`
-    /// found in the document, if any).
+    /// Base URL for resolving relative `href`/`src` values; null falls back to `<base href>`.
     pub base_url: *const c_char,
 }
 

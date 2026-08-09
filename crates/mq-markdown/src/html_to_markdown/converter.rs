@@ -74,12 +74,7 @@ fn get_cell_alignment(element: &HtmlElement) -> Alignment {
     Alignment::Default
 }
 
-/// Escapes/sanitizes cell content for use inside a markdown table row.
-///
-/// Table rows are single lines, so a raw newline (from a `<br>`, which renders as
-/// a "  \n" hard break in inline markdown) would otherwise split the row into
-/// extra, malformed table rows. It's converted to a literal `<br>` tag instead,
-/// which GFM table renderers support directly.
+/// Converts newlines to a literal `<br>` since a raw newline would split the table row.
 fn escape_table_cell_content(content: &str) -> String {
     content
         .replace("  \n", "<br>")
@@ -87,9 +82,7 @@ fn escape_table_cell_content(content: &str) -> String {
         .replace("|", "\\|")
 }
 
-/// Wraps raw text in a CommonMark code span, choosing a backtick fence longer than
-/// any backtick run inside the content, and padding with a space when the content
-/// starts or ends with a backtick, so the content survives verbatim.
+/// Wraps `raw` in a code span, choosing a backtick fence longer than any backtick run inside it.
 fn wrap_code_span(raw: &str) -> String {
     if raw.is_empty() {
         return "``".to_string();
@@ -103,12 +96,8 @@ fn wrap_code_span(raw: &str) -> String {
     }
 }
 
-/// Wraps `content` in a markdown delimiter (e.g. `**`, `*`, `~~`), moving any
-/// leading/trailing whitespace outside the delimiters. CommonMark emphasis
-/// requires the delimiter run to be immediately adjacent to non-whitespace
-/// content, so `**  padded  **` is not valid emphasis and would round-trip as
-/// literal asterisks; `  **padded**  ` is. Returns an empty string if `content`
-/// is empty or entirely whitespace, so callers can skip pushing an empty wrap.
+/// Wraps `content` in `delimiter`, moving leading/trailing whitespace outside it since
+/// CommonMark emphasis can't be adjacent to whitespace.
 fn wrap_with_delimiter(content: &str, delimiter: &str) -> String {
     let trimmed = content.trim();
     if trimmed.is_empty() {
@@ -119,10 +108,8 @@ fn wrap_with_delimiter(content: &str, delimiter: &str) -> String {
     format!("{leading_ws}{delimiter}{trimmed}{delimiter}{trailing_ws}")
 }
 
-/// Escapes markdown inline-syntax characters found in literal HTML text so they
-/// survive as literal text instead of being reinterpreted as markdown syntax
-/// (emphasis, code spans, links, raw HTML) when the generated markdown string is
-/// re-parsed by a CommonMark parser.
+/// Backslash-escapes markdown inline-syntax characters so literal HTML text isn't
+/// reinterpreted as markdown when re-parsed.
 fn escape_markdown_inline(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     for c in text.chars() {
@@ -134,10 +121,8 @@ fn escape_markdown_inline(text: &str) -> String {
     result
 }
 
-/// Escapes markdown block-marker characters (`#`, `-`/`*`/`+`, ordered-list
-/// numbers, `>`, thematic breaks) when they appear at the start of a line, so
-/// literal text like "1. Not a list" or "# Not a heading" isn't reinterpreted
-/// as block structure when the generated markdown is re-parsed.
+/// Escapes leading block markers (`#`, list markers, `>`, thematic breaks) so literal
+/// text like "1. Not a list" isn't reinterpreted as block structure when re-parsed.
 fn escape_leading_block_markers(text: &str) -> String {
     text.lines()
         .map(escape_line_leading_marker)
@@ -149,12 +134,10 @@ fn escape_line_leading_marker(line: &str) -> String {
     let trimmed_start = line.trim_start_matches(' ');
     let indent_len = line.len() - trimmed_start.len();
     if indent_len > 3 || trimmed_start.is_empty() {
-        // 4+ leading spaces would already form an indented code block; leave as-is.
         return line.to_string();
     }
     let indent = &line[..indent_len];
 
-    // ATX heading: 1-6 '#' followed by a space or end of line.
     let hashes = trimmed_start.chars().take_while(|&c| c == '#').count();
     if (1..=6).contains(&hashes) {
         let rest = &trimmed_start[hashes..];
@@ -163,7 +146,6 @@ fn escape_line_leading_marker(line: &str) -> String {
         }
     }
 
-    // Bullet list marker: -, *, + followed by a space.
     let mut chars = trimmed_start.chars();
     if let Some(first) = chars.next()
         && matches!(first, '-' | '*' | '+')
@@ -172,7 +154,6 @@ fn escape_line_leading_marker(line: &str) -> String {
         return format!("{}\\{}", indent, trimmed_start);
     }
 
-    // Ordered list marker: digits followed by '.' or ')' then a space or end of line.
     let digit_count = trimmed_start.chars().take_while(|c| c.is_ascii_digit()).count();
     if digit_count > 0 {
         let after_digits = &trimmed_start[digit_count..];
@@ -191,12 +172,10 @@ fn escape_line_leading_marker(line: &str) -> String {
         }
     }
 
-    // Blockquote marker.
     if trimmed_start.starts_with('>') {
         return format!("{}\\{}", indent, trimmed_start);
     }
 
-    // Thematic break: a line made up solely of 3+ of the same character among -, _, *.
     for marker in ['-', '_', '*'] {
         let stripped: String = trimmed_start.chars().filter(|&c| c != ' ').collect();
         if stripped.len() >= 3 && stripped.chars().all(|c| c == marker) {
@@ -207,9 +186,7 @@ fn escape_line_leading_marker(line: &str) -> String {
     line.to_string()
 }
 
-/// Parses a `colspan`/`rowspan` attribute, defaulting to 1 for missing/invalid/zero
-/// values and clamping to a sane maximum so a pathological value (e.g. `colspan="99999999"`)
-/// can't blow up table generation.
+/// Parses `colspan`/`rowspan`, defaulting to 1 and clamping to 64 to guard against pathological values.
 fn get_span_attr(element: &HtmlElement, attr: &str) -> usize {
     element
         .attributes
@@ -221,10 +198,8 @@ fn get_span_attr(element: &HtmlElement, attr: &str) -> usize {
         .min(64)
 }
 
-/// Extracts a header row's cells, honoring `colspan` by repeating the cell's content
-/// (and alignment) across each spanned column. Without this, a `colspan` header
-/// collapses to a single column while data rows below keep their real column count,
-/// producing a table whose header and body widths don't match.
+/// Extracts a header row's cells, repeating content/alignment across `colspan` so header
+/// and body column counts match.
 fn expand_header_row_cells(tr_element: &HtmlElement) -> miette::Result<(Vec<String>, Vec<Alignment>)> {
     let mut cells = Vec::new();
     let mut alignments = Vec::new();
@@ -245,9 +220,8 @@ fn expand_header_row_cells(tr_element: &HtmlElement) -> miette::Result<(Vec<Stri
     Ok((cells, alignments))
 }
 
-/// Extracts one `<tr>`'s cells, honoring `colspan` (repeating content across spanned
-/// columns) and `rowspan` (recording carry-over into `rowspan_carry`, keyed by column
-/// index, so subsequent rows can pull in the repeated content at the right position).
+/// Extracts one `<tr>`'s cells, repeating content across `colspan` and carrying `rowspan`
+/// content into `rowspan_carry` for subsequent rows.
 fn expand_data_row_cells(
     tr_element: &HtmlElement,
     rowspan_carry: &mut FxHashMap<usize, (String, usize)>,
@@ -370,8 +344,7 @@ fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result
         }
     }
 
-    // `tfoot` rows have no separate representation in a markdown table; append them
-    // as trailing body rows rather than dropping them.
+    // tfoot rows aren't representable separately in markdown tables; append as trailing body rows.
     for node in &table_element.children {
         if let HtmlNode::Element(tfoot_element) = node
             && tfoot_element.tag_name == "tfoot"
@@ -534,10 +507,7 @@ fn handle_pre_element(element: &HtmlElement, _options: &ConversionOptions) -> mi
     Ok(format!("```{}\n{}\n```", lang_specifier, text_content))
 }
 
-/// GFM/CommonMark tables can't nest (a markdown table can't contain another table),
-/// so a `<table>` with a `<table>` among its descendants can't be represented as a
-/// markdown table without losing the inner table's structure entirely. Returns true
-/// if `element` has a nested `<table>` anywhere below it.
+/// Returns true if `element` contains a nested `<table>`, which GFM tables can't represent.
 fn contains_nested_table(element: &HtmlElement) -> bool {
     element.children.iter().any(|child| match child {
         HtmlNode::Element(el) => el.tag_name == "table" || contains_nested_table(el),
@@ -557,9 +527,7 @@ fn escape_html_attr_value(s: &str) -> String {
     escape_html_text(s).replace('"', "&quot;")
 }
 
-/// Serializes an [`HtmlElement`] tree back into an HTML string. Used as a fallback
-/// for constructs markdown can't represent (e.g. nested tables), since CommonMark
-/// passes raw HTML blocks through untouched.
+/// Serializes back to HTML; used as a fallback for constructs markdown can't represent (e.g. nested tables).
 fn html_element_to_html(element: &HtmlElement) -> String {
     let mut attr_keys: Vec<&String> = element.attributes.keys().collect();
     attr_keys.sort();
@@ -814,13 +782,8 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
     convert_children_to_string_impl(nodes, true)
 }
 
-/// Converts inline HTML nodes to a markdown string.
-///
-/// `escape_text` controls whether literal markdown-syntax characters in text nodes
-/// are backslash-escaped. It is turned off while rendering the content of a `<code>`
-/// element, since code span content is already verbatim and must not gain escape
-/// backslashes (the code span fence itself protects the content from being
-/// reinterpreted as markdown).
+/// Converts inline HTML nodes to markdown; `escape_text` is off inside `<code>`, whose
+/// content is already verbatim.
 fn convert_children_to_string_impl(nodes: &[HtmlNode], escape_text: bool) -> miette::Result<String> {
     let mut parts = Vec::new();
     for node in nodes {
@@ -1047,12 +1010,8 @@ fn convert_children_to_string_impl(nodes: &[HtmlNode], escape_text: bool) -> mie
     Ok(collapse_redundant_spaces(&parts.join("")))
 }
 
-/// Collapses runs of 2+ plain spaces into one, matching HTML's whitespace-collapse
-/// rendering rules. This mainly cleans up doubled-up spaces that appear when an
-/// inline element (e.g. `<strong> padded </strong>`) contributes its own boundary
-/// space right next to a sibling text node that already ends/starts with one.
-/// Runs immediately followed by a newline are left untouched since two trailing
-/// spaces before `\n` are a meaningful CommonMark hard line break.
+/// Collapses runs of 2+ spaces to one (HTML whitespace collapsing), except before a
+/// newline where they form a meaningful CommonMark hard line break.
 fn collapse_redundant_spaces(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut result = String::with_capacity(text.len());

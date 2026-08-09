@@ -218,8 +218,7 @@ pub struct ConversionOptions {
     pub extract_scripts_as_code_blocks: bool,
     pub generate_front_matter: bool,
     pub use_title_as_h1: bool,
-    /// Base URL used to resolve relative `href`/`src` values into absolute URLs.
-    /// Empty means no explicit base URL (falls back to a `<base href>` in the document, if any).
+    /// Base URL for resolving relative `href`/`src` values; empty falls back to `<base href>`.
     #[wasm_bindgen(getter_with_clone)]
     pub base_url: String,
 }
