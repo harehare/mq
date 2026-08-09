@@ -64,9 +64,7 @@ that you can also create and edit manually via **Run > Edit Configurations**.
 
 ## Building
 
-`gradle/wrapper/gradle-wrapper.jar` is intentionally not checked in. Build with a system-installed Gradle
-matching `.tool-versions` (e.g. `gradle buildPlugin`), or run `gradle wrapper` once to generate the jar locally
-before using `./gradlew`.
+Build with `./gradlew buildPlugin`.
 
 ## Known differences from the VS Code extension
 

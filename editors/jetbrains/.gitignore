@@ -5,7 +5,3 @@ out/
 .idea/
 *.iml
 
-# Wrapper jar is intentionally not committed; CI and local dev use a system-installed
-# Gradle (see .tool-versions) instead of ./gradlew.
-gradle/wrapper/gradle-wrapper.jar
-
