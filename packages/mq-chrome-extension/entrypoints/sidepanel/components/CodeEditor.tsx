@@ -59,6 +59,9 @@ const editorTheme = EditorView.theme({
   ".cm-selectionBackground": {
     backgroundColor: "color-mix(in srgb, var(--header-title-color) 25%, transparent) !important",
   },
+  ".cm-cursor, .cm-dropCursor": {
+    borderLeftColor: "var(--fg)",
+  },
 });
 
 export function CodeEditor({
