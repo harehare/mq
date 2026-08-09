@@ -7,8 +7,6 @@
   --muted: light-dark(#718096, #a0aec0);
   --border: light-dark(#e2e8f0, #3e3e42);
   --surface: light-dark(#edf2f7, #2d2d30);
-  --header-bg: light-dark(#2c5282, #1a4c6b);
-  --header-fg: #ffffff;
   --header-title-color: light-dark(#67b8e3, #5dade2);
   --accent: light-dark(#3182ce, #63b3ed);
   --accent-strong: light-dark(#2c5282, #88acd2);
@@ -62,37 +60,6 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-}
-
-.app-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: var(--header-bg);
-  color: var(--header-fg);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-  flex-shrink: 0;
-}
-
-.app-logo-link {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.app-logo {
-  width: 18px;
-  height: 18px;
-  display: block;
-}
-
-.app-header h1 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--header-title-color);
 }
 
 .app-body {

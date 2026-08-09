@@ -105,19 +105,6 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="app-header">
-        <a
-          href="https://mqlang.org/"
-          className="app-logo-link"
-          target="_blank"
-          rel="noopener noreferrer"
-          title="mqlang.org"
-        >
-          <img src="/logo.svg" className="app-logo" alt="mq" />
-        </a>
-        <h1>mq</h1>
-      </header>
-
       <div className="app-body">
         {error && <div className="error-banner">{error}</div>}
 
