@@ -400,6 +400,7 @@ mod tests {
                 extract_scripts_as_code_blocks: true,
                 generate_front_matter: true,
                 use_title_as_h1: true,
+                base_url: None,
             },
         );
         assert!(result.is_ok());

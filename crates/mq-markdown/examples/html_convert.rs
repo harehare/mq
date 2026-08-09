@@ -19,6 +19,7 @@ fn main() {
         extract_scripts_as_code_blocks: false,
         generate_front_matter: false,
         use_title_as_h1: false,
+        base_url: None,
     };
 
     match convert_html_to_markdown(&html, options) {

@@ -218,6 +218,10 @@ pub struct ConversionOptions {
     pub extract_scripts_as_code_blocks: bool,
     pub generate_front_matter: bool,
     pub use_title_as_h1: bool,
+    /// Base URL used to resolve relative `href`/`src` values into absolute URLs.
+    /// Empty means no explicit base URL (falls back to a `<base href>` in the document, if any).
+    #[wasm_bindgen(getter_with_clone)]
+    pub base_url: String,
 }
 
 impl From<ConversionOptions> for mq_markdown::ConversionOptions {
@@ -226,6 +230,7 @@ impl From<ConversionOptions> for mq_markdown::ConversionOptions {
             extract_scripts_as_code_blocks: options.extract_scripts_as_code_blocks,
             generate_front_matter: options.generate_front_matter,
             use_title_as_h1: options.use_title_as_h1,
+            base_url: Some(options.base_url).filter(|s| !s.is_empty()),
         }
     }
 }

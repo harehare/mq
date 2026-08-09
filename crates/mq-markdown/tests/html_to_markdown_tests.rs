@@ -360,7 +360,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     concat!(
         "| Header |\n",
         "|---|\n",
-        "| Cell with **bold**, *italic*,  \nand a [link](#). |\n",
+        "| Cell with **bold**, *italic*,<br>and a [link](#). |\n",
         "| Cell with list:L1L2 (list becomes inline) |\n",
         "| Cell with image: ![alt](img.png) |"
     )
@@ -741,15 +741,15 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "| H1 | H2 |\n|---|---|\n| C1 | C2 |"
 )]
-#[case::table_with_colspan_ignored(
+#[case::table_with_colspan_repeated_across_columns(
     "<table><thead><tr><th colspan=\"2\">H</th></tr></thead><tbody><tr><td>A</td><td>B</td></tr></tbody></table>",
     ConversionOptions::default(),
-    "| H |\n|---|\n| A |"
+    "| H | H |\n|---|---|\n| A | B |"
 )]
-#[case::table_with_rowspan_ignored(
+#[case::table_with_rowspan_carried_into_next_row(
     "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td rowspan=\"2\">R1C1</td><td>R1C2</td></tr><tr><td>R2C2</td></tr></tbody></table>",
     ConversionOptions::default(),
-    "| H1 | H2 |\n|---|---|\n| R1C1 | R1C2 |\n| R2C2 |  |"
+    "| H1 | H2 |\n|---|---|\n| R1C1 | R1C2 |\n| R1C1 | R2C2 |"
 )]
 #[case::table_thead_with_td_cells(
     "<table><thead><tr><td>H1</td><td>H2</td></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr></tbody></table>",
@@ -761,10 +761,10 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "| H1 |\n|---|\n| R1C1 |"
 )]
-#[case::table_with_tfoot_ignored(
+#[case::table_with_tfoot_appended_as_trailing_row(
     "<table><thead><tr><th>H1</th></tr></thead><tbody><tr><td>C1</td></tr></tbody><tfoot><tr><td>F1</td></tr></tfoot></table>",
     ConversionOptions::default(),
-    "| H1 |\n|---|\n| C1 |"
+    "| H1 |\n|---|\n| C1 |\n| F1 |"
 )]
 #[case::s_tag("<s>strike</s>", ConversionOptions::default(), "~~strike~~")]
 #[case::strike_tag("<strike>strike</strike>", ConversionOptions::default(), "~~strike~~")]
@@ -985,7 +985,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "### Part1 **bold** and *italic* Part2"
 )]
-#[case::strong_with_internal_whitespace("<strong>  spaced  </strong>", ConversionOptions::default(), "** spaced **")]
+#[case::strong_with_internal_whitespace("<strong>  spaced  </strong>", ConversionOptions::default(), "**spaced**")]
 #[case::em_around_strong(
     "<em>Emphasis around <strong>bold</strong> text.</em>",
     ConversionOptions::default(),
@@ -1476,6 +1476,85 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "Just a caption"
 )]
+#[case::literal_asterisks_and_underscores_escaped(
+    "<p>Use *bold* and _italic_ literally.</p>",
+    ConversionOptions::default(),
+    "Use \\*bold\\* and \\_italic\\_ literally."
+)]
+#[case::literal_brackets_and_backticks_escaped(
+    "<p>See [brackets] and `backticks`.</p>",
+    ConversionOptions::default(),
+    "See \\[brackets\\] and \\`backticks\\`."
+)]
+#[case::literal_leading_hash_escaped("<p># Not a heading</p>", ConversionOptions::default(), "\\# Not a heading")]
+#[case::literal_leading_dash_escaped("<p>- Not a list item</p>", ConversionOptions::default(), "\\- Not a list item")]
+#[case::literal_leading_ordered_marker_escaped(
+    "<p>1. Not a list item</p>",
+    ConversionOptions::default(),
+    "1\\. Not a list item"
+)]
+#[case::mid_sentence_hash_not_escaped(
+    "<p>Written in C# today.</p>",
+    ConversionOptions::default(),
+    "Written in C# today."
+)]
+#[case::code_with_backtick_uses_longer_fence("<p><code>`x`</code></p>", ConversionOptions::default(), "`` `x` ``")]
+#[case::code_content_not_escaped("<p><code>a*b_c</code></p>", ConversionOptions::default(), "`a*b_c`")]
+#[case::img_alt_with_brackets_escaped(
+    "<img src=\"a.png\" alt=\"a [b] c\">",
+    ConversionOptions::default(),
+    "![a \\[b\\] c](a.png)"
+)]
+#[case::strong_padded_in_paragraph_no_double_space(
+    "<p>Some <strong> padded </strong> text and <em> also padded </em> here.</p>",
+    ConversionOptions::default(),
+    "Some **padded** text and *also padded* here."
+)]
+#[case::strong_padded_touching_words_gets_single_space(
+    "<p>Word<strong> bold </strong>Word2</p>",
+    ConversionOptions::default(),
+    "Word **bold** Word2"
+)]
+#[case::strikethrough_padded_in_paragraph(
+    "<p>Was <del> removed </del> now.</p>",
+    ConversionOptions::default(),
+    "Was ~~removed~~ now."
+)]
+#[case::strong_whitespace_only_content_dropped(
+    "<p>Before<strong>   </strong>After</p>",
+    ConversionOptions::default(),
+    "BeforeAfter"
+)]
+#[case::table_cell_br_does_not_split_row(
+    "<table><tr><th>H</th></tr><tr><td>line1<br>line2</td></tr></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| line1<br>line2 |"
+)]
+#[case::table_cell_multiple_br_does_not_split_row(
+    "<table><tr><th>H</th></tr><tr><td>a<br><br>b</td></tr></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| a<br><br>b |"
+)]
+#[case::table_with_colspan_and_rowspan_mixed(
+    concat!(
+        "<table><thead><tr><th>A</th><th>B</th><th>C</th></tr></thead><tbody>",
+        "<tr><td rowspan=\"2\">R1</td><td colspan=\"2\">wide</td></tr>",
+        "<tr><td>x</td><td>y</td></tr>",
+        "</tbody></table>"
+    ),
+    ConversionOptions::default(),
+    "| A | B | C |\n|---|---|---|\n| R1 | wide | wide |\n| R1 | x | y |"
+)]
+#[case::nested_table_falls_back_to_raw_html(
+    "<table><tr><td>outer<table><tr><td>inner</td></tr></table></td></tr></table>",
+    ConversionOptions::default(),
+    "<table><tbody><tr><td>outer<table><tbody><tr><td>inner</td></tr></tbody></table></td></tr></tbody></table>"
+)]
+#[case::table_without_nesting_still_renders_as_markdown(
+    "<table><tr><th>H</th></tr><tr><td>1</td></tr></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| 1 |"
+)]
 fn test_html_to_markdown(#[case] html: &str, #[case] options: ConversionOptions, #[case] expected: &str) {
     assert_conversion_with_options(html, expected, options);
 }
@@ -1545,6 +1624,48 @@ fn test_html_comment_stripped() {
     assert!(md.contains("Text"));
     assert!(!md.contains("<!--"));
     assert!(md.contains("More"));
+}
+
+#[test]
+fn test_base_url_resolves_relative_links_and_images() {
+    let html = r#"<p><a href="/absolute-path">a</a> and <a href="../sibling">b</a> and
+        <img src="pic.png" alt="x"> and <a href="https://other.com/x">already-absolute</a></p>"#;
+    let options = ConversionOptions {
+        base_url: Some("https://example.com/blog/post/".to_string()),
+        ..Default::default()
+    };
+    let md = convert_html_to_markdown(html, options).unwrap();
+    assert!(md.contains("[a](https://example.com/absolute-path)"));
+    assert!(md.contains("[b](https://example.com/blog/sibling)"));
+    assert!(md.contains("![x](https://example.com/blog/post/pic.png)"));
+    assert!(md.contains("[already-absolute](https://other.com/x)"));
+}
+
+#[test]
+fn test_base_href_tag_resolves_relative_links_when_no_explicit_base_url() {
+    let html = r#"<html><head><base href="https://example.com/docs/"></head>
+        <body><p><a href="../other">link</a></p></body></html>"#;
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("[link](https://example.com/other)"));
+}
+
+#[test]
+fn test_explicit_base_url_takes_priority_over_base_href_tag() {
+    let html = r#"<html><head><base href="https://ignored.example.com/"></head>
+        <body><p><a href="rel">link</a></p></body></html>"#;
+    let options = ConversionOptions {
+        base_url: Some("https://example.com/blog/".to_string()),
+        ..Default::default()
+    };
+    let md = convert_html_to_markdown(html, options).unwrap();
+    assert!(md.contains("[link](https://example.com/blog/rel)"));
+}
+
+#[test]
+fn test_no_base_url_leaves_relative_links_unresolved() {
+    let html = r#"<p><a href="/relative/path">link</a></p>"#;
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("[link](/relative/path)"));
 }
 
 // TODO: Add tests for headings with links, images etc. once those elements are supported.

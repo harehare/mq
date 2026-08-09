@@ -95,14 +95,27 @@ pub struct MqConversionOptions {
     pub generate_front_matter: bool,
     /// Use HTML title tag as H1 heading
     pub use_title_as_h1: bool,
+    /// Base URL used to resolve relative `href`/`src` values into absolute URLs.
+    /// A null pointer means no explicit base URL (falls back to a `<base href>`
+    /// found in the document, if any).
+    pub base_url: *const c_char,
 }
 
 impl From<MqConversionOptions> for ConversionOptions {
     fn from(options: MqConversionOptions) -> Self {
+        let base_url = if options.base_url.is_null() {
+            None
+        } else {
+            unsafe { c_str_to_rust_str_slice(options.base_url) }
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+        };
         ConversionOptions {
             extract_scripts_as_code_blocks: options.extract_scripts_as_code_blocks,
             generate_front_matter: options.generate_front_matter,
             use_title_as_h1: options.use_title_as_h1,
+            base_url,
         }
     }
 }
@@ -1138,6 +1151,7 @@ mod tests {
             extract_scripts_as_code_blocks: false,
             generate_front_matter: true,
             use_title_as_h1: true,
+            base_url: ptr::null(),
         };
         let mut error_msg: *mut c_char = ptr::null_mut();
 
@@ -1242,6 +1256,7 @@ mod tests {
             extract_scripts_as_code_blocks: true,
             generate_front_matter: true,
             use_title_as_h1: true,
+            base_url: ptr::null(),
         };
 
         let rust_options: ConversionOptions = mq_options.into();

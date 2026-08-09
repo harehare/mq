@@ -549,7 +549,10 @@ impl Crawler {
 
                 let query = self.mq_query.clone();
                 let html_content_clone = html_content.clone();
-                let conversion_options = self.conversion_options;
+                // Resolve relative links/images against the URL actually being crawled,
+                // rather than a single static base for the whole crawl.
+                let mut conversion_options = self.conversion_options.clone();
+                conversion_options.base_url = Some(current_url.to_string());
                 let current_url_clone = current_url.clone();
                 let self_clone = self.clone();
                 let new_links = tokio::task::spawn_blocking(move || {
