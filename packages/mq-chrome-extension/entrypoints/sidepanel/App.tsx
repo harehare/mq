@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { htmlToMarkdown, run, toHtml } from "./lib/mq";
 import { extractActivePageHtml, toggleActivePagePreview } from "./lib/activeTab";
 import { buildSrcDoc } from "./lib/buildSrcDoc";
@@ -46,6 +46,11 @@ export function App() {
       setIsExtracting(false);
     }
   };
+
+  useEffect(() => {
+    handleExtract();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleRun = async () => {
     setError(null);
