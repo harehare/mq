@@ -1555,6 +1555,31 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "| H |\n|---|\n| 1 |"
 )]
+#[case::multibyte_text_with_strong_and_link(
+    "<p>これは<strong>太字</strong>と<a href=\"/パス\">リンク</a>です。</p>",
+    ConversionOptions::default(),
+    "これは**太字**と[リンク](/パス)です。"
+)]
+#[case::ascii_hash_marker_followed_by_multibyte_text_is_escaped(
+    "<p># 日本語のあとに全角文字：漢字とひらがなを含む</p>",
+    ConversionOptions::default(),
+    "\\# 日本語のあとに全角文字：漢字とひらがなを含む"
+)]
+#[case::fullwidth_hash_lookalike_is_not_escaped(
+    "<p>＃これは見出しではない日本語です</p>",
+    ConversionOptions::default(),
+    "＃これは見出しではない日本語です"
+)]
+#[case::code_span_with_multibyte_content(
+    "<p>変数<code>日本語変数名</code>です</p>",
+    ConversionOptions::default(),
+    "変数`日本語変数名`です"
+)]
+#[case::emoji_padded_strong_does_not_panic(
+    "<p>絵文字テスト🎉です<strong> 太字😀 </strong>終わり</p>",
+    ConversionOptions::default(),
+    "絵文字テスト🎉です **太字😀** 終わり"
+)]
 fn test_html_to_markdown(#[case] html: &str, #[case] options: ConversionOptions, #[case] expected: &str) {
     assert_conversion_with_options(html, expected, options);
 }
