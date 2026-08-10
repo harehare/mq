@@ -72,19 +72,18 @@ Downloads the latest mq binary for your platform, installs it to `~/.local/bin/`
 | Cargo (crates.io)      | `cargo install mq-run`                      |
 | Docker                 | `docker run --rm ghcr.io/harehare/mq:0.7.0` |
 
-
 <details>
 <summary>More install options: cargo variants, binstall, pre-built binaries</summary>
 
 ```sh
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.8.1
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.8.2
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 # Install using binstall
-cargo binstall mq-run@0.8.1
+cargo binstall mq-run@0.8.2
 ```
 
 Pre-built binaries for macOS, Linux, and Windows are also available on the [GitHub releases page](https://github.com/harehare/mq/releases).
@@ -96,11 +95,10 @@ Pre-built binaries for macOS, Linux, and Windows are also available on the [GitH
 | Integration    | Link                                                                                                                                                                                                                                                                                                                                                                                    |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | VS Code        | [![Visual Studio Marketplace Version](https://vsmarketplacebadges.dev/version/harehare.vscode-mq.svg?style=flat-square&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq) [![Open VSX Version](https://img.shields.io/open-vsx/v/harehare/vscode-mq?style=flat-square&logo=eclipseide)](https://open-vsx.org/extension/harehare/vscode-mq) |
-| Chrome         | [![Chrome Extension README](https://img.shields.io/badge/chrome-README-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](https://github.com/harehare/mq/blob/main/packages/mq-chrome-extension/README.md)                                                                                                                                                                     |
+| Chrome         | [![Chrome Extension README](https://img.shields.io/badge/chrome-README-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](https://github.com/harehare/mq/blob/main/packages/mq-chrome-extension/README.md)                                                                                                                                                                    |
 | Neovim         | [![Neovim README](https://img.shields.io/badge/neovim-README-57A143?style=flat-square&logo=neovim&logoColor=white)](https://github.com/harehare/mq/blob/main/editors/neovim/README.md)                                                                                                                                                                                                  |
 | Zed            | [![Zed README](https://img.shields.io/badge/zed-README-084CCF?style=flat-square&logo=zed&logoColor=white)](https://github.com/harehare/mq/blob/main/editors/zed/README.md)                                                                                                                                                                                                              |
 | GitHub Actions | [![Setup mq](https://img.shields.io/badge/marketplace-Setup%20mq-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/setup-mq)                                                                                                                                                                                                         |
-
 
 ```yaml
 steps:
@@ -137,7 +135,6 @@ mq is a Rust + TypeScript monorepo.
 | [`mq-web`](packages/mq-web)           | Official WebAssembly build for the browser            | [![npm](https://img.shields.io/npm/v/mq-web?style=flat-square)](https://www.npmjs.com/package/mq-web)                 |
 | [`mq-nodejs`](packages/mq-nodejs)     | Node.js bindings                                      | [![npm](https://img.shields.io/npm/v/mq-nodejs?style=flat-square)](https://www.npmjs.com/package/mq-nodejs)           |
 
-
 </details>
 
 mq is also available as a hosted REST API (see [`mq-web-api`](crates/mq-web-api) above). See the [REST API docs](https://mqlang.org/book/start/web_api) or try it in the [Playground](https://mqlang.org/playground).
@@ -170,8 +167,8 @@ Commands:
   help        Show documentation for a builtin function, selector, standard module, standard-module function, or the `examples` topic
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -A, --aggregate
