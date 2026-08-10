@@ -40,41 +40,8 @@ fn io_err(err: std::io::Error, path: &Path) -> IoError {
     }
 }
 
-/// Reads `reader` into a `Vec`, erroring once more than `limit` bytes have
-/// been produced instead of buffering an unbounded amount (protects against
-/// decompression bombs when `reader` is a decoder).
 #[cfg(feature = "http")]
-fn read_bounded_to_vec(mut reader: impl std::io::Read, limit: u64) -> std::io::Result<Vec<u8>> {
-    let limit = limit as usize;
-    let mut buf = Vec::new();
-    let mut chunk = [0u8; 64 * 1024];
-
-    loop {
-        let n = reader.read(&mut chunk)?;
-        if n == 0 {
-            return Ok(buf);
-        }
-        if buf.len() + n > limit {
-            return Err(std::io::Error::other(format!(
-                "response body exceeds the {limit}-byte limit"
-            )));
-        }
-        buf.extend_from_slice(&chunk[..n]);
-    }
-}
-
-/// Some servers send raw deflate instead of the zlib wrapper `Content-Encoding: deflate` implies.
-#[cfg(feature = "http")]
-fn decode_deflate(compressed: &[u8], limit: u64) -> std::io::Result<Vec<u8>> {
-    read_bounded_to_vec(flate2::read::ZlibDecoder::new(compressed), limit)
-        .or_else(|_| read_bounded_to_vec(flate2::read::DeflateDecoder::new(compressed), limit))
-}
-
-#[cfg(feature = "http")]
-fn decode_zstd(reader: impl std::io::Read, limit: u64) -> std::io::Result<Vec<u8>> {
-    let decoder = ruzstd::decoding::StreamingDecoder::new(reader).map_err(std::io::Error::other)?;
-    read_bounded_to_vec(decoder, limit)
-}
+use crate::compression::{decode_deflate, decode_zstd, read_bounded_to_vec};
 
 impl Io for NativeIo {
     fn read_to_string(&self, path: &Path) -> Result<String, IoError> {
@@ -319,8 +286,6 @@ impl Io for NativeIo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "http")]
-    use rstest::rstest;
 
     #[test]
     fn test_read_write_round_trip() {
@@ -446,86 +411,5 @@ mod tests {
             io.http_request("GET", "http://example.invalid", None, &[]),
             Err(IoError::Other(_))
         ));
-    }
-
-    #[cfg(feature = "http")]
-    #[rstest]
-    #[case(b"hello world".as_slice(), 11)]
-    #[case(b"".as_slice(), 0)]
-    fn test_read_bounded_to_vec_within_limit(#[case] data: &[u8], #[case] limit: u64) {
-        assert_eq!(read_bounded_to_vec(data, limit).unwrap(), data);
-    }
-
-    #[cfg(feature = "http")]
-    #[test]
-    fn test_read_bounded_to_vec_rejects_oversized_input() {
-        assert!(read_bounded_to_vec(vec![0u8; 100].as_slice(), 50).is_err());
-    }
-
-    #[cfg(feature = "http")]
-    #[test]
-    fn test_decode_deflate_zlib_wrapped() {
-        let original = b"deflate payload";
-        let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-        std::io::Write::write_all(&mut encoder, original).unwrap();
-        let compressed = encoder.finish().unwrap();
-
-        assert_eq!(decode_deflate(&compressed, 1024).unwrap(), original);
-    }
-
-    #[cfg(feature = "http")]
-    #[test]
-    fn test_decode_deflate_raw_fallback() {
-        // Some servers send raw deflate under `Content-Encoding: deflate`, without the zlib wrapper.
-        let original = b"deflate payload";
-        let mut encoder = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
-        std::io::Write::write_all(&mut encoder, original).unwrap();
-        let compressed = encoder.finish().unwrap();
-
-        assert_eq!(decode_deflate(&compressed, 1024).unwrap(), original);
-    }
-
-    #[cfg(feature = "http")]
-    #[test]
-    fn test_decode_deflate_rejects_garbage() {
-        assert!(decode_deflate(b"not compressed data at all", 1024).is_err());
-    }
-
-    #[cfg(feature = "http")]
-    #[test]
-    fn test_decode_deflate_enforces_decompressed_limit() {
-        // Highly compressible: well under the limit compressed, far past it decompressed.
-        let original = vec![0u8; 1024 * 1024];
-        let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
-        std::io::Write::write_all(&mut encoder, &original).unwrap();
-        let compressed = encoder.finish().unwrap();
-        assert!(compressed.len() < original.len() / 100);
-
-        assert!(decode_deflate(&compressed, 1024).is_err());
-    }
-
-    #[cfg(feature = "http")]
-    #[test]
-    fn test_decode_zstd_round_trip() {
-        let original = b"zstd payload";
-        let compressed = ruzstd::encoding::compress_to_vec(&original[..], ruzstd::encoding::CompressionLevel::Fastest);
-
-        assert_eq!(decode_zstd(compressed.as_slice(), 1024).unwrap(), original);
-    }
-
-    #[cfg(feature = "http")]
-    #[test]
-    fn test_decode_zstd_rejects_garbage() {
-        assert!(decode_zstd(&b"not zstd data"[..], 1024).is_err());
-    }
-
-    #[cfg(feature = "http")]
-    #[test]
-    fn test_decode_zstd_enforces_decompressed_limit() {
-        let original = vec![0u8; 1024 * 1024];
-        let compressed = ruzstd::encoding::compress_to_vec(&original[..], ruzstd::encoding::CompressionLevel::Fastest);
-        assert!(compressed.len() < 1024);
-
-        assert!(decode_zstd(compressed.as_slice(), 1024).is_err());
     }
 }

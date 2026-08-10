@@ -1,4 +1,6 @@
 pub(super) mod bytes;
+#[cfg(feature = "compression")]
+mod codec;
 mod compress;
 pub(super) mod convert;
 #[cfg(feature = "css-selector")]
@@ -4535,6 +4537,41 @@ fn parse_http_request(value: &RuntimeValue) -> Result<HttpRequestSpec, Error> {
     })
 }
 
+/// Compresses `data` (bytes) using `algorithm` (`:gzip`, `:deflate`, or `:zstd`, as a string or
+/// symbol) and returns the compressed bytes.
+#[cfg(feature = "compression")]
+#[mq_macros::mq_fn(name = "compress", params = Fixed(2))]
+fn compress_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [
+            RuntimeValue::Bytes(data),
+            algorithm @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
+        ] => codec::compress(data, algorithm),
+        args => Err(Error::InvalidTypes(
+            ident.to_string(),
+            args.iter_mut().map(std::mem::take).collect(),
+        )),
+    }
+}
+
+/// Decompresses `data` (bytes) that was compressed using `algorithm` (`:gzip`, `:deflate`, or
+/// `:zstd`, as a string or symbol) and returns the decompressed bytes. A result over 100MB is a
+/// runtime error, guarding against decompression bombs.
+#[cfg(feature = "compression")]
+#[mq_macros::mq_fn(name = "decompress", params = Fixed(2))]
+fn decompress_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [
+            RuntimeValue::Bytes(data),
+            algorithm @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
+        ] => codec::decompress(data, algorithm),
+        args => Err(Error::InvalidTypes(
+            ident.to_string(),
+            args.iter_mut().map(std::mem::take).collect(),
+        )),
+    }
+}
+
 #[cfg(all(feature = "http", feature = "mock-io"))]
 #[mq_macros::mq_fn(name = "mock_fetch", params = Fixed(2))]
 fn mock_fetch_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
@@ -5063,6 +5100,10 @@ mq_macros::builtin_dispatch! {
     HTTP_ALL,
     #[cfg(all(feature = "http", feature = "mock-io"))]
     MOCK_FETCH,
+    #[cfg(feature = "compression")]
+    COMPRESS,
+    #[cfg(feature = "compression")]
+    DECOMPRESS,
     #[cfg(feature = "process-io")]
     SYSTEM,
     #[cfg(feature = "css-selector")]
@@ -8114,6 +8155,30 @@ x
             returns: "string",
             examples: &[],
             capability: Some("http"),
+        },
+    );
+    #[cfg(feature = "compression")]
+    map.insert(
+        SmolStr::new("compress"),
+        BuiltinFunctionDoc {
+            description: "Compresses bytes using the given algorithm (a string or symbol: :gzip, :deflate, or :zstd) and returns the compressed bytes.",
+            params: &["data", "algorithm"],
+            param_types: &["bytes", "string"],
+            returns: "bytes",
+            examples: &[],
+            capability: None,
+        },
+    );
+    #[cfg(feature = "compression")]
+    map.insert(
+        SmolStr::new("decompress"),
+        BuiltinFunctionDoc {
+            description: "Decompresses bytes previously compressed with the given algorithm (a string or symbol: :gzip, :deflate, or :zstd) and returns the decompressed bytes. A result over 100MB is a runtime error, guarding against decompression bombs.",
+            params: &["data", "algorithm"],
+            param_types: &["bytes", "string"],
+            returns: "bytes",
+            examples: &[],
+            capability: None,
         },
     );
     #[cfg(all(feature = "http", feature = "mock-io"))]

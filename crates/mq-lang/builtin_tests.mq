@@ -1429,3 +1429,30 @@ def test_assert_matches():
   | assert_eq(result4["error"], true)
 end
 
+def test_compress_decompress():
+  let original = to_bytes("hello, compression!")
+  | let gzip_result = decompress(compress(original, :gzip), :gzip)
+  | assert_eq(gzip_result, original)
+
+  | let deflate_result = decompress(compress(original, "deflate"), "deflate")
+  | assert_eq(deflate_result, original)
+
+  | let zstd_result = decompress(compress(original, :zstd), :zstd)
+  | assert_eq(zstd_result, original)
+end
+
+def test_gzip_compress_decompress():
+  let original = to_bytes("hello, gzip!")
+  | assert_eq(gzip_decompress(gzip_compress(original)), original)
+end
+
+def test_deflate_compress_decompress():
+  let original = to_bytes("hello, deflate!")
+  | assert_eq(deflate_decompress(deflate_compress(original)), original)
+end
+
+def test_zstd_compress_decompress():
+  let original = to_bytes("hello, zstd!")
+  | assert_eq(zstd_decompress(zstd_compress(original)), original)
+end
+

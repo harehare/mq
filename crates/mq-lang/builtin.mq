@@ -1379,6 +1379,36 @@ def http_patch_json(url, body, headers = {}): _json_parse(http(:patch, url, body
 # Returns: dynamic
 def http_delete_json(url, headers = {}): _json_parse(http(:delete, url, headers));
 
+# Compresses bytes using gzip.
+#
+# Returns: bytes
+def gzip_compress(data): compress(data, :gzip);
+
+# Decompresses gzip-compressed bytes.
+#
+# Returns: bytes
+def gzip_decompress(data): decompress(data, :gzip);
+
+# Compresses bytes using deflate (zlib).
+#
+# Returns: bytes
+def deflate_compress(data): compress(data, :deflate);
+
+# Decompresses deflate-compressed bytes.
+#
+# Returns: bytes
+def deflate_decompress(data): decompress(data, :deflate);
+
+# Compresses bytes using zstd.
+#
+# Returns: bytes
+def zstd_compress(data): compress(data, :zstd);
+
+# Decompresses zstd-compressed bytes.
+#
+# Returns: bytes
+def zstd_decompress(data): decompress(data, :zstd);
+
 # Prints the debug information of the given value(s).
 #
 # Returns: dynamic

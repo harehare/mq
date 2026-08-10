@@ -41,6 +41,8 @@
 //!   When this feature is enabled, `serde` and `serde_json` dependencies are included.
 mod arena;
 mod ast;
+#[cfg(feature = "compression")]
+mod compression;
 #[cfg(feature = "cst")]
 mod cst;
 pub mod diagnostic;

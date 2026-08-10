@@ -1432,6 +1432,12 @@ fn register_bytes(ctx: &mut InferenceContext) {
     // repeat: (bytes, number) -> bytes
     register_binary(ctx, "repeat", Type::Bytes, Type::Number, Type::Bytes);
 
+    // compress/decompress: (bytes, algorithm) -> bytes, algorithm as string or symbol
+    for algorithm in [Type::String, Type::Symbol] {
+        register_binary(ctx, "compress", Type::Bytes, algorithm.clone(), Type::Bytes);
+        register_binary(ctx, "decompress", Type::Bytes, algorithm, Type::Bytes);
+    }
+
     // gt/gte/lt/lte are registered in register_comparison; no duplicate needed here
 }
 
