@@ -73,6 +73,27 @@ Pass a string argument to match code blocks with a specific language:
 .code("python") | to_array | concat(.code("javascript"))
 ```
 
+### Reference Identifier Filtering
+
+Pass one or more string arguments to match reference-style nodes by their identifier:
+
+```mq
+# Select the link reference with identifier "id"
+.link_ref("id")
+
+# Select the image reference with identifier "id"
+.image_ref("id")
+
+# Select the footnote reference with identifier "1"
+.footnote_ref("1")
+
+# Select the footnote definition with identifier "1"
+.footnote("1")
+
+# Select the link/image definition with identifier "id"
+.definition("id")
+```
+
 ### Combining with Other Operations
 
 Selector calls can be combined with pipes and functions just like plain selectors:

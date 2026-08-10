@@ -8641,6 +8641,11 @@ fn collect_string_values(args: &[RuntimeValue]) -> Vec<String> {
 /// - `Callout`: filters by kind using string args (e.g. `.callout("NOTE")`)
 /// - `WikiLink`: filters by target using string args (e.g. `.wikilink("Some Page")`)
 /// - `Embed`: filters by target using string args (e.g. `.embed("image.png")`)
+/// - `LinkRef`: filters by identifier using string args (e.g. `.link_ref("ref")`)
+/// - `ImageRef`: filters by identifier using string args (e.g. `.image_ref("ref")`)
+/// - `FootnoteRef`: filters by identifier using string args (e.g. `.footnote_ref("1")`)
+/// - `Footnote`: filters by identifier using string args (e.g. `.footnote("1")`)
+/// - `Definition`: filters by identifier using string args (e.g. `.definition("ref")`)
 /// - `MdxJsxFlowElement`: filters by element name using string args (e.g. `.mdx_jsx_flow_element("Alert")`)
 /// - `MdxJsxTextElement`: filters by element name using string args (e.g. `.mdx_jsx_text_element("Alert")`)
 /// - `List`: filters by list item index using a numeric arg (e.g. `.[v]` where `v` evaluates to an index)
@@ -8717,6 +8722,71 @@ pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, ar
 
             if let mq_markdown::Node::Embed(mq_markdown::Embed { target, .. }) = node {
                 targets.iter().any(|t| t == target)
+            } else {
+                false
+            }
+        }
+        Selector::LinkRef => {
+            let idents = collect_string_values(args);
+
+            if idents.is_empty() {
+                return eval_selector(node, selector);
+            }
+
+            if let mq_markdown::Node::LinkRef(mq_markdown::LinkRef { ident, .. }) = node {
+                idents.iter().any(|i| i == ident)
+            } else {
+                false
+            }
+        }
+        Selector::ImageRef => {
+            let idents = collect_string_values(args);
+
+            if idents.is_empty() {
+                return eval_selector(node, selector);
+            }
+
+            if let mq_markdown::Node::ImageRef(mq_markdown::ImageRef { ident, .. }) = node {
+                idents.iter().any(|i| i == ident)
+            } else {
+                false
+            }
+        }
+        Selector::FootnoteRef => {
+            let idents = collect_string_values(args);
+
+            if idents.is_empty() {
+                return eval_selector(node, selector);
+            }
+
+            if let mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef { ident, .. }) = node {
+                idents.iter().any(|i| i == ident)
+            } else {
+                false
+            }
+        }
+        Selector::Footnote => {
+            let idents = collect_string_values(args);
+
+            if idents.is_empty() {
+                return eval_selector(node, selector);
+            }
+
+            if let mq_markdown::Node::Footnote(mq_markdown::Footnote { ident, .. }) = node {
+                idents.iter().any(|i| i == ident)
+            } else {
+                false
+            }
+        }
+        Selector::Definition => {
+            let idents = collect_string_values(args);
+
+            if idents.is_empty() {
+                return eval_selector(node, selector);
+            }
+
+            if let mq_markdown::Node::Definition(mq_markdown::Definition { ident, .. }) = node {
+                idents.iter().any(|i| i == ident)
             } else {
                 false
             }
@@ -12017,6 +12087,156 @@ mod tests {
         Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
         Selector::Embed,
         vec![RuntimeValue::String("image.png".into())],
+        false
+    )]
+    #[case::link_ref_ident_match(
+        Node::LinkRef(mq_markdown::LinkRef { ident: "ref".to_string(), label: None, values: vec![], position: None }),
+        Selector::LinkRef,
+        vec![RuntimeValue::String("ref".into())],
+        true
+    )]
+    #[case::link_ref_ident_no_match(
+        Node::LinkRef(mq_markdown::LinkRef { ident: "other".to_string(), label: None, values: vec![], position: None }),
+        Selector::LinkRef,
+        vec![RuntimeValue::String("ref".into())],
+        false
+    )]
+    #[case::link_ref_multi_ident_match(
+        Node::LinkRef(mq_markdown::LinkRef { ident: "other".to_string(), label: None, values: vec![], position: None }),
+        Selector::LinkRef,
+        vec![RuntimeValue::String("ref".into()), RuntimeValue::String("other".into())],
+        true
+    )]
+    #[case::link_ref_no_args_fallback(
+        Node::LinkRef(mq_markdown::LinkRef { ident: "ref".to_string(), label: None, values: vec![], position: None }),
+        Selector::LinkRef,
+        vec![],
+        true
+    )]
+    #[case::link_ref_non_link_ref_node(
+        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Selector::LinkRef,
+        vec![RuntimeValue::String("ref".into())],
+        false
+    )]
+    #[case::image_ref_ident_match(
+        Node::ImageRef(mq_markdown::ImageRef { alt: "".to_string(), ident: "ref".to_string(), label: None, position: None }),
+        Selector::ImageRef,
+        vec![RuntimeValue::String("ref".into())],
+        true
+    )]
+    #[case::image_ref_ident_no_match(
+        Node::ImageRef(mq_markdown::ImageRef { alt: "".to_string(), ident: "other".to_string(), label: None, position: None }),
+        Selector::ImageRef,
+        vec![RuntimeValue::String("ref".into())],
+        false
+    )]
+    #[case::image_ref_multi_ident_match(
+        Node::ImageRef(mq_markdown::ImageRef { alt: "".to_string(), ident: "other".to_string(), label: None, position: None }),
+        Selector::ImageRef,
+        vec![RuntimeValue::String("ref".into()), RuntimeValue::String("other".into())],
+        true
+    )]
+    #[case::image_ref_no_args_fallback(
+        Node::ImageRef(mq_markdown::ImageRef { alt: "".to_string(), ident: "ref".to_string(), label: None, position: None }),
+        Selector::ImageRef,
+        vec![],
+        true
+    )]
+    #[case::image_ref_non_image_ref_node(
+        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Selector::ImageRef,
+        vec![RuntimeValue::String("ref".into())],
+        false
+    )]
+    #[case::footnote_ref_ident_match(
+        Node::FootnoteRef(mq_markdown::FootnoteRef { ident: "1".to_string(), label: None, position: None }),
+        Selector::FootnoteRef,
+        vec![RuntimeValue::String("1".into())],
+        true
+    )]
+    #[case::footnote_ref_ident_no_match(
+        Node::FootnoteRef(mq_markdown::FootnoteRef { ident: "2".to_string(), label: None, position: None }),
+        Selector::FootnoteRef,
+        vec![RuntimeValue::String("1".into())],
+        false
+    )]
+    #[case::footnote_ref_multi_ident_match(
+        Node::FootnoteRef(mq_markdown::FootnoteRef { ident: "2".to_string(), label: None, position: None }),
+        Selector::FootnoteRef,
+        vec![RuntimeValue::String("1".into()), RuntimeValue::String("2".into())],
+        true
+    )]
+    #[case::footnote_ref_no_args_fallback(
+        Node::FootnoteRef(mq_markdown::FootnoteRef { ident: "1".to_string(), label: None, position: None }),
+        Selector::FootnoteRef,
+        vec![],
+        true
+    )]
+    #[case::footnote_ref_non_footnote_ref_node(
+        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Selector::FootnoteRef,
+        vec![RuntimeValue::String("1".into())],
+        false
+    )]
+    #[case::footnote_ident_match(
+        Node::Footnote(mq_markdown::Footnote { ident: "1".to_string(), values: vec![], position: None }),
+        Selector::Footnote,
+        vec![RuntimeValue::String("1".into())],
+        true
+    )]
+    #[case::footnote_ident_no_match(
+        Node::Footnote(mq_markdown::Footnote { ident: "2".to_string(), values: vec![], position: None }),
+        Selector::Footnote,
+        vec![RuntimeValue::String("1".into())],
+        false
+    )]
+    #[case::footnote_multi_ident_match(
+        Node::Footnote(mq_markdown::Footnote { ident: "2".to_string(), values: vec![], position: None }),
+        Selector::Footnote,
+        vec![RuntimeValue::String("1".into()), RuntimeValue::String("2".into())],
+        true
+    )]
+    #[case::footnote_no_args_fallback(
+        Node::Footnote(mq_markdown::Footnote { ident: "1".to_string(), values: vec![], position: None }),
+        Selector::Footnote,
+        vec![],
+        true
+    )]
+    #[case::footnote_non_footnote_node(
+        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Selector::Footnote,
+        vec![RuntimeValue::String("1".into())],
+        false
+    )]
+    #[case::definition_ident_match(
+        Node::Definition(mq_markdown::Definition { position: None, url: mq_markdown::Url::new("https://example.com".to_string()), title: None, ident: "ref".to_string(), label: None }),
+        Selector::Definition,
+        vec![RuntimeValue::String("ref".into())],
+        true
+    )]
+    #[case::definition_ident_no_match(
+        Node::Definition(mq_markdown::Definition { position: None, url: mq_markdown::Url::new("https://example.com".to_string()), title: None, ident: "other".to_string(), label: None }),
+        Selector::Definition,
+        vec![RuntimeValue::String("ref".into())],
+        false
+    )]
+    #[case::definition_multi_ident_match(
+        Node::Definition(mq_markdown::Definition { position: None, url: mq_markdown::Url::new("https://example.com".to_string()), title: None, ident: "other".to_string(), label: None }),
+        Selector::Definition,
+        vec![RuntimeValue::String("ref".into()), RuntimeValue::String("other".into())],
+        true
+    )]
+    #[case::definition_no_args_fallback(
+        Node::Definition(mq_markdown::Definition { position: None, url: mq_markdown::Url::new("https://example.com".to_string()), title: None, ident: "ref".to_string(), label: None }),
+        Selector::Definition,
+        vec![],
+        true
+    )]
+    #[case::definition_non_definition_node(
+        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Selector::Definition,
+        vec![RuntimeValue::String("ref".into())],
         false
     )]
     #[case::mdx_jsx_flow_element_name_match(
