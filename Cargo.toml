@@ -59,6 +59,7 @@ dirs = "6.0.0"
 divan = {version = "4.7.0", package = "codspeed-divan-compat"}
 ego-tree = "0.11.0"
 fantoccini = {version = "0.22.1", default-features = false, features = ["rustls-tls"]}
+flate2 = "1"
 futures = "0.3"
 glob = "0.3.3"
 httpmock = "0.8.2"
@@ -89,6 +90,7 @@ ropey = "1.6"
 rstest = "0.26.1"
 rustc-hash = "2.1.2"
 rustyline = {version = "18.0.0", default-features = false}
+ruzstd = "0.9"
 scopeguard = "1.2.0"
 scraper = "0.27.0"
 serde = "1.0"

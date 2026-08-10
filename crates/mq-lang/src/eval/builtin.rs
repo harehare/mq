@@ -8108,7 +8108,7 @@ x
     map.insert(
         SmolStr::new("http"),
         BuiltinFunctionDoc {
-            description: "Performs an HTTPS request with the given method (a string or symbol, e.g. \"post\" or :post — get, post, put, delete, patch, head, ... are all supported) and returns the response body as a string. An optional body argument (string) sends a request body regardless of method, and an optional headers argument (a dict of string to string, e.g. {\"Content-Type\": \"application/json\"}) is applied to the request. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
+            description: "Performs an HTTPS request with the given method (a string or symbol, e.g. \"post\" or :post — get, post, put, delete, patch, head, ... are all supported) and returns the response body as a string. An optional body argument (string) sends a request body regardless of method, and an optional headers argument (a dict of string to string, e.g. {\"Content-Type\": \"application/json\"}) is applied to the request. gzip, deflate, and zstd compressed responses are decompressed transparently (a response over 10MB decompressed is a runtime error, guarding against decompression bombs); pass your own \"Accept-Encoding\" header to opt out. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
             params: &["method", "url", "body", "headers"],
             param_types: &["string", "string", "string", "dict"],
             returns: "string",
@@ -9081,7 +9081,11 @@ mod tests {
 
     #[cfg(all(feature = "http", feature = "mock-io"))]
     use crate::io::MemIo;
-    #[cfg(any(feature = "file-io", feature = "http", feature = "process-io"))]
+    #[cfg(any(
+        feature = "file-io",
+        feature = "process-io",
+        all(feature = "http", feature = "mock-io")
+    ))]
     use crate::io::{NativeIo, SandboxedIo};
 
     use super::*;

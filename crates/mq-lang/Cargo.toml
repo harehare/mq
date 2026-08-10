@@ -49,6 +49,8 @@ quick-xml = {workspace = true}
 unicode-width = {workspace = true}
 similar = {workspace = true}
 tiktoken-rs = { version = "0.12", optional = true }
+flate2 = { workspace = true, optional = true }
+ruzstd = { workspace = true, optional = true }
 ureq = { workspace = true, optional = true }
 uuid = {workspace = true, features = ["v4", "v7"]}
 ammonia = {workspace = true}
@@ -70,7 +72,7 @@ process-io = []
 std = []
 sync = []
 http-import = []
-http = ["dep:ureq"]
+http = ["dep:ureq", "dep:flate2", "dep:ruzstd"]
 http-import-ureq = ["http-import", "http"]
 mock-io = []
 tiktoken = ["dep:tiktoken-rs"]
