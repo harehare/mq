@@ -41,7 +41,7 @@ fn io_err(err: std::io::Error, path: &Path) -> IoError {
 }
 
 #[cfg(feature = "http")]
-use crate::compression::{decode_deflate, decode_zstd, read_bounded_to_vec};
+use crate::compression::{Algorithm, read_bounded_to_vec};
 
 impl Io for NativeIo {
     fn read_to_string(&self, path: &Path) -> Result<String, IoError> {
@@ -188,30 +188,25 @@ impl Io for NativeIo {
             ))));
         }
 
-        // ureq decodes `gzip` itself; `deflate`/`zstd` are ours to handle.
         let content_encoding = response
             .headers()
             .get("content-encoding")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.trim().to_ascii_lowercase());
 
-        let bytes = match content_encoding.as_deref() {
-            Some("deflate") => {
+        let bytes = match content_encoding.as_deref().and_then(Algorithm::parse) {
+            // Gzip is decoded by ureq itself; unknown/absent encodings pass through as-is.
+            Some(Algorithm::Gzip) | None => read_bounded_to_vec(response.body_mut().as_reader(), MAX_RESPONSE_SIZE)
+                .map_err(|e| IoError::Other(Cow::Owned(format!("failed to read response body: {e}"))))?,
+            Some(algorithm) => {
                 let compressed = read_bounded_to_vec(response.body_mut().as_reader(), MAX_RESPONSE_SIZE)
                     .map_err(|e| IoError::Other(Cow::Owned(format!("failed to read response body: {e}"))))?;
-                decode_deflate(&compressed, MAX_RESPONSE_SIZE).map_err(|e| {
+                algorithm.decode(&compressed, MAX_RESPONSE_SIZE).map_err(|e| {
                     IoError::Other(Cow::Owned(format!(
-                        "failed to inflate deflate-encoded response body: {e}"
+                        "failed to decompress ({algorithm:?}) response body: {e}"
                     )))
                 })?
             }
-            Some("zstd") => decode_zstd(response.body_mut().as_reader(), MAX_RESPONSE_SIZE).map_err(|e| {
-                IoError::Other(Cow::Owned(format!(
-                    "failed to decompress zstd-encoded response body: {e}"
-                )))
-            })?,
-            _ => read_bounded_to_vec(response.body_mut().as_reader(), MAX_RESPONSE_SIZE)
-                .map_err(|e| IoError::Other(Cow::Owned(format!("failed to read response body: {e}"))))?,
         };
 
         Ok(String::from_utf8_lossy(&bytes).into_owned())
