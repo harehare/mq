@@ -66,6 +66,8 @@ Options:
           Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, gron, raw, csv, toml, toon, xml, yaml, none]
   -U, --update
           Update matching Markdown nodes and write the result to stdout
+      --diff
+          With --update, print a unified diff instead of the transformed content; nothing is written. Multiple files are diffed one at a time with their path in the headers; stdin is labeled `<stdin>`. Exits 1 if anything would change
       --unbuffered
           Unbuffered output
       --list-style <LIST_STYLE>

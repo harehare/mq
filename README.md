@@ -72,6 +72,7 @@ Downloads the latest mq binary for your platform, installs it to `~/.local/bin/`
 | Cargo (crates.io)      | `cargo install mq-run`                      |
 | Docker                 | `docker run --rm ghcr.io/harehare/mq:0.7.0` |
 
+
 <details>
 <summary>More install options: cargo variants, binstall, pre-built binaries</summary>
 
@@ -99,6 +100,7 @@ Pre-built binaries for macOS, Linux, and Windows are also available on the [GitH
 | Neovim         | [![Neovim README](https://img.shields.io/badge/neovim-README-57A143?style=flat-square&logo=neovim&logoColor=white)](https://github.com/harehare/mq/blob/main/editors/neovim/README.md)                                                                                                                                                                                                  |
 | Zed            | [![Zed README](https://img.shields.io/badge/zed-README-084CCF?style=flat-square&logo=zed&logoColor=white)](https://github.com/harehare/mq/blob/main/editors/zed/README.md)                                                                                                                                                                                                              |
 | GitHub Actions | [![Setup mq](https://img.shields.io/badge/marketplace-Setup%20mq-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/setup-mq)                                                                                                                                                                                                         |
+
 
 ```yaml
 steps:
@@ -135,6 +137,7 @@ mq is a Rust + TypeScript monorepo.
 | [`mq-web`](packages/mq-web)           | Official WebAssembly build for the browser            | [![npm](https://img.shields.io/npm/v/mq-web?style=flat-square)](https://www.npmjs.com/package/mq-web)                 |
 | [`mq-nodejs`](packages/mq-nodejs)     | Node.js bindings                                      | [![npm](https://img.shields.io/npm/v/mq-nodejs?style=flat-square)](https://www.npmjs.com/package/mq-nodejs)           |
 
+
 </details>
 
 mq is also available as a hosted REST API (see [`mq-web-api`](crates/mq-web-api) above). See the [REST API docs](https://mqlang.org/book/start/web_api) or try it in the [Playground](https://mqlang.org/playground).
@@ -167,8 +170,8 @@ Commands:
   help        Show documentation for a builtin function, selector, standard module, standard-module function, or the `examples` topic
 
 Arguments:
-  [QUERY OR FILE]
-  [FILES]...
+  [QUERY OR FILE]  
+  [FILES]...       
 
 Options:
   -A, --aggregate
@@ -221,6 +224,8 @@ Options:
           Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, gron, raw, csv, toml, toon, xml, yaml, none]
   -U, --update
           Update matching Markdown nodes and write the result to stdout
+      --diff
+          With --update, print a unified diff instead of the transformed content; nothing is written. Multiple files are diffed one at a time with their path in the headers; stdin is labeled `<stdin>`. Exits 1 if anything would change
       --unbuffered
           Unbuffered output
       --list-style <LIST_STYLE>
