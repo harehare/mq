@@ -217,6 +217,70 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     },
     "Just a paragraph", // Meta tag not in <head> context
 )]
+#[case::front_matter_og_description_fallback(
+    "<html><head><meta property=\"og:description\" content=\"OGP desc\"></head><body><p>B</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\ndescription: OGP desc\n---\n\nB",
+)]
+#[case::front_matter_name_description_wins_over_og(
+    "<html><head><meta name=\"description\" content=\"Named desc\"><meta property=\"og:description\" content=\"OGP desc\"></head><body><p>B</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\ndescription: Named desc\n---\n\nB",
+)]
+#[case::front_matter_schema_author_wins_over_twitter_handle(
+    r#"<html><head><meta name="twitter:creator" content="@jverne"><script type="application/ld+json">{"@type":"Article","author":{"name":"Jules Verne"}}</script></head><body><p>B</p></body></html>"#,
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\nauthor: Jules Verne\n---\n\nB",
+)]
+#[case::front_matter_twitter_creator_fallback(
+    "<html><head><meta name=\"twitter:creator\" content=\"@jverne\"></head><body><p>B</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\nauthor: '@jverne'\n---\n\nB",
+)]
+#[case::front_matter_article_published_time(
+    "<html><head><meta property=\"article:published_time\" content=\"2024-01-02T00:00:00Z\"></head><body><p>B</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\npublished: 2024-01-02T00:00:00Z\n---\n\nB",
+)]
+#[case::front_matter_og_image_and_site_name(
+    "<html><head><meta property=\"og:image\" content=\"https://example.com/a.png\"><meta property=\"og:site_name\" content=\"Example Site\"></head><body><p>B</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\nimage: https://example.com/a.png\nsite: Example Site\n---\n\nB",
+)]
+#[case::front_matter_multibyte_description_and_author(
+    "<html><head><meta name=\"description\" content=\"日本語の説明文です\"><meta name=\"author\" content=\"山田太郎\"></head><body><p>本文</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\nauthor: 山田太郎\ndescription: 日本語の説明文です\n---\n\n本文",
+)]
+#[case::front_matter_json_ld_article(
+    r#"<html><head><script type="application/ld+json">{"@type":"Article","headline":"JSON-LD Title","author":{"name":"Ada Lovelace"},"datePublished":"2023-05-01"}</script></head><body><p>B</p></body></html>"#,
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\nauthor: Ada Lovelace\npublished: 2023-05-01\n---\n\nB",
+)]
 #[case::script_tag_leading_newline_stripping(
     "<script>\n  var x = 1;\n</script>",
     ConversionOptions {
@@ -1600,6 +1664,32 @@ fn test_html_to_markdown(#[case] html: &str, #[case] options: ConversionOptions,
     r#"<div class="mw-heading"><h2 id="Intro">Intro</h2><span class="mw-editsection"><span>[</span><a href="/edit">edit</a><span>]</span></span></div>"#,
     "[edit]"
 )]
+#[case::hidden_attribute_skipped(r#"<p hidden>Secret</p><p>Content</p>"#, "Secret")]
+#[case::inline_display_none_skipped(r#"<p style="display: none;">Secret</p><p>Content</p>"#, "Secret")]
+#[case::inline_visibility_hidden_skipped(r#"<p style="visibility: hidden">Secret</p><p>Content</p>"#, "Secret")]
+#[case::aria_hidden_true_skipped(r#"<p aria-hidden="true">Secret</p><p>Content</p>"#, "Secret")]
+#[case::ad_class_skipped(r#"<div class="ad-container">Buy now</div><p>Content</p>"#, "Buy now")]
+#[case::related_posts_id_skipped(r#"<div id="related-posts">More stories</div><p>Content</p>"#, "More stories")]
+#[case::cookie_banner_class_skipped(
+    r#"<div class="cookie-banner">We use cookies</div><p>Content</p>"#,
+    "We use cookies"
+)]
+#[case::newsletter_signup_class_skipped(
+    r#"<div class="newsletter-signup">Subscribe now</div><p>Content</p>"#,
+    "Subscribe now"
+)]
+#[case::ad_class_skipped_multibyte_content(
+    r#"<div class="ad-container">今すぐお試しください🎉</div><p>Content</p>"#,
+    "今すぐお試しください🎉"
+)]
+#[case::hidden_attribute_skipped_multibyte_content(
+    r#"<p hidden>これは表示されないテキストです</p><p>Content</p>"#,
+    "これは表示されないテキストです"
+)]
+#[case::cookie_banner_skipped_multibyte_content(
+    r#"<div class="cookie-banner">当サイトはCookieを使用しています</div><p>Content</p>"#,
+    "当サイトはCookieを使用しています"
+)]
 fn test_noisy_elements_skipped(#[case] html: &str, #[case] expected_excluded: &str) {
     let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
     assert!(
@@ -1608,6 +1698,42 @@ fn test_noisy_elements_skipped(#[case] html: &str, #[case] expected_excluded: &s
         expected_excluded,
         md
     );
+}
+
+#[test]
+fn test_css_custom_property_named_display_is_not_treated_as_hidden() {
+    // A substring match on "display: none" would false-positive on custom properties
+    // like `--footer-display: none`; only an actual `display` declaration should hide.
+    let html = r#"<p style="--footer-display: none">Kept</p>"#;
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("Kept"));
+}
+
+#[test]
+fn test_smart_extraction_uses_content_id_when_no_semantic_tag() {
+    let html = r#"<html><body>
+        <div class="sidebar"><a href="/">Home</a></div>
+        <div id="content"><h1>Article</h1><p>Main content</p></div>
+    </body></html>"#;
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("Article"));
+    assert!(md.contains("Main content"));
+    assert!(!md.contains("Home"), "sidebar should be excluded");
+}
+
+#[test]
+fn test_smart_extraction_scores_content_over_boilerplate_siblings() {
+    let html = r#"<html><body>
+        <div class="promo-links"><a href="/a">Ad one</a><a href="/b">Ad two</a><a href="/c">Ad three</a></div>
+        <div>
+            <p>This is the first real paragraph of the article, with plenty of words to score well.</p>
+            <p>And here is a second paragraph, continuing the article with even more prose content.</p>
+        </div>
+    </body></html>"#;
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("first real paragraph"));
+    assert!(md.contains("second paragraph"));
+    assert!(!md.contains("Ad one"), "boilerplate sibling should be excluded: {md}");
 }
 
 #[test]
