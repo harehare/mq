@@ -8,7 +8,7 @@ export default defineConfig({
     description:
       "Convert the current page to Markdown, filter it with mq queries, and preview the result on the page.",
     minimum_chrome_version: "116",
-    permissions: ["activeTab", "scripting", "sidePanel"],
+    permissions: ["activeTab", "scripting", "sidePanel", "storage"],
     action: {},
     content_security_policy: {
       extension_pages:
