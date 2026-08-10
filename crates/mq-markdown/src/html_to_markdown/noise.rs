@@ -108,6 +108,7 @@ pub(super) fn is_noise_by_class_id(element: &HtmlElement) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use rstest::rstest;
     use rustc_hash::FxHashMap;
 
@@ -151,7 +152,65 @@ mod tests {
     #[case(&[("class", "already-read")], false)]
     #[case(&[("class", "gradient-bg")], false)]
     #[case(&[("class", "article-content")], false)]
+    // Non-ASCII text never forms a token (tokenizing splits on non-ASCII-alphanumeric
+    // boundaries), so a Japanese-only class is a known miss, not a false positive.
+    #[case(&[("class", "広告")], false)]
+    #[case(&[("class", "お知らせ-share")], true)]
     fn test_is_noise_by_class_id(#[case] attrs: &[(&str, &str)], #[case] expected: bool) {
         assert_eq!(is_noise_by_class_id(&element_with_attrs(attrs)), expected);
+    }
+
+    proptest! {
+        // Casing must not matter.
+        #[test]
+        fn prop_isolated_noise_token_is_always_detected(
+            token in prop::sample::select(NOISE_TOKENS.to_vec()),
+            upper in any::<bool>(),
+        ) {
+            let class = if upper { token.to_ascii_uppercase() } else { token.to_string() };
+            let el = element_with_attrs(&[("class", &class)]);
+            prop_assert!(is_noise_by_class_id(&el));
+        }
+
+        #[test]
+        fn prop_noise_token_detected_within_class_list(
+            token in prop::sample::select(NOISE_TOKENS.to_vec()),
+            prefix in "[a-z]{0,8}",
+            suffix in "[a-z]{0,8}",
+        ) {
+            let class = format!("{prefix}-{token}-{suffix}");
+            let el = element_with_attrs(&[("class", &class)]);
+            prop_assert!(is_noise_by_class_id(&el));
+        }
+
+        // Guards against accidental substring/prefix matches.
+        #[test]
+        fn prop_no_false_positive_for_non_noise_words(
+            words in prop::collection::vec("[a-zA-Z]{1,12}", 1..4)
+        ) {
+            prop_assume!(words.iter().all(|w| !NOISE_TOKENS.contains(&w.to_ascii_lowercase().as_str())));
+            let class = words.join("-");
+            let el = element_with_attrs(&[("class", &class)]);
+            prop_assert!(!is_noise_by_class_id(&el));
+        }
+
+        #[test]
+        fn prop_never_panics_on_arbitrary_unicode_class(class in ".{0,40}", id in ".{0,40}") {
+            let el = element_with_attrs(&[("class", &class), ("id", &id)]);
+            let _ = is_noise_by_class_id(&el);
+        }
+
+        // Must be an exact match, not a substring (e.g. "none-ish" doesn't count).
+        #[test]
+        fn prop_display_only_hides_when_value_is_exactly_none(
+            value in prop_oneof![
+                Just("block"), Just("flex"), Just("inline"), Just("grid"),
+                Just("inline-block"), Just("nonexistent"), Just("none-ish"),
+            ]
+        ) {
+            let style = format!("display: {value}");
+            let el = element_with_attrs(&[("style", &style)]);
+            prop_assert_eq!(is_hidden_element(&el), value == "none");
+        }
     }
 }

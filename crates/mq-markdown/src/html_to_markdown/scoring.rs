@@ -142,38 +142,81 @@ pub(super) fn find_best_candidate(html: &Html) -> Option<ElementRef<'_>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+    use rstest::rstest;
 
-    #[test]
-    fn test_finds_content_div_among_boilerplate_siblings() {
-        let html = Html::parse_document(
-            r#"<html><body>
-                <div class="sidebar"><a href="/a">Link one</a><a href="/b">Link two</a><a href="/c">Link three</a></div>
-                <div id="content">
-                    <p>This is the first real paragraph of the article, with plenty of words to score well.</p>
-                    <p>And here is a second paragraph, continuing the article with even more prose content.</p>
-                </div>
-            </body></html>"#,
-        );
-        let best = find_best_candidate(&html).expect("should find a candidate");
-        assert_eq!(best.value().attr("id"), Some("content"));
+    #[rstest]
+    #[case::picks_content_over_link_only_sidebar(
+        r#"<html><body>
+            <div class="sidebar"><a href="/a">Link one</a><a href="/b">Link two</a><a href="/c">Link three</a></div>
+            <div id="content">
+                <p>This is the first real paragraph of the article, with plenty of words to score well.</p>
+                <p>And here is a second paragraph, continuing the article with even more prose content.</p>
+            </div>
+        </body></html>"#,
+        Some("content")
+    )]
+    #[case::picks_content_over_link_only_sidebar_multibyte(
+        r#"<html><body>
+            <div class="sidebar"><a href="/a">リンク一</a><a href="/b">リンク二</a><a href="/c">リンク三</a></div>
+            <div id="content">
+                <p>これは記事の最初の段落です。スコアリングされるのに十分な長さの、意味のある日本語の文章が含まれています。</p>
+                <p>これは記事の2番目の段落で、絵文字🎉も含む十分な長さの文章がここに続きます、はい。</p>
+            </div>
+        </body></html>"#,
+        Some("content")
+    )]
+    #[case::bails_when_heading_sibling_would_be_lost(
+        r#"<html><body>
+            <h1>Page Title</h1>
+            <div>
+                <p>This is a long enough paragraph to be considered a real scoring candidate here.</p>
+            </div>
+        </body></html>"#,
+        None
+    )]
+    #[case::returns_none_when_no_candidate_qualifies("<html><body><div><p>Too short</p></div></body></html>", None)]
+    fn test_find_best_candidate(#[case] html: &str, #[case] expected_content_id: Option<&str>) {
+        let doc = Html::parse_document(html);
+        let result_id = find_best_candidate(&doc).and_then(|el| el.value().attr("id").map(str::to_string));
+        assert_eq!(result_id.as_deref(), expected_content_id);
     }
 
-    #[test]
-    fn test_returns_none_when_heading_sibling_would_be_lost() {
-        let html = Html::parse_document(
-            r#"<html><body>
-                <h1>Page Title</h1>
-                <div>
-                    <p>This is a long enough paragraph to be considered a real scoring candidate here.</p>
-                </div>
-            </body></html>"#,
-        );
-        assert!(find_best_candidate(&html).is_none());
+    // Multibyte-inclusive vocabulary; shortest word is 2 chars, so >=12 words
+    // guarantees each paragraph clears MIN_CANDIDATE_TEXT_LEN (25) even in the
+    // (astronomically unlikely) worst case of drawing the same short word every time.
+    fn prose_word() -> impl Strategy<Value = &'static str> {
+        prop_oneof![
+            Just("lorem"),
+            Just("ipsum"),
+            Just("dolor"),
+            Just("sit"),
+            Just("amet"),
+            Just("日本語"),
+            Just("文章"),
+            Just("絵文字🎉"),
+            Just("café"),
+            Just("naïve"),
+        ]
     }
 
-    #[test]
-    fn test_returns_none_when_no_candidate_qualifies() {
-        let html = Html::parse_document("<html><body><div><p>Too short</p></div></body></html>");
-        assert!(find_best_candidate(&html).is_none());
+    fn prose_text() -> impl Strategy<Value = String> {
+        prop::collection::vec(prose_word(), 12..20).prop_map(|words| words.join(" "))
+    }
+
+    proptest! {
+        // Must never panic on multibyte/emoji input.
+        #[test]
+        fn prop_content_div_always_wins_over_link_only_sidebar(para_a in prose_text(), para_b in prose_text()) {
+            let html = format!(
+                r#"<html><body>
+                    <div class="sidebar"><a href="/a">Link</a><a href="/b">Link</a><a href="/c">Link</a></div>
+                    <div id="content"><p>{para_a}</p><p>{para_b}</p></div>
+                </body></html>"#
+            );
+            let doc = Html::parse_document(&html);
+            let result_id = find_best_candidate(&doc).and_then(|el| el.value().attr("id").map(str::to_string));
+            prop_assert_eq!(result_id.as_deref(), Some("content"));
+        }
     }
 }

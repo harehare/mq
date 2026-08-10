@@ -265,6 +265,14 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     },
     "---\nimage: https://example.com/a.png\nsite: Example Site\n---\n\nB",
 )]
+#[case::front_matter_multibyte_description_and_author(
+    "<html><head><meta name=\"description\" content=\"日本語の説明文です\"><meta name=\"author\" content=\"山田太郎\"></head><body><p>本文</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\nauthor: 山田太郎\ndescription: 日本語の説明文です\n---\n\n本文",
+)]
 #[case::front_matter_json_ld_article(
     r#"<html><head><script type="application/ld+json">{"@type":"Article","headline":"JSON-LD Title","author":{"name":"Ada Lovelace"},"datePublished":"2023-05-01"}</script></head><body><p>B</p></body></html>"#,
     ConversionOptions {
@@ -1669,6 +1677,18 @@ fn test_html_to_markdown(#[case] html: &str, #[case] options: ConversionOptions,
 #[case::newsletter_signup_class_skipped(
     r#"<div class="newsletter-signup">Subscribe now</div><p>Content</p>"#,
     "Subscribe now"
+)]
+#[case::ad_class_skipped_multibyte_content(
+    r#"<div class="ad-container">今すぐお試しください🎉</div><p>Content</p>"#,
+    "今すぐお試しください🎉"
+)]
+#[case::hidden_attribute_skipped_multibyte_content(
+    r#"<p hidden>これは表示されないテキストです</p><p>Content</p>"#,
+    "これは表示されないテキストです"
+)]
+#[case::cookie_banner_skipped_multibyte_content(
+    r#"<div class="cookie-banner">当サイトはCookieを使用しています</div><p>Content</p>"#,
+    "当サイトはCookieを使用しています"
 )]
 fn test_noisy_elements_skipped(#[case] html: &str, #[case] expected_excluded: &str) {
     let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
