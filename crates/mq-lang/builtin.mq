@@ -2094,6 +2094,46 @@ def set_path(value, path, new_value):
     end
 end
 
+# Deletes the value at a nested path, following an array of keys/indices, e.g. `del_path(d, ["a", "b", 0])`.
+# An empty path deletes the whole value, mirroring jq's `delpaths([[]])`. A path through a missing
+# intermediate container, or ending in a missing key/out-of-range index, leaves `value` unchanged.
+#
+# Example:
+# ```
+# del_path({"a": {"b": 1, "c": 2}}, ["a", "b"])
+# #=> {"a": {"c": 2}}
+# ```
+#
+# Returns: dynamic
+def del_path(value, path):
+  if (is_empty(path)):
+    None
+  else:
+    do
+      let init = take(path, len(path) - 1)
+      | let key = last(path)
+      | let container = get_path(value, init)
+      | if (has(container, key)):
+          set_path(value, init, del(container, key))
+        else:
+          value
+    end
+end
+
+# Deletes the values at multiple nested paths, e.g. `del_paths(d, [["a"], ["b", 0]])`.
+# Paths are applied deepest-first (via `sort`/`reverse`) so that deleting one array element
+# doesn't shift the indices used by the remaining paths, mirroring jq's `delpaths`.
+#
+# Example:
+# ```
+# del_paths({"a": 1, "b": 2, "c": 3}, [["a"], ["c"]])
+# #=> {"b": 2}
+# ```
+#
+# Returns: dynamic
+def del_paths(value, paths):
+  fold(reverse(sort(paths)), value, fn(acc, p): del_path(acc, p););
+
 # Returns an array of leaf-path arrays for a value, e.g. `paths({"a": {"b": 1}})` returns `[["a", "b"]]`.
 # Each returned path can be passed to `get_path`/`set_path`. Containers with no leaves (e.g. `{}`, `[]`)
 # contribute no paths.
