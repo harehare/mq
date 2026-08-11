@@ -158,6 +158,10 @@ for details and known limitations.
 
 You can install the Neovim plugin by following the instructions in the [mq.nvim README](https://github.com/harehare/mq/blob/main/editors/neovim/README.md).
 
+### Obsidian
+
+You can install the mq plugin from the [Obsidian Community Plugins](https://community.obsidian.md/plugins/mq) directory. It runs mq queries directly inside Obsidian, fully client-side via WebAssembly.
+
 ### GitHub Actions
 
 You can use mq in your GitHub Actions workflows with the [Setup mq](https://github.com/marketplace/actions/setup-mq) action:
