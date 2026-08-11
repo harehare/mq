@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@codemirror/lang-html':
-        specifier: ^6.4.12
-        version: 6.4.12
       '@codemirror/lang-markdown':
         specifier: ^6.5.2
         version: 6.5.2

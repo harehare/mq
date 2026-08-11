@@ -1,8 +1,8 @@
 import { browser } from "wxt/browser";
-import { extractPageHtml, toggleOverlayPreview } from "../../../lib/injected";
+import { extractPageHtml } from "../../../lib/injected";
 
 export const PERMISSION_MESSAGE =
-  "Couldn't access this tab. Click the mq icon in the toolbar again to grant access, then retry.";
+  "Couldn't access this tab. Some pages (chrome://, the Chrome Web Store, etc.) can't be scripted by extensions.";
 
 export type ActiveTabResult<T> =
   | { ok: true; value: T }
@@ -36,9 +36,8 @@ async function executeInActiveTab<Args extends unknown[], R>(
     }
     return { ok: true, value: injection.result as R };
   } catch (error) {
-    // activeTab's grant is scoped to the tab active when the toolbar icon
-    // (or another qualifying gesture) was last clicked, and isn't renewed
-    // just by switching tabs while the side panel stays open.
+    // Fails on tabs scripting can't reach at all (chrome://, the Web
+    // Store, etc.), regardless of the activeTab grant.
     const detail = error instanceof Error ? error.message : String(error);
     return { ok: false, message: `${PERMISSION_MESSAGE} (${detail})` };
   }
@@ -47,11 +46,4 @@ async function executeInActiveTab<Args extends unknown[], R>(
 /** Extracts the active tab's full page HTML. */
 export function extractActivePageHtml(): Promise<ActiveTabResult<string>> {
   return executeInActiveTab(extractPageHtml, []);
-}
-
-/** Toggles the on-page preview overlay in the active tab. Returns whether it's now visible. */
-export function toggleActivePagePreview(
-  srcdoc: string,
-): Promise<ActiveTabResult<boolean>> {
-  return executeInActiveTab(toggleOverlayPreview, [srcdoc]);
 }

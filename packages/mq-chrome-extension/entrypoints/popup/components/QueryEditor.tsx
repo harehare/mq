@@ -1,4 +1,4 @@
-import { EXAMPLE_QUERIES } from "../lib/examples";
+import { EXAMPLE_CATEGORIES } from "../lib/examples";
 import { CodeEditor } from "./CodeEditor";
 
 type QueryEditorProps = {
@@ -6,6 +6,7 @@ type QueryEditorProps = {
   isRunning: boolean;
   disabled: boolean;
   onChange: (value: string) => void;
+  onSelectExample: (code: string) => void;
   onRun: () => void;
 };
 
@@ -14,6 +15,7 @@ export function QueryEditor({
   isRunning,
   disabled,
   onChange,
+  onSelectExample,
   onRun,
 }: QueryEditorProps) {
   return (
@@ -22,16 +24,21 @@ export function QueryEditor({
         <h2>mq Query</h2>
         <select
           aria-label="Example queries"
+          title="Pick an example to load it and run it immediately"
           value=""
           onChange={(event) => {
-            if (event.target.value) onChange(event.target.value);
+            if (event.target.value) onSelectExample(event.target.value);
           }}
         >
           <option value="">Examples…</option>
-          {EXAMPLE_QUERIES.map((example) => (
-            <option key={example.name} value={example.code}>
-              {example.name}
-            </option>
+          {EXAMPLE_CATEGORIES.map((category) => (
+            <optgroup key={category.name} label={category.name}>
+              {category.examples.map((example) => (
+                <option key={example.name} value={example.code}>
+                  {example.name}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EXAMPLE_QUERIES } from "../entrypoints/sidepanel/lib/examples";
+import { EXAMPLE_QUERIES } from "../entrypoints/popup/lib/examples";
 
 describe("EXAMPLE_QUERIES", () => {
   it("has a name and non-empty mq code for every entry", () => {
