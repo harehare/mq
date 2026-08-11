@@ -85,6 +85,10 @@ fmt:
 test-mq:
     cargo run -p mq-test -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/*_test.mq
 
+# Check -U round-trip fidelity against the GFM spec examples (fetches spec.txt over the network)
+test-gfm-spec:
+    cargo test -p mq-markdown --test gfm_roundtrip_fidelity -- --ignored --nocapture
+
 test-doc:
     cargo test --doc --workspace
 

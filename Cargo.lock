@@ -2778,6 +2778,7 @@ dependencies = [
  "serde_yaml",
  "smol_str",
  "unicode-width 0.2.2",
+ "ureq",
  "url",
 ]
 
