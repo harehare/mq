@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { htmlToMarkdown, run, toHtml } from "./lib/mq";
-import { extractActivePageHtml, toggleActivePagePreview } from "./lib/activeTab";
-import { buildSrcDoc } from "./lib/buildSrcDoc";
+import { htmlToMarkdown, run } from "./lib/mq";
+import { extractActivePageHtml } from "./lib/activeTab";
 import { queryStorage } from "./lib/queryStorage";
-import { SourcePane, type SourceMode } from "./components/SourcePane";
+import { SourcePane } from "./components/SourcePane";
 import { QueryEditor } from "./components/QueryEditor";
 import { ResultPane } from "./components/ResultPane";
 import { OptionsPanel, type RunOptions } from "./components/OptionsPanel";
@@ -16,20 +15,15 @@ const DEFAULT_OPTIONS: RunOptions = {
 
 export function App() {
   const [markdown, setMarkdown] = useState("");
-  const [html, setHtml] = useState("");
-  const [sourceMode, setSourceMode] = useState<SourceMode>("markdown");
   const [query, setQuery] = useState("");
   const [result, setResult] = useState("");
   const [options, setOptions] = useState<RunOptions>(DEFAULT_OPTIONS);
   const [isExtracting, setIsExtracting] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
-  const [previewActive, setPreviewActive] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryLoadedRef = useRef(false);
-
-  const source = sourceMode === "html" ? html : markdown;
 
   const handleExtract = async (): Promise<string | undefined> => {
     setError(null);
@@ -40,7 +34,6 @@ export function App() {
         setError(extracted.message);
         return undefined;
       }
-      setHtml(extracted.value);
       const md = await htmlToMarkdown(extracted.value);
       setMarkdown(md);
       setResult("");
@@ -53,19 +46,11 @@ export function App() {
     }
   };
 
-  const runQuery = async (
-    q: string,
-    src: string,
-    mode: SourceMode,
-    opts: RunOptions,
-  ) => {
+  const runQuery = async (q: string, src: string, opts: RunOptions) => {
     setError(null);
     setIsRunning(true);
     try {
-      const filtered = await run(q, src, {
-        ...opts,
-        inputFormat: mode === "html" ? "html" : "markdown",
-      });
+      const filtered = await run(q, src, opts);
       setResult(filtered);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -74,7 +59,12 @@ export function App() {
     }
   };
 
-  const handleRun = () => runQuery(query, source, sourceMode, options);
+  const handleRun = () => runQuery(query, markdown, options);
+
+  const handleSelectExample = (code: string) => {
+    setQuery(code);
+    if (markdown) runQuery(code, markdown, options);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -87,7 +77,7 @@ export function App() {
       setQuery(storedQuery);
       queryLoadedRef.current = true;
       if (storedQuery.trim() && extractedMarkdown) {
-        await runQuery(storedQuery, extractedMarkdown, "markdown", options);
+        await runQuery(storedQuery, extractedMarkdown, options);
       }
     })();
     return () => {
@@ -120,69 +110,30 @@ export function App() {
     };
   }, []);
 
-  const handleTogglePreview = async () => {
-    setError(null);
-    try {
-      if (previewActive) {
-        const toggled = await toggleActivePagePreview("");
-        if (!toggled.ok) {
-          setError(toggled.message);
-          return;
-        }
-        setPreviewActive(toggled.value);
-        return;
-      }
-
-      const previewSource =
-        result || markdown || (html ? await htmlToMarkdown(html) : "");
-      if (!previewSource) return;
-      const previewHtml = await toHtml(previewSource);
-      const srcdoc = buildSrcDoc(previewHtml);
-      const toggled = await toggleActivePagePreview(srcdoc);
-      if (!toggled.ok) {
-        setError(toggled.message);
-        return;
-      }
-      setPreviewActive(toggled.value);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
-
   return (
     <div className="app">
       <div className="app-body">
         {error && <div className="error-banner">{error}</div>}
 
         <SourcePane
-          mode={sourceMode}
           markdown={markdown}
-          html={html}
           isExtracting={isExtracting}
-          onModeChange={setSourceMode}
           onMarkdownChange={setMarkdown}
-          onHtmlChange={setHtml}
           onExtract={handleExtract}
         />
 
         <QueryEditor
           query={query}
           isRunning={isRunning}
-          disabled={!source}
+          disabled={!markdown}
           onChange={setQuery}
+          onSelectExample={handleSelectExample}
           onRun={handleRun}
         />
 
         <OptionsPanel options={options} onChange={setOptions} />
 
-        <ResultPane
-          result={result}
-          previewActive={previewActive}
-          previewDisabled={!result && !markdown && !html}
-          copied={copied}
-          onCopy={handleCopy}
-          onTogglePreview={handleTogglePreview}
-        />
+        <ResultPane result={result} copied={copied} onCopy={handleCopy} />
       </div>
     </div>
   );

@@ -25,6 +25,12 @@
 
 body {
   margin: 0;
+  /* Chrome sizes the popup window to the document unless given explicit
+     dimensions, so pin it here instead of letting it collapse to content.
+     600px height is Chrome's hard cap (kMaxSize); width has headroom up
+     to 800px but 600px keeps the popup from feeling oversized. */
+  width: 600px;
+  height: 600px;
   background: var(--bg);
   color: var(--fg);
   font-family:
@@ -49,11 +55,6 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
-}
-
-html,
-body {
-  height: 100%;
 }
 
 .app {
@@ -125,38 +126,6 @@ body {
   padding-left: 7px;
 }
 
-.tabs {
-  display: flex;
-  gap: 2px;
-  padding: 6px 10px 0;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
-
-.tab {
-  background: transparent;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 4px 4px 0 0;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding: 5px 10px;
-  cursor: pointer;
-}
-
-.tab:hover {
-  color: var(--fg);
-}
-
-.tab.active {
-  background: var(--panel-bg);
-  border-color: var(--border);
-  color: var(--header-title-color);
-}
-
 .pane-textarea {
   display: flex;
   width: 100%;
@@ -221,21 +190,10 @@ button.run-button:hover:not(:disabled) {
   color: var(--accent-fg);
 }
 
-button.active {
-  background: var(--accent-strong);
-  color: var(--accent-fg);
-  border-color: var(--accent-strong);
-}
-
 button.copied {
   background: var(--success-color);
   color: var(--accent-fg);
   border-color: var(--success-color);
-}
-
-.button-group {
-  display: flex;
-  gap: 6px;
 }
 
 select {

@@ -6,10 +6,9 @@ export default defineConfig({
   manifest: {
     name: "mq for Markdown",
     description:
-      "Convert the current page to Markdown, filter it with mq queries, and preview the result on the page.",
+      "Convert the current page to Markdown and filter it with mq queries.",
     minimum_chrome_version: "116",
-    permissions: ["activeTab", "scripting", "sidePanel", "storage"],
-    action: {},
+    permissions: ["activeTab", "scripting", "storage"],
     content_security_policy: {
       extension_pages:
         "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",

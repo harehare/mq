@@ -1,11 +1,10 @@
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { syntaxHighlighting } from "@codemirror/language";
 import { markdown } from "@codemirror/lang-markdown";
-import { html } from "@codemirror/lang-html";
 import { mqLanguage } from "../lib/mqLanguage";
 import { editorHighlightStyle } from "../lib/editorHighlight";
 
-export type EditorLanguage = "markdown" | "html" | "mq";
+export type EditorLanguage = "markdown" | "mq";
 
 type CodeEditorProps = {
   value: string;
@@ -21,8 +20,6 @@ const languageExtension = (language: EditorLanguage) => {
   switch (language) {
     case "markdown":
       return markdown();
-    case "html":
-      return html();
     case "mq":
       return mqLanguage;
   }
