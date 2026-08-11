@@ -1685,6 +1685,41 @@ impl Cli {
         }
     }
 
+    /// A `[filename]` tag for status lines, so they're never mistaken for query output
+    /// interleaved on the same terminal. Colorized when possible, plain text otherwise.
+    #[cfg(feature = "watch")]
+    fn watch_badge(watch_paths: &[PathBuf]) -> String {
+        let names: Vec<String> = watch_paths
+            .iter()
+            .map(|p| {
+                p.file_name()
+                    .map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().to_string())
+            })
+            .collect();
+        let label = if names.len() <= 3 {
+            names.join(",")
+        } else {
+            format!("{} files", names.len())
+        };
+        let tag = format!("[{label}]");
+
+        if io::stderr().is_terminal() && !Self::is_no_color() {
+            tag.cyan().bold().to_string()
+        } else {
+            tag
+        }
+    }
+
+    #[cfg(feature = "watch")]
+    fn watch_divider() -> String {
+        let line = "─".repeat(40);
+        if io::stderr().is_terminal() && !Self::is_no_color() {
+            line.dimmed().to_string()
+        } else {
+            line
+        }
+    }
+
     /// Watches each target's parent dir (not the file itself) and filters by filename,
     /// since editors that save via delete-and-rename would break a watch on the file's inode.
     #[cfg(feature = "watch")]
@@ -1701,8 +1736,8 @@ impl Cli {
             .collect();
 
         eprintln!(
-            "Watching {} file(s) for changes. Press Ctrl-C to stop.",
-            watch_paths.len()
+            "{} Watching for changes. Press Ctrl-C to stop.",
+            Self::watch_badge(&watch_paths)
         );
         self.run_once_watch();
 
@@ -1744,7 +1779,11 @@ impl Cli {
             });
 
             if relevant {
-                eprintln!("\nChange detected, re-running...");
+                eprintln!(
+                    "\n{}\n{} Changed, re-running...",
+                    Self::watch_divider(),
+                    Self::watch_badge(&watch_paths)
+                );
                 self.run_once_watch();
             }
         }
