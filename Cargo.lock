@@ -386,9 +386,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64"
-version = "0.23.0"
+version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b25655df2c3cdd83c5e5b293b88acd880332b2ddadd7c30ac43144fdc0033da9"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "bimap"
@@ -2565,7 +2565,7 @@ dependencies = [
 name = "mq-crawler"
 version = "0.8.2"
 dependencies = [
- "base64 0.23.0",
+ "base64 0.23.1",
  "chromiumoxide",
  "clap",
  "crossbeam",
@@ -2667,7 +2667,7 @@ name = "mq-lang"
 version = "0.8.2"
 dependencies = [
  "ammonia",
- "base64 0.23.0",
+ "base64 0.23.1",
  "chrono",
  "ciborium",
  "codspeed-divan-compat",
@@ -2697,7 +2697,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "similar 3.1.1",
+ "similar 3.1.2",
  "smallvec",
  "smol_str",
  "string-interner",
@@ -2828,7 +2828,7 @@ dependencies = [
  "scopeguard",
  "serde_json",
  "serde_yaml",
- "similar 3.1.1",
+ "similar 3.1.2",
  "strum",
  "tabled",
  "tempfile",
@@ -4371,9 +4371,9 @@ checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
 name = "similar"
-version = "3.1.1"
+version = "3.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6505efef05804732ed8a3f2d4f279429eb485bd69d5b0cc6b19cc02005cda16"
+checksum = "85ee016af5d736b69fc89e19254540fa4b5f5492853fb5503920f084011c78b6"
 dependencies = [
  "bstr",
 ]
