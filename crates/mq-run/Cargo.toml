@@ -15,11 +15,12 @@ default-run = "mq"
 [features]
 css-selector = ["mq-lang/css-selector"]
 debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex", "mq-dap"]
-default = ["std", "use_mimalloc", "http-import", "css-selector"]
+default = ["std", "use_mimalloc", "http-import", "css-selector", "watch"]
 http-import = ["mq-lang/http-import-ureq"]
 std = []
 tiktoken = ["mq-lang/tiktoken"]
 use_mimalloc = ["mimalloc"]
+watch = ["dep:notify"]
 
 [dependencies]
 clap = {workspace = true, features = ["derive"]}
@@ -35,8 +36,10 @@ mq-help = {workspace = true}
 mq-lang = {workspace = true, features = ["file-io", "process-io"]}
 mq-markdown = {workspace = true, features = ["json", "html-to-markdown", "color"]}
 mq-repl = {workspace = true}
+notify = {workspace = true, optional = true}
 quick-xml = {workspace = true}
 rayon = {workspace = true}
+rustc-hash = {workspace = true}
 serde_json = {workspace = true}
 similar = {workspace = true}
 serde_yaml = {workspace = true}

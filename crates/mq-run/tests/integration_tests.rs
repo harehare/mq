@@ -1501,3 +1501,76 @@ fn test_completion(#[case] shell: &str, #[case] expected_substring: &str) -> Res
 
     Ok(())
 }
+
+#[test]
+fn test_watch_requires_input_file() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.arg("--watch").arg(".h").write_stdin("# hello").assert().failure();
+}
+
+#[test]
+fn test_watch_reruns_on_file_change() -> Result<(), Box<dyn std::error::Error>> {
+    use assert_cmd::prelude::*;
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    let (_, file_path) = create_file("test_watch_reruns_on_file_change.md", "# hello\n");
+    let file_path_clone = file_path.clone();
+    defer! {
+        std::fs::remove_file(&file_path_clone).ok();
+    }
+
+    let mut child = Command::cargo_bin("mq")?
+        .arg("--watch")
+        .arg(".h")
+        .arg(&file_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+
+    let stdout = child.stdout.take().expect("child stdout was piped");
+    let (tx, rx) = mpsc::channel::<String>();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+
+    // Bounded polling rather than a fixed sleep: passes as soon as the line shows up,
+    // only takes the full timeout if the watcher is actually broken.
+    let wait_for = |expected: &str, timeout: Duration| -> bool {
+        let deadline = Instant::now() + timeout;
+        loop {
+            match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(line) if line == expected => return true,
+                Ok(_) => {}
+                Err(_) => return false,
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+        }
+    };
+
+    assert!(
+        wait_for("# hello", Duration::from_secs(10)),
+        "expected the initial run to print the file's current heading"
+    );
+
+    std::fs::write(&file_path, "# updated\n")?;
+
+    assert!(
+        wait_for("# updated", Duration::from_secs(10)),
+        "expected a re-run to print the heading after the file changed"
+    );
+
+    child.kill()?;
+    child.wait()?;
+
+    Ok(())
+}
