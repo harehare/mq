@@ -5,7 +5,8 @@ use miette::miette;
 use mq_lang::DefaultEngine;
 use mq_lang::Shared;
 use rayon::prelude::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::io::BufRead;
 use std::io::IsTerminal;
@@ -14,6 +15,8 @@ use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::time::Duration;
 use std::{fs, path::PathBuf};
 use which::which;
 
@@ -312,6 +315,14 @@ struct InputArgs {
     /// Enable streaming mode for processing large files line by line
     #[arg(long, default_value_t = false)]
     stream: bool,
+
+    /// Watch the input file(s) for changes and automatically re-run the query whenever
+    /// they change. Requires at least one input file (stdin cannot be watched). With
+    /// --from-file, the query file is watched too. Runs until interrupted (Ctrl-C); a
+    /// query error is printed to stderr and watching continues rather than exiting.
+    #[cfg(feature = "watch")]
+    #[arg(long, default_value_t = false)]
+    watch: bool,
 
     /// Evaluate the query once against all input files combined (like yq's `eval-all`),
     /// instead of once per file. Enables cross-file aggregation in a single query.
@@ -1241,12 +1252,10 @@ impl Cli {
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
             Some(Commands::Completion { shell }) => Self::generate_completion(shell),
             Some(Commands::Help { name, json, markdown }) => Self::run_help(name.as_deref(), *json, *markdown),
+            #[cfg(feature = "watch")]
+            None if self.input.watch => self.run_watch(),
             None => {
-                let result = if self.input.stream {
-                    self.process_streaming()
-                } else {
-                    self.process_batch()
-                };
+                let result = self.execute_once();
 
                 // --exit-status / -e: exit with code 1 if no truthy value was
                 // produced. Mirrors jq's behaviour: false and null are falsy;
@@ -1630,6 +1639,115 @@ impl Cli {
         }
         let first = self.auto_query_prefix(&files[0].0);
         files[1..].iter().all(|(f, _)| self.auto_query_prefix(f) == first)
+    }
+
+    fn execute_once(&self) -> miette::Result<()> {
+        if self.input.stream {
+            self.process_streaming()
+        } else {
+            self.process_batch()
+        }
+    }
+
+    #[cfg(feature = "watch")]
+    fn watch_targets(&self) -> miette::Result<Vec<PathBuf>> {
+        let mut targets = self.files.clone().unwrap_or_default();
+
+        if targets.is_empty() {
+            return Err(miette!(
+                "--watch requires at least one input file; stdin cannot be watched"
+            ));
+        }
+
+        if self.input.from_file
+            && let Some(query_path) = &self.query
+        {
+            targets.push(PathBuf::from(query_path));
+        }
+
+        Ok(targets)
+    }
+
+    #[cfg(feature = "watch")]
+    fn canonical_parent_dir(path: &Path) -> PathBuf {
+        let dir = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf())
+    }
+
+    /// Errors go to stderr instead of ending the loop, so one bad query doesn't stop watching.
+    #[cfg(feature = "watch")]
+    fn run_once_watch(&self) {
+        if let Err(err) = self.execute_once() {
+            eprintln!("{:?}", err);
+        }
+    }
+
+    /// Watches each target's parent dir (not the file itself) and filters by filename,
+    /// since editors that save via delete-and-rename would break a watch on the file's inode.
+    #[cfg(feature = "watch")]
+    fn run_watch(&self) -> miette::Result<()> {
+        use notify::Watcher as _;
+
+        let watch_paths = self.watch_targets()?;
+        let targets: rustc_hash::FxHashSet<(PathBuf, OsString)> = watch_paths
+            .iter()
+            .filter_map(|p| {
+                p.file_name()
+                    .map(|name| (Self::canonical_parent_dir(p), name.to_os_string()))
+            })
+            .collect();
+
+        eprintln!(
+            "Watching {} file(s) for changes. Press Ctrl-C to stop.",
+            watch_paths.len()
+        );
+        self.run_once_watch();
+
+        let (tx, rx) = mpsc::channel::<PathBuf>();
+        let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+            if let Ok(event) = res {
+                for path in event.paths {
+                    let _ = tx.send(path);
+                }
+            }
+        })
+        .map_err(|e| miette!("Failed to start file watcher: {e}"))?;
+
+        let mut watched_dirs = BTreeSet::new();
+        for path in &watch_paths {
+            let dir = Self::canonical_parent_dir(path);
+            if watched_dirs.insert(dir.clone()) {
+                watcher
+                    .watch(&dir, notify::RecursiveMode::NonRecursive)
+                    .map_err(|e| miette!("Failed to watch {}: {e}", dir.display()))?;
+            }
+        }
+
+        loop {
+            let Ok(first) = rx.recv() else {
+                return Ok(());
+            };
+
+            // Debounce: a single save often fires several fs events in quick
+            // succession (write + rename, etc.); coalesce them into one re-run.
+            let mut changed = vec![first];
+            while let Ok(path) = rx.recv_timeout(Duration::from_millis(150)) {
+                changed.push(path);
+            }
+
+            let relevant = changed.iter().any(|p| {
+                p.file_name()
+                    .is_some_and(|name| targets.contains(&(Self::canonical_parent_dir(p), name.to_os_string())))
+            });
+
+            if relevant {
+                eprintln!("\nChange detected, re-running...");
+                self.run_once_watch();
+            }
+        }
     }
 
     fn process_batch(&self) -> Result<(), miette::Error> {
@@ -5125,5 +5243,51 @@ mod tests {
             ..Cli::default()
         };
         assert!(cli.run().is_ok(), "--args with a valid NAME VALUE pair should succeed");
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn test_watch_targets_requires_a_file() {
+        let cli = Cli {
+            files: None,
+            query: Some("self".to_string()),
+            ..Cli::default()
+        };
+        assert!(
+            cli.watch_targets().is_err(),
+            "--watch on stdin (no files) should be rejected"
+        );
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn test_watch_targets_includes_input_files() {
+        let file = PathBuf::from("input.md");
+        let cli = Cli {
+            files: Some(vec![file.clone()]),
+            query: Some("self".to_string()),
+            ..Cli::default()
+        };
+        assert_eq!(cli.watch_targets().unwrap(), vec![file]);
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn test_watch_targets_includes_query_file_when_from_file() {
+        let input_file = PathBuf::from("input.md");
+        let query_file = "query.mq";
+        let cli = Cli {
+            input: InputArgs {
+                from_file: true,
+                ..Default::default()
+            },
+            files: Some(vec![input_file.clone()]),
+            query: Some(query_file.to_string()),
+            ..Cli::default()
+        };
+        assert_eq!(
+            cli.watch_targets().unwrap(),
+            vec![input_file, PathBuf::from(query_file)]
+        );
     }
 }
