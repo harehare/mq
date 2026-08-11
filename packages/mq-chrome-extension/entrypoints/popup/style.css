@@ -207,6 +207,7 @@ select {
 }
 
 .options-panel {
+  flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel-bg);

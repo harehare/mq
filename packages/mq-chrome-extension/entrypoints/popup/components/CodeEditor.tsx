@@ -84,6 +84,7 @@ export function CodeEditor({
         foldGutter: false,
         highlightActiveLine,
         highlightActiveLineGutter: false,
+        highlightSelectionMatches: false,
       }}
       theme={editorTheme}
       extensions={[languageExtension(language), syntaxHighlighting(editorHighlightStyle)]}
