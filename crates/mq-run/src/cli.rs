@@ -241,6 +241,7 @@ enum OutputFormat {
     Toon,
     Xml,
     Yaml,
+    Shell,
     None,
 }
 
@@ -2268,6 +2269,10 @@ impl Cli {
                 let yaml_str = crate::output::yaml::runtime_values_to_yaml(runtime_values)?;
                 buf.extend_from_slice(yaml_str.as_bytes());
             }
+            OutputFormat::Shell => {
+                let shell_str = crate::output::shell::runtime_values_to_shell(runtime_values);
+                buf.extend_from_slice(shell_str.as_bytes());
+            }
             OutputFormat::None => {}
         }
 
@@ -2736,6 +2741,7 @@ mod tests {
             OutputFormat::Xml,
             OutputFormat::Yaml,
             OutputFormat::Toon,
+            OutputFormat::Shell,
         ] {
             let cli = Cli {
                 input: InputArgs::default(),

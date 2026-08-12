@@ -6,6 +6,7 @@
 pub(crate) mod csv;
 pub(crate) mod gron;
 pub(crate) mod json;
+pub(crate) mod shell;
 pub(crate) mod table;
 pub(crate) mod toml;
 pub(crate) mod toon;
