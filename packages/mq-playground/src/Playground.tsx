@@ -32,6 +32,7 @@ import {
   VscListUnordered,
   VscError,
   VscWarning,
+  VscBook,
 } from "react-icons/vsc";
 import { initVimMode, VimMode } from "monaco-vim";
 import { EXAMPLES } from "./examples";
@@ -2048,6 +2049,15 @@ img{max-width:100%}
               marginRight: "8px",
             }}
           >
+            <a
+              className="header-icon-button"
+              href="https://mqlang.org/book/builtins.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Builtin function reference"
+            >
+              <VscBook size={16} />
+            </a>
             <button
               className="header-icon-button"
               onClick={() => setIsSettingsOpen(true)}
