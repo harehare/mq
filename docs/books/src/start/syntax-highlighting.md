@@ -61,3 +61,4 @@ bat example.mq
 In addition to bat, mq syntax highlighting is available for:
 
 - **Visual Studio Code**: Install the [mq extension](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq)
+- **Obsidian**: Install the [mq plugin](https://community.obsidian.md/plugins/mq)

@@ -29,6 +29,7 @@ url = {workspace = true, optional = true}
 divan = {workspace = true}
 proptest = {workspace = true}
 rstest = {workspace = true}
+ureq = {workspace = true}
 
 [[bench]]
 harness = false

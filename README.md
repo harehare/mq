@@ -72,7 +72,6 @@ Downloads the latest mq binary for your platform, installs it to `~/.local/bin/`
 | Cargo (crates.io)      | `cargo install mq-run`                      |
 | Docker                 | `docker run --rm ghcr.io/harehare/mq:0.7.0` |
 
-
 <details>
 <summary>More install options: cargo variants, binstall, pre-built binaries</summary>
 
@@ -100,8 +99,8 @@ Pre-built binaries for macOS, Linux, and Windows are also available on the [GitH
 | Neovim         | [![Neovim README](https://img.shields.io/badge/neovim-README-57A143?style=flat-square&logo=neovim&logoColor=white)](https://github.com/harehare/mq/blob/main/editors/neovim/README.md)                                                                                                                                                                                                  |
 | Zed            | [![Zed README](https://img.shields.io/badge/zed-README-084CCF?style=flat-square&logo=zed&logoColor=white)](https://github.com/harehare/mq/blob/main/editors/zed/README.md)                                                                                                                                                                                                              |
 | JetBrains IDEs | [![JetBrains README](https://img.shields.io/badge/jetbrains-README-000000?style=flat-square&logo=jetbrains&logoColor=white)](https://github.com/harehare/mq/blob/main/editors/jetbrains/README.md)                                                                                                                                                                                      |
+| Obsidian       | [![Obsidian Plugin](https://img.shields.io/badge/obsidian-plugin-7C3AED?style=flat-square&logo=obsidian&logoColor=white)](https://community.obsidian.md/plugins/mq)                                                                                                                                                                                                                     |
 | GitHub Actions | [![Setup mq](https://img.shields.io/badge/marketplace-Setup%20mq-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/setup-mq)                                                                                                                                                                                                         |
-
 
 ```yaml
 steps:
@@ -138,7 +137,6 @@ mq is a Rust + TypeScript monorepo.
 | [`mq-web`](packages/mq-web)           | Official WebAssembly build for the browser            | [![npm](https://img.shields.io/npm/v/mq-web?style=flat-square)](https://www.npmjs.com/package/mq-web)                 |
 | [`mq-nodejs`](packages/mq-nodejs)     | Node.js bindings                                      | [![npm](https://img.shields.io/npm/v/mq-nodejs?style=flat-square)](https://www.npmjs.com/package/mq-nodejs)           |
 
-
 </details>
 
 mq is also available as a hosted REST API (see [`mq-web-api`](crates/mq-web-api) above). See the [REST API docs](https://mqlang.org/book/start/web_api) or try it in the [Playground](https://mqlang.org/playground).
@@ -171,8 +169,8 @@ Commands:
   help        Show documentation for a builtin function, selector, standard module, standard-module function, or the `examples` topic
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -A, --aggregate
