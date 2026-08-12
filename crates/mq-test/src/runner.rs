@@ -1,5 +1,5 @@
 use glob::glob;
-use miette::IntoDiagnostic;
+use miette::{IntoDiagnostic, NamedSource};
 use mq_lang::{CstNodeKind, CstTrivia, RuntimeValue};
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -128,7 +128,10 @@ impl TestRunner {
 
     /// Discovers and executes all test functions.
     ///
-    /// Returns `Ok(true)` if every executed test passed.
+    /// A file that fails to read, parse, or evaluate is reported in place but does not
+    /// stop the remaining files from running.
+    ///
+    /// Returns `Ok(true)` if every executed test passed and every file ran.
     pub fn run(self) -> miette::Result<bool> {
         let test_files: Vec<PathBuf> = if self.files.is_empty() {
             glob("./**/*.mq")
@@ -144,15 +147,25 @@ impl TestRunner {
         // Behind a `Mutex` so files can be run in parallel.
         let module_paths: Mutex<FxHashMap<String, PathBuf>> = Mutex::new(FxHashMap::default());
         let any_failed = AtomicBool::new(false);
+        // Files that failed to read/parse/evaluate, reported as a rollup at the end.
+        let file_errors: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
-        let run_file = |file: &PathBuf| -> miette::Result<()> {
-            let content = fs::read_to_string(file).into_diagnostic()?;
+        let run_file = |file: &PathBuf| {
+            let content = match fs::read_to_string(file) {
+                Ok(content) => content,
+                Err(e) => {
+                    any_failed.store(true, Ordering::Relaxed);
+                    file_errors.lock().unwrap().push(file.clone());
+                    eprintln!("# {}\n\n❌ Failed to read file: {e}\n\n---\n", file.display());
+                    return;
+                }
+            };
             let tests: Vec<DiscoveredTest> = Self::discover_tests(&content)
                 .into_iter()
                 .filter(|test| self.matches(test))
                 .collect();
             if tests.is_empty() {
-                return Ok(());
+                return;
             }
 
             let query = Self::build_test_query(&content, &tests);
@@ -189,34 +202,40 @@ impl TestRunner {
             };
 
             let input = mq_lang::null_input();
-            let result = engine.eval(&query, input.into_iter()).map_err(|e| *e)?;
-            let passed = matches!(result.values().first(), Some(RuntimeValue::Boolean(true)));
-            if !passed {
-                any_failed.store(true, Ordering::Relaxed);
-            }
-
-            if self.coverage {
-                let mut module_paths = module_paths.lock().unwrap();
-                for module_name in coverage_data.snapshot().keys() {
-                    if before_modules.contains(module_name) {
-                        continue;
+            match engine.eval(&query, input.into_iter()) {
+                Ok(result) => {
+                    let passed = matches!(result.values().first(), Some(RuntimeValue::Boolean(true)));
+                    if !passed {
+                        any_failed.store(true, Ordering::Relaxed);
                     }
-                    module_paths.entry(module_name.clone()).or_insert_with(|| {
-                        engine
-                            .get_module_path(module_name)
-                            .map(PathBuf::from)
-                            .unwrap_or_else(|_| PathBuf::from(module_name))
-                    });
+
+                    if self.coverage {
+                        let mut module_paths = module_paths.lock().unwrap();
+                        for module_name in coverage_data.snapshot().keys() {
+                            if before_modules.contains(module_name) {
+                                continue;
+                            }
+                            module_paths.entry(module_name.clone()).or_insert_with(|| {
+                                engine
+                                    .get_module_path(module_name)
+                                    .map(PathBuf::from)
+                                    .unwrap_or_else(|_| PathBuf::from(module_name))
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    any_failed.store(true, Ordering::Relaxed);
+                    file_errors.lock().unwrap().push(file.clone());
+                    eprintln!("{}", Self::render_file_error(file, *e));
                 }
             }
-
-            Ok(())
         };
 
         if test_files.len() > self.parallel_threshold {
-            test_files.par_iter().try_for_each(run_file)?;
+            test_files.par_iter().for_each(run_file);
         } else {
-            test_files.iter().try_for_each(run_file)?;
+            test_files.iter().for_each(run_file);
         }
 
         if self.coverage {
@@ -255,7 +274,35 @@ impl TestRunner {
             }
         }
 
+        let file_errors = file_errors.into_inner().unwrap();
+        if !file_errors.is_empty() {
+            let list = file_errors
+                .iter()
+                .map(|f| format!("  - {}", f.display()))
+                .collect::<Vec<_>>()
+                .join("\n");
+            eprintln!(
+                "⚠ {} of {} file(s) failed to run and were skipped:\n{list}",
+                file_errors.len(),
+                test_files.len()
+            );
+        }
+
         Ok(!any_failed.load(Ordering::Relaxed))
+    }
+
+    /// Renders a file-level failure (parse/eval error, not a failing test) with a
+    /// per-file header. mq-lang's top-level query has no file name of its own, so this
+    /// re-attaches `file` when the diagnostic's source name is blank.
+    fn render_file_error(file: &Path, mut error: mq_lang::Error) -> String {
+        if error.source_code.name().is_empty() {
+            error.source_code = NamedSource::new(file.display().to_string(), error.source_code.inner().clone());
+        }
+        format!(
+            "# {}\n\n❌ Failed to run tests\n\n{:?}\n---\n",
+            file.display(),
+            miette::Report::new(error)
+        )
     }
 
     /// Returns `true` if `test` should run given `self.filter`/`self.tags`.
@@ -978,6 +1025,79 @@ mod tests {
 
         let passed = TestRunner::new(vec![failing, passing]).run().unwrap();
         assert!(!passed, "run() must report failure when any test fails");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_run_continues_after_a_file_with_a_syntax_error() {
+        let dir = temp_project_dir("continues_after_syntax_error");
+        fs::write(dir.join("lib.mq"), "def add(a, b):\n  a + b\nend\n").unwrap();
+
+        let broken = dir.join("a_broken.mq");
+        fs::write(
+            &broken,
+            "include \"test\"\n|\ndef test_broken():\n  assert_eq(1, 1)\nend\nend\n",
+        )
+        .unwrap();
+
+        let ok = dir.join("b_ok.mq");
+        fs::write(
+            &ok,
+            "include \"test\" | include \"lib\"\n|\n\ndef test_ok():\n  assert_eq(add(1, 2), 3)\nend\n",
+        )
+        .unwrap();
+        let output = dir.join("coverage.json");
+
+        let passed = TestRunner::new(vec![broken, ok])
+            .with_coverage(true)
+            .with_coverage_format(CoverageFormat::Json)
+            .with_coverage_output(Some(output.clone()))
+            .run()
+            .unwrap();
+        assert!(!passed, "a broken file must fail the overall run");
+
+        // Proves b_ok.mq still ran despite a_broken.mq's syntax error.
+        let report = fs::read_to_string(&output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
+        let files = parsed["files"].as_array().unwrap();
+        assert_eq!(
+            files.len(),
+            1,
+            "b_ok.mq must still have run and exercised lib.mq: {files:?}"
+        );
+        assert!(files[0]["file"].as_str().unwrap().ends_with("lib.mq"));
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_render_file_error_attaches_the_file_name_when_mq_lang_left_it_blank() {
+        let dir = temp_project_dir("render_file_error");
+        let broken = dir.join("broken.mq");
+        let content = "include \"test\"\n|\ndef test_x():\n  1\nend\nend\n";
+        fs::write(&broken, content).unwrap();
+
+        let tests = TestRunner::discover_tests(content);
+        let query = TestRunner::build_test_query(content, &tests);
+
+        let mut engine = mq_lang::Engine::with_io(
+            mq_lang::DefaultModuleResolver::default(),
+            mq_lang::Shared::new(mq_lang::MemIo::default()),
+        );
+        engine.load_builtin_module();
+        let err = *engine.eval(&query, mq_lang::null_input().into_iter()).unwrap_err();
+        assert_eq!(
+            err.source_code.name(),
+            "",
+            "sanity check: mq-lang itself doesn't know the file name"
+        );
+
+        let rendered = TestRunner::render_file_error(&broken, err);
+        assert!(
+            rendered.contains(&broken.display().to_string()),
+            "rendered error must name the failing file:\n{rendered}"
+        );
 
         fs::remove_dir_all(&dir).ok();
     }
