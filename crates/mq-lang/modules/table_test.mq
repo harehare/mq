@@ -21,24 +21,9 @@ def test_table_tables_empty():
   | assert_eq(result, [])
 end
 
-def test_table_tables_followed_by_paragraph():
-  let md_nodes = to_markdown(table_md_followed_by_paragraph)
-  | let result = table::tables(md_nodes)
-  | assert_eq(len(result), 1)
-  | let t = result[0]
-  | assert_eq(len(t[:rows]), 2)
-end
-
-def test_table_tables_followed_by_heading():
-  let md_nodes = to_markdown(table_md_followed_by_heading)
-  | let result = table::tables(md_nodes)
-  | assert_eq(len(result), 1)
-  | let t = result[0]
-  | assert_eq(len(t[:rows]), 2)
-end
-
-def test_table_tables_followed_by_break():
-  let md_nodes = to_markdown(table_md_followed_by_break)
+# @parametrize([[table_md_followed_by_paragraph], [table_md_followed_by_heading], [table_md_followed_by_break]])
+def test_table_tables_followed_by(markdown):
+  let md_nodes = to_markdown(markdown)
   | let result = table::tables(md_nodes)
   | assert_eq(len(result), 1)
   | let t = result[0]

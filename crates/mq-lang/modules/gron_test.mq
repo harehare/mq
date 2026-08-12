@@ -8,17 +8,13 @@ def test_gron_parse_scalar():
   | assert_eq(result, "hello")
 end
 
-def test_gron_parse_nested():
-  let result = gron::gron_parse("json = {};\njson.a = {};\njson.a.b = \"deep\";")
-  | assert_eq(result["a"]["b"], "deep")
+# @parametrize([["json = {};\njson.a = {};\njson.a.b = \"deep\";", "deep"], ["json.a.b = \"deep\";", "deep"]])
+def test_gron_parse_nested(input, expected):
+  let result = gron::gron_parse(input)
+  | assert_eq(result["a"]["b"], expected)
 end
 
 def test_gron_parse_array():
   let result = gron::gron_parse("json = [];\njson[0] = \"x\";\njson[1] = \"y\";")
   | assert_eq(result, ["x", "y"])
-end
-
-def test_gron_parse_ignores_redundant_container_decls():
-  let result = gron::gron_parse("json.a.b = \"deep\";")
-  | assert_eq(result["a"]["b"], "deep")
 end

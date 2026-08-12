@@ -1,71 +1,39 @@
-include "test"
+include "test" |
 
-|
-
-def test_is_array():
-  let result1 = is_array([1, 2, 3])
-  | assert_eq(result1, true)
-
-  | let result2 = is_array("string")
-  | assert_eq(result2, false)
-
-  | let result3 = is_array(42)
-  | assert_eq(result3, false)
+# @parametrize([[[1, 2, 3], true], ["string", false], [42, false], [None, false], [dict(), false]])
+def test_is_array(arr, expected):
+  let result1 = is_array(arr)
+  | assert_eq(result1, expected)
 end
 
-def test_is_bool():
-  let result1 = is_bool(true)
-  | assert_eq(result1, true)
-
-  | let result2 = is_bool(false)
-  | assert_eq(result2, true)
-
-  | let result3 = is_bool(1)
-  | assert_eq(result3, false)
+# @parametrize([[true, true], [false, true], [1, false]])
+def test_is_bool(value, expected):
+  let result = is_bool(value)
+  | assert_eq(result, expected)
 end
 
-def test_is_number():
-  let result1 = is_number(42)
-  | assert_eq(result1, true)
-
-  | let result2 = is_number(3.14)
-  | assert_eq(result2, true)
-
-  | let result3 = is_number("42")
-  | assert_eq(result3, false)
+# @parametrize([[42, true], [3.14, true], ["42", false]])
+def test_is_number(value, expected):
+  let result = is_number(value)
+  | assert_eq(result, expected)
 end
 
-def test_is_string():
-  let result1 = is_string("hello")
-  | assert_eq(result1, true)
-
-  | let result2 = is_string(42)
-  | assert_eq(result2, false)
-
-  | let result3 = is_string([])
-  | assert_eq(result3, false)
+# @parametrize([["hello", true], [42, false], [[], false]])
+def test_is_string(value, expected):
+  let result = is_string(value)
+  | assert_eq(result, expected)
 end
 
-def test_is_none():
-  let result1 = is_none(None)
-  | assert_eq(result1, true)
-
-  | let result2 = is_none(0)
-  | assert_eq(result2, false)
-
-  | let result3 = is_none("")
-  | assert_eq(result3, false)
+# @parametrize([[None, true], [0, false], ["", false]])
+def test_is_none(value, expected):
+  let result = is_none(value)
+  | assert_eq(result, expected)
 end
 
-def test_is_dict():
-  let result1 = is_dict(dict())
-  | assert_eq(result1, true)
-
-  | let result2 = is_dict({"key": "value"})
-  | assert_eq(result2, true)
-
-  | let result3 = is_dict([])
-  | assert_eq(result3, false)
+# @parametrize([[dict(), true], [{"key": "value"}, true], [[], false]])
+def test_is_dict(value, expected):
+  let result = is_dict(value)
+  | assert_eq(result, expected)
 end
 
 def test_is_mdx():
@@ -79,449 +47,260 @@ def test_is_mdx():
   | assert_eq(result3, false)
 end
 
-def test_is_callout():
-  let result1 = do "> [!NOTE]\n> This is a note." | to_markdown() | first() | is_callout();
-  | assert_eq(result1, true)
+# @parametrize([["> [!NOTE]\n> This is a note.", true], ["> [!WARNING]\n> Watch out!", true], ["> [!WARNING] Watch out!", true], ["> Just a plain blockquote.", false]])
+def test_is_callout(markdown, expected):
+  let node = do markdown | to_markdown() | first();
+  | let result = is_callout(node)
+  | assert_eq(result, expected)
+end
 
-  | let result2 = do "> [!WARNING]\n> Watch out!" | to_markdown() | first() | is_callout();
-  | assert_eq(result2, true)
-
-  | let result3 = do "> [!WARNING] Watch out!" | to_markdown() | first() | is_callout();
-  | assert_eq(result3, true)
-
-  | let result4 = do "> Just a plain blockquote." | to_markdown() | first() | is_callout();
-  | assert_eq(result4, false)
-
-  | let result5 = is_callout("not a blockquote")
-  | assert_eq(result5, false)
+def test_is_callout_non_node():
+  let result = is_callout("not a blockquote")
+  | assert_eq(result, false)
 end
 
 # String manipulation tests
-def test_contains():
-  let result1 = contains("hello world", "world")
-  | assert_eq(result1, true)
-
-  | let result2 = contains("hello world", "foo")
-  | assert_eq(result2, false)
-
-  | let result3 = contains({"a": 1, "b": 2}, "a")
-  | assert_eq(result3, true)
-
-  | let result4 = contains({"a": 1, "b": 2}, "c")
-  | assert_eq(result4, false)
+# @parametrize([["hello world", "world", true], ["hello world", "foo", false], [{"a": 1, "b": 2}, "a", true], [{"a": 1, "b": 2}, "c", false]])
+def test_contains(value, needle, expected):
+  let result = contains(value, needle)
+  | assert_eq(result, expected)
 end
 
-def test_ltrimstr():
-  let result1 = ltrimstr("hello world", "hello ")
-  | assert_eq(result1, "world")
-
-  | let result2 = ltrimstr("hello world", "foo")
-  | assert_eq(result2, "hello world")
-
-  | let result3 = ltrimstr("test", "test")
-  | assert_eq(result3, "")
+# @parametrize([["hello world", "hello ", "world"], ["hello world", "foo", "hello world"], ["test", "test", ""]])
+def test_ltrimstr(value, prefix, expected):
+  let result = ltrimstr(value, prefix)
+  | assert_eq(result, expected)
 end
 
-def test_rtrimstr():
-  let result1 = rtrimstr("hello world", " world")
-  | assert_eq(result1, "hello")
-
-  | let result2 = rtrimstr("hello world", "foo")
-  | assert_eq(result2, "hello world")
-
-  | let result3 = rtrimstr("test", "test")
-  | assert_eq(result3, "")
+# @parametrize([["hello world", " world", "hello"], ["hello world", "foo", "hello world"], ["test", "test", ""]])
+def test_rtrimstr(value, suffix, expected):
+  let result = rtrimstr(value, suffix)
+  | assert_eq(result, expected)
 end
 
 # Collection tests
-def test_is_empty():
-  let result1 = is_empty([])
-  | assert_eq(result1, true)
-
-  | let result2 = is_empty("")
-  | assert_eq(result2, true)
-
-  | let result3 = is_empty(dict())
-  | assert_eq(result3, true)
-
-  | let result4 = is_empty([1, 2, 3])
-  | assert_eq(result4, false)
-
-  | let result5 = is_empty("hello")
-  | assert_eq(result5, false)
-
-  | let result6 = is_empty(None)
-  | assert_eq(result6, true)
-
-  | let result7 = is_empty(b"binary\x20data")
-  | assert_eq(result7, false)
-
-  | let result8 = is_empty(b"")
-  | assert_eq(result8, true)
-
+# @parametrize([[[], true], ["", true], [dict(), true], [[1, 2, 3], false], ["hello", false], [None, true], [b"binary\x20data", false], [b"", true]])
+def test_is_empty(value, expected):
+  let result = is_empty(value)
+  | assert_eq(result, expected)
 end
 
 # Selector tests
-def test_select():
-  let result1 = select(42, true)
-  | assert_eq(result1, 42)
-
-  | let result2 = select(42, false)
-  | assert_eq(result2, None)
+# @parametrize([[42, true, 42], [42, false, None]])
+def test_select(value, cond, expected):
+  let result = select(value, cond)
+  | assert_eq(result, expected)
 end
 
-def test_arrays():
-  let result1 = arrays([1, 2, 3])
-  | assert_eq(result1, [1, 2, 3])
-
-  | let result2 = arrays("not an array")
-  | assert_eq(result2, None)
+# @parametrize([[[1, 2, 3], [1, 2, 3]], ["not an array", None]])
+def test_arrays(value, expected):
+  let result = arrays(value)
+  | assert_eq(result, expected)
 end
 
-def test_booleans():
-  let result1 = booleans(true)
-  | assert_eq(result1, true)
-
-  | let result2 = booleans(42)
-  | assert_eq(result2, None)
+# @parametrize([[true, true], [42, None]])
+def test_booleans(value, expected):
+  let result = booleans(value)
+  | assert_eq(result, expected)
 end
 
-def test_numbers():
-  let result1 = numbers(42)
-  | assert_eq(result1, 42)
-
-  | let result2 = numbers("42")
-  | assert_eq(result2, None)
+# @parametrize([[42, 42], ["42", None]])
+def test_numbers(value, expected):
+  let result = numbers(value)
+  | assert_eq(result, expected)
 end
 
-def test_strings():
-  let result1 = strings("hello")
-  | assert_eq(result1, "hello")
-
-  | let result2 = strings(42)
-  | assert_eq(result2, None)
+# @parametrize([["hello", "hello"], [42, None]])
+def test_strings(value, expected):
+  let result = strings(value)
+  | assert_eq(result, expected)
 end
 
-def test_dicts():
-  let result1 = dicts({"a": 1})
-  | assert_eq(result1, {"a": 1})
-
-  | let result2 = dicts([1, 2])
-  | assert_eq(result2, None)
+# @parametrize([[{"a": 1}, {"a": 1}], [[1, 2], None]])
+def test_dicts(value, expected):
+  let result = dicts(value)
+  | assert_eq(result, expected)
 end
 
-def test_nones():
-  let result1 = nones(None)
-  | assert_eq(result1, None)
-
-  | let result2 = nones(42)
-  | assert_eq(result2, None)
+# @parametrize([[None, None], [42, None]])
+def test_nones(value, expected):
+  let result = nones(value)
+  | assert_eq(result, expected)
 end
 
-def test_bytes():
-  let result1 = bytes(b"data")
-  | assert_eq(result1, b"data")
-
-  | let result2 = bytes("not bytes")
-  | assert_eq(result2, None)
+# @parametrize([[b"data", b"data"], ["not bytes", None]])
+def test_bytes(value, expected):
+  let result = bytes(value)
+  | assert_eq(result, expected)
 end
 
-def test_iterables():
-  let result1 = iterables([1, 2, 3])
-  | assert_eq(result1, [1, 2, 3])
-
-  | let result2 = iterables({"a": 1})
-  | assert_eq(result2, {"a": 1})
-
-  | let result3 = iterables(42)
-  | assert_eq(result3, None)
+# @parametrize([[[1, 2, 3], [1, 2, 3]], [{"a": 1}, {"a": 1}], [42, None]])
+def test_iterables(value, expected):
+  let result = iterables(value)
+  | assert_eq(result, expected)
 end
 
-def test_scalars():
-  let result1 = scalars(42)
-  | assert_eq(result1, 42)
-
-  | let result2 = scalars("hello")
-  | assert_eq(result2, "hello")
-
-  | let result3 = scalars([1, 2, 3])
-  | assert_eq(result3, None)
-
-  | let result4 = scalars({"a": 1})
-  | assert_eq(result4, None)
+# @parametrize([[42, 42], ["hello", "hello"], [[1, 2, 3], None], [{"a": 1}, None]])
+def test_scalars(value, expected):
+  let result = scalars(value)
+  | assert_eq(result, expected)
 end
 
 # Array manipulation tests
-def test_map():
-  let result1 = map([1, 2, 3], fn(x): x * 2;)
-  | assert_eq(result1, [2, 4, 6])
-
-  | let result2 = map({"a": 1, "b": 2}, fn(x): [x[0], x[1] * 2];)
-  | assert_eq(result2, {"a": 2, "b": 4})
-
-  | let result3 = map(None, fn(x): [x[0], x[1] * 2];)
-  | assert_eq(result3, None)
+# @parametrize([[[1, 2, 3], fn(x): x * 2;, [2, 4, 6]], [{"a": 1, "b": 2}, fn(x): [x[0], x[1] * 2];, {"a": 2, "b": 4}], [None, fn(x): [x[0], x[1] * 2];, None]])
+def test_map(value, f, expected):
+  let result = map(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_flat_map():
-  let result1 = flat_map([1, 2, 3], fn(x): [x, x * 2];)
-  | assert_eq(result1, [1, 2, 2, 4, 3, 6])
-
-  | let result2 = flat_map([[1, 2], [3, 4]], fn(x): x;)
-  | assert_eq(result2, [1, 2, 3, 4])
-
-  | let result3 = flat_map(None, fn(x): [x[0], x[1] * 2];)
-  | assert_eq(result3, None)
+# @parametrize([[[1, 2, 3], fn(x): [x, x * 2];, [1, 2, 2, 4, 3, 6]], [[[1, 2], [3, 4]], fn(x): x;, [1, 2, 3, 4]], [None, fn(x): [x[0], x[1] * 2];, None]])
+def test_flat_map(value, f, expected):
+  let result = flat_map(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_filter():
-  let result1 = filter([1, 2, 3, 4, 5], fn(x): x > 2;)
-  | assert_eq(result1, [3, 4, 5])
-
-  | let result2 = filter({"a": 1, "b": 2, "c": 3}, fn(x): x[1] > 1;)
-  | assert_eq(result2, {"b": 2, "c": 3})
-
-  | let result3 = filter(None, fn(x): [x[0], x[1] * 2];)
-  | assert_eq(result3, None)
+# @parametrize([[[1, 2, 3, 4, 5], fn(x): x > 2;, [3, 4, 5]], [{"a": 1, "b": 2, "c": 3}, fn(x): x[1] > 1;, {"b": 2, "c": 3}], [None, fn(x): [x[0], x[1] * 2];, None]])
+def test_filter(value, f, expected):
+  let result = filter(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_first():
-  let result1 = first([1, 2, 3])
-  | assert_eq(result1, 1)
-
-  | let result2 = first([])
-  | assert_eq(result2, None)
+# @parametrize([[[1, 2, 3], 1], [[], None]])
+def test_first(value, expected):
+  let result = first(value)
+  | assert_eq(result, expected)
 end
 
-def test_last():
-  let result1 = last([1, 2, 3])
-  | assert_eq(result1, 3)
-
-  | let result2 = last([42])
-  | assert_eq(result2, 42)
+# @parametrize([[[1, 2, 3], 3], [[42], 42]])
+def test_last(value, expected):
+  let result = last(value)
+  | assert_eq(result, expected)
 end
 
-def test_second():
-  let result1 = second([1, 2, 3])
-  | assert_eq(result1, 2)
-
-  | let result2 = second([42])
-  | assert_eq(result2, None)
+# @parametrize([[[1, 2, 3], 2], [[42], None]])
+def test_second(value, expected):
+  let result = second(value)
+  | assert_eq(result, expected)
 end
 
-def test_fill():
-  let result1 = fill("x", 3)
-  | assert_eq(result1, ["x", "x", "x"])
-
-  | let result2 = fill(0, 0)
-  | assert_eq(result2, [])
-
-  | let result3 = fill(42, 2)
-  | assert_eq(result3, [42, 42])
+# @parametrize([["x", 3, ["x", "x", "x"]], [0, 0, []], [42, 2, [42, 42]]])
+def test_fill(value, n, expected):
+  let result = fill(value, n)
+  | assert_eq(result, expected)
 end
 
-def test_sort_natural():
-  let result1 = sort_natural(["file10", "file2", "file1"])
-  | assert_eq(result1, ["file1", "file2", "file10"])
-
-  | let result2 = sort_natural(["chapter-2.md", "chapter-10.md", "chapter-1.md"])
-  | assert_eq(result2, ["chapter-1.md", "chapter-2.md", "chapter-10.md"])
-
-  | let result3 = sort_natural([])
-  | assert_eq(result3, [])
+# @parametrize([[["file10", "file2", "file1"], ["file1", "file2", "file10"]], [["chapter-2.md", "chapter-10.md", "chapter-1.md"], ["chapter-1.md", "chapter-2.md", "chapter-10.md"]], [[], []]])
+def test_sort_natural(value, expected):
+  let result = sort_natural(value)
+  | assert_eq(result, expected)
 end
 
-def test_skip():
-  let result1 = skip([1, 2, 3, 4, 5], 2)
-  | assert_eq(result1, [3, 4, 5])
-
-  | let result2 = skip([1, 2, 3], 0)
-  | assert_eq(result2, [1, 2, 3])
-
-  | let result3 = skip([1, 2, 3], 5)
-  | assert_eq(result3, [])
+# @parametrize([[[1, 2, 3, 4, 5], 2, [3, 4, 5]], [[1, 2, 3], 0, [1, 2, 3]], [[1, 2, 3], 5, []]])
+def test_skip(value, n, expected):
+  let result = skip(value, n)
+  | assert_eq(result, expected)
 end
 
-def test_take():
-  let result1 = take([1, 2, 3, 4, 5], 3)
-  | assert_eq(result1, [1, 2, 3])
-
-  | let result2 = take([1, 2, 3], 0)
-  | assert_eq(result2, [])
-
-  | let result3 = take([1, 2, 3], 5)
-  | assert_eq(result3, [1, 2, 3])
+# @parametrize([[[1, 2, 3, 4, 5], 3, [1, 2, 3]], [[1, 2, 3], 0, []], [[1, 2, 3], 5, [1, 2, 3]]])
+def test_take(value, n, expected):
+  let result = take(value, n)
+  | assert_eq(result, expected)
 end
 
-def test_find_index():
-  let result1 = find_index([1, 2, 3, 4, 5], fn(x): x == 3;)
-  | assert_eq(result1, 2)
-
-  | let result2 = find_index([1, 2, 3, 4, 5], fn(x): x > 10;)
-  | assert_eq(result2, -1)
-
-  | let result3 = find_index([10, 20, 30], fn(x): x == 10;)
-  | assert_eq(result3, 0)
+# @parametrize([[[1, 2, 3, 4, 5], fn(x): x == 3;, 2], [[1, 2, 3, 4, 5], fn(x): x > 10;, -1], [[10, 20, 30], fn(x): x == 10;, 0]])
+def test_find_index(value, f, expected):
+  let result = find_index(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_skip_while():
-  let result1 = skip_while([1, 2, 3, 4, 5], fn(x): x < 3;)
-  | assert_eq(result1, [3, 4, 5])
-
-  | let result2 = skip_while([1, 2, 3], fn(x): x > 10;)
-  | assert_eq(result2, [1, 2, 3])
-
-  | let result3 = skip_while([], fn(x): x < 5;)
-  | assert_eq(result3, [])
+# @parametrize([[[1, 2, 3, 4, 5], fn(x): x < 3;, [3, 4, 5]], [[1, 2, 3], fn(x): x > 10;, [1, 2, 3]], [[], fn(x): x < 5;, []]])
+def test_skip_while(value, f, expected):
+  let result = skip_while(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_take_while():
-  let result1 = take_while([1, 2, 3, 4, 5], fn(x): x < 4;)
-  | assert_eq(result1, [1, 2, 3])
-
-  | let result2 = take_while([1, 2, 3], fn(x): x > 10;)
-  | assert_eq(result2, [])
-
-  | let result3 = take_while([], fn(x): x < 5;)
-  | assert_eq(result3, [])
+# @parametrize([[[1, 2, 3, 4, 5], fn(x): x < 4;, [1, 2, 3]], [[1, 2, 3], fn(x): x > 10;, []], [[], fn(x): x < 5;, []]])
+def test_take_while(value, f, expected):
+  let result = take_while(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_group_by():
-  let result1 = group_by([1, 2, 3, 4, 5, 6], fn(x): x % 2;)
-  | assert_eq(result1["0"], [2, 4, 6])
-  | assert_eq(result1["1"], [1, 3, 5])
-
-  | let result2 = group_by([], fn(x): x;)
-  | assert_eq(result2, dict())
+# @parametrize([[[1, 2, 3, 4, 5, 6], fn(x): x % 2;, {"0": [2, 4, 6], "1": [1, 3, 5]}], [[], fn(x): x;, dict()]])
+def test_group_by(value, f, expected):
+  let result = group_by(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_frequencies_by():
-  let result1 = frequencies_by([1, 2, 3, 4, 5, 6], fn(x): x % 2;)
-  | assert_eq(result1["0"], 3)
-  | assert_eq(result1["1"], 3)
-
-  | let result2 = frequencies_by([], fn(x): x;)
-  | assert_eq(result2, dict())
+# @parametrize([[[1, 2, 3, 4, 5, 6], fn(x): x % 2;, {"0": 3, "1": 3}], [[], fn(x): x;, dict()]])
+def test_frequencies_by(value, f, expected):
+  let result = frequencies_by(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_tally():
-  let result1 = tally(["a", "b", "a", "c", "b", "a"])
-  | assert_eq(result1["a"], 3)
-  | assert_eq(result1["b"], 2)
-  | assert_eq(result1["c"], 1)
-
-  | let result2 = tally([])
-  | assert_eq(result2, dict())
+# @parametrize([[["a", "b", "a", "c", "b", "a"], {"a": 3, "b": 2, "c": 1}], [[], dict()]])
+def test_tally(value, expected):
+  let result = tally(value)
+  | assert_eq(result, expected)
 end
 
-def test_count_by():
-  let result1 = count_by([1, 2, 3, 4, 5], fn(x): x > 2;)
-  | assert_eq(result1, 3)
-
-  | let result2 = count_by([1, 2, 3, 4, 5], fn(x): x > 10;)
-  | assert_eq(result2, 0)
-
-  | let result3 = count_by([], fn(x): x > 0;)
-  | assert_eq(result3, 0)
-
-  | let result4 = count_by([2, 4, 6, 8], fn(x): x % 2 == 0;)
-  | assert_eq(result4, 4)
+# @parametrize([[[1, 2, 3, 4, 5], fn(x): x > 2;, 3], [[1, 2, 3, 4, 5], fn(x): x > 10;, 0], [[], fn(x): x > 0;, 0], [[2, 4, 6, 8], fn(x): x % 2 == 0;, 4]])
+def test_count_by(value, f, expected):
+  let result = count_by(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_any():
-  let result1 = any([1, 2, 3, 4, 5], fn(x): x > 3;)
-  | assert_eq(result1, true)
-
-  | let result2 = any([1, 2, 3], fn(x): x > 10;)
-  | assert_eq(result2, false)
-
-  | let result3 = any([], fn(x): x > 0;)
-  | assert_eq(result3, false)
+# @parametrize([[[1, 2, 3, 4, 5], fn(x): x > 3;, true], [[1, 2, 3], fn(x): x > 10;, false], [[], fn(x): x > 0;, false]])
+def test_any(value, f, expected):
+  let result = any(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_all():
-  let result1 = all([1, 2, 3, 4, 5], fn(x): x > 0;)
-  | assert_eq(result1, true)
-
-  | let result2 = all([1, 2, 3, 4, 5], fn(x): x > 3;)
-  | assert_eq(result2, false)
-
-  | let result3 = all([], fn(x): x > 0;)
-  | assert_eq(result3, true)
+# @parametrize([[[1, 2, 3, 4, 5], fn(x): x > 0;, true], [[1, 2, 3, 4, 5], fn(x): x > 3;, false], [[], fn(x): x > 0;, true]])
+def test_all(value, f, expected):
+  let result = all(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_in():
-  let result1 = in([1, 2, 3, 4, 5], 3)
-  | assert_eq(result1, true)
-
-  | let result2 = in([1, 2, 3], 10)
-  | assert_eq(result2, false)
-
-  | let result3 = in([1, 2, 3, 4, 5], [2, 3])
-  | assert_eq(result3, true)
-
-  | let result4 = in("hello world", "world")
-  | assert_eq(result4, true)
+# @parametrize([[[1, 2, 3, 4, 5], 3, true], [[1, 2, 3], 10, false], [[1, 2, 3, 4, 5], [2, 3], true], ["hello world", "world", true]])
+def test_in(value, needle, expected):
+  let result = in(value, needle)
+  | assert_eq(result, expected)
 end
 
-def test_fold():
-  let result1 = fold([1, 2, 3, 4, 5], 0, fn(acc, x): acc + x;)
-  | assert_eq(result1, 15)
-
-  | let result2 = fold([1, 2, 3], 1, fn(acc, x): acc * x;)
-  | assert_eq(result2, 6)
-
-  | let result3 = fold([], 10, fn(acc, x): acc + x;)
-  | assert_eq(result3, 10)
+# @parametrize([[[1, 2, 3, 4, 5], 0, fn(acc, x): acc + x;, 15], [[1, 2, 3], 1, fn(acc, x): acc * x;, 6], [[], 10, fn(acc, x): acc + x;, 10]])
+def test_fold(value, init, f, expected):
+  let result = fold(value, init, f)
+  | assert_eq(result, expected)
 end
 
-def test_unique_by():
-  let result1 = unique_by([1, 2, 3, 2, 1, 4], fn(x): x;)
-  | assert_eq(result1, [1, 2, 3, 4])
-
-  | let result2 = unique_by([{"id": 1}, {"id": 2}, {"id": 1}], fn(x): x["id"];)
-  | assert_eq(len(result2), 2)
-
-  | let result3 = unique_by([], fn(x): x;)
-  | assert_eq(result3, [])
+# @parametrize([[[1, 2, 3, 2, 1, 4], fn(x): x;, [1, 2, 3, 4]], [[{"id": 1}, {"id": 2}, {"id": 1}], fn(x): x["id"];, [{"id": 1}, {"id": 2}]], [[], fn(x): x;, []]])
+def test_unique_by(value, f, expected):
+  let result = unique_by(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_identity():
-  let result1 = identity(42)
-  | assert_eq(result1, 42)
-
-  | let result2 = identity("test")
-  | assert_eq(result2, "test")
-
-  | let result3 = identity([1, 2, 3])
-  | assert_eq(result3, [1, 2, 3])
+# @parametrize([[42, 42], ["test", "test"], [[1, 2, 3], [1, 2, 3]]])
+def test_identity(value, expected):
+  let result = identity(value)
+  | assert_eq(result, expected)
 end
 
-def test_transpose():
-  let result1 = transpose([[1, 2, 3], [4, 5, 6]])
-  | assert_eq(result1, [[1, 4], [2, 5], [3, 6]])
-
-  | let result2 = transpose([])
-  | assert_eq(result2, [])
-
-  | let result3 = transpose([[1, 2], [3, 4], [5, 6]])
-  | assert_eq(result3, [[1, 3, 5], [2, 4, 6]])
+# @parametrize([[[[1, 2, 3], [4, 5, 6]], [[1, 4], [2, 5], [3, 6]]], [[], []], [[[1, 2], [3, 4], [5, 6]], [[1, 3, 5], [2, 4, 6]]]])
+def test_transpose(value, expected):
+  let result = transpose(value)
+  | assert_eq(result, expected)
 end
 
-def test_regex_test():
-  let result1 = test("aaa", "[a-z]+")
-  | assert_eq(result1, true)
-
-  | let result2 = test("aaa", "[0-9]+")
-  | assert_eq(result2, false)
+# @parametrize([["aaa", "[a-z]+", true], ["aaa", "[0-9]+", false]])
+def test_regex_test(value, pattern, expected):
+  let result = test(value, pattern)
+  | assert_eq(result, expected)
 end
 
-def test_regex_match():
-  let result1 = regex_match("aaa", "[a-z]+")
-  | assert_eq(result1, ["aaa"])
-
-  | let result2 = regex_match("aaa", "[0-9]+")
-  | assert_eq(result2, [])
+# @parametrize([["aaa", "[a-z]+", ["aaa"]], ["aaa", "[0-9]+", []]])
+def test_regex_match(value, pattern, expected):
+  let result = regex_match(value, pattern)
+  | assert_eq(result, expected)
 end
 
 def test_tap():
@@ -553,113 +332,52 @@ def test_until():
   | assert_eq(result1, 6)
 end
 
-def test_compact_map():
-  let result1 = compact_map([1, 2, 3, 4, 5], fn(x): if (x > 2): x;)
-  | assert_eq(result1, [3, 4, 5])
-
-  | let result2 = compact_map([1, 2, 3], fn(x): if (x % 2 == 0): x * 2;)
-  | assert_eq(result2, [4])
-
-  | let result3 = compact_map([], fn(x): x;)
-  | assert_eq(result3, [])
-
-  | let result4 = compact_map([1, 2, 3], fn(x): None;)
-  | assert_eq(result4, [])
+# @parametrize([[[1, 2, 3, 4, 5], fn(x): if (x > 2): x;, [3, 4, 5]], [[1, 2, 3], fn(x): if (x % 2 == 0): x * 2;, [4]], [[], fn(x): x;, []], [[1, 2, 3], fn(x): None;, []]])
+def test_compact_map(value, f, expected):
+  let result = compact_map(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_reject():
-  let result1 = reject([1, 2, 3, 4, 5], fn(x): x > 3;)
-  | assert_eq(result1, [1, 2, 3])
-
-  | let result2 = reject([1, 2, 3, 4], fn(x): x % 2 == 0;)
-  | assert_eq(result2, [1, 3])
-
-  | let result3 = reject([], fn(x): x > 0;)
-  | assert_eq(result3, [])
-
-  | let result4 = reject([1, 2, 3], fn(x): false;)
-  | assert_eq(result4, [1, 2, 3])
+# @parametrize([[[1, 2, 3, 4, 5], fn(x): x > 3;, [1, 2, 3]], [[1, 2, 3, 4], fn(x): x % 2 == 0;, [1, 3]], [[], fn(x): x > 0;, []], [[1, 2, 3], fn(x): false;, [1, 2, 3]]])
+def test_reject(value, f, expected):
+  let result = reject(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_partition():
-  let result1 = partition([1, 2, 3, 4, 5], fn(x): x > 3;)
-  | assert_eq(result1, [[4, 5], [1, 2, 3]])
-
-  | let result2 = partition([1, 2, 3, 4], fn(x): x % 2 == 0;)
-  | assert_eq(result2, [[2, 4], [1, 3]])
-
-  | let result3 = partition([], fn(x): x > 0;)
-  | assert_eq(result3, [[], []])
-
-  | let result4 = partition([1, 2, 3], fn(x): true;)
-  | assert_eq(result4, [[1, 2, 3], []])
+# @parametrize([[[1, 2, 3, 4, 5], fn(x): x > 3;, [[4, 5], [1, 2, 3]]], [[1, 2, 3, 4], fn(x): x % 2 == 0;, [[2, 4], [1, 3]]], [[], fn(x): x > 0;, [[], []]], [[1, 2, 3], fn(x): true;, [[1, 2, 3], []]]])
+def test_partition(value, f, expected):
+  let result = partition(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_get_or():
-  let d = dict([["a", 1], ["b", 2]])
-  | let result1 = get_or(d, "a", 0)
-  | assert_eq(result1, 1)
-
-  | let result2 = get_or(d, "c", 0)
-  | assert_eq(result2, 0)
-
-  | let result3 = get_or(d, "b", 999)
-  | assert_eq(result3, 2)
-
-  | let result4 = get_or(dict(), "key", "default")
-  | assert_eq(result4, "default")
+# @parametrize([[dict([["a", 1], ["b", 2]]), "a", 0, 1], [dict([["a", 1], ["b", 2]]), "c", 0, 0], [dict([["a", 1], ["b", 2]]), "b", 999, 2], [dict(), "key", "default", "default"]])
+def test_get_or(d, key, default, expected):
+  let result = get_or(d, key, default)
+  | assert_eq(result, expected)
 end
 
-def test_times():
-  let result1 = times(3, 5)
-  | assert_eq(result1, [5, 5, 5])
-
-  | let result2 = times(0, "hello")
-  | assert_eq(result2, [])
-
-  | let result3 = times(4, 1)
-  | assert_eq(result3, [1, 1, 1, 1])
+# @parametrize([[3, 5, [5, 5, 5]], [0, "hello", []], [4, 1, [1, 1, 1, 1]]])
+def test_times(n, value, expected):
+  let result = times(n, value)
+  | assert_eq(result, expected)
 end
 
-def test_between():
-  let result1 = between(5, 1, 10)
-  | assert_eq(result1, true)
-
-  | let result2 = between(0, 1, 10)
-  | assert_eq(result2, false)
-
-  | let result3 = between(10, 1, 10)
-  | assert_eq(result3, true)
-
-  | let result4 = between(1, 1, 10)
-  | assert_eq(result4, true)
-
-  | let result5 = between(15, 1, 10)
-  | assert_eq(result5, false)
+# @parametrize([[5, 1, 10, true], [0, 1, 10, false], [10, 1, 10, true], [1, 1, 10, true], [15, 1, 10, false]])
+def test_between(value, lo, hi, expected):
+  let result = between(value, lo, hi)
+  | assert_eq(result, expected)
 end
 
-def test_sum_by():
-  let result1 = sum_by([1, 2, 3, 4], fn(x): x;)
-  | assert_eq(result1, 10)
-
-  | let result2 = sum_by([1, 2, 3], fn(x): x * 2;)
-  | assert_eq(result2, 12)
-
-  | let result3 = sum_by([], fn(x): x;)
-  | assert_eq(result3, 0)
-
-  | let result4 = sum_by([5, 10, 15], fn(x): x / 5;)
-  | assert_eq(result4, 6)
+# @parametrize([[[1, 2, 3, 4], fn(x): x;, 10], [[1, 2, 3], fn(x): x * 2;, 12], [[], fn(x): x;, 0], [[5, 10, 15], fn(x): x / 5;, 6]])
+def test_sum_by(value, f, expected):
+  let result = sum_by(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_index_by():
-  let arr = [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
-  | let result1 = index_by(arr, fn(item): item["id"];)
-  | assert_eq(get(result1, "1")["name"], "Alice")
-  | assert_eq(get(result1, "2")["name"], "Bob")
-
-  | let result2 = index_by([], fn(item): item["id"];)
-  | assert_eq(result2, dict())
+# @parametrize([[[{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}], fn(item): item["id"];, {"1": {"id": 1, "name": "Alice"}, "2": {"id": 2, "name": "Bob"}}], [[], fn(item): item["id"];, dict()]])
+def test_index_by(value, f, expected):
+  let result = index_by(value, f)
+  | assert_eq(result, expected)
 end
 
 def test_join_by_inner():
@@ -741,42 +459,10 @@ def test_join_by_non_array_left_errors():
   | assert(contains(result, "left must be an array"))
 end
 
-def test_percentile():
-  # median of odd-length array
-  let result1 = percentile([1, 2, 3, 4, 5], 0.5)
-  | assert_eq(result1, 3)
-
-  # median of even-length array (linear interpolation)
-  | let result2 = percentile([1, 2, 3, 4], 0.5)
-  | assert_eq(result2, 2.5)
-
-  # 0th percentile = min
-  | let result3 = percentile([3, 1, 4, 1, 5], 0)
-  | assert_eq(result3, 1)
-
-  # 100th percentile = max
-  | let result4 = percentile([3, 1, 4, 1, 5], 1)
-  | assert_eq(result4, 5)
-
-  # 25th percentile
-  | let result5 = percentile([1, 2, 3, 4], 0.25)
-  | assert_eq(result5, 1.75)
-
-  # 75th percentile
-  | let result6 = percentile([1, 2, 3, 4], 0.75)
-  | assert_eq(result6, 3.25)
-
-  # single element array
-  | let result7 = percentile([42], 0.5)
-  | assert_eq(result7, 42)
-
-  # unsorted input is handled correctly
-  | let result8 = percentile([5, 1, 3], 0.5)
-  | assert_eq(result8, 3)
-
-  # empty array returns None
-  | let result9 = percentile([], 0.5)
-  | assert_eq(result9, None)
+# @parametrize([[[1, 2, 3, 4, 5], 0.5, 3], [[1, 2, 3, 4], 0.5, 2.5], [[3, 1, 4, 1, 5], 0, 1], [[3, 1, 4, 1, 5], 1, 5], [[1, 2, 3, 4], 0.25, 1.75], [[1, 2, 3, 4], 0.75, 3.25], [[42], 0.5, 42], [[5, 1, 3], 0.5, 3], [[], 0.5, None]])
+def test_percentile(value, p, expected):
+  let result = percentile(value, p)
+  | assert_eq(result, expected)
 end
 
 def test_inspect():
@@ -791,89 +477,46 @@ def test_each():
   | assert_eq(i, 6)
 end
 
-def test_lpad():
-  let result1 = lpad("test", 6, "0")
-  | assert_eq(result1, "00test")
-
-  | let result2 = lpad("hello", 3, "x")
-  | assert_eq(result2, "hello")
-
-  | let result3 = lpad("abc", 5)
-  | assert_eq(result3, "  abc")
+# @parametrize([["test", 6, "0", "00test"], ["hello", 3, "x", "hello"], ["abc", 5, " ", "  abc"]])
+def test_lpad(value, n, pad, expected):
+  let result = lpad(value, n, pad)
+  | assert_eq(result, expected)
 end
 
-def test_rpad():
-  let result1 = rpad("test", 6, "0")
-  | assert_eq(result1, "test00")
-
-  | let result2 = rpad("hello", 3, "x")
-  | assert_eq(result2, "hello")
-
-  | let result3 = rpad("abc", 5)
-  | assert_eq(result3, "abc  ")
+# @parametrize([["test", 6, "0", "test00"], ["hello", 3, "x", "hello"], ["abc", 5, " ", "abc  "]])
+def test_rpad(value, n, pad, expected):
+  let result = rpad(value, n, pad)
+  | assert_eq(result, expected)
 end
 
-def test_bsearch():
-  let result1 = bsearch([1, 2, 3, 4, 5], 3)
-  | assert_eq(result1, 2)
-
-  | let result2 = bsearch([1, 2, 3, 4, 5], 6)
-  | assert_eq(result2, -1)
-
-  | let result3 = bsearch([10, 20, 30], 10)
-  | assert_eq(result3, 0)
-
-  | let result4 = bsearch(["a", "b", "c"], "b")
-  | assert_eq(result4, 1)
+# @parametrize([[[1, 2, 3, 4, 5], 3, 2], [[1, 2, 3, 4, 5], 6, -1], [[10, 20, 30], 10, 0], [["a", "b", "c"], "b", 1]])
+def test_bsearch(value, target, expected):
+  let result = bsearch(value, target)
+  | assert_eq(result, expected)
 end
 
-def test_slugify():
-  let result1 = slugify("Hello World!")
-  | assert_eq(result1, "hello-world")
-
-  | let result2 = slugify("This is a test.")
-  | assert_eq(result2, "this-is-a-test")
-
-  | let result3 = slugify("Special characters: @#$%^&*()")
-  | assert_eq(result3, "special-characters")
+# @parametrize([["Hello World!", "hello-world"], ["This is a test.", "this-is-a-test"], ["Special characters: @#$%^&*()", "special-characters"]])
+def test_slugify(value, expected):
+  let result = slugify(value)
+  | assert_eq(result, expected)
 end
 
-def test_chunks():
-  let result1 = chunks([1, 2, 3, 4, 5], 2)
-  | assert_eq(result1, [[1, 2], [3, 4], [5]])
-
-  | let result2 = chunks([1, 2, 3, 4], 3)
-  | assert_eq(result2, [[1, 2, 3], [4]])
-
-  | let result3 = chunks([], 2)
-  | assert_eq(result3, [])
-
-  | let result4 = chunks("123456", 2)
-  | assert_eq(result4, ["12", "34", "56"])
+# @parametrize([[[1, 2, 3, 4, 5], 2, [[1, 2], [3, 4], [5]]], [[1, 2, 3, 4], 3, [[1, 2, 3], [4]]], [[], 2, []], ["123456", 2, ["12", "34", "56"]]])
+def test_chunks(value, n, expected):
+  let result = chunks(value, n)
+  | assert_eq(result, expected)
 end
 
-def test_chunk_by():
-  let result1 = chunk_by([1, 2, 3, 4, 5], fn(x): x % 2;)
-  | assert_eq(result1, [[1], [2], [3], [4], [5]])
-
-  | let result2 = chunk_by([1, 2, 3, 4], fn(x): x > 2;)
-  | assert_eq(result2, [[1, 2], [3, 4]])
-
-  | let result3 = chunk_by([], fn(x): x;)
-  | assert_eq(result3, [])
-
-  | let result4 = chunk_by("123456", fn(x): x == "1";)
-  | assert_eq(result4, ["1", "23456"])
+# @parametrize([[[1, 2, 3, 4, 5], fn(x): x % 2;, [[1], [2], [3], [4], [5]]], [[1, 2, 3, 4], fn(x): x > 2;, [[1, 2], [3, 4]]], [[], fn(x): x;, []], ["123456", fn(x): x == "1";, ["1", "23456"]]])
+def test_chunk_by(value, f, expected):
+  let result = chunk_by(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_flip():
-  let a = fn(a, b): a + b;
-  | let result1 = do a | flip(2, 3);
-  | assert_eq(result1, 5)
-
-  | let b = fn(a, b): a - b;
-  | let result2 = do b | flip(5, 2);
-  | assert_eq(result2, -3)
+# @parametrize([[fn(a, b): a + b;, 2, 3, 5], [fn(a, b): a - b;, 5, 2, -3]])
+def test_flip(f, x, y, expected):
+  let result = do f | flip(x, y);
+  | assert_eq(result, expected)
 end
 
 def test_complement():
@@ -907,26 +550,16 @@ def test_juxt():
   | assert_eq(g(5), [])
 end
 
-def test_sum():
-  let result1 = sum([1, 2, 3, 4, 5])
-  | assert_eq(result1, 15)
-
-  | let result2 = sum([])
-  | assert_eq(result2, 0)
-
-  | let result3 = sum([42])
-  | assert_eq(result3, 42)
+# @parametrize([[[1, 2, 3, 4, 5], 15], [[], 0], [[42], 42]])
+def test_sum(value, expected):
+  let result = sum(value)
+  | assert_eq(result, expected)
 end
 
-def test_mean():
-  let result1 = mean([1, 2, 3, 4, 5])
-  | assert_eq(result1, 3)
-
-  | let result2 = mean([])
-  | assert_eq(result2, None)
-
-  | let result3 = mean([10, 20])
-  | assert_eq(result3, 15)
+# @parametrize([[[1, 2, 3, 4, 5], 3], [[], None], [[10, 20], 15]])
+def test_mean(value, expected):
+  let result = mean(value)
+  | assert_eq(result, expected)
 end
 
 def test_geomean():
@@ -940,40 +573,22 @@ def test_geomean():
   | assert_eq(result3, 4)
 end
 
-def test_variance():
-  let result1 = variance([2, 4, 4, 4, 5, 5, 7, 9])
-  | assert_eq(result1, 4)
-
-  | let result2 = variance([])
-  | assert_eq(result2, None)
-
-  | let result3 = variance([5])
-  | assert_eq(result3, 0)
+# @parametrize([[[2, 4, 4, 4, 5, 5, 7, 9], 4], [[], None], [[5], 0]])
+def test_variance(value, expected):
+  let result = variance(value)
+  | assert_eq(result, expected)
 end
 
-def test_stddev():
-  let result1 = stddev([2, 4, 4, 4, 5, 5, 7, 9])
-  | assert_eq(result1, 2)
-
-  | let result2 = stddev([])
-  | assert_eq(result2, None)
-
-  | let result3 = stddev([5])
-  | assert_eq(result3, 0)
+# @parametrize([[[2, 4, 4, 4, 5, 5, 7, 9], 2], [[], None], [[5], 0]])
+def test_stddev(value, expected):
+  let result = stddev(value)
+  | assert_eq(result, expected)
 end
 
-def test_mode():
-  let result1 = mode([1, 2, 2, 3])
-  | assert_eq(result1, [2])
-
-  | let result2 = mode([1, 1, 2, 2, 3])
-  | assert_eq(result2, [1, 2])
-
-  | let result3 = mode([])
-  | assert_eq(result3, None)
-
-  | let result4 = mode([1, 2, 3])
-  | assert_eq(result4, [1, 2, 3])
+# @parametrize([[[1, 2, 2, 3], [2]], [[1, 1, 2, 2, 3], [1, 2]], [[], None], [[1, 2, 3], [1, 2, 3]]])
+def test_mode(value, expected):
+  let result = mode(value)
+  | assert_eq(result, expected)
 end
 
 def test_describe():
@@ -989,432 +604,169 @@ def test_describe():
   | assert_eq(result2, None)
 end
 
-def test_ngram():
-  let result1 = ngram("hello", 2)
-  | assert_eq(result1, ["he", "el", "ll", "lo"])
-
-  | let result2 = ngram("test", 3)
-  | assert_eq(result2, ["tes", "est"])
-
-  | let result3 = ngram("abc", 4)
-  | assert_eq(result3, [])
-
-  | let result4 = ngram([1, 2, 3, 4], 2)
-  | assert_eq(result4, [[1, 2], [2, 3], [3, 4]])
-
-  | let result5 = ngram([1, 2, 3], 1)
-  | assert_eq(result5, [[1], [2], [3]])
-
-  | let result6 = ngram([1, 2], 4)
-  | assert_eq(result6, [])
+# @parametrize([["hello", 2, ["he", "el", "ll", "lo"]], ["test", 3, ["tes", "est"]], ["abc", 4, []], [[1, 2, 3, 4], 2, [[1, 2], [2, 3], [3, 4]]], [[1, 2, 3], 1, [[1], [2], [3]]], [[1, 2], 4, []]])
+def test_ngram(value, n, expected):
+  let result = ngram(value, n)
+  | assert_eq(result, expected)
 end
 
-def test_zip():
-  let result1 = zip([1, 2, 3], ["a", "b", "c"])
-  | assert_eq(result1, [[1, "a"], [2, "b"], [3, "c"]])
-
-  | let result2 = zip([1, 2], ["x", "y", "z"])
-  | assert_eq(result2, [[1, "x"], [2, "y"]])
-
-  | let result3 = zip([], ["a", "b"])
-  | assert_eq(result3, [])
+# @parametrize([[[1, 2, 3], ["a", "b", "c"], [[1, "a"], [2, "b"], [3, "c"]]], [[1, 2], ["x", "y", "z"], [[1, "x"], [2, "y"]]], [[], ["a", "b"], []]])
+def test_zip(value1, value2, expected):
+  let result = zip(value1, value2)
+  | assert_eq(result, expected)
 end
 
-def test_min_by():
-  let result1 = min_by([{"value": 3}, {"value": 1}, {"value": 2}], fn(x): x["value"];)
-  | assert_eq(result1["value"], 1)
-
-  | let result2 = min_by([], fn(x): x;)
-  | assert_eq(result2, None)
-
-  | let result3 = min_by([{"score": 10}, {"score": 5}], fn(x): x["score"];)
-  | assert_eq(result3["score"], 5)
+# @parametrize([[[{"value": 3}, {"value": 1}, {"value": 2}], fn(x): x["value"];, {"value": 1}], [[], fn(x): x;, None], [[{"score": 10}, {"score": 5}], fn(x): x["score"];, {"score": 5}]])
+def test_min_by(value, f, expected):
+  let result = min_by(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_max_by():
-  let result1 = max_by([{"value": 3}, {"value": 1}, {"value": 2}], fn(x): x["value"];)
-  | assert_eq(result1["value"], 3)
-
-  | let result2 = max_by([], fn(x): x;)
-  | assert_eq(result2, None)
-
-  | let result3 = max_by([{"score": 10}, {"score": 5}], fn(x): x["score"];)
-  | assert_eq(result3["score"], 10)
+# @parametrize([[[{"value": 3}, {"value": 1}, {"value": 2}], fn(x): x["value"];, {"value": 3}], [[], fn(x): x;, None], [[{"score": 10}, {"score": 5}], fn(x): x["score"];, {"score": 10}]])
+def test_max_by(value, f, expected):
+  let result = max_by(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_lines():
-  let result1 = lines("line1\nline2\nline3")
-  | assert_eq(result1, ["line1", "line2", "line3"])
-
-  | let result2 = lines("single line")
-  | assert_eq(result2, ["single line"])
-
-  | let result3 = lines("")
-  | assert_eq(result3, [""])
+# @parametrize([["line1\nline2\nline3", ["line1", "line2", "line3"]], ["single line", ["single line"]], ["", [""]]])
+def test_lines(value, expected):
+  let result = lines(value)
+  | assert_eq(result, expected)
 end
 
-def test_unlines():
-  let result1 = unlines(["line1", "line2", "line3"])
-  | assert_eq(result1, "line1\nline2\nline3")
-
-  | let result2 = unlines(["single line"])
-  | assert_eq(result2, "single line")
-
-  | let result3 = unlines([])
-  | assert_eq(result3, "")
+# @parametrize([[["line1", "line2", "line3"], "line1\nline2\nline3"], [["single line"], "single line"], [[], ""]])
+def test_unlines(value, expected):
+  let result = unlines(value)
+  | assert_eq(result, expected)
 end
 
-def test_pick():
-  let result1 = pick({"a": 1, "b": 2, "c": 3}, ["a", "c"])
-  | assert_eq(result1, {"a": 1, "c": 3})
-
-  | let result2 = pick({"x": 10, "y": 20}, ["y"])
-  | assert_eq(result2, {"y": 20})
-
-  | let result3 = pick({"key": "value"}, ["nonexistent"])
-  | assert_eq(result3, dict())
+# @parametrize([[{"a": 1, "b": 2, "c": 3}, ["a", "c"], {"a": 1, "c": 3}], [{"x": 10, "y": 20}, ["y"], {"y": 20}], [{"key": "value"}, ["nonexistent"], dict()]])
+def test_pick(value, keys, expected):
+  let result = pick(value, keys)
+  | assert_eq(result, expected)
 end
 
-def test_omit():
-  let result1 = omit({"a": 1, "b": 2, "c": 3}, ["b"])
-  | assert_eq(result1, {"a": 1, "c": 3})
-
-  | let result2 = omit({"x": 10, "y": 20}, ["x", "y"])
-  | assert_eq(result2, {})
-
-  | let result3 = omit({"key": "value"}, ["nonexistent"])
-  | assert_eq(result3, {"key": "value"})
+# @parametrize([[{"a": 1, "b": 2, "c": 3}, ["b"], {"a": 1, "c": 3}], [{"x": 10, "y": 20}, ["x", "y"], {}], [{"key": "value"}, ["nonexistent"], {"key": "value"}]])
+def test_omit(value, keys, expected):
+  let result = omit(value, keys)
+  | assert_eq(result, expected)
 end
 
-def test_has():
-  let result1 = has({"a": 1, "b": 2}, "a")
-  | assert_eq(result1, true)
-
-  | let result2 = has({"a": 1, "b": 2}, "c")
-  | assert_eq(result2, false)
-
-  | let result3 = has([1, 2, 3], 1)
-  | assert_eq(result3, true)
-
-  | let result4 = has([1, 2, 3], 5)
-  | assert_eq(result4, false)
-
-  | let result5 = has([1, 2, 3], -1)
-  | assert_eq(result5, false)
-
-  | let result6 = has("not a container", "key")
-  | assert_eq(result6, false)
+# @parametrize([[{"a": 1, "b": 2}, "a", true], [{"a": 1, "b": 2}, "c", false], [[1, 2, 3], 1, true], [[1, 2, 3], 5, false], [[1, 2, 3], -1, false], ["not a container", "key", false]])
+def test_has(value, key, expected):
+  let result = has(value, key)
+  | assert_eq(result, expected)
 end
 
-def test_get_path():
-  let result1 = get_path({"a": {"b": [1, 2, 3]}}, ["a", "b", 1])
-  | assert_eq(result1, 2)
-
-  # Missing intermediate key short-circuits to None
-  | let result2 = get_path({"a": {"b": 1}}, ["a", "x", "y"])
-  | assert_eq(result2, None)
-
-  # Empty path returns the value itself
-  | let result3 = get_path({"a": 1}, [])
-  | assert_eq(result3, {"a": 1})
-
-  # Out-of-bounds array index yields None
-  | let result4 = get_path([1, 2, 3], [10])
-  | assert_eq(result4, None)
+# @parametrize([[{"a": {"b": [1, 2, 3]}}, ["a", "b", 1], 2], [{"a": {"b": 1}}, ["a", "x", "y"], None], [{"a": 1}, [], {"a": 1}], [[1, 2, 3], [10], None]])
+def test_get_path(value, path, expected):
+  let result = get_path(value, path)
+  | assert_eq(result, expected)
 end
 
-def test_set_path():
-  let result1 = set_path({"a": {"b": [1, 2, 3]}}, ["a", "b", 1], 99)
-  | assert_eq(result1, {"a": {"b": [1, 99, 3]}})
+# @parametrize([[{"a": {"b": [1, 2, 3]}}, ["a", "b", 1], 99, {"a": {"b": [1, 99, 3]}}], [{}, ["a", "b", 0], 42, {"a": {"b": [42]}}], [{"a": 1}, [], 99, 99]])
+def test_set_path(value, path, new_value, expected):
+  let result = set_path(value, path, new_value)
+  | assert_eq(result, expected)
+end
 
-  # Missing intermediate containers are created automatically
-  | let result2 = set_path({}, ["a", "b", 0], 42)
-  | assert_eq(result2, {"a": {"b": [42]}})
-
-  # Empty path replaces the whole value
-  | let result3 = set_path({"a": 1}, [], 99)
-  | assert_eq(result3, 99)
-
+def test_set_path_round_trip():
   # A round-trip through paths()/get_path() reconstructs every leaf via set_path()
-  | let v = {"a": {"b": 1, "c": 2}, "d": [3, 4]}
-  | let result4 = fold(paths(v), v, fn(acc, p): set_path(acc, p, get_path(v, p) * 10);)
-  | assert_eq(result4, {"a": {"b": 10, "c": 20}, "d": [30, 40]})
+  let v = {"a": {"b": 1, "c": 2}, "d": [3, 4]}
+  | let result = fold(paths(v), v, fn(acc, p): set_path(acc, p, get_path(v, p) * 10);)
+  | assert_eq(result, {"a": {"b": 10, "c": 20}, "d": [30, 40]})
 end
 
-def test_del_path():
-  let result1 = del_path({"a": {"b": 1, "c": 2}}, ["a", "b"])
-  | assert_eq(result1, {"a": {"c": 2}})
-
-  | let result2 = del_path([1, 2, 3, 4], [1])
-  | assert_eq(result2, [1, 3, 4])
-
-  # A missing intermediate container leaves the value unchanged
-  | let result3 = del_path({"a": 1}, ["x", "y"])
-  | assert_eq(result3, {"a": 1})
-
-  # A missing key leaves the value unchanged
-  | let result4 = del_path({"a": 1}, ["b"])
-  | assert_eq(result4, {"a": 1})
-
-  # An out-of-range array index leaves the value unchanged
-  | let result5 = del_path([1, 2, 3], [10])
-  | assert_eq(result5, [1, 2, 3])
-
-  # An empty path deletes the whole value
-  | let result6 = del_path({"a": 1}, [])
-  | assert_eq(result6, None)
+# @parametrize([[{"a": {"b": 1, "c": 2}}, ["a", "b"], {"a": {"c": 2}}], [[1, 2, 3, 4], [1], [1, 3, 4]], [{"a": 1}, ["x", "y"], {"a": 1}], [{"a": 1}, ["b"], {"a": 1}], [[1, 2, 3], [10], [1, 2, 3]], [{"a": 1}, [], None]])
+def test_del_path(value, path, expected):
+  let result = del_path(value, path)
+  | assert_eq(result, expected)
 end
 
-def test_del_paths():
-  let result1 = del_paths({"a": 1, "b": 2, "c": 3}, [["a"], ["c"]])
-  | assert_eq(result1, {"b": 2})
-
-  # Paths are applied deepest-first so index shifts don't affect other deletions
-  | let result2 = del_paths([1, 2, 3, 4], [[0], [2]])
-  | assert_eq(result2, [2, 4])
-
-  | let result3 = del_paths({"a": {"b": 1, "c": 2}}, [["a", "b"], ["a", "c"]])
-  | assert_eq(result3, {"a": {}})
+# @parametrize([[{"a": 1, "b": 2, "c": 3}, [["a"], ["c"]], {"b": 2}], [[1, 2, 3, 4], [[0], [2]], [2, 4]], [{"a": {"b": 1, "c": 2}}, [["a", "b"], ["a", "c"]], {"a": {}}]])
+def test_del_paths(value, paths_list, expected):
+  let result = del_paths(value, paths_list)
+  | assert_eq(result, expected)
 end
 
-def test_paths():
-  let result1 = paths({"a": {"b": 1, "c": 2}, "d": [3, 4]})
-  | assert_eq(result1, [["a", "b"], ["a", "c"], ["d", 0], ["d", 1]])
-
-  # Containers with no leaves contribute no paths
-  | let result2 = paths({})
-  | assert_eq(result2, [])
-
-  | let result3 = paths([])
-  | assert_eq(result3, [])
-
-  # A bare scalar has a single, empty leaf path
-  | let result4 = paths(42)
-  | assert_eq(result4, [[]])
+# @parametrize([[{"a": {"b": 1, "c": 2}, "d": [3, 4]}, [["a", "b"], ["a", "c"], ["d", 0], ["d", 1]]], [{}, []], [[], []], [42, [[]]]])
+def test_paths(value, expected):
+  let result = paths(value)
+  | assert_eq(result, expected)
 end
 
-def test_from_entries():
-  let result1 = from_entries([["a", 1], ["b", 2]])
-  | assert_eq(result1, {"a": 1, "b": 2})
-
-  | let result2 = from_entries([])
-  | assert_eq(result2, dict())
-
-  # Later occurrences of the same key overwrite earlier ones
-  | let result3 = from_entries([["a", 1], ["a", 2]])
-  | assert_eq(result3, {"a": 2})
+# @parametrize([[[["a", 1], ["b", 2]], {"a": 1, "b": 2}], [[], dict()], [[["a", 1], ["a", 2]], {"a": 2}]])
+def test_from_entries(value, expected):
+  let result = from_entries(value)
+  | assert_eq(result, expected)
 end
 
-def test_with_entries():
-  let result1 = with_entries({"a": 1, "b": 2}, fn(pair): [pair[0], pair[1] * 10];)
-  | assert_eq(result1, {"a": 10, "b": 20})
-
-  | let result2 = with_entries({}, fn(pair): pair;)
-  | assert_eq(result2, dict())
+# @parametrize([[{"a": 1, "b": 2}, fn(pair): [pair[0], pair[1] * 10];, {"a": 10, "b": 20}], [{}, fn(pair): pair;, dict()]])
+def test_with_entries(value, f, expected):
+  let result = with_entries(value, f)
+  | assert_eq(result, expected)
 end
 
-def test_merge_with():
-  # Nested dicts are merged recursively; non-overlapping keys are kept from both sides
-  let result1 = merge_with({"a": 1, "b": {"x": 1}}, {"b": {"y": 2}, "c": 3}, "replace")
-  | assert_eq(result1, {"a": 1, "b": {"x": 1, "y": 2}, "c": 3})
-
-  # "replace" policy: the second value wins on leaf/array conflicts
-  | let result2 = merge_with({"a": [1, 2], "b": 1}, {"a": [3], "b": 2}, "replace")
-  | assert_eq(result2, {"a": [3], "b": 2})
-
-  # "append" policy: arrays are concatenated, scalar conflicts become [a, b]
-  | let result3 = merge_with({"a": [1, 2], "b": 1}, {"a": [3], "b": 2}, "append")
-  | assert_eq(result3, {"a": [1, 2, 3], "b": [1, 2]})
-
-  # "error" policy: raises on conflicting leaf values
-  | let result4 = try: merge_with({"a": 1}, {"a": 2}, "error") catch: "error"
-  | assert_eq(result4, "error")
-
-  # Null on either side is not an error; "replace" lets the null win, "append" keeps the non-null value
-  | let result5 = merge_with({"a": 1}, {"a": None}, "replace")
-  | assert_eq(result5, {"a": None})
-
-  | let result6 = merge_with({"a": 1}, {"a": None}, "append")
-  | assert_eq(result6, {"a": 1})
-
-  # An invalid policy is rejected
-  | let result7 = try: merge_with({}, {}, "invalid") catch: "error"
-  | assert_eq(result7, "error")
+# @parametrize([[{"a": 1, "b": {"x": 1}}, {"b": {"y": 2}, "c": 3}, "replace", {"a": 1, "b": {"x": 1, "y": 2}, "c": 3}], [{"a": [1, 2], "b": 1}, {"a": [3], "b": 2}, "replace", {"a": [3], "b": 2}], [{"a": [1, 2], "b": 1}, {"a": [3], "b": 2}, "append", {"a": [1, 2, 3], "b": [1, 2]}], [{"a": 1}, {"a": 2}, "error", "error"], [{"a": 1}, {"a": None}, "replace", {"a": None}], [{"a": 1}, {"a": None}, "append", {"a": 1}], [{}, {}, "invalid", "error"]])
+def test_merge_with(a, b, policy, expected):
+  let result = try: merge_with(a, b, policy) catch: "error"
+  | assert_eq(result, expected)
 end
 
-def test_merge_defaults():
-  # Values from `d` win, missing keys fall back to `defaults`, recursively
-  let result1 = merge_defaults({"a": {"x": 1}}, {"a": {"x": 0, "y": 2}, "b": 3})
-  | assert_eq(result1, {"a": {"x": 1, "y": 2}, "b": 3})
-
-  # `d`'s arrays replace `defaults`'s arrays entirely
-  | let result2 = merge_defaults({"a": [1]}, {"a": [2, 3]})
-  | assert_eq(result2, {"a": [1]})
-
-  # An empty override falls back entirely to defaults
-  | let result3 = merge_defaults({}, {"a": 1, "b": 2})
-  | assert_eq(result3, {"a": 1, "b": 2})
+# @parametrize([[{"a": {"x": 1}}, {"a": {"x": 0, "y": 2}, "b": 3}, {"a": {"x": 1, "y": 2}, "b": 3}], [{"a": [1]}, {"a": [2, 3]}, {"a": [1]}], [{}, {"a": 1, "b": 2}, {"a": 1, "b": 2}]])
+def test_merge_defaults(d, defaults, expected):
+  let result = merge_defaults(d, defaults)
+  | assert_eq(result, expected)
 end
 
-def test_frontmatter():
-  # YAML frontmatter is parsed into a dict
-  let result1 = do "---\ntitle: Hello\nauthor: World\n---\n\n# Heading" | to_markdown() | first() | frontmatter();
-  | assert_eq(result1["title"], "Hello")
-  | assert_eq(result1["author"], "World")
-
-  # TOML frontmatter is parsed into a dict
-  | let result2 = do "+++\ntitle = \"Hello\"\nauthor = \"World\"\n+++\n\n# Heading" | to_markdown() | first() | frontmatter();
-  | assert_eq(result2["title"], "Hello")
-  | assert_eq(result2["author"], "World")
-
-  # Non-frontmatter node returns None
-  | let result3 = do "# Heading" | to_markdown() | first() | frontmatter();
-  | assert_eq(result3, None)
-
-  # YAML frontmatter with nested values
-  | let result4 = do "---\ntitle: My Post\ntags:\n  - rust\n  - markdown\n---\n" | to_markdown() | first() | frontmatter();
-  | assert_eq(result4["title"], "My Post")
-  | assert_eq(result4["tags"], ["rust", "markdown"])
+# @parametrize([["---\ntitle: Hello\nauthor: World\n---\n\n# Heading", {"title": "Hello", "author": "World"}], ["+++\ntitle = \"Hello\"\nauthor = \"World\"\n+++\n\n# Heading", {"title": "Hello", "author": "World"}], ["# Heading", None], ["---\ntitle: My Post\ntags:\n  - rust\n  - markdown\n---\n", {"title": "My Post", "tags": ["rust", "markdown"]}]])
+def test_frontmatter(markdown, expected):
+  let result = do markdown | to_markdown() | first() | frontmatter();
+  | assert_eq(result, expected)
 end
 
-def test_walk():
-  # scalar: number — f applied directly
-  let result1 = walk(42, fn(x): x * 2;)
-  | assert_eq(result1, 84)
+# @parametrize([[42, fn(x): x * 2;, 84], ["hello", fn(x): if (is_string(x)): upcase(x) else: x;, "HELLO"], [None, identity, None], [true, fn(x): if (is_bool(x)): !x else: x;, false], [[], identity, []], [[1, 2, 3], identity, [1, 2, 3]], [[1, 2, 3], fn(x): if (is_number(x)): x * 2 else: x;, [2, 4, 6]], [[[1, 2], [3, 4]], fn(x): if (is_number(x)): x + 10 else: x;, [[11, 12], [13, 14]]], [[[[1]]], fn(x): if (is_number(x)): x + 100 else: x;, [[[101]]]], [[1, "hello", None], identity, [1, "hello", None]], [[2, 4, 6], fn(x): if (is_number(x)): x * -1 else: x;, [-2, -4, -6]], [["a", "b"], fn(x): if (is_string(x)): upcase(x) else: x;, ["A", "B"]], [[true, false], fn(x): if (is_bool(x)): !x else: x;, [false, true]], [[1, 2, 3], fn(x): if (is_number(x)): x * 2 else: x;, [2, 4, 6]], [{}, identity, dict()], [{"a": 1, "b": 2}, fn(x): if (is_number(x)): x * 10 else: x;, {"a": 10, "b": 20}], [{"x": "hello"}, fn(x): if (is_string(x)): upcase(x) else: x;, {"x": "HELLO"}], [{"a": 1, "b": 2}, identity, {"a": 1, "b": 2}]])
+def test_walk(value, f, expected):
+  let result = walk(value, f)
+  | assert_eq(result, expected)
+end
 
-  # scalar: string — f applied directly
-  | let result2 = walk("hello", fn(x): if (is_string(x)): upcase(x) else: x;)
-  | assert_eq(result2, "HELLO")
-
-  # scalar: None — f applied directly
-  | let result3 = walk(None, identity)
-  | assert_eq(result3, None)
-
-  # scalar: bool — f applied directly
-  | let result4 = walk(true, fn(x): if (is_bool(x)): !x else: x;)
-  | assert_eq(result4, false)
-
-  # array: empty array returns []
-  | let result5 = walk([], identity)
-  | assert_eq(result5, [])
-
-  # array: identity preserves all elements
-  | let result6 = walk([1, 2, 3], identity)
-  | assert_eq(result6, [1, 2, 3])
-
-  # array: transform each number
-  | let result7 = walk([1, 2, 3], fn(x): if (is_number(x)): x * 2 else: x;)
-  | assert_eq(result7, [2, 4, 6])
-
-  # array: recurses into nested subarrays
-  | let result8 = walk([[1, 2], [3, 4]], fn(x): if (is_number(x)): x + 10 else: x;)
-  | assert_eq(result8, [[11, 12], [13, 14]])
-
-  # array: 3 levels of nesting
-  | let result9 = walk([[[1]]], fn(x): if (is_number(x)): x + 100 else: x;)
-  | assert_eq(result9, [[[101]]])
-
-  # array: identity preserves mixed types including None
-  | let result10 = walk([1, "hello", None], identity)
-  | assert_eq(result10, [1, "hello", None])
-
-  # array: negate each number
-  | let result11 = walk([2, 4, 6], fn(x): if (is_number(x)): x * -1 else: x;)
-  | assert_eq(result11, [-2, -4, -6])
-
-  # array: upcase each string
-  | let result12 = walk(["a", "b"], fn(x): if (is_string(x)): upcase(x) else: x;)
-  | assert_eq(result12, ["A", "B"])
-
-  # array: flip each boolean
-  | let result13 = walk([true, false], fn(x): if (is_bool(x)): !x else: x;)
-  | assert_eq(result13, [false, true])
-
-  # array: named def as function argument
-  | def double(x): if (is_number(x)): x * 2 else: x;
-  | let result14 = walk([1, 2, 3], double)
-  | assert_eq(result14, [2, 4, 6])
-
-  # dict: empty dict returns {}
-  | let result15 = walk({}, identity)
-  | assert_eq(result15, dict())
-
-  # dict: only values are transformed, keys unchanged
-  | let result16 = walk({"a": 1, "b": 2}, fn(x): if (is_number(x)): x * 10 else: x;)
-  | assert_eq(result16["a"], 10)
-  | assert_eq(result16["b"], 20)
-
-  # dict: string values uppercased
-  | let result17 = walk({"x": "hello"}, fn(x): if (is_string(x)): upcase(x) else: x;)
-  | assert_eq(result17["x"], "HELLO")
-
-  # dict: identity preserves full structure
-  | let result18 = walk({"a": 1, "b": 2}, identity)
-  | assert_eq(result18, {"a": 1, "b": 2})
-
+def test_walk_markdown():
   # markdown: text leaf — identity preserves text content
-  | let result19 = do "plain text" | to_markdown() | first() | walk(fn(n): n;) | to_text();
-  | assert_eq(result19, "plain text")
+  let result1 = do "plain text" | to_markdown() | first() | walk(fn(n): n;) | to_text();
+  | assert_eq(result1, "plain text")
 
   # markdown: heading — identity preserves HTML output
-  | let result20 = do "# heading" | to_markdown() | first() | walk(fn(n): n;) | to_html();
-  | assert_eq(result20, "<h1>heading</h1>")
+  | let result2 = do "# heading" | to_markdown() | first() | walk(fn(n): n;) | to_html();
+  | assert_eq(result2, "<h1>heading</h1>")
 
   # markdown: h2 — identity preserves depth
-  | let result21 = do "## section" | to_markdown() | first() | walk(fn(n): n;) | to_html();
-  | assert_eq(result21, "<h2>section</h2>")
+  | let result3 = do "## section" | to_markdown() | first() | walk(fn(n): n;) | to_html();
+  | assert_eq(result3, "<h2>section</h2>")
 
   # markdown: demote h1 → h2
-  | let result22 = do "# Title" | to_markdown() | first() | walk(fn(n): if (is_h(n)): demote_heading(n) else: n;) | to_html();
-  | assert_eq(result22, "<h2>Title</h2>")
+  | let result4 = do "# Title" | to_markdown() | first() | walk(fn(n): if (is_h(n)): demote_heading(n) else: n;) | to_html();
+  | assert_eq(result4, "<h2>Title</h2>")
 
   # markdown: promote h2 → h1
-  | let result23 = do "## Title" | to_markdown() | first() | walk(fn(n): if (is_h(n)): promote_heading(n) else: n;) | to_html();
-  | assert_eq(result23, "<h1>Title</h1>")
+  | let result5 = do "## Title" | to_markdown() | first() | walk(fn(n): if (is_h(n)): promote_heading(n) else: n;) | to_html();
+  | assert_eq(result5, "<h1>Title</h1>")
 
   # markdown: node name reflects transformation
-  | let result24 = do "# hi" | to_markdown() | first() | walk(fn(n): if (is_h(n)): demote_heading(n) else: n;) | to_md_name();
-  | assert_eq(result24, "h2")
+  | let result6 = do "# hi" | to_markdown() | first() | walk(fn(n): if (is_h(n)): demote_heading(n) else: n;) | to_md_name();
+  | assert_eq(result6, "h2")
 end
 
-def test_human_bytes():
-  let result1 = human_bytes(0)
-  | assert_eq(result1, "0B")
-
-  | let result2 = human_bytes(500)
-  | assert_eq(result2, "500B")
-
-  | let result3 = human_bytes(1500)
-  | assert_eq(result3, "1.5KB")
-
-  | let result4 = human_bytes(1000000)
-  | assert_eq(result4, "1MB")
-
-  | let result5 = human_bytes(1500000000)
-  | assert_eq(result5, "1.5GB")
-
-  | let result6 = human_bytes(-1500)
-  | assert_eq(result6, "-1.5KB")
+# @parametrize([[0, "0B"], [500, "500B"], [1500, "1.5KB"], [1000000, "1MB"], [1500000000, "1.5GB"], [-1500, "-1.5KB"]])
+def test_human_bytes(value, expected):
+  let result = human_bytes(value)
+  | assert_eq(result, expected)
 end
 
-def test_human_size():
-  let result1 = human_size(0)
-  | assert_eq(result1, "0B")
-
-  | let result2 = human_size(500)
-  | assert_eq(result2, "500B")
-
-  | let result3 = human_size(1536)
-  | assert_eq(result3, "1.5K")
-
-  | let result4 = human_size(1048576)
-  | assert_eq(result4, "1M")
-
-  | let result5 = human_size(1610612736)
-  | assert_eq(result5, "1.5G")
-
-  | let result6 = human_size(-1536)
-  | assert_eq(result6, "-1.5K")
+# @parametrize([[0, "0B"], [500, "500B"], [1536, "1.5K"], [1048576, "1M"], [1610612736, "1.5G"], [-1536, "-1.5K"]])
+def test_human_size(value, expected):
+  let result = human_size(value)
+  | assert_eq(result, expected)
 end
 
 def test_assert_type():
@@ -1464,4 +816,3 @@ def test_assert_matches():
   | let result4 = assert_matches("hello world", "^bye")
   | assert_eq(result4["error"], true)
 end
-
