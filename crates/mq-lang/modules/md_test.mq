@@ -43,14 +43,10 @@ def test_md_blockquote():
   | assert_eq(result, "> quote")
 end
 
-def test_md_callout():
-  let result = to_string(md::callout("note body", "note"))
-  | assert_eq(result, "> [!NOTE]\n> note body")
-end
-
-def test_md_callout_with_title():
-  let result = to_string(md::callout("warn body", "warning", "Careful"))
-  | assert_eq(result, "> [!WARNING] Careful\n> warn body")
+# @parametrize([["note body", "note", "", "> [!NOTE]\n> note body"], ["warn body", "warning", "Careful", "> [!WARNING] Careful\n> warn body"]])
+def test_md_callout(value, kind, title, expected):
+  let result = to_string(md::callout(value, kind, title))
+  | assert_eq(result, expected)
 end
 
 def test_md_hr():
@@ -78,24 +74,10 @@ def test_md_image():
   | assert_eq(result, "![Alt](https://example.com/a.png \"\")")
 end
 
-def test_md_list():
-  let result = to_string(md::list("Item"))
-  | assert_eq(result, "- Item")
-end
-
-def test_md_list_nested():
-  let result = to_string(md::list("Nested", 1))
-  | assert_eq(result, "  - Nested")
-end
-
-def test_md_list_ordered():
-  let result = to_string(md::list("Ordered", 0, true))
-  | assert_eq(result, "1. Ordered")
-end
-
-def test_md_list_checked():
-  let result = to_string(md::list("Checked", 0, false, true))
-  | assert_eq(result, "- [x] Checked")
+# @parametrize([["Item", 0, false, None, "- Item"], ["Nested", 1, false, None, "  - Nested"], ["Ordered", 0, true, None, "1. Ordered"], ["Checked", 0, false, true, "- [x] Checked"]])
+def test_md_list(value, level, ordered, checked, expected):
+  let result = to_string(md::list(value, level, ordered, checked))
+  | assert_eq(result, expected)
 end
 
 def test_md_table_row():

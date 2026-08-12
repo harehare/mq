@@ -4,12 +4,10 @@ import "section"
 | let section_md = "# Introduction\nThis is the introduction section.\n\n## Advanced Topics\nThis section covers advanced topics.\n\n# Conclusion\nThis is the conclusion section.\n"
 | let test_sections = to_markdown(section_md) |
 
-def test_section_sections():
-  let sections = do test_sections | section::sections();
-  | assert_eq(len(sections), 3)
-
-  | let sections = do "# test" | to_markdown() | section::sections();
-  | assert_eq(len(sections), 1)
+# @parametrize([[section_md, 3], ["# test", 1]])
+def test_section_sections(markdown, expected_len):
+  let sections = do markdown | to_markdown() | section::sections();
+  | assert_eq(len(sections), expected_len)
 end
 
 def test_section_filter_sections():
@@ -27,16 +25,11 @@ def test_section_split():
   | assert_eq(len(sections), 2)
 end
 
-def test_section_title_contains():
+# @parametrize([[section::title_contains, "Introduction", 1], [section::title_match, "^I.*", 1]])
+def test_section_title_filter(f, pattern, expected_len):
   let sections = do test_sections | section::split(1);
-  | let filtered = section::title_contains(sections, "Introduction")
-  | assert_eq(len(filtered), 1)
-end
-
-def test_section_title_match():
-  let sections = do test_sections | section::split(1);
-  | let filtered = section::title_match(sections, "^I.*")
-  | assert_eq(len(filtered), 1)
+  | let filtered = f(sections, pattern)
+  | assert_eq(len(filtered), expected_len)
 end
 
 def test_section_title():
@@ -116,21 +109,11 @@ def test_section_bodies_pipe():
   | assert(is_array(first(body_list)))
 end
 
-def test_section_by_level_scalar():
-  let secs = do test_sections | section::sections() | section::by_level(1);
-  | assert_eq(len(secs), 2)
-  | assert_eq(section::level(first(secs)), 1)
-end
-
-def test_section_by_level_h2():
-  let secs = do test_sections | section::sections() | section::by_level(2);
-  | assert_eq(len(secs), 1)
-  | assert_eq(section::level(first(secs)), 2)
-end
-
-def test_section_by_level_range():
-  let secs = do test_sections | section::sections() | section::by_level(1..2);
-  | assert_eq(len(secs), 3)
+# @parametrize([[1, 2, 1], [2, 1, 2], [1..2, 3, 1]])
+def test_section_by_level(level_arg, expected_len, expected_first_level):
+  let secs = do test_sections | section::sections() | section::by_level(level_arg);
+  | assert_eq(len(secs), expected_len)
+  | assert_eq(section::level(first(secs)), expected_first_level)
 end
 
 def test_section_by_level_empty():
