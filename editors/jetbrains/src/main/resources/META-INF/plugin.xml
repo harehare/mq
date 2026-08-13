@@ -1,0 +1,90 @@
+<idea-plugin>
+    <id>org.mqlang.mq</id>
+    <name>mq</name>
+    <vendor url="https://mqlang.org/">mq</vendor>
+
+    <description><![CDATA[
+      <p><a href="https://mqlang.org">mq</a> is a jq-like command-line tool for Markdown processing.</p>
+      <p>This plugin adds editing support for <code>.mq</code> files backed by the <code>mq-lsp</code> language
+      server (completion, hover, diagnostics, go to definition, formatting, inlay hints), syntax highlighting,
+      commands to run mq queries against Markdown/MDX/HTML/CSV/TSV/text files from the editor, and
+      <code>mq-dbg</code> Debug Adapter Protocol debugging.</p>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.plugins.textmate</depends>
+    <depends>com.redhat.devtools.lsp4ij</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <textmate.bundleProvider implementation="org.mqlang.mq.textmate.MqTextMateBundleProvider"/>
+
+        <notificationGroup id="mq" displayType="BALLOON"/>
+
+        <applicationConfigurable
+            parentId="language"
+            instance="org.mqlang.mq.settings.MqSettingsConfigurable"
+            id="org.mqlang.mq.settings.MqSettingsConfigurable"
+            displayName="mq"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
+        <server id="mq"
+                name="mq"
+                factoryClass="org.mqlang.mq.lsp.MqLanguageServerFactory">
+            <description><![CDATA[
+              The <a href="https://mqlang.org">mq</a> language server (<code>mq-lsp</code>): completion, hover,
+              diagnostics, go to definition, document symbols and formatting for <code>.mq</code> files.
+            ]]></description>
+        </server>
+        <fileNamePatternMapping patterns="*.mq" serverId="mq"/>
+
+        <debugAdapterServer id="mq"
+                             name="mq"
+                             factoryClass="org.mqlang.mq.dap.MqDebugAdapterDescriptorFactory"/>
+    </extensions>
+
+    <actions>
+        <group id="org.mqlang.mq.ActionGroup" text="mq" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+
+            <action id="org.mqlang.mq.NewFile"
+                    class="org.mqlang.mq.actions.MqNewFileAction"
+                    text="New mq File"
+                    description="Create a new .mq file"/>
+            <separator/>
+            <action id="org.mqlang.mq.RunSelectedText"
+                    class="org.mqlang.mq.actions.MqRunSelectedTextAction"
+                    text="Run Selected Text"
+                    description="Run the selected text as an mq query"/>
+            <action id="org.mqlang.mq.ExecuteQuery"
+                    class="org.mqlang.mq.actions.MqExecuteQueryAction"
+                    text="Execute Query"
+                    description="Run an mq query against the active editor's text"/>
+            <action id="org.mqlang.mq.ExecuteFile"
+                    class="org.mqlang.mq.actions.MqExecuteFileAction"
+                    text="Execute mq File"
+                    description="Run a chosen .mq file against the active editor's text"/>
+            <action id="org.mqlang.mq.DebugCurrentFile"
+                    class="org.mqlang.mq.actions.MqDebugCurrentFileAction"
+                    text="Debug Current File"
+                    description="Debug the active .mq file with mq-dbg"/>
+            <separator/>
+            <action id="org.mqlang.mq.InstallServers"
+                    class="org.mqlang.mq.actions.MqInstallServersAction"
+                    text="Install Servers"
+                    description="Download mq-lsp and mq-dbg from GitHub Releases"/>
+            <action id="org.mqlang.mq.StartLspServer"
+                    class="org.mqlang.mq.actions.MqStartLspServerAction"
+                    text="Start LSP Server"
+                    description="Start the mq-lsp language server"/>
+            <action id="org.mqlang.mq.StopLspServer"
+                    class="org.mqlang.mq.actions.MqStopLspServerAction"
+                    text="Stop LSP Server"
+                    description="Stop the mq-lsp language server"/>
+            <action id="org.mqlang.mq.RestartLspServer"
+                    class="org.mqlang.mq.actions.MqRestartLspServerAction"
+                    text="Restart LSP Server"
+                    description="Restart the mq-lsp language server"/>
+        </group>
+    </actions>
+</idea-plugin>

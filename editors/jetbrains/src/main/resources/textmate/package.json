@@ -1,0 +1,25 @@
+{
+  "name": "mq",
+  "displayName": "mq",
+  "version": "0.7.0",
+  "engines": {
+    "vscode": "^1.0.0"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "mq",
+        "aliases": ["mq", "MQ"],
+        "extensions": [".mq"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mq",
+        "scopeName": "source.mq",
+        "path": "./Syntaxes/mq.tmLanguage.json"
+      }
+    ]
+  }
+}
