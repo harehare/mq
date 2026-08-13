@@ -80,8 +80,6 @@ pub(crate) fn check_snapshot(test_file: &Path, name: &str, actual: &str, update:
         return RuntimeValue::String(actual.to_string());
     }
 
-    // Diffed once and shared by the (possibly truncated) inline message and the full HTML
-    // report, rather than re-running the line-diff algorithm for each.
     let lines = diff_lines(&expected, actual);
     let report = write_store(test_file, &safe_name, actual, &lines);
     let (diff, truncated) = truncated_text_diff(&lines);
@@ -119,14 +117,11 @@ fn write_store(test_file: &Path, safe_name: &str, actual: &str, lines: &[DiffLin
     report_path
 }
 
-/// One line of a line-level diff between the golden snapshot and the actual output.
 struct DiffLine {
     tag: ChangeTag,
     text: String,
 }
 
-/// Diffs `expected` against `actual` once; the result feeds both the (possibly truncated)
-/// inline failure message and the full HTML report, instead of each re-running the diff.
 fn diff_lines(expected: &str, actual: &str) -> Vec<DiffLine> {
     TextDiff::from_lines(expected, actual)
         .iter_all_changes()
@@ -152,8 +147,6 @@ fn text_diff(lines: &[DiffLine]) -> String {
         .join("\n")
 }
 
-/// Slices `lines` down to [`MAX_INLINE_DIFF_LINES`] *before* rendering, rather than
-/// rendering the full diff and re-splitting it back into lines.
 fn truncated_text_diff(lines: &[DiffLine]) -> (String, bool) {
     let truncated = lines.len() > MAX_INLINE_DIFF_LINES;
     let shown = if truncated {

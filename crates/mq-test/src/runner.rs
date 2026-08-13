@@ -193,9 +193,6 @@ impl TestRunner {
                 engine.set_search_paths(vec![parent.to_path_buf()]);
             }
 
-            // Real, unmocked disk I/O — a deliberate exception to the hermetic `MemIo`
-            // above. Golden snapshot files must survive across runs and be checked into
-            // version control, which an in-memory `Io` cannot provide.
             {
                 let snapshot_file = file.clone();
                 let update_snapshots = self.update_snapshots;
@@ -222,8 +219,6 @@ impl TestRunner {
                     .set_command(mq_lang::DebuggerCommand::StepInto);
             }
 
-            // Snapshot before eval, so only modules newly touched by *this* file's
-            // engine (the only one that can resolve their paths) get attributed to it.
             let before_modules: FxHashSet<String> = if self.coverage {
                 coverage_data.snapshot().keys().cloned().collect()
             } else {
@@ -320,9 +315,6 @@ impl TestRunner {
         Ok(!any_failed.load(Ordering::Relaxed))
     }
 
-    /// Renders a file-level failure (parse/eval error, not a failing test) with a
-    /// per-file header. mq-lang's top-level query has no file name of its own, so this
-    /// re-attaches `file` when the diagnostic's source name is blank.
     fn render_file_error(file: &Path, mut error: mq_lang::Error) -> String {
         if error.source_code.name().is_empty() {
             error.source_code = NamedSource::new(file.display().to_string(), error.source_code.inner().clone());
@@ -334,7 +326,6 @@ impl TestRunner {
         )
     }
 
-    /// Returns `true` if `test` should run given `self.filter`/`self.tags`.
     fn matches(&self, test: &DiscoveredTest) -> bool {
         let name_matches = match &self.filter {
             Some(filter) => Self::display_name(test.name())
@@ -408,10 +399,6 @@ impl TestRunner {
         tests
     }
 
-    /// Parses a comment into a `TestAnnotation`.
-    ///
-    /// Supported forms: `@test`, `[test]`, `@parametrize(expr)`, `@tags(a, b)`.
-    /// Unknown `@name(...)` annotations are silently ignored.
     fn parse_annotation(comment: &str) -> Option<TestAnnotation> {
         let s = comment.trim();
 
@@ -473,9 +460,6 @@ impl TestRunner {
     }
 
     /// Builds the `run_tests(flatten([...]))` call appended to the file content.
-    ///
-    /// Simple tests are `[test_case(...)]`; parametrized tests expand via
-    /// `map(zip(range(...), params), fn(...))`. `flatten` merges both into one list.
     fn build_test_query(content: &str, tests: &[DiscoveredTest]) -> String {
         let cases = tests
             .iter()
@@ -510,9 +494,6 @@ impl TestRunner {
     }
 }
 
-/// Builds the command that opens `path` in the OS default application for
-/// `target_os` (as in `std::env::consts::OS`): `open` on macOS, `start` on
-/// Windows, `xdg-open` elsewhere.
 fn build_open_command(path: &Path, target_os: &str) -> std::process::Command {
     let mut cmd = if target_os == "macos" {
         std::process::Command::new("open")
