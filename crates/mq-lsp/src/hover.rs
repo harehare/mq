@@ -27,15 +27,20 @@ fn extract_deprecated_message(text: &str) -> Option<String> {
     }
 }
 
-/// Builds a Markdown hover string from a kind label, name, signature, doc comments,
-/// deprecation status, and optional parameter list.
-///
-/// The layout is:
-/// - A heading with the symbol name and kind (e.g. `## \`len\` — function`)
-/// - A fenced `mq` code block containing the full signature
-/// - An optional blockquote deprecation notice (when `deprecated` is `true`)
-/// - An optional `---` separator followed by non-deprecated doc lines
-/// - An optional `### Parameters` section listing each parameter
+fn format_examples(examples: &[mq_lang::BuiltinExample]) -> Option<String> {
+    if examples.is_empty() {
+        return None;
+    }
+
+    let items = examples
+        .iter()
+        .map(|example| format!("```mq\n{}\n```\n\n`#=>` `{}`", example.code, example.expected))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    Some(format!("### Examples\n\n{}", items))
+}
+
 fn format_hover_content(
     kind_label: &str,
     name: &str,
@@ -43,6 +48,7 @@ fn format_hover_content(
     docs: &[mq_hir::Doc],
     deprecated: bool,
     params: &[mq_hir::ParamInfo],
+    examples: &[mq_lang::BuiltinExample],
 ) -> String {
     let mut sections: Vec<String> = Vec::new();
 
@@ -90,6 +96,10 @@ fn format_hover_content(
         sections.push(format!("### Parameters\n{}", param_items));
     }
 
+    if let Some(examples) = format_examples(examples) {
+        sections.push(examples);
+    }
+
     sections.join("\n\n")
 }
 
@@ -116,6 +126,20 @@ pub(crate) fn response(
                     let type_scheme = type_env.as_ref().and_then(|env| env.get(&symbol_id));
                     let name = symbol.value.as_deref().unwrap_or_default();
 
+                    let examples: Vec<mq_lang::BuiltinExample> = {
+                        let hir = hir.read().unwrap();
+                        if symbol.source.source_id == Some(hir.builtin.source_id) {
+                            hir.builtin
+                                .functions
+                                .get(name)
+                                .or_else(|| hir.builtin.internal_functions.get(name))
+                                .map(|doc| doc.examples.to_vec())
+                                .unwrap_or_default()
+                        } else {
+                            Vec::new()
+                        }
+                    };
+
                     let (kind_label, signature, params) = match &symbol.kind {
                         mq_hir::SymbolKind::Function(args) | mq_hir::SymbolKind::Macro(args) => {
                             let kind_label = if matches!(symbol.kind, mq_hir::SymbolKind::Function(_)) {
@@ -141,7 +165,15 @@ pub(crate) fn response(
                     Some(Hover {
                         contents: HoverContents::Markup(MarkupContent {
                             kind: MarkupKind::Markdown,
-                            value: format_hover_content(kind_label, name, &signature, &symbol.doc, deprecated, &params),
+                            value: format_hover_content(
+                                kind_label,
+                                name,
+                                &signature,
+                                &symbol.doc,
+                                deprecated,
+                                &params,
+                                &examples,
+                            ),
                         }),
                         range: symbol.source.text_range.map(|text_range| {
                             Range::new(
@@ -166,8 +198,6 @@ mod tests {
     use tower_lsp_server::ls_types;
 
     use super::*;
-
-    // --- unit tests for helpers ---
 
     #[test]
     fn test_is_deprecated_marker_variants() {
@@ -199,7 +229,7 @@ mod tests {
     #[test]
     fn test_format_hover_content_no_docs() {
         let docs: Vec<mq_hir::Doc> = vec![];
-        let result = format_hover_content("function", "func", "func()", &docs, false, &[]);
+        let result = format_hover_content("function", "func", "func()", &docs, false, &[], &[]);
         assert!(result.contains("## `func` — function"));
         assert!(result.contains("```mq\nfunc()\n```"));
     }
@@ -207,7 +237,7 @@ mod tests {
     #[test]
     fn test_format_hover_content_with_docs() {
         let docs: Vec<mq_hir::Doc> = vec![(Default::default(), "Returns a value.".to_string())];
-        let result = format_hover_content("function", "func", "func()", &docs, false, &[]);
+        let result = format_hover_content("function", "func", "func()", &docs, false, &[], &[]);
         assert!(result.contains("## `func` — function"));
         assert!(result.contains("```mq\nfunc()\n```"));
         assert!(result.contains("---"));
@@ -217,7 +247,7 @@ mod tests {
     #[test]
     fn test_format_hover_content_deprecated_only() {
         let docs: Vec<mq_hir::Doc> = vec![(Default::default(), "deprecated: use bar instead".to_string())];
-        let result = format_hover_content("function", "func", "func()", &docs, true, &[]);
+        let result = format_hover_content("function", "func", "func()", &docs, true, &[], &[]);
         assert!(result.contains("> ⚠️ **Deprecated**: use bar instead"));
         // The deprecated line itself should NOT appear again in the doc section
         assert!(
@@ -232,7 +262,7 @@ mod tests {
             (Default::default(), "deprecated: use bar instead".to_string()),
             (Default::default(), "Some extra context.".to_string()),
         ];
-        let result = format_hover_content("function", "func", "func()", &docs, true, &[]);
+        let result = format_hover_content("function", "func", "func()", &docs, true, &[], &[]);
         assert!(result.contains("> ⚠️ **Deprecated**: use bar instead"));
         assert!(result.contains("---"));
         assert!(result.contains("Some extra context."));
@@ -244,7 +274,7 @@ mod tests {
     fn test_format_hover_content_doc_mentioning_deprecated() {
         // A doc line that merely mentions "deprecated" is NOT filtered
         let docs: Vec<mq_hir::Doc> = vec![(Default::default(), "Replaces the deprecated foo API.".to_string())];
-        let result = format_hover_content("function", "func", "func()", &docs, false, &[]);
+        let result = format_hover_content("function", "func", "func()", &docs, false, &[], &[]);
         assert!(result.contains("Replaces the deprecated foo API."));
     }
 
@@ -264,14 +294,32 @@ mod tests {
                 is_variadic: true,
             },
         ];
-        let result = format_hover_content("function", "func", "func(a, b, *rest)", &docs, false, &params);
+        let result = format_hover_content("function", "func", "func(a, b, *rest)", &docs, false, &params, &[]);
         assert!(result.contains("### Parameters"));
         assert!(result.contains("- `a`"));
         assert!(result.contains("- `b` *(optional)*"));
         assert!(result.contains("- `*rest` *(variadic)*"));
     }
 
-    // --- integration tests via response() ---
+    #[test]
+    fn test_format_hover_content_with_examples() {
+        let docs: Vec<mq_hir::Doc> = vec![];
+        let examples = vec![mq_lang::BuiltinExample {
+            code: r#"len("hello")"#,
+            expected: "5",
+        }];
+        let result = format_hover_content("function", "len", "len(value)", &docs, false, &[], &examples);
+        assert!(result.contains("### Examples"));
+        assert!(result.contains("```mq\nlen(\"hello\")\n```"));
+        assert!(result.contains("5"));
+    }
+
+    #[test]
+    fn test_format_hover_content_no_examples_section_when_empty() {
+        let docs: Vec<mq_hir::Doc> = vec![];
+        let result = format_hover_content("function", "func", "func()", &docs, false, &[], &[]);
+        assert!(!result.contains("### Examples"));
+    }
 
     #[test]
     fn test_function_hover() {
@@ -364,6 +412,14 @@ mod tests {
                     .value
                     .contains("Returns the length of the given string or array"),
                 "Should contain description"
+            );
+            assert!(
+                content.value.contains("### Examples"),
+                "Should contain an Examples section for a documented builtin"
+            );
+            assert!(
+                content.value.contains(r#"len("hello")"#),
+                "Should contain the example code"
             );
         } else {
             panic!("Expected markup content");
