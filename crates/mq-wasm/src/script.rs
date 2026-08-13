@@ -895,9 +895,26 @@ fn extract_deprecated_message(text: &str) -> Option<String> {
     }
 }
 
-/// Builds a Markdown hover string from a pre-formatted signature, doc comments, and
-/// deprecation status.
-fn format_hover_content(signature: &str, docs: &[mq_hir::Doc], deprecated: bool) -> String {
+fn format_examples(examples: &[mq_lang::BuiltinExample]) -> Option<String> {
+    if examples.is_empty() {
+        return None;
+    }
+
+    let items = examples
+        .iter()
+        .map(|example| format!("```mq\n{}\n```\n\n`#=>` `{}`", example.code, example.expected))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    Some(format!("### Examples\n\n{}", items))
+}
+
+fn format_hover_content(
+    signature: &str,
+    docs: &[mq_hir::Doc],
+    deprecated: bool,
+    examples: &[mq_lang::BuiltinExample],
+) -> String {
     let mut sections: Vec<String> = Vec::new();
 
     sections.push(format!("```mq\n{}\n```", signature));
@@ -924,6 +941,10 @@ fn format_hover_content(signature: &str, docs: &[mq_hir::Doc], deprecated: bool)
     if !doc_text.trim().is_empty() {
         sections.push("---".to_string());
         sections.push(doc_text);
+    }
+
+    if let Some(examples) = format_examples(examples) {
+        sections.push(examples);
     }
 
     sections.join("\n\n")
@@ -968,8 +989,20 @@ pub async fn hover(code: &str, line: u32, column: u32) -> JsValue {
         _ => return JsValue::NULL,
     };
 
+    let name = symbol.value.as_deref().unwrap_or_default();
+    let examples: Vec<mq_lang::BuiltinExample> = if symbol.source.source_id == Some(hir.builtin.source_id) {
+        hir.builtin
+            .functions
+            .get(name)
+            .or_else(|| hir.builtin.internal_functions.get(name))
+            .map(|doc| doc.examples.to_vec())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     let result = HoverResult {
-        content: format_hover_content(&signature, &symbol.doc, deprecated),
+        content: format_hover_content(&signature, &symbol.doc, deprecated, &examples),
     };
     serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
 }
