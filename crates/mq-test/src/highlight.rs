@@ -8,7 +8,7 @@
 use mq_lang::{CstNode, CstNodeKind, CstTrivia, Shared, TokenKind};
 use rustc_hash::FxHashMap;
 
-use crate::coverage::html_escape;
+use crate::html::escape as html_escape;
 
 /// Coarse lexical category used to pick a `tok-*` CSS class for a token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

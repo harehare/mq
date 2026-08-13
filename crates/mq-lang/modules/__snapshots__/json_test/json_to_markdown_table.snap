@@ -1,0 +1,5 @@
+| name | id | email | roles |
+| --- | --- | --- | --- |
+| Alice | 1 | alice@example.com | ["admin", "user"] |
+| Bob | 2 | bob@example.com | ["user"] |
+| Charlie | 3 | charlie@example.com | ["editor", "user"] |

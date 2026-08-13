@@ -59,6 +59,9 @@ mq-test --tag smoke
 
 # Run test files in parallel once more than 4 files are discovered
 mq-test --parallel-threshold 4
+
+# Accept the current output of every assert_snapshot(...) call as the new golden snapshot
+mq-test --update-snapshots
 ```
 
 ## Coverage
@@ -209,15 +212,54 @@ any test in any file failed.
 
 Tests use the built-in `assert_eq` and related helpers from the `test` module:
 
-| Function                    | Description                    |
-| --------------------------- | ------------------------------ |
-| `assert_eq(actual, expect)` | Fails if `actual != expect`    |
-| `assert(cond)`              | Fails if `cond` is not `true`  |
-| `test_case(name, fn)`       | Registers a named test case    |
-| `run_tests(cases)`          | Runs all registered test cases |
+| Function                        | Description                    |
+| -------------------------------- | ------------------------------ |
+| `assert_eq(actual, expect)`      | Fails if `actual != expect`    |
+| `assert(cond)`                   | Fails if `cond` is not `true`  |
+| `assert_snapshot(name, actual)`  | Fails if `actual` doesn't match the golden snapshot `name` |
+| `test_case(name, fn)`            | Registers a named test case    |
+| `run_tests(cases)`               | Runs all registered test cases |
 
 The runner automatically generates a `run_tests(flatten([...]))` call from all
 discovered test functions — test files do not need to maintain a manual list.
+
+### Snapshot Testing
+
+`assert_snapshot(name, actual)` compares `actual` against a golden file, for outputs
+too large to usefully inline in an `assert_eq` diff (e.g. a rendered document):
+
+```mq
+include "test"
+|
+
+def test_renders_the_full_report():
+  assert_snapshot("report", render_report(data))
+end
+```
+
+The layout follows the `suite`/`ref`/`store` split from
+[typst's test runner](https://github.com/typst/typst/tree/main/tests): the test file
+itself plus whatever it feeds into `assert_snapshot` is the "suite" (input), and:
+
+- **ref** — `__snapshots__/<test file stem>/<name>.snap`, next to the test file. This is
+  the golden, checked-in expected value.
+- **store** — `.mq-test-store/<test file stem>/<name>.diff.html` (and `.actual.snap`),
+  written on a mismatch. A self-contained HTML diff report plus the raw actual output,
+  for reviewing a large mismatch without scrolling a terminal. Not checked in — add
+  `.mq-test-store/` to `.gitignore`.
+
+A snapshot that doesn't exist yet fails the test (it does not get created implicitly) —
+this is the one exception in `mq-test` where "no such thing" is a real failure, not an
+error to silently paper over. Run with `--update-snapshots` to create or overwrite golden
+snapshots from the current output:
+
+```bash
+mq-test --update-snapshots
+```
+
+`assert_snapshot` is real, unmocked disk I/O — the one deliberate exception to the
+hermetic `Io` described below, since golden files must survive across runs and be
+checked into version control.
 
 ### Mocking File and Network I/O
 

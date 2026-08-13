@@ -82,8 +82,7 @@ end
 def test_table_to_markdown():
   let t = first(table::tables(table_nodes))
   | let md_result = table::to_markdown(t)
-  | assert(is_array(md_result))
-  | assert(len(md_result) > 0)
+  | assert_snapshot("table_to_markdown", to_markdown_string(md_result))
 end
 
 def test_table_map_rows():

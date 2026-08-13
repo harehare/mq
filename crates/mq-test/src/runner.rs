@@ -9,6 +9,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::coverage::{self, CoverageData, CoverageFormat, CoverageHandler, FileCoverage};
+use crate::snapshot;
 
 /// Parsed test annotation from a leading comment.
 #[derive(Debug, PartialEq)]
@@ -63,6 +64,7 @@ pub struct TestRunner {
     filter: Option<String>,
     tags: Vec<String>,
     parallel_threshold: usize,
+    update_snapshots: bool,
 }
 
 impl TestRunner {
@@ -78,6 +80,7 @@ impl TestRunner {
             filter: None,
             tags: Vec::new(),
             parallel_threshold: usize::MAX,
+            update_snapshots: false,
         }
     }
 
@@ -123,6 +126,13 @@ impl TestRunner {
     /// Runs test files in parallel once more than this many files are discovered.
     pub fn with_parallel_threshold(mut self, parallel_threshold: usize) -> Self {
         self.parallel_threshold = parallel_threshold;
+        self
+    }
+
+    /// When `true`, `assert_snapshot(name, actual)` writes `actual` as the new golden
+    /// snapshot instead of comparing against it, for every snapshot exercised by the run.
+    pub fn with_update_snapshots(mut self, update_snapshots: bool) -> Self {
+        self.update_snapshots = update_snapshots;
         self
     }
 
@@ -181,6 +191,25 @@ impl TestRunner {
                 && parent != Path::new("")
             {
                 engine.set_search_paths(vec![parent.to_path_buf()]);
+            }
+
+            // Real, unmocked disk I/O — a deliberate exception to the hermetic `MemIo`
+            // above. Golden snapshot files must survive across runs and be checked into
+            // version control, which an in-memory `Io` cannot provide.
+            {
+                let snapshot_file = file.clone();
+                let update_snapshots = self.update_snapshots;
+                engine.register_fn(
+                    "assert_snapshot",
+                    move |name: String, actual: String| -> mq_lang::HostFnResult {
+                        Ok(snapshot::check_snapshot(
+                            &snapshot_file,
+                            &name,
+                            &actual,
+                            update_snapshots,
+                        ))
+                    },
+                );
             }
 
             if self.coverage {
@@ -874,6 +903,18 @@ mod tests {
         dir
     }
 
+    /// Writes a minimal test file exercising `assert_snapshot("greeting", "hello world")`,
+    /// shared by the `assert_snapshot` integration tests below.
+    fn write_greeting_snapshot_test_file(dir: &Path) -> PathBuf {
+        let test_file = dir.join("tests.mq");
+        fs::write(
+            &test_file,
+            "include \"test\"\n|\ndef test_greeting():\n  assert_snapshot(\"greeting\", \"hello world\")\nend\n",
+        )
+        .unwrap();
+        test_file
+    }
+
     #[test]
     fn test_coverage_reports_only_the_imported_module() {
         let dir = temp_project_dir("coverage_only_imported");
@@ -1170,6 +1211,52 @@ mod tests {
 
         let passed = TestRunner::new(files).with_parallel_threshold(0).run().unwrap();
         assert!(passed);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_assert_snapshot_creates_then_matches_across_runs() {
+        let dir = temp_project_dir("snapshot_create_then_match");
+        let test_file = write_greeting_snapshot_test_file(&dir);
+
+        // First run with --update-snapshots creates the golden file and passes.
+        assert!(
+            TestRunner::new(vec![test_file.clone()])
+                .with_update_snapshots(true)
+                .run()
+                .unwrap()
+        );
+        assert!(dir.join("__snapshots__/tests/greeting.snap").exists());
+
+        // A normal run now compares against it and still passes.
+        assert!(TestRunner::new(vec![test_file]).run().unwrap());
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_assert_snapshot_fails_on_mismatch_and_writes_store() {
+        let dir = temp_project_dir("snapshot_mismatch");
+        let test_file = write_greeting_snapshot_test_file(&dir);
+        fs::create_dir_all(dir.join("__snapshots__/tests")).unwrap();
+        fs::write(dir.join("__snapshots__/tests/greeting.snap"), "goodbye world").unwrap();
+
+        let passed = TestRunner::new(vec![test_file]).run().unwrap();
+        assert!(!passed, "a snapshot mismatch must fail the run");
+        assert!(dir.join(".mq-test-store/tests/greeting.diff.html").exists());
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_assert_snapshot_missing_golden_fails_without_update_flag() {
+        let dir = temp_project_dir("snapshot_missing");
+        let test_file = write_greeting_snapshot_test_file(&dir);
+
+        let passed = TestRunner::new(vec![test_file]).run().unwrap();
+        assert!(!passed, "a missing golden snapshot must fail rather than silently pass");
+        assert!(!dir.join("__snapshots__/tests/greeting.snap").exists());
 
         fs::remove_dir_all(&dir).ok();
     }
