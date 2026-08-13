@@ -6,6 +6,7 @@ use mq_lang::{CstNode, CstNodeKind, DebugContext, DebuggerAction, DebuggerHandle
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::highlight;
+use crate::html;
 
 /// Output format for a coverage report.
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -294,13 +295,6 @@ pub(crate) fn format_lcov_report(coverages: &[FileCoverage]) -> String {
     out
 }
 
-pub(crate) fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
 /// Classifies a coverage percentage into a badge color tier.
 fn badge_class(pct: f64) -> &'static str {
     if pct >= 80.0 {
@@ -448,7 +442,7 @@ fn format_html_source(cov: &FileCoverage, anchor: &str) -> String {
         \x20       </table>\n\
         \x20     </details>\n",
         anchor = anchor,
-        file = html_escape(&cov.file.display().to_string()),
+        file = html::escape(&cov.file.display().to_string()),
         pct = cov.percent(),
         covered = cov.covered_lines(),
         total = cov.total_lines(),
@@ -482,7 +476,7 @@ pub(crate) fn format_html_report(coverages: &[FileCoverage]) -> String {
             \x20       <td>{covered}/{total}</td>\n\
             \x20       <td class=\"uncovered\">{uncovered_text}</td>\n\
             \x20     </tr>\n",
-            file = html_escape(&cov.file.display().to_string()),
+            file = html::escape(&cov.file.display().to_string()),
             badge = badge_class(cov.percent()),
             pct = cov.percent(),
             covered = cov.covered_lines(),
@@ -498,16 +492,8 @@ pub(crate) fn format_html_report(coverages: &[FileCoverage]) -> String {
         (total_covered as f64 / total_lines as f64) * 100.0
     };
 
-    format!(
-        "<!doctype html>\n\
-        <html lang=\"en\">\n\
-        <head>\n\
-        \x20 <meta charset=\"utf-8\">\n\
-        \x20 <title>mq-test coverage report</title>\n\
-        \x20 <style>{HTML_STYLE}</style>\n\
-        </head>\n\
-        <body>\n\
-        \x20 <h1>Coverage report</h1>\n\
+    let body = format!(
+        "\x20 <h1>Coverage report</h1>\n\
         \x20 <table>\n\
         \x20   <thead>\n\
         \x20     <tr><th>File</th><th>Coverage</th><th>Lines</th><th>Uncovered lines</th></tr>\n\
@@ -519,11 +505,11 @@ pub(crate) fn format_html_report(coverages: &[FileCoverage]) -> String {
         \x20     <tr><td>Total</td><td><span class=\"badge {overall_badge}\">{overall:.1}%</span></td><td>{total_covered}/{total_lines}</td><td></td></tr>\n\
         \x20   </tfoot>\n\
         \x20 </table>\n\
-        {sources}\
-        </body>\n\
-        </html>\n",
+        {sources}",
         overall_badge = badge_class(overall),
-    )
+    );
+
+    html::page("mq-test coverage report", HTML_STYLE, &body)
 }
 
 /// Renders a Markdown coverage report: a summary table followed by each

@@ -1,6 +1,8 @@
 mod coverage;
 mod highlight;
+mod html;
 mod runner;
+mod snapshot;
 
 use clap::Parser;
 use coverage::CoverageFormat;
@@ -32,7 +34,9 @@ use std::{path::PathBuf, process::ExitCode};
     ## Only run tests tagged \"smoke\" (see `# @tags(...)` in test files):\n\
     mq-test --tag smoke\n\n\
     ## Run test files in parallel once more than 4 files are discovered:\n\
-    mq-test --parallel-threshold 4")]
+    mq-test --parallel-threshold 4\n\n\
+    ## Accept the current output of every assert_snapshot(...) call as the new golden snapshot:\n\
+    mq-test --update-snapshots")]
 struct Cli {
     /// Path(s) to mq test files.
     /// Defaults to **/*.mq in the current directory when omitted.
@@ -70,6 +74,11 @@ struct Cli {
     /// Omit to always run files sequentially.
     #[arg(short = 'P', long)]
     parallel_threshold: Option<usize>,
+
+    /// Write the current output of every `assert_snapshot(name, actual)` call as its new
+    /// golden snapshot, instead of comparing against the existing one.
+    #[arg(long)]
+    update_snapshots: bool,
 }
 
 fn main() -> ExitCode {
@@ -83,6 +92,7 @@ fn main() -> ExitCode {
         .with_filter(cli.filter)
         .with_tags(cli.tags)
         .with_parallel_threshold(cli.parallel_threshold.unwrap_or(usize::MAX))
+        .with_update_snapshots(cli.update_snapshots)
         .run()
     {
         Ok(true) => ExitCode::SUCCESS,

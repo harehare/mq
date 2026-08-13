@@ -1,0 +1,115 @@
+| Index | Tag | Attributes | Text |
+| --- | --- | --- | --- |
+| 0 | user | id=1 |  |
+| 1 | user | id=2 |  |
+| 2 | user | id=3 |  |
+
+## Children of user:
+
+| Index | Tag | Attributes | Text |
+| --- | --- | --- | --- |
+| 0 | name |  | Alice |
+| 1 | email |  | alice@example.com |
+| 2 | roles |  |  |
+
+### Children of name:
+
+| Tag | Attributes | Text | Children |
+| --- | --- | --- | --- |
+| name |  | Alice | 0 |
+
+### Children of email:
+
+| Tag | Attributes | Text | Children |
+| --- | --- | --- | --- |
+| email |  | alice@example.com | 0 |
+
+### Children of roles:
+
+| Index | Tag | Attributes | Text |
+| --- | --- | --- | --- |
+| 0 | role |  | admin |
+| 1 | role |  | user |
+
+#### Children of role:
+
+| Tag | Attributes | Text | Children |
+| --- | --- | --- | --- |
+| role |  | admin | 0 |
+
+#### Children of role:
+
+| Tag | Attributes | Text | Children |
+| --- | --- | --- | --- |
+| role |  | user | 0 |
+
+## Children of user:
+
+| Index | Tag | Attributes | Text |
+| --- | --- | --- | --- |
+| 0 | name |  | Bob |
+| 1 | email |  | bob@example.com |
+| 2 | roles |  |  |
+
+### Children of name:
+
+| Tag | Attributes | Text | Children |
+| --- | --- | --- | --- |
+| name |  | Bob | 0 |
+
+### Children of email:
+
+| Tag | Attributes | Text | Children |
+| --- | --- | --- | --- |
+| email |  | bob@example.com | 0 |
+
+### Children of roles:
+
+| Index | Tag | Attributes | Text |
+| --- | --- | --- | --- |
+| 0 | role |  | user |
+
+#### Children of role:
+
+| Tag | Attributes | Text | Children |
+| --- | --- | --- | --- |
+| role |  | user | 0 |
+
+## Children of user:
+
+| Index | Tag | Attributes | Text |
+| --- | --- | --- | --- |
+| 0 | name |  | Charlie |
+| 1 | email |  | charlie@example.com |
+| 2 | roles |  |  |
+
+### Children of name:
+
+| Tag | Attributes | Text | Children |
+| --- | --- | --- | --- |
+| name |  | Charlie | 0 |
+
+### Children of email:
+
+| Tag | Attributes | Text | Children |
+| --- | --- | --- | --- |
+| email |  | charlie@example.com | 0 |
+
+### Children of roles:
+
+| Index | Tag | Attributes | Text |
+| --- | --- | --- | --- |
+| 0 | role |  | editor |
+| 1 | role |  | user |
+
+#### Children of role:
+
+| Tag | Attributes | Text | Children |
+| --- | --- | --- | --- |
+| role |  | editor | 0 |
+
+#### Children of role:
+
+| Tag | Attributes | Text | Children |
+| --- | --- | --- | --- |
+| role |  | user | 0 |

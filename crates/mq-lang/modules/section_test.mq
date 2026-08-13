@@ -43,7 +43,7 @@ def test_section_content():
   let sections = do test_sections | section::split(1);
   | let first_section = first(sections)
   | let content_nodes = section::content(first_section)
-  | assert(len(content_nodes) > 0)
+  | assert_snapshot("section_content", to_markdown_string(content_nodes))
 end
 
 def test_section_level():
@@ -68,7 +68,7 @@ end
 def test_section_flatten():
   let sections = do test_sections | section::split(1);
   | let flattened = section::collect(sections)
-  | assert(is_array(flattened))
+  | assert_snapshot("section_flatten", to_markdown_string(flattened))
 end
 
 def test_section_section_pattern():
@@ -106,7 +106,7 @@ end
 def test_section_bodies_pipe():
   let body_list = do test_sections | section::section("Introduction") | section::bodies();
   | assert_eq(len(body_list), 1)
-  | assert(is_array(first(body_list)))
+  | assert_eq(to_markdown_string(first(body_list)), "This is the introduction section.\n")
 end
 
 # @parametrize([[1, 2, 1], [2, 1, 2], [1..2, 3, 1]])

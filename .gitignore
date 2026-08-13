@@ -8,6 +8,9 @@ target/
 .direnv/
 result
 
+# mq-test snapshot store (assert_snapshot); __snapshots__/ itself IS checked in
+.mq-test-store/
+
 **/*.rs.bk
 *.pdb
 

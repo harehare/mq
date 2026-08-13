@@ -17,12 +17,12 @@ end
 
 def test_yaml_to_json():
   let result = yaml::yaml_to_json(yaml::yaml_parse(yaml_input))
-  | assert_eq(result, "{\"array\": [\"item1\", \"item2\", \"item3\"], \"number\": 42, \"float\": 3.14, \"bool_true\": true, \"bool_false\": false, \"null_value\": null, \"object\": {\"key1\": \"value1\", \"key2\": \"value2\"}, \"nested\": {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}}}")
+  | assert_snapshot("yaml_to_json", result)
 end
 
 def test_yaml_to_markdown_table():
   let result = yaml::yaml_to_markdown_table(yaml::yaml_parse(yaml_input))
-  | assert_eq(result, "| Key | Value |\n| --- | --- |\n| array | [\"item1\", \"item2\", \"item3\"] |\n| number | 42 |\n| float | 3.14 |\n| bool_true | true |\n| bool_false | false |\n| null_value |  |\n| object | {\"key1\": \"value1\", \"key2\": \"value2\"} |\n| nested | {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}} |")
+  | assert_snapshot("yaml_to_markdown_table", result)
 end
 
 def test_to_front_matter():

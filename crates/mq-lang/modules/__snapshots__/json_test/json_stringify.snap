@@ -1,0 +1,1 @@
+{"users": [{"name": "Alice", "id": 1, "email": "alice@example.com", "roles": ["admin", "user"]}, {"name": "Bob", "id": 2, "email": "bob@example.com", "roles": ["user"]}, {"name": "Charlie", "id": 3, "email": "charlie@example.com", "roles": ["editor", "user"]}], "meta": {"count": 3, "generated_at": "2024-06-01T12:00:00Z"}}
