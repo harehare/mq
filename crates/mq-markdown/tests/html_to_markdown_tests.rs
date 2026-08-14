@@ -609,6 +609,43 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     "* [x] Done"
 )]
 #[case::input_other_type_ignored("<input type=\"text\" value=\"Hello\">", ConversionOptions::default(), "Hello")]
+#[case::input_no_type_defaults_to_text("<input value=\"Alice\">", ConversionOptions::default(), "Alice")]
+#[case::input_placeholder_fallback("<input placeholder=\"Your name\">", ConversionOptions::default(), "_Your name_")]
+#[case::input_value_takes_precedence_over_placeholder(
+    "<input value=\"Alice\" placeholder=\"Your name\">",
+    ConversionOptions::default(),
+    "Alice"
+)]
+#[case::input_hidden_ignored("<input type=\"hidden\" value=\"secret\">", ConversionOptions::default(), "")]
+#[case::input_file_ignored("<input type=\"file\">", ConversionOptions::default(), "")]
+#[case::input_range_with_value("<input type=\"range\" value=\"5\">", ConversionOptions::default(), "5")]
+#[case::select_with_options(
+    "<select><option>Red</option><option selected>Green</option><option>Blue</option></select>",
+    ConversionOptions::default(),
+    "* [ ] Red\n* [x] Green\n* [ ] Blue"
+)]
+#[case::select_with_optgroup(
+    "<select><optgroup label=\"Fruits\"><option>Apple</option><option selected>Banana</option></optgroup></select>",
+    ConversionOptions::default(),
+    "* **Fruits**\n    * [ ] Apple\n    * [x] Banana"
+)]
+#[case::select_empty("<select></select>", ConversionOptions::default(), "")]
+#[case::textarea_with_content(
+    "<textarea>line1\nline2</textarea>",
+    ConversionOptions::default(),
+    "```\nline1\nline2\n```"
+)]
+#[case::textarea_empty("<textarea></textarea>", ConversionOptions::default(), "")]
+#[case::fieldset_legend(
+    "<fieldset><legend>Contact</legend><p>Name</p></fieldset>",
+    ConversionOptions::default(),
+    "**Contact**\n\nName"
+)]
+#[case::form_with_label_and_input(
+    "<form><label>Name: <input type=\"text\" value=\"World\"></label></form>",
+    ConversionOptions::default(),
+    "Name: World"
+)]
 #[case::dl_simple(
     "<dl><dt>Term 1</dt><dd>Definition 1</dd></dl>",
     ConversionOptions::default(),

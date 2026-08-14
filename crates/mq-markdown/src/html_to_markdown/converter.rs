@@ -605,6 +605,66 @@ fn handle_dl_element(element: &HtmlElement, options: &ConversionOptions) -> miet
     }
 }
 
+/// Converts a `<select>`'s `<option>`/`<optgroup>` children into a task-list, reusing the
+/// same `[x]`/`[ ]` marker convention as checkbox/radio `<input>`s.
+fn handle_select_element(element: &HtmlElement) -> miette::Result<String> {
+    let mut items = Vec::new();
+    collect_select_options(&element.children, &mut items, 0)?;
+    Ok(items.join("\n"))
+}
+
+fn collect_select_options(nodes: &[HtmlNode], items: &mut Vec<String>, indent_level: usize) -> miette::Result<()> {
+    let indent = "    ".repeat(indent_level);
+    for node in nodes {
+        if let HtmlNode::Element(el) = node {
+            match el.tag_name.as_str() {
+                "option" => {
+                    let text = convert_children_to_string(&el.children)?;
+                    let text = text.trim();
+                    let label = if !text.is_empty() {
+                        text.to_string()
+                    } else if let Some(Some(label_attr)) = el.attributes.get("label") {
+                        label_attr.clone()
+                    } else {
+                        String::new()
+                    };
+                    if label.is_empty() {
+                        continue;
+                    }
+                    let marker = if el.attributes.contains_key("selected") {
+                        "[x]"
+                    } else {
+                        "[ ]"
+                    };
+                    items.push(format!("{}* {} {}", indent, marker, label));
+                }
+                "optgroup" => {
+                    if let Some(Some(group_label)) = el.attributes.get("label")
+                        && !group_label.is_empty()
+                    {
+                        items.push(format!("{}* **{}**", indent, group_label));
+                    }
+                    collect_select_options(&el.children, items, indent_level + 1)?;
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Converts `<textarea>` content to a fenced code block, mirroring `<pre>` since a
+/// textarea's value is verbatim, whitespace-significant text.
+fn handle_textarea_element(element: &HtmlElement) -> miette::Result<String> {
+    let text_content = extract_text_from_pre_children(&element.children);
+    let text_content = text_content.strip_prefix('\n').unwrap_or(&text_content);
+    let text_content = dedent(text_content.trim_end_matches('\n'));
+    if text_content.trim().is_empty() {
+        return Ok(String::new());
+    }
+    Ok(format!("```\n{}\n```", text_content))
+}
+
 fn handle_script_element(element: &HtmlElement, options: &ConversionOptions) -> miette::Result<Option<String>> {
     if options.extract_scripts_as_code_blocks {
         if element.attributes.get("src").and_then(|opt| opt.as_ref()).is_none() {
@@ -893,10 +953,15 @@ fn convert_children_to_string_impl(nodes: &[HtmlNode], escape_text: bool) -> mie
                         // Skip inputs used as CSS toggle triggers (not actual form inputs)
                         let is_ui_toggle = element.attributes.get("role").and_then(|v| v.as_deref()) == Some("button")
                             || element.attributes.get("aria-haspopup").and_then(|v| v.as_deref()) == Some("true");
-                        if is_ui_toggle {
-                            // nothing
-                        } else if let Some(Some(type_attr)) = element.attributes.get("type") {
-                            match type_attr.to_lowercase().as_str() {
+                        if !is_ui_toggle {
+                            // No `type` attribute defaults to "text" per the HTML spec.
+                            let type_attr = element
+                                .attributes
+                                .get("type")
+                                .and_then(|opt| opt.as_deref())
+                                .unwrap_or("text")
+                                .to_lowercase();
+                            match type_attr.as_str() {
                                 "checkbox" | "radio" => {
                                     if element.attributes.contains_key("checked") {
                                         parts.push("[x] ".to_string());
@@ -904,12 +969,19 @@ fn convert_children_to_string_impl(nodes: &[HtmlNode], escape_text: bool) -> mie
                                         parts.push("[ ] ".to_string());
                                     }
                                 }
-                                "text" | "number" | "button" | "url" | "email"
-                                    if element.attributes.contains_key("value") =>
-                                {
-                                    parts.push(element.attributes.get("value").cloned().unwrap().unwrap_or_default());
+                                // No meaningful textual content to surface.
+                                "hidden" | "file" | "image" => {}
+                                _ => {
+                                    if let Some(Some(value)) = element.attributes.get("value")
+                                        && !value.is_empty()
+                                    {
+                                        parts.push(value.clone());
+                                    } else if let Some(Some(placeholder)) = element.attributes.get("placeholder")
+                                        && !placeholder.is_empty()
+                                    {
+                                        parts.push(format!("_{}_", placeholder));
+                                    }
                                 }
-                                _ => {}
                             }
                         }
                     }
@@ -1114,7 +1186,7 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: &ConversionOptions
                         // Skip navigational/sidebar/noscript noise entirely
                     }
                     "html" | "head" | "header" | "footer" | "body" | "div" | "main" | "article" | "section"
-                    | "hgroup" | "details" | "figure" => {
+                    | "hgroup" | "details" | "figure" | "form" | "fieldset" => {
                         if is_css_dropdown_widget(element) {
                             // Skip CSS-only dropdown widgets (language switchers, nav menus, etc.)
                         } else if is_heading_with_aux_siblings(element) {
@@ -1151,6 +1223,25 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: &ConversionOptions
                         let dl_md = handle_dl_element(element, options)?;
                         if !dl_md.is_empty() {
                             markdown_blocks.push((dl_md, false));
+                        }
+                    }
+                    "select" => {
+                        let select_md = handle_select_element(element)?;
+                        if !select_md.is_empty() {
+                            markdown_blocks.push((select_md, false));
+                        }
+                    }
+                    "textarea" => {
+                        let textarea_md = handle_textarea_element(element)?;
+                        if !textarea_md.is_empty() {
+                            markdown_blocks.push((textarea_md, false));
+                        }
+                    }
+                    "legend" => {
+                        let legend_text = convert_children_to_string(&element.children)?;
+                        let legend_text = legend_text.trim();
+                        if !legend_text.is_empty() {
+                            markdown_blocks.push((format!("**{}**", legend_text), false));
                         }
                     }
                     "summary" => {
