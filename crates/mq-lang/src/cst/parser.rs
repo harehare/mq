@@ -1135,6 +1135,69 @@ impl<'a> Parser<'a> {
                 {
                     node.children =
                         vec![self.next_node(|kind| matches!(kind, TokenKind::Selector(_)), NodeKind::Selector)?];
+                    return Ok(Shared::new(node));
+                }
+
+                if let Some(next_token) = self.peek()
+                    && next_token.is_selector()
+                    && matches!(Selector::try_from(&**next_token), Ok(sel) if !sel.is_attribute_selector())
+                {
+                    let first_token = Shared::clone(node.token.as_ref().unwrap());
+                    let block_leading = node.leading_trivia.clone();
+                    let mut nodes = vec![Shared::new(node)];
+
+                    while let Some(step_token) = self.peek() {
+                        if !step_token.is_selector() {
+                            break;
+                        }
+
+                        match Selector::try_from(&**step_token) {
+                            Ok(sel) if sel.is_attribute_selector() => {
+                                nodes.push(
+                                    self.next_node(|kind| matches!(kind, TokenKind::Selector(_)), NodeKind::Selector)?,
+                                );
+                                break;
+                            }
+                            Ok(_) => {
+                                nodes.push(Shared::new(Node {
+                                    kind: NodeKind::Selector,
+                                    token: Some(Shared::new(Token {
+                                        kind: TokenKind::DoubleDot,
+                                        range: step_token.range,
+                                        module_id: step_token.module_id,
+                                    })),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }));
+
+                                let leading_trivia = self.parse_leading_trivia();
+                                let step_src_token = self.next_token(|kind| matches!(kind, TokenKind::Selector(_)))?;
+                                let trailing_trivia = self.parse_trailing_trivia();
+                                let mut step_node = Node {
+                                    kind: NodeKind::Selector,
+                                    token: Some(Shared::clone(&step_src_token)),
+                                    leading_trivia,
+                                    trailing_trivia,
+                                    children: Vec::new(),
+                                };
+                                if self.try_next_token(|kind| matches!(kind, TokenKind::LParen)) {
+                                    step_node.kind = NodeKind::SelectorCall;
+                                    step_node.children = self.parse_args()?;
+                                }
+                                nodes.push(Shared::new(step_node));
+                            }
+                            Err(_) => break,
+                        }
+                    }
+
+                    return Ok(Shared::new(Node {
+                        kind: NodeKind::Block,
+                        token: Some(first_token),
+                        leading_trivia: block_leading,
+                        trailing_trivia: Vec::new(),
+                        children: nodes,
+                    }));
                 }
 
                 Ok(Shared::new(node))

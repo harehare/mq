@@ -699,7 +699,16 @@ impl Formatter {
                         child.token.as_ref().map(|t| &t.kind),
                         Some(mq_lang::TokenKind::Selector(s)) if s == "."
                     );
-                if is_list_iterator {
+
+                let is_descendant_bridge = matches!(
+                    child.token.as_ref().map(|t| &t.kind),
+                    Some(mq_lang::TokenKind::DoubleDot)
+                );
+                if is_descendant_bridge {
+                    if !self.output.ends_with(' ') {
+                        self.append_space();
+                    }
+                } else if is_list_iterator {
                     child.children.iter().for_each(|bracket_child| {
                         self.format_node(mq_lang::Shared::clone(bracket_child), 0);
                     });
@@ -2935,6 +2944,12 @@ end
     #[case::selector_call_heading_multi_arg(".h(1,2)", ".h(1, 2)")]
     #[case::selector_call_code_lang(".code(\"rust\")", ".code(\"rust\")")]
     #[case::selector_call_pipe(".h(1)|.text()", ".h(1) | .text()")]
+    #[case::descendant_chain(".blockquote .code", ".blockquote .code")]
+    #[case::descendant_chain_no_space(".blockquote.code", ".blockquote .code")]
+    #[case::descendant_chain_extra_space(".blockquote  .code", ".blockquote .code")]
+    #[case::descendant_chain_three_levels(".blockquote .list .code", ".blockquote .list .code")]
+    #[case::descendant_chain_with_selector_call(".blockquote .code(\"rust\")", ".blockquote .code(\"rust\")")]
+    #[case::descendant_chain_trailing_attr(".blockquote .code.lang", ".blockquote .code.lang")]
     #[case::arrow_simple("->(): program;", "->(): program;")]
     #[case::arrow_multiline(
         "->(arg1,arg2):
