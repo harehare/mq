@@ -391,6 +391,11 @@ impl ModuleLoader<DefaultModuleResolver> {
         self.resolver.set_allowed_domains(domains);
     }
 
+    /// Enables or disables HTTP module imports outright, independent of the domain allowlist.
+    pub fn set_http_import_enabled(&mut self, enabled: bool) {
+        self.resolver.set_http_import_enabled(enabled);
+    }
+
     /// Clears all locally-cached HTTP module files.
     ///
     /// Call this once before processing to force a re-fetch of all cached modules.
@@ -406,6 +411,12 @@ impl ModuleLoader<DefaultModuleResolver> {
     /// Enables or disables the `mq.lock` integrity check/update for HTTP imports.
     pub fn set_lockfile_enabled(&mut self, enabled: bool) {
         self.resolver.set_lockfile_enabled(enabled);
+    }
+
+    /// When `true`, a URL with no existing `mq.lock` entry is a hard error instead of being
+    /// recorded as a new entry.
+    pub fn set_lockfile_frozen(&mut self, frozen: bool) {
+        self.resolver.set_lockfile_frozen(frozen);
     }
 
     /// Sets the path used for `mq.lock`.

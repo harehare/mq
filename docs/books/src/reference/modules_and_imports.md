@@ -191,8 +191,11 @@ import "md"
 When `mq` is built with the `http-import` feature, `import` and `include` accept HTTP/HTTPS URLs
 in addition to local file names.
 
-> **Security note:** By default, only URLs under `github.com/harehare` (resolved to `raw.githubusercontent.com/harehare`) are allowed.
-> Importing from any other domain requires explicitly enabling it with the `--allowed-domain` flag.
+> **Security note:** HTTP imports are disabled by default and must be enabled with
+> `--allow-http-import`. Once enabled, only URLs under `github.com/harehare` (resolved to
+> `raw.githubusercontent.com/harehare`) are allowed; importing from any other domain also
+> requires `--allowed-domain`. This is a separate permission from `--allow-net`, which only
+> gates the `http()`/`http_request()` builtins, not module resolution.
 
 ### Plain URL
 
@@ -218,9 +221,8 @@ github.com/{owner}/{path}[@{version}]
 
 **Example:**
 
-```mq
-import "github.com/harehare/kdl.mq"
-| kdl::kdl_parse("title \"Hello, World!\"")
+```sh
+mq --allow-http-import 'import "github.com/harehare/kdl.mq" | kdl::kdl_parse("title \"Hello, World!\"")'
 ```
 
 ### Caching
@@ -232,17 +234,6 @@ Fetched modules are cached in `{system_cache_dir}/mq/` as `{md5(url)}.mq` files.
   Pass `--refresh-modules` on the command line to discard the cache and re-fetch.
 
 ### Lock file (`mq.lock`)
-
-Every fetched module URL's SHA-256 content hash is recorded in an `mq.lock` file, created in
-the current directory the first time a URL is fetched. This makes HTTP imports reproducible
-across machines and CI: if the same URL is fetched again with different content — from a
-different machine, a fresh (cold) cache, or after `--refresh-modules` clears the disk cache
-— mq fails with an error instead of silently using whatever the remote now serves.
-
-The check also applies to disk-cache hits, not just network fetches. The module cache is
-shared per machine while `mq.lock` is per project, so a project whose lock file expects
-different content than the local cache holds fails the same way, and a project without an
-`mq.lock` yet gets one created even when every module is served from the cache.
 
 - **First use of a URL** (fetched or served from the cache): recorded in `mq.lock`.
 - **Later use, content unchanged**: succeeds silently.
@@ -258,32 +249,41 @@ different content than the local cache holds fails the same way, and a project w
 Commit `mq.lock` alongside scripts that use HTTP imports so CI and teammates fetch the exact
 content you locked, the same way `package-lock.json`/`deno.lock` work.
 
+
 ### CLI options
 
 | Flag                        | Description                                                                                                                             |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `--allow-http-import`       | Enable HTTP module imports. Disabled by default; `import`/`include` of a `github.com/...` or `https://...` URL fails without this.      |
 | `--refresh-modules`         | Discard cached mutable-ref modules and re-fetch them, updating their `mq.lock` entries.                                                 |
-| `--allowed-domain <domain>` | Allow HTTP imports from an additional domain beyond the default (`raw.githubusercontent.com/harehare`). Repeat to add multiple domains. |
+| `--allowed-domain <domain>` | Allow HTTP imports from an additional domain beyond the default (`raw.githubusercontent.com/harehare`). Repeat to add multiple domains. Has no effect unless `--allow-http-import` (or `--allow-all`) is also passed. |
 | `--no-lockfile`             | Disable the `mq.lock` integrity check/update.                                                                                           |
+| `--frozen`                  | Fail instead of recording a new `mq.lock` entry. Use in CI once `mq.lock` is committed. Mutually exclusive with `--no-lockfile`.        |
 | `--lockfile <path>`         | Use `<path>` instead of `./mq.lock`.                                                                                                     |
 
 **Examples:**
 
 ```sh
-# Force re-fetch of any HEAD/branch modules, accepting new content into mq.lock
-mq --refresh-modules 'self' file.md
+# Enable HTTP imports, restricted to the built-in default domain
+mq --allow-http-import 'self' file.md
 
-# Only allow imports from example.com
-mq --allowed-domain example.com 'self' file.md
+# Force re-fetch of any HEAD/branch modules, accepting new content into mq.lock
+mq --allow-http-import --refresh-modules 'self' file.md
+
+# Only allow imports from example.com (in addition to the built-in default)
+mq --allow-http-import --allowed-domain example.com 'self' file.md
 
 # Allow multiple domains
-mq --allowed-domain example.com --allowed-domain raw.githubusercontent.com 'self' file.md
+mq --allow-http-import --allowed-domain example.com --allowed-domain raw.githubusercontent.com 'self' file.md
 
 # Use a different lock file location
-mq --lockfile config/mq.lock 'self' file.md
+mq --allow-http-import --lockfile config/mq.lock 'self' file.md
 
 # Skip the mq.lock check entirely
 mq --no-lockfile 'self' file.md
+
+# CI: fail if a script tries to import a URL not already recorded in the committed mq.lock
+mq --allow-http-import --frozen 'self' file.md
 ```
 
 ## Network and File-Write Capabilities
@@ -312,10 +312,7 @@ bodies in the same order. Each request is a dict with a required `url` and optio
 mq --allow-net 'http_all([{"url": "https://example.com/a"}, {"url": "https://example.com/b", "method": "post", "body": "{}", "headers": {"Content-Type": "application/json"}}])'
 ```
 
-Requests in the batch run concurrently when the runtime supports it, so fanning out to
-multiple endpoints is faster than calling `http()` in a loop. The same URL/domain policy
-applies as for `http()`: HTTPS only, and `--allow-net` (with or without a domain allowlist)
-is required.
+Requests in the batch run concurrently when the runtime supports it, so fanning out to multiple endpoints is faster than calling `http()` in a loop. The same URL/domain policy applies as for `http()`: HTTPS only, and `--allow-net` (with or without a domain allowlist) is required.
 
 > **Security note:** `http` only accepts `https://` URLs and is routed through the same
 > SSRF-hardened client used for HTTP imports — no automatic redirects, and DNS results are
@@ -334,8 +331,7 @@ mq --allow-net 'http_post("https://example.com", "{}", {"Content-Type": "applica
 mq --allow-write 'write_file("out.md", "# Hello")'
 ```
 
-`--allow-net` also accepts a domain allowlist, restricting `http`/`http_*` calls to just those
-domains (and any path under them) instead of granting unrestricted network access:
+`--allow-net` also accepts a domain allowlist, restricting `http`/`http_*` calls to just those domains (and any path under them) instead of granting unrestricted network access:
 
 ```sh
 # Restrict to just example.com
