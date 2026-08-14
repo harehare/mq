@@ -43,6 +43,8 @@ export interface Options {
     linkUrlStyle: 'angle' | 'none' | null,
     /** Domains permitted for HTTP module imports in addition to github.com/harehare (always allowed). */
     allowedDomains?: string[],
+    /** Enables HTTP/GitHub module imports. Off by default, mirroring the CLI's `--allow-http-import`. */
+    allowHttpImport?: boolean,
     /** Maximum time in milliseconds a query may run before evaluation is aborted. Disabled (no timeout) if omitted. */
     timeoutMs?: number,
 }
@@ -109,6 +111,7 @@ struct Options {
     link_title_style: Option<TitleSurroundStyle>,
     link_url_style: Option<UrlSurroundStyle>,
     allowed_domains: Option<Vec<String>>,
+    allow_http_import: Option<bool>,
     timeout_ms: Option<u32>,
 }
 
@@ -365,6 +368,14 @@ impl WasmModuleResolver {
         self.http_resolver.borrow_mut().set_allowed_domains(domains);
     }
 
+    /// Enables or disables HTTP module imports outright, independent of the domain allowlist.
+    ///
+    /// `run()` sets this from `Options.allowHttpImport`, defaulting to `false` so imports are
+    /// opt-in, mirroring the CLI's `--allow-http-import`.
+    pub fn set_http_import_enabled(&self, enabled: bool) {
+        self.http_resolver.borrow_mut().set_enabled(enabled);
+    }
+
     /// Initializes the OPFS root directory handle
     ///
     /// If OPFS is not available, this method will silently fail and the resolver
@@ -459,14 +470,19 @@ impl WasmModuleResolver {
 
     /// Pre-fetches HTTP/GitHub import URLs found directly in `code` (top-level only).
     ///
-    /// Only imports written in the user's own code are resolved; HTTP imports inside
-    /// fetched modules are intentionally ignored.
+    /// Only imports written in the user's own code are resolved; HTTP imports inside fetched modules are intentionally ignored.
+    ///
+    /// Returns immediately (without fetching) if HTTP import is disabled via [`Self::set_http_import_enabled`] — no network request is made just because a query happens to contain an HTTP import.
     ///
     /// When the `opfs` feature is enabled, HTTP imports require OPFS to be available —
     /// this method returns immediately (without fetching) if OPFS is unavailable.
     /// Versioned URLs (`@v1.0`) are persisted in `http_cache/versioned/` and mutable URLs
     /// in `http_cache/mutable/`, each with a SHA-256 sidecar for tamper detection.
     pub async fn preload_http_modules(&self, code: &str) {
+        if !self.http_resolver.borrow().is_enabled() {
+            return;
+        }
+
         // HTTP import requires OPFS for caching; skip if OPFS is unavailable.
         #[cfg(feature = "opfs")]
         if !self.fetcher.is_opfs_available() {
@@ -529,7 +545,7 @@ impl mq_lang::ModuleResolver for WasmModuleResolver {
 
         if is_http {
             #[cfg(feature = "opfs")]
-            if !self.fetcher.is_opfs_available() {
+            if self.http_resolver.borrow().is_enabled() && !self.fetcher.is_opfs_available() {
                 return Err(mq_lang::ModuleError::IOError(std::borrow::Cow::Owned(format!(
                     "HTTP import of '{}' is not available: OPFS is not supported in this environment.",
                     module_name
@@ -629,6 +645,7 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
     if let Some(ref domains) = options.allowed_domains {
         resolver.set_allowed_domains(domains.clone());
     }
+    resolver.set_http_import_enabled(options.allow_http_import.unwrap_or(false));
     resolver.preload_modules(code).await;
     resolver.preload_http_modules(code).await;
 
@@ -1288,6 +1305,7 @@ mod tests {
                 link_title_style: None,
                 link_url_style: None,
                 allowed_domains: None,
+                allow_http_import: None,
                 timeout_ms: None,
             })
             .unwrap(),
@@ -1308,6 +1326,7 @@ mod tests {
                 link_title_style: None,
                 link_url_style: None,
                 allowed_domains: None,
+                allow_http_import: None,
                 timeout_ms: None,
             })
             .unwrap(),
@@ -1328,6 +1347,7 @@ mod tests {
                 link_title_style: None,
                 link_url_style: Some(UrlSurroundStyle::Angle),
                 allowed_domains: None,
+                allow_http_import: None,
                 timeout_ms: None,
             })
             .unwrap(),
@@ -1348,6 +1368,7 @@ mod tests {
                 link_title_style: None,
                 link_url_style: None,
                 allowed_domains: None,
+                allow_http_import: None,
                 // A zero timeout guarantees the deadline is already passed by the first
                 // periodic check, regardless of how fast the machine running this test is.
                 timeout_ms: Some(0),
@@ -1371,6 +1392,7 @@ mod tests {
                     link_title_style: None,
                     link_url_style: None,
                     allowed_domains: None,
+                    allow_http_import: None,
                     timeout_ms: None,
                 })
                 .unwrap()
@@ -2221,6 +2243,50 @@ mod tests {
         let blocked =
             mq_lang::ModuleResolver::resolve(&resolver, "https://raw.githubusercontent.com/alice/other/HEAD/other.mq");
         assert!(matches!(blocked, Err(mq_lang::ModuleError::IOError(_))));
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_set_http_import_enabled_false_blocks_resolve() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        resolver.set_http_import_enabled(false);
+        let result = mq_lang::ModuleResolver::resolve(
+            &resolver,
+            "https://raw.githubusercontent.com/harehare/test/HEAD/test.mq",
+        );
+        assert!(
+            matches!(result, Err(mq_lang::ModuleError::IOError(_))),
+            "expected IOError when HTTP import is disabled, got: {:?}",
+            result
+        );
+    }
+
+    #[cfg(feature = "opfs")]
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_preload_http_modules_noop_when_disabled() {
+        let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
+        if !*resolver.is_available.borrow() {
+            return;
+        }
+        resolver.set_http_import_enabled(false);
+        // Domain is allowed, but HTTP import is disabled outright → preload skips it.
+        resolver
+            .preload_http_modules(r#"import "https://raw.githubusercontent.com/harehare/test/HEAD/test.mq""#)
+            .await;
+        resolver.set_http_import_enabled(true);
+        let result = mq_lang::ModuleResolver::resolve(
+            &resolver,
+            "https://raw.githubusercontent.com/harehare/test/HEAD/test.mq",
+        );
+        // Not cached (preload was skipped while disabled) → NotFound, not fetched content.
+        assert!(
+            matches!(result, Err(mq_lang::ModuleError::NotFound(_))),
+            "expected NotFound since preload should have skipped fetching, got: {:?}",
+            result
+        );
     }
 
     #[allow(unused)]

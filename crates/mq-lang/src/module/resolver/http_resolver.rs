@@ -114,6 +114,11 @@ impl<F: HttpFetcher> HttpModuleResolver<F> {
         self.enabled = enabled;
     }
 
+    /// Returns whether HTTP module imports are currently enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
     fn to_fetch_url(&self, module_name: &str) -> Result<String, ModuleError> {
         let is_import_attempt = is_github_url(module_name) || is_remote_url(module_name);
         if is_import_attempt && !self.enabled {
